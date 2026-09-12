@@ -91,8 +91,51 @@ function padded(value: string): string {
 /** The padded form, remembered — an address was being padded once per area otherwise. */
 const paddedText = memoizeByText(padded);
 
-/** And the space-free padded form: " downtown " from "down town". */
-const paddedSquashedText = memoizeByText((value: string) => padded(value.replace(/\s+/g, "")));
+/** The space-free form, for comparing one spelling of a place against the other: "downtown". */
+function squashed(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+/**
+ * How many consecutive words a squashed window may span.
+ *
+ * Three is the longest alias in the vocabulary ("kafr el shaikh"), and area tokens reach three as
+ * well ("dokki mohandseen bolak"). Four leaves one word of headroom without widening the windows a
+ * long address generates — the cost here is linear in this number.
+ */
+const MAX_SQUASH_WINDOW = 4;
+
+/**
+ * EVERY run of up to four consecutive words in a string, with the spaces taken out.
+ *
+ * WHY THIS EXISTS, and what it replaced. Two comments in this file promised that "Down town" and
+ * "downtown" were matched as the same place in both directions. Neither did. The old test squashed
+ * the WHOLE address into one token and then looked for a PADDED alias inside it — and once every
+ * space is gone there are no internal spaces left for that padding to find, so it could only ever
+ * match when the entire address squashed to exactly one alias. A CV never says only "down town"; it
+ * says "15 Abbas El Akkad, down town, Cairo". Those addresses resolved through some OTHER word, or
+ * not at all. Measured 2026-09-12: `governorateNamedBy("down town")` answered null while
+ * `governorateNamedBy("downtown")` answered Cairo.
+ *
+ * Windows of WHOLE WORDS are what makes joining them safe. The founding bug of this matcher was a
+ * bare substring test resolving "New Bapunagar, Bhilwara, Rajasthan" to Dakahlia, because
+ * "bapunAGAr" contains the alias "aga". A window is cut on word boundaries before it is squashed,
+ * so "bapunagar" can only ever be compared whole; no alias can be found hiding inside a longer word.
+ *
+ * Remembered per string, because the screening queue asks the same address once per open seat.
+ */
+const squashedWindowsOf = memoizeByText((value: string): ReadonlySet<string> => {
+  const words = value.split(" ").filter(Boolean);
+  const windows = new Set<string>();
+  for (let start = 0; start < words.length; start += 1) {
+    let window = "";
+    for (let take = 0; take < MAX_SQUASH_WINDOW && start + take < words.length; take += 1) {
+      window += words[start + take];
+      windows.add(window);
+    }
+  }
+  return windows;
+});
 
 // ── Governorate ──────────────────────────────────────────────────────────────
 
@@ -110,18 +153,17 @@ const paddedSquashedText = memoizeByText((value: string) => padded(value.replace
 const NORMALIZED_ALIASES: ReadonlyArray<{
   label: string;
   /**
-   * Each alias in the two forms it is compared in, padded here and never again. `squashed` is null
-   * where the alias has no space in it and the two forms would be the same test run twice.
+   * Each alias in the two forms it is compared in, built here and never again. The squashed form is
+   * kept for EVERY alias, space or no space: a space-free alias is exactly what a spaced address
+   * needs to reach ("down town" -> "downtown"), and dropping it as a duplicate is what left that
+   * whole direction unmatched.
    */
-  keys: ReadonlyArray<{ padded: string; squashed: string | null }>;
+  keys: ReadonlyArray<{ padded: string; squashed: string }>;
 }> = placeAliases.map((entry) => ({
   keys: entry.aliases
     .map((alias) => normalizePlaceText(alias))
     .filter(Boolean)
-    .map((key) => {
-      const squashed = key.replace(/\s+/g, "");
-      return { padded: padded(key), squashed: squashed === key ? null : padded(squashed) };
-    }),
+    .map((key) => ({ padded: padded(key), squashed: squashed(key) })),
   label: entry.label,
 }));
 
@@ -145,12 +187,13 @@ export function governorateNamedBy(value: string | null | undefined): string | n
 /** The walk itself, remembered on the NORMALISED string — so two spellings of one address share it. */
 const governorateOfCleaned = memoizeByText((cleaned: string): string | null => {
   const hay = padded(cleaned);
-  // The space-free form as well, so "Down town" reaches the alias "downtown" and vice versa.
-  const squashedHay = padded(cleaned.replace(/\s+/g, ""));
+  // And every run of up to four consecutive words with the spaces taken out, so "down town" reaches
+  // the alias "downtown" and an address written "nasrcity" reaches the alias "nasr city".
+  const windows = squashedWindowsOf(cleaned);
   for (const { label, keys } of NORMALIZED_ALIASES) {
     for (const key of keys) {
       if (hay.includes(key.padded)) return label;
-      if (key.squashed !== null && squashedHay.includes(key.squashed)) return label;
+      if (windows.has(key.squashed)) return label;
     }
   }
   return null;
@@ -232,18 +275,53 @@ const NON_PLACE_TOKENS = new Set(["egypt", "head office", "office"]);
 export function addressNamesArea(haystack: string, areaName: string | null): boolean {
   const hay = paddedText(haystack);
   // "Down town" and "downtown" are the same place spelled two ways, and one of them is the area's
-  // own name — so the space-free form is compared as well, on both sides.
-  const squashedHay = paddedSquashedText(haystack);
+  // own name — so the space-free form is compared as well, on both sides. The comparison is against
+  // every four-word window of the address rather than against the whole of it squashed into one
+  // token: the latter only ever matched an address that said nothing BUT the area's name, which is
+  // not a shape any CV has.
+  const windows = squashedWindowsOf(normalizePlaceText(haystack));
   for (const token of tokensOfArea(areaName ?? "")) {
     if (NON_PLACE_TOKENS.has(token)) continue;
     if (GOVERNORATE_LABELS.has(token)) continue;
-    const paddedToken = paddedText(token);
-    if (hay.includes(paddedToken)) return true;
-    const squashedToken = paddedSquashedText(token);
-    if (squashedToken !== paddedToken && squashedHay.includes(squashedToken)) return true;
+    if (hay.includes(paddedText(token))) return true;
+    if (windows.has(squashed(token))) return true;
   }
   return false;
 }
+
+/**
+ * Areas whose own NAME holds no place this vocabulary knows, and the governorate the owner has ruled
+ * each one sits in.
+ *
+ * ONE ENTRY, AND IT IS A RULING RATHER THAN A LOOKUP. "Down town" is area `CA5` — a real Cairo
+ * district with one seat, filed under the GIZA sales region. Every other one of the 40 live area
+ * names carries a governorate inside it ("Behira 1" -> Beheira, "Sohag1" -> Sohag); this one is
+ * named after a neighbourhood and resolved to nothing at all.
+ *
+ * WHAT THAT COST, and why it is worth a map of its own. `position-suggestion.ts` exempts a
+ * last-remaining seat from the address check when its area has no governorate — an exemption
+ * written for seats that are not somewhere a person LIVES, like head office or the whole country.
+ * `Down town` was falling through it, so the one downtown seat could be pre-filled for a candidate
+ * whose address agreed with nothing. Giving it a governorate puts it back under the same rule as
+ * every other real area.
+ *
+ * AN AREA OVERRIDE, DELIBERATELY NOT AN ALIAS — and the gazetteer is not the reason. Cairo's alias
+ * list in egypt-locations.ts already carries "downtown" and "وسط البلد", so an ADDRESS saying
+ * downtown has always answered Cairo. What never matched is the AREA NAME: the area walk splits
+ * "Down town" on its space and neither half names a place. The reason not to close that by pasting
+ * "down town" into the alias list is that an area's governorate would then be decided by an address
+ * gazetteer edited for unrelated reasons — a territory fact quietly following geography, which is
+ * the one thing this repo's rules forbid. Named here, the ruling is explicit, dated and
+ * attributable. Sales, the closing and `au.canonical_areas` are untouched — the same shape, and the
+ * same reasoning, as `recruitmentAreaRegionOverrides` in candidate-region.ts.
+ *
+ * Owner, 2026-09-12, asked rather than inferred: "downtown move top cairo yes". Keyed by the
+ * EXACT area name in production, so a rename there drops the override — which the registered test
+ * pins against.
+ */
+export const areaGovernorateOverrides: Record<string, string> = {
+  "Down town": "Cairo",
+};
 
 /**
  * EVERY governorate an area's own name mentions, in the order the name mentions them.
@@ -259,6 +337,11 @@ export function areaGovernorates(areaName: string | null): string[] {
 }
 
 const governoratesOfArea = memoizeByText((areaName: string): readonly string[] => {
+  // The ruling first: an area named in the map above does not get to be re-derived from its own
+  // letters, because the whole reason it is there is that its letters say nothing.
+  const ruled = areaGovernorateOverrides[areaName.trim()];
+  if (ruled) return [ruled];
+
   const found: string[] = [];
   for (const token of tokensOfArea(areaName)) {
     if (NON_PLACE_TOKENS.has(token)) continue;

@@ -56,7 +56,11 @@ finding 14 as two rows, **14a** and **14b**, each naming
 `tests/automated-payroll-fail-closed-reads.test.ts` and merged PR **#3699**. The draft missed them
 because it searched for a row headed `14` and the rows are headed `14a`/`14b`;
 `tests/payroll-audit-ledger.test.ts` matches the letter suffix and has been counting them correctly
-all along. **The ledger's total of 39 stands, and no correction to the arithmetic is owed.**
+all along. **No correction to the ledger's arithmetic is owed on finding 14's account.** (The
+"fixed with evidence" bucket did move from 39 to 41 on 2026-09-12, for an unrelated reason: findings
+30 and 36 were re-verified against live production and now carry code markers, emptying the
+"claimed closed by earlier work nobody can name" bucket. That change came in on `main` separately
+and is untouched here.)
 
 ## The 37, by what a defect there would cost
 

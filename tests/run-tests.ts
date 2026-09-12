@@ -785,6 +785,7 @@ import {
   runSatoEmailRenderTests,
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
+import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -1096,6 +1097,7 @@ import { runAutomatedPayrollLeaverOverpaymentTests } from "./automated-payroll-l
 import { runAutomatedPayrollGuardsThatGuardTests } from "./automated-payroll-guards-that-guard.test.ts";
 import { runAutomatedPayrollDismissalSettlementTests } from "./automated-payroll-dismissal-settlement.test.ts";
 import { runAutomatedPayrollInsuranceWageTests } from "./automated-payroll-insurance-wage.test.ts";
+import { runPayrollReadySheetLeaverProrationTests } from "./payroll-ready-sheet-leaver-proration.test.ts";
 import { runAutomatedPayrollVacationReconfirmTests } from "./automated-payroll-vacation-reconfirm.test.ts";
 import { runAutomatedPayrollModuleDriftTests } from "./automated-payroll-module-drift.test.ts";
 import { runAutomatedPayrollDayCollisionTests } from "./automated-payroll-day-collisions.test.ts";
@@ -1872,6 +1874,10 @@ await runTest(
 await runTest(
   "payroll: every employee on a published batch is told their payslip is ready",
   runPayrollPayslipNoticeTests,
+);
+await runTest(
+  "payroll: a leaver whose resignation is still in the workflow is never paid a full month",
+  runPayrollReadySheetLeaverProrationTests,
 );
 await runTest(
   "payroll: somebody hired and gone in the same month is paid from their hire date",
@@ -5322,6 +5328,11 @@ await runTest(
 await runTest(
   "a Sato email send dedupes by address and is cut into emails of at most 25 — the cap the manual-email policy already enforces — with a per-email idempotency key and unfilled template gaps caught",
   runSatoEmailPlanTests,
+);
+
+await runTest(
+  "the Sato composer's rewrite changes wording only — a figure, a link or a [square bracket] gap the sender never wrote is refused, and the reader never learns a model was involved",
+  runSatoEmailPolishTests,
 );
 
 await runTest(

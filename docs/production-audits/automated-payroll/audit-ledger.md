@@ -32,8 +32,8 @@ and it is the single most useful thing that could still be added.
 
 | | Count | Findings |
 | --- | ---: | --- |
-| **Fixed, with evidence** | **39** | 2–5, 14–18, 20, 22, 23, 26, 27, 29, 31–35, 37–55 |
-| **Claimed closed by earlier work, no code marker** | **2** | 30, 36 |
+| **Fixed, with evidence** | **41** | 2–5, 14–18, 20, 22, 23, 26, 27, 29–55 |
+| **Claimed closed by earlier work, no code marker** | **0** | — (30 and 36 were here until 2026-09-12; re-verified, see below) |
 | **Referenced, but neither fixed nor dismissed** | **1** | 19 |
 | **No trace found anywhere** | **13** | 1, 6–13, 21, 24, 25, 28 |
 | **Total** | **55** | |
@@ -147,11 +147,34 @@ else.**
 | --- | --- | --- | --- |
 | **29** | A person who both joined and left in one month is classified as a **leaver only** — the leaver branch returns before the joiner branch is reached — and the settlement counted days from the 1st. So it paid for days before the person was hired. | `tests/payroll-same-month-joiner-leaver.test.ts` | test + PR #3711 |
 
-### Findings 30 and 36
+### Findings 30 and 36 — re-verified 2026-09-12
 
-| # | Status |
-| --- | --- |
-| **30, 36** | ⚠️ **Claimed closed, with no code marker.** PR #3717's description states: *"Findings 30, 33, 34 and 36 were already closed by earlier work."* It does not name that work, and neither number appears anywhere in the code, the tests or git history. **The claim is the only evidence.** 33 and 34 from that same sentence are independently traceable (below); 30 and 36 are not. |
+They sat in this ledger as **claimed closed, with no code marker**: PR #3717's description said
+*"Findings 30, 33, 34 and 36 were already closed by earlier work"*, named no such work, and neither
+number appeared in the code, the tests or git history. The claim was the only evidence. That entry
+was correct when written. It is no longer, and the evidence state is kept here rather than
+overwritten, because what was known at the time is part of the record.
+
+Both were examined against live production and `origin/main` on 2026-09-12. Both are genuinely
+closed, and both now have a marker anyone can check.
+
+| # | What it was | Where the fix lives | Evidence |
+| --- | --- | --- | --- |
+| **30** | An employee with no social-insurance figure was filed at zero rather than flagged. | `data-quality.ts` raises `missing_insurance_wage` through `usableInsuranceWage(…) === null`, so a NULL, a zero and a stray non-number all read as missing — "published at zero" is the case it catches. `copilot/assemble.ts` computes social insurance only when the wage is non-null. | code + test (`tests/automated-payroll-insurance-wage.test.ts`, registered) |
+| **36** | The Ready payroll sheet paid a full unprorated month to a leaver whose resignation was still in the workflow. | Closed by WHERE the status write lives: `phx_resign_employee_and_open_vacancy` sets `employment_status` when the resignation is **filed**, not when its workflow completes, so an in-workflow leaver is already terminal to the Ready sheet. | code + test (`tests/payroll-ready-sheet-leaver-proration.test.ts`) |
+
+**Production, 2026-09-12.** For 30 the condition is live: **6** active payroll-eligible employees
+have a NULL `social_insurance_wage` (0 at zero, 97 positive, 103 total), so the flag has real work
+to do. For 36 the exploitable state does not exist: the one resignation still at workflow status
+`submitted` already carried `employment_status = 'resigned'`, and no row had an in-flight
+resignation against an employee still `active`. The single active-employee resignation row is
+`cancelled` — correct, that person did not leave.
+
+**Why 36 needed a test of its own.** Its closure is a consequence of a mechanism, not of an explicit
+guard. Moving the status write to the workflow's completion step — a reasonable-looking tidy-up,
+since the rest of the resignation lifecycle is workflow-driven — silently returns every leaver to a
+full unprorated month. The new test pins the mechanism across *every* migration that defines that
+RPC, so a future redefinition that drops the write fails rather than shipping.
 
 ### The spreadsheet round trip — PR #3717 (2026-09-11), PR #3709 (2026-09-11)
 
