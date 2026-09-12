@@ -26,6 +26,7 @@ export const CREDENTIAL_ROUTE_PREFIXES: readonly string[] = [
   "/api/admin/email-templates/custom-variables",
   "/api/auth/password-setup",
   "/api/email/unsubscribe",
+  "/api/sato-email/media",
   "/api/share/cv-lifecycle",
   "/api/share/direct-orders",
   "/api/share/marketing-requests",
