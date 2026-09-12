@@ -1,12 +1,12 @@
-# Automated Payroll — Audit Cycle 3 (in progress)
+# Automated Payroll — Audit Cycle 3
 
 **Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them)
-**Status:** TIERS 1-3 VERIFIED (33 of 37) · TIER 4 NOT STARTED
+**Status:** ALL FOUR TIERS VERIFIED — 37 of 37
 **Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
 > ordering is the process fix cycle 2 established, and it is the reason cycle 1 lost fourteen
-> findings. Tier 1 carries results as of 2026-09-12; Tiers 2-4 are still unticked.
+> findings. All four tiers carry results as of 2026-09-12.
 
 ## Why this cycle exists
 
@@ -19,8 +19,10 @@ name a merged pull request** — #3696, #3699, #3701, #3703, #3706, #3707, #3708
 backlog.
 
 **Second, and far more important: the original audit document exists.** The owner confirmed it. That
-contradicts a sentence this repository currently publishes — cycle 2 and the ledger both state that
-the wording of the missing findings "cannot be recovered from anything the company holds."
+contradicted a sentence this repository published — cycle 2 and the ledger both stated that the
+wording of the missing findings "cannot be recovered from anything the company holds." **Both are
+corrected in this pull request**, along with the registry: every irrecoverability statement is now
+scoped to *this repository*, which is the only thing that was ever true of it.
 
 ### What that does to the ruling of 2026-09-12
 
@@ -45,12 +47,16 @@ call. The defect was in the interaction, not in any one file.
 So this cycle re-verifies each finding **empirically** — against production data, the emitted
 artifact, or a forced failure — never against the source that claims to fix it.
 
-## A known gap in the cycle-1 record, found while writing this
+## A gap in the cycle-1 record that turned out not to exist
 
-**Finding 14 is counted in the ledger's "fixed with evidence" total of 39, but it has no detail row
-and names no pull request.** The ledger already flags 30 and 36 as claimed-closed-without-a-marker;
-it does not flag 14. That is an error in the record, not in the code, and it means the real
-"fixed with evidence" count is 38, not 39. It is corrected in the same PR as the rest.
+An earlier draft of this document said finding 14 was counted in the ledger's "fixed with evidence"
+total of 39 but had no detail row and named no pull request, and that the real count was therefore
+38. **That was wrong, and it is retracted here rather than quietly deleted.** The ledger records
+finding 14 as two rows, **14a** and **14b**, each naming
+`tests/automated-payroll-fail-closed-reads.test.ts` and merged PR **#3699**. The draft missed them
+because it searched for a row headed `14` and the rows are headed `14a`/`14b`;
+`tests/payroll-audit-ledger.test.ts` matches the letter suffix and has been counting them correctly
+all along. **The ledger's total of 39 stands, and no correction to the arithmetic is owed.**
 
 ## The 37, by what a defect there would cost
 
@@ -349,10 +355,84 @@ No money moves, but someone is not told something true. Verified on the emitted 
 
 | # | In one line | Claimed fixed by | Re-verified |
 | ---: | --- | --- | :---: |
-| **15** | 205 employees across two published months were never told their payslip was ready. | #3708 | ☐ |
-| **38** | The workbook finance executes the month from never mentions holds on its cover. | #3741 | ☐ |
-| **54** | The excluded-employees panel prints the raw HR code instead of the person's name. | #3741 | ☐ |
-| **55** | The Payslips Center search for an HR code is case-sensitive, so a lower-case search reports no payslips. | #3741 | ☐ |
+| **15** | 205 employees across two published months were never told their payslip was ready. | #3708 | ☑ |
+| **38** | The workbook finance executes the month from never mentions holds on its cover. | #3741 | ☑ |
+| **54** | The excluded-employees panel prints the raw HR code instead of the person's name. | #3741 | ☑ |
+| **55** | The Payslips Center search for an HR code is case-sensitive, so a lower-case search reports no payslips. | #3741 | ☑ |
+### Tier 4 — results, 2026-09-12
+
+**Four of four verified, and three of them were settled against production rather than a harness.**
+This tier is the one where nothing breaks: the money is right, the run completes, and the only thing
+wrong is what somebody is told. So none of the four can be proven by reading the fix — only by
+reading what the person actually receives.
+
+| Finding | What was broken to prove it | What fired |
+| ---: | --- | --- |
+| **15** | the notifier given a roster of nobody, as before #3708 | `{"notified":0,"failed":0}` — a published month that tells no one, and records that it told no one |
+| **38** | the `On hold` row removed from the finance cover | `HEADLINE: the finance cover must say how many people are on hold`, and the emitted cover went silent on 20 held people |
+| **54** | the panel put back on codes, against production's own August run | `PD-0007 (PD-0007)`, `PD-0011 (PD-0011)`, `AI-0006 (AI-0006)` |
+| **55** | the pre-fix case-sensitive `.eq`, run against production | typing `a-1` returned **0 payslips** where `A-1` returns 8 |
+
+#### What production says
+
+**Finding 15 is exactly true, and it is 205 people.** `notification_events` holds **123**
+`payslip_available` records, every one of them dated **2026-07-13**, all for a single batch, and
+**none since**. The two batches that were actually published carry none at all:
+
+| Batch | Published (Cairo) | People paid | Told their payslip was ready |
+| --- | --- | ---: | ---: |
+| July 2026 | 2026-08-10 10:11 | 105 | **0** |
+| August 2026 | 2026-09-08 14:43 | 100 | **0** |
+
+Publish now calls `notifyPayslipAvailable` and records the outcome in the `published` audit row —
+`payslipNoticeSent`, `payslipNoticeFailed`, `payslipNoticeError` — so a month that tells nobody can
+no longer do it quietly. The notifier was exercised with an injected roster client **and an injected
+sender**: never the real one, because the suite runs with production credentials and reaching it
+would notify real employees and burn a month's idempotency keys. A 100-person batch told 100 people;
+a duplicate row, a blank and a null were dropped; two forced delivery failures were **counted and
+returned** rather than swallowed; and a roster that could not be read returned the error rather than
+a successful nobody. The payload carries **`channels: ["in_app", "telegram"]` and no `email` block at
+all** — the owner's rule that a payslip is never emailed, read off the payload rather than assumed.
+
+**The finance cover was read out of the emitted `.xlsx`, at August's real shape.** Built with
+production's August population — 120 people, 20 of them held — the Cover sheet finance opens says:
+
+```
+Employees    | 120
+On hold      | 20 of 120, shown in red below. A held row is NOT paid by this run: no salary
+               record is written, and nothing here records a payment made outside the system.
+               Held means the SECOND part is owed, not the whole month — paying full net would
+               pay part one twice.
+```
+
+All 20 held people are still rows in the table below it, every one carrying the `HELD — this person
+is NOT paid by this run` note on its `HR_ID` cell and a fill, so the mark survives greyscale and a
+reader who cannot see red. A month with **no** holds prints `None — every employee row below is paid
+by this run`, which is what stops a missing line ever being read as "none".
+
+**The excluded panel was built by the application from production's own August run.** `getRunView`
+was called against the live database with the owner's context, and it returned the three people
+August actually excluded — **Bahaa Gamal (PD-0007), Mohamed Eldomiaty (PD-0011), Mohamed Yasser
+(AI-0006)** — each named, with the code beside the name rather than instead of it. Put back on codes,
+the same call against the same data printed `PD-0007 (PD-0007)`.
+
+**The case-sensitive search was the whole company, not an edge case.** Of the **896** published
+payslip rows in production, covering **175 people**, **every single one** carries an upper-case letter
+in its HR id. So before the fix, a lower-case HR-id search answered "no payslips" for *every employee
+in the company* — and it read as a fact about the person, not about the query. Searched live:
+typing `a-1` now returns the same 8 payslips as `A-1`, and only A-1's — not A-10, A-12 or A-13, so
+the whole-match promise survives the case fix. A typed `_` and a typed `*` both stay characters and
+match nothing, while a lower-case **name** still searches as a contains-match (80 rows for
+`mahmoud`). Put back on `.eq`, `a-1` returned 0 against the same production data.
+
+#### The one qualification
+
+**54 and 55 are proven on the server and on production data, not on the rendered screen.** The
+excluded panel's markup and the Payslips Center's input box were read as source; what was measured
+live is the data each one is handed. This is the same machine limit as findings 27 and 47 — free RAM
+below the dev-server floor — and the same honest boundary: the value that reaches the component was
+verified against production, the pixel was not.
+
 ## Method
 
 For each finding, in tier order:

@@ -2,7 +2,7 @@
 
 **Audit run:** 2026-09-10 → 2026-09-12 · **Findings numbered:** 1 – 55 · **Ledger written:** 2026-09-12
 
-> **Cycle 2 ran on 2026-09-12** and is recorded separately in [audit-cycle-2.md](audit-cycle-2.md). It did not recover any of the thirteen — nothing could — so every count and every row below still stands exactly as written. Cycle 2 numbered one new finding, **56**, continuing this series so the two can never collide.
+> **Cycle 2 ran on 2026-09-12** and is recorded separately in [audit-cycle-2.md](audit-cycle-2.md). It did not recover any of the thirteen — nothing in this repository could — so every count and every row below still stands exactly as written. **Cycle 3 (2026-09-12) corrected the scope of that claim: the owner holds the original audit document, so the thirteen are recoverable from him even though they are not recoverable from here.** Cycle 2 numbered one new finding, **56**, continuing this series so the two can never collide.
 
 ## Why this file exists
 
@@ -19,8 +19,14 @@ is a worse outcome than a finding that is still open, because the open one is at
 **What this ledger is not.** It is not the audit itself. The audit document — the thing that assigned
 these numbers, wrote the findings up and rated their severity — **was never committed to this
 repository**, and is not recoverable from it. Severity is recorded below only where a merged PR
-stated it in words. That missing document is why thirteen findings cannot be reconstructed, and it is
-the single most useful thing that could still be added here.
+stated it in words. That missing document is why thirteen findings cannot be reconstructed **here**,
+and it is the single most useful thing that could still be added.
+
+> **CORRECTED 2026-09-12 (cycle 3).** Earlier wording said the document could not be recovered from
+> anything the company holds. **That was wrong: the owner holds the original.** The repository lost
+> it; the company did not. Every irrecoverability statement in this ledger is scoped to this
+> repository, and the ruling further down — made on the stated basis that no source survived — is
+> **suspended pending that document**. See [audit-cycle-3.md](audit-cycle-3.md).
 
 ## The numbers
 
@@ -32,7 +38,7 @@ the single most useful thing that could still be added here.
 | **No trace found anywhere** | **13** | 1, 6–13, 21, 24, 25, 28 |
 | **Total** | **55** | |
 
-> **Status of the thirteen, plus 19: CLOSED as permanently unrecoverable by the owner's ruling of 2026-09-12.** The counts above are unchanged and stay unchanged — the ruling settled what is owed, not what is known. See [The ruling on the fourteen](#the-ruling-on-the-fourteen--closed-2026-09-12).
+> **Status of the thirteen, plus 19: CLOSED by the owner's ruling of 2026-09-12 — SUSPENDED 2026-09-12 pending the original audit document, which the owner holds.** The counts above are unchanged and stay unchanged — the ruling settled what is owed, not what is known. See [The ruling on the fourteen](#the-ruling-on-the-fourteen--closed-2026-09-12).
 
 Thirteen numbers — **1, 6–13, 21, 24, 25 and 28** — appear nowhere: not in code, not in a test, not
 in a commit message, not in a merged PR description, and not anywhere in git history. That is the
@@ -230,8 +236,10 @@ treated held people as absent.
 
 **The owner ruled on 2026-09-12: these fourteen are closed as permanently unrecoverable.**
 
-Cycle 2 established that nothing in this company can recover them. The audit document that assigned
-the numbers was never committed; `git grep` across the whole tree and `git log -S` across the whole
+Cycle 2 established that nothing **in this repository** can recover them — its original wording said
+"nothing in this company", which was wrong and is corrected here: **the owner holds the original audit
+document**, and on that basis this ruling is **suspended pending it** (not reversed, and not re-opened
+as work). The audit document that assigned the numbers was never committed; `git grep` across the whole tree and `git log -S` across the whole
 history return nothing for any of them in the payroll paths; no merged pull request describes them.
 An empirical re-audit of the module was run instead (see [audit-cycle-2.md](audit-cycle-2.md)) and it
 found one defect, which was numbered **56** and fixed — not one of these fourteen.
