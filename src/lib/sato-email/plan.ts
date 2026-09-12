@@ -61,6 +61,14 @@ export function findUnfilledPlaceholders(...texts: string[]): string[] {
 
 /** One key per email in a send, so a double-click re-sends nothing while a new send always goes. */
 export function buildSatoEmailIdempotencyKey(input: {
+  /**
+   * What is clipped to the mail, in the key as well as the body.
+   *
+   * A send that failed at the provider, had a file removed and was pressed again is a DIFFERENT
+   * email. Without this the two would hash the same whenever the wording was untouched, and the
+   * provider would dedupe the corrected one away.
+   */
+  attachmentIds: readonly string[];
   batch: readonly string[];
   batchIndex: number;
   clientRequestId: string;
@@ -72,6 +80,7 @@ export function buildSatoEmailIdempotencyKey(input: {
     .createHash("sha256")
     .update(
       JSON.stringify({
+        attachmentIds: [...input.attachmentIds].sort(),
         batch: [...input.batch].sort(),
         batchIndex: input.batchIndex,
         clientRequestId: input.clientRequestId,
