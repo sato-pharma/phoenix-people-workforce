@@ -4,7 +4,6 @@ import { CalendarRange, Download, Loader2, Table2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
-import { ClosingIdentityStyles, CLOSING_SURFACE_CLASS } from "@/components/sales/closing-identity-styles";
 import { ClosingDetailsPanel } from "@/components/sales/closing-details-panel";
 import { ClosingMatrixTable } from "@/components/sales/closing-matrix-table";
 import {
@@ -193,16 +192,12 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
   const hasMatrix = Boolean(filteredMatrix && filteredMatrix.columns.length > 0);
 
   return (
-    // Same wrapper as the admin workspace, deliberately: the two surfaces render the same matrix
-    // and must stay the same document. The shell rules it overrides are .employee-portal-shell's
-    // here rather than .admin-shell's, and the stylesheet carries both.
-    <div className={`${CLOSING_SURFACE_CLASS} space-y-4`}>
-      <ClosingIdentityStyles />
+    <div className="space-y-4">
       {/* Line (locked, or a picker for a genuinely multi-line viewer) + published-month picker */}
-      <div className="flex flex-col gap-3 rounded border border-[#6B8296]/30 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-[#6B8296]">Line</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
             {/* Stays the read-only box for everyone who holds one line — which is almost everyone.
                 It becomes a picker only when the server resolved more than one PUBLISHED line for
                 this viewer, so the control cannot offer a line they may not open. */}
@@ -218,13 +213,13 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 ))}
               </SearchableSelect>
             ) : (
-              <div className="flex h-11 items-center rounded border border-[#6B8296]/30 bg-[#F3F8FC] px-3.5 text-sm font-semibold text-[#0A1F33]">
+              <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
                 {line}
               </div>
             )}
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-[#6B8296]">Month</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             {availablePeriods.length > 1 ? (
               <SearchableSelect
                 className={monthSelectClassName}
@@ -237,21 +232,21 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 ))}
               </SearchableSelect>
             ) : (
-              <div className="flex h-11 w-44 items-center rounded border border-[#6B8296]/30 bg-[#F3F8FC] px-3.5 text-sm font-semibold text-[#0A1F33]">
+              <div className="flex h-11 w-44 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
                 {selectedPeriod ?? "—"}
               </div>
             )}
           </label>
-          {isPending ? <Loader2 className="mb-3 h-4 w-4 animate-spin text-[#6B8296]" /> : null}
+          {isPending ? <Loader2 className="mb-3 h-4 w-4 animate-spin text-slate-400" /> : null}
         </div>
-        <p className="text-xs font-medium text-[#6B8296]">
+        <p className="text-xs font-medium text-slate-500">
           Published closing for your line — scoped to your own areas.
         </p>
       </div>
 
       {/* Matrix / Details tabs — same two views as /sales/monthly-closing */}
-      <div className="overflow-hidden rounded border border-[#6B8296]/30 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
-        <div className="flex items-center gap-1 border-b border-[#6B8296]/20 px-4 pt-3">
+      <div className="overflow-hidden rounded border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+        <div className="flex items-center gap-1 border-b border-slate-100 px-4 pt-3">
           {([
             { icon: <CalendarRange className="h-4 w-4" />, key: "matrix" as const, label: "Closing Matrix" },
             { icon: <Table2 className="h-4 w-4" />, key: "details" as const, label: "Details" },
@@ -260,8 +255,8 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
               className={cn(
                 "inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition",
                 tab === entry.key
-                  ? "border-phx-accent text-[#0A1F33]"
-                  : "border-transparent text-[#6B8296] hover:text-[#16324A]",
+                  ? "border-phx-accent text-[#0B0B0B]"
+                  : "border-transparent text-slate-500 hover:text-slate-800",
               )}
               key={entry.key}
               onClick={() => setTab(entry.key)}
@@ -275,7 +270,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
 
         {tab === "matrix" ? (
           <>
-            <div className="flex flex-col gap-3 border-b border-[#6B8296]/20 px-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 md:flex-row md:items-center md:justify-between">
               <MonthlyClosingFilters
                 areas={filterOptions.areas}
                 onChange={setFilter}
@@ -284,7 +279,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 value={filter}
               />
               <button
-                className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0A1F33] bg-[#0A1F33] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
+                className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
                 disabled={isExporting || !hasMatrix}
                 onClick={() => void handleExport()}
                 type="button"
@@ -301,7 +296,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
             {filteredMatrix && hasMatrix ? (
               <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
             ) : (
-              <p className="px-4 py-8 text-center text-sm text-[#6B8296]">
+              <p className="px-4 py-8 text-center text-sm text-slate-500">
                 No closing rows match the current filters.
               </p>
             )}

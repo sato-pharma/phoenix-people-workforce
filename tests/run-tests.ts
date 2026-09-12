@@ -1323,7 +1323,6 @@ import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runClosingEngineExportTests } from "./closing-engine-export.test.ts";
 import { runClosingExecutiveLookTests } from "./closing-executive-look.test.ts";
-import { runClosingScreenIdentityTests } from "./closing-screen-identity.test.ts";
 import { runClosingLayoutInvariantTests } from "./closing-layout-invariants.test.ts";
 import { runClosingAchievementFollowsTheClosingTests } from "./closing-achievement-follows-the-closing.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
@@ -4239,10 +4238,6 @@ await runTest(
 await runTest(
   "the premium closing workbook keeps its APPROVED executive look (owner 2026-09-08) — exempt from the house identity, so no brand blue anywhere, rounded buttons kept, filled bands kept, band heights held",
   runClosingExecutiveLookTests,
-);
-await runTest(
-  "the closing SCREEN wears that same workbook identity (owner 2026-09-12) — every colour role-for-role, the column tints derived and not invented, no foreign palette on any closing component, the frozen black Export XLSX button untouched, and every special column keeping its own colour inside the Grand Total",
-  runClosingScreenIdentityTests,
 );
 await runTest(
   "the premium closing's achievement IS the Monthly Closing's (all sales over target, owner 2026-09-05) on a MIXED area, on the masthead, on every region row, on Family Performance, and in the owner's own four .xlsm formulas",

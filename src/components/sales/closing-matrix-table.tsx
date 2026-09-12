@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { Fragment, useRef } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
-import { CLOSING_COLUMN_TINT, CLOSING_FONT_STACK, CLOSING_GRID_LINE, CLOSING_IDENTITY } from "@/lib/sales/closing-identity";
+import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
@@ -28,205 +28,89 @@ function valueText(value: number) {
   return valueFormatter.format(value || 0);
 }
 
-// ── The premium workbook's identity, on screen ────────────────────────────────
-// Owner, 2026-09-12: "brand the front end closing as the premium xlsx sato identity". Every colour
-// below comes from CLOSING_IDENTITY, which is the premium closing workbook's approved palette and
-// is pinned against it by tests/closing-screen-identity.test.ts.
-//
-// COLOUR IS APPLIED AS AN INLINE STYLE, NOT A TAILWIND CLASS, and that is deliberate on this file
-// in particular: `cn()` (tailwind-merge) silently drops utilities it does not recognise — it already
-// ate every `text-phx-*` size in this repo once, visible only to getComputedStyle in a real browser
-// — and a dropped colour here would leave a cell with no ground at all, which on a STICKY cell means
-// the rows scroll through it. An inline style cannot be merged away.
-//
-// WHY THE AXES ARE GROUNDS AND NOT HUES. The old table separated its axes with five unrelated
-// colours (sky, orange, amber, violet, and a green the owner rejected on sight). The workbook's
-// identity has no such vocabulary: it has two navies, one accent blue, and two grounds, and it tells
-// one block from the next by ALTERNATING them — the same device its tab strip uses. So a column's
-// axis is carried by its GROUND (white → veryLight → lightBlue, in increasing order of "this figure
-// is derived rather than sold") and by its header band, never by tinting the digits themselves.
-const INK = {
-  /** A measured figure: units sold, value sold. */
-  figure: CLOSING_IDENTITY.mainText,
-  /** A derived figure: a share, a target, a percentage. */
-  derived: CLOSING_IDENTITY.mutedText,
-  /** The Target axis — the one column the owner asked to stand out. */
-  target: CLOSING_IDENTITY.corporateBlue,
-  /** "of which Office" — a component of the figure beside it, never a sale of its own. */
-  office: CLOSING_IDENTITY.secondaryNavy,
-  /** "Ach %" — the verdict the whole row exists to produce, so it takes the darkest ink there is. */
-  verdict: CLOSING_IDENTITY.primaryNavy,
-  /** On a navy row, everything inverts. */
-  onNavy: CLOSING_IDENTITY.white,
-  onNavyMuted: CLOSING_IDENTITY.lightBlue,
-} as const;
-
-const GROUND = {
-  plain: CLOSING_IDENTITY.white,
-  /** The zebra half, and the ground under a derived column. */
-  soft: CLOSING_IDENTITY.veryLight,
-  /** The ground under a measured-against column (Target, Office, Family, Grand Total). */
-  panel: CLOSING_IDENTITY.lightBlue,
-  /** "of which Office" — its own ground, so the column can be traced down the whole grid. */
-  office: CLOSING_COLUMN_TINT.office,
-  /** "Ach %" — likewise, and the bluer of the two because it is the column being looked for. */
-  ach: CLOSING_COLUMN_TINT.achievement,
-  /** A region subtotal row. */
-  subtotal: CLOSING_IDENTITY.lightBlue,
-  /** A national total row. */
-  total: CLOSING_IDENTITY.primaryNavy,
-  /** The second national total row, so the two read as two — the tab strip's alternation. */
-  totalAlt: CLOSING_IDENTITY.secondaryNavy,
-} as const;
-
-/**
- * Ground for a cell, honouring a row-wide override (Direct rows, total rows).
- *
- * `own` is optional because every ground helper deliberately returns undefined on a grand-total
- * row - that row is navy end to end and a cell ground would paint straight over it. So "no ground"
- * is a real answer here, not a missing one, and the result is passed to a `bg?: string` prop.
- */
-function groundOf(rowBg: string | undefined, own: string | undefined) {
-  return rowBg ?? own;
+function toneText(variant: RowVariant, dim: boolean) {
+  if (variant === "grand") return dim ? "text-slate-500" : "font-semibold text-white";
+  if (variant === "subtotal") return dim ? "text-slate-400" : "font-bold text-slate-900";
+  return dim ? "text-slate-300" : "text-slate-700";
 }
 
-/** Ink for a figure, given its row. A grand-total row inverts everything on it. */
-// A role's ink survives a zero — a 0% achievement and a zero target are the two figures on this
-// grid somebody is actually hunting for, so greying them out would hide the finding. Everything
-// else dims at zero, which is what keeps a sparse product column readable.
-function inkFor(variant: RowVariant, role: keyof typeof INK, dim = false) {
-  if (variant === "grand") return dim ? INK.onNavyMuted : INK.onNavy;
-  if (role === "target" || role === "verdict") return INK[role];
-  if (dim) return INK.derived;
-  return INK[role];
-}
-
-function weightFor(variant: RowVariant) {
-  if (variant === "grand") return 600;
-  if (variant === "subtotal") return 700;
-  return 400;
-}
-
-const CELL_BASE = "whitespace-nowrap px-3 py-2 text-right tabular-nums";
-
-function Cell({
-  bg,
-  bold = false,
-  ink,
-  text,
-  variant,
-}: {
-  bg?: string;
-  /** A column that carries the row's verdict. Never lighter than the row's own weight. */
-  bold?: boolean;
-  ink: string;
-  text: string;
-  variant: RowVariant;
-}) {
-  const weight = bold ? Math.max(600, weightFor(variant)) : weightFor(variant);
-  return (
-    <td className={CELL_BASE} style={{ backgroundColor: bg, color: ink, fontWeight: weight }}>
-      {text}
-    </td>
-  );
-}
-
-// `role` is what makes a column identifiable: it picks the ink, and the ground it is given picks the
-// band. It replaced a bare `muted` boolean, which could only say "grey" and so had every derived
-// column - Office, Contribution, Target - wearing one colour between them.
 function NumCell({
-  bg,
+  bg = "",
   kind = "int",
-  role = "figure",
+  muted = false,
   value,
   variant,
 }: {
   bg?: string;
   kind?: "int" | "value";
-  role?: "figure" | "derived" | "target" | "office";
+  muted?: boolean;
   value: number | null;
   variant: RowVariant;
 }) {
+  const base = "whitespace-nowrap px-3 py-2 text-right tabular-nums";
   if (value === null) {
-    return <Cell bg={bg} ink={inkFor(variant, "derived", true)} text={BLANK} variant={variant} />;
+    return <td className={cn(base, bg, variant === "grand" ? "text-slate-500" : "text-slate-300")}>{BLANK}</td>;
   }
+  const dim = muted || value === 0;
   const text = kind === "value" ? valueText(value) : formatNumber(value);
-  return <Cell bg={bg} ink={inkFor(variant, role, value === 0)} text={text} variant={variant} />;
+  return <td className={cn(base, bg, toneText(variant, dim))}>{text}</td>;
 }
 
-// Achievement % — the column every reader of this grid is actually looking for, and until now it
-// wore the same ink and the same ground as the units beside it. It takes the darkest navy in the
-// identity, a half-step of weight, and a ground of its own (GROUND.ach).
-function AchCell({ bg, value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
+function AchCell({ bg = "", value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
+  const base = "whitespace-nowrap px-3 py-2 text-right tabular-nums";
   if (value === null) {
-    return <Cell bg={bg} ink={inkFor(variant, "derived", true)} text={BLANK} variant={variant} />;
+    return <td className={cn(base, bg, variant === "grand" ? "text-slate-500" : "text-slate-300")}>{BLANK}</td>;
   }
-  return <Cell bg={bg} bold ink={inkFor(variant, "verdict")} text={formatPercent(value, { input: "ratio" })} variant={variant} />;
+  return <td className={cn(base, bg, variant === "grand" ? "font-semibold text-white" : "text-slate-600")}>{formatPercent(value, { input: "ratio" })}</td>;
 }
 
 // Contribution % — share of this row's sales within the product's / row-total's national total.
-function ContribCell({ bg, value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
+function ContribCell({ bg = "", value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
+  const base = "whitespace-nowrap px-3 py-2 text-right tabular-nums";
   if (value === null) {
-    return <Cell bg={bg} ink={inkFor(variant, "derived", true)} text={BLANK} variant={variant} />;
+    return <td className={cn(base, bg, variant === "grand" ? "text-slate-500" : "text-slate-300")}>{BLANK}</td>;
   }
-  return <Cell bg={bg} ink={inkFor(variant, "derived")} text={formatPercent(value, { input: "ratio" })} variant={variant} />;
+  const color =
+    variant === "grand" ? "font-semibold text-sky-200" :
+    variant === "subtotal" ? "font-bold text-sky-700" :
+    "text-sky-600";
+  return <td className={cn(base, bg, color)}>{formatPercent(value, { input: "ratio" })}</td>;
 }
 
-// Target value — the Grand Total block's one axis that had no colour of its own and rendered as
-// muted grey, which reads as "not important" beside the figure it is the yardstick for. Owner
-// 2026-09-12: "Tgt Value in grand total need another color". It takes the identity's ACCENT BLUE on
-// the plain ground, so inside a panel-tinted Grand Total block it inverts against its neighbours —
-// which is what makes it the column the eye lands on, without spending a hue the identity does not
-// have. (An emerald version of this shipped for about twenty minutes and the owner rejected it.)
-function TargetCell({ bg, value, variant }: { bg?: string; value: number | null; variant: RowVariant }) {
-  if (value === null) {
-    return <Cell bg={bg} ink={inkFor(variant, "derived", true)} text={BLANK} variant={variant} />;
-  }
-  return <Cell bg={bg} ink={inkFor(variant, "target")} text={valueText(value)} variant={variant} />;
-}
-
-// ── Column grounds ────────────────────────────────────────────────────────────
-// Three levels only — plain, soft, panel — in increasing order of "this figure is a yardstick rather
-// than a sale". A grand-total row is navy end to end, so it takes no column ground at all.
-
-// A grand-total row is navy END TO END, so its cells must take NO ground of their own: a white
-// cell ground paints straight over the row and leaves white figures on white, which is not a
-// faint bug - the whole national total goes invisible. Every ground helper returns undefined on
-// "grand" for that reason, and this is the one for a cell that is otherwise plain.
-function plainBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.plain;
-}
-
-function softBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.soft;
-}
-
-function panelBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.panel;
-}
-
-/** Achievement % — the verdict, on the bluest ground of the five so the column is findable. */
+// Darker-orange tint for the Achievement % column so it reads as its own axis.
 function achBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.ach;
+  if (variant === "area") return "bg-orange-100";
+  if (variant === "subtotal") return "bg-orange-200/80";
+  return "";
 }
 
-/** Contribution % — derived. */
-const contrBgFor = softBgFor;
-
-/** The rightmost Grand Total block, tinted so it reads as one block. */
-const totalBgFor = panelBgFor;
-
-/** The Target column INSIDE the Grand Total block — plain, so it inverts out of the panel. */
-function tgtBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.plain;
+// Sky-blue tint for the Contribution % column — visually distinct from Achievement.
+function contrBgFor(variant: RowVariant) {
+  if (variant === "area") return "bg-sky-50";
+  if (variant === "subtotal") return "bg-sky-100";
+  return "";
 }
 
-/** The family summary block — derivative, never added to the Grand Total. */
-const famBgFor = panelBgFor;
+// Stronger-orange tint for the rightmost Grand Total block.
+function totalBgFor(variant: RowVariant) {
+  if (variant === "area") return "bg-[#FBD8A6]";
+  if (variant === "subtotal") return "bg-[#F4C078]";
+  return "";
+}
 
-/** "of which Office" — a component of the figure beside it, not a figure of its own. */
+// Amber tint for the family summary columns (display-only, not added to Grand Total).
+function famBgFor(variant: RowVariant) {
+  if (variant === "area") return "bg-amber-50";
+  if (variant === "subtotal") return "bg-amber-100";
+  return "";
+}
+
+// Violet tint for the "of which Office" columns — its own axis, distinct from Contr (sky),
+// Achievement (orange) and Family (amber).
 function officeBgFor(variant: RowVariant) {
-  return variant === "grand" ? undefined : GROUND.office;
+  if (variant === "area") return "bg-violet-50";
+  if (variant === "subtotal") return "bg-violet-100";
+  return "";
 }
 
 // ── "of which Office" ─────────────────────────────────────────────────────────
@@ -329,23 +213,20 @@ function ProductCells({
   rowBg?: string;
   variant: RowVariant;
 }) {
-  // The product band's own alternation, matching the header band above it: every second product
-  // sits on the soft ground so the eye can see where one product's columns end without a rule.
-  const bg = groundOf(rowBg, variant === "area" && bandTint ? GROUND.soft : plainBgFor(variant));
-  const achBg = groundOf(rowBg, achBgFor(variant) ?? bg);
-  const contrBg = groundOf(rowBg, contrBgFor(variant) ?? bg);
-  const officeBg = groundOf(rowBg, officeBgFor(variant) ?? bg);
-  const tgtBg = groundOf(rowBg, panelBgFor(variant) ?? bg);
+  const bg = rowBg ?? (variant === "area" && bandTint ? "bg-orange-50/50" : "");
+  const achBg = rowBg ?? achBgFor(variant);
+  const contrBg = rowBg ?? contrBgFor(variant);
+  const officeBg = rowBg ?? officeBgFor(variant);
   const contrib =
     productTotal && productTotal > 0 ? (cell.salesValue ?? 0) / productTotal : null;
   return (
     <>
       <NumCell bg={bg} value={cell.salesUnits} variant={variant} />
-      {officeUnits !== undefined ? <NumCell bg={officeBg} role="office" value={officeUnits} variant={variant} /> : null}
+      {officeUnits !== undefined ? <NumCell bg={officeBg} value={officeUnits} variant={variant} /> : null}
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       <ContribCell bg={contrBg} value={contrib} variant={variant} />
-      <NumCell bg={tgtBg} role="target" value={cell.targetUnits} variant={variant} />
-      <NumCell bg={tgtBg} kind="value" role="target" value={cell.targetValue} variant={variant} />
+      <NumCell bg={bg} muted value={cell.targetUnits} variant={variant} />
+      <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
       <AchCell bg={achBg} value={cell.achievement} variant={variant} />
     </>
   );
@@ -366,7 +247,7 @@ function FamilyCells({
   rowBg?: string;
   variant: RowVariant;
 }) {
-  const bg = groundOf(rowBg, famBgFor(variant) ?? plainBgFor(variant));
+  const bg = rowBg ?? famBgFor(variant);
   const famValue = group.indices.reduce((s, i) => s + (cells[i]?.salesValue ?? 0), 0);
   const famTargetRaw = group.indices.reduce((s, i) => s + (cells[i]?.targetValue ?? 0), 0);
   const famTarget = famTargetRaw > 0 ? famTargetRaw : null;
@@ -374,7 +255,7 @@ function FamilyCells({
   return (
     <>
       <NumCell bg={bg} kind="value" value={famValue} variant={variant} />
-      <NumCell bg={bg} kind="value" role="target" value={famTarget} variant={variant} />
+      <NumCell bg={bg} kind="value" muted value={famTarget} variant={variant} />
       <ContribCell bg={bg} value={famContr} variant={variant} />
     </>
   );
@@ -394,23 +275,17 @@ function TotalCells({
   rowBg?: string;
   variant: RowVariant;
 }) {
-  const bg = groundOf(rowBg, totalBgFor(variant) ?? plainBgFor(variant));
-  const officeBg = groundOf(rowBg, officeBgFor(variant) ?? bg);
-  const contrBg = groundOf(rowBg, contrBgFor(variant) ?? bg);
-  const achBg = groundOf(rowBg, achBgFor(variant) ?? bg);
-  // Deliberately NOT the row override: inside the Grand Total block the Target column is the one
-  // that has to stand out, and on a Direct row (which supplies a rowBg for every other cell) taking
-  // that ground would put it straight back to being indistinguishable from the value beside it.
-  const tgtBg = tgtBgFor(variant) ?? rowBg;
+  const bg = rowBg ?? totalBgFor(variant);
+  const officeBg = rowBg ?? officeBgFor(variant);
   const contrib =
     grandTotal && grandTotal > 0 ? (cell.salesValue ?? 0) / grandTotal : null;
   return (
     <>
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
-      {officeValue !== undefined ? <NumCell bg={officeBg} kind="value" role="office" value={officeValue} variant={variant} /> : null}
-      <ContribCell bg={contrBg} value={contrib} variant={variant} />
-      <TargetCell bg={tgtBg} value={cell.targetValue} variant={variant} />
-      <AchCell bg={achBg} value={cell.achievement} variant={variant} />
+      {officeValue !== undefined ? <NumCell bg={officeBg} kind="value" value={officeValue} variant={variant} /> : null}
+      <ContribCell bg={bg} value={contrib} variant={variant} />
+      <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
+      <AchCell bg={bg} value={cell.achievement} variant={variant} />
     </>
   );
 }
@@ -425,8 +300,8 @@ function MetricHeaders({ showOffice }: { showOffice: boolean }) {
       {showOffice ? <th className={`${cell} phx-office`} style={{ top: 44 }}>of wh. Office</th> : null}
       <th className={cell} style={{ top: 44 }}>Value</th>
       <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
-      <th className={`${cell} phx-tgt font-normal`} style={{ top: 44 }}>Tgt Units</th>
-      <th className={`${cell} phx-tgt font-normal`} style={{ top: 44 }}>Tgt Value</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Units</th>
+      <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Value</th>
       <th className={`${cell} phx-ach`} style={{ top: 44 }}>Ach %</th>
     </>
   );
@@ -438,7 +313,7 @@ function FamilySubHeaders() {
   return (
     <>
       <th className={`${cell} phx-family`} style={{ top: 44 }}>Value</th>
-      <th className={`${cell} phx-family phx-tgt font-normal`} style={{ top: 44 }}>Tgt Value</th>
+      <th className={`${cell} phx-family font-normal opacity-70`} style={{ top: 44 }}>Tgt Value</th>
       <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
     </>
   );
@@ -484,22 +359,16 @@ function RegionBlock({
   return (
     <>
       {region.areas.map((area) => {
-        const directBg = CLOSING_IDENTITY.lightBlue;
+        const directBg = "bg-[#CFE0FB]";
         // The anonymous "◆ Direct / Direct orders (company)" identity belongs ONLY to the synthetic
         // pseudo-area. Since July 2026's direct orders were restated to area grain, `area.isDirect`
         // is also true for REAL areas that absorbed direct money — Dakahlia 1 is still Dakahlia 1,
         // and reading the raw flag here erased the name of every area that earned a direct order.
         const synthetic = isSyntheticDirectArea(area);
         return (
-          <tr className={synthetic ? "" : "phx-closing-row transition-colors"} key={area.areaCode}>
-            <td
-              className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${synthetic ? "uppercase tracking-wide" : ""}`}
-              style={{ backgroundColor: synthetic ? directBg : GROUND.plain, color: synthetic ? INK.target : CLOSING_IDENTITY.mainText }}
-            >{synthetic ? "◆ Direct" : area.areaCode}</td>
-            <td
-              className={`${STICKY2} truncate px-3 py-2.5 ${synthetic ? "font-bold" : ""}`}
-              style={{ backgroundColor: synthetic ? directBg : GROUND.plain, color: synthetic ? INK.target : CLOSING_IDENTITY.mutedText, left: COL.area }}
-            >{synthetic ? "Direct orders (company)" : area.areaName}</td>
+          <tr className={synthetic ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
+            <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${synthetic ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{synthetic ? "◆ Direct" : area.areaCode}</td>
+            <td className={`${STICKY2} truncate px-3 py-2.5 ${synthetic ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{synthetic ? "Direct orders (company)" : area.areaName}</td>
             {columnGroups.map((group, gi) => (
               <Fragment key={gi}>
                 {group.indices.map((idx) => (
@@ -529,9 +398,9 @@ function RegionBlock({
           </tr>
         );
       })}
-      <tr style={{ backgroundColor: GROUND.subtotal }}>
-        <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-black uppercase tracking-wide`} style={{ backgroundColor: GROUND.subtotal, color: CLOSING_IDENTITY.primaryNavy }}>{region.regionCode}</td>
-        <td className={`${STICKY2} truncate px-3 py-2.5 font-black`} style={{ backgroundColor: GROUND.subtotal, color: CLOSING_IDENTITY.primaryNavy, left: COL.area }}>{region.regionName}</td>
+      <tr className="bg-[#FDEAD0]">
+        <td className={`${STICKY1} whitespace-nowrap bg-[#FDEAD0] px-3 py-2.5 font-black uppercase tracking-wide text-slate-900`}>{region.regionCode}</td>
+        <td className={`${STICKY2} truncate bg-[#FDEAD0] px-3 py-2.5 font-black text-slate-900`} style={{ left: COL.area }}>{region.regionName}</td>
         {columnGroups.map((group, gi) => (
           <Fragment key={gi}>
             {group.indices.map((idx) => (
@@ -626,30 +495,15 @@ export function ClosingMatrixTable({
 
   return (
     <div className="p-4 md:p-5">
-      {/* The premium closing workbook's identity, scoped to this grid.
-          Two navies alternating band by band, one accent blue on the Target axis, and a hairline
-          rule - the same vocabulary closing-executive-look.ts paints the .xlsx with, so the screen
-          and the download read as one document (owner, 2026-09-12).
-          Table-level specificity is what lets a sticky header cover the rows scrolling under it. */}
+      {/* Solid black header band + crisp light-orange grid.
+          Family block headers use amber (#78350f) so they read as a separate axis.
+          Scoped to this table with table-level specificity so sticky header covers rows. */}
       <style>{`
-        table.phx-closing-grid { font-family: ${CLOSING_FONT_STACK}; }
-        table.phx-closing-grid th, table.phx-closing-grid td { border: 1px solid ${CLOSING_GRID_LINE} !important; }
-        table.phx-closing-grid thead th { background-color: ${CLOSING_IDENTITY.secondaryNavy} !important; color: ${CLOSING_IDENTITY.white} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.corporateBlue}; font-weight: 600; letter-spacing: .01em; }
-        /* BLOCK bands first - which group of columns this is. */
-        table.phx-closing-grid thead th.phx-band { background-color: ${CLOSING_IDENTITY.primaryNavy} !important; }
-        table.phx-closing-grid thead th.phx-family { background-color: ${CLOSING_IDENTITY.primaryNavy} !important; color: ${CLOSING_IDENTITY.lightBlue} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.mutedText}; }
-        table.phx-closing-grid thead th.phx-gt { background-color: ${CLOSING_IDENTITY.primaryNavy} !important; color: ${CLOSING_IDENTITY.white} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.corporateBlue}; }
-        /* COLUMN roles second, and the ORDER is the whole point: every one of these also appears
-           inside the Grand Total block, where it carries phx-gt as well. Equal specificity means
-           source order decides, so a role listed after phx-gt keeps its own colour there - which is
-           what makes "Tgt Value" and "Ach %" the same columns at the far right as they are in every
-           product band (owner, 2026-09-12: colours for identification). Moving one of these lines
-           above phx-gt silently hands that column back to the block. */
-        table.phx-closing-grid thead th.phx-office { background-color: ${CLOSING_IDENTITY.secondaryNavy} !important; color: ${CLOSING_IDENTITY.lightBlue} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.mutedText}; font-weight: 400; }
-        table.phx-closing-grid thead th.phx-contr { color: ${CLOSING_IDENTITY.lightBlue} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.lightBlue}; font-weight: 400; }
-        table.phx-closing-grid thead th.phx-tgt { background-color: ${CLOSING_IDENTITY.corporateBlue} !important; color: ${CLOSING_IDENTITY.white} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.lightBlue}; }
-        table.phx-closing-grid thead th.phx-ach { background-color: ${CLOSING_IDENTITY.primaryNavy} !important; color: ${CLOSING_IDENTITY.white} !important; box-shadow: inset 0 -2px 0 ${CLOSING_IDENTITY.white}; }
-        table.phx-closing-grid tbody tr.phx-closing-row:hover td { background-color: ${CLOSING_IDENTITY.lightBlue} !important; }
+        table.phx-closing-grid th, table.phx-closing-grid td { border: 1px solid #F4B66E !important; }
+        table.phx-closing-grid thead th { background-color: #0B0B0B !important; color: #F1F5F9 !important; box-shadow: inset 0 -2px 0 #F97316; }
+        table.phx-closing-grid thead th.phx-family { background-color: #78350f !important; color: #fef3c7 !important; box-shadow: inset 0 -2px 0 #d97706; }
+        table.phx-closing-grid .phx-contr { background-color: #0c3352 !important; }
+        table.phx-closing-grid thead th.phx-office { background-color: #3B1D6B !important; color: #E9D5FF !important; box-shadow: inset 0 -2px 0 #8B5CF6; }
       `}</style>
 
       {officeLookup.shown && officeLookup.valueFor("NAT") === null ? (
@@ -713,9 +567,9 @@ export function ClosingMatrixTable({
               <th className={`${bandHeader} ${STICKY2} top-0 z-40 h-11`} rowSpan={2} style={{ left: COL.area }}>Area Name</th>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
-                  <th className={`${bandHeader} ${idx % 2 === 1 ? "phx-band" : ""} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
-                    <span className="block truncate text-phx-sm font-black leading-tight" style={{ color: CLOSING_IDENTITY.white }}>{matrix.columns[idx].productName}</span>
-                    <span className="block text-phx-2xs font-normal" style={{ color: CLOSING_IDENTITY.lightBlue }}>{matrix.columns[idx].productCode}</span>
+                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
+                    <span className="block truncate text-phx-sm font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
+                    <span className="block text-phx-2xs font-normal" style={{ color: "#CBD5E1" }}>{matrix.columns[idx].productCode}</span>
                   </th>
                 )),
                 ...(group.isMulti ? [
@@ -738,7 +592,7 @@ export function ClosingMatrixTable({
               <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Value</th>
               {officeLookup.shown ? <th className="phx-gt phx-office sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>of wh. Office</th> : null}
               <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Contr %</th>
-              <th className="phx-gt phx-tgt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Tgt Value</th>
+              <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: 44 }}>Tgt Value</th>
               <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Ach %</th>
             </tr>
           </thead>
@@ -756,9 +610,9 @@ export function ClosingMatrixTable({
             ))}
 
             {/* National Grand Total — family columns shown here too but rowTotal is unchanged */}
-            <tr style={{ backgroundColor: GROUND.total }}>
-              <td className={`${STICKY1} whitespace-nowrap px-3 py-3 font-black uppercase tracking-wide`} style={{ backgroundColor: GROUND.total, color: CLOSING_IDENTITY.white }}>NAT</td>
-              <td className={`${STICKY2} whitespace-nowrap px-3 py-3 font-black`} style={{ backgroundColor: GROUND.total, color: CLOSING_IDENTITY.white, left: COL.area }}>National Grand Total</td>
+            <tr className="bg-[#0B0B0B]">
+              <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-white`}>NAT</td>
+              <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-white`} style={{ left: COL.area }}>National Grand Total</td>
               {columnGroups.map((group, gi) => (
                 <Fragment key={gi}>
                   {group.indices.map((idx) => (
@@ -788,8 +642,8 @@ export function ClosingMatrixTable({
 
             {matrix.directNational ? (
               <tr>
-                <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-black uppercase tracking-wide`} style={{ backgroundColor: GROUND.soft, color: INK.target }}>◆ DIR</td>
-                <td className={`${STICKY2} whitespace-nowrap px-3 py-2.5 font-black`} style={{ backgroundColor: GROUND.soft, color: INK.target, left: COL.area }}>Direct – National</td>
+                <td className={`${STICKY1} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black uppercase tracking-wide text-[#1E3A8A]`}>◆ DIR</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#B6CEF8] px-3 py-2.5 font-black text-[#1E3A8A]`} style={{ left: COL.area }}>Direct – National</td>
                 {columnGroups.map((group, gi) => (
                   <Fragment key={gi}>
                     {group.indices.map((idx) => (
@@ -799,7 +653,7 @@ export function ClosingMatrixTable({
                         key={`dn-${idx}`}
                         officeUnits={officeLookup.zero}
                         productTotal={productTotals[idx] ?? null}
-                        rowBg={GROUND.soft}
+                        rowBg="bg-[#B6CEF8]"
                         variant="subtotal"
                       />
                     ))}
@@ -809,22 +663,20 @@ export function ClosingMatrixTable({
                         grandTotalValue={grandTotalValue}
                         group={group}
                         key={`dn-fam-${gi}`}
-                        rowBg={GROUND.soft}
+                        rowBg="bg-[#B6CEF8]"
                         variant="subtotal"
                       />
                     )}
                   </Fragment>
                 ))}
-                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} officeValue={officeLookup.zero} rowBg={GROUND.soft} variant="subtotal" />
+                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} officeValue={officeLookup.zero} rowBg="bg-[#B6CEF8]" variant="subtotal" />
               </tr>
             ) : null}
 
-            {/* The SECOND national total, so it takes the alternate navy - the same two-tone
-                alternation the workbook's tab strip uses to show where one group ends. */}
             {matrix.companyTotal ? (
-              <tr style={{ backgroundColor: GROUND.totalAlt }}>
-                <td className={`${STICKY1} whitespace-nowrap px-3 py-3 font-black uppercase tracking-wide`} style={{ backgroundColor: GROUND.totalAlt, color: CLOSING_IDENTITY.white }}>TOT</td>
-                <td className={`${STICKY2} whitespace-nowrap px-3 py-3 font-black`} style={{ backgroundColor: GROUND.totalAlt, color: CLOSING_IDENTITY.white, left: COL.area }}>Grand Total (incl. Direct)</td>
+              <tr className="bg-[#0B0B0B]">
+                <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-phx-accent`}>TOT</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-phx-accent`} style={{ left: COL.area }}>Grand Total (incl. Direct)</td>
                 {columnGroups.map((group, gi) => (
                   <Fragment key={gi}>
                     {group.indices.map((idx) => (
