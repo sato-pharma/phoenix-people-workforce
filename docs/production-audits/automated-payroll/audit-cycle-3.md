@@ -80,12 +80,13 @@ A defect here moves money into or out of a real person's account. Verified again
 | **37** | A CRM or vacation deduction changes amount the moment anyone touches its day box, in any month that is not 30 days long. | #3752 | ☑ |
 | **29** | Someone hired and leaving in the same month is paid from the 1st, not from their hire date. | #3711 | ☑ |
 | **32** | Correcting a leaver's days worked by spreadsheet changes the day count but not the money. | #3717 | ☑ |
-| **36** | The Ready payroll sheet pays a full unprorated month to a leaver whose resignation is still in the workflow. | **no PR named** | **no marker** |
+| **36** | The Ready payroll sheet pays a full unprorated month to a leaver whose resignation is still in the workflow. | #3768 | ☑ |
 | **20** | Reopening Part 1 to correct a salary does not actually re-derive it for joiners or leavers. | #3706 | ☑ |
 
 ### Tier 1 — results, 2026-09-12
 
-**Eleven of the twelve verified. One names no code at all.**
+**Twelve of twelve verified — eleven of them here, and the twelfth (36) by a separate
+change that landed the same day, four commits before this document merged.**
 
 Every ☑ above was established the same way: the fix was broken on purpose, the check that should
 catch it was watched firing, and the file was restored from a byte copy. A green check on unmodified
@@ -135,10 +136,27 @@ because July's Part 1 was confirmed on 26 July and August's on 30 August, both *
 pre-fix behaviour. Neither guard has ever run in production. **September's run is the first real
 test of both.** Neither published month can be corrected, and neither shows a defect.
 
-**36 names no file anywhere in the repository** — no PR, no code marker, no test. That confirms the
-ledger's own "claimed closed, no code marker" note empirically rather than resolving it. It stays
-outside the ruling of 2026-09-12, as the ledger already says, and it cannot be verified until the
-original audit document says what it was.
+**36 was closed the same day, by PR #3768 — this paragraph is corrected in place, not deleted.**
+When Tier 1 ran, 36 named no file anywhere in the repository: no PR, no code marker, no test. That
+was true when it was written and it is no longer. `a8c0ada08` (PR #3768) landed on `main` four
+commits before this document merged, and it closes 36 two ways.
+
+**Where the closure lives.** `phx_resign_employee_and_open_vacancy` sets `employment_status` when
+the resignation is *filed*, not when its workflow completes — so an in-workflow leaver is already
+terminal to the Ready sheet and never reaches a full unprorated month. **What pins it.**
+`tests/payroll-ready-sheet-leaver-proration.test.ts`, registered in `tests/run-tests.ts`, asserts
+that mechanism across *every* migration that defines the RPC, so moving the status write to the
+workflow's completion step — a reasonable-looking tidy-up — fails rather than ships. **What
+production said on 2026-09-12.** The one resignation still at workflow status `submitted` already
+carried `employment_status = 'resigned'`; no row held an in-flight resignation against an employee
+still `active`; and the single active-employee resignation row is `cancelled`, which is correct —
+that person did not leave. The exploitable state does not exist.
+
+**Two qualifications, so the tick is not read as more than it is.** First, **36's proof came from
+outside this cycle**: #3768 is another change's work, which is why 36 carries no row in the break
+table above — cycle 3 did not break its fix and watch the check fire, as it did for the other
+eleven. Second, like all 37, it is verified against **the ledger's paraphrase** of the finding, not
+against the original audit document, which is still unread.
 
 #### Noted on the way, not yet a finding
 
