@@ -5,6 +5,7 @@ import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import {
   canViewManagerCvEngagement,
+  canViewManagerEngagementCandidate,
   getManagerEngagementCandidateFile,
 } from "@/lib/recruitment/manager-cv-engagement";
 
@@ -28,6 +29,13 @@ export async function GET(
       );
     }
     const { candidateId, fileId } = await params;
+    // The report is scoped to the reader's line, so its preview must be too — see the helper.
+    if (!(await canViewManagerEngagementCandidate(access, candidateId))) {
+      return NextResponse.json(
+        { error: "forbidden", message: "This candidate is not in your line.", success: false },
+        { status: 403 },
+      );
+    }
     const download = await getManagerEngagementCandidateFile(candidateId, fileId);
     if (!download) {
       return NextResponse.json({ error: "not_found", message: "File not found.", success: false }, { status: 404 });
