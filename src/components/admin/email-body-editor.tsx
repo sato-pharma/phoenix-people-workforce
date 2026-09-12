@@ -3,18 +3,23 @@
 import {
   AlignCenter,
   AlignLeft,
+  AlignRight,
   Bold,
   Eraser,
   Image as ImageIcon,
   Italic,
   Link2,
+  Link2Off,
   List,
   ListOrdered,
   Minus,
+  Quote,
+  Redo2,
   SquareMousePointer,
   Strikethrough,
   Table,
   Underline,
+  Undo2,
 } from "lucide-react";
 import type { ClipboardEvent, DragEvent } from "react";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
@@ -246,19 +251,33 @@ type ToolbarAction = {
 type Props = {
   /** Toolbar action labels to hide, e.g. ["Action button"] where {{ctaUrl}} cannot resolve. */
   hiddenActions?: string[];
+  /**
+   * Which image types the picker offers, when the host supplies `uploadImage`. The host owns this
+   * because the host owns the store that will refuse anything else - a list written twice drifts.
+   */
+  imageAccept?: string;
   onChange: (storedHtml: string) => void;
   onFocusBody?: () => void;
+  /**
+   * Upload a picture the sender chose on his own machine, and return the https address it will be
+   * served from. Supplied only by a screen that owns a file store; without it the image button
+   * keeps asking for an address, which is all the template manager and the HR reply composer can
+   * honestly offer. The host owns the error message - it has somewhere to put one, and the toolbar
+   * does not.
+   */
+  uploadImage?: (file: File) => Promise<string>;
   value: string;
   variables: EditorVariable[];
 };
 
 export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function EmailBodyEditor(
-  { hiddenActions, onChange, onFocusBody, value, variables },
+  { hiddenActions, imageAccept, onChange, onFocusBody, uploadImage, value, variables },
   ref,
 ) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const lastEmittedRef = useRef<string | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
@@ -377,7 +396,19 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     );
   }, [insertHtmlAtCaret]);
 
+  /**
+   * Insert a picture from the machine when the host can store one, and by address when it cannot.
+   *
+   * 🔴 THE SELECTION IS REMEMBERED BEFORE THE FILE DIALOG OPENS. Choosing a file takes focus out of
+   * the editor and the browser does not hand the caret back, so without this the picture would land
+   * at the end of the body rather than where the sender was typing.
+   */
   const addImage = useCallback(() => {
+    if (uploadImage) {
+      rememberSelection();
+      imageInputRef.current?.click();
+      return;
+    }
     const url = window.prompt("Paste the image address (must start with https://)");
     const trimmed = url?.trim();
     if (!trimmed) return;
@@ -386,7 +417,22 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       return;
     }
     insertHtmlAtCaret(`<img src="${escapeHtml(trimmed)}" alt="" style="max-width: 100%" />`);
-  }, [insertHtmlAtCaret]);
+  }, [insertHtmlAtCaret, rememberSelection, uploadImage]);
+
+  const insertUploadedImage = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file || !uploadImage) return;
+      try {
+        const url = await uploadImage(file);
+        if (!url) return;
+        insertHtmlAtCaret(`<img src="${escapeHtml(url)}" alt="" style="max-width: 100%" />`);
+      } catch {
+        // Swallowed here on purpose: the host reports the failure on its own screen, and a toolbar
+        // button has nowhere to put a message. An unhandled rejection is the only alternative.
+      }
+    },
+    [insertHtmlAtCaret, uploadImage],
+  );
 
   // Apply a change to every top-level block (paragraph/list/table) the selection touches —
   // used for line spacing, letter spacing, and Arabic RTL direction, which are
@@ -425,6 +471,29 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
       `<table style="border-collapse: collapse; width: 100%"><tbody><tr>${headerCell.repeat(3)}</tr>${bodyRow.repeat(2)}</tbody></table><p><br /></p>`,
     );
   }, [insertHtmlAtCaret]);
+
+  const addQuote = useCallback(() => {
+    runCommand("formatBlock", "<blockquote>");
+  }, [runCommand]);
+
+  /**
+   * Heading / Sub-heading / Normal.
+   *
+   * Written as an inline style rather than a real <h2>, because the server sanitizer discards
+   * heading tags and rebuilds them as exactly this styled paragraph. Setting the style here
+   * means the canvas already shows what will be sent, instead of showing an <h2> that quietly
+   * turns into something else on save. 18px and 16px are the sizes the house renderer reads
+   * back when it draws a section heading, so these are not free-hand numbers.
+   */
+  const applyHeading = useCallback(
+    (size: "" | "16px" | "18px") => {
+      applyToSelectedBlocks((block) => {
+        block.style.fontSize = size;
+        block.style.fontWeight = size ? "bold" : "";
+      });
+    },
+    [applyToSelectedBlocks],
+  );
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
@@ -474,12 +543,20 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     { icon: ListOrdered, label: "Numbered list", run: () => runCommand("insertOrderedList") },
     { icon: AlignLeft, label: "Align left", run: () => runCommand("justifyLeft") },
     { icon: AlignCenter, label: "Align center", run: () => runCommand("justifyCenter") },
+    // Left and center shipped without right, which left the third of the pair missing: an English
+    // paragraph could not be pushed right at all. (An Arabic one already sits right by default —
+    // dir="rtl" carries its own alignment — so this is about the choice, not about Arabic.)
+    { icon: AlignRight, label: "Align right", run: () => runCommand("justifyRight") },
+    { icon: Quote, label: "Quote", run: addQuote },
     { icon: Link2, label: "Link", run: addLink },
+    { icon: Link2Off, label: "Remove link", run: () => runCommand("unlink") },
     { icon: SquareMousePointer, label: "Action button", run: addCtaButton },
     { icon: Table, label: "Insert table", run: addTable },
-    { icon: ImageIcon, label: "Insert image (https link)", run: addImage },
+    { icon: ImageIcon, label: "Insert image", run: addImage },
     { icon: Minus, label: "Divider line", run: () => insertHtmlAtCaret("<hr />") },
     { icon: Eraser, label: "Clear formatting", run: () => runCommand("removeFormat") },
+    { icon: Undo2, label: "Undo", run: () => runCommand("undo") },
+    { icon: Redo2, label: "Redo", run: () => runCommand("redo") },
   ].filter((action) => !hiddenActions?.includes(action.label));
 
   return (
@@ -533,6 +610,23 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           <option value="3">Normal</option>
           <option value="5">Large</option>
           <option value="7">Huge</option>
+        </SearchableSelect>
+        <SearchableSelect
+          aria-label="Heading"
+          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
+          defaultValue=""
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value) return;
+            applyHeading(value === "normal" ? "" : value === "heading" ? "18px" : "16px");
+            event.target.value = "";
+          }}
+          title="Heading (a section title the email design draws a rule under)"
+        >
+          <option disabled value="">Style</option>
+          <option value="normal">Normal text</option>
+          <option value="heading">Heading</option>
+          <option value="subheading">Sub-heading</option>
         </SearchableSelect>
         <SearchableSelect
           aria-label="Line spacing"
@@ -624,6 +718,21 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
             <action.icon className="h-4 w-4" />
           </button>
         ))}
+        {uploadImage ? (
+          <input
+            accept={imageAccept ?? "image/jpeg,image/png,image/gif,image/webp"}
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Cleared straight away, so choosing the SAME file twice in a row still fires a change
+              // event - otherwise a failed upload could not simply be retried.
+              event.target.value = "";
+              void insertUploadedImage(file);
+            }}
+            ref={imageInputRef}
+            type="file"
+          />
+        ) : null}
         <span className="ml-auto hidden text-xs font-bold text-phx-ink-faint xl:block">
           Write here like Gmail - check the Preview for the exact employee view.
         </span>
