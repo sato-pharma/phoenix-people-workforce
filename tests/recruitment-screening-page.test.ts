@@ -1080,4 +1080,51 @@ export async function runRecruitmentScreeningPageTests() {
       `${handler} must take its id from \`selected\`, so it cannot act on a hidden candidate`,
     );
   }
+
+  // ── 16 · The verdict buttons are SQUARE ─────────────────────────────────
+  //
+  // The square-edge golden rule: no round or semi-round corners, anywhere. Shortlist and Reject
+  // carried `rounded-md` from the day the overlay shipped.
+  //
+  // WHY A SOURCE PIN IS WORTH HAVING EVEN THOUGH THE SHELLS ALREADY WIN. Both hosts wrap this
+  // overlay in a shell whose stylesheet zeroes the radius of anything matching `[class*="rounded"]`
+  // with `!important` (globals.css RULE 1, twice: `.admin-shell` and `.employee-portal-shell`), so
+  // the corners were already square ON SCREEN. That is exactly what makes the class dangerous
+  // rather than harmless: it reads as an intended radius to everyone who opens the file, it is
+  // invisible to any audit done by looking at the rendered page, and it is one un-shelled ancestor
+  // away from becoming real. A radius that only a stylesheet sweep is holding down is a radius.
+  //
+  // Pinned at the SOURCE for that reason -- the emitted-artifact rule says check what renders, and
+  // what renders here is square either way. The thing being defended is the class not coming back.
+  for (const [label, colour] of [
+    ["Shortlist", "bg-emerald-600"],
+    ["Reject", "bg-rose-600"],
+  ] as const) {
+    const at = session.indexOf(colour);
+    assert.ok(at >= 0, `the ${label} button must still be found by its colour`);
+    const classAttribute = session.slice(session.lastIndexOf('className="', at), at);
+    assert.ok(
+      !classAttribute.includes("rounded"),
+      `${label} must have no rounded-* class -- the square-edge golden rule, and a shell sweep ` +
+        `holding a corner down is not the same as the corner not being there`,
+    );
+  }
+
+  // AND THE WHOLE FILE, not just the two buttons the owner named. He asked for Shortlist and Reject,
+  // saw the rest listed, and said "do the rest of the file too" -- so the screen is square in its
+  // source as well as on screen, and this assertion is what keeps it that way. It is deliberately a
+  // plain substring search for the Tailwind prefix: a corner comes back as `rounded-md` on a pasted
+  // block far more often than it comes back as a hand-written radius.
+  //
+  // THE ONE EXEMPTION IF THIS EVER FIRES FAIRLY: `[&::-webkit-scrollbar-thumb]:rounded-full`. That
+  // utility contains the substring "rounded" but aims it at a scrollbar pseudo-element, whose
+  // corners were never what the golden rule is about. There is none in this file today. Add the
+  // exemption narrowly if one ever arrives -- do not widen this check into uselessness.
+  const roundedInSession = [...session.matchAll(/\brounded(?:-[a-z0-9]+)?\b/g)].map((hit) => hit[0]);
+  assert.deepEqual(
+    roundedInSession,
+    [],
+    `the screening overlay must carry no rounded-* class at all -- the square-edge golden rule. ` +
+      `Found: ${roundedInSession.join(", ")}`,
+  );
 }
