@@ -26,7 +26,7 @@
  *     vacant during the window can be filled now, and vice versa — that is not a conflict,
  *     and collapsing the two would either leak data or hide a manager's own numbers.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
@@ -37,7 +37,6 @@ import ExcelJS from "exceljs";
 // owner's machine, so nobody else could reproduce the output.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..", "..", "..");
-const DATA = path.join(ROOT, "src/lib/business-review/data");
 const OUT = "C:/Users/satoh/Downloads/Phoenix Business Review - ACCESS MAPPING (confirm me).xlsx";
 const PROD_REF = "ozucdzovmcqvepbozvqf";
 
@@ -280,82 +279,17 @@ for (const t of [...rsmSeats, ...dmSeats].sort((a, b) => (a.line_code + a.seat_t
     () => COOL);
 }
 
-// ================= access-map.json (consumed by the portal scope resolver) =================
-// The portal knows only an HR_ID; the review is keyed on seats. This file is the bridge, and
-// it is built from the seat map rather than by matching names — per PR #1479 the seat map is
-// the authoritative answer to "which areas may this manager see", and three separate defects
-// in this build came from name-matching.
+// ================= no access map is written any more =================
+// This script used to emit data/access-map.json, and the portal resolved every viewer against it.
+// On 2026-09-12 that file was six weeks old and SEVEN serving district managers were absent from
+// it, so the module told them "Not available for your role". Regenerating it would have fixed that
+// morning and re-broken on the next hire, with the same symptom and no alarm — so the portal reads
+// the live organogram instead (src/lib/business-review/portal-scope.ts) and the file is gone.
 //
-// `unmappedAreas` is emitted deliberately. An area the portal cannot resolve must be
-// reported to the viewer, not silently omitted: PR #1486 documents the same class of bug
-// (a scope that resolved too narrowly showed 0.0% achievement with no error and no empty
-// state). The page surfaces this count instead of quietly showing a short list.
-// `viewers` precomputes the whole access decision per HR_ID at ingest time. Two reasons:
-// the module stays isolated (the portal page needs no read of employees/app_auth_users at
-// request time), and the decision becomes auditable — the owner can read exactly who gets
-// what in this file and in the workbook, rather than inferring it from code. The runtime
-// resolver still cross-checks the baked role against the live session role and fails closed
-// on any disagreement, so a stale map can only ever grant less, never more.
-const LINE_BY_DBNAME = { Pedia: "pedia", CNS: "cns", "Anti Infective": "anti", "Anti-Infective": "anti" };
-const accessMap = { generatedAt: new Date().toISOString(), sourceRef: PROD_REF, lines: {}, viewers: {}, roleGaps: gaps };
-for (const m of mgr) {
-  const hrU = up(m.hr);
-  if (!hrU || m.scope === "(no access)") continue;
-  const entry = { hrId: m.hr, name: m.name, role: m.appRole, scope: null, line: null, dmSeatId: null, rsmSeatId: null, note: m.note };
-  if (m.scope === "All company") entry.scope = "company";
-  else if (m.scope === "Whole line") {
-    const lk = LINE_BY_DBNAME[m.line];
-    if (!lk) continue;                       // no resolvable line -> no access, never company-wide
-    entry.scope = "line"; entry.line = lk;
-  } else if (m.scope === "Own DM team") {
-    const s = dmSeats.find((d) => up(d.occupant_hr_id) === hrU);
-    if (!s) continue;
-    entry.scope = "ownDm"; entry.dmSeatId = s.seat_id;
-    entry.line = LINES.find((l) => l.code === s.line_code)?.key ?? null;
-    if (!entry.line) continue;
-  } else if (m.scope === "Listed DM seats") {
-    const r = rsmSeats.find((x) => up(x.occupant_hr_id) === hrU);
-    if (!r) continue;
-    entry.scope = "dmSeats"; entry.rsmSeatId = r.seat_id;
-    entry.line = LINES.find((l) => l.code === r.line_code)?.key ?? null;
-    entry.dmSeatIds = (rsmScope.get(r.seat_id) ?? []).map((d) => d.seat_id);
-    if (!entry.line || !entry.dmSeatIds.length) continue;
-  } else continue;
-  accessMap.viewers[hrU] = entry;
-}
-for (const l of LINES) {
-  const dmsForLine = dmSeats.filter((d) => d.line_code === l.code).map((d) => ({
-    seatId: d.seat_id, regionCode: d.region_code ?? null,
-    hrId: d.occupant_hr_id ?? null, name: nameOf.get(up(d.occupant_hr_id)) ?? null,
-    isVacant: !!d.is_vacant,
-  }));
-  const rsmForLine = rsmSeats.filter((r) => r.line_code === l.code).map((r) => ({
-    seatId: r.seat_id, hrId: r.occupant_hr_id ?? null,
-    name: nameOf.get(up(r.occupant_hr_id)) ?? null,
-    dmSeatIds: (rsmScope.get(r.seat_id) ?? []).map((d) => d.seat_id),
-  }));
-  const areas = {};
-  // Retained (always empty now) so the consumed shape does not change: an area the portal
-  // cannot resolve must still be reportable rather than silently omitted — see PR #1486.
-  const unmapped = [];
-  for (const r of repRows.filter((x) => x.line === l.label)) {
-    if (!r.seat) { unmapped.push(r.area); continue; }
-    const repSeat = repByLine.get(l.key).find((s) => s.seat_id === r.seat);
-    // A rep seat's owning DM seat: same line + same region_code. line_area_map is the
-    // stricter source but region is sufficient here because every rep seat in the tree
-    // hangs off exactly one DM seat within its region.
-    const owningDm = dmsForLine.find((d) => d.regionCode === repSeat?.region_code);
-    areas[r.area] = {
-      seatId: r.seat, areaCode: r.areaCode || null,
-      repHrId: r.repHr || null, repName: r.repName || null,
-      seatVacantToday: r.seatVacantToday === null ? null : !!r.seatVacantToday,
-      dmSeatId: owningDm?.seatId ?? null, dmHrId: owningDm?.hrId ?? null,
-      regionCode: r.region || null,
-    };
-  }
-  accessMap.lines[l.key] = { label: l.label, lineCode: l.code, dmSeats: dmsForLine, rsmSeats: rsmForLine, areas, unmappedAreas: unmapped };
-}
-writeFileSync(path.join(DATA, "access-map.json"), JSON.stringify(accessMap, null, 1), "utf8");
+// This script stays, and is still worth running: the workbook below is the owner's own ACCESS
+// MAPPING review, and its ROLE GAPS sheet answers a question nothing else does — who holds a seat
+// but a login role that will not open the module. That is a report, not a request-path input, and
+// a stale report is visibly dated rather than silently wrong.
 
 await wb.xlsx.writeFile(OUT);
 console.log("========= ACCESS MAPPING (from live employee master) =========");

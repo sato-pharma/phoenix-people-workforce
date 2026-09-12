@@ -955,7 +955,7 @@ export function BusinessReviewPortal({
       ) : null}
 
       <p className="px-1 text-phx-xs font-semibold leading-5 text-slate-400">
-        Territory resolved from the live organogram seat map (snapshot {mapGeneratedAt.slice(0, 10)}). Figures are the
+        Territory resolved from the live organogram seat map, read {mapGeneratedAt.slice(0, 10)}. Figures are the
         actuals for {reviewWindow.label} and are not restated when a seat changes hands, so an area shown as vacant for this
         window may have an occupant today.
       </p>
