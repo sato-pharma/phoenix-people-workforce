@@ -6,6 +6,7 @@ import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 import { fetchPendingInboundVideos } from "@/lib/whatsapp-videos/inbox";
+import { thankDueFtpVideoSenders } from "@/lib/whatsapp-videos/thanks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +50,17 @@ export async function GET(request: Request) {
       return null;
     });
 
-    return NextResponse.json({ success: true, ...result, videos });
+    // The FTP video thank-you (owner 2026-09-13): sent here, after the fetch, to senders who have gone
+    // quiet with an unanswered video. Same reasoning as the fetch — outside the switch, never fatal.
+    const thanks = await thankDueFtpVideoSenders().catch((thanksError) => {
+      logError("FTP video thank-you tick failed", {
+        error: thanksError,
+        labels: { event: "ftp_video_thanks_tick_threw", job: "inbound-intake" },
+      });
+      return null;
+    });
+
+    return NextResponse.json({ success: true, ...result, thanks, videos });
   } catch (error) {
     logError("Inbound intake worker failed", {
       error,
