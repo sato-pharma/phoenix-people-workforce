@@ -195,8 +195,21 @@ export function runSatoEmailPlanTests() {
   );
   assert.deepEqual(findUnfilledPlaceholders("Nothing left to fill"), []);
 
-  const base = { batch: ["a@satopharma.com", "b@satopharma.com"], batchIndex: 0, clientRequestId: "req-1", html: "<p>x</p>", senderId: "B-10", subject: "S" };
+  const base = { attachmentIds: [] as string[], batch: ["a@satopharma.com", "b@satopharma.com"], batchIndex: 0, clientRequestId: "req-1", html: "<p>x</p>", senderId: "B-10", subject: "S" };
   assert.equal(buildSatoEmailIdempotencyKey(base), buildSatoEmailIdempotencyKey({ ...base, batch: ["b@satopharma.com", "a@satopharma.com"] }), "a double-click re-sends nothing");
   assert.notEqual(buildSatoEmailIdempotencyKey(base), buildSatoEmailIdempotencyKey({ ...base, batchIndex: 1 }), "each email in a send has its own key");
   assert.notEqual(buildSatoEmailIdempotencyKey(base), buildSatoEmailIdempotencyKey({ ...base, clientRequestId: "req-2" }), "a deliberate second send still goes");
+  // The files are part of the key. A send that failed, had a file removed and was pressed again is
+  // a DIFFERENT email — swallowing it as a duplicate would leave the sender staring at a success
+  // message for mail that never went.
+  assert.notEqual(
+    buildSatoEmailIdempotencyKey(base),
+    buildSatoEmailIdempotencyKey({ ...base, attachmentIds: ["11111111-1111-4111-8111-111111111111"] }),
+    "adding a file makes it a different email, not a duplicate of the one without it",
+  );
+  assert.equal(
+    buildSatoEmailIdempotencyKey({ ...base, attachmentIds: ["a-id", "b-id"] }),
+    buildSatoEmailIdempotencyKey({ ...base, attachmentIds: ["b-id", "a-id"] }),
+    "the same two files listed in the other order are the same email",
+  );
 }
