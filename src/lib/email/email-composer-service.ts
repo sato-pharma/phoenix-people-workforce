@@ -17,7 +17,6 @@ import {
 import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
 import { getEmailTemplateCatalog } from "@/lib/email-templates/service";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { resolveDistributionListByKey } from "@/lib/distribution-lists/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type ComposerRecipientSelection =
@@ -68,8 +67,8 @@ export type EmailDeliveryAnalytics = {
 const allowedTones = new Set<PhoenixHrEmailTone>(["professional", "warm", "firm", "concise"]);
 
 const composerGroups = [
-  { description: "The HR seats, from the editable HR Team list.", key: "hr_team", label: "HR Team" },
-  { description: "The Finance seats, from the editable Finance Team list.", key: "finance_team", label: "Finance Team" },
+  { description: "Employees whose department or job title mentions HR.", key: "hr_team", label: "HR Team" },
+  { description: "Employees whose department or job title mentions Finance.", key: "finance_team", label: "Finance Team" },
   { description: "Employees with manager titles or direct reports.", key: "managers", label: "Managers" },
 ] satisfies Array<{ description: string; key: ComposerRecipientGroupKey; label: string }>;
 
@@ -107,17 +106,8 @@ function roleText(employee: EmployeeDirectoryRow) {
 }
 
 /**
- * The original substring rule, kept as the FALLBACK for the two groups a distribution list now
- * answers, and still the live rule for `managers`.
- *
- * Matching a substring of the department and job-title text is invisible and unauditable — a person
- * lands in the HR Team group because of how somebody typed their title, and the only way to find
- * out is to read this function. Two of the three groups moved to app roles for that reason.
- *
- * `managers` deliberately did NOT move (owner, 2026-09-11). Half its rule is "is somebody's
- * manager", which is a RELATIONSHIP, and a distribution list holds attributes — roles, lines,
- * areas, departments, positions, regions. There is no dimension that expresses direct reports, so
- * moving it would have to drop that half and silently change the group.
+ * The substring rule behind this composer's three groups. Deliberately not the distribution lists:
+ * owner 2026-09-11, the lists belong to the Sato Email Composer and nothing else.
  */
 function groupEmployees(key: ComposerRecipientGroupKey, employees: EmployeeDirectoryRow[]) {
   if (key === "hr_team") {
@@ -131,60 +121,13 @@ function groupEmployees(key: ComposerRecipientGroupKey, employees: EmployeeDirec
   return employees.filter((employee) => managerIds.has(employee.hrId.toLowerCase()) || roleText(employee).includes("manager"));
 }
 
-/** Which composer group is answered by which distribution list. `managers` is absent on purpose —
- *  see groupEmployees above. */
-const GROUP_DISTRIBUTION_LISTS: Partial<Record<ComposerRecipientGroupKey, string>> = {
-  finance_team: "finance_team",
-  hr_team: "hr_team",
-};
-
-type GroupMembership = Map<ComposerRecipientGroupKey, Set<string>>;
-
-/**
- * Resolve the groups a set of selections actually uses, once, before any selection is expanded.
- *
- * FALLS BACK to the substring rule whenever a list is switched off, missing or unreadable, and says
- * so through `warnings` — which the composer preview renders. Failing closed here would silently
- * shrink a manually composed audience, and the person sending would have no way to tell an empty
- * group from a broken one.
- */
-async function resolveGroupMembership(
-  selections: ComposerRecipientSelection[],
-): Promise<{ membership: GroupMembership; warnings: string[] }> {
-  const membership: GroupMembership = new Map();
-  const warnings: string[] = [];
-  const wanted = new Set(
-    selections
-      .filter((selection): selection is Extract<ComposerRecipientSelection, { type: "group" }> => selection.type === "group")
-      .map((selection) => selection.key)
-      .filter((key) => key in GROUP_DISTRIBUTION_LISTS),
-  );
-
-  for (const key of wanted) {
-    const listKey = GROUP_DISTRIBUTION_LISTS[key];
-    if (!listKey) continue;
-    const resolved = await resolveDistributionListByKey(listKey);
-    if (resolved.refusedReason) {
-      warnings.push(`${key}: ${resolved.refusedReason} Falling back to the job-title match.`);
-      continue; // no entry — resolveSelection then uses groupEmployees
-    }
-    membership.set(key, new Set(resolved.members.map((member) => member.hrId.toLowerCase())));
-  }
-
-  return { membership, warnings };
-}
-
 function addEmail(output: Array<{ email: string; label: string; source: string }>, email: string, label: string, source: string) {
   const normalized = normalizeEmail(email);
   if (!normalized) return;
   output.push({ email: normalized, label, source });
 }
 
-function resolveSelection(
-  selection: ComposerRecipientSelection,
-  employees: EmployeeDirectoryRow[],
-  membership: GroupMembership,
-) {
+function resolveSelection(selection: ComposerRecipientSelection, employees: EmployeeDirectoryRow[]) {
   const output: Array<{ email: string; label: string; source: string }> = [];
   if (selection.type === "email") {
     addEmail(output, selection.email, selection.label ?? selection.email, "Manual email");
@@ -195,13 +138,7 @@ function resolveSelection(
     if (employee) addEmail(output, employeeEmail(employee), employeeLabel(employee), "Employee");
     return output;
   }
-  // A list answered this group; otherwise the substring rule still does. An absent entry is the
-  // fallback path, and resolveGroupMembership has already recorded why.
-  const listMembers = membership.get(selection.key);
-  const members = listMembers
-    ? employees.filter((employee) => listMembers.has(employee.hrId.toLowerCase()))
-    : groupEmployees(selection.key, employees);
-  for (const employee of members) {
+  for (const employee of groupEmployees(selection.key, employees)) {
     addEmail(output, employeeEmail(employee), employeeLabel(employee), selection.label ?? selection.key);
   }
   return output;
@@ -443,23 +380,17 @@ export async function resolveComposerRecipients(input: ComposerPayload) {
     .map((email) => ({ email: normalizeEmail(email), label: email, source: "Manual email" }));
   const bcc = splitCommunicationEmailList(input.bcc)
     .map((email) => ({ email: normalizeEmail(email), label: email, source: "Manual email" }));
-  const allSelections = [
-    ...(input.toSelections ?? []),
-    ...(input.ccSelections ?? []),
-    ...(input.bccSelections ?? []),
-  ];
-  const { membership, warnings: groupWarnings } = await resolveGroupMembership(allSelections);
   const resolvedSelections = {
-    bcc: (input.bccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees, membership)),
-    cc: (input.ccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees, membership)),
-    to: (input.toSelections ?? []).flatMap((selection) => resolveSelection(selection, employees, membership)),
+    bcc: (input.bccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees)),
+    cc: (input.ccSelections ?? []).flatMap((selection) => resolveSelection(selection, employees)),
+    to: (input.toSelections ?? []).flatMap((selection) => resolveSelection(selection, employees)),
   };
   const channels = dedupeChannels({
     bcc: [...bcc, ...resolvedSelections.bcc],
     cc: [...cc, ...resolvedSelections.cc],
     to: [...to, ...resolvedSelections.to],
   });
-  const warnings: string[] = [...groupWarnings];
+  const warnings: string[] = [];
   const allEmails = [...channels.to, ...channels.cc, ...channels.bcc].map((item) => item.email);
   const invalidRecipients = invalidCommunicationEmails(allEmails);
   const context = composerContextFromEmployee(firstSelectedEmployee(input, employees));

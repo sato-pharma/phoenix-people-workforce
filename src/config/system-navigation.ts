@@ -1984,6 +1984,16 @@ const hrNavigationSectionSeeds = [
       // navigation-granted-but-unreachable derives her mode from resolveNavigationMode, which never
       // returns "hr", so it believes she is offered the admin card.
       { href: "/hr/admin/distribution-lists", icon: Users, label: "Distribution Lists", roles: ["HR Advisory"] },
+      // The composer that sends to those lists — same reasoning as the row above, and the same
+      // trap: the adminToolsPageItems entry for /admin/sato-email is inert for her seat. Owner
+      // 2026-09-11: "This module would be accessible for HR business partner and the system
+      // administrator."
+      //
+      // Named "Sato Email Composer" rather than the shorter "Email Composer" on purpose: that label
+      // already belongs to /admin/email-reply-composer, the older composer the owner asked to leave
+      // alone ("the other one, leave it now"). Two rows reading the same word would be a coin toss
+      // for anyone holding both, and the wrong one sends from a different identity.
+      { href: "/hr/admin/sato-email", icon: Mail, label: "Sato Email Composer", roles: ["HR Advisory"] },
     ],
     label: "People",
   },
@@ -2736,6 +2746,19 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     // The HR Business Partner sees only the HR-owned lists — that narrowing lives in
     // @/lib/distribution-lists/access, not here. A nav entry decides whether the link is offered,
     // never what is behind it.
+    roles: ["Super Admin", "HR Advisory"],
+  },
+  {
+    href: "/admin/sato-email",
+    icon: Mail,
+    label: "Sato Email Composer",
+    description:
+      "Write an email to a distribution list or to named colleagues, from a fixed template or in your own words, in the company's identity.",
+    // Both seats, gated by @/lib/sato-email/access. ⚠ This entry is INERT for the HR Business
+    // Partner: an HR seat renders the `hr` shell and app-shell.tsx redirects a bare /admin/… address
+    // into /hr/admin/…, so her row is the /hr/admin/sato-email one in hrNavigationSections. Listing
+    // her here offers the card in the Admin Tools hub and the admin command palette, both of which
+    // she does not render — it is kept so the two lists agree about who the module is for.
     roles: ["Super Admin", "HR Advisory"],
   },
   {
@@ -4609,6 +4632,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/email-control-center",
           "/admin/notification-recipients",
           "/admin/distribution-lists",
+          // Beside the lists it sends to, deliberately: it is the only surface under this heading
+          // that puts mail in somebody's inbox, and it reads the list directly above it.
+          "/admin/sato-email",
           "/admin/notification-confidence",
           "/admin/notifications/email",
           "/admin/notifications/email-tracking",

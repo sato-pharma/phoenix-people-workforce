@@ -769,8 +769,8 @@ import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
 import { runDistributionListsTests } from "./distribution-lists.test.ts";
 import { runDistributionListsAccessTests } from "./distribution-lists-access.test.ts";
-import { runClosingFixedCcListTests } from "./closing-fixed-cc-list.test.ts";
-import { runComposerGroupListsTests } from "./composer-group-lists.test.ts";
+import { runSatoEmailPlanTests, runSatoEmailRenderTests } from "./sato-email.test.ts";
+import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
 import { runEmailControlCenterTests } from "./email-control-center.test.ts";
 import { runWorkflowRegistryTests } from "./workflow-registry.test.ts";
 import { runWorkflowRegistryEnforcementTests } from "./workflow-registry-enforcement.test.ts";
@@ -5211,13 +5211,18 @@ await runTest(
 );
 
 await runTest(
-  "the closing's fixed Cc roles come from a list whose seed and code fallback cannot drift, while the per-line District Managers, NSM and PM stay on the organogram",
-  runClosingFixedCcListTests,
+  "the Sato email wears the house identity, never Phoenix: on-light mark, white paper, no fills or radius, sanitised body and per-line direction",
+  runSatoEmailRenderTests,
 );
 
 await runTest(
-  "the composer's HR and Finance groups read editable lists that preserve today's membership, while Managers stays on the organogram relationship no list can express",
-  runComposerGroupListsTests,
+  "a Sato email send dedupes by address and is cut into emails of at most 25 — the cap the manual-email policy already enforces — with a per-email idempotency key and unfilled template gaps caught",
+  runSatoEmailPlanTests,
+);
+
+await runTest(
+  "the distribution lists reach the Sato Email Composer and nothing else — the closing Cc names its roles in code, the older HR reply composer is untouched, and a composer send passes no origin and never bypasses the confidence gate",
+  runSatoEmailListsOnlyComposerTests,
 );
 
 await runTest(
