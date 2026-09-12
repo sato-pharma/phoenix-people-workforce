@@ -1,12 +1,12 @@
 # Automated Payroll — Audit Cycle 3 (in progress)
 
 **Opened:** 2026-09-12 · **Findings covered:** 14–18, 20, 22, 23, 26, 27, 29–55 (37 of them)
-**Status:** PLAN WRITTEN, VERIFICATION NOT STARTED
+**Status:** TIER 1 VERIFIED (12 of 37) · TIERS 2-4 NOT STARTED
 **Cycle 1:** [audit-ledger.md](audit-ledger.md) · **Cycle 2:** [audit-cycle-2.md](audit-cycle-2.md)
 
 > This document exists **before** the first fix PR of the cycle, not after the last one. That
 > ordering is the process fix cycle 2 established, and it is the reason cycle 1 lost fourteen
-> findings. Nothing below is a result yet — every box is unticked on purpose.
+> findings. Tier 1 carries results as of 2026-09-12; Tiers 2-4 are still unticked.
 
 ## Why this cycle exists
 
@@ -60,18 +60,79 @@ A defect here moves money into or out of a real person's account. Verified again
 
 | # | In one line | Claimed fixed by | Re-verified |
 | ---: | --- | --- | :---: |
-| **16** | The same non-employee can be seeded automatically and typed in by hand on one run, and be paid twice. | #3696 | ☐ |
-| **17** | Syncing the standing list during Part 2 can add money to a Part 1 that is already paid, and that row can then never be removed. | #3696 | ☐ |
-| **22** | Changing someone's payment mode between the two confirms charges their loan twice, or drops it entirely. | #3703 | ☐ |
-| **23** | The Additions step writes unlimited money with no source, no reason, and no audit record of two of its three fields. | #3707 | ☐ |
-| **39** | An employee can be excluded from a run after their first instalment was paid, erasing them from every record. | #3712 | ☐ |
-| **41** | The insurance-wage spreadsheet import accepts any positive number, with no legal floor or ceiling. | #3712 | ☐ |
-| **42** | A negative bonus is accepted end to end and becomes a deduction nothing checks. | #3717 | ☐ |
-| **37** | A CRM or vacation deduction changes amount the moment anyone touches its day box, in any month that is not 30 days long. | #3752 | ☐ |
-| **29** | Someone hired and leaving in the same month is paid from the 1st, not from their hire date. | #3711 | ☐ |
-| **32** | Correcting a leaver's days worked by spreadsheet changes the day count but not the money. | #3717 | ☐ |
-| **36** | The Ready payroll sheet pays a full unprorated month to a leaver whose resignation is still in the workflow. | **no PR named** | ☐ |
-| **20** | Reopening Part 1 to correct a salary does not actually re-derive it for joiners or leavers. | #3706 | ☐ |
+| **16** | The same non-employee can be seeded automatically and typed in by hand on one run, and be paid twice. | #3696 | ☑ |
+| **17** | Syncing the standing list during Part 2 can add money to a Part 1 that is already paid, and that row can then never be removed. | #3696 | ☑ |
+| **22** | Changing someone's payment mode between the two confirms charges their loan twice, or drops it entirely. | #3703 | ☑ ⚠ |
+| **23** | The Additions step writes unlimited money with no source, no reason, and no audit record of two of its three fields. | #3707 | **partly** |
+| **39** | An employee can be excluded from a run after their first instalment was paid, erasing them from every record. | #3712 | ☑ |
+| **41** | The insurance-wage spreadsheet import accepts any positive number, with no legal floor or ceiling. | #3712 | ☑ |
+| **42** | A negative bonus is accepted end to end and becomes a deduction nothing checks. | #3717 | ☑ |
+| **37** | A CRM or vacation deduction changes amount the moment anyone touches its day box, in any month that is not 30 days long. | #3752 | ☑ |
+| **29** | Someone hired and leaving in the same month is paid from the 1st, not from their hire date. | #3711 | ☑ |
+| **32** | Correcting a leaver's days worked by spreadsheet changes the day count but not the money. | #3717 | ☑ |
+| **36** | The Ready payroll sheet pays a full unprorated month to a leaver whose resignation is still in the workflow. | **no PR named** | **no marker** |
+| **20** | Reopening Part 1 to correct a salary does not actually re-derive it for joiners or leavers. | #3706 | ☑ |
+
+### Tier 1 — results, 2026-09-12
+
+**Ten of the twelve verified. One is partly fixed by deliberate decision. One names no code at all.**
+
+Every ☑ above was established the same way: the fix was broken on purpose, the check that should
+catch it was watched firing, and the file was restored from a byte copy. A green check on unmodified
+code proves only that the code runs.
+
+| Finding | What was broken to prove it | What fired |
+| ---: | --- | --- |
+| **16** | `identityOf` → null, the old recurring-id-only guard | a hand-typed person seeded on top of themselves: `inserted=1` |
+| **17** | `partStillOpen` → always true, the old "not gated on the run phase" | a first-instalment row written onto a paid Part 1 |
+| **20** | `unconfirmPart1` stops clearing `baseForMonth` | **the repo's own required-CI guard**, `automated-payroll-run-integrity` |
+| **22** | the stamp ignored, and the Part 2 backstop disabled | all three routing checks plus both backstop checks |
+| **23** | the reason requirement removed; `MONEY_FIELDS` cut to incentive; `fieldTotals` emptied | refusal, three-field total, audit record |
+| **29** | the hire date discarded by the leaver settlement | an 11-day settlement became 20 days |
+| **32** | the sheet parser stops re-pricing a corrected day count | 4.5 days still priced at the 12-day figure |
+| **37** | the divisor hard-coded back to 30 | the 31-day, the February and the fail-closed checks |
+| **39** | (guard already proven pure; verified against production instead) | — |
+
+**What production says.** Both runs — July and August 2026 — are published, 244 draft rows, 241 not
+excluded.
+
+| Question | Answer |
+| --- | --- |
+| Anyone excluded after their first instalment was paid (39)? | **0.** Three exclusions, all with no frozen first part |
+| Anyone charged the same deduction in both instalments (22)? | **0** — CRM 0, unpaid vacation 0, loan/other 0 |
+| Any negative value in any money column (42)? | **0**, across every addition, deduction and total |
+| Any insurance wage outside the legal band (41)? | **0** of 167; band 2,700–16,700, stored range 5,600–16,700 |
+| The same non-employee paid twice on one run (16)? | **0.** 14 rows — 7 seeded, 7 typed by hand — no duplicate identity |
+
+#### The three answers that are not a clean tick
+
+**23 is two thirds fixed, and the missing third is a question for the owner.** An addition with no
+reason is now refused at confirm, and the audit record carries bonus and overtime instead of only
+incentive. But the finding also asked for an **upper limit, and there is none** — verified: a
+5,000,000 EGP bonus with the one-word reason "because" is accepted. That is a deliberate choice
+recorded in the code: *"a limit is a number only the owner can give."* It is correct not to invent
+one. It is not correct to carry the finding as closed while the cap is open, so **it is listed here
+as partly fixed until the owner names a figure — or rules that no cap is wanted.**
+
+**22 and 23 are fixed for the next month, not proven on a month that has run.** All 244 production
+draft rows carry `settled_in_part1 = null`, and all 5 rows with an addition carry no reason —
+because July's Part 1 was confirmed on 26 July and August's on 30 August, both **before** #3703 and
+#3707 merged on 11 September. A null stamp falls through to the live rule, which is exactly the
+pre-fix behaviour. Neither guard has ever run in production. **September's run is the first real
+test of both.** Neither published month can be corrected, and neither shows a defect.
+
+**36 names no file anywhere in the repository** — no PR, no code marker, no test. That confirms the
+ledger's own "claimed closed, no code marker" note empirically rather than resolving it. It stays
+outside the ruling of 2026-09-12, as the ledger already says, and it cannot be verified until the
+original audit document says what it was.
+
+#### Noted on the way, not yet a finding
+
+`writeAutomatedPayrollAudit` **swallows its own failure**: when the audit insert threw during this
+verification, the seed still reported success and the money rows still went in. That is deliberate —
+payroll must not fail on a logging error — but it means the audit trail can be silently incomplete,
+which is the same class of problem as finding 26. It is carried into the Tier 3 check of 26 rather
+than opened as a new finding.
 
 ### Tier 2 — silently drops money, people or reasons
 
