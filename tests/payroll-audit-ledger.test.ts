@@ -148,6 +148,7 @@ export async function runPayrollAuditLedgerTests(): Promise<void> {
     moduleSlug: string;
     latestAuditFile: string | null;
     managerSummary: string;
+    requiredNextAction: string;
   }>;
   const payroll = registry.find((entry) => entry.moduleSlug === "automated-payroll");
   assert.ok(payroll, "HEADLINE: the audit registry must carry a real Automated Payroll record — it held only a May 2026 'Replace Me' placeholder while 55 findings were worked through");
