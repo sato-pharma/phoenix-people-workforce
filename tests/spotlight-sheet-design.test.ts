@@ -445,8 +445,15 @@ export function runSpotlightSheetDesignTests() {
   // ── Colour keeps its meaning ───────────────────────────────────────────────────────────────
   // Green means at-or-above target and red means below, and nothing else on the page is either.
   // A tint WASHED ACROSS THE ROW is what took that meaning away: seven of ten rows filled green
-  // reads as decoration. The key is a rule on the rank cell; the only fill is the zebra.
-  assert.ok(long.includes("tr.zebra td { background: var(--tint); }"), "the zebra is the one fill the ink rule allows");
+  // reads as decoration. The key is a rule on the rank cell; the zebra is the only fill in the TABLE.
+  //
+  // 🔒 AND IT IS THE ONLY ONE THE TABLE HAS — NOT THE ONLY ONE THE SHEET HAS. The crest band,
+  // the plinth and the stat band are filled too, and on 2026-09-12 the owner was asked about them in
+  // writing and ruled that they STAY: approved exemptions from `SATO-DIS-2026-01`'s ink rule, not an
+  // oversight and not a debt. Do not "bring them into line", and do not read this assertion as
+  // licence to. AGENTS.md section 4 carries the ruling.
+  assert.ok(long.includes("tr.zebra td { background: var(--tint); }"),
+    "the zebra is the one fill the RANKING TABLE carries — the panel's three bands are the owner's own exemption");
   assert.ok(!/tr\.beat td\s*{\s*background/.test(long), "an over-target row is keyed by a rule, never filled with green");
   assert.ok(long.includes("tr.beat td:first-child { border-left-color: var(--green); }"), "over target is keyed green");
   assert.ok(long.includes("tr.miss td:first-child { border-left-color: var(--red); }"), "under target is keyed red");
