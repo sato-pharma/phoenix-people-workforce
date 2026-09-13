@@ -6,12 +6,14 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
 import {
   MARKETING_OVERSIGHT_LINE_ROLES,
+  canViewHeadOfficeLine,
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { fillClosingEngine } from "@/lib/sales/closing-engine-fill";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import { loadClosingExportPayload } from "@/lib/sales/closing-export-payload";
+import { sealClosingSelection, sealedRepCardPdfBase } from "@/lib/sales/closing-pdf-link-seal";
 import { loadClosingQuarterGap } from "@/lib/sales/closing-quarter-gap";
 import { buildQuarterGapSheet, canSeeQuarterGapTab } from "@/lib/sales/closing-quarter-gap-sheet";
 import { buildReviewSheets } from "@/lib/sales/closing-review-sheets";
@@ -150,6 +152,21 @@ export async function POST(request: Request) {
     // host we do not serve. Both environments carry their own URL in `PHOENIX_ALLOWED_ORIGINS`, and
     // anything unrecognised falls back to the production domain rather than to a dead one.
     const origin = trustedOriginForRedirect(request);
+
+    // THE SEAL — owner, 2026-09-14: "any one who receive the closing can export". The workbook is
+    // forwarded to managers and reps whose own scope is narrower than the file, and each of them was
+    // refused by the PDF route's company-wide gate. So every Export PDF link carries a seal of the
+    // selection this workbook was built from, and the PDF route reads the line, month and filters out
+    // of the seal instead of off the URL — editing the link reaches nothing the file does not hold.
+    // `headOffice` records whether the downloader sees Head Office's detail rows, so the PDF shows
+    // what the file shows. Null without a signing secret; the links then go out bare, as before.
+    const seal = sealClosingSelection({
+      filter,
+      headOffice: canViewHeadOfficeLine(access.role),
+      line: payload.line,
+      period: payload.period,
+    });
+
     const pdfLink = (sheet: string): string | null => {
       if (!isClosingPdfSheet(sheet)) return null;
       // Only what actually resolved. An empty `line=` would narrow the PDF to a line named by the
@@ -162,16 +179,22 @@ export async function POST(request: Request) {
       for (const code of body.areaCodes ?? []) query.append("area", code);
       for (const code of body.productCodes ?? []) query.append("product", code);
       if (typeof body.search === "string" && body.search.trim()) query.set("search", body.search.trim());
+      // The readable parameters above stay so a link reads as what it is; the PDF route ignores them
+      // whenever this seal is valid.
+      if (seal) query.set("seal", seal);
       return `${origin}/api/sales/monthly-closing/premium-export/pdf?${query.toString()}`;
     };
 
     // The Rep Card's link is a FORMULA, not a shape: the sheet draws whichever rep its dropdown is
     // set to, and only a formula can append that choice to the URL when the sheet recalculates.
-    const repCardPdfBase = `${origin}/api/sales/monthly-closing/premium-export/pdf?${new URLSearchParams({
-      ...(payload.line ? { line: payload.line } : {}),
-      ...(payload.period ? { period: payload.period } : {}),
-      sheet: "Rep Card",
-    }).toString()}`;
+    // Sealed, it drops the readable line and month — Excel caps a formula's link at 255 characters and
+    // the seal already carries both. A selection too long to fit even then keeps the unsealed base.
+    const repCardPdfBase = (seal ? sealedRepCardPdfBase(origin, seal) : null)
+      ?? `${origin}/api/sales/monthly-closing/premium-export/pdf?${new URLSearchParams({
+        ...(payload.line ? { line: payload.line } : {}),
+        ...(payload.period ? { period: payload.period } : {}),
+        sheet: "Rep Card",
+      }).toString()}`;
 
     // The Performance Review folded in as extra sheets, at the owner's instruction (2026-09-05):
     // one workbook instead of two. Only what the engine does not already carry -- the review's own
