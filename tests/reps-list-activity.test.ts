@@ -22,6 +22,7 @@ import {
   type RepsListActivity,
   type RepsListActivityStatus,
 } from "../src/lib/crm/reps-list-activity.ts";
+import { repKeyOfHrIdRead } from "../src/lib/crm/reps-list-activity-data.ts";
 
 /**
  * Reps List — the activity column. What actually happened to each contact on a rep's own list.
@@ -371,24 +372,58 @@ export function runRepsListActivityTests() {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // The IO half joins on the CRM id, on BOTH sides. Source-pinned because the failure is invisible:
-  // an hr-id join returns a shortened plan against a full visit set, so the board renders perfectly
-  // and accuses a quarter of a month's doctors of being ignored.
+  // A rep with no CRM account is read by his hr id, and the builder is told whose rows those are.
+  // Filtered on a key his rows do not carry, every doctor on his list reads untouched — the exact
+  // accusation this column exists to avoid — so the key comes from the rows the hr id found.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    const hrOnlyPlan = PLAN_ROWS.map((row) => ({ ...row, agent_crm_id: null, agent_hr_id: "B-40" }));
+    const hrOnlyVisits = VISIT_ROWS.map((row) => ({ ...row, agent_crm_id: null, agent_hr_id: "b-40 " }));
+    const hrKey = repKeyOfHrIdRead("B-40", [...hrOnlyPlan, ...hrOnlyVisits]);
+    assert.equal(hrKey, "hr:b-40", "a rep with no CRM account is keyed on his canonical hr id, whatever casing each row carries");
+
+    const index = buildRepsListActivityIndex(board({ planRows: hrOnlyPlan, repKey: hrKey ?? undefined, visitRows: hrOnlyVisits }).doctors);
+    assert.equal(index.get(1001)?.status, "on_plan", "his planned-and-visited doctor reads on plan, not untouched");
+    assert.equal(index.get(1002)?.status, "missed", "his planned-and-unvisited doctor reads missed");
+    assert.equal(index.get(1005)?.status, "off_plan", "his unplanned visit still counts");
+
+    // The employee record carries a CRM id, so the unified views stamp his rows with it even though
+    // the Reps List shows him with no account. The key must follow the ROWS, not the hr id.
+    const stampedPlan = hrOnlyPlan.map((row) => ({ ...row, agent_crm_id: 777 }));
+    const stampedVisits = hrOnlyVisits.map((row) => ({ ...row, agent_crm_id: 777 }));
+    const stampedKey = repKeyOfHrIdRead("B-40", [...stampedPlan, ...stampedVisits]);
+    assert.equal(stampedKey, "777", "rows his hr id found are his, so their key is his key — filtering on hr:b-40 would drop all of them");
+    const stamped = buildRepsListActivityIndex(board({ planRows: stampedPlan, repKey: stampedKey ?? undefined, visitRows: stampedVisits }).doctors);
+    assert.equal(stamped.get(1001)?.status, "on_plan", "and his list reads true, not every doctor untouched");
+
+    assert.equal(
+      repKeyOfHrIdRead("B-40", [...hrOnlyPlan, ...stampedVisits]),
+      null,
+      "rows carrying two keys split his month across two builder rows, and no single count would be true — unavailable, never a partial accusation",
+    );
+    assert.equal(repKeyOfHrIdRead("B-40", []), "hr:b-40", "an empty month is still his month");
+    assert.equal(repKeyOfHrIdRead(null, []), null, "a read naming nobody has no key");
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // The IO half joins on the CRM id, on BOTH sides, whenever the rep has one. Source-pinned because
+  // the failure is invisible: an hr-id join returns a shortened plan against a full visit set, so the
+  // board renders perfectly and accuses a quarter of a month's doctors of being ignored.
   // ───────────────────────────────────────────────────────────────────────────
   {
     const data = readFileSync("src/lib/crm/reps-list-activity-data.ts", "utf8");
 
-    assert.equal(
-      (data.match(/agentCrmIds: \[input\.agentCrmId\]/g) ?? []).length,
-      2,
-      "BOTH halves — the plan scan and the visits query — must be narrowed by agent_crm_id",
+    assert.ok(
+      /input\.agentCrmId != null \? \{ agentCrmIds: \[input\.agentCrmId\] \} : hrId \? \{ agentHrIds: \[hrId\] \} : null/.test(data),
+      "the CRM id is the filter whenever the rep has one, and the hr id is read ONLY for a rep with none: the plan mirror leaves the hr id null on up to 27.9% of a month's rows, and every row it drops reads as an untouched doctor",
     );
     assert.ok(
-      !/agentHrIds|agent_hr_id:/.test(data),
-      "the hr id must never be a filter here: the plan mirror leaves it null on up to 27.9% of a month's rows, and every row it drops reads as an untouched doctor",
+      /scanPlanEntries\(from, to, narrowedTo\)/.test(data) && /\.\.\.narrowedTo,/.test(data),
+      "BOTH halves — the plan scan and the visits query — must be narrowed by the SAME filter",
     );
     assert.ok(
-      /filters: \{ repKey: String\(input\.agentCrmId\) \}/.test(data),
+      /filters: \{ repKey \}/.test(data) &&
+        /input\.agentCrmId != null \? String\(input\.agentCrmId\) : repKeyOfHrIdRead\(hrId, \[\.\.\.planRows, \.\.\.visitRows\]\)/.test(data),
       "the builder must also be told whose list this is — it is what keeps a widened query from attributing another rep's visits, and what stops the drill-down cap truncating a long list into fabricated untouched rows",
     );
     assert.ok(

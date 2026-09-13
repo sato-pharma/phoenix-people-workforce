@@ -47,7 +47,7 @@ import { getRepsListForAgent, type RepsListForRep } from "@/lib/crm/reps-list";
 // screens start disagreeing about which month "August" is — see the DATE DISCIPLINE note in
 // rep-doctor-lists.ts on why all of it is string arithmetic and never Date parsing.
 import { kpiMonthOptions, type KpiPeriodOption } from "@/lib/crm/kpis-board";
-import { monthBounds, monthLabelOf, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
+import { monthBounds, monthLabelOf, repDoctorListRepKey, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
 import { activityForContact, countUnvisited, type RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { loadRepsListActivity } from "@/lib/crm/reps-list-activity-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
@@ -186,11 +186,12 @@ export function pruneLineFirst(tree: CoverageFilterTree, raw: CoverageFilterSele
 export type RepsCascade = {
   options: CoverageFilterOptions;
   /**
-   * Agent id -> rep name, COMPANY-WIDE. Built here because it is derived from the unrestricted
-   * tree this function already holds; what it is for, and why it is the one read that wants the
-   * unrestricted tree, is written out where it is built below.
+   * Rep key -> rep name, COMPANY-WIDE. The key is `repDoctorListRepKey`'s: the CRM id as a string,
+   * or `hr:<id>` for a rep with no CRM account. Built here because it is derived from the
+   * unrestricted tree this function already holds; what it is for, and why it is the one read that
+   * wants the unrestricted tree, is written out where it is built below.
    */
-  repNameByAgentId: Map<number, string>;
+  repNameByRepKey: Map<string, string>;
   reps: RepsListRep[];
   /**
    * The same list WITHOUT the rep level applied — every rep in the chosen line, region and area.
@@ -219,7 +220,7 @@ export async function buildRepsCascade(input: {
       options: EMPTY_OPTIONS,
       // A fresh Map per call, never a shared literal: a caller that mutated a shared one would
       // leak one viewer's names into the next request served by the same process.
-      repNameByAgentId: new Map<number, string>(),
+      repNameByRepKey: new Map<string, string>(),
       reps: [],
       repsIgnoringRep: [],
       scopeLabel,
@@ -327,11 +328,17 @@ export async function buildRepsCascade(input: {
   //
   // The owner was asked directly on 2026-09-01 and approved the one thing this widens: a manager
   // may read the NAME of a rep outside his own team, on a shared row he can already see.
-  const repNameByAgentId = new Map<number, string>();
+  //
+  // KEYED ON THE REP KEY, NOT THE CRM ID. Keyed on the CRM id, a rep hired without an account could
+  // never be named, so every customer he shared was dropped and his visits never counted as a second
+  // observer. The key is the one the roster and the check-ins are stamped with: the CRM id when the
+  // rep has one, otherwise `hr:<id>`. A row that names such a rep by his HR id alone stays unnamed and
+  // is skipped, which costs a highlight and never puts the wrong rep's name on a customer.
+  const repNameByRepKey = new Map<string, string>();
   for (const rep of companyTree.reps) {
-    const summary = summaryFor(rep.hrId);
+    const key = repDoctorListRepKey(summaryFor(rep.hrId)?.agentCrmId, rep.hrId);
     const name = rep.repName?.trim();
-    if (summary?.agentCrmId != null && name) repNameByAgentId.set(summary.agentCrmId, name);
+    if (key && name) repNameByRepKey.set(key, name);
   }
 
   const syncedAt = reps.reduce<string | null>((latest, rep) => {
@@ -340,7 +347,7 @@ export async function buildRepsCascade(input: {
     return at && (!latest || at > latest) ? at : latest;
   }, null);
 
-  return { options, repNameByAgentId, reps, repsIgnoringRep, scopeLabel, scopeReason: null, selected, selection, syncedAt };
+  return { options, repNameByRepKey, reps, repsIgnoringRep, scopeLabel, scopeReason: null, selected, selection, syncedAt };
 }
 
 /**
@@ -390,7 +397,7 @@ export async function getRepsListBoard(input: {
   const selectedRep = cascade.selected;
   const rawList =
     selectedRep && selectedRep.contactCount + selectedRep.pharmacyCount > 0
-      ? await getRepsListForAgent({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId }, cascade.repNameByAgentId)
+      ? await getRepsListForAgent({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId }, cascade.repNameByRepKey)
       : null;
 
   // THE ACTIVITY MUST NEVER TAKE THE CONTACT LIST DOWN WITH IT. The list is this board's whole
@@ -399,12 +406,16 @@ export async function getRepsListBoard(input: {
   // failure here therefore drops the annotation and says so, and the board below still renders every
   // contact — the behaviour this board had before the column existed.
   //
-  // STILL KEYED ON A CRM ACCOUNT: `loadRepsListActivity` takes one, so a rep with no account shows his
-  // list with the activity column marked unavailable, never with every doctor reading "unvisited".
+  // A REP WITH NO CRM ACCOUNT GETS HIS ACTIVITY TOO. The loader reads by the CRM id when there is one
+  // and by the HR id only when there is not; with neither it answers unavailable, never "unvisited".
   let activityIndex: Map<number, RepsListActivity> | null = null;
-  if (rawList && cascade.selected?.agentCrmId != null) {
+  if (rawList && selectedRep && (selectedRep.agentCrmId != null || selectedRep.hrId)) {
     try {
-      activityIndex = await loadRepsListActivity({ agentCrmId: cascade.selected.agentCrmId, month: activityMonth });
+      activityIndex = await loadRepsListActivity({
+        agentCrmId: selectedRep.agentCrmId,
+        hrId: selectedRep.hrId,
+        month: activityMonth,
+      });
     } catch {
       activityIndex = null;
     }

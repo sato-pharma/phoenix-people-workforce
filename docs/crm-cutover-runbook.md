@@ -105,8 +105,9 @@ Check `pg_class`/`pg_proc` for each object, never the migration ledger alone.
 ## Known gaps at cutover (not handled by this code)
 
 - **`public.ireports360_visits_effective`** still reads the vendor table directly and does not see
-  Phoenix rows. (`crm_contact_master_refresh` and `phx_crm_agent_crm_ids_for_hr_ids` read the unified
-  views since `20260914000000`.)
+  Phoenix rows. No application code reads it, so it is only a drop for the deletion PR.
+  (`crm_contact_master_refresh` and `phx_crm_agent_crm_ids_for_hr_ids` read the unified views since
+  `20260914000000`.)
 - **Rep doctor lists** are rebuilt nightly from the vendor scrape until the cutover date. From the
   date, only Phoenix's doctor-list changes move them (see "Who enters what"); disable the scrape job
   at step 7 so a stale scrape never competes with them.
@@ -114,9 +115,11 @@ Check `pg_class`/`pg_proc` for each object, never the migration ledger alone.
   `exclusion_crm_id` of -1 in the views. Check-in matching, the call rate, the KPIs board, rep doctor
   lists, the rep day, visit workload, visit partners, plan actuals, the reps weekly plans board and
   doctor coverage key him by his HR id instead. A double visit whose partner has no CRM id counts on a
-  Phoenix row only (`source = 'phoenix'`); a vendor row's stray HR id never does. Still keyed on the
-  CRM id: the Reps List activity loader and the shared-customer partners (location confidence, Phoenix
-  insights). `getAgentCrmIdentityRows` deliberately stays on the vendor table (it maps a leaver's
-  historical CRM id), and the plan view has no `exclusion_crm_id` column.
+  Phoenix row only (`source = 'phoenix'`); a vendor row's stray HR id never does. The Reps List
+  activity column reads him by his HR id, and the shared-customer partners and check-in observers
+  (location confidence, Phoenix insights) key him as `hr:<id>`. A list row that names a rep who has a
+  CRM id by his HR id alone stays unnamed as a partner rather than risk the wrong name.
+  `getAgentCrmIdentityRows` deliberately stays on the vendor table (it maps a leaver's historical CRM
+  id), and the plan view has no `exclusion_crm_id` column.
 - **Plans filed in Phoenix** appear on the plan boards with a negative plan id and read "Reviewed in
   Phoenix" there, with no verify button. They are verified on Phoenix's own plan review screen.
