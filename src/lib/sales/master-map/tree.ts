@@ -75,7 +75,7 @@ export type AreaManagerInput = { areaCode: string; lineName: string; manager: st
 export const MASTER_MAP_MANAGER_LINES = ["Anti Infective", "CNS", "Pedia"] as const;
 
 /** An area the organogram has no row for at all. Only "Main Store" is in this state, with 0 bricks. */
-const UNKNOWN_MANAGER = "Not in the organogram";
+export const UNKNOWN_MANAGER = "Not in the organogram";
 
 export type MasterMapBrick = {
   brickId: string;

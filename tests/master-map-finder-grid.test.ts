@@ -5,6 +5,8 @@ import {
   renderListsSheet,
 } from "../src/lib/sales/master-map/lookup-tab.ts";
 import {
+  MASTER_MAP_FLAT_COLUMNS,
+  MASTER_MAP_MANAGER_LINES,
   buildMasterMapTree,
   flatShopCount,
   renderFlatRows,
@@ -163,4 +165,69 @@ export function runMasterMapFinderGridTests() {
     renderFlatRows(tree, (code) => code).length,
     "the grid is sized from a count taken WITHOUT building the rows, so it has to agree with the rows exactly — an organogram view counted in would oversize harmlessly, one left out would overflow",
   );
+
+  // ---- The Region box follows the organogram, not geography --------------------------------------
+  // Measured live 2026-09-13: the box offered 7 regions and the organogram has 10. Column A of
+  // "All customers" is geography, and Delta (3), Upper Egypt 1 and Upper Egypt 2 own no areas in the
+  // area master, so a list read from A could neither offer them nor find a shop by them. The three
+  // "<line> region" columns carry all ten.
+  const lineRegionLetters = MASTER_MAP_MANAGER_LINES.map((line) => {
+    const index = MASTER_MAP_FLAT_COLUMNS.indexOf(`${line} region`);
+    assert.ok(index >= 0 && index < 26, `"All customers" carries a single-letter "${line} region" column`);
+    return String.fromCharCode(65 + index);
+  });
+  const geographyRange = `'All customers'!A2:A`;
+
+  const regionList = listsFormulaAt(rendered, 0);
+  for (const letter of lineRegionLetters) {
+    assert.ok(
+      regionList.includes(`'All customers'!${letter}2:${letter}`),
+      `the Region list reads the organogram's line region column ${letter}`,
+    );
+  }
+  assert.ok(
+    !regionList.includes(geographyRange),
+    "the Region list must not read geography — that is the list that hid Delta (3), Upper Egypt 1 and Upper Egypt 2",
+  );
+  assert.ok(
+    regionList.includes(`<>"Not in the organogram"`),
+    "an area no line files is not a region, and must not be offered as one",
+  );
+
+  // Picking a region has to narrow by the same columns, everywhere a region narrows anything.
+  for (const [column, what] of [
+    [1, "the Area list"],
+    [2, "the Brick list"],
+    [5, "the results"],
+  ] as const) {
+    const formula = listsFormulaAt(rendered, column);
+    for (const letter of lineRegionLetters) {
+      assert.ok(
+        formula.includes(`'All customers'!${letter}2:${letter}='Find a pharmacy'!$A$4`),
+        `${what} matches the picked region against line region column ${letter}`,
+      );
+    }
+    assert.ok(
+      !formula.includes(`${geographyRange}='Find a pharmacy'!$A$4`),
+      `${what} must not match the picked region against geography, or Upper Egypt 1 finds nothing`,
+    );
+  }
+}
+
+type FormulaWrite = {
+  updateCells?: {
+    range?: { startColumnIndex?: number; startRowIndex?: number };
+    rows?: Array<{ values?: Array<{ userEnteredValue?: { formulaValue?: string } }> }>;
+  };
+};
+
+/** The formula the Lists tab writes into row 2 of a column. */
+function listsFormulaAt(sheet: { requests: unknown[] }, column: number): string {
+  for (const request of sheet.requests as FormulaWrite[]) {
+    const cells = request?.updateCells;
+    if (cells?.range?.startRowIndex !== 1 || cells.range.startColumnIndex !== column) continue;
+    const formula = cells.rows?.[0]?.values?.[0]?.userEnteredValue?.formulaValue;
+    if (formula) return formula;
+  }
+  throw new Error(`the Lists tab writes no formula into column ${column}`);
 }

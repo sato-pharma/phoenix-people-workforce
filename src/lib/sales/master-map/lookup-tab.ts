@@ -24,7 +24,11 @@
 // Bumping the version changes the visible text, which moves the hash. Bump it whenever you change
 // anything on these two tabs.
 
-import { MASTER_MAP_FLAT_COLUMNS } from "@/lib/sales/master-map/tree";
+import {
+  MASTER_MAP_FLAT_COLUMNS,
+  MASTER_MAP_MANAGER_LINES,
+  UNKNOWN_MANAGER,
+} from "@/lib/sales/master-map/tree";
 import {
   FONT,
   STYLE,
@@ -40,7 +44,8 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-const LAYOUT_VERSION = "v7";
+/** v8: the Region box reads the organogram's three line regions instead of geography. */
+const LAYOUT_VERSION = "v8";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -90,8 +95,23 @@ const FLAT = {
   channel: "I",
   code: "G",
   pharmacy: "E",
-  region: "A",
 } as const;
+
+/**
+ * The three "<line> region" columns, derived rather than typed for the same reason FLAT_LAST is.
+ *
+ * THE REGION BOX DOES NOT READ COLUMN A. Column A is geography, from the area master, and three
+ * organogram regions own no geography at all — Delta (3), Upper Egypt 1 and Upper Egypt 2. A list
+ * read from A offered seven of the ten regions and could never find a shop by the other three
+ * (measured live 2026-09-13). Each line files an area under its own region, so a shop is IN a
+ * region when any line's organogram puts its area there: Minia 1 answers to Upper Egypt 1 for
+ * Pedia and to Upper Egypt for CNS, and picking either finds it.
+ */
+const LINE_REGION_COLUMNS = MASTER_MAP_MANAGER_LINES.map((line) => {
+  const index = MASTER_MAP_FLAT_COLUMNS.indexOf(`${line} region`);
+  if (index < 0) throw new Error(`"All customers" has no "${line} region" column for the Region box`);
+  return columnLetter(index);
+});
 
 const LOOKUP = `'${LOOKUP_TAB}'`;
 const SOURCE = `'All customers'`;
@@ -99,6 +119,26 @@ const SOURCE = `'All customers'`;
 /** "blank means everything" — a cleared box contributes nothing rather than matching nothing. */
 function optional(cell: string, column: string): string {
   return `(${LOOKUP}!${cell}="")+(${SOURCE}!${column}2:${column}=${LOOKUP}!${cell})`;
+}
+
+/** The Region box: blank, or any line's organogram region equals the one picked. */
+function regionClause(cell: string): string {
+  const anyLine = LINE_REGION_COLUMNS.map(
+    (column) => `(${SOURCE}!${column}2:${column}=${LOOKUP}!${cell})`,
+  ).join("+");
+  return `(${LOOKUP}!${cell}="")+${anyLine}`;
+}
+
+/**
+ * Every region any line files an area under, once, sorted.
+ *
+ * The three columns are stacked into one before UNIQUE, so a region only one line uses — Delta (3)
+ * is Anti Infective's alone — is offered exactly like a region all three share. An area no line
+ * files reads "Not in the organogram", which is not a region and is left out.
+ */
+function regionListFormula(): string {
+  const stacked = `{${LINE_REGION_COLUMNS.map((column) => `${SOURCE}!${column}2:${column}`).join(";")}}`;
+  return `=IFERROR(SORT(UNIQUE(FILTER(${stacked},${stacked}<>"",${stacked}<>"${UNKNOWN_MANAGER}"))))`;
 }
 
 /**
@@ -131,7 +171,7 @@ const CHANNEL_CELL = "$D$4";
 const SEARCH_CELL = "$E$4";
 
 const RESULT_FORMULA = `=IFERROR(FILTER(${SOURCE}!A2:${FLAT_LAST},${[
-  optional(REGION_CELL, FLAT.region),
+  regionClause(REGION_CELL),
   optional(AREA_CELL, FLAT.area),
   optional(BRICK_CELL, FLAT.brick),
   optional(CHANNEL_CELL, FLAT.channel),
@@ -241,21 +281,13 @@ export function renderListsSheet(sheetId: number, shopCount: number): RenderedSh
         },
       },
     },
-    updateCellFormula(sheetId, 1, 0, listFormula(FLAT.region, [])),
-    updateCellFormula(
-      sheetId,
-      1,
-      1,
-      listFormula(FLAT.area, [optional(REGION_CELL, FLAT.region)]),
-    ),
+    updateCellFormula(sheetId, 1, 0, regionListFormula()),
+    updateCellFormula(sheetId, 1, 1, listFormula(FLAT.area, [regionClause(REGION_CELL)])),
     updateCellFormula(
       sheetId,
       1,
       2,
-      listFormula(FLAT.brick, [
-        optional(REGION_CELL, FLAT.region),
-        optional(AREA_CELL, FLAT.area),
-      ]),
+      listFormula(FLAT.brick, [regionClause(REGION_CELL), optional(AREA_CELL, FLAT.area)]),
     ),
     updateCellFormula(sheetId, 1, 3, listFormula(FLAT.channel, [])),
     updateCellFormula(sheetId, 1, RESULTS_FIRST_INDEX, RESULT_FORMULA),
@@ -394,7 +426,12 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
         },
       },
     },
-    dropdownRequest(sheetId, 0, "A2:A", "Pick a region, or leave it empty for every region."),
+    dropdownRequest(
+      sheetId,
+      0,
+      "A2:A",
+      "Pick an organogram region, or leave it empty for every region. A shop is in a region when any line files its area there.",
+    ),
     dropdownRequest(sheetId, 1, "B2:B", "Areas of the region you picked."),
     dropdownRequest(sheetId, 2, "C2:C", "Bricks of the area you picked."),
     dropdownRequest(sheetId, 3, "D2:D", "Pharmacy, Store or Hospital."),
