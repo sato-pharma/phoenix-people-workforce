@@ -107,4 +107,37 @@ export function runCspHeaderTests() {
     /"font-src [^"]*https:\/\/fonts\.gstatic\.com/.test(nextConfigSource),
     "font-src must allow Google's font file host for the Maps JS API controls.",
   );
+
+  runPermissionsPolicyTests();
+}
+
+/**
+ * The Permissions-Policy header shipped `camera=()` from 2026-05-12, which Chromium enforces by
+ * rejecting getUserMedia with NotAllowedError before any prompt — measured on production
+ * 2026-09-13 (`document.featurePolicy.allowsFeature('camera') === false`). Every live-photo
+ * capture was dead on Android Chrome while Safari, which ignores the header, kept uploading.
+ */
+function runPermissionsPolicyTests() {
+  const declarations = [...nextConfigSource.matchAll(/key: "Permissions-Policy",\s*value: "([^"]*)"/g)];
+  assert.equal(
+    declarations.length,
+    1,
+    "Permissions-Policy must be declared exactly once, site-wide. A per-route override cannot work: the policy is fixed when the document loads, and App Router navigation never loads a new document.",
+  );
+
+  const directives = new Map(
+    declarations[0][1].split(",").map((part) => {
+      const [feature, allowlist] = part.trim().split("=");
+      return [feature, allowlist] as const;
+    }),
+  );
+
+  assert.equal(
+    directives.get("camera"),
+    "(self)",
+    "camera must be (self): camera=() makes Chromium refuse getUserMedia, which kills the outstation arrival/departure photos and the storefront and venue photos.",
+  );
+  assert.equal(directives.get("microphone"), "()", "microphone must stay () — nothing in the app records audio.");
+  assert.equal(directives.get("geolocation"), "(self)", "geolocation must stay (self) — every evidence capture stamps GPS.");
+  assert.equal(directives.get("payment"), "()", "payment must stay ().");
 }
