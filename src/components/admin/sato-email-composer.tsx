@@ -1,16 +1,38 @@
 "use client";
 
-import { AlertTriangle, Check, Eye, Loader2, Mail, Paperclip, Search, Send, Sparkles, Undo2, Users, X } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  AtSign,
+  Check,
+  Eye,
+  Loader2,
+  Mail,
+  Paperclip,
+  Plus,
+  Search,
+  Send,
+  Sparkles,
+  Undo2,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 
 import { AdminSectionHeader } from "@/components/admin/admin-design-system";
 import { EmailBodyEditor } from "@/components/admin/email-body-editor";
+import { SatoEmailListPicker } from "@/components/admin/sato-email-list-picker";
 import {
   SATO_EMAIL_ATTACHMENT_ACCEPT,
   SATO_EMAIL_INLINE_ACCEPT,
   SATO_EMAIL_MEDIA_MAX_FILES,
   formatBytes,
 } from "@/lib/sato-email/media-limits";
+import {
+  SATO_EMAIL_MAX_TYPED_ADDRESSES,
+  isOutsideCompanyAddress,
+  parseTypedEmailAddresses,
+} from "@/lib/sato-email/typed-recipients";
 
 export type SatoTemplateView = {
   bodyHtml: string;
@@ -22,6 +44,7 @@ export type SatoTemplateView = {
 };
 
 export type SatoListView = {
+  coveredBy: string[];
   description: string;
   label: string;
   listKey: string;
@@ -45,9 +68,14 @@ type PreviewView = {
   };
   emailCount: number;
   html: string;
+  outsideAddresses: string[];
   placeholders: string[];
   recipientCount: number;
+  recipientProblem: string | null;
 };
+
+/** Mirrors MAX_MATCHES in app/api/admin/sato-email/employees/route.ts, so the screen can say it is a cap. */
+const SEARCH_MATCH_CAP = 25;
 
 type SendResultView = {
   emailCount: number;
@@ -106,6 +134,15 @@ export function SatoEmailComposer({
   const [term, setTerm] = useState("");
   const [matches, setMatches] = useState<SatoPersonView[]>([]);
   const [searching, setSearching] = useState(false);
+  // "Choose people yourself": tick colleagues from a search, or type addresses by hand.
+  const [chooseBy, setChooseBy] = useState<"search" | "type">("search");
+  const [emails, setEmails] = useState<string[]>([]);
+  const [emailText, setEmailText] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [externalJustification, setExternalJustification] = useState("");
+  // What the SERVER last called outside. Kept across invalidation on purpose: typing the reason
+  // clears the preview, and the reason box must not vanish under the sender's cursor as it does.
+  const [serverOutside, setServerOutside] = useState<string[]>([]);
 
   // The rewrite. `polished` holds what the sender wrote immediately before it, which is the whole
   // of Undo: his own words are never sent anywhere to be fetched back, they are simply still here.
@@ -133,16 +170,21 @@ export function SatoEmailComposer({
       attachmentIds: attachments.map((file) => file.id),
       bodyHtml,
       clientRequestId,
+      emails,
+      externalJustification: externalJustification.trim() || null,
       hrIds: people.map((person) => person.hrId),
       listKeys,
       signOff,
       subject,
       templateKey: mode === "template" && templateKey ? templateKey : null,
     }),
-    [attachments, bodyHtml, clientRequestId, listKeys, mode, people, signOff, subject, templateKey],
+    [attachments, bodyHtml, clientRequestId, emails, externalJustification, listKeys, mode, people, signOff, subject, templateKey],
   );
 
-  const canCompose = Boolean(subject.trim() && bodyHtml.trim() && (listKeys.length > 0 || people.length > 0));
+  const canCompose = Boolean(
+    subject.trim() && bodyHtml.trim() && (listKeys.length > 0 || people.length > 0 || emails.length > 0),
+  );
+  const needsReason = emails.filter((email) => isOutsideCompanyAddress(email) || serverOutside.includes(email));
 
   /**
    * Put one file in the store and hand back what the caller needs.
@@ -282,6 +324,58 @@ export function SatoEmailComposer({
     }
   }
 
+  /** One press adds a colleague, the next removes them — the results stay open for the next pick. */
+  function togglePerson(match: SatoPersonView) {
+    setPeople((current) =>
+      current.some((person) => person.hrId === match.hrId)
+        ? current.filter((person) => person.hrId !== match.hrId)
+        : [...current, match],
+    );
+    invalidate();
+  }
+
+  function tickAllShown() {
+    setPeople((current) => [...current, ...matches.filter((match) => !current.some((person) => person.hrId === match.hrId))]);
+    invalidate();
+  }
+
+  /**
+   * Moves every good address out of the box and leaves only what still needs the sender's eye —
+   * a typo stays where he typed it, with the reason beside it, rather than disappearing.
+   */
+  function addTypedAddresses() {
+    const { invalid, valid } = parseTypedEmailAddresses(emailText);
+    const fresh = valid.filter((email) => !emails.includes(email));
+    const accepted = fresh.slice(0, Math.max(0, SATO_EMAIL_MAX_TYPED_ADDRESSES - emails.length));
+    const overflow = fresh.slice(accepted.length);
+
+    if (accepted.length > 0) {
+      setEmails((current) => [...current, ...accepted]);
+      invalidate();
+    }
+    setEmailText([...invalid, ...overflow].join(", "));
+
+    if (invalid.length > 0) {
+      setEmailError(
+        invalid.length === 1
+          ? `"${invalid[0]}" is not an email address. Correct it and add again.`
+          : `These are not email addresses: ${invalid.join(", ")}. Correct them and add again.`,
+      );
+    } else if (overflow.length > 0) {
+      setEmailError(`You can type up to ${SATO_EMAIL_MAX_TYPED_ADDRESSES} addresses. An audience that size belongs on a distribution list.`);
+    } else if (valid.length > 0 && accepted.length === 0) {
+      setEmailError(valid.length === 1 ? "That address is already added." : "Those addresses are already added.");
+    } else {
+      setEmailError(null);
+    }
+  }
+
+  function clearChosen() {
+    setPeople([]);
+    setEmails([]);
+    invalidate();
+  }
+
   async function runPreview() {
     setBusy("preview");
     setError(null);
@@ -297,6 +391,7 @@ export function SatoEmailComposer({
         return;
       }
       setPreview(payload.preview);
+      setServerOutside(payload.preview.outsideAddresses ?? []);
       setConfirming(false);
     } catch {
       setError("The preview could not be built.");
@@ -342,9 +437,15 @@ export function SatoEmailComposer({
         </div>
       ) : null}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {/* Owner 2026-09-13: "make preview and send direct under the place where i write the email".
+          On desktop the page is two columns — writing, then preview and send beneath it, on the
+          left; the audience on the right, spanning both rows. `auto_1fr` lets the first row take
+          the writing card's own height, so a tall audience column never opens a gap between the
+          email and its Send button. On a phone it is one column in DOM order — write, pick who, then
+          send — because a Send button above the audience would ask for a count of nobody. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] xl:grid-rows-[auto_1fr] xl:items-start">
         {/* ---------------------------------------------------------------- what it says */}
-        <section className="space-y-4">
+        <section className="space-y-4 xl:col-start-1 xl:row-start-1">
           <AdminSectionHeader
             description="Start from a fixed template or write the whole email yourself — the switch below flips between the two, and either way you can edit every word before sending."
             title="What it says"
@@ -560,117 +661,259 @@ export function SatoEmailComposer({
         </section>
 
         {/* ------------------------------------------------------------- who it reaches */}
-        <section className="space-y-4">
+        <section className="space-y-4 xl:col-start-2 xl:row-span-2 xl:row-start-1">
           <AdminSectionHeader
-            description="Pick a distribution list, name people individually, or both. Recipients never see each other's addresses."
+            description="Pick a distribution list, choose people yourself, or both. Recipients never see each other's addresses."
             title="Who it reaches"
           />
           <div className={CARD}>
-          <div className="space-y-2">
-            {initialLists.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-phx-line bg-phx-paper p-4 text-sm text-phx-ink-soft">
-                No distribution list is switched on yet. Turn one on under Distribution Lists, or name people below.
-              </p>
-            ) : null}
-            {initialLists.map((list) => {
-              const checked = listKeys.includes(list.listKey);
-              return (
-                <label
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border border-phx-line bg-phx-paper p-3"
-                  key={list.listKey}
-                >
-                  <input
-                    checked={checked}
-                    className="mt-1 h-4 w-4"
-                    onChange={() => {
-                      setListKeys((current) =>
-                        checked ? current.filter((key) => key !== list.listKey) : [...current, list.listKey],
-                      );
-                      invalidate();
-                    }}
-                    type="checkbox"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-black text-phx-ink">{list.label}</span>
-                    <span className="block text-xs font-semibold text-phx-ink-faint">{list.description}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+          <SatoEmailListPicker
+            lists={initialLists}
+            onChange={(next) => {
+              setListKeys(next);
+              invalidate();
+            }}
+            selected={listKeys}
+          />
 
-          <div className="mt-5">
-            <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-people">
-              Add people by name
-            </label>
-            <div className="relative mt-2">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-faint" />
-              <input
-                className={`${FIELD} pl-9`}
-                id="sato-people"
-                onChange={(event) => void search(event.target.value)}
-                placeholder="Search a colleague"
-                value={term}
-              />
+          {/* ------------------------------------------------ choose people yourself */}
+          {/* Owner 2026-09-13: "make an option to manual search and choose single or multiple
+              reciepients and option to manually write emails my self". */}
+          <div className="mt-6 border-t border-phx-line pt-5">
+            <div className="flex items-center gap-2.5">
+              <UserPlus className="h-4 w-4 shrink-0 text-orange-700" />
+              <h3 className="text-sm font-black text-phx-ink">Choose people yourself</h3>
+            </div>
+            <p className="mt-1 text-xs font-semibold leading-5 text-phx-ink-soft">
+              Search colleagues and tick one or as many as you need, or type email addresses by hand. Use it on its
+              own or on top of a list.
+            </p>
+
+            <div aria-label="How to choose people" className="mt-3 grid grid-cols-2 border border-phx-line" role="tablist">
+              {(
+                [
+                  ["search", "Search colleagues", Search],
+                  ["type", "Type addresses", AtSign],
+                ] as const
+              ).map(([key, label, Icon]) => {
+                const active = chooseBy === key;
+                return (
+                  <button
+                    aria-selected={active}
+                    className={`relative flex min-h-[44px] items-center justify-center gap-1.5 px-2 py-1.5 text-center text-phx-xs font-black transition ${
+                      active
+                        ? "bg-[#0B0B0B] text-white shadow-[0_6px_16px_rgba(15,23,42,0.18)]"
+                        : "bg-white text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
+                    }`}
+                    key={key}
+                    onClick={() => setChooseBy(key)}
+                    role="tab"
+                    type="button"
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    {label}
+                    {active ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-phx-accent" /> : null}
+                  </button>
+                );
+              })}
             </div>
 
-            {searching ? <p className="mt-2 text-xs font-semibold text-phx-ink-faint">Searching…</p> : null}
-
-            {matches.length > 0 ? (
-              <ul className="mt-2 space-y-1">
-                {matches
-                  .filter((match) => !people.some((person) => person.hrId === match.hrId))
-                  .map((match) => (
-                    <li key={match.hrId}>
-                      <button
-                        className="w-full rounded-lg border border-phx-line bg-white px-3 py-2 text-left text-sm text-phx-ink transition hover:bg-phx-paper"
-                        onClick={() => {
-                          setPeople((current) => [...current, match]);
-                          setTerm("");
-                          setMatches([]);
-                          invalidate();
-                        }}
-                        type="button"
-                      >
-                        <span className="font-black">{match.displayName}</span>
-                        {match.jobTitle ? (
-                          <span className="block text-xs font-semibold text-phx-ink-faint">
-                            {match.jobTitle}
-                            {match.where ? ` · ${match.where}` : ""}
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            ) : null}
-
-            {people.length > 0 ? (
-              <ul className="mt-3 flex flex-wrap gap-2">
-                {people.map((person) => (
-                  <li key={person.hrId}>
+            {chooseBy === "search" ? (
+              <div className="mt-3" role="tabpanel">
+                <label className="sr-only" htmlFor="sato-people">
+                  Search colleagues
+                </label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-faint" />
+                  <input
+                    className={`${FIELD} pl-9 pr-10`}
+                    id="sato-people"
+                    onChange={(event) => void search(event.target.value)}
+                    placeholder="Name, job title, area or email"
+                    value={term}
+                  />
+                  {term ? (
                     <button
-                      className="inline-flex items-center gap-1.5 rounded-full border border-phx-line bg-phx-paper px-3 py-1.5 text-xs font-bold text-phx-ink-2"
-                      onClick={() => {
-                        setPeople((current) => current.filter((item) => item.hrId !== person.hrId));
-                        invalidate();
-                      }}
+                      aria-label="Clear the search"
+                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-phx-ink-faint transition hover:text-phx-ink"
+                      onClick={() => void search("")}
                       type="button"
                     >
-                      {person.displayName}
-                      <X className="h-3 w-3" />
+                      <X className="h-3.5 w-3.5" />
                     </button>
-                  </li>
-                ))}
-              </ul>
+                  ) : null}
+                </div>
+
+                {term.trim().length < 2 ? (
+                  <p className="mt-2 text-xs font-semibold leading-5 text-phx-ink-faint">
+                    Type at least 2 letters. Tick each person you want. The results stay open, so you can pick several in
+                    a row.
+                  </p>
+                ) : matches.length === 0 ? (
+                  <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
+                    {searching ? "Searching…" : `Nobody matches "${term.trim()}".`}
+                  </p>
+                ) : (
+                  <>
+                    <ul className="mt-2 divide-y divide-phx-line border border-phx-line">
+                      {matches.map((match) => {
+                        const picked = people.some((person) => person.hrId === match.hrId);
+                        return (
+                          <li key={match.hrId}>
+                            <button
+                              aria-checked={picked}
+                              className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition ${
+                                picked ? "bg-phx-accent-soft" : "bg-white hover:bg-phx-paper"
+                              }`}
+                              onClick={() => togglePerson(match)}
+                              role="checkbox"
+                              type="button"
+                            >
+                              <span className="mt-0.5 flex shrink-0">
+                                <ChoiceTick picked={picked} />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-black text-phx-ink">{match.displayName}</span>
+                                {match.jobTitle || match.where ? (
+                                  <span className="block text-xs font-semibold text-phx-ink-faint">
+                                    {[match.jobTitle, match.where].filter(Boolean).join(" · ")}
+                                  </span>
+                                ) : null}
+                                <span className="block break-all text-xs text-phx-ink-soft">{match.email}</span>
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-semibold text-phx-ink-faint">
+                      <span>
+                        {matches.length >= SEARCH_MATCH_CAP
+                          ? `Showing the first ${SEARCH_MATCH_CAP}. Type more of the name to narrow it.`
+                          : `${matches.length} match${matches.length === 1 ? "" : "es"}`}
+                      </span>
+                      {matches.some((match) => !people.some((person) => person.hrId === match.hrId)) ? (
+                        <button className="font-black text-orange-700 hover:underline" onClick={tickAllShown} type="button">
+                          Tick all {matches.length} shown
+                        </button>
+                      ) : null}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="mt-3" role="tabpanel">
+                <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-typed-emails">
+                  Email addresses
+                </label>
+                <textarea
+                  className={`${FIELD} mt-2 min-h-[88px] resize-y`}
+                  id="sato-typed-emails"
+                  onChange={(event) => {
+                    setEmailText(event.target.value);
+                    setEmailError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      addTypedAddresses();
+                    }
+                  }}
+                  placeholder="someone@satopharma.com, partner@clinic.com"
+                  value={emailText}
+                />
+                <p className="mt-1.5 text-xs font-semibold leading-5 text-phx-ink-faint">
+                  Separate with commas, spaces or new lines. A list pasted from Outlook works too. Press Enter to add.
+                </p>
+                {emailError ? (
+                  <p className="mt-2 border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-900">
+                    <AlertTriangle className="mr-1.5 inline h-3.5 w-3.5" />
+                    {emailError}
+                  </p>
+                ) : null}
+                <button
+                  className={`${DARK_BUTTON} mt-3`}
+                  disabled={!emailText.trim()}
+                  onClick={addTypedAddresses}
+                  type="button"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add addresses
+                </button>
+              </div>
+            )}
+
+            {people.length + emails.length > 0 ? (
+              <div className="mt-4 border border-phx-accent-line bg-phx-accent-soft p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-black text-phx-ink">
+                    {people.length + emails.length} chosen by you
+                    <span className="font-semibold text-phx-ink-soft">
+                      {" "}
+                      · {people.length} colleague{people.length === 1 ? "" : "s"}, {emails.length} typed address
+                      {emails.length === 1 ? "" : "es"}
+                    </span>
+                  </p>
+                  <button className="text-xs font-black text-orange-700 hover:underline" onClick={clearChosen} type="button">
+                    Clear all
+                  </button>
+                </div>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {people.map((person) => (
+                    <li className="max-w-full" key={`person-${person.hrId}`}>
+                      <ChosenChip
+                        icon={<Users className="h-3 w-3 shrink-0 text-phx-ink-faint" />}
+                        label={person.displayName}
+                        onRemove={() => togglePerson(person)}
+                        title={person.email}
+                      />
+                    </li>
+                  ))}
+                  {emails.map((email) => (
+                    <li className="max-w-full" key={`email-${email}`}>
+                      <ChosenChip
+                        icon={<Mail className="h-3 w-3 shrink-0 text-phx-ink-faint" />}
+                        label={email}
+                        onRemove={() => {
+                          setEmails((current) => current.filter((item) => item !== email));
+                          invalidate();
+                        }}
+                        outside={needsReason.includes(email)}
+                        title={email}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {needsReason.length > 0 ? (
+              <div className="mt-4">
+                <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-outside-reason">
+                  Why outside addresses?
+                </label>
+                <p className="mt-1 break-words text-xs font-semibold leading-5 text-orange-700">
+                  {needsReason.join(", ")} {needsReason.length === 1 ? "is" : "are"} outside Sato Pharma. Say why, in at
+                  least 10 characters. The reason is kept with the send record.
+                </p>
+                <textarea
+                  className={`${FIELD} mt-2 min-h-[64px] resize-y`}
+                  id="sato-outside-reason"
+                  onChange={(event) => {
+                    setExternalJustification(event.target.value);
+                    invalidate();
+                  }}
+                  placeholder="For example: the clinic partner receives the new rota"
+                  value={externalJustification}
+                />
+              </div>
             ) : null}
           </div>
           </div>
         </section>
-      </div>
 
-      {/* ------------------------------------------------------------------ preview / send */}
-      <section className="space-y-4">
+      {/* ------------------------------------------- preview / send — under what it says */}
+      <section className="space-y-4 xl:col-start-1 xl:row-start-2">
         <AdminSectionHeader
           description="Nothing is sent until you have seen exactly who this reaches and said yes to that number."
           title="Check it, then send"
@@ -714,6 +957,13 @@ export function SatoEmailComposer({
               <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
                 <AlertTriangle className="mr-1.5 inline h-4 w-4" />
                 {preview.attachmentProblem}
+              </p>
+            ) : null}
+
+            {preview.recipientProblem ? (
+              <p className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-900">
+                <AlertTriangle className="mr-1.5 inline h-4 w-4" />
+                {preview.recipientProblem}
               </p>
             ) : null}
 
@@ -770,7 +1020,7 @@ export function SatoEmailComposer({
               // carry them is not the email the sender is looking at.
               <button
                 className={DARK_BUTTON}
-                disabled={Boolean(preview.attachmentProblem)}
+                disabled={Boolean(preview.attachmentProblem || preview.recipientProblem)}
                 onClick={() => setConfirming(true)}
                 type="button"
               >
@@ -814,9 +1064,52 @@ export function SatoEmailComposer({
         ) : null}
         </div>
       </section>
+      </div>
 
       <SatoTemplateManager onSaved={(template) => setTemplates(mergeTemplate(templates, template))} templates={templates} />
     </div>
+  );
+}
+
+function ChoiceTick({ picked }: { picked: boolean }) {
+  if (picked) {
+    return (
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center bg-phx-accent text-white">
+        <Check className="h-3 w-3" strokeWidth={3.5} />
+      </span>
+    );
+  }
+  return <span className="block h-4 w-4 shrink-0 border border-phx-line-strong bg-white" />;
+}
+
+function ChosenChip({
+  icon,
+  label,
+  onRemove,
+  outside = false,
+  title,
+}: {
+  icon: ReactNode;
+  label: string;
+  onRemove: () => void;
+  outside?: boolean;
+  title: string;
+}) {
+  return (
+    <button
+      aria-label={`Remove ${label}`}
+      className={`inline-flex max-w-full items-center gap-1.5 border bg-white px-2.5 py-1.5 text-left text-xs font-bold text-phx-ink-2 transition hover:border-phx-ink-faint ${
+        outside ? "border-orange-300" : "border-phx-line"
+      }`}
+      onClick={onRemove}
+      title={title}
+      type="button"
+    >
+      {icon}
+      <span className="min-w-0 break-all">{label}</span>
+      {outside ? <span className="shrink-0 text-[10px] font-black uppercase tracking-wide text-orange-700">Outside</span> : null}
+      <X className="h-3 w-3 shrink-0" />
+    </button>
   );
 }
 

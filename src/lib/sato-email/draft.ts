@@ -1,4 +1,9 @@
 import type { SatoEmailDraft } from "./service";
+import {
+  SATO_EMAIL_MAX_TYPED_ADDRESSES,
+  isTypedEmailAddress,
+  normalizeTypedEmailAddress,
+} from "./typed-recipients";
 
 /**
  * One reader for what the composer posts, shared by the preview route and the send route.
@@ -30,8 +35,22 @@ export function parseSatoEmailDraft(body: Record<string, unknown>): ParsedDraft 
   if (!listKeys) return { message: "listKeys must be an array of strings." };
   const hrIds = stringArray(body.hrIds);
   if (!hrIds) return { message: "hrIds must be an array of strings." };
-  if (listKeys.length === 0 && hrIds.length === 0) {
-    return { message: "Choose at least one distribution list or colleague." };
+
+  // Addresses the sender typed by hand. Refused whole rather than filtered: an address quietly
+  // dropped here is a recipient the preview count never mentions and the sender believes was mailed.
+  const typed = stringArray(body.emails);
+  if (!typed) return { message: "emails must be an array of strings." };
+  if (typed.length > SATO_EMAIL_MAX_TYPED_ADDRESSES) {
+    return {
+      message: `Type at most ${SATO_EMAIL_MAX_TYPED_ADDRESSES} addresses. An audience that size belongs on a distribution list.`,
+    };
+  }
+  const notAnAddress = typed.find((value) => !isTypedEmailAddress(value));
+  if (notAnAddress !== undefined) return { message: `"${notAnAddress}" is not an email address.` };
+  const emails = Array.from(new Set(typed.map(normalizeTypedEmailAddress)));
+
+  if (listKeys.length === 0 && hrIds.length === 0 && emails.length === 0) {
+    return { message: "Choose at least one distribution list, colleague or email address." };
   }
 
   // Attachments go through the same reader as everything else, so the preview totals the same files
@@ -55,5 +74,7 @@ export function parseSatoEmailDraft(body: Record<string, unknown>): ParsedDraft 
       ? body.externalJustification.trim()
       : null;
 
-  return { draft: { attachmentIds, bodyHtml, clientRequestId, externalJustification, hrIds, listKeys, signOff, subject, templateKey } };
+  return {
+    draft: { attachmentIds, bodyHtml, clientRequestId, emails, externalJustification, hrIds, listKeys, signOff, subject, templateKey },
+  };
 }
