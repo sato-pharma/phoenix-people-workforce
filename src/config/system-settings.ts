@@ -366,6 +366,31 @@ export const systemContractDefaults = {
    * filed copy is the company's record of the salary it certified to a bank or an embassy.
    */
   salaryLetterCopies: 2,
+  /**
+   * The owner's letters pack of 2026-09-13. A decision served on somebody is TWO — his copy, and
+   * the one carrying his signature that he was told. The salary memo goes to payroll once. A letter
+   * to an insurance office is TWO: the original handed in and the copy filed. The handover record
+   * says itself that it is «مكون من أصل» — one original. The exit interview is filed, never handed
+   * back. Each government form is ONE: the office asks for the form, and a desk that needs more
+   * prints more.
+   */
+  disciplinaryWarningCopies: 2,
+  disciplinaryPenaltyCopies: 2,
+  transferDecisionCopies: 2,
+  salaryAdjustmentCopies: 1,
+  socialInsuranceAuthorizationCopies: 2,
+  healthInsuranceAuthorizationCopies: 2,
+  insurancePrintLetterCopies: 2,
+  handoverRecordCopies: 1,
+  exitInterviewCopies: 1,
+  maternityCompensationCopies: 1,
+  insuranceForm2Copies: 1,
+  carInsuranceCertificateCopies: 1,
+  wageProgressSheetCopies: 1,
+  officialHolidaysSheetCopies: 1,
+  sickLeaveSheetCopies: 1,
+  penaltiesSheetCopies: 1,
+  penaltyRegulationsApprovalCopies: 1,
 } as const;
 
 export const systemAuthEmailText = {

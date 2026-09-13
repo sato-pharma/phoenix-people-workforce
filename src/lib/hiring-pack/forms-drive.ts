@@ -33,9 +33,14 @@ import {
   EXIT_DOCUMENTS,
   HIRING_DOCUMENTS,
   HOUSE_ATTENDANCE_DOCUMENTS,
+  HOUSE_DECISION_DOCUMENTS,
+  HOUSE_INSURANCE_DOCUMENTS,
   HOUSE_JOINING_DOCUMENTS,
   HOUSE_LEAVING_DOCUMENTS,
   HOUSE_LETTER_DOCUMENTS,
+  LABOUR_OFFICE_DOCUMENTS,
+  OFFICIAL_INSURANCE_FORM_DOCUMENTS,
+  OFFICIAL_PACK_FORM_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
   isBuiltInDocument,
@@ -47,9 +52,12 @@ import {
 export type FormsDriveFolderId =
   | "joining"
   | "attendance"
+  | "decisions"
   | "devices"
   | "renewal"
   | "letters"
+  | "insurance"
+  | "labourOffice"
   | "leaving"
   | "company";
 
@@ -97,6 +105,13 @@ const FOLDER_DEFINITIONS: ReadonlyArray<{
     documents: [...HOUSE_ATTENDANCE_DOCUMENTS],
   },
   {
+    id: "decisions",
+    labelEn: "Decisions",
+    labelAr: "قرارات",
+    description: "Warnings, penalties, transfers and the salary adjustment memo.",
+    documents: [...HOUSE_DECISION_DOCUMENTS],
+  },
+  {
     id: "devices",
     labelEn: "Devices",
     labelAr: "العهد",
@@ -118,10 +133,25 @@ const FOLDER_DEFINITIONS: ReadonlyArray<{
     documents: [...HOUSE_LETTER_DOCUMENTS],
   },
   {
+    id: "insurance",
+    labelEn: "Social insurance",
+    labelAr: "التأمينات الاجتماعية",
+    description: "Letters to the insurance offices, and the Authority's own forms printed as issued.",
+    documents: [...HOUSE_INSURANCE_DOCUMENTS, ...OFFICIAL_INSURANCE_FORM_DOCUMENTS],
+  },
+  {
+    id: "labourOffice",
+    labelEn: "Labour Office",
+    labelAr: "صحائف مكتب العمل",
+    description: "The Labour Office registers and the penalty-regulations approval request, as issued.",
+    documents: [...LABOUR_OFFICE_DOCUMENTS],
+  },
+  {
     id: "leaving",
     labelEn: "Leaving",
     labelAr: "انتهاء الخدمة",
-    description: "Resignation, Form 6, clearance and the certificates of experience.",
+    description:
+      "Resignation, Form 6, clearance, the handover record, the exit interview and the certificates of experience.",
     documents: [...EXIT_DOCUMENTS, ...HOUSE_LEAVING_DOCUMENTS],
   },
   {
@@ -159,6 +189,8 @@ const OFFICIAL_FORMS: ReadonlySet<string> = new Set([
   "form6",
   "resignation",
   "mutualTermination",
+  // The letters pack's government forms — owner, 2026-09-13: "governmental leave as is".
+  ...OFFICIAL_PACK_FORM_DOCUMENTS,
 ]);
 
 /** Whether the reference number prints on the paper itself. */

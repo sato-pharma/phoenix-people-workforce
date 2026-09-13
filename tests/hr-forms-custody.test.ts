@@ -32,6 +32,7 @@ import {
   HIRING_PACK_DOCUMENTS,
   HOUSE_LETTER_DOCUMENTS,
   HOUSE_PAPER_DOCUMENTS,
+  OFFICIAL_PACK_FORM_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
   SIGNABLE_DOCUMENTS,
@@ -655,6 +656,13 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
     }
     // The HR letter is issued on request, as often as a bank or an embassy asks — nothing to sign.
     if (HOUSE_LETTER_DOCUMENTS.includes(document as (typeof HOUSE_LETTER_DOCUMENTS)[number])) continue;
+    // The letters pack's government forms are registers and applications handed to an office —
+    // the employee signs none of them against his record.
+    if (
+      OFFICIAL_PACK_FORM_DOCUMENTS.includes(document as (typeof OFFICIAL_PACK_FORM_DOCUMENTS)[number])
+    ) {
+      continue;
+    }
     assert.equal(
       isSignableDocument(document),
       true,

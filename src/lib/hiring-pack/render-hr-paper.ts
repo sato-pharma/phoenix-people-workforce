@@ -206,6 +206,23 @@ function gridValue(
   return field.ltr ? `<span dir="ltr">${marked}</span>` : marked;
 }
 
+/**
+ * A label, with its English line under it on a bilingual paper.
+ *
+ * The English is its own block pinned left-to-right, never appended to the Arabic: one line holding
+ * both turns wholly one way and prints the other half backwards.
+ */
+function labelHtml(labelAr: string, labelEn?: string): string {
+  const english = labelEn ? `<span class="doc-en" dir="ltr">${escapeHtml(labelEn)}</span>` : "";
+  return `${escapeHtml(labelAr)}${english}`;
+}
+
+/** A paragraph, turned left-to-right when the paper wrote it in English. */
+function paragraphHtml(text: string, values: Partial<Record<HrPaperToken, string>>): string {
+  const dir = /^[A-Za-z]/.test(text) ? ' dir="ltr"' : "";
+  return `<p class="doc-para"${dir}>${fillMarkedHtml(text, values)}</p>`;
+}
+
 /** A labelled grid, two pairs to a row, a wide field taking the whole row. */
 function grid(
   fields: readonly HrPaperField[],
@@ -234,13 +251,13 @@ function grid(
     if (field.wide) {
       flush();
       rows.push(
-        `<tr><th class="doc-ident__label">${escapeHtml(field.labelAr)}</th>` +
+        `<tr><th class="doc-ident__label">${labelHtml(field.labelAr, field.labelEn)}</th>` +
           `<td class="doc-ident__value" colspan="3">${gridValue(field, values)}</td></tr>`,
       );
       continue;
     }
     pending.push(
-      `<th class="doc-ident__label">${escapeHtml(field.labelAr)}</th>` +
+      `<th class="doc-ident__label">${labelHtml(field.labelAr, field.labelEn)}</th>` +
         `<td class="doc-ident__value">${gridValue(field, values)}</td>`,
     );
     if (pending.length === 2) flush();
@@ -257,14 +274,22 @@ function checklistTable(
 ): string {
   const list = template.checklist;
   if (!list) return "";
+  // A rating scale's columns are single digits and take a narrow box each; left to share the width
+  // equally with the question they would squeeze a sentence into a fifth of the row.
   const head =
     `<th class="doc-list__no">م</th><th class="doc-list__item">${escapeHtml(list.itemHeadingAr)}</th>` +
-    list.columnsAr.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+    list.columnsAr
+      .map((column) =>
+        column.length <= 2
+          ? `<th class="doc-list__rate">${escapeHtml(column)}</th>`
+          : `<th>${escapeHtml(column)}</th>`,
+      )
+      .join("");
   const body = list.rows
     .map(
       (row) =>
         `<tr><td class="doc-list__no">${escapeHtml(row.number)}</td>` +
-        `<td class="doc-list__item">${escapeHtml(row.labelAr)}</td>` +
+        `<td class="doc-list__item">${labelHtml(row.labelAr, row.labelEn)}</td>` +
         list.columnsAr.map(() => `<td class="doc-list__box"></td>`).join("") +
         "</tr>",
     )
@@ -276,23 +301,56 @@ function checklistTable(
     <table class="doc-list"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${note}`;
 }
 
-/** An empty table the signer fills by hand. */
-function openTable(template: HrPaperTemplate): string {
+/**
+ * An empty table the signer fills by hand.
+ *
+ * `firstRowTokens`, when a paper sets it, fills the FIRST row with the person the pack was opened
+ * for — the salary memo lists several people and he is one of them. Every other row stays ruled.
+ */
+function openTable(
+  template: HrPaperTemplate,
+  values: Partial<Record<HrPaperToken, string>>,
+): string {
   const table = template.openTable;
   if (!table) return "";
   const head = table.columnsAr.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+  const firstRow = table.firstRowTokens ?? null;
   const body = Array.from(
     { length: table.rows },
     (unused, index) =>
       `<tr><td class="doc-list__no">${index + 1}</td>` +
       table.columnsAr
         .slice(1)
-        .map(() => `<td class="doc-list__box doc-list__box--tall"></td>`)
+        .map((_column, cell) => {
+          const token = index === 0 && firstRow ? (firstRow[cell] ?? null) : null;
+          const raw = token ? values[token] : undefined;
+          const text = typeof raw === "string" ? raw.trim() : "";
+          if (!token) return `<td class="doc-list__box doc-list__box--tall"></td>`;
+          return `<td class="doc-list__box doc-list__box--tall doc-list__item">${
+            text ? filledMarker(token, text) : blankMarker(token, HR_PAPER_BLANK_RULE)
+          }</td>`;
+        })
         .join("") +
       "</tr>",
   ).join("");
   return `<h2 class="doc-head">${escapeHtml(table.headingAr)}</h2>
     <table class="doc-list"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+/** Numbered questions answered in writing: the question, then ruled lines for the pen. */
+function openQuestionsBlock(template: HrPaperTemplate): string {
+  const block = template.openQuestions;
+  if (!block) return "";
+  const lines = Array.from({ length: Math.max(1, block.lines) }, () => `<div class="doc-open__line"></div>`).join("");
+  const items = block.rows
+    .map(
+      (row) =>
+        `<div class="doc-open__item"><p class="doc-open__q"><span class="doc-open__no">${escapeHtml(
+          row.number,
+        )}</span> ${labelHtml(row.labelAr, row.labelEn)}</p>${lines}</div>`,
+    )
+    .join("");
+  return `<h2 class="doc-head">${escapeHtml(block.headingAr)}</h2><section class="doc-open">${items}</section>`;
 }
 
 /** Which signing field carries the seal: a dedicated خاتم column when there is one, else index 1. */
@@ -373,20 +431,20 @@ function renderCopy(
     .map((text) => `<p class="doc-recital">${fillMarkedHtml(text, values)}</p>`)
     .join("");
 
-  const paragraphs = template.bodyParagraphsAr
-    .map((text) => `<p class="doc-para">${fillMarkedHtml(text, values)}</p>`)
-    .join("");
+  const paragraphs = template.bodyParagraphsAr.map((text) => paragraphHtml(text, values)).join("");
 
   // The operative half of a notice, set apart. On a paper that ends somebody's service the sentence
   // that does the ending must not read as one more paragraph among several.
   const operative = template.operativeParagraphsAr.length
     ? `<section class="doc-operative">
         ${template.operativeHeadingAr ? `<p class="doc-operative__head">${escapeHtml(template.operativeHeadingAr)}</p>` : ""}
-        ${template.operativeParagraphsAr
-          .map((text) => `<p class="doc-para">${fillMarkedHtml(text, values)}</p>`)
-          .join("")}
+        ${template.operativeParagraphsAr.map((text) => paragraphHtml(text, values)).join("")}
       </section>`
     : "";
+
+  const closing = (template.closingParagraphsAr ?? [])
+    .map((text) => paragraphHtml(text, values))
+    .join("");
 
   const sections = template.sections
     .map((section) => `${heading(section.headingAr)}${grid(section.fields, values)}`)
@@ -443,7 +501,9 @@ function renderCopy(
         ${paragraphs}
         ${operative}
         ${checklistTable(template, values)}
-        ${openTable(template)}
+        ${openQuestionsBlock(template)}
+        ${openTable(template, values)}
+        ${closing ? `<section class="doc-closing">${closing}</section>` : ""}
         ${declaration}
         ${heading(template.signaturesHeadingAr)}
         ${signatureTable(template.signatureColumns)}
@@ -486,13 +546,22 @@ export function renderHrPaperHtml(
     `${employeeName} — ${template.titleAr}, ${total} ${total === 1 ? "copy" : "copies"}.`,
   ];
   if (template.checklist) {
+    // KEYED ON THE PAPER'S OWN COLUMNS. The appointment-documents checklist asks whether a document
+    // was seen; the exit interview asks for a rating. Telling a reader of the second one about
+    // certificates is a warning that does not apply, and one a reader learns to skip.
     banner.push(
-      "Every verdict box prints blank by design — Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen.",
+      template.checklist.columnsAr.includes("متوفر")
+        ? "Every verdict box prints blank by design — Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen."
+        : "Every rating box prints blank — the answers are the employee's own, marked with the paper in front of him.",
     );
   }
   if (template.openTable) {
     banner.push(
-      "The dependants table prints blank: the insurance file is a different set of people for a different purpose. The employee completes it and signs that it is true.",
+      template.openTable.headingAr === "بيان من يعولهم العامل"
+        ? "The dependants table prints blank: the insurance file is a different set of people for a different purpose. The employee completes it and signs that it is true."
+        : template.openTable.firstRowTokens
+          ? "The table's first row is the person this pack is open for; the rows under it are written in by hand."
+          : "The table prints ruled rows, completed by hand at the desk.",
     );
   }
   // KEYED ON THE TOKENS, NOT ON THE KIND. It read `kind === "letter"` while both letters happened to
@@ -671,6 +740,18 @@ export function renderHrPaperHtml(
   .doc-list__box--tall { height: 8mm; }
   .doc-list tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
   .doc-list tr { break-inside: avoid; page-break-inside: avoid; }
+
+  .doc-list__rate { width: 8mm; }
+  /* A bilingual paper's English line: its own block, left-to-right, lighter than the Arabic. */
+  .doc-en { display: block; margin-top: 0.3mm; color: ${HOUSE_COLORS.muted}; font-size: 7.5pt; font-weight: 400; text-align: left; line-height: 1.3; }
+  .doc-para[dir="ltr"] { text-align: left; }
+
+  /* Written answers: the question, then ruled lines — no filled area, per the ink rule. */
+  .doc-open__item { margin: 0 0 2mm; break-inside: avoid; page-break-inside: avoid; }
+  .doc-open__q { margin: 0; color: ${HOUSE_COLORS.deep}; font-size: 8.5pt; font-weight: 700; }
+  .doc-open__no { color: ${HOUSE_COLORS.muted}; }
+  .doc-open__line { height: 6.5mm; border-bottom: 0.5pt solid #cfdce7; }
+  .doc-closing { margin: 2.5mm 0 0; }
 
   .doc-note { margin: 1.5mm 0 0; color: ${HOUSE_COLORS.muted}; font-size: 8pt; text-align: justify; }
   .doc-declaration { margin: 3mm 0 2mm; text-align: justify; font-weight: 700; }

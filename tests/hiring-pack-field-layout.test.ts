@@ -106,9 +106,23 @@ function testEveryDocumentDeclaresItsSurface() {
   const pageSurfaces = HIRING_PACK_DOCUMENTS.filter(
     (document) => documentSurface(document) === "page",
   );
+  // TWELVE since 2026-09-13: the letters pack's eight government forms print their own artwork too.
   assert.deepEqual(
     [...pageSurfaces].sort(),
-    ["form1", "form6", "mutualTermination", "resignation"],
+    [
+      "carInsuranceCertificate",
+      "form1",
+      "form6",
+      "insuranceForm2",
+      "maternityCompensation",
+      "mutualTermination",
+      "officialHolidaysSheet",
+      "penaltiesSheet",
+      "penaltyRegulationsApproval",
+      "resignation",
+      "sickLeaveSheet",
+      "wageProgressSheet",
+    ],
     "only the artwork-backed government forms may place by absolute page coordinate",
   );
 }
