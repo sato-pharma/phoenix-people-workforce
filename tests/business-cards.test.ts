@@ -15,6 +15,13 @@ import {
 import type { BusinessCardFields } from "../src/lib/business-cards/card-content.ts";
 import { CARD_ADDRESS, CARD_WEBSITE, MM_TO_PT } from "../src/lib/business-cards/card-layout.ts";
 import {
+  formatHireDate,
+  hireMonthKey,
+  hireMonthLabel,
+  hireMonthOptions,
+  NO_HIRE_MONTH,
+} from "../src/lib/business-cards/hire-month.ts";
+import {
   assertBusinessCardsPrintable,
   BusinessCardCharacterError,
   businessCardsZipStream,
@@ -34,7 +41,10 @@ import { crc32 } from "../src/lib/business-cards/zip-stream.ts";
 //      the owner's template; every name, title and number is embedded TrueType text.
 //   4. The record-to-card rules: phone format, line · area, blanks leave a line off.
 
-const TEMPLATE_SHA256 = "410c97630f5f6056e65ea164ebaec8ec9b0abebd74437ba763c9e378bee8acf7";
+// Re-pinned 2026-09-13 at the owner's request: the back logo gained a transparency mask so its
+// baked-in dark JPEG background stops printing as a lighter box. The logo's own JPEG bytes and
+// every page box are unchanged.
+const TEMPLATE_SHA256 = "cabfe4334a74912a14652a1bd78783d784f7daf9f67648044093319f19e4b713";
 
 function near(actual: number, expected: number, message: string) {
   assert.ok(Math.abs(actual - expected) < 0.01, `${message}: expected ${expected}, got ${actual}`);
@@ -117,6 +127,33 @@ export async function runBusinessCardsTests() {
   assert.equal(cardFileName("Aya Elsawy", "card"), "business-card-Aya-Elsawy.pdf");
   assert.equal(cardFileName("آية", "card"), "business-card-card.pdf");
 
+  // ── Hiring month: how HR finds the new hires who still need cards ───────────────────────────────
+  assert.equal(hireMonthKey("2026-09-01"), "2026-09", "the 1st of a month stays in that month — never shifted a zone back");
+  assert.equal(hireMonthKey("2026-08-31T23:30:00+00:00"), "2026-08", "a timestamp is read by its own digits");
+  assert.equal(hireMonthKey(null), NO_HIRE_MONTH);
+  assert.equal(hireMonthKey("03/09/2026"), NO_HIRE_MONTH, "an unreadable date is 'no hiring date', never a guessed month");
+  assert.equal(hireMonthKey("2026-13-01"), NO_HIRE_MONTH);
+  assert.equal(hireMonthLabel("2026-09"), "September 2026");
+  assert.equal(hireMonthLabel(NO_HIRE_MONTH), "No hiring date");
+  assert.equal(formatHireDate("2026-09-03"), "3 Sep 2026");
+  assert.equal(formatHireDate(null), "");
+  assert.deepEqual(
+    hireMonthOptions([
+      { hireDate: "2025-12-15" },
+      { hireDate: null },
+      { hireDate: "2026-09-01" },
+      { hireDate: "2026-02-10" },
+      { hireDate: "2026-09-20" },
+    ]),
+    [
+      { count: 2, key: "2026-09", label: "September 2026" },
+      { count: 1, key: "2026-02", label: "February 2026" },
+      { count: 1, key: "2025-12", label: "December 2025" },
+      { count: 1, key: NO_HIRE_MONTH, label: "No hiring date" },
+    ],
+    "newest month first, across years, with its head count; people with no date last",
+  );
+
   // ── 2 & 3. The PDF ──────────────────────────────────────────────────────────────────────────────
   const cards: BusinessCardFields[] = [
     fields,
@@ -142,7 +179,27 @@ export async function runBusinessCardsTests() {
 
   const dicts = dictsOf(pdf);
   const images = dicts.filter((dict) => dict.get(PDFName.of("Subtype")) === PDFName.of("Image"));
-  assert.equal(images.length, 2, "the only images are the two logos in the owner's template — the generator adds none");
+  const maskStreams = images
+    .map((dict) => dict.get(PDFName.of("SMask")))
+    .filter((ref): ref is PDFRef => ref instanceof PDFRef)
+    .map((ref) => pdf.context.lookup(ref))
+    .filter((mask): mask is PDFRawStream => mask instanceof PDFRawStream);
+  const masks = new Set(maskStreams.map((mask) => mask.dict));
+  const logos = images.filter((dict) => !masks.has(dict));
+  assert.equal(logos.length, 2, "the only pictures are the two logos in the owner's template — the generator adds none");
+  assert.equal(masks.size, 1, "plus exactly one transparency mask: the back logo's");
+
+  // The back logo is a JPEG with its own dark background baked in, a few percent lighter than the
+  // card's ink. Unmasked, that background prints as a visible box around the logo (owner, 2026-09-13).
+  const backLogo = logos.find((dict) => dict.get(PDFName.of("Width"))?.toString() === "355");
+  assert.ok(backLogo?.get(PDFName.of("SMask")) instanceof PDFRef, "the back logo is see-through around its letters — no box on the card's back");
+  const [backMask] = maskStreams;
+  const alpha = inflateSync(backMask.contents);
+  assert.equal(alpha.length, 355 * 134, "the mask covers the logo pixel for pixel");
+  const outerEdge = [...alpha.subarray(0, 355), ...alpha.subarray(alpha.length - 355)];
+  for (let row = 0; row < 134; row += 1) outerEdge.push(alpha[row * 355], alpha[row * 355 + 354]);
+  assert.equal(Math.max(...outerEdge), 0, "the logo's outer edge is fully transparent, so no outline of the old box remains");
+  assert.ok(alpha.includes(255), "the letters stay fully opaque");
 
   // The generator's own fonts are the ones the card PAGE names (the template's fonts sit inside its
   // embedded artwork, one level down).

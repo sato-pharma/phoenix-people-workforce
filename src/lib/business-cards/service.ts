@@ -7,6 +7,8 @@ export type BusinessCardEmployee = {
   areaName: string | null;
   /** What the card prints for this person before anyone edits it on screen. */
   fields: BusinessCardFields;
+  /** Date only (`YYYY-MM-DD`) — the screen filters by its month so new hires are easy to find. */
+  hireDate: string | null;
   hrId: string;
   jobTitle: string | null;
   lineName: string | null;
@@ -25,6 +27,7 @@ export async function listBusinessCardEmployees(): Promise<BusinessCardEmployee[
     .map((employee) => ({
       areaName: employee.areaName,
       fields: cardFieldsFor(employee),
+      hireDate: employee.hireDate,
       hrId: employee.hrId,
       jobTitle: employee.jobTitle,
       lineName: employee.lineName,
