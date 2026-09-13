@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { isIReports360Configured } from "@/lib/crm/config";
+import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@/lib/crm/contact-master";
 import {
   CONTACT_SYNC_SLICE_COUNT,
   contactSyncSliceForDate,
@@ -131,6 +132,20 @@ export async function GET(request: Request) {
       });
     }
 
+    // THE CONTACT MASTER FOLLOWS THE MIRROR. These rows are the only signal that a doctor joined or
+    // left a list, and the master's dated assignments are built from them, so the master is rebuilt
+    // right after the slice that changed them. It never throws: a failure is named in the audit row
+    // and the sync still answers 200, because the mirror rows ARE written.
+    const contactMaster = await refreshCrmContactMaster({
+      includeActivity: contactMasterRefreshIncludesActivity({ slice, sliceOf }),
+    });
+    if (contactMaster.status === "failed") {
+      logError("crm-contact-lists: contact master refresh failed", {
+        error: contactMaster.error,
+        labels: { event: "contact_master_refresh_failed", job: JOB_NAME },
+      });
+    }
+
     // Refusals and failures are the two outcomes that mean "the mirror is older than it looks", so
     // they are named in the audit row rather than buried in a count nobody reads. `skipped` is the
     // third: it means the tick ran out of time, and the agents behind it wait a whole day.
@@ -140,7 +155,12 @@ export async function GET(request: Request) {
       (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
       (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
       (result.skipped ? `, ${result.skipped} out of time` : "") +
-      (unresolved.length ? `, ${unresolved.length} with no CRM account yet` : "");
+      (unresolved.length ? `, ${unresolved.length} with no CRM account yet` : "") +
+      (contactMaster.status === "failed"
+        ? ", contact master refresh FAILED"
+        : contactMaster.status === "not_provisioned"
+          ? ", contact master not provisioned"
+          : "");
 
     await writeAuditLog({
       actorLoginId: null,
@@ -153,6 +173,8 @@ export async function GET(request: Request) {
         agentsFailed: result.agentsFailed,
         agentsRefusedEmpty: result.agentsRefusedEmpty,
         agentsSkipped: result.skipped,
+        contactMaster:
+          contactMaster.status === "refreshed" ? { status: contactMaster.status, ...contactMaster.result } : contactMaster,
         contacts: result.contacts,
         deleted: result.deleted,
         durationMs: Date.now() - startedAt,
@@ -170,13 +192,19 @@ export async function GET(request: Request) {
       summary,
     });
 
+    // A FAILED MASTER REFRESH FAILS THE PING. The direct-order venue picker and its write check read
+    // the master, not the mirror, so a refresh that fails every day leaves them serving a frozen
+    // list — a handed-over doctor stays in the old manager's picker — while the mirror looks fresh.
+    // The audit row alone would say so to nobody. `not_provisioned` is the expected state between a
+    // deploy and the migration, and stays green.
     await pingDeadMansSwitch(
       JOB_SLUG,
-      result.agents === 0 ? "fail" : "success",
+      result.agents === 0 || contactMaster.status === "failed" ? "fail" : "success",
       `slice ${slice + 1}/${sliceOf}: ${result.agents} agent(s) refreshed, ${result.upserted} row(s) upserted` +
         (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
         (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
-        (result.skipped ? `, ${result.skipped} out of time` : ""),
+        (result.skipped ? `, ${result.skipped} out of time` : "") +
+        (contactMaster.status === "failed" ? `, contact master refresh FAILED: ${contactMaster.error}` : ""),
     );
 
     return NextResponse.json(
@@ -185,6 +213,7 @@ export async function GET(request: Request) {
         agentsFailed: result.agentsFailed,
         agentsRefusedEmpty: result.agentsRefusedEmpty,
         agentsSkipped: result.skipped,
+        contactMaster: contactMaster.status,
         contacts: result.contacts,
         deleted: result.deleted,
         durationMs: Date.now() - startedAt,
