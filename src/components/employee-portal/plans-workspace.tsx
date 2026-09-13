@@ -52,7 +52,7 @@ import { cairoDate } from "@/lib/format/cairo-datetime";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
-import { placeSourcedPlanRow } from "@/lib/weekly-planning/plan-slot-merge";
+import { placeSourcedPlanRow, planDayMode } from "@/lib/weekly-planning/plan-slot-merge";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
   buildEmployeePlanPeriod,
@@ -694,7 +694,8 @@ function groupDraftRows(rows: DraftItem[]): DayGroup[] {
   return Array.from(groups.entries()).map(([activityDate, groupRows]) => ({
     activityDate,
     dayNote: groupRows.find((row) => row.notes?.trim())?.notes ?? "",
-    mode: groupRows.length > 1 ? "split" : "full",
+    // A Field Force Thursday is one AM row; it must not light "Full day". See planDayMode.
+    mode: planDayMode(groupRows),
     rows: groupRows,
   }));
 }

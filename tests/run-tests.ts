@@ -347,6 +347,7 @@ import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.t
 import { runWeeklyPlanManagerGapTests } from "./weekly-plan-manager-gap.test.ts";
 import { runWeeklyPlanRegionAreasTests } from "./weekly-plan-region-areas.test.ts";
 import { runPlanSlotMergeTests } from "./plan-slot-merge.test.ts";
+import { runSearchableSelectHiddenTriggerTests } from "./searchable-select-hidden-trigger.test.ts";
 import { runPlanAdherenceTests } from "./plan-adherence.test.ts";
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
@@ -2457,6 +2458,7 @@ await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("weekly plan manager gap listing (stuck-approval detection)", runWeeklyPlanManagerGapTests);
 await runTest("weekly plan region canonicalisation and area options", runWeeklyPlanRegionAreasTests);
 await runTest("plan prefill displaces every slot it overlaps (AM / PM switch on a split weekly day)", runPlanSlotMergeTests);
+await runTest("a searchable dropdown closes when its field scrolls out of sight", runSearchableSelectHiddenTriggerTests);
 await runTest(
   "plan adherence score (a week with nothing verifiable in it scores null, never 0)",
   runPlanAdherenceTests,

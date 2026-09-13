@@ -202,16 +202,41 @@ export function SearchableSelect({
     });
   }, []);
 
+  // The panel is position:fixed and portalled to <body>, so it follows its field on every scroll. It
+  // must also CLOSE once the field is no longer on screen. Before this it kept tracking a field that
+  // had scrolled up under the portal's sticky header and drew itself over that header, hanging from
+  // nothing (owner's video of the Weekly / Monthly Plan page, 2026-09-13). "On screen" is a hit-test
+  // at the field's centre: it answers null past the viewport and the header when one covers the
+  // field, while a field a phone keyboard scrolls INTO view stays open. A scroll inside the panel's
+  // own option list is ignored.
+  const triggerIsOnScreen = React.useCallback(() => {
+    const input = inputRef.current;
+    const wrapper = wrapperRef.current;
+    if (!input || !wrapper) return false;
+    const rect = input.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return Boolean(hit && wrapper.contains(hit));
+  }, []);
+
   React.useLayoutEffect(() => {
     if (!open) return;
     updateMenuPosition();
-    window.addEventListener("scroll", updateMenuPosition, true);
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && dropdownRef.current?.contains(event.target)) return;
+      if (!triggerIsOnScreen()) {
+        setOpen(false);
+        setQuery("");
+        return;
+      }
+      updateMenuPosition();
+    };
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", updateMenuPosition);
     return () => {
-      window.removeEventListener("scroll", updateMenuPosition, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", updateMenuPosition);
     };
-  }, [open, updateMenuPosition]);
+  }, [open, triggerIsOnScreen, updateMenuPosition]);
 
   const emitChange = (nextValue: string) => {
     if (!isControlled) setInternalValue(nextValue);
