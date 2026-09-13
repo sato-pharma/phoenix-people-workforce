@@ -52,7 +52,14 @@ export const systemEditingPolicy = {
 
 export const systemEmail = {
   defaultFromEmail: "phoenix@send.satopharma.com",
-  defaultReplyTo: "phoenix@satopharma.com",
+  /**
+   * Where replies to system mail land, and the visible To of every fan-out send (everyone real is
+   * on BCC). Owner 2026-09-13: care.phx@satopharma.com. The previous inbox, phoenix@ on the apex
+   * domain, sits on Resend's suppression list after a hard bounce, so every reply bounced and every
+   * fan-out To was dropped as suppressed. Production sets no NOTIFICATION_REPLY_TO, so this value is
+   * what ships. Never point it at an address Resend has suppressed.
+   */
+  defaultReplyTo: "care.phx@satopharma.com",
   /**
    * The From address of every mail the Sato Email Composer sends, whoever is sending it.
    *
@@ -84,9 +91,9 @@ export const systemEmail = {
   // Controlled internal inboxes only. NEVER add personal/external addresses here:
   // when testing-delivery is on, ALL mail is redirected to this list, so a personal
   // address would receive real employee/candidate PII.
+  // Owner 2026-09-13: the suppressed phoenix@ inbox came off this list; omar.anwar@ stays alone.
   testingRecipientFallback: [
     "omar.anwar@satopharma.com",
-    "phoenix@satopharma.com",
   ],
 } as const;
 

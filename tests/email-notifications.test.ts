@@ -56,7 +56,18 @@ export function runEmailNotificationTests() {
   assert.match(systemSettingsSource, /isForceTestingDelivery/);
   assert.match(systemSettingsSource, /testingRecipientFallback/);
   assert.match(systemSettingsSource, /omar\.anwar@satopharma\.com/);
-  assert.match(systemSettingsSource, /phoenix@satopharma\.com/);
+  // Owner 2026-09-13: phoenix@satopharma.com is on Resend's suppression list, so replies to system
+  // mail and the fan-out To go to care.phx@ instead, and phoenix@ is no longer a testing inbox.
+  assert.match(
+    systemSettingsSource,
+    /defaultReplyTo: "care\.phx@satopharma\.com"/,
+    "system replies and the fan-out To must use care.phx@satopharma.com",
+  );
+  assert.doesNotMatch(
+    systemSettingsSource,
+    /"phoenix@satopharma\.com"/,
+    "the suppressed phoenix@satopharma.com inbox must not be a default reply-to or testing recipient",
+  );
 
   assert.match(notificationTestRouteSource, /renderPhoenixEmailHtml/);
   assert.match(notificationTestRouteSource, /renderPhoenixEmailText/);
