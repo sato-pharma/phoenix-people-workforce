@@ -212,11 +212,17 @@ export function runDoubleVisitAnalyticsTests() {
     /agent_crm_id, agent_hr_id, agent_name/,
     "the mirror visit query must select agent_crm_id so corrections can be looked up",
   );
-  const weeklyDigestSource = readFileSync("src/lib/double-visit-analytics/weekly-digest.ts", "utf8");
-  assert.match(
-    weeklyDigestSource,
-    /getLiveDoubleVisitRows\(cadenceFloor, today, employees\);/,
-    "the weekly digest (coverage/scoring) must keep excluding resigned agents — it must NOT opt into includeResignedAgents",
+  const weeklyDigestRemoved = (() => {
+    try {
+      readFileSync("src/lib/double-visit-analytics/weekly-digest.ts", "utf8");
+      return false;
+    } catch {
+      return true;
+    }
+  })();
+  assert.ok(
+    weeklyDigestRemoved,
+    "the weekly double-visit digest was deleted by owner decision (2026-09-13): it never ran and its recipient lists disagreed — do not bring it back",
   );
   assert.match(service, /hireDate: employee\.hireDate/, "MR scores carry the rep's hire date");
   assert.doesNotMatch(service, /DSM Dashboard/i, "module service must not use DSM dashboard naming");

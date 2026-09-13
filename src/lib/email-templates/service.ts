@@ -21,7 +21,6 @@ import {
   type EmailTemplateKey,
 } from "./key-resolution";
 import { TOKEN_REGISTRY } from "./token-registry";
-import { buildDvDigestSummaryEmail } from "@/lib/double-visit-analytics/weekly-digest";
 import { sendPhoenixEmail, type SendPhoenixEmailAttachment, type SendPhoenixEmailResult } from "@/lib/email/send-phoenix-email";
 import type { NotificationOrigin } from "@/lib/notifications/confidence-gate";
 import { createUnsubscribeToken } from "@/lib/email/unsubscribe-token";
@@ -63,7 +62,6 @@ export const EMAIL_TEMPLATE_KEYS = {
   PROBATION_WORKFLOW: "probation_workflow",
   PROBATION_DV_SNAPSHOT: "probation_dv_snapshot",
   PROBATION_WEEKLY_DIGEST: "probation_weekly_digest",
-  DV_PLANNER_WEEKLY: "dv_planner_weekly",
   PROBATION_DAY30: "probation_day30",
   PROBATION_DAY60: "probation_day60",
   PROBATION_DAY75: "probation_day75",
@@ -112,7 +110,7 @@ export type EmailTemplateRecipientRole = (typeof emailTemplateRecipientRoleOptio
 export type EmailTemplateContext = {
   amount?: string | null;
   area?: string | null;
-  /** Pre-rendered HTML/text summary table used by digest-style templates (e.g. dv_planner_weekly). */
+  /** Pre-rendered HTML/text summary table used by digest-style templates (e.g. probation_weekly_digest). */
   digestTable?: string | null;
   digestTableText?: string | null;
   /** Formatted date range label for a digest-style template, e.g. "2026-06-24 to 2026-06-30". */
@@ -499,11 +497,6 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   // (src/lib/probation/intelligence/probation-emails.ts).
   probation_dv_snapshot: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_weekly_digest: emptyRules(["direct_manager", "national_sales_manager"], ["ceo", "hr"]),
-  // Recipients are resolved explicitly at emit time (src/lib/double-visit-analytics/weekly-digest.ts):
-  // District Manager, Regional Manager, National Sales Manager, Product Manager, Group Product
-  // Manager, Training Manager, each about their OWN scope — not a stakeholder fan-out about one
-  // employee, so this rule entry is documentation only (role vocabulary has no PM/GPM/TM tokens).
-  dv_planner_weekly: emptyRules(["district_manager", "regional_sales_manager", "national_sales_manager"], []),
   probation_day30: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
@@ -999,22 +992,6 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     templateKey: "probation_weekly_digest",
     templateName: "Probation Weekly Digest",
   },
-  dv_planner_weekly: {
-    bodyHtml:
-      "<p>Here's a review of your Double-Visit week ({{weekLabel}}).</p>" +
-      "{{digestTable}}" +
-      "<p>Open DV Planner for the full roster and visit history.</p>",
-    bodyText:
-      "Your Double-Visit week ({{weekLabel}}).\n\n{{digestTable}}\n\nOpen DV Planner for the full roster and visit history.",
-    closingText: "Open DV Planner any time to check your live coverage.",
-    description: "Weekly review of a manager's own Double-Visit coverage — a positive summary, not an escalation, sent every week regardless of how the week went.",
-    greeting: "Dear {{honorific}}{{recipientName}},",
-    isActive: true,
-    previewText: "Your Double-Visit coverage summary for the week.",
-    subject: "Your Double-Visit week — {{weekLabel}}",
-    templateKey: "dv_planner_weekly",
-    templateName: "DV Planner Weekly Review",
-  },
   probation_day30: {
     bodyHtml:
       "<p><strong>Day 30 — early progress review</strong> for {{employeeName}} ({{employeeHrId}}).</p>" +
@@ -1115,7 +1092,6 @@ const templateCategories: Record<EmailTemplateKey, EmailTemplateCategory> = {
   birthday: "Birthdays",
   coaching_report: "Coaching",
   contract_renewal: "Contracts",
-  dv_planner_weekly: "Probation",
   excuse_decision: "Excuses",
   excuse_request: "Excuses",
   general: "General",
@@ -2345,22 +2321,6 @@ function buildSampleCoachingScoreTable(): { scoreTable: string; scoreTableText: 
   };
 }
 
-function sampleDvPlannerDigestContext(): Partial<EmailTemplateContext> {
-  return { weekLabel: "2026-07-12 to 2026-07-18", ...buildSampleDvPlannerDigestTable() };
-}
-
-function buildSampleDvPlannerDigestTable(): { digestTable: string; digestTableText: string } {
-  const rendered = buildDvDigestSummaryEmail({
-    summary: { covered: 11, coveragePct: 73, neverVisited: 4, onProbation: 2, overdue: 3, probationDvPending: 1, total: 15 },
-    topOverdue: [
-      { daysSinceLastVisit: 78, name: "Sample Medical Rep A" },
-      { daysSinceLastVisit: 45, name: "Sample Medical Rep B" },
-      { daysSinceLastVisit: null, name: "Sample Medical Rep C" },
-    ],
-  });
-  return { digestTable: rendered.html, digestTableText: rendered.text };
-}
-
 function buildSamplePlanTable(): { planTable: string; planTableText: string } {
   const cell = "border:1px solid #E5E7EB;padding:8px 10px;font-size:13px;text-align:left";
   const head = "background-color:#0F172A;color:#ffffff;border:1px solid #0F172A;padding:8px 10px;font-size:12px;text-align:left";
@@ -2411,8 +2371,6 @@ export async function previewTemplate(templateKey: string, input: {
     context = { ...input.context, ...sampleCoachingScoreContext() };
   } else if (templateKey === EMAIL_TEMPLATE_KEYS.MARKETING_REQUEST && !text(input.context?.productsTable).includes("<table")) {
     context = { ...sampleMarketingContext(), ...input.context };
-  } else if (templateKey === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY && !text(input.context?.digestTable).includes("<table")) {
-    context = { ...sampleDvPlannerDigestContext(), ...input.context };
   }
   // Use the real employee's values when the admin supplied a sample HR ID, otherwise show
   // representative samples so a custom token never previews as a blank gap.
@@ -2820,7 +2778,6 @@ export async function sendTemplateTestEmail(input: {
     // renders as (mirrors previewTemplate).
     ...(key === EMAIL_TEMPLATE_KEYS.WEEKLY_PLANS ? buildSamplePlanTable() : {}),
     ...(key === EMAIL_TEMPLATE_KEYS.COACHING_REPORT ? buildSampleCoachingScoreTable() : {}),
-    ...(key === EMAIL_TEMPLATE_KEYS.DV_PLANNER_WEEKLY ? buildSampleDvPlannerDigestTable() : {}),
     ...(input.context ?? {}),
   };
   const customVariables = text(context.employeeHrId)

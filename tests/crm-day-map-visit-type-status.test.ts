@@ -3,9 +3,16 @@ import { readFileSync } from "node:fs";
 
 import { crmDayVisitTypeStatus } from "../src/lib/attendance/crm-day-maps.ts";
 import { leaverVisitTypeStatus } from "../src/lib/automated-payroll/recommend.ts";
+import { crmVisitTypeMeaningLenient } from "../src/lib/crm/visit-type-meaning.ts";
 
 /**
- * THE iREPORTS360 AV/CP RULING EXISTS IN THREE PLACES, AND THE THIRD ONE DRIFTED.
+ * UPDATE 2026-09-13: the three copies described below are now ONE table,
+ * src/lib/crm/visit-type-meaning.ts, read leniently by the FWC matrix and strictly by the day map
+ * and the payroll leaver ruling. The source guards at the bottom pin that single source and that
+ * the old hand-kept literals are gone; tests/crm-visit-type-meaning.test.ts pins that every
+ * production code kept each copy's old answer. The history below is why.
+ *
+ * THE iREPORTS360 AV/CP RULING EXISTED IN THREE PLACES, AND THE THIRD ONE DRIFTED.
  *
  * Two of the copies are Maps and grep as `VISIT_TYPE_TO_STATUS`
  * (field-workforce-compliance/ireports360-source.ts) and `LEAVER_VISIT_TYPE_TO_STATUS`
@@ -114,18 +121,65 @@ export function runCrmDayMapVisitTypeStatusTests() {
     );
   }
 
-  const sourceMap = readFileSync(
-    new URL("../src/lib/field-workforce-compliance/ireports360-source.ts", import.meta.url),
-    "utf8",
-  );
-  // VISIT_TYPE_TO_STATUS is module-private, so the third copy is pinned at the source. Plain string
-  // checks, deliberately not a regex over match-anything (the classic ReDoS shape, banned here).
-  for (const { code, status, name } of MAPPED_RULING) {
-    assert.ok(
-      sourceMap.includes(`[${code}, "${status}"]`),
-      `VISIT_TYPE_TO_STATUS must still map ${name} (${code}) to ${status} — the day map is pinned to it`,
+  // The Field Workforce Compliance matrix reads the same table through the lenient lookup.
+  for (const { code, status, name } of RULING) {
+    assert.equal(
+      crmVisitTypeMeaningLenient(code),
+      status,
+      `${name} (${code}) must carry the same ruling in the FWC matrix's lenient lookup as in the day map`,
     );
   }
+
+  // ---- SOURCE GUARD: ONE TABLE, AND THE THREE OLD COPIES ARE GONE -----------
+  // Plain string checks, deliberately not a regex over match-anything (the classic ReDoS shape,
+  // banned here).
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+  const meaning = read("../src/lib/crm/visit-type-meaning.ts");
+  for (const { code, status, name } of RULING) {
+    assert.ok(
+      meaning.includes(`[${code}, "${status}"]`),
+      `the shared table in crm/visit-type-meaning.ts must map ${name} (${code}) to ${status}`,
+    );
+  }
+  assert.equal(
+    meaning.split(`, "AV"]`).length - 1,
+    1,
+    "the shared table must hold exactly ONE leave (AV) entry — Annual Vacation",
+  );
+
+  const sourceMap = read("../src/lib/field-workforce-compliance/ireports360-source.ts");
+  const recommend = read("../src/lib/automated-payroll/recommend.ts");
+  const dayMap = read("../src/lib/attendance/crm-day-maps.ts");
+  assert.ok(
+    sourceMap.includes("import { crmVisitTypeMeaningLenient } from \"@/lib/crm/visit-type-meaning\";"),
+    "the FWC matrix must read the shared table (lenient lookup)",
+  );
+  assert.ok(
+    recommend.includes("import { crmVisitTypeMeaningStrict } from \"@/lib/crm/visit-type-meaning\";"),
+    "the payroll leaver ruling must read the shared table (strict lookup)",
+  );
+  assert.ok(
+    dayMap.includes("crmVisitTypeMeaningStrict,") && dayMap.includes("} from \"@/lib/crm/visit-type-meaning\";"),
+    "the attendance day map must read the shared table (strict lookup)",
+  );
+  for (const [file, text] of [
+    ["field-workforce-compliance/ireports360-source.ts", sourceMap],
+    ["automated-payroll/recommend.ts", recommend],
+    ["attendance/crm-day-maps.ts", dayMap],
+  ] as const) {
+    assert.equal(
+      text.includes("new Map<number, \"AV\" | \"CP\">("),
+      false,
+      `${file} must not carry its own visit-type Map again — classify codes in crm/visit-type-meaning.ts`,
+    );
+    assert.equal(
+      text.includes("[-4, \"AV\"]"),
+      false,
+      `${file} must not hand-list the Annual Vacation ruling again — it lives in crm/visit-type-meaning.ts`,
+    );
+  }
+  assert.equal(sourceMap.includes("VISIT_TYPE_TO_STATUS"), false, "the old FWC copy VISIT_TYPE_TO_STATUS must be gone");
+  assert.equal(recommend.includes("LEAVER_VISIT_TYPE_TO_STATUS"), false, "the old payroll copy LEAVER_VISIT_TYPE_TO_STATUS must be gone");
 
   // ---- BUT THE WHITELIST IS STILL A WHITELIST -------------------------------
   // A code iReports360 has never sent stays a fall-through, deliberately: copies #1/#2 would call it
@@ -143,17 +197,15 @@ export function runCrmDayMapVisitTypeStatusTests() {
     "a regular visit (0) is counted by regularCount in the classification loop, never through these Sets",
   );
 
-  // ---- SOURCE GUARD: THE SETS THEMSELVES ------------------------------------
-  // crmDayVisitTypeStatus is a thin reader over the two Sets, so a revert that edits the Sets is
-  // caught above — but pin the literals too, so a reviewer diffing this file sees the ruling.
-  const dayMap = readFileSync(new URL("../src/lib/attendance/crm-day-maps.ts", import.meta.url), "utf8");
-  assert.ok(
-    dayMap.includes("const CRM_LEAVE_VISIT_TYPES = new Set<number>([-4]);"),
-    "the leave Set must contain Annual Vacation and nothing else",
+  // ---- SOURCE GUARD: THE DAY MAP'S HAND-KEPT SETS ARE GONE ------------------
+  assert.equal(
+    dayMap.includes("new Set<number>([-4])"),
+    false,
+    "the day map must not hand-list its leave Set again — it is derived from crm/visit-type-meaning.ts",
   );
-  assert.ok(
-    dayMap.includes("-1, -2, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30,"),
-    "the CP Set must carry all 15 production visit types — Public Holiday (-5), Casual Leave (-6) and "
-      + "Health Day (-15) alongside the original campaign types and the five undocumented codes",
+  assert.equal(
+    dayMap.includes("-1, -2, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30"),
+    false,
+    "the day map must not hand-list its CP Set again — it is derived from crm/visit-type-meaning.ts",
   );
 }

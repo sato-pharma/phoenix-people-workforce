@@ -773,6 +773,13 @@ export async function confirmStep(
     summary[RECOMMENDED_AT_CONFIRM_KEY] = snapshotRecommendations(rows);
   }
 
+  // Computed BEFORE the step is marked confirmed: when the CRM leave data cannot be read this throws
+  // PayrollCrmLeaveUnavailableError, and the step must stay unconfirmed rather than show "confirmed"
+  // with no balance settlement behind it.
+  // Pass the run so its own earlier settlement is excluded from the balance it re-reads.
+  const vacationTotals =
+    stepKey === "p2_vacation" ? await computeVacationDeductionTotals(members, sources, period, runId) : null;
+
   const state = await upsertStepState({
     runId,
     stepKey,
@@ -787,11 +794,10 @@ export async function confirmStep(
   // Confirming this step is the one moment CRM-only leave (no v2_vacation_requests row)
   // becomes real: settle it into the same ledger a formal request settlement uses, so future
   // balance checks see it consumed, not just this month's payroll-sheet number.
-  if (stepKey === "p2_vacation") {
-    // Pass the run so its own earlier settlement is excluded from the balance it re-reads.
+  if (vacationTotals) {
     // Confirming this step is not a one-way door: HR re-confirms after correcting a row, and
     // before this the second confirm gave the leave days back while the deduction stayed.
-    const { crmLeaveSettlements } = await computeVacationDeductionTotals(members, sources, period, runId);
+    const { crmLeaveSettlements } = vacationTotals;
     const { settled } = await settleCrmLeaveBalanceForPeriod({
       actorHrId: actorId(access),
       crmLeaveSettlements,

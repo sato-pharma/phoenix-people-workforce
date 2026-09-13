@@ -29,9 +29,15 @@ import {
   type IReports360MonthlyPlanEntry,
   type IReports360PlanEntry,
 } from "@/lib/crm/client";
-import { loadCrmIdentityMaps, resolveEmployeeHrId } from "@/lib/crm/identity";
+import { loadCrmIdentityMaps, resolveEmployeeAttribution, resolveEmployeeHrId } from "@/lib/crm/identity";
 import type { PlanKind } from "@/lib/crm/plan-verification";
-import { dedupeByKey, isValidIsoDate, normalizeAmpm, normalizeContactGrade } from "@/lib/crm/sync";
+import {
+  dedupeByKey,
+  isValidIsoDate,
+  normalizeAmpm,
+  normalizeContactGrade,
+  preserveResolvedIdentities,
+} from "@/lib/crm/sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { CrmIdentityMaps } from "@/lib/crm/types";
 
@@ -247,6 +253,135 @@ export function rowFromPlanEntry(entry: IReports360PlanEntry, maps: CrmIdentityM
 export type PlanDraftRow = ReturnType<typeof rowFromPlanEntry>;
 
 /**
+ * The date a plan row's identity is judged against: its own `plan_date` for a weekly row, the first
+ * of its month for a monthly one (see rowFromMonthlyPlanEntry for why the first). Null when the row
+ * carries neither — and such a row is never re-stamped, because a row that cannot be placed in time
+ * cannot pass through the pre-hire / post-exit guard at all.
+ *
+ * ONE rule for the three places that need it — the two row builders' preserve step and the re-stamp
+ * below — so a monthly row can never be judged against one day at upsert and another at re-stamp.
+ */
+export function planRestampDate(row: {
+  plan_date?: string | null;
+  plan_month?: number | null;
+  plan_year?: number | null;
+}): string | null {
+  if (row.plan_date) return row.plan_date.slice(0, 10);
+  if (row.plan_month && row.plan_year) return `${row.plan_year}-${String(row.plan_month).padStart(2, "0")}-01`;
+  return null;
+}
+
+/** The columns the re-stamp reads from a mirror row. */
+export type PlanRestampRow = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  crm_plan_entry_id: number;
+  plan_date: string | null;
+  plan_month: number | null;
+  plan_year: number | null;
+};
+
+/**
+ * Pure decision core of the plan re-stamp: which unmapped rows the CURRENT identity maps can now
+ * name, and who. Split from the I/O so the guard cases are testable without Supabase.
+ *
+ * Emits a row only when all three hold:
+ *   - it has no `agent_hr_id` today — a stamped row is never re-decided here, whatever the maps say;
+ *   - it can be placed in time (planRestampDate) — an undatable row would skip the employment guard;
+ *   - the resolver returns an hr id for that date. A pre-hire or post-exit BLOCK returns null, so the
+ *     previous occupant's plans on a handed-over CRM slot stay unattributed, exactly as the upsert
+ *     leaves them.
+ *
+ * Plan entries carry no agent name, so the resolver is called crm-id-only — the same call shape the
+ * row builders use.
+ */
+export function resolvePlanRestamps(
+  rows: readonly PlanRestampRow[],
+  maps: CrmIdentityMaps,
+): Array<{ agent_hr_id: string; crm_plan_entry_id: number }> {
+  const restamps: Array<{ agent_hr_id: string; crm_plan_entry_id: number }> = [];
+  for (const row of rows) {
+    if (row.agent_hr_id) continue;
+    const asOf = planRestampDate(row);
+    if (!asOf) continue;
+    const hrId = resolveEmployeeHrId(row.agent_crm_id, null, maps, asOf);
+    if (hrId) restamps.push({ agent_hr_id: hrId, crm_plan_entry_id: row.crm_plan_entry_id });
+  }
+  return restamps;
+}
+
+/** Unmapped rows read per page by the re-stamp. PostgREST cuts an unbounded select at 1000 rows with
+ * no marker, so it pages at exactly that size. */
+const RESTAMP_SCAN_PAGE_SIZE = 1000;
+
+/** Ids per re-stamp update. The filter travels in the URL, and a long `.in()` list comes back as a
+ * silent no-op — the same reason PRUNE_DELETE_CHUNK is 50. */
+const RESTAMP_UPDATE_CHUNK = 50;
+
+/**
+ * Re-stamps `agent_hr_id` onto every plan-entry row that has none, wherever today's identity maps can
+ * name the rep for that row's own date. The plan-side counterpart of the visits table's
+ * stampUnmappedVisitRows.
+ *
+ * WHY IT EXISTS. The sync resolves `agent_hr_id` once, at upsert, and a closed month is never fetched
+ * again — so a row written before an identity was known (a leaver's crm_id not yet on the roster, an
+ * admin mapping not yet made) stayed null forever. Production held 40,445 such rows of 176,410, and a
+ * scoped viewer's plan board filters on `agent_hr_id`, so those plans simply did not exist for them.
+ *
+ * READ EVERYTHING FIRST, THEN WRITE. Every update removes rows from the `agent_hr_id is null` set the
+ * scan is walking, so interleaving the two would page past rows that moved. Keyset paging on the
+ * primary key keeps the read itself stable.
+ *
+ * Only null rows are ever written — the update repeats the `is null` filter, so a sync that stamped a
+ * row between the read and the write wins, and a stamped row is never overwritten by this.
+ */
+export async function restampUnmappedPlanEntries(): Promise<{ checked: number; fixed: number }> {
+  const supabase = getSupabaseAdmin();
+  const maps = await loadCrmIdentityMaps();
+
+  const unmapped: PlanRestampRow[] = [];
+  let cursor: number | null = null;
+  for (;;) {
+    let query = supabase
+      .from(CRM_PLAN_ENTRIES_TABLE)
+      .select("crm_plan_entry_id, agent_crm_id, agent_hr_id, plan_date, plan_month, plan_year")
+      .is("agent_hr_id", null)
+      .order("crm_plan_entry_id", { ascending: true })
+      .limit(RESTAMP_SCAN_PAGE_SIZE);
+    if (cursor !== null) query = query.gt("crm_plan_entry_id", cursor);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const page = (data ?? []) as unknown as PlanRestampRow[];
+    unmapped.push(...page);
+    if (page.length < RESTAMP_SCAN_PAGE_SIZE) break;
+    cursor = page[page.length - 1]!.crm_plan_entry_id;
+  }
+
+  const idsByHrId = new Map<string, number[]>();
+  for (const restamp of resolvePlanRestamps(unmapped, maps)) {
+    const ids = idsByHrId.get(restamp.agent_hr_id) ?? [];
+    ids.push(restamp.crm_plan_entry_id);
+    idsByHrId.set(restamp.agent_hr_id, ids);
+  }
+
+  let fixed = 0;
+  for (const [hrId, ids] of idsByHrId) {
+    for (let from = 0; from < ids.length; from += RESTAMP_UPDATE_CHUNK) {
+      const chunk = ids.slice(from, from + RESTAMP_UPDATE_CHUNK);
+      const { count, error } = await supabase
+        .from(CRM_PLAN_ENTRIES_TABLE)
+        .update({ agent_hr_id: hrId, updated_at: new Date().toISOString() }, { count: "exact" })
+        .in("crm_plan_entry_id", chunk)
+        .is("agent_hr_id", null);
+      if (error) throw new Error(error.message);
+      fixed += count ?? chunk.length;
+    }
+  }
+
+  return { checked: unmapped.length, fixed };
+}
+
+/**
  * A plan this run saw for the FIRST time — the mirror had never held a row for it.
  *
  * Returned so the caller can tell the rep's manager it is waiting. Deliberately NOT "every plan
@@ -413,12 +548,17 @@ async function mirroredPlanEntryIds(input: {
  * that agent: a pull that only knows the truth about one rep can only ever delete that rep's rows.
  *
  * A closed month is protected by never being fetched — see `resolvePlanSyncWindow`. The same
- * protection has a cost: `agent_hr_id` is resolved once, at upsert time (`rowFromPlanEntry`), from
- * whatever `loadCrmIdentityMaps()` knew THEN — and because a closed month's rows are never revisited,
- * a row written before an identity resolved (a leaver's crm_username match not yet learned, an admin
- * mapping not yet made) stays unmapped forever, even after `ireports360_visits` correctly re-stamps
- * the same person's visit rows via `stampUnmappedVisitRows`. There is no plan-side equivalent of that
- * re-stamp.
+ * protection has a cost: `agent_hr_id` is resolved at upsert time (`rowFromPlanEntry`), from whatever
+ * `loadCrmIdentityMaps()` knew THEN — and because a closed month's rows are never revisited, a row
+ * written before an identity resolved (a leaver's crm_id not yet on the roster, an admin mapping not
+ * yet made) stayed unmapped forever, even after `ireports360_visits` correctly re-stamped the same
+ * person's visit rows via `stampUnmappedVisitRows`.
+ *
+ * SINCE 2026-09-13 THERE IS A PLAN-SIDE RE-STAMP: `restampUnmappedPlanEntries`, run by the live
+ * poller after every successful deep visits run. It fills null rows only, through the same employment
+ * guard, so a pre-hire or post-exit row stays null. Both upserts below also call
+ * `preserveResolvedIdentities` first, so a SILENT null from a later sync can no longer overwrite an
+ * hr id the mirror already holds. The audit below is the history that prompted it.
  *
  * 2026-09-03 audit (prompted by the crm_id 1367/1485 reused-slot fixes in reads.ts): 39,750 of
  * 165,470 plan_entries rows (24%), across 61 agent_crm_ids, carry a null agent_hr_id. 36 of the 61
@@ -434,10 +574,8 @@ async function mirroredPlanEntryIds(input: {
  *
  * Net: nobody currently active has their live Coverage/Frequency numbers suppressed by this today —
  * it is inert historical debt, not a repeat of the reused-CRM-slot bug class (CRM_RESIGNED_AGENT_CRM_IDS
- * in reads.ts). Still a real gap worth closing: a retroactive re-stamp for plan_entries, mirroring
- * stampUnmappedVisitRows, next time this module is substantially touched. Not fixed here — low
- * urgency, and any future backfill should re-run the audit fresh rather than trust these numbers,
- * since they will have moved on by then.
+ * in reads.ts). The gap it named — no retroactive re-stamp for plan_entries — is closed by
+ * `restampUnmappedPlanEntries` above; by 2026-09-13 the null count had grown to 40,445 of 176,410.
  */
 export async function syncIReports360WeeklyPlans(input: {
   startDate: string;
@@ -476,6 +614,23 @@ export async function syncIReports360WeeklyPlans(input: {
   // Announcing everything currently PENDING instead would have emailed a manager once for each of
   // production's 204 unverified plans going back to January, on the first run after deploy.
   const newPlans = await collectNewPlans(rows, "weekly");
+
+  // The upsert writes every column, so a SILENT null (nobody matched today) would overwrite an hr id
+  // the mirror already resolved. Restore those first; a deliberate pre-hire / post-exit BLOCK is
+  // still written. See isSilentAttribution in sync.ts.
+  await preserveResolvedIdentities({
+    attributions: [
+      {
+        column: "agent_hr_id",
+        of: (row) => resolveEmployeeAttribution(row.agent_crm_id, null, maps, planRestampDate(row)),
+      },
+    ],
+    keyColumn: "crm_plan_entry_id",
+    keyOf: (row) => row.crm_plan_entry_id,
+    rows,
+    supabase,
+    table: CRM_PLAN_ENTRIES_TABLE,
+  });
 
   for (let index = 0; index < rows.length; index += UPSERT_BATCH_SIZE) {
     const batch = rows.slice(index, index + UPSERT_BATCH_SIZE);
@@ -556,7 +711,7 @@ export async function syncIReports360WeeklyPlans(input: {
 export function rowFromMonthlyPlanEntry(entry: IReports360MonthlyPlanEntry, maps: CrmIdentityMaps) {
   const month = entry.month ?? null;
   const year = entry.year ?? null;
-  const asOf = month && year ? `${year}-${String(month).padStart(2, "0")}-01` : null;
+  const asOf = planRestampDate({ plan_month: month, plan_year: year });
   const now = new Date().toISOString();
   return {
     agent_crm_id: entry.agentID,
@@ -696,6 +851,21 @@ export async function syncIReports360MonthlyPlans(input: {
   // upsert, or the answer is always "none". A monthly plan carries no dates, so `firstDate` and
   // `lastDate` come back null here and the notification names the month instead.
   const newPlans = await collectNewPlans(rows, "monthly");
+
+  // Same silent-null protection as the weekly upsert, judged against the month's first day.
+  await preserveResolvedIdentities({
+    attributions: [
+      {
+        column: "agent_hr_id",
+        of: (row) => resolveEmployeeAttribution(row.agent_crm_id, null, maps, planRestampDate(row)),
+      },
+    ],
+    keyColumn: "crm_plan_entry_id",
+    keyOf: (row) => row.crm_plan_entry_id,
+    rows,
+    supabase,
+    table: CRM_PLAN_ENTRIES_TABLE,
+  });
 
   for (let index = 0; index < rows.length; index += UPSERT_BATCH_SIZE) {
     const batch = rows.slice(index, index + UPSERT_BATCH_SIZE);

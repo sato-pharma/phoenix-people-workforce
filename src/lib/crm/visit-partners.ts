@@ -20,8 +20,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { queryVisits } from "@/lib/crm/reads";
 import { logError } from "@/lib/observability/log";
 
 /** person HR ID -> date (YYYY-MM-DD) -> the HR IDs they were recorded out with that date. */
@@ -96,7 +95,6 @@ export async function getTripVisitPartnersByDate(input: {
     const { crmByHr, hrByCrm } = await loadCrmIdentityMaps();
     const start = dates[0];
     const end = dates[dates.length - 1];
-    const supabase = getSupabaseAdmin();
 
     let frontier = new Set<number>();
     for (const hrId of input.rootHrIds) {
@@ -112,18 +110,21 @@ export async function getTripVisitPartnersByDate(input: {
       if (toQuery.length === 0) break;
       for (const crmId of toQuery) queried.add(crmId);
 
-      const list = toQuery.join(",");
-      const { data, error } = await supabase
-        .from(CRM_VISITS_TABLE)
-        .select("agent_crm_id, double_crm_id, visit_date")
-        .gte("visit_date", start)
-        .lte("visit_date", `${end}T23:59:59.999Z`)
-        .not("double_crm_id", "is", null)
-        .or(`agent_crm_id.in.(${list}),double_crm_id.in.(${list})`);
-      if (error) throw new Error(error.message);
+      // Through the CRM read door: agent OR double-visit partner in the frontier, a double partner
+      // present (NOT NULL only — the `0` sentinel is discarded below as before), no departed-agent
+      // exclusion (a rep who has since left still did the visits that justify a manager's trip).
+      // The door keyset-pages, so no hop is cut off at PostgREST's 1,000-row response cap.
+      const rows = await queryVisits<PairRow>({
+        columns: "agent_crm_id, double_crm_id, visit_date",
+        dateFrom: start,
+        dateTo: end,
+        includeResignedAgents: true,
+        participantCrmIds: toQuery,
+        requireDoubleCrmId: true,
+      });
 
       const discovered = new Set<number>();
-      for (const row of (data ?? []) as PairRow[]) {
+      for (const row of rows) {
         const day = String(row.visit_date ?? "").slice(0, 10);
         if (!dates.includes(day)) continue;
 
