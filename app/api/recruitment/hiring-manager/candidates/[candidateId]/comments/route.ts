@@ -7,7 +7,6 @@ import {
   listCandidateComments,
   resolveCommentAuthor,
 } from "@/lib/recruitment/candidate-comments";
-import { hasOpenedCandidate } from "@/lib/recruitment/cv-feedback-lock-db";
 import {
   isCandidateInViewerTeamDistrict,
   isCandidateWithinViewerTeam,
@@ -76,13 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ can
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "hiring_interviews", "update");
     const { candidateId } = await params;
-    // WRITE ONLY: a person who opened this CV may always write about it, even once the candidate has
-    // left his folders. The feedback lock demands exactly that note, and without this he was told to
-    // write something the route then refused. See hasOpenedCandidate. Reading the thread keeps the
-    // strict scope above.
-    if (!(await hasOpenedCandidate(access.hrId, candidateId))) {
-      await assertCanComment(access, candidateId);
-    }
+    await assertCanComment(access, candidateId);
 
     const body = str((await readJsonObject(request)).body);
     if (!body) {

@@ -21,7 +21,6 @@ import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateCallClaim, CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
-import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   candidateStatusLabel,
@@ -60,14 +59,6 @@ type Props = {
    * without the table answers — is the pre-claim screen and is deliberately not an error state.
    */
   initialCallClaims: CandidateCallClaims;
-  /**
-   * The CV this manager opened and has not yet written about, read on the server with the page.
-   *
-   * The owner, 2026-09-09, on candidates being telephoned twice: he must write what he found before
-   * he may open another CV. Null is the normal state. The server refuses the file regardless; this
-   * is what lets the card say so instead of a preview breaking.
-   */
-  initialOutstandingFeedback: OutstandingFeedback | null;
   /**
    * This manager's own districts, and inside each one a folder per area he holds — every area,
    * including the ones nobody has applied to. Empty for anybody who holds no district seat, which is
@@ -180,8 +171,6 @@ function CandidateCard({
   claim,
   files,
   onChanged,
-  onFeedbackGiven,
-  outstandingFeedback,
   viewerHrId,
 }: {
   application: ApplicationWithContext;
@@ -190,10 +179,6 @@ function CandidateCard({
   /** Loaded with the page, for the same reason as the sent-to-you cards. */
   files: TeamCandidateFile[];
   onChanged: () => void;
-  /** He writes the feedback he owed, so the block lifts without a reload. */
-  onFeedbackGiven: (candidateId: string) => void;
-  /** The CV he owes feedback on, which blocks him opening any other. */
-  outstandingFeedback: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const candidate = application.candidate!;
@@ -334,7 +319,6 @@ function CandidateCard({
       <CandidateCvActions
         candidateId={candidate.id}
         initialFiles={files}
-        outstandingFeedback={outstandingFeedback}
         showPhoneNumbers={call.mine}
       />
 
@@ -346,16 +330,7 @@ function CandidateCard({
         viewerHrId={viewerHrId}
       />
 
-      {/* ADDED WITH THE FEEDBACK LOCK, and required by it rather than decorative. Opening a CV here
-          creates the same obligation as opening one anywhere else, and this was the one card in the
-          portal with nowhere to write anything — a manager who opened an applicant in his own
-          interview round would have been locked out of every other CV with nothing on the screen in
-          front of him that could release it. */}
-      <CandidateCommentThread
-        candidateId={candidate.id}
-        onCommentAdded={onFeedbackGiven}
-        viewerHrId={viewerHrId}
-      />
+      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -448,9 +423,7 @@ function SentCandidateCard({
   claim: initialClaim,
   filing,
   files,
-  onFeedbackGiven,
   onFilingChanged,
-  outstandingFeedback,
   viewerHrId,
 }: {
   areaOptions: CandidateFolderAreaOption[];
@@ -461,11 +434,7 @@ function SentCandidateCard({
   filing: ManagerFolderFiling | null;
   /** This candidate's files, already loaded with the list — so View CV is there with the card. */
   files: TeamCandidateFile[];
-  /** He writes the feedback he owed, so the block lifts without a reload. */
-  onFeedbackGiven: (candidateId: string) => void;
   onFilingChanged: (candidateId: string, filing: ManagerFolderFiling | null) => void;
-  /** The CV he owes feedback on, which blocks him opening any other. */
-  outstandingFeedback: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [candidate, setCandidate] = useState(initial);
@@ -497,7 +466,7 @@ function SentCandidateCard({
     // decision route stores is capped at 300. Sending a long one would come back as a bare "keep the
     // note under 300 characters" from the server, which reads as the screen having lost his words.
     // He is told here instead, and pointed at the option that takes the whole thing — posting it as
-    // a comment, which clears the lock just the same.
+    // a comment.
     if (note.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
       setError(
         `Skip takes a short reason, under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters. `
@@ -514,10 +483,6 @@ function SentCandidateCard({
       });
       if (data.candidate) setCandidate(data.candidate as Candidate);
       clearDraft();
-      // A Skip carries its reason, and that reason IS the feedback the lock was waiting for, so the
-      // block must lift here as well as after a comment. Without this he answers, is released by the
-      // server, and the card he is looking at goes on refusing until he reloads.
-      onFeedbackGiven(candidate.id);
       // Skipping releases his reservation on the server, so the card has to follow: without this the
       // number stays printed on a CV he has just passed on, until he happens to reload. The route
       // answers with whatever claim now stands — null after his own Skip, unchanged when somebody
@@ -581,7 +546,6 @@ function SentCandidateCard({
         <CandidateCvActions
         candidateId={candidate.id}
         initialFiles={files}
-        outstandingFeedback={outstandingFeedback}
         showPhoneNumbers={call.mine}
       />
         {/* The third answer, and the one the owner asked for on 2026-08-30: neither "Interview" nor
@@ -598,8 +562,8 @@ function SentCandidateCard({
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
       {/* ONE FIELD, NOT TWO. The owner, 2026-09-09: *"I have two fields for your answer and your
-          comments — merge them into one field, no need two fields."* After the feedback lock there
-          is only one thing to type on a CV, which is what he found, so the answer buttons moved DOWN
+          comments — merge them into one field, no need two fields."* There is only one thing to
+          type on a CV, which is what he found, so the answer buttons moved DOWN
           into the comment box rather than the box being duplicated above them. Skip sends whatever
           is in that box as the reason it has always required. */}
       {!awaitingAnswer ? (
@@ -651,7 +615,6 @@ function SentCandidateCard({
               )
             : undefined
         }
-        onCommentAdded={onFeedbackGiven}
         viewerHrId={viewerHrId}
       />
     </Card>
@@ -662,7 +625,6 @@ export function RecruitmentCandidatesPortal({
   areaOptions,
   initialApplications,
   initialCallClaims: callClaims,
-  initialOutstandingFeedback,
   initialDistrictBoards,
   initialFilings,
   initialFiles: files,
@@ -671,13 +633,6 @@ export function RecruitmentCandidatesPortal({
   viewerHrId,
 }: Props) {
   const [applications, setApplications] = useState(initialApplications);
-  // Held in state, not read straight from the prop, so writing the feedback lifts the block in place.
-  // The page only re-reads it on a reload, and a manager who has just typed his comment should not
-  // have to reload to be let through.
-  const [outstandingFeedback, setOutstandingFeedback] = useState(initialOutstandingFeedback);
-  const onFeedbackGiven = (candidateId: string) => {
-    setOutstandingFeedback((current) => (current && current.candidateId === candidateId ? null : current));
-  };
   const [filings, setFilings] = useState<ManagerFolderFilings>(initialFilings);
 
   // The manager's own shelf, folded by the RECRUITER's own partition function so a folder means one
@@ -707,9 +662,7 @@ export function RecruitmentCandidatesPortal({
       filing={filings[candidate.id] ?? null}
       files={files[candidate.id] ?? []}
       key={candidate.id}
-      onFeedbackGiven={onFeedbackGiven}
       onFilingChanged={onFilingChanged}
-      outstandingFeedback={outstandingFeedback}
       viewerHrId={viewerHrId}
     />
   );
@@ -835,8 +788,6 @@ export function RecruitmentCandidatesPortal({
         boards={areaBoards}
         callClaims={callClaims}
         files={files}
-        onFeedbackGiven={onFeedbackGiven}
-        outstandingFeedback={outstandingFeedback}
         ownFolders
         viewerHrId={viewerHrId}
       />
@@ -853,8 +804,6 @@ export function RecruitmentCandidatesPortal({
         callClaims={callClaims}
         files={files}
         heading="District manager applicants"
-        onFeedbackGiven={onFeedbackGiven}
-        outstandingFeedback={outstandingFeedback}
         ownFolders
         rescreenBanner={false}
         subheading="People applying to run one of the districts under you, filed by the district they asked for. District managers never see these."
@@ -866,8 +815,6 @@ export function RecruitmentCandidatesPortal({
           own queue below the fold. */}
       <TeamCandidatesSection
         managers={initialTeam}
-        onFeedbackGiven={onFeedbackGiven}
-        outstandingFeedback={outstandingFeedback}
         viewerHrId={viewerHrId}
       />
 
@@ -886,8 +833,6 @@ export function RecruitmentCandidatesPortal({
               files={files[application.candidate?.id ?? ""] ?? []}
               key={application.id}
               onChanged={reload}
-              onFeedbackGiven={onFeedbackGiven}
-              outstandingFeedback={outstandingFeedback}
               viewerHrId={viewerHrId}
             />
           ))}
