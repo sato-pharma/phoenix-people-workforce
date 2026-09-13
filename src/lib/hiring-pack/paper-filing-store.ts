@@ -31,6 +31,8 @@ import {
   PaperArtworkMissingError,
   renderHiringPaperPdf,
 } from "@/lib/hiring-pack/paper-pdf";
+import { stampPaperReference } from "@/lib/hiring-pack/paper-reference";
+import { latestPaperNumber } from "@/lib/hiring-pack/paper-register-store";
 import { renderHiringPaper } from "@/lib/hiring-pack/render-paper";
 import { isBuiltInDocument } from "@/lib/hiring-pack/types";
 
@@ -145,7 +147,10 @@ export async function fileSignedPaper(input: {
     // Numbered for the papers Phoenix authors, never for the Authority's own forms — the policy
     // lives beside the identity it belongs to, so the filed copy and the downloaded one can never
     // disagree about which documents may carry a footer.
-    pdf = await renderHiringPaperPdf(paper.html, {
+    // The filed copy carries the number printed on the sheet that was signed — the newest one
+    // issued for this paper for this person. None issued yet (or no register) files it unnumbered.
+    const reference = await latestPaperNumber(input.document, input.hrId);
+    pdf = await renderHiringPaperPdf(stampPaperReference(paper.html, reference, input.document), {
       pageNumbers: documentCarriesHousePageNumbers(input.document),
     });
   } catch (error) {

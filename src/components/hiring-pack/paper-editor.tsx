@@ -53,6 +53,7 @@ import { FieldHistoryPanel } from "@/components/hiring-pack/field-history-panel"
 import { Input } from "@/components/ui/input";
 import type { DocumentFieldInventoryEntry } from "@/lib/hiring-pack/document-inventory";
 import { documentSurfaceOf } from "@/lib/hiring-pack/document-registry";
+import { stampPaperReferenceInDocument } from "@/lib/hiring-pack/paper-reference";
 import type {
   DocumentFieldRow,
   DocumentFieldSource,
@@ -253,6 +254,13 @@ type PaperEditorCommonProps = {
   canEditCompany: boolean;
   onPackChange: (pack: HiringPackData) => void;
   onClose: () => void;
+  /**
+   * Takes this paper's number from the register at the moment Print is pressed — "make sure every
+   * paper and document is auto numbered". The number is stamped into the page on screen and then
+   * printed, so the sheet in the tray and the register row carry the same number. Absent, or
+   * answering null (no register yet), and Print behaves exactly as it always has.
+   */
+  onIssueReference?: () => Promise<string | null>;
 };
 
 /**
@@ -442,6 +450,7 @@ export function HiringPackPaperEditor({
   canEditCompany,
   onPackChange,
   onClose,
+  onIssueReference,
 }: PaperEditorProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   /**
@@ -1715,12 +1724,27 @@ export function HiringPackPaperEditor({
     return () => observer.disconnect();
   }, [zoomPinned]);
 
-  const print = useCallback(() => {
+  const [printing, setPrinting] = useState(false);
+  const print = useCallback(async () => {
     const frame = frameRef.current;
     if (!frame?.contentWindow) return;
+    if (onIssueReference) {
+      setPrinting(true);
+      try {
+        const reference = await onIssueReference();
+        if (frame.contentDocument) {
+          stampPaperReferenceInDocument(frame.contentDocument, reference, documentKey);
+        }
+      } catch {
+        // A number that could not be taken never stops a print — the paper goes out unnumbered,
+        // exactly as it did before the register existed.
+      } finally {
+        setPrinting(false);
+      }
+    }
     frame.contentWindow.focus();
     frame.contentWindow.print();
-  }, []);
+  }, [documentKey, onIssueReference]);
 
   const saveSelection = useCallback(
     (typed: string) => {
@@ -1795,9 +1819,9 @@ export function HiringPackPaperEditor({
             <RotateCw className="h-4 w-4" />
             Reload
           </Button>
-          <Button className="gap-2" onClick={print} size="sm" type="button">
-            <Printer className="h-4 w-4" />
-            Print
+          <Button className="gap-2" disabled={printing} onClick={() => void print()} size="sm" type="button">
+            {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+            {printing ? "Numbering" : "Print"}
           </Button>
           <Button
             aria-label="Close the preview"
