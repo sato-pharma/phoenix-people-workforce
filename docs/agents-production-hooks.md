@@ -617,11 +617,13 @@ so a writer cannot assert an approval that never happened. A session that insert
 to push its own change through defeats the guard exactly as the comment warns. Do not do it; put the
 hold to the owner and release it on his word, passing his words as `p_actor`.
 
-⚠ **`sos_map_guard_decide` writes `brick_id`, `area_code`, `region_code`, `source` and `active` — and
-nothing else.** `mapped_by` and `confidence` keep their pre-hold values, so a batch released through
-it ends up stamped differently from the rows that went through directly. Bring them into line with a
-follow-up update; because it touches neither brick nor area, the trigger's `v_moves` check is false
-and it passes without a new hold.
+⚠ **Before `20260913020000`, `sos_map_guard_decide` wrote `brick_id`, `area_code`, `region_code`,
+`source` and `active` — and nothing else.** `mapped_by` and `confidence` kept their pre-hold values,
+so a released owner ruling landed below confidence 100 and did not bind (214 rulings, repaired by
+hand 2026-09-13; pre-images in `is_twin_backup_20260911.release185_pre_20260913` and
+`release185_holds_pre_20260913`). That migration makes the customer-map branch carry both from the
+hold's `after_json` (falling back to the row's own values). A follow-up update touching neither
+brick nor area still passes without a new hold, because the trigger's `v_moves` check is false.
 
 The batch that produced this entry finished at 111 of 111, with a pre-image of every changed row in
 `sos_backup_20260911.customer_map_pre_territory`.
