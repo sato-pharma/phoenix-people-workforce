@@ -17,9 +17,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { queryCheckins } from "@/lib/crm/reads";
-import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
 export type RepVisitDetail = {
@@ -181,14 +179,17 @@ export async function getRepTripVisitWorkload(input: {
     return emptyWorkload(dates, "This rep has no CRM id, so their visits can't be matched.", "unmapped");
   }
 
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_VISITS_TABLE)
-    .select("agent_crm_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, speciality, visit_date, visit_type")
-    .gte("visit_date", start)
-    .lte("visit_date", `${end}T23:59:59.999Z`)
-    .or(`agent_crm_id.eq.${crmId},double_crm_id.eq.${crmId}`);
-  if (error) throw new Error(error.message);
+  // Through the CRM read door. `includeResignedAgents: true` keeps this read's documented contract
+  // (no departed-agent exclusion — see the module note); `visit_date` is a DATE column, so `dateTo`
+  // as YYYY-MM-DD is the same bound the old `${end}T23:59:59.999Z` literal cast down to. The door
+  // keyset-pages, so a window past PostgREST's 1,000-row response cap is returned in full.
+  const data = await queryVisits<WorkloadVisitRow>({
+    columns: "agent_crm_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, speciality, visit_date, visit_type",
+    dateFrom: start,
+    dateTo: end,
+    includeResignedAgents: true,
+    participantCrmIds: [crmId],
+  });
 
   const byDate = new Map<string, RepVisitWorkloadDay>();
   for (const date of dates) {
@@ -202,7 +203,7 @@ export async function getRepTripVisitWorkload(input: {
   // person's route that day (self when they submitted, else the rep(s) they were double with).
   const checkinOwnersByDate = new Map<string, Set<number>>();
 
-  for (const row of (data ?? []) as WorkloadVisitRow[]) {
+  for (const row of data) {
     const day = String(row.visit_date ?? "").slice(0, 10);
     const entry = byDate.get(day);
     if (!entry) continue;

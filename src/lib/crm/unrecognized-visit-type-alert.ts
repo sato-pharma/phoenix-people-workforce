@@ -3,10 +3,10 @@
  * nobody has classified" alert (see notifyUnrecognizedCrmVisitTypes in
  * notifications/ireports360-sync-digest.ts).
  *
- * WHY THIS EXISTS. Phoenix mirrors the AV/CP meaning of every iReports360 visit type in three
- * places, and two of them read through `?? "CP"` — an unlisted code silently counts as a working
- * day, which is the safe direction. The third, CRM_CAMPAIGN_VISIT_TYPES / CRM_LEAVE_VISIT_TYPES in
- * attendance/crm-day-maps.ts, is a strict whitelist with no default: an unlisted code sets no flag,
+ * WHY THIS EXISTS. The AV/CP meaning of every iReports360 visit type lives in one table,
+ * crm/visit-type-meaning.ts. The compliance preview reads it leniently — an unlisted code silently
+ * counts as a working day, which is the safe direction. The attendance day map
+ * (attendance/crm-day-maps.ts) reads it strictly, with no default: an unlisted code sets no flag,
  * so `reconcileDay` never sees a cancel and the day is judged on device-punch timing alone. That is
  * the exact failure the deductions module was built to prevent — a post-settlement audit once found
  * employees deducted on days they had logged real visits.

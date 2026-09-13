@@ -292,10 +292,8 @@ function buildUnrecognizedVisitTypeMessage(alert: UnrecognizedVisitTypeAlert): s
     "attendance engine sets no field-visit and no leave flag, so nothing cancels a deduction and the",
     "day is judged on punch timing alone. Someone can be deducted for a day they actually worked.",
     "",
-    "Fix → classify this code in all THREE places that map visit types, deliberately and together:",
-    "  1. src/lib/field-workforce-compliance/ireports360-source.ts (VISIT_TYPE_TO_STATUS)",
-    "  2. src/lib/automated-payroll/recommend.ts (LEAVER_VISIT_TYPE_TO_STATUS)",
-    "  3. src/lib/attendance/crm-day-maps.ts (CRM_CAMPAIGN_VISIT_TYPES / CRM_LEAVE_VISIT_TYPES)",
+    "Fix → classify this code in the one visit-type table every map reads:",
+    "  src/lib/crm/visit-type-meaning.ts",
   );
   return lines.join("\n");
 }

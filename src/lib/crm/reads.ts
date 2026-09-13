@@ -398,11 +398,39 @@ export type CrmVisitFilter = {
    * contact-centric reads (e.g. "what speciality does the CRM record for these doctors"), where
    * the subject of the question is the contact rather than the agent. */
   contactCrmIds?: readonly number[];
+  /**
+   * Restrict to visits these CRM ids took part in, as EITHER the submitting agent OR the
+   * double-visit partner (`agent_crm_id IN ids OR double_crm_id IN ids`). Empty array, or no finite
+   * id in it → no rows (fails closed, never widens to every row). For person-centric workload reads
+   * where a manager's fieldwork is recorded on the rep's visit as the double-visitor (outstation
+   * workload evidence, the manager partner roll-up).
+   */
+  participantCrmIds?: readonly number[];
+  /** Require a `double_crm_id` (NOT NULL only). Unlike `doubleOnly` it keeps the vendor's `0`
+   * sentinel, for callers that already discard it themselves. */
+  requireDoubleCrmId?: boolean;
 };
+
+/**
+ * PostgREST `or` expression for {@link CrmVisitFilter.participantCrmIds}: agent OR double-visit
+ * partner in the id list. Non-finite ids are dropped and duplicates collapsed; returns `null` when
+ * nothing usable is left, which the door treats as "no rows". Pure, exported for its unit test.
+ */
+export function buildParticipantCrmIdOrFilter(ids: readonly number[]): string | null {
+  const clean = Array.from(new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id))));
+  if (clean.length === 0) return null;
+  const list = clean.join(",");
+  return `agent_crm_id.in.(${list}),double_crm_id.in.(${list})`;
+}
+
+/** True when a `participantCrmIds` filter was supplied but can match nobody. */
+function participantFilterMatchesNobody(filter: CrmVisitFilter): boolean {
+  return filter.participantCrmIds != null && buildParticipantCrmIdOrFilter(filter.participantCrmIds) === null;
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape; the
    real type is too deep to thread through a helper (see visits-report/service.ts precedent). */
-type VisitFilterableQuery = {
+export type VisitFilterableQuery = {
   eq: (...args: any[]) => VisitFilterableQuery;
   gte: (...args: any[]) => VisitFilterableQuery;
   lte: (...args: any[]) => VisitFilterableQuery;
@@ -411,10 +439,12 @@ type VisitFilterableQuery = {
   is: (...args: any[]) => VisitFilterableQuery;
   neq: (...args: any[]) => VisitFilterableQuery;
   not: (...args: any[]) => VisitFilterableQuery;
+  or: (...args: any[]) => VisitFilterableQuery;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function applyVisitFilter(
+/** Exported for its unit test only (tests/crm-participant-filter.test.ts) — callers use the doors. */
+export function applyVisitFilter(
   query: VisitFilterableQuery,
   filter: CrmVisitFilter,
   excludedInList: string = CRM_RESIGNED_IN_LIST,
@@ -435,6 +465,13 @@ function applyVisitFilter(
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
   if (filter.requireDoubleHrId) result = result.not("double_hr_id", "is", null);
   if (filter.contactCrmIds && filter.contactCrmIds.length > 0) result = result.in("contact_crm_id", [...filter.contactCrmIds]);
+  if (filter.requireDoubleCrmId) result = result.not("double_crm_id", "is", null);
+  if (filter.participantCrmIds != null) {
+    const participantOr = buildParticipantCrmIdOrFilter(filter.participantCrmIds);
+    // Fail CLOSED: a supplied-but-unusable id list must never silently drop the filter and widen
+    // the read to every row. The doors short-circuit this case before querying; this is the backstop.
+    result = participantOr ? result.or(participantOr) : result.in("agent_crm_id", []);
+  }
   return result;
 }
 
@@ -671,6 +708,7 @@ export async function queryVisits<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
+  if (participantFilterMatchesNobody(options)) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
   // When collapsing, widen the projection so the duplicate-detection fingerprint columns are present
@@ -711,6 +749,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
+  if (participantFilterMatchesNobody(options)) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
   // See queryVisits: widen the projection so the collapse fingerprint columns are present.

@@ -24,6 +24,7 @@ import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
+import { crmVisitTypeMeaningLenient } from "@/lib/crm/visit-type-meaning";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
   daysInMonth,
@@ -55,43 +56,18 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/**
- * Non-regular visit types -> compliance status. Regular (0) is handled as a count.
- *
- * AV means "away, not working" (leave). CP means "working, just not a regular
- * customer visit" — conferences, training, meetings, travel.
- *
- * Health Day (-15) is CP, NOT AV (owner ruling 2026-08-01): "health day is a
- * normal working day, it's an activity they do for patients in the dr clinic."
- * It used to map to AV, so every health day read as vacation — it consumed the
- * employee's annual leave balance and, once that ran out, was deducted from
- * salary on the payroll Vacation step. In July 2026 that was 22 days across 11
- * employees (33 in June, 22 in May): people charged leave for days they worked.
+/*
+ * Non-regular visit types -> compliance status (AV = leave, CP = worked, not a regular visit) is
+ * decided by the single table in src/lib/crm/visit-type-meaning.ts. This matrix reads it through
+ * the LENIENT lookup: a code the table does not list counts as a worked day ("CP"), exactly as the
+ * old `?? "CP"` default here did. Regular (0) is handled as a count and never looked up.
  */
-const VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
-  [-1, "CP"], // Conference
-  [-2, "CP"], // Group Meeting
-  [-4, "AV"], // Annual Vacation — the only genuine leave type here
-  // Public Holiday (-5) and Casual Leave (-6) are WORKING time (owner ruling 2026-08-21).
-  // Both already behaved this way — but only because they were ABSENT from this map and fell
-  // through to the CP default. That was an accident, not a decision. Listing them explicitly
-  // means a later change to that fallback cannot silently turn 1,659 production days into
-  // charged leave, which is exactly how the Health Day mistake below happened. iReports360
-  // sends no description for either; see src/lib/crm/visit-types.ts for what each code means.
-  [-5, "CP"],
-  [-6, "CP"],
-  [-8, "CP"], // Campaign (Prospection)
-  [-9, "CP"], // Training
-  [-11, "CP"], // Meeting
-  [-12, "CP"], // Traveling
-  [-15, "CP"], // Health Day — clinic work, see the note above
-]);
 
 /**
  * Visit types iReports360 also uses to log EXCUSES — there is no dedicated
  * excuse visit_type (see EXCUSE_COMMENT_PATTERN below).
  *
- * Deliberately its own set rather than derived from VISIT_TYPE_TO_STATUS:
+ * Deliberately its own set rather than derived from the visit-type meaning table:
  * excuse detection has always considered both -4 and -15, and must keep doing
  * so now that -15 classifies as CP instead of AV. Deriving it from the status
  * map would have silently stopped excuse-labelled health days being held back
@@ -141,7 +117,7 @@ function dayCellValue(visits: IReports360Visit[]): number | "AV" | "CP" {
     if (visit.visitType === 0) {
       regularCount++;
     } else {
-      const mapped = VISIT_TYPE_TO_STATUS.get(visit.visitType) ?? "CP";
+      const mapped = crmVisitTypeMeaningLenient(visit.visitType);
       if (mapped === "AV") hasAv = true;
       else hasCp = true;
     }
@@ -162,7 +138,7 @@ function mixedDayHasCampaign(visits: IReports360Visit[]): boolean {
   let hasCp = false;
   for (const visit of visits) {
     if (visit.visitType === 0) regularCount++;
-    else if ((VISIT_TYPE_TO_STATUS.get(visit.visitType) ?? "CP") === "CP") hasCp = true;
+    else if (crmVisitTypeMeaningLenient(visit.visitType) === "CP") hasCp = true;
   }
   return regularCount > 0 && hasCp;
 }

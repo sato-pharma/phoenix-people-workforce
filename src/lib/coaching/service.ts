@@ -16,6 +16,7 @@ import {
   sameWorkforceLine,
 } from "@/lib/workforce/hierarchy-resolver";
 import { coachingMaxScore } from "@/lib/coaching/constants";
+import { buildDownwardCut, type DownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import {
   buildCoachingScoreAnalytics,
   emptyCoachingScoreAnalytics,
@@ -238,6 +239,11 @@ export function canAccessCoachingEmployee(
   const currentHrId = normalizeHrId(access.hrId);
   if (!currentHrId) return false;
   if (idsMatch(currentHrId, employee.hrId)) return true;
+  // THE DOWNWARD RULE (owner, 2026-09-04) on the LINE-scoped branch — line membership is neither up
+  // nor down, so a Product Manager's line includes his own manager. Chain cut first, ahead of the
+  // direct-report shortcut, so a cyclic manager link can never re-admit an ancestor.
+  const lineCut = lineRoles.has(access.role) ? downwardCutFor(access, directory) : null;
+  if (lineCut?.isAboveViewer(employee)) return false;
   // TEAM (direct report): seat-continuity aware so a manager keeps their team
   // after a sub-manager resignation (vacant-seat marker), staying consistent with
   // the organogram. See src/lib/workforce/hierarchy-resolver.ts.
@@ -258,14 +264,44 @@ export function canAccessCoachingEmployee(
     if (!accessor) return false;
     // GPM sees ALL employees on their product line regardless of department,
     // so they get a full cross-department line view in coaching.
-    if (access.role === "Group Product Manager") {
-      return sameWorkforceLine(accessor, employee);
-    }
     // All other line roles (NSM, PM): department-safe — same line AND same
     // department only, so a Sales role never sees Marketing on a shared line.
-    return lineScopeIncludesEmployee(accessor, employee);
+    const onLine =
+      access.role === "Group Product Manager"
+        ? sameWorkforceLine(accessor, employee)
+        : lineScopeIncludesEmployee(accessor, employee);
+    if (!onLine) return false;
+    // Cut 2 — the seat-rank ladder (peers, anyone above, unranked titles). Narrow-only: someone on
+    // the line who genuinely sits in the viewer's own reporting subtree stays visible even with an
+    // off-ladder title, because that subtree is downward by construction.
+    if (!lineCut || lineCut.isStrictlyBelowViewer(employee)) return true;
+    return isWithinManagerHierarchy({
+      employee,
+      byCanonicalHrId: buildCanonicalDirectory(directory),
+      viewerCanonicalHrId: currentHrId,
+      canonicalize: normalizeHrId,
+    });
   }
   return false;
+}
+
+// filterSummariesForAccess calls canAccessCoachingEmployee once per report against the same
+// directory array, so the O(directory) cut is built once per (directory, viewer, role).
+const downwardCutCache = new WeakMap<EmployeeDirectoryRow[], Map<string, DownwardCut>>();
+
+function downwardCutFor(access: AccessContext, directory: EmployeeDirectoryRow[]): DownwardCut {
+  const cacheKey = `${access.role}|${normalizeHrId(access.hrId) ?? ""}`;
+  let byViewer = downwardCutCache.get(directory);
+  if (!byViewer) {
+    byViewer = new Map();
+    downwardCutCache.set(directory, byViewer);
+  }
+  let cut = byViewer.get(cacheKey);
+  if (!cut) {
+    cut = buildDownwardCut({ role: access.role, viewerHrId: access.hrId ?? null, employees: directory });
+    byViewer.set(cacheKey, cut);
+  }
+  return cut;
 }
 
 function assertCanAccessEmployee(

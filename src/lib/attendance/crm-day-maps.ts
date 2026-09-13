@@ -18,109 +18,70 @@
 // nor a CP-type visit exists does an Annual-Vacation entry count as
 // CRM-recorded leave.
 //
-// THIS IS THE THIRD COPY OF THE AV/CP RULING, AND IT IS NOT IDENTICAL TO THE
-// OTHER TWO. Both maps named above are read through `?? "CP"`, so a visit type
-// they do not list still counts as working time. The two Sets below are a
-// strict WHITELIST instead: a type in neither Set sets no flag at all, the day
+// THE AV/CP RULING ITSELF LIVES IN ONE PLACE: src/lib/crm/visit-type-meaning.ts.
+// This module used to hold a hand-kept third copy of it as two Sets, and that
+// copy drifted (it kept Health Day (-15) as leave after the ruling, and never
+// received the Public Holiday (-5) / Casual Leave (-6) ruling). It now reads the
+// shared table.
+//
+// What is still different here is the LOOKUP, not the table: this module uses
+// the STRICT lookup. A code the table does not list sets no flag at all, the day
 // falls through the classification loop's `continue`, and NO cancel reaches
 // reconcileDay — the day is then judged on device-punch timing alone. The
-// Sets must be kept in lockstep with those Maps by hand, because a Set pair
-// does not grep like a Map: that is exactly how this copy kept an obsolete
-// Health Day (-15) mapping after the other two dropped it, and never received
-// the Public Holiday (-5) / Casual Leave (-6) ruling at all.
-//
-// The five undocumented codes that used to fall through here — -7, -19, -20,
-// -21, -30 — were added to the CP Set on the owner's ruling of 2026-08-21,
-// closing that gap: measured on production the same day, 88 agent-days across
-// 30 employees since 2026-07-01 had one of those as their ONLY CRM record, and
-// were being judged on punch timing while copies #1 and #2 counted the very
-// same day as working time via `?? "CP"`. The Set now lists all 15 visit types
-// production has ever produced, so all three copies agree on every real code.
-//
-// What still differs is only a code iReports360 has never sent: a NEW type
-// would be CP in the other two and a fall-through here. That is deliberate —
-// silently cancelling a deduction for a code nobody has classified is the
-// riskier default. It is no longer SILENT, though: the CRM sync now raises an
-// alert the first time an unclassified code appears, via
-// CRM_DAY_CLASSIFIED_VISIT_TYPES below and
-// crm/unrecognized-visit-type-alert.ts. (crm/unmapped-alert.ts is a different
-// tripwire — it covers unmapped AGENTS, not visit types.) If a 16th code ever
-// appears, classify it here and in the two Maps deliberately.
+// Field Workforce Compliance matrix uses the lenient lookup and calls such a
+// code CP. That is deliberate — silently cancelling a deduction for a code
+// nobody has classified is the riskier default. It is not SILENT: the CRM sync
+// raises an alert the first time an unclassified code appears, via
+// CRM_DAY_CLASSIFIED_VISIT_TYPES below and crm/unrecognized-visit-type-alert.ts.
+// (crm/unmapped-alert.ts is a different tripwire — it covers unmapped AGENTS.)
+// If a new code ever appears, classify it in visit-type-meaning.ts, deliberately.
 
 import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
+import {
+  CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES,
+  CRM_LEAVE_VISIT_TYPE_CODES,
+  CRM_REGULAR_VISIT_TYPE,
+  CRM_WORKING_VISIT_TYPE_CODES,
+  crmVisitTypeMeaningStrict,
+} from "@/lib/crm/visit-type-meaning";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
 
-/** iReports360 visit types that represent a leave day, not a field visit — the AV half of
- * VISIT_TYPE_TO_STATUS / LEAVER_VISIT_TYPE_TO_STATUS. Annual Vacation (-4) is the ONLY genuine
- * leave type Phoenix recognises here. Health Day (-15) is NOT leave — owner ruling 2026-08-01,
- * "an activity they do for patients in the dr clinic" — and Public Holiday (-5) / Casual Leave
- * (-6) are NOT leave either — owner ruling 2026-08-21. All three now sit in the CP Set below. */
-const CRM_LEAVE_VISIT_TYPES = new Set<number>([-4]);
+/** Leave-day codes (the AV half of the shared table) — Annual Vacation (-4) only. Health Day
+ * (-15), Public Holiday (-5) and Casual Leave (-6) are working time. Derived, never hand-listed. */
+const CRM_LEAVE_VISIT_TYPES: ReadonlySet<number> = CRM_LEAVE_VISIT_TYPE_CODES;
 
-/** iReports360 visit types that represent a real (non-desk) work activity that isn't a plain
- * customer visit — the CP half of VISIT_TYPE_TO_STATUS / LEAVER_VISIT_TYPE_TO_STATUS. Treated
- * identically to a regular visit for this module's purposes: proof the employee was doing real
- * field/CRM-logged work that day, same "regular > CP > AV" precedence as dayCellValue.
- *
- * The nine the vendor documents: Conference (-1), Group Meeting (-2), Campaign/Prospection (-8),
- * Training (-9), Meeting (-11), Traveling (-12), Health Day (-15).
- *
- * Plus the undocumented codes, which iReports360 sends with the description "Unknown" and whose
- * meanings were owner-confirmed 2026-07-14 from the reps' own comment text (see
- * src/lib/crm/visit-types.ts): Public Holiday (-5), Casual Leave (-6), Ambiguous (-7), Meetings
- * (-19), Admin Work (-20), Business Review/BRM (-21), Unlabelled field visit (-30). Copies #1 and
- * #2 reach CP for all of these through their `?? "CP"` default; this Set has to name them,
- * because it has no default. Owner ruling 2026-08-21.
- *
- * -7 is the one judgement call: its comment text is split at runtime by classifyAmbiguousComment,
- * and some of those rows read as leave. CP is still right here — it is what the other two copies
- * already return for -7, and in this module leave and field visit are both a universal cancel in
- * reconcileDay, so the two only differ in the reason string, never in money. */
-const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([
-  -1, -2, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30,
-]);
+/** Working-but-not-a-regular-visit codes (the CP half of the shared table). Treated identically to
+ * a regular visit here: proof of real field/CRM-logged work that day, same "regular > CP > AV"
+ * precedence as dayCellValue. Derived, never hand-listed. */
+const CRM_CAMPAIGN_VISIT_TYPES: ReadonlySet<number> = CRM_WORKING_VISIT_TYPE_CODES;
 
 /**
- * Read accessor for the two Sets above, exported so the AV/CP ruling is unit-testable without
- * exposing the mutable Sets themselves — the same shape as `leaverVisitTypeStatus` in
- * automated-payroll/recommend.ts.
+ * The AV/CP ruling as this module applies it — the STRICT lookup over the shared table.
  *
- * Returns undefined for a type in NEITHER Set. That is this module's strict-whitelist
- * fall-through (no flag, no cancel) and is deliberately NOT the `?? "CP"` the other two copies
- * apply — see the header note. A regular visit (type 0) is counted by `regularCount` in the
- * classification loop and never routed through these Sets, so it too returns undefined here.
+ * Returns undefined for a type the table does not list. That is this module's strict-whitelist
+ * fall-through (no flag, no cancel) and deliberately NOT the lenient "CP" the Field Workforce
+ * Compliance matrix applies — see the header note. A regular visit (type 0) is counted by
+ * `regularCount` in the classification loop and never looked up, so it too returns undefined here.
  */
 export function crmDayVisitTypeStatus(visitType: number): "AV" | "CP" | undefined {
-  if (CRM_CAMPAIGN_VISIT_TYPES.has(visitType)) return "CP";
-  if (CRM_LEAVE_VISIT_TYPES.has(visitType)) return "AV";
-  return undefined;
+  return crmVisitTypeMeaningStrict(visitType);
 }
 
-/** Regular customer visit — counted by `regularCount` in the classification loop below rather than
- * through either Set, so it is classified even though `crmDayVisitTypeStatus` returns undefined
- * for it. Named here so the alert set below does not mistake the commonest code of all for a new
- * one. */
-const CRM_REGULAR_VISIT_TYPE = 0;
-
 /**
- * Every visit type this module knows how to classify — the two Sets plus the regular-visit code.
+ * Every visit type this module knows how to classify — the shared table's codes plus the
+ * regular-visit code.
  *
- * Exists so the CRM sync can raise an alert when iReports360 sends a code that is in NEITHER Set
+ * Exists so the CRM sync can raise an alert when iReports360 sends a code the table does not list
  * (see selectUnrecognizedVisitTypeAlerts in crm/unrecognized-visit-type-alert.ts). Such a code
  * falls through the classification loop to `continue`, setting no flag, so `reconcileDay` never
- * sees a cancel and the day is judged on device-punch timing alone — the precise failure this
- * module was built to prevent. Copies #1 and #2 default an unlisted code to CP via `?? "CP"` and
- * are therefore unaffected, which is what makes this fall-through so quiet.
+ * sees a cancel and the day is judged on device-punch timing alone.
  *
- * DERIVED from the Sets above, never a hand-written list. A fourth hand-maintained copy of the
- * visit-type ruling is exactly the drift that made the 88-agent-day gap possible in the first
- * place; building this from the same two Sets means it cannot disagree with them.
+ * DERIVED from the shared table, never a hand-written list, so it cannot disagree with it.
  */
 export const CRM_DAY_CLASSIFIED_VISIT_TYPES: ReadonlySet<number> = new Set<number>([
   CRM_REGULAR_VISIT_TYPE,
-  ...CRM_LEAVE_VISIT_TYPES,
-  ...CRM_CAMPAIGN_VISIT_TYPES,
+  ...CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES,
 ]);
 
 type CrmDayVisitRow = {

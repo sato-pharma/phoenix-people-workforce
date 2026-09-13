@@ -15,7 +15,6 @@ export const emailTemplateKeys = [
   "probation_reminder",
   "probation_dv_snapshot",
   "probation_weekly_digest",
-  "dv_planner_weekly",
   "probation_day30",
   "probation_day60",
   "probation_day75",

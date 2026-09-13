@@ -54,7 +54,7 @@ import type { CompanyVacationReportSource } from "@/lib/vacation/company-vacatio
  * comment above for why a visit-count heuristic is deliberately NOT used for anyone else. */
 const AV_HALF_DAY_MAX_WORKED_MINUTES = 5 * 60;
 const EXCUSE_COMMENT_PATTERN = /excuse/i;
-/** CRM visit_type for "Annual Vacation" — see VISIT_TYPE_TO_STATUS in ireports360-source.ts.
+/** CRM visit_type for "Annual Vacation" — see the visit-type table in crm/visit-type-meaning.ts.
  * Deliberately excludes -15 (Health Day): this report is scoped to vacation, not sick leave.
  * NOTE: this is intentionally NARROWER than the CRM master "Vacations" tab (crm/master.ts
  * computeVacationPeriods), which matches any 'vacation'-worded description. BOTH honor the CRM's

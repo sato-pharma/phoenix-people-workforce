@@ -16,6 +16,7 @@ import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -236,11 +237,52 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   // National Sales Manager is NOT company-wide: he sees only his own scope — himself plus
   // everyone reporting up to him (the descendantHrIds chain resolved below).
 
-  const viewerKey = normalizedHrKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId);
+  const viewerIdentity = resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId;
+  const viewerKey = normalizedHrKey(viewerIdentity);
   const viewer = viewerKey
     ? employees.find((employee) => normalizedHrKey(employee.hrId) === viewerKey) ?? null
     : null;
-  const allowedHrIds = viewerKey ? descendantHrIds(viewerKey, employees) : new Set<string>();
+
+  // ── THE DOWNWARD RULE (owner, 2026-09-04; totals decision 2026-09-13) ──────────────────────
+  // "Never an employee sees his direct manager. You see yourself and your scope down." Until this
+  // block, the rule lived only in doctor coverage, so Product Manager B-155 saw his own manager A-8
+  // on this board while she was hidden from him on every CRM board. The ladder and the climb are
+  // NOT re-implemented here: buildDownwardCut is the locked resolver's own helpers, exported.
+  //
+  // Two cuts, as there:
+  //   1. CHAIN — every ancestor of the viewer, climbed over the FULL directory (callers pass
+  //      includeInactive: true, so a departed middle manager does not stop the climb). Applied to
+  //      EVERY scoped viewer.
+  //   2. LADDER — anyone not ranked strictly below the viewer's seat (unranked titles included).
+  //      Applied ONLY for the roles whose scope WIDENS past their own reporting subtree — PM/GPM
+  //      (whole line) and RM (line ∩ region). The subtree itself is downward by construction and is
+  //      exempt from the ladder, exactly as doctor coverage exempts its `team` basis: ranking it
+  //      would drop a real report whose title sits off the ladder out of his own manager's board.
+  //
+  // `excludedVisitorKeys` carries both cuts (normalizeHrIdForAccess keys, the SAME domain as
+  // allowedHrIds). Owner decision 2026-09-13: an excluded person's visits are hidden FROM THE TOTALS
+  // TOO — the headline shrinks so the KPI band still equals the leaderboard sum. filterRowsForAccess
+  // drops them first, and filterEmployeesForDoubleVisitAccess can never readmit them.
+  const cut = buildDownwardCut({ role: access.role, viewerHrId: viewerIdentity ?? null, employees });
+  const excludedVisitorKeys = new Set<string>(cut.chain);
+  if (viewerKey) excludedVisitorKeys.delete(viewerKey);
+
+  const subtreeHrIds = viewerKey ? descendantHrIds(viewerKey, employees) : new Set<string>();
+  const appliesLadder =
+    access.role === "Product Manager" ||
+    access.role === "Group Product Manager" ||
+    access.role === "Regional Manager";
+  if (appliesLadder) {
+    for (const employee of employees) {
+      const key = normalizedHrKey(employee.hrId);
+      if (!key || key === viewerKey || subtreeHrIds.has(key)) continue;
+      if (!cut.isStrictlyBelowViewer(employee)) excludedVisitorKeys.add(key);
+    }
+  }
+  const isExcluded = (key: string | null | undefined) => Boolean(key && excludedVisitorKeys.has(key));
+
+  // A cycle in manager links can put an ancestor inside the subtree walk; the chain wins.
+  const allowedHrIds = new Set<string>(Array.from(subtreeHrIds).filter((key) => !isExcluded(key)));
   const allowedAreas = new Set<string>();
   const allowedLines = new Set<string>();
 
@@ -260,7 +302,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
         const region = normalizeRegionLabel(employee.regionName);
         if (!region || !rmRegionKeys.has(region)) continue;
         const key = normalizedHrKey(employee.hrId);
-        if (key) allowedHrIds.add(key);
+        if (key && !isExcluded(key)) allowedHrIds.add(key);
       }
     }
   }
@@ -281,7 +323,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     for (const employee of employees) {
       if (!sameWorkforceLine(viewer, employee)) continue;
       const key = normalizedHrKey(employee.hrId);
-      if (key) allowedHrIds.add(key);
+      if (key && !isExcluded(key)) allowedHrIds.add(key);
       // Keep any non-null line label too, so line-tagged rows with no mapped employee
       // (e.g. resigned/vacant territories on the line) are still captured.
       const line = normalizeLabelKey(employee.lineName);
@@ -294,6 +336,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     allowedAreas,
     allowedHrIds,
     allowedLines,
+    excludedVisitorKeys,
   };
 }
 
@@ -303,6 +346,12 @@ export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessCont
   return rows.filter((row) => {
     const doubleVisitorKey = normalizedHrKey(row.double_visitor_hr_id);
     const visitedKey = normalizedHrKey(row.visited_employee_hr_id);
+    // Downward rule FIRST, before any admit: a visit BY someone above the viewer (or, on a widening
+    // role, at/above his rank) is hidden from the rows AND the totals (owner, 2026-09-13), even
+    // though it was made to one of HIS reps. Keyed on the visitor only, and on exclusion — never on
+    // directory membership — so an unmapped `CRM:<id>` visitor and a visit to a vacant territory
+    // still reach the line-label fallback below.
+    if (doubleVisitorKey && scope.excludedVisitorKeys.has(doubleVisitorKey)) return false;
     if (doubleVisitorKey && scope.allowedHrIds.has(doubleVisitorKey)) return true;
     if (visitedKey && scope.allowedHrIds.has(visitedKey)) return true;
     if (row.area_name && scope.allowedAreas.has(normalizeLabelKey(row.area_name))) return true;
@@ -314,12 +363,13 @@ export function filterRowsForAccess(rows: DoubleVisitDbRow[], access: AccessCont
 export function filterEmployeesForDoubleVisitAccess(employees: EmployeeDirectoryRow[], access: AccessContext) {
   const scope = resolveDoubleVisitAccessScope(access, employees);
   if (scope.all) return employees;
+  // PEOPLE are admitted by identity only. allowedLines/allowedAreas are ROW rules — they exist so a
+  // line-tagged visit with no mapped employee (a vacant territory) still counts. Letting them admit
+  // EMPLOYEES too is what readmitted an excluded manager into scopedEmployees, and from there into
+  // the By Manager tab and the "did zero double visits" idle list (a false zero about a real person).
   return employees.filter((employee) => {
     const key = normalizedHrKey(employee.hrId);
-    if (key && scope.allowedHrIds.has(key)) return true;
-    if (employee.areaName && scope.allowedAreas.has(normalizeLabelKey(employee.areaName))) return true;
-    if (employee.lineName && scope.allowedLines.has(normalizeLabelKey(employee.lineName))) return true;
-    return false;
+    return Boolean(key && scope.allowedHrIds.has(key) && !scope.excludedVisitorKeys.has(key));
   });
 }
 
@@ -1367,6 +1417,56 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
   };
 }
 
+/**
+ * The scoped heart of the dashboard — pure, no IO — exported so the downward-rule test drives the
+ * SERVICE's own construction rather than a copy of it (a test that rebuilt this pipeline itself is
+ * how an earlier attempt stayed green while the idle-manager defect shipped).
+ *
+ * Every emitter (KPI band, leaderboard, By Manager tab, idle list, MR scores) is built from the one
+ * `filteredRows` / `scopedEmployees` pair, which is what keeps the KPI total equal to the
+ * leaderboard sum once out-of-scope visitors are removed.
+ *
+ * `employees` must be the FULL directory (includeInactive: true).
+ */
+export function buildScopedDoubleVisitDashboardCore(input: {
+  access: AccessContext;
+  dateTo: string;
+  employees: EmployeeDirectoryRow[];
+  rows: DoubleVisitDbRow[];
+}) {
+  const { access, dateTo, employees, rows } = input;
+  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, access);
+  const scopedRows = filterRowsForAccess(rows, access, employees);
+  // Visitor ROLE classification reads the FULL directory, never the scope. Built from the scope it
+  // failed OPEN for anyone outside it (isAllowedDoubleVisitor(null) is true), so it only ever
+  // worked for a scoped viewer while an out-of-scope visitor happened to be readmitted.
+  const employeesByAccessKey = new Map(
+    employees
+      .map((employee) => [normalizedHrKey(employee.hrId), employee])
+      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+  );
+  // Manager HR ID keys (DSM/RM/NSM/PM/GPM/TM) to exclude manager-to-manager rows — defense-in-depth
+  // alongside the row-level classification in dbRowFromMirrorVisit. An EXCLUSION is built from the
+  // full directory, never from the scope: derived from scopedEmployees it silently stops excluding
+  // exactly the managers the downward rule removes from scope.
+  const managerHrIdKeys = new Set(
+    employees
+      .filter((e) => resolveDvRole(e) !== null)
+      .map((e) => canonicalHrIdKey(e.hrId))
+      .filter((k): k is string => Boolean(k)),
+  );
+  const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, employeesByAccessKey).filter((row) => {
+    if (!row.visited_employee_hr_id) return true;
+    return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
+  });
+  const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
+  const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
+  const kpis = buildKpis(filteredRows);
+  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, dateTo);
+  const executiveSummary = buildExecutiveSummary(managerSummaries, mrScores, kpis, scopedEmployees, visitedKeysByManager);
+  return { executiveReports, executiveSummary, filteredRows, kpis, managerSummaries, mrScores, scopedEmployees };
+}
+
 export async function getDoubleVisitDashboardData(input: {
   access: AccessContext;
   dateFrom?: string | null;
@@ -1382,30 +1482,15 @@ export async function getDoubleVisitDashboardData(input: {
 
   const employees = await getEmployeeDirectoryRows({ includeInactive: true });
   const rows = await getLiveDoubleVisitRows(dateFrom, dateTo, employees);
-  const scopedEmployees = filterEmployeesForDoubleVisitAccess(employees, input.access);
-  const scopedRows = filterRowsForAccess(rows, input.access, employees);
-  const scopedEmployeesByHrId = new Map(
-    scopedEmployees
-      .map((employee) => [normalizedHrKey(employee.hrId), employee])
-      .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
-  );
-  // Build a set of manager HR ID keys (DSM/RM/NSM/PM/GPM/TM) to exclude manager-to-manager
-  // rows — defense-in-depth alongside the row-level classification in dbRowFromMirrorVisit.
-  const managerHrIdKeys = new Set(
-    scopedEmployees
-      .filter((e) => resolveDvRole(e) !== null)
-      .map((e) => canonicalHrIdKey(e.hrId))
-      .filter((k): k is string => Boolean(k)),
-  );
-  const filteredRows = filterRowsByAllowedDoubleVisitor(scopedRows, scopedEmployeesByHrId).filter((row) => {
-    if (!row.visited_employee_hr_id) return true;
-    return !managerHrIdKeys.has(canonicalHrIdKey(row.visited_employee_hr_id) ?? "");
-  });
-  const mrScores = buildMrScores(filteredRows, scopedEmployees, dateTo);
-  const executiveReports = buildExecutiveReports(mrScores, scopedEmployees, filteredRows);
-  const kpisValue = buildKpis(filteredRows);
-  const { summaries: managerSummaries, visitedKeysByManager } = buildManagerSummariesDetailed(filteredRows, scopedEmployees, dateTo);
-  const executiveSummary = buildExecutiveSummary(managerSummaries, mrScores, kpisValue, scopedEmployees, visitedKeysByManager);
+  const {
+    executiveReports,
+    executiveSummary,
+    filteredRows,
+    kpis: kpisValue,
+    managerSummaries,
+    mrScores,
+    scopedEmployees,
+  } = buildScopedDoubleVisitDashboardCore({ access: input.access, dateTo, employees, rows });
   const activeScopeEmployees = scopedEmployees.filter(isActiveEmployee);
   const areaBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.areaName)).filter((value): value is string => Boolean(value)))).sort();
   const lineBuckets = Array.from(new Set(activeScopeEmployees.map((employee) => nullableText(employee.lineName)).filter((value): value is string => Boolean(value)))).sort();
@@ -1863,8 +1948,10 @@ export async function getDoubleVisitReportData(input: {
       regionByAreaKey.set(areaKey, employee.regionName);
     }
   }
+  // Built from the FULL directory: an exclusion derived from the scope stops excluding exactly the
+  // managers the downward rule takes out of scope (see buildScopedDoubleVisitDashboardCore).
   const managerHrIdKeys = new Set(
-    scopedEmployees
+    employees
       .filter((employee) => resolveDvRole(employee) !== null)
       .map((employee) => canonicalHrIdKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),

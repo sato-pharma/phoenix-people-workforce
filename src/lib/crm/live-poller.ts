@@ -52,6 +52,7 @@ import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
 import {
   latestPlanSyncAtMs,
   resolvePlanSyncWindow,
+  restampUnmappedPlanEntries,
   syncIReports360WeeklyPlans,
   type NewlySeenPlan,
 } from "@/lib/crm/plan-sync";
@@ -60,7 +61,6 @@ import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
-import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -616,6 +616,29 @@ async function runProbationDvCapture(window: { dateFrom: string; dateTo: string 
   }
 }
 
+/**
+ * Stamps `agent_hr_id` onto plan-entry rows that were written before their rep's identity was known.
+ *
+ * Rides the deep visits runs for the same reason the probation capture does: those runs are where a
+ * newly learned identity first reaches the mirror, and a plan row the sync wrote as null was never
+ * revisited — 40,445 of them on 2026-09-13, invisible to every scoped plan board. Firewalled like
+ * runProbationDvCapture: it never throws, never pings the visits dead-man's switch, and never
+ * notifies anyone — an unmapped doctor list is old debt, not "today's attendance data is broken".
+ */
+async function runPlanEntryRestamp(): Promise<void> {
+  try {
+    const summary = await restampUnmappedPlanEntries();
+    console.log(
+      `[crm:live-poll] plan entry re-stamp — checked ${summary.checked} unmapped row(s), fixed ${summary.fixed}`,
+    );
+  } catch (error) {
+    logError("Plan-entry identity re-stamp failed after a CRM deep run; the next run retries", {
+      error,
+      labels: { event: "plan_entry_restamp_failed", job: "plan-entry-restamp" },
+    });
+  }
+}
+
 /** Runs one due deep job (rolling sync or wide reconcile) in place of this tick's probe, with the
  * same dead-man's-switch slugs and digest behavior the external cron routes use — so monitoring
  * continuity holds no matter which scheduler fired last. Reconcile always notifies (weekly
@@ -669,6 +692,7 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
         ? resolveWideReconciliationSlice(scheduledAt)
         : { dateFrom: addDaysIso(today, -PROBATION_DV_LOOKBACK_DAYS), dateTo: today },
     );
+    await runPlanEntryRestamp();
   } catch (error) {
     if (isReconcile) state.lastReconcileFailureMs = Date.now();
     else state.lastRollingFailureMs = Date.now();
@@ -707,8 +731,9 @@ async function notifySustainedFailure(dateFrom: string, dateTo: string, error: u
 }
 
 /** Timers must never hold the process open (deploy shutdowns, tests) — but in a DOM-typed
- * bundle setTimeout's return type is a number, so reach for unref only when it exists. */
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+ * bundle setTimeout's return type is a number, so reach for unref only when it exists. Exported for
+ * the Early Birds close scheduler, which runs its own timer beside this loop. */
+export function unrefTimer(timer: ReturnType<typeof setTimeout> | ReturnType<typeof setInterval>): void {
   (timer as unknown as { unref?: () => void }).unref?.();
 }
 
@@ -736,16 +761,10 @@ async function tick(): Promise<void> {
     return;
   }
 
-  // Early Birds closes its fortnights here rather than from a cron route: the external scheduler is
-  // a third-party account with a 30s request cap, far too short for a company-wide close. This is
-  // self-throttling (it asks the database at most every 15 minutes) and never throws, so a failure
-  // cannot cost the CRM probe its tick.
-  await runDueEarlyBirdsClose().catch((error: unknown) =>
-    logError("Early Birds sweep threw into the poller tick", {
-      labels: { event: "early_birds_sweep_threw" },
-      error,
-    }),
-  );
+  // The Early Birds close USED to run here. It moved to its own timer
+  // (src/lib/early-birds/close-scheduler.ts) because this loop only starts when iReports360
+  // credentials are present, and the close reads the mirror, not the vendor — so losing the vendor
+  // credentials silently stopped every fortnight from closing. Do not put it back.
 
   const plan = resolvePollPlan(hour * 60 + minute, state.tickIndex);
   const dateFrom = plan.includeYesterday ? addDaysIso(today, -1) : today;
@@ -827,21 +846,30 @@ function scheduleNext(): void {
 export type LivePollerStartResult = { reason?: string; started: boolean };
 
 /**
- * Starts the singleton poller. Hard guards, in order:
+ * The HOST half of the in-process guards — why this process must not run a scheduled writer at all,
+ * or null when it may. Shared with the Early Birds close scheduler, which needs exactly these three
+ * and deliberately NOT the iReports360 credential check below.
  *  - PHOENIX_LIVE_CRM_POLL must be exactly "true" (the Railway-only opt-in switch; NOT in any
  *    .env file in this repo, so a dev machine — whose .env.local points at PRODUCTION Supabase —
  *    can never start a second writer against prod);
  *  - a production Next.js build (`next dev` is excluded even if someone exports the flag);
- *  - RAILWAY_ENVIRONMENT_NAME === "production" (belt-and-braces host pin);
- *  - iReports360 secrets present.
+ *  - RAILWAY_ENVIRONMENT_NAME === "production" (belt-and-braces host pin).
+ */
+export function resolveInProcessHostRefusal(): string | null {
+  if (process.env.PHOENIX_LIVE_CRM_POLL !== "true") return "PHOENIX_LIVE_CRM_POLL is not 'true'";
+  if (process.env.NODE_ENV !== "production") return "not a production build";
+  if (process.env.RAILWAY_ENVIRONMENT_NAME !== "production") return "RAILWAY_ENVIRONMENT_NAME is not 'production'";
+  return null;
+}
+
+/**
+ * Starts the singleton poller. Hard guards, in order: the host guards in resolveInProcessHostRefusal,
+ * then iReports360 secrets present.
  */
 export function startLiveCrmPoller(): LivePollerStartResult {
   if (state.running) return { reason: "already running", started: false };
-  if (process.env.PHOENIX_LIVE_CRM_POLL !== "true") return { reason: "PHOENIX_LIVE_CRM_POLL is not 'true'", started: false };
-  if (process.env.NODE_ENV !== "production") return { reason: "not a production build", started: false };
-  if (process.env.RAILWAY_ENVIRONMENT_NAME !== "production") {
-    return { reason: "RAILWAY_ENVIRONMENT_NAME is not 'production'", started: false };
-  }
+  const hostRefusal = resolveInProcessHostRefusal();
+  if (hostRefusal) return { reason: hostRefusal, started: false };
   if (!isIReports360Configured()) return { reason: "iReports360 secrets are not configured", started: false };
 
   state.running = true;
