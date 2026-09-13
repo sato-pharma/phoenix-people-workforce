@@ -6,7 +6,6 @@ import { CandidateReadCard } from "@/components/employee-portal/candidate-read-c
 import { CandidateReturnControl } from "@/components/employee-portal/candidate-return-control";
 import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
-import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
 
@@ -38,8 +37,6 @@ export function DistrictFoldersSection({
   boards,
   callClaims,
   files,
-  onFeedbackGiven,
-  outstandingFeedback = null,
   heading = "Your areas",
   subheading = "Every area you hold in the organogram, and the CVs of applicants who asked to work in it or whose CV places them there. Open a folder to read them.",
   viewerHrId,
@@ -56,10 +53,6 @@ export function DistrictFoldersSection({
    */
   callClaims: CandidateCallClaims;
   files: Record<string, TeamCandidateFile[]>;
-  /** The CV this reader owes feedback on, which blocks him opening any other. */
-  outstandingFeedback?: OutstandingFeedback | null;
-  /** He writes it, and the block lifts in place. */
-  onFeedbackGiven?: (candidateId: string) => void;
   heading?: string;
   subheading?: string;
   viewerHrId: string | null;
@@ -263,9 +256,7 @@ export function DistrictFoldersSection({
                         candidate={candidate}
                         claim={callClaims[candidate.id] ?? null}
                         files={files[candidate.id] ?? []}
-                        onFeedbackGiven={onFeedbackGiven}
                         onSkipped={handleSkipped}
-                        outstandingFeedback={outstandingFeedback}
                         footer={
                           ownFolders ? (
                             <CandidateReturnControl

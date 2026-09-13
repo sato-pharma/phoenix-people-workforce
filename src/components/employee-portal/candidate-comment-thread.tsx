@@ -24,25 +24,15 @@ import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recru
 export function CandidateCommentThread({
   candidateId,
   composerActions,
-  onCommentAdded,
   viewerHrId,
 }: {
   candidateId: string;
   /**
-   * Called after THIS viewer has posted a comment on this CV.
-   *
-   * The feedback lock is read once on the server with the page, so the card would go on blocking
-   * him until a reload even though he has just written the thing it was waiting for. This is what
-   * releases it in place. It fires only on his OWN post, never on the thread loading somebody
-   * else's comment, because another manager's words are not the feedback he owes.
-   */
-  onCommentAdded?: (candidateId: string) => void;
-  /**
    * The card's own answer buttons, rendered BESIDE Add comment and sharing this one text box.
    *
    * ONE FIELD, NOT TWO. The owner, 2026-09-09: *"I have two fields for your answer and your comments
-   * — merge them into one field, no need two fields."* He was right: after the feedback lock there is
-   * only one thing to type on a CV, which is what he found. So the answer buttons come DOWN here to
+   * — merge them into one field, no need two fields."* There is only one thing to type on a CV,
+   * which is what he found. So the answer buttons come DOWN here to
    * the comment box rather than the box being duplicated above them, and Skip sends whatever is in
    * it as its required reason.
    *
@@ -93,7 +83,6 @@ export function CandidateCommentThread({
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
       if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Failed to save your comment.");
       setComments((prev) => [data.comment as CandidateComment, ...(prev ?? [])]);
-      onCommentAdded?.(candidateId);
       setDraft("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to save your comment.");

@@ -230,7 +230,7 @@ import { runCvFolderTreeTests } from "./cv-folder-tree.test.ts";
 import { runCandidateFolderFilerNameTests } from "./candidate-folder-filer-name.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
 import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
-import { runCvFeedbackLockTests } from "./cv-feedback-lock.test.ts";
+import { runCvLockRemovedRevealMarksSeenTests } from "./cv-lock-removed-reveal-marks-seen.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
 import { runCandidateFolderSuggestionTests } from "./candidate-folder-suggestion.test.ts";
 import { runCandidateFolderCanonicalAreaTests } from "./candidate-folder-canonical-area.test.ts";
@@ -5333,8 +5333,8 @@ await runTest(
 );
 
 await runTest(
-  "a manager who opens a CV owes his feedback on it before he may open another (and may always reopen that one)",
-  runCvFeedbackLockTests,
+  "the CV feedback lock stays removed, and revealing a phone number marks the CV seen",
+  runCvLockRemovedRevealMarksSeenTests,
 );
 
 await runTest(

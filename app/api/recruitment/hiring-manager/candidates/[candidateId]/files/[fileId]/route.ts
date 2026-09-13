@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
-import {
-  CvFeedbackRequiredError,
-  downloadHiringManagerCandidateFile,
-} from "@/lib/recruitment/hiring-manager-view";
+import { downloadHiringManagerCandidateFile } from "@/lib/recruitment/hiring-manager-view";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
 export const runtime = "nodejs";
@@ -71,23 +68,6 @@ export async function GET(
     // content-type, no filename, no Content-Disposition. See file-response.ts.
     return recruitmentFileResponse(request, download);
   } catch (error) {
-    // THE FEEDBACK LOCK ANSWERS 423, AND CARRIES THE CV HE OWES.
-    //
-    // Not a 403: he is perfectly entitled to this CV, and telling him he is forbidden would send him
-    // to the recruitment team to have a permission fixed that is not broken. 423 Locked says the
-    // thing that is true — there is a step outstanding — and the body names the candidate and his id
-    // so the card can offer a way straight back to that record rather than a dead sentence.
-    if (error instanceof CvFeedbackRequiredError) {
-      return NextResponse.json(
-        {
-          error: "feedback_required",
-          message: error.message,
-          outstanding: error.outstanding,
-          success: false,
-        },
-        { status: 423 },
-      );
-    }
     return recruitmentApiError(error, "File download failed.");
   }
 }

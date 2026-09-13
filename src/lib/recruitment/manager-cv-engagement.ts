@@ -538,6 +538,9 @@ export async function loadManagerCvEngagement(access: AccessContext): Promise<Ma
  * markCandidateSeen, which no-ops on a missing table or a session with no HR_ID and never throws for
  * either, and the caller wraps it besides, because a tracking write must never break a CV opening.
  *
+ * Also called from the "I will call" route at the moment it reveals the phone number. The owner,
+ * 2026-09-13: revealing the number marks the CV as seen.
+ *
  * Keyed by the opener's own HR_ID. An upline opening a CV in the team view records the OPEN under the
  * upline, not under the manager who was sent it — which is exactly right: the manager who never
  * opened it must keep reading as not-opened.
