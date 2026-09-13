@@ -1364,10 +1364,16 @@ function formatEgp(value: number) {
 async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
   const normalized = normalizeHrId(hrId);
   if (!normalized) return null;
+  // normalizeHrId is the LOWERCASE comparison key, while app_auth_users stores "B-119". A plain
+  // .eq on the key matched nothing for every employee, so the role came back null and every
+  // submit link fell back to the ADMIN queue — a District Manager's "request submitted" link
+  // pointed at a page his role cannot use (production, 2026-09-12). Same fix as the weekly-plans
+  // copy of this function: look up by the stored form.
   const { data, error } = await getSupabaseAdmin()
     .from("app_auth_users")
     .select("role")
-    .eq("hr_id", normalized)
+    .eq("hr_id", hrIdForStorage(hrId))
+    .limit(1)
     .maybeSingle();
   if (error || !data) return null;
   const role = (data as { role?: string | null }).role;
@@ -1546,7 +1552,16 @@ async function notifyOutstationSubmitted(
     const messageLines = [
       ...(heldForReview
         ? [
-            `HELD FOR REVIEW: this request's residence/destination governorate could not be confirmed automatically, so it was NOT added to payroll yet. A Super Admin will approve or reject it.`,
+            // Generic since 2026-09-13, matching the "Action needed" metric above: every submission
+            // from a hold role waits now, so naming the one reason that used to cause a hold (an
+            // unconfirmable governorate) told a District Manager his Alexandria trip had failed a
+            // check it never failed. The real reason, when the checks raised one, is appended.
+            [
+              "HELD FOR REVIEW: this request is NOT added to payroll yet. A Super Admin will approve or reject it.",
+              text(options.reviewReason),
+            ]
+              .filter(Boolean)
+              .join(" "),
           ]
         : []),
       `${request.employeeName} submitted an outstation expense request for ${claimedAmount} on ${formatPhoenixDateTime(request.createdAt)}.`,
@@ -1628,6 +1643,9 @@ async function notifyOutstationDecision(input: {
             { label: "Trip start", value: formatPhoenixLongDate(r.tripStartDate) },
             { label: "Trip end", value: formatPhoenixLongDate(r.tripEndDate) },
           ],
+          // Pinned: module "outstation" otherwise frames EVERY event in the submit template, whose
+          // fixed body reads "submitted automatically and requires your review".
+          templateKey: "general",
         },
         eventType: "request_rejected",
         message: `Your expense request for ${amount} (${formatPhoenixLongDate(r.tripStartDate)} to ${formatPhoenixLongDate(r.tripEndDate)}) was rejected. Reason: ${reason}`,
@@ -4310,6 +4328,12 @@ export async function sendOutstationDeparturePhotoReminder(
       email: {
         ctaHref: "/employee-portals/expense-submissions",
         ctaLabel: "Take the photo",
+        // Pinned to the plain template. Left to module routing, `outstation` picked the SUBMIT
+        // template, so this reminder reached the employee as "An Outstation / Expense request for
+        // B-119 needs your review … submitted automatically and requires your review", with the HR
+        // ID where his name belongs and blank Job Title and Line rows — that template reads its
+        // fields from submit-only metrics this reminder never carries (production, 2026-09-12).
+        templateKey: "general",
         tone: "neutral" as const,
       },
       eventType: "outstation_departure_photo_due",
@@ -4426,6 +4450,9 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
           email: {
             ctaHref: `/admin/approvals-hub?module=outstation&id=${String(row.id)}`,
             ctaLabel: "Review now",
+            // Plain template: the submit template's table reads submit-only metrics and would
+            // print the HR ID as the employee's name.
+            templateKey: "general",
             tone: "warning" as const,
           },
         },
@@ -5022,6 +5049,37 @@ export async function getOutstationSubmissionForManager(
     decisions.get(request.id) ?? null,
   );
   return { ...submission, employeeHrId: request.employeeHrId, employeeName: request.employeeName };
+}
+
+/**
+ * Why a notification link to an outstation request finds nothing, when the answer is "it was
+ * deleted". The notifications raised at submit are history and outlive the request, so a link in
+ * them can point at a row a Super Admin has since removed — request 136 on 2026-09-12, deleted and
+ * resubmitted as 139 the same afternoon. The page then said "not available, or outside what you can
+ * view", which reads as a permissions fault to the employee who filed it.
+ *
+ * Read from the audit row deleteOutstationRequest writes. Scoped exactly like the live request: the
+ * notice is returned only to a viewer who could have seen that employee's request, so the page
+ * never confirms to anyone else that a request with this id existed.
+ */
+export async function getDeletedOutstationRequestNotice(
+  access: AccessContext,
+  requestId: number,
+): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("audit_logs")
+    .select("old_values,created_at")
+    .eq("entity_type", "outstation_request")
+    .eq("entity_id", String(requestId))
+    .like("summary", "Admin deleted outstation request%")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as { created_at?: string | null; old_values?: Record<string, unknown> | null };
+  const employeeHrId = text(row.old_values?.employeeHrId);
+  if (!employeeHrId || !(await canViewEmployeeExpenseScope(access, employeeHrId))) return null;
+  return `This outstation request was deleted by a Super Admin on ${formatPhoenixDateTime(row.created_at ?? null)}, so there is nothing left to open here. If it was submitted again, the new request is in Expense Submissions.`;
 }
 
 /**
