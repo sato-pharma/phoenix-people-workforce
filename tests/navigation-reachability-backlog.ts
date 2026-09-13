@@ -271,6 +271,9 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // cutover makes native entry the way every rep logs visits, give them rail rows and delete these.
   { route: "/employee-portals/visits/confirmations", roles: ["District Manager", "National Sales Manager", "Regional Manager"], kind: "linked-from-a-component", reason: "Native visit pilot. Reached from the button on My Visits, shown only to a manager a rep has named on a pilot visit that still waits for his answer. No sidebar row until cutover — outside the pilot the screen is always empty.", recorded: "2026-09-13" },
   { route: "/employee-portals/visits/log", roles: ["Medical Rep"], kind: "linked-from-a-component", reason: "Native visit pilot. Reached from the button on My Visits, shown only to a rep on the pilot line until the pilot's last day. No sidebar row until cutover — every other rep would be offered a form that tells him it is closed.", recorded: "2026-09-13" },
+  // ── Native rep plans, the same pilot (CRM phase 4), recorded 2026-09-13 ─────────────────────────
+  { route: "/employee-portals/visits/plan", roles: ["Medical Rep"], kind: "linked-from-a-component", reason: "Native rep plan pilot. Reached from the button on My Visits, shown only to a rep on the pilot line while a pilot week is still ahead. No sidebar row until cutover — every other rep would be offered a planner that tells them it is closed.", recorded: "2026-09-13" },
+  { route: "/employee-portals/visits/plan-reviews", roles: ["District Manager", "National Sales Manager", "Regional Manager"], kind: "linked-from-a-component", reason: "Native rep plan pilot. Reached from the button on My Visits, shown only to a manager a rep has sent a pilot plan to. No sidebar row until cutover — outside the pilot the screen is always empty.", recorded: "2026-09-13" },
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

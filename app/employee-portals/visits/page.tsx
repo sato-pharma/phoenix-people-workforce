@@ -7,6 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { getNativePlanAvailability } from "@/lib/crm/native-visits/plans-service";
 import { getNativeVisitEntryAvailability } from "@/lib/crm/native-visits/service";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
@@ -100,9 +101,13 @@ export default async function MyVisitsPage() {
     teamVisits = [];
   }
 
-  // Native visit entry (the pilot). Offered to a pilot-line rep, and to a manager a rep has named on
-  // a visit. It never throws, so the viewer's own visits always render.
-  const nativeEntry = await getNativeVisitEntryAvailability(access);
+  // Native visit entry and weekly plans (the pilot). Offered to a pilot-line rep, and to a manager a
+  // rep has named on a visit or sent a plan to. Neither throws, so the viewer's own visits always render.
+  const [nativeEntry, nativePlans] = await Promise.all([
+    getNativeVisitEntryAvailability(access),
+    getNativePlanAvailability(access),
+  ]);
+  const showNativeLinks = nativeEntry.canLog || nativeEntry.canConfirm || nativePlans.canPlan || nativePlans.canReview;
 
   return (
     <EmployeePortalPageShell
@@ -114,16 +119,26 @@ export default async function MyVisitsPage() {
       }
       title="My Visits"
     >
-      {nativeEntry.canLog || nativeEntry.canConfirm ? (
+      {showNativeLinks ? (
         <div className="mb-4 flex flex-wrap gap-2">
           {nativeEntry.canLog ? (
             <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/log">
               Log a visit (pilot)
             </Link>
           ) : null}
+          {nativePlans.canPlan ? (
+            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan">
+              My weekly plan (pilot)
+            </Link>
+          ) : null}
           {nativeEntry.canConfirm ? (
             <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/confirmations">
               {`Visits to confirm (${nativeEntry.pendingConfirmations})`}
+            </Link>
+          ) : null}
+          {nativePlans.canReview ? (
+            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan-reviews">
+              {nativePlans.pendingReviews > 0 ? `Plans to verify (${nativePlans.pendingReviews})` : "Plan reviews"}
             </Link>
           ) : null}
         </div>
