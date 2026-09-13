@@ -65,11 +65,11 @@ other credentials in this file or in Git. Never assume a pasted preview URL is c
 | PHOENIX_EMAIL_TEST_RECIPIENTS | Comma-separated test emails | Redirects all emails in test mode |
 | RESEND_API_KEY | Resend.com API key | Required for live email |
 | NOTIFICATION_EMAIL_FROM | Sender address | e.g. Phoenix HR <noreply@domain.com> |
-| NOTIFICATION_REPLY_TO | Reply-to address | |
+| NOTIFICATION_REPLY_TO | Reply-to address, and the visible To of fan-out sends | Unset in production, so `systemEmail.defaultReplyTo` (care.phx@satopharma.com) ships. Never set it to an address Resend has suppressed |
 | JOB_OFFER_EMAIL_FROM | Offer email sender | Speaks as Sato, never as Phoenix. Falls back to `hr@` on the sending domain — NOT to NOTIFICATION_EMAIL_FROM |
 | JOB_OFFER_REPLY_TO | Where a candidate's reply to an offer lands | Defaults to hr@satopharma.com. Must be a real, monitored mailbox |
 | INTERNAL_MESSAGE_EMAIL_FROM | Internal msg sender | Falls back to NOTIFICATION_EMAIL_FROM |
-| HR_NOTIFICATION_EMAILS | HR team emails for admin notifications | Comma-separated |
+| HR_NOTIFICATION_EMAILS | HR team emails for admin notifications | Comma-separated. Owner 2026-09-13: omar.anwar@satopharma.com (was the suppressed phoenix@satopharma.com, so HR copies reached nobody) |
 | NOTIFICATION_TEST_MODE | Force test mode | "true" to prevent real sends |
 
 ## Google Maps (Optional)

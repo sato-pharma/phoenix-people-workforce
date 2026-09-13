@@ -196,12 +196,12 @@ export function runNotificationConfidenceGateTests() {
   // explicitly rather than relying on the default, so the assertion holds whatever the
   // environment carries.
   const previousReplyTo = process.env.NOTIFICATION_REPLY_TO;
-  process.env.NOTIFICATION_REPLY_TO = "phoenix@satopharma.com";
+  process.env.NOTIFICATION_REPLY_TO = "care.phx@satopharma.com";
   try {
     assert.equal(
       computeRealAudienceSize({
         bcc: ["a@satopharma.com", "b@satopharma.com", STANDING_ADMIN_BCC],
-        to: ["phoenix@satopharma.com"],
+        to: ["care.phx@satopharma.com"],
       }),
       2,
       "a fanned-out send must count its BCC'd recipients, not the reply-to placeholder or the standing admin",
