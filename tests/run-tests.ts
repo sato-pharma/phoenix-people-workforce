@@ -899,6 +899,7 @@ import { runHiringPackDocumentRegistryTests } from "./hiring-pack-document-regis
 import { runHiringPackFieldLayoutTests } from "./hiring-pack-field-layout.test.ts";
 import { runHiringPackFieldTemplateTests } from "./hiring-pack-field-template.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
+import { runHiringPackFormsDriveTests } from "./hiring-pack-forms-drive.test.ts";
 import { runHrFormsClearanceTests } from "./hr-forms-clearance.test.ts";
 import { runHrFormsContractArchiveTests } from "./hr-forms-contract-archive.test.ts";
 import { runHrFormsCustodyTests } from "./hr-forms-custody.test.ts";
@@ -3213,6 +3214,7 @@ await runTest("hiring document capture (polish keeps colour, pages become one A4
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
 await runTest("hiring document status notes (an omitted notes key must not blank the cell)", runHiringDocumentsStatusNotesTests);
 await runTest("hiring pack (Form 1 coordinate map, back-page إقرار, تفقيط agreement)", runHiringPackTests);
+await runTest("hiring pack forms drive (every paper in one folder, a leaving paper lists leavers only, the number never lands on an official form, a typed-in paper cannot set a company value)", runHiringPackFormsDriveTests);
 await runTest("hiring pack field layer (a dragged default keeps its kind, an added field prints on top, a literal cannot shadow a value)", runHiringPackFieldLayoutTests);
 await runTest("hiring pack company templates (a custom document cannot collide with a built-in, a page in pixels is refused, a new version writes beside the old artwork)", runHiringPackCustomTemplateTests);
 await runTest("hiring pack paper filing (a slot is matched on its pinned column not its name, a retired or missing slot refuses rather than guesses, a filed name survives a Windows download)", runHiringPackPaperFilingTests);

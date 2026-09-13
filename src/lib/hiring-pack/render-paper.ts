@@ -255,6 +255,12 @@ export async function renderHiringPaper(input: {
    * the register row rather than from somebody copying them off the underside of a laptop.
    */
   custodyDeviceId?: string | null;
+  /**
+   * A pack already built — a paper TYPED IN BY HAND (see manual-pack.ts). Absent is the normal
+   * case, and then the pack is read from the employee's record as it always was. The paper is drawn
+   * by the same renderers either way, which is what makes the two modes one document.
+   */
+  data?: HiringPackData;
   document: PrintableDocument;
   hrId: string;
   version?: string | null;
@@ -284,7 +290,7 @@ export async function renderHiringPaper(input: {
     }
   }
 
-  const data = await getHiringPack(hrId, input.custodyDeviceId ?? null);
+  const data = input.data ?? (await getHiringPack(hrId, input.custodyDeviceId ?? null));
 
   // A COMPANY TEMPLATE IS RESOLVED FROM THE DATABASE, not from a table in this file. Everything
   // after this point is the same for both kinds; the branch is only about WHERE the document and
