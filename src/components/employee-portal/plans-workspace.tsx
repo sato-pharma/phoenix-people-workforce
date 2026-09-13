@@ -52,6 +52,7 @@ import { cairoDate } from "@/lib/format/cairo-datetime";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
+import { placeSourcedPlanRow } from "@/lib/weekly-planning/plan-slot-merge";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
   buildEmployeePlanPeriod,
@@ -736,9 +737,10 @@ function draftRowsFromPlan(plan: EmployeePlan, medicalRepOptions: MedicalRepOpti
   }));
 }
 
-// Overlay cross-domain prefill onto seeded rows. Locked vacation/excuse rows
-// replace any seeded row in the same (date, slot); sourced weekly rows fill
-// empty seeded slots. Existing user-entered content is never clobbered.
+// Overlay cross-domain prefill onto seeded rows. Locked rows (leave, holidays,
+// the submitted weekly plan) replace every unlocked row they overlap on that
+// day — a split AM + PM week day clears the seeded "Full day" row too; sourced
+// unlocked rows only fill an untouched day. See placeSourcedPlanRow.
 function mergePrefillIntoRows(base: DraftItem[], prefill: PlanPrefillItem[]): DraftItem[] {
   if (prefill.length === 0) return base;
   const slotFilled = (row: DraftItem) =>
@@ -748,9 +750,7 @@ function mergePrefillIntoRows(base: DraftItem[], prefill: PlanPrefillItem[]): Dr
         String(row.area ?? "").trim() ||
         String(row.objective ?? "").trim(),
     );
-  const rows = [...base];
-  const indexOf = (date: string, slot: PlanSlot) =>
-    rows.findIndex((row) => row.activityDate === date && row.slot === slot);
+  let rows = [...base];
 
   prefill.forEach((item, prefillIndex) => {
     const row: DraftItem = {
@@ -774,16 +774,7 @@ function mergePrefillIntoRows(base: DraftItem[], prefill: PlanPrefillItem[]): Dr
       sourceLabel: item.sourceLabel,
       startTime: "",
     };
-    const existingIndex = indexOf(item.activityDate, item.slot);
-    if (existingIndex === -1) {
-      rows.push(row);
-      return;
-    }
-    const existing = rows[existingIndex];
-    // Locked sources always win; sourced weekly only fills an untouched slot.
-    if (item.locked || !slotFilled(existing)) {
-      rows[existingIndex] = { ...row, key: existing.key };
-    }
+    rows = placeSourcedPlanRow(rows, row, slotFilled);
   });
   return sortDraftRows(rows);
 }
