@@ -43,3 +43,15 @@ export const CRM_CONTACTS_TABLE = "ireports360_contacts";
  * this one holds what they were assigned. Deliberately NOT named after Phoenix's own
  * `weekly-planning` module, which is an unrelated in-app feature with a confusingly similar name. */
 export const CRM_PLAN_ENTRIES_TABLE = "ireports360_plan_entries";
+
+/** Phoenix's own CONTACT MASTER — one row per CRM contact, keyed on the CRM contact id, built from
+ * the three read-only mirrors above. Unlike CRM_CONTACTS_TABLE it never forgets a contact. See
+ * src/lib/crm/contact-master.ts. */
+export const CRM_CONTACT_MASTER_TABLE = "crm_contacts";
+
+/** Dated list membership: one row per (contact, agent, list, rep, grade) PERIOD; `effective_to` is
+ * null while the contact is on that list today. The history CRM_CONTACTS_TABLE cannot keep. */
+export const CRM_CONTACT_ASSIGNMENTS_TABLE = "crm_contact_assignments";
+
+/** The SQL function that rebuilds both master tables from the mirrors. */
+export const CRM_CONTACT_MASTER_REFRESH_RPC = "crm_contact_master_refresh";

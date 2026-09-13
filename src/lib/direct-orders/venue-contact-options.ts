@@ -41,6 +41,15 @@
  * to someone who never sold to them, which is the expensive direction of wrong. A board that hides
  * a row while its route still accepts a write for it is not scoped, it is merely tidy.
  *
+ * ## Where the contacts come from
+ *
+ * The CONTACT MASTER's open assignments — `crm_contact_assignments` where `effective_to is null`,
+ * joined to `crm_contacts` (see src/lib/crm/contact-master.ts). They state the same lists the mirror
+ * states today, under contact ids that survive a list change. Until the master's migration reaches
+ * an environment, the mirror answers instead: a deploy applies no migrations, and an empty picker in
+ * that window would read as a broken form rather than as a pending migration. The scope is applied
+ * to the assignment's own rep exactly as it was applied to the mirror row's, and is not widened.
+ *
  * Phone numbers are deliberately not returned. Picking which shop a venue is does not need one, and
  * the narrower the projection the less a widened scope could ever leak.
  */
@@ -51,7 +60,7 @@ import { doctorListBasisForRole } from "@/lib/crm/doctor-list-access";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
+import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE, CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { canManagePharmacyRegistry } from "@/lib/direct-orders/registry-access";
@@ -158,7 +167,7 @@ function toOption(row: DoctorListRow, agentName: string): VenueContactOption {
   };
 }
 
-type ContactRecord = {
+export type ContactRecord = {
   address: string | null;
   agent_crm_id: number;
   agent_hr_id: string | null;
@@ -176,6 +185,96 @@ const SELECT_COLUMNS =
   "speciality, address, crm_region_name, list_type";
 
 /**
+ * The master's projection. `!inner` because an assignment always has its contact (a foreign key),
+ * and an inner embed is what lets PostgREST return the parent rows with it. No phone — same rule as
+ * SELECT_COLUMNS above.
+ */
+const MASTER_SELECT_COLUMNS =
+  "id, agent_crm_id, agent_hr_id, contact_crm_id, list_type, grade, " +
+  `contact:${CRM_CONTACT_MASTER_TABLE}!inner(name, name_ar, speciality, address, crm_region_name)`;
+
+type MasterContactEmbed = {
+  address: string | null;
+  crm_region_name: string | null;
+  name: string | null;
+  name_ar: string | null;
+  speciality: string | null;
+};
+
+export type MasterAssignmentRecord = {
+  agent_crm_id: number;
+  agent_hr_id: string | null;
+  contact: MasterContactEmbed | MasterContactEmbed[] | null;
+  contact_crm_id: number;
+  grade: string | null;
+  list_type: string | null;
+};
+
+/** One open master assignment, as the ContactRecord every reader below already consumes. */
+export function contactRecordFromMasterAssignment(row: MasterAssignmentRecord): ContactRecord {
+  // A to-one embed arrives as an object. An array is tolerated too, so a client upgrade that changes
+  // the embed's shape cannot blank every contact's name at once.
+  const contact = Array.isArray(row.contact) ? row.contact[0] ?? null : row.contact;
+  return {
+    address: contact?.address ?? null,
+    agent_crm_id: row.agent_crm_id,
+    agent_hr_id: row.agent_hr_id,
+    contact_crm_id: row.contact_crm_id,
+    contact_grade: row.grade,
+    contact_name: contact?.name ?? null,
+    contact_name_ar: contact?.name_ar ?? null,
+    crm_region_name: contact?.crm_region_name ?? null,
+    list_type: row.list_type,
+    speciality: contact?.speciality ?? null,
+  };
+}
+
+type ContactFilter = { agentHrIds?: readonly string[]; contactCrmIds?: readonly number[] };
+
+/**
+ * One page of contact rows — from the master, or from the mirror while the master's migration has
+ * not reached this environment. Every read in this module goes through here.
+ *
+ * Only a MISSING TABLE falls back. Any other error on the master is thrown: quietly answering from
+ * the mirror would hide a broken master behind a picker that still looks right.
+ *
+ * The master is paged on the assignment's own id, which is total. The mirror fallback adds the rest
+ * of its key behind the name, because a page boundary inside a run of equal names skips or repeats
+ * a row.
+ */
+async function readContactRecordsPage(filter: ContactFilter, from: number): Promise<ContactRecord[]> {
+  const supabase = getSupabaseAdmin();
+
+  let master = supabase.from(CRM_CONTACT_ASSIGNMENTS_TABLE).select(MASTER_SELECT_COLUMNS).is("effective_to", null);
+  if (filter.agentHrIds) master = master.in("agent_hr_id", filter.agentHrIds as string[]);
+  if (filter.contactCrmIds) master = master.in("contact_crm_id", filter.contactCrmIds as number[]);
+  const fromMaster = await master.order("id", { ascending: true }).range(from, from + PAGE_SIZE - 1);
+  if (!fromMaster.error) {
+    return ((fromMaster.data ?? []) as unknown as MasterAssignmentRecord[]).map(contactRecordFromMasterAssignment);
+  }
+  if (!isCrmSchemaMissingError(fromMaster.error)) {
+    throw new Error(`Could not read the CRM contact master: ${fromMaster.error.message}`);
+  }
+
+  let mirror = supabase.from(CRM_CONTACTS_TABLE).select(SELECT_COLUMNS);
+  if (filter.agentHrIds) mirror = mirror.in("agent_hr_id", filter.agentHrIds as string[]);
+  if (filter.contactCrmIds) mirror = mirror.in("contact_crm_id", filter.contactCrmIds as number[]);
+  const fromMirror = await mirror
+    .order("contact_name", { ascending: true })
+    .order("agent_crm_id", { ascending: true })
+    .order("contact_crm_id", { ascending: true })
+    .order("list_type", { ascending: true })
+    .range(from, from + PAGE_SIZE - 1);
+  if (fromMirror.error) {
+    // Before the CRM migrations reach an environment the table is absent. An empty picker is
+    // correct there; a 500 on the whole venue form is not.
+    if (isCrmSchemaMissingError(fromMirror.error)) return [];
+    throw new Error(`Could not read CRM contacts: ${fromMirror.error.message}`);
+  }
+  return (fromMirror.data ?? []) as unknown as ContactRecord[];
+}
+
+/**
  * Read every contact inside the scope.
  *
  * HR ids are MIXED CASE in this database, so both sides of the comparison are lowered — a plain
@@ -188,14 +287,7 @@ const SELECT_COLUMNS =
  * future company with larger districts from getting a silent empty picker.
  */
 async function readScopedContacts(scope: CrmManagerScope): Promise<ContactRecord[]> {
-  const supabase = getSupabaseAdmin();
   const rows: ContactRecord[] = [];
-
-  const readPage = async (from: number, agentHrIds: readonly string[] | null) => {
-    let query = supabase.from(CRM_CONTACTS_TABLE).select(SELECT_COLUMNS);
-    if (agentHrIds) query = query.in("agent_hr_id", agentHrIds as string[]);
-    return query.order("contact_name", { ascending: true }).range(from, from + PAGE_SIZE - 1);
-  };
 
   const runs: Array<readonly string[] | null> = [];
   if (scope.kind === "company") {
@@ -219,14 +311,7 @@ async function readScopedContacts(scope: CrmManagerScope): Promise<ContactRecord
 
   for (const agentHrIds of runs) {
     for (let from = 0; ; from += PAGE_SIZE) {
-      const { data, error } = await readPage(from, agentHrIds);
-      if (error) {
-        // Before the CRM migrations reach an environment the table is absent. An empty picker is
-        // correct there; a 500 on the whole venue form is not.
-        if (isCrmSchemaMissingError(error)) return [];
-        throw new Error(`Could not read CRM contacts: ${error.message}`);
-      }
-      const page = (data ?? []) as unknown as ContactRecord[];
+      const page = await readContactRecordsPage(agentHrIds ? { agentHrIds } : {}, from);
       rows.push(...page);
       if (page.length < PAGE_SIZE) break;
     }
@@ -247,17 +332,7 @@ async function readScopedContacts(scope: CrmManagerScope): Promise<ContactRecord
  * empty result into a refusal, which is the safe way round.
  */
 async function readContactsById(contactCrmId: number): Promise<ContactRecord[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_CONTACTS_TABLE)
-    .select(SELECT_COLUMNS)
-    .eq("contact_crm_id", contactCrmId)
-    .limit(PAGE_SIZE);
-  if (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw new Error(`Could not read CRM contacts: ${error.message}`);
-  }
-  return (data ?? []) as unknown as ContactRecord[];
+  return readContactRecordsPage({ contactCrmIds: [contactCrmId] }, 0);
 }
 
 /** Every rep's display name by canonical hr id — human-readable names, never raw ids (owner rule). */
@@ -334,22 +409,11 @@ export async function describeVenueContacts(
   const scope = await resolveVenueContactScope(access);
   if (scope.kind === "none") return described;
 
-  const supabase = getSupabaseAdmin();
   const records: ContactRecord[] = [];
   for (let index = 0; index < wanted.length; index += 50) {
-    const chunk = wanted.slice(index, index + 50);
-    const { data, error } = await supabase
-      .from(CRM_CONTACTS_TABLE)
-      .select(SELECT_COLUMNS)
-      .in("contact_crm_id", chunk)
-      .limit(PAGE_SIZE);
-    if (error) {
-      // Same tolerance as every other read here: before the CRM migrations reach an environment the
-      // table is absent, and 500ing the whole registry over a display label would be wrong.
-      if (isCrmSchemaMissingError(error)) return described;
-      throw new Error(`Could not read CRM contacts: ${error.message}`);
-    }
-    records.push(...((data ?? []) as unknown as ContactRecord[]));
+    // Same tolerance as every other read here: an absent table reads as no rows, because 500ing the
+    // whole registry over a display label would be wrong.
+    records.push(...(await readContactRecordsPage({ contactCrmIds: wanted.slice(index, index + 50) }, 0)));
   }
 
   const resolveAgentName = await agentNameLookup();

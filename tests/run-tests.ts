@@ -1336,6 +1336,7 @@ import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-s
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
 import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
+import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -4249,6 +4250,11 @@ await runTest(
 await runTest(
   "a direct-order venue carries the CRM contact the submitter DECLARED, scoped to self union subtree (1 of 63 venues linked by name alone, ceiling 4 with the area gate removed; the write is gated by the same scope as the read; the main venue select must not name the new column before the migration is applied; the ADMIN REGISTRY is the retroactive door for the 74 venues that predate the column, and it admits the SFE Manager, who has no direct_orders:create)",
   runDirectOrderVenueCrmContactLinkTests,
+);
+
+await runTest(
+  "the CRM contact master keeps dated list periods (a removed contact closes on its last-seen day, never today; a same-day re-run leaves no overlapping periods; a rep's HR id resolving is not a handover; contact 100000 refused; the mirror is never written; the venue picker reads the master first; a failed refresh fails the dead-man ping)",
+  runCrmContactMasterTests,
 );
 
 await runTest(
