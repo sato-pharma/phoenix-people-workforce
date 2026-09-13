@@ -48,6 +48,16 @@ import { FLAT_TAB, MASTER_TAB } from "@/lib/sales/master-map/sync";
 const VALUES_PER_CHUNK = 4_000;
 const REQUESTS_PER_CHUNK = 300;
 
+/**
+ * Folded into every tab's hash. The hash reads TEXT only, so a change that touches nothing but
+ * formatting — a column width, a colour — would never reach a tab whose shops did not move. Bump
+ * this with any such change and every tab repaints once at the next check.
+ *
+ * f2: the organogram region columns went from 180 to 230 because the live sheet clipped their
+ * header, and All customers and Gaps would otherwise have kept the clipped width.
+ */
+const FORMAT_VERSION = "f2";
+
 /** How long a loaded snapshot may be reused for slices without re-checking the source. */
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -182,6 +192,7 @@ function tabTitles(workbook: CachedWorkbook): string[] {
  */
 function hashValues(values: readonly (readonly string[])[]): string {
   const digest = createHash("sha1");
+  digest.update(FORMAT_VERSION);
   for (const row of values) {
     digest.update(JSON.stringify(row));
   }
