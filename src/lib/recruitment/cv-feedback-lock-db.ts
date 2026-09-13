@@ -20,6 +20,40 @@ import {
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 
+/**
+ * Whether this person has opened this candidate's CV — the one question that lets him write the
+ * feedback the lock demands of him, wherever the candidate sits today.
+ *
+ * WHY THE COMMENT ROUTE NEEDS IT. A view row is written only AFTER the file route's scope check
+ * passed, so it is proof he was allowed to read this CV. But the comment route re-derives scope from
+ * the org chart and the area folders as they are NOW, and an applicant's folder placement moves
+ * (Ahmed Abdelgwad was opened by Samaa Shalabi from a folder on 2026-09-10 and later re-placed). The
+ * lock remembered the open while the comment route forgot the scope, which is a manager told to
+ * write something she has no way to write. Opening the CV is what created the duty; it has to be
+ * enough to discharge it.
+ *
+ * Fails CLOSED, unlike the lock itself: this widens who may write, so a read error is a no.
+ */
+export async function hasOpenedCandidate(
+  viewerHrId: string | null | undefined,
+  candidateId: string,
+): Promise<boolean> {
+  const keys = hrIdLookupKeys(viewerHrId);
+  if (keys.length === 0 || !candidateId) return false;
+  try {
+    const { data, error } = await recruitmentDb()
+      .from("ats_candidate_views")
+      .select("candidate_id")
+      .eq("candidate_id", candidateId)
+      .in("viewer_hr_id", keys)
+      .limit(1);
+    if (error) return false;
+    return (data ?? []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** How many recent opens to consider. A manager with more than this outstanding has bigger problems. */
 const OPENS_SCANNED = 200;
 

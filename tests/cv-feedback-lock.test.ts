@@ -136,9 +136,39 @@ export async function runCvFeedbackLockTests() {
     actions.includes("cvOpenRefusal(outstandingFeedback, candidateId)"),
     "the card must ask the same rule rather than re-deriving it",
   );
+  // ── THE WAY OUT IS A BOX, NOT ONLY A LINK ─────────────────────────────────────────────────────
+  //
+  // MEASURED ON PRODUCTION, 2026-09-13: eleven people locked, ten of them on a CV that was never sent
+  // to them — opened from an area folder or a team list. "Go to that CV →" was an in-page anchor to a
+  // card that exists only while its folder is open, or not at all once the applicant is re-placed.
+  // Samaa Shalabi could not reach Ahmed Abdelgwad either way, and could open no other CV.
+  const box = read("../src/components/employee-portal/owed-feedback-box.tsx");
   assert.ok(
-    actions.includes("#candidate-"),
-    "and must offer a way back to the CV he owes — a block with no way out reads as the portal being broken",
+    actions.includes("<OwedFeedbackBox") && !actions.includes('href={`#candidate-'),
+    "the card's block must carry the feedback box itself, not a bare link to a card that may not be on the page",
+  );
+  assert.ok(
+    /<textarea/.test(box) && box.includes("/comments`") && /method: "POST"/.test(box),
+    "the box must let him WRITE the feedback in place, posting to the same comment route the card uses",
+  );
+  assert.ok(box.includes("#candidate-"), "and still offers the link, for when the card is on the page");
+
+  // The comment route must let the person who OPENED the CV write about it, wherever the candidate
+  // sits now. The lock remembers the open; if the route re-derives scope from today's folders, the
+  // manager is told to write something the route then refuses.
+  const commentsRoute = read("../app/api/recruitment/hiring-manager/candidates/[candidateId]/comments/route.ts");
+  {
+    const post = commentsRoute.slice(commentsRoute.indexOf("export async function POST"));
+    assert.ok(
+      /if \(!\(await hasOpenedCandidate\(access\.hrId, candidateId\)\)\) \{\s*await assertCanComment\(access, candidateId\);/.test(post),
+      "POST must accept a comment from anyone who has opened this CV before falling back to the scope check",
+    );
+    const get = commentsRoute.slice(commentsRoute.indexOf("export async function GET"), commentsRoute.indexOf("export async function POST"));
+    assert.doesNotMatch(get, /hasOpenedCandidate/, "reading the thread keeps the strict scope — only the write is widened");
+  }
+  assert.ok(
+    /hasOpenedCandidate[\s\S]{0,1400}?if \(error\) return false;[\s\S]{0,200}?catch \{\s*return false;/.test(db),
+    "the opener check widens who may write, so it must fail CLOSED",
   );
 
   // Every card that can open a CV must also be able to write the feedback that releases it. The
@@ -162,8 +192,8 @@ export async function runCvFeedbackLockTests() {
     "the preview must recognise the lock's 423 instead of treating it as a failed document load",
   );
   assert.ok(
-    viewer.includes("#candidate-"),
-    "and must carry the link back to the CV he owes, or the notice is a dead end",
+    viewer.includes("<OwedFeedbackBox"),
+    "and must carry the feedback box for the CV he owes, or the notice is a dead end",
   );
   assert.ok(
     /const documentBody = locked \?/.test(viewer),

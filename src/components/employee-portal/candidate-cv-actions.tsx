@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { OwedFeedbackBox } from "@/components/employee-portal/owed-feedback-box";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { cvOpenRefusal, type OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
@@ -124,18 +125,9 @@ export function CandidateCvActions({
           name is printed underneath and breaks where it must. */}
       <div className="space-y-1">
         {blocked ? (
-          /* The owner's rule, on screen. It names the person he owes it on and links straight to
-             that card, because a block with no way out is the version of this that gets reported as
-             the portal being broken. */
-          <div className="border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <p className="font-semibold">{blocked}</p>
-            <a
-              className="mt-1 inline-block font-semibold text-amber-900 underline underline-offset-2"
-              href={`#candidate-${outstandingFeedback?.candidateId ?? ""}`}
-            >
-              Go to that CV →
-            </a>
-          </div>
+          /* The owner's rule, on screen, with the box that clears it. The link alone was a dead end
+             whenever the owed card sat in a closed folder or had left the manager's lists. */
+          <OwedFeedbackBox candidateId={outstandingFeedback?.candidateId ?? ""} message={blocked} />
         ) : cvKind !== "unsupported" ? (
           <>
             <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
