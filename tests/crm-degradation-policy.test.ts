@@ -7,12 +7,12 @@ import {
   crmMasterSupportsFilter,
 } from "../src/lib/crm/master-datasets.ts";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "../src/lib/crm/checkin-match.ts";
-import { attachEffectiveType } from "../src/lib/crm/master.ts";
+import { attachEffectiveType, REGULAR_NO_GPS_CHECKIN_LABEL } from "../src/lib/crm/master.ts";
 import type { CrmMasterRow } from "../src/lib/crm/master.ts";
 import { isUtcTimestamp, offsetOf } from "../scripts/check-db-timezone.ts";
 
-/** The exact label attachEffectiveType writes when it counts a Regular visit as Campaign. */
-const RECLASSIFIED = "Campaign — reclassified (Regular, no check-in)";
+/** The exact label attachEffectiveType writes on a Regular visit with no GPS check-in. */
+const RECLASSIFIED = REGULAR_NO_GPS_CHECKIN_LABEL;
 
 /** A Regular visit with no correlated check-in — the row shape this whole rule turns on. */
 function regularNoCheckin(): CrmMasterRow {
@@ -33,9 +33,9 @@ export function runCrmDegradationPolicyTests() {
   // ── (A) A failed check-in read must never manufacture a reclassification ─────────
   //
   // attachNearestCheckins leaves every checkin_id null when the read fails. attachEffectiveType
-  // reads exactly that null to decide "Regular with no check-in -> counted as Campaign". Wired
-  // naively, an infrastructure error relabels a whole team's regular visits as Campaign — a
-  // classification invented out of an outage. The availability flag is what separates the two.
+  // reads exactly that null to decide "Regular with no GPS check-in". Wired naively, an
+  // infrastructure error flags a whole team's regular visits as unevidenced — a flag invented out
+  // of an outage. The availability flag is what separates the two.
   // Driven BEHAVIOURALLY, not by matching the source of master.ts. A source assertion breaks when a
   // parameter is renamed or a ternary is reformatted — and, worse, passes for right-looking code
   // that computes the flag wrongly. attachEffectiveType is a pure function over rows, so drive it.
@@ -43,7 +43,15 @@ export function runCrmDegradationPolicyTests() {
   // Correlation SUCCEEDED and the visit genuinely has no check-in — reclassifying is correct.
   const correlated = [regularNoCheckin()];
   attachEffectiveType("visits", correlated, true);
-  assert.equal(correlated[0].effective_type, RECLASSIFIED, "a genuine no-check-in Regular visit is counted as Campaign");
+  assert.equal(correlated[0].effective_type, RECLASSIFIED, "a genuine no-check-in Regular visit is flagged no GPS check-in");
+  // Owner decisions 1 and 7 (13 Sep): GPS is evidence only, so the flag must never turn a regular
+  // visit into a campaign one.
+  assert.doesNotMatch(
+    String(correlated[0].effective_type),
+    /campaign/i,
+    "a Regular visit with no GPS check-in stays Regular — it is never relabelled Campaign",
+  );
+  assert.match(String(correlated[0].effective_type), /^Regular\b/, "the flag label still reads as a Regular visit");
 
   // THE BUG: correlation FAILED, so checkin_id is null for that reason alone. Reclassifying here
   // turns an outage into the confident claim that a team did no verified regular visits.
@@ -57,7 +65,7 @@ export function runCrmDegradationPolicyTests() {
     );
   }
 
-  // The two No-Check-in tabs filter at the DB on `reclassified_no_checkin`, so they never depended
+  // The two No-Check-in tabs filter at the DB on `regular_no_checkin`, so they never depended
   // on the in-memory correlation and must stay correct even when it fails.
   for (const dataset of ["regular_no_checkin", "regular_dv_no_checkin"] as const) {
     const dbFiltered = [regularNoCheckin()];

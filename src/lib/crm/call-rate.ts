@@ -344,7 +344,21 @@ export type CallRateReport = {
   holidayDays: number;
   campaignLimit: number;
   reps: RepCallRate[];
+  /** Which visits the headline rate counts. Absent means "verified", the rule before the CRM cutover. */
+  basis?: CallRateBasis;
+  /** Why a period split by the cutover kept the old rule. See phoenix-kpi-rules.ts. */
+  basisNote?: string | null;
 };
+
+/**
+ * What the headline rate (`verifiedRate`, `attainmentPct`) counts.
+ *
+ * "verified" is the rule before the CRM cutover: a regular visit with a same-day GPS check-in.
+ * "submitted" is the Phoenix KPI rule from the cutover (phase 6, owner-approved): every submitted
+ * regular visit counts and GPS is evidence only. Campaign calls stay outside the rate either way.
+ * The field keeps its name so every screen reads one headline; the three proof buckets are unchanged.
+ */
+export type CallRateBasis = "verified" | "submitted";
 
 /** Minimum visit shape. Matches the mirror's column names so callers pass rows straight through. */
 export type VisitForCallRate = {
@@ -373,10 +387,12 @@ function emptySlice<Target extends number | null>(target: Target): CallRateSlice
 function finalizeSlice<Target extends number | null>(
   slice: CallRateSliceOf<Target>,
   workingDays: number,
+  basis: CallRateBasis = "verified",
 ): CallRateSliceOf<Target> {
   slice.total = slice.verified + slice.unverified + slice.campaign;
   if (workingDays <= 0) return slice;
-  slice.verifiedRate = slice.verified / workingDays;
+  const headline = basis === "submitted" ? slice.verified + slice.unverified : slice.verified;
+  slice.verifiedRate = headline / workingDays;
   slice.totalRate = slice.total / workingDays;
   slice.attainmentPct = slice.target != null && slice.target > 0 ? (slice.verifiedRate / slice.target) * 100 : null;
   return slice;
@@ -474,9 +490,17 @@ export function classifyCallProof<C extends CheckinForMatch>(
 export function computeCallRate<C extends CheckinForMatch>(
   visits: readonly VisitForCallRate[],
   checkins: readonly C[],
-  options: { dateFrom: string; dateTo: string; campaignLimit?: number; holidays?: CallRateHolidays },
+  options: {
+    dateFrom: string;
+    dateTo: string;
+    campaignLimit?: number;
+    holidays?: CallRateHolidays;
+    /** Omit for "verified". Only a caller that read the CRM cutover passes "submitted". */
+    basis?: CallRateBasis;
+  },
 ): CallRateReport {
   const { dateFrom, dateTo } = options;
+  const basis: CallRateBasis = options.basis ?? "verified";
   const campaignLimit = options.campaignLimit ?? DAILY_CAMPAIGN_LIMIT;
   const workingDays = countCallRateWorkingDays(dateFrom, dateTo, options.holidays);
   // Deliberately the DIFFERENCE between the two counts, not `options.holidays.size`. The caller's
@@ -573,9 +597,9 @@ export function computeCallRate<C extends CheckinForMatch>(
       agentHrId: rep.agentHrId,
       agentName: rep.agentName,
       workingDays,
-      am: finalizeSlice(rep.am, workingDays),
-      pm: finalizeSlice(rep.pm, workingDays),
-      pharmacy: finalizeSlice(rep.pharmacy, workingDays),
+      am: finalizeSlice(rep.am, workingDays, basis),
+      pm: finalizeSlice(rep.pm, workingDays, basis),
+      pharmacy: finalizeSlice(rep.pharmacy, workingDays, basis),
       unspecified: rep.unspecified,
       campaignShare: rep.fieldCalls > 0 ? rep.campaignCalls / rep.fieldCalls : 0,
       campaignOverLimitDays: overLimit,
@@ -584,5 +608,5 @@ export function computeCallRate<C extends CheckinForMatch>(
   }
 
   reps.sort((a, b) => b.campaignShare - a.campaignShare || a.agentName.localeCompare(b.agentName));
-  return { dateFrom, dateTo, workingDays, holidayDays, campaignLimit, reps };
+  return { dateFrom, dateTo, workingDays, holidayDays, campaignLimit, reps, basis };
 }

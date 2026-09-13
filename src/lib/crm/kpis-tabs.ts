@@ -59,6 +59,14 @@ export const KPI_TAB_HINT: Record<KpiTab, string> = {
   pharmacies: "All three KPIs against his pharmacy list. A rep with no pharmacies is not applicable, not a zero.",
 };
 
+/** The hints that change once the Phoenix KPI rules score a period (phase 6, after the CRM cutover). */
+export const KPI_TAB_HINT_PHOENIX: Partial<Record<KpiTab, string>> = {
+  "call-rate":
+    "Every submitted regular visit per working day, Saturday to Wednesday minus national holidays. GPS is evidence only.",
+  coverage: "Planned doctors in the period with at least one visit, out of the planned doctors in it.",
+  frequency: "Whether each graded doctor got the visits his grade asks for: A 3, B 2, C 1. Extra visits are fine.",
+};
+
 /**
  * Resolves the `?tab=` parameter, falling back to Summary.
  *

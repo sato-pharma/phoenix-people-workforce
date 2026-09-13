@@ -619,6 +619,12 @@ export const accessRegistry = [
   // the visit may answer, and only for a rep inside his downward scope.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // Working on an approved vacation day (CRM phase 6, rule 9). `guard: "domain-helper"` — the gate is
+  // assertVacationDayAccess(): a rep who may enter visits asks, a manager holding crm_visit_entry
+  // approve answers for a rep beneath him, and only the administrator gives the HR approval. Each
+  // action re-checks its own permission inside the service. Dormant until the CRM cutover date.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/vacation-day-requests", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Native rep plans — the pilot (CRM phase 4). A rep plans only the rep's own week (the session).
   // `approve` is narrowed again inside the service: only the manager the plan was sent to decides it,
   // for a rep inside that manager's downward scope. Nothing reaches the vendor plan or its write-back.

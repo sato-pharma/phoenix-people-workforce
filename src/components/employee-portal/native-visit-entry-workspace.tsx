@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LocateFixed, Save, Send, Trash2, WifiOff, X } from "lucide-react";
 
@@ -421,6 +422,15 @@ export function NativeVisitEntryWorkspace() {
         title="New visit"
       >
         <div className="grid min-w-0 gap-5 px-4 py-4 sm:px-5">
+          {options.vacationDayRuleInForce ? (
+            <p className="text-sm text-slate-600">
+              On a day HR approved as your vacation, a visit saves only after your manager and HR approve your{" "}
+              <Link className="font-bold text-orange-700 underline" href="/employee-portals/visits/vacation-day-requests">
+                request to work that day
+              </Link>
+              . A regular visit saves only for a doctor planned on that very day, in a week plan your manager verified.
+            </p>
+          ) : null}
           <Field label="Day">
             <div className="flex flex-wrap gap-2">
               {entryDays.map((day) => (

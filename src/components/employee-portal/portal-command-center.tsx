@@ -1113,7 +1113,11 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             Pharmacy joined 2026-09-05, separate again — see PHARMACY_CALL_RATE_TARGET for why it
             carries no bar and no "of N". */}
         <RepTile
-          hint={kpis?.hasCallRate ? `Verified calls per day · ${kpis.workingDays} working days` : "No calls logged"}
+          hint={
+            kpis?.hasCallRate
+              ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
+              : "No calls logged"
+          }
           label="Call rate"
           meta={shortPeriod(kpis?.monthLabel)}
           rail="bg-sky-500"

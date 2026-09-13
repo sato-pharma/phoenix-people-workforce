@@ -96,6 +96,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/admin/approvals/plan/:id", to: "/employee-portals/approvals/plan/:id" },
   { from: "/admin/approvals/vacation", to: "/employee-portals/approvals/vacation" },
   { from: "/admin/approvals/vacation/:id", to: "/employee-portals/approvals/vacation/:id" },
+  // Vacation-day work (CRM phase 6): the administrator answers on the admin page; reps ask and
+  // managers answer on the portal page, which the admin page's own source also names.
+  { from: "/admin/approvals/vacation-day-work", to: "/employee-portals/visits/vacation-day-requests" },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },

@@ -7,8 +7,9 @@ import {
   buildKpisQuery,
   countActiveKpiFilters,
   hasActiveKpiFilters,
-  KPI_FLAG_HINT,
+  kpiFlagHint,
   toggleKpiFacet,
+  type KpiFlag,
   type KpiFacetOption,
   type KpiFacets,
   type KpiFilterState,
@@ -83,10 +84,18 @@ const GROUPS: ReadonlyArray<{ key: FacetKey; title: string; hint: string }> = [
   { key: "flags", title: "Situations", hint: "Any one of these matches — they are OR-ed." },
 ];
 
+/** The group hints that change once the Phoenix KPI rules score the board (phase 6). */
+const GROUP_HINT_PHOENIX: Partial<Record<FacetKey, string>> = {
+  frequency: "Graded doctors at their grade norm. Extra visits are fine.",
+  amRate: "Submitted morning visits against the AM target alone.",
+  pmRate: "Submitted afternoon visits against the PM target alone.",
+};
+
 export function KpisFilterBar({
   basePath,
   facets,
   filters,
+  kpiRules,
   month,
   period,
   tab,
@@ -96,6 +105,8 @@ export function KpisFilterBar({
   basePath: string;
   facets: KpiFacets;
   filters: KpiFilterState;
+  /** "phoenix" once the CRM cutover rules score the board — the frequency and rate hints change. */
+  kpiRules?: "legacy" | "phoenix";
   month: string;
   period: string;
   tab: string;
@@ -229,7 +240,9 @@ export function KpisFilterBar({
               return (
                 <fieldset className="min-w-0 border border-slate-200 bg-white px-3 py-3" key={group.key}>
                   <legend className={`px-1 ${LABEL}`}>{group.title}</legend>
-                  <p className="text-phx-3xs leading-4 text-slate-400">{group.hint}</p>
+                  <p className="text-phx-3xs leading-4 text-slate-400">
+                    {(kpiRules === "phoenix" ? GROUP_HINT_PHOENIX[group.key] : undefined) ?? group.hint}
+                  </p>
                   {/* Vertical scroll on a long list is fine; horizontal never is. */}
                   <div className="mt-2 flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
                     {options.map((option) => {
@@ -242,7 +255,7 @@ export function KpisFilterBar({
                               : "inline-flex cursor-pointer items-center gap-1.5 border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-semibold text-slate-700 transition-colors hover:border-slate-400"
                           }
                           key={option.value}
-                          title={group.key === "flags" ? KPI_FLAG_HINT[option.value as keyof typeof KPI_FLAG_HINT] : undefined}
+                          title={group.key === "flags" ? kpiFlagHint(option.value as KpiFlag, kpiRules) : undefined}
                         >
                           <input
                             checked={isOn}

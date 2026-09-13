@@ -41,7 +41,7 @@ const PAGE_SIZE = 1000;
 
 const VISIT_COLUMNS = "agent_hr_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment";
 
-type ContactRecord = {
+export type ContactRecord = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   contact_crm_id: number | null;
@@ -68,7 +68,7 @@ type VisitRecord = {
  * screen would say it happened. Production carries exactly the three values (measured 2026-09-05),
  * so this drops nothing today; it is the behaviour on the day a fourth appears that matters.
  */
-function narrowListType(value: string | null): CrmListType | null {
+export function narrowListType(value: string | null): CrmListType | null {
   return (LIST_TYPES as readonly string[]).includes(value ?? "") ? (value as CrmListType) : null;
 }
 
@@ -84,7 +84,7 @@ function narrowListType(value: string | null): CrmListType | null {
  * optimisation here — it is the only thing that makes the read complete. A missing page would not
  * error; it would quietly shrink somebody's panel and inflate his coverage.
  */
-async function loadPanelRows(): Promise<ContactRecord[]> {
+export async function loadPanelRows(): Promise<ContactRecord[]> {
   const supabase = getSupabaseAdmin();
   const select = "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, list_type";
   const { count, error: countError } = await supabase

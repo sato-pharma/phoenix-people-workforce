@@ -9,6 +9,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { getNativePlanAvailability } from "@/lib/crm/native-visits/plans-service";
 import { getNativeVisitEntryAvailability } from "@/lib/crm/native-visits/service";
+import { getVacationDayRequestAvailability } from "@/lib/crm/native-visits/vacation-days";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
@@ -103,11 +104,14 @@ export default async function MyVisitsPage() {
 
   // Native visit entry and weekly plans (the pilot). Offered to a pilot-line rep, and to a manager a
   // rep has named on a visit or sent a plan to. Neither throws, so the viewer's own visits always render.
-  const [nativeEntry, nativePlans] = await Promise.all([
+  // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
+  const [nativeEntry, nativePlans, vacationDays] = await Promise.all([
     getNativeVisitEntryAvailability(access),
     getNativePlanAvailability(access),
+    getVacationDayRequestAvailability(access),
   ]);
-  const showNativeLinks = nativeEntry.canLog || nativeEntry.canConfirm || nativePlans.canPlan || nativePlans.canReview;
+  const showNativeLinks =
+    nativeEntry.canLog || nativeEntry.canConfirm || nativePlans.canPlan || nativePlans.canReview || vacationDays.show;
 
   return (
     <EmployeePortalPageShell
@@ -139,6 +143,13 @@ export default async function MyVisitsPage() {
           {nativePlans.canReview ? (
             <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan-reviews">
               {nativePlans.pendingReviews > 0 ? `Plans to verify (${nativePlans.pendingReviews})` : "Plan reviews"}
+            </Link>
+          ) : null}
+          {vacationDays.show ? (
+            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/vacation-day-requests">
+              {vacationDays.waitingForYou > 0
+                ? `Vacation-day requests (${vacationDays.waitingForYou} waiting)`
+                : "Vacation-day requests"}
             </Link>
           ) : null}
         </div>

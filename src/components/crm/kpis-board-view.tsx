@@ -31,7 +31,7 @@ import {
   OffListNote,
   PharmacyKpiReportTables,
 } from "@/components/crm/kpi-reports-tables";
-import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
+import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_HINT_PHOENIX, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
   amBandOf,
@@ -43,7 +43,7 @@ import {
   kpiBandOf,
   kpiFlagsOf,
   KPI_BAND_LABEL,
-  KPI_FLAG_LABEL,
+  kpiFlagLabel,
   nextKpiSort,
   UNASSIGNED_FACET_KEY,
   UNASSIGNED_FACET_LABEL,
@@ -133,6 +133,19 @@ function pmPct(row: KpiRepRow): string {
  */
 function pharmacyValue(row: KpiRepRow): string {
   return row.hasCallRate ? rate(row.pharmacyRate) : "No calls";
+}
+
+/** True once the CRM cutover makes the Phoenix KPI rules score this board (phase 6). */
+function isPhoenix(board: KpisBoard): boolean {
+  return board.kpiRules === "phoenix";
+}
+
+/** Rule 3's daily follow-up for one session — tracked, never a pass or a fail. Empty under the old rules. */
+function followUpText(row: KpiRepRow, session: "am" | "pm"): string {
+  const followUp = row.phoenix?.followUp?.[session];
+  if (!followUp) return "";
+  if (followUp.reached) return " · month target reached";
+  return followUp.neededPerDay == null ? "" : ` · needs ${followUp.neededPerDay.toFixed(2)} a day`;
 }
 
 type ViewContext = {
@@ -472,7 +485,7 @@ function ActiveFilterChips({ context }: { context: ViewContext }) {
   for (const flag of filters.flags) {
     chips.push({
       key: `flag:${flag}`,
-      label: KPI_FLAG_LABEL[flag],
+      label: kpiFlagLabel(flag, context.board.kpiRules),
       next: { ...filters, flags: filters.flags.filter((entry) => entry !== flag) },
     });
   }
@@ -563,7 +576,7 @@ function coverageFloorBadge(row: KpiRepRow): React.ReactNode {
  * AM and PM figures, `over-visiting` beside the Above count, and `below-coverage-floor` beside the
  * coverage percentage — would each be the same fact said twice.
  */
-function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
+function RepCell({ rank, row, rules }: { rank?: number; row: KpiRepRow; rules?: KpisBoard["kpiRules"] }) {
   const flags = kpiFlagsOf(row).filter(
     (flag) =>
       flag !== "below-am-target" &&
@@ -587,7 +600,7 @@ function RepCell({ rank, row }: { rank?: number; row: KpiRepRow }) {
               className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
-              {KPI_FLAG_LABEL[flag]}
+              {kpiFlagLabel(flag, rules)}
             </span>
           ))}
         </span>
@@ -655,7 +668,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
             direction={filters.direction}
             href={sortHref(context, "frequency")}
             label="Frequency"
-            sub="Exact only"
+            sub={isPhoenix(context.board) ? "Grade norm" : "Exact only"}
           />
           <KpiSortableTh
             active={filters.sort === "am"}
@@ -676,7 +689,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
+            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
             <MeasureCell
               band={coverageBandOf(row)}
               caption={
@@ -692,7 +705,9 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
               band={frequencyBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.onPlanDoctors} exact · ${row.underDoctors} below · ${row.overDoctors} above`
+                  ? isPhoenix(context.board)
+                    ? `${row.onPlanDoctors} at norm · ${row.underDoctors} below norm`
+                    : `${row.onPlanDoctors} exact · ${row.underDoctors} below · ${row.overDoctors} above`
                   : "Nothing planned"
               }
               fill={frequencyFill(row)}
@@ -720,6 +735,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
 function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
   const { board } = context;
   const { filters } = board;
+  const phoenix = isPhoenix(board);
   return (
     <table className="hidden w-full table-fixed md:table">
       {/* The Attainment column is gone: it held (AM + PM) over one denominator, which is the
@@ -773,38 +789,40 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             direction={filters.direction}
             href={sortHref(context, "campaign")}
             label="Campaign"
-            sub="Unverifiable"
+            sub={phoenix ? "Outside the plan" : "Unverifiable"}
           />
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
+            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
             <td className={NUM}>{row.workingDays}</td>
             <td className={NUM}>
               {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {amPct(row)} · {row.amVerified} of {row.workingDays * board.amTarget} asked for
+                {followUpText(row, "am")}
               </span>
             </td>
             <td className={NUM}>
               {rate(row.pmRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.pmTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {pmPct(row)} · {row.pmVerified} of {row.workingDays * board.pmTarget} asked for
+                {followUpText(row, "pm")}
               </span>
             </td>
             <td className={NUM}>
               {pharmacyValue(row)}
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.pharmacyVerified} verified
+                {row.pharmacyVerified} {phoenix ? "visits" : "verified"}
               </span>
             </td>
             <td className={NUM}>
               {Math.round(row.campaignShare * 100)}%
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {row.campaignCalls} calls
-                {row.campaignOnlyDays > 0 ? ` · ${row.campaignOnlyDays} day(s) campaign only` : ""}
+                {!phoenix && row.campaignOnlyDays > 0 ? ` · ${row.campaignOnlyDays} day(s) campaign only` : ""}
               </span>
             </td>
           </tr>
@@ -870,7 +888,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
+            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
             <td className={NUM}>{row.plannedDoctors}</td>
             <td className={NUM}>{row.visitedDoctors}</td>
             <td className={NUM}>{row.missedDoctors}</td>
@@ -895,6 +913,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
 
 function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
   const { filters } = context.board;
+  const phoenix = isPhoenix(context.board);
   return (
     <table className="hidden w-full table-fixed md:table">
       <colgroup>
@@ -915,48 +934,83 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
               precisely what tests/crm-rep-doctor-lists.test.ts was written to catch. Reading one map
               makes the drift impossible instead of merely detected. `Exact` is the only pass: both
               Below and Above are deviations, so do not "improve" these into On plan / Over plan. */}
-          <KpiSortableTh
-            active={filters.sort === "exact"}
-            direction={filters.direction}
-            href={sortHref(context, "exact")}
-            label={ACTIVITY_LABEL.on_plan}
-            sub="The only pass"
-          />
-          <KpiSortableTh
-            active={filters.sort === "below"}
-            direction={filters.direction}
-            href={sortHref(context, "below")}
-            label={ACTIVITY_LABEL.under}
-            sub="Short of plan"
-          />
-          <KpiSortableTh
-            active={filters.sort === "above"}
-            direction={filters.direction}
-            href={sortHref(context, "above")}
-            label={ACTIVITY_LABEL.over}
-            sub="Also a deviation"
-          />
+          {/* Under the Phoenix rules the same two columns judge the grade norm, not the plan (rule 7),
+              so they carry the norm's words; the old rules keep the owner's three words above. */}
+          {phoenix ? (
+            <KpiSortableTh
+              active={filters.sort === "exact"}
+              direction={filters.direction}
+              href={sortHref(context, "exact")}
+              label="At norm"
+              sub="The pass"
+            />
+          ) : (
+            <KpiSortableTh
+              active={filters.sort === "exact"}
+              direction={filters.direction}
+              href={sortHref(context, "exact")}
+              label={ACTIVITY_LABEL.on_plan}
+              sub="The only pass"
+            />
+          )}
+          {phoenix ? (
+            <KpiSortableTh
+              active={filters.sort === "below"}
+              direction={filters.direction}
+              href={sortHref(context, "below")}
+              label="Below norm"
+              sub="Fewer than the grade asks"
+            />
+          ) : (
+            <KpiSortableTh
+              active={filters.sort === "below"}
+              direction={filters.direction}
+              href={sortHref(context, "below")}
+              label={ACTIVITY_LABEL.under}
+              sub="Short of plan"
+            />
+          )}
+          {/* Under the Phoenix rules an extra visit is fine (rule 7), so this column shows the
+              ungraded doctors left out instead — nothing to rank anyone on, so not sortable. */}
+          {phoenix ? (
+            <th className={TH} scope="col">
+              Ungraded
+              <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+                Left out
+              </span>
+            </th>
+          ) : (
+            <KpiSortableTh
+              active={filters.sort === "above"}
+              direction={filters.direction}
+              href={sortHref(context, "above")}
+              label={ACTIVITY_LABEL.over}
+              sub="Also a deviation"
+            />
+          )}
           <KpiSortableTh
             active={filters.sort === "frequency"}
             direction={filters.direction}
             href={sortHref(context, "frequency")}
             label="Frequency"
-            sub="Exact ÷ planned"
+            sub={phoenix ? "At norm ÷ graded" : "Exact ÷ planned"}
           />
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} />
+            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
             <td className={NUM}>{row.onPlanDoctors}</td>
             <td className={NUM}>{row.underDoctors}</td>
-            <td className={NUM}>{row.overDoctors}</td>
+            <td className={NUM}>{row.phoenix ? row.phoenix.frequency.ungraded : row.overDoctors}</td>
             <MeasureCell
               band={frequencyBandOf(row)}
               caption={
                 row.hasMeasurablePlan
-                  ? `${row.actualCalls} of ${row.plannedCalls} planned calls made`
+                  ? row.phoenix
+                    ? `${row.phoenix.frequency.met} of ${row.phoenix.frequency.judged} graded doctors at norm`
+                    : `${row.actualCalls} of ${row.plannedCalls} planned calls made`
                   : "No planned doctors to be a percentage of"
               }
               fill={frequencyFill(row)}
@@ -981,11 +1035,13 @@ function RepCard({
   pmTarget,
   rank,
   row,
+  rules,
 }: {
   amTarget: number;
   pmTarget: number;
   rank?: number;
   row: KpiRepRow;
+  rules?: KpisBoard["kpiRules"];
 }) {
   const measures: Array<{
     band: KpiBand;
@@ -1007,7 +1063,7 @@ function RepCard({
     },
     {
       band: frequencyBandOf(row),
-      caption: row.hasMeasurablePlan ? `${row.onPlanDoctors} exact` : "Nothing planned",
+      caption: row.hasMeasurablePlan ? (row.phoenix ? `${row.onPlanDoctors} at norm` : `${row.onPlanDoctors} exact`) : "Nothing planned",
       fill: frequencyFill(row),
       label: "Frequency",
       value: planPct(row, row.frequencyPct),
@@ -1031,7 +1087,9 @@ function RepCard({
       // always this band because pharmacyAttainmentPct is always null (see
       // PHARMACY_CALL_RATE_TARGET); the caption says why, so the chip does not read as a fault.
       band: kpiBandOf(row.pharmacyAttainmentPct),
-      caption: row.hasCallRate ? `${row.pharmacyVerified} verified · no target set yet` : "No calls",
+      caption: row.hasCallRate
+        ? `${row.pharmacyVerified} ${row.phoenix ? "visits" : "verified"} · no target set yet`
+        : "No calls",
       fill: null,
       label: "Pharmacy",
       value: pharmacyValue(row),
@@ -1080,7 +1138,7 @@ function RepCard({
               className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600"
               key={flag}
             >
-              {KPI_FLAG_LABEL[flag]}
+              {kpiFlagLabel(flag, rules)}
             </span>
           ))}
         </div>
@@ -1146,6 +1204,8 @@ export function KpisBoardView({
   // The window is still running, so coverage and frequency are a position rather than a finished
   // score. A tile is read on its own, away from the hero, so the caveat has to travel with it.
   const partial = board.workingDays > 0 && board.workingDays < board.workingDaysInWindow;
+  const phoenix = isPhoenix(board);
+  const callWord = phoenix ? "visits" : "verified";
 
   return (
     <div className="space-y-4">
@@ -1157,7 +1217,9 @@ export function KpisBoardView({
           <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
             <div className="min-w-0">
               <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">{KPI_TAB_LABEL[tab]}</p>
-              <p className={`mt-0.5 leading-4 ${CAPTION}`}>{KPI_TAB_HINT[tab]}</p>
+              <p className={`mt-0.5 leading-4 ${CAPTION}`}>
+                {(phoenix ? KPI_TAB_HINT_PHOENIX[tab] : undefined) ?? KPI_TAB_HINT[tab]}
+              </p>
             </div>
             <p className={CAPTION}>
               {board.scopeLabel} · {board.monthLabel} · {board.range.periodLabel}
@@ -1184,6 +1246,7 @@ export function KpisBoardView({
             basePath={basePath}
             facets={board.facets}
             filters={filters}
+            kpiRules={board.kpiRules}
             month={board.month}
             period={board.range.periodKey}
             tab={tab}
@@ -1206,6 +1269,12 @@ export function KpisBoardView({
               </p>
             </div>
           )}
+
+          {board.kpiRulesNote ? (
+            <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+              <p className={`${CAPTION} font-semibold`}>{board.kpiRulesNote}</p>
+            </div>
+          ) : null}
 
           {board.range.notStarted ? (
             <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
@@ -1235,14 +1304,14 @@ export function KpisBoardView({
             />
             <KpiTile
               band={kpiBandOf(totals.amAttainmentPct)}
-              caption={`${totals.amVerified} verified · target ${board.amTarget} a day`}
+              caption={`${totals.amVerified} ${callWord} · target ${board.amTarget} a day`}
               label="AM call rate"
               progress={totals.amAttainmentPct}
               value={`${rate(totals.amRate)} of ${board.amTarget}`}
             />
             <KpiTile
               band={kpiBandOf(totals.pmAttainmentPct)}
-              caption={`${totals.pmVerified} verified · target ${board.pmTarget} a day`}
+              caption={`${totals.pmVerified} ${callWord} · target ${board.pmTarget} a day`}
               label="PM call rate"
               progress={totals.pmAttainmentPct}
               value={`${rate(totals.pmRate)} of ${board.pmTarget}`}
@@ -1250,7 +1319,7 @@ export function KpisBoardView({
             {/* No target yet (see PHARMACY_CALL_RATE_TARGET) — the raw rate, no percentage, no
                 progress bar to fill against a number that does not exist. */}
             <KpiTile
-              caption={`${totals.pharmacyVerified} verified · no target set yet`}
+              caption={`${totals.pharmacyVerified} ${callWord} · no target set yet`}
               label="Pharmacy call rate"
               value={rate(totals.pharmacyRate)}
             />
@@ -1271,12 +1340,27 @@ export function KpisBoardView({
             />
             <KpiTile
               band={kpiBandOf(totals.frequencyPct)}
-              caption={`${totals.onPlanDoctors} exact · ${totals.underDoctors} below · ${totals.overDoctors} above${partial ? " · so far" : ""}`}
+              caption={
+                phoenix
+                  ? `${totals.onPlanDoctors} at norm · ${totals.underDoctors} below norm${partial ? " · so far" : ""}`
+                  : `${totals.onPlanDoctors} exact · ${totals.underDoctors} below · ${totals.overDoctors} above${partial ? " · so far" : ""}`
+              }
               label="Frequency"
               progress={totals.frequencyPct}
               value={`${totals.frequencyPct}%`}
             />
           </div>
+
+          {/* Rules 2, 7 and 8 — the lines that sit OUTSIDE the three KPIs, said once for the team. */}
+          {board.phoenixTotals ? (
+            <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+              <p className={`leading-4 ${CAPTION}`}>
+                {board.phoenixTotals.campaignVisits} campaign visits, unplanned visits to a contact not on the
+                rep&apos;s list included, are counted on their own line, outside call rate, coverage and frequency. {board.phoenixTotals.ungradedDoctors} planned doctors have no grade and are left
+                out of frequency.
+              </p>
+            </div>
+          ) : null}
 
           {board.reps.length === 0 ? (
             <div className="border-t border-slate-100">
@@ -1328,21 +1412,21 @@ export function KpisBoardView({
                     {tab === "summary" || tab === "frequency" ? (
                       <KpiPodiumCard
                         entries={podium.frequency}
-                        hint="Most doctors seen exactly as planned"
+                        hint={phoenix ? "Most graded doctors at their grade norm" : "Most doctors seen exactly as planned"}
                         title="Frequency"
                       />
                     ) : null}
                     {tab === "summary" || tab === "call-rate" ? (
                       <KpiPodiumCard
                         entries={podium.amCallRate}
-                        hint={`Closest to ${board.amTarget} verified AM calls a day`}
+                        hint={`Closest to ${board.amTarget} ${phoenix ? "AM visits" : "verified AM calls"} a day`}
                         title="AM call rate"
                       />
                     ) : null}
                     {tab === "summary" || tab === "call-rate" ? (
                       <KpiPodiumCard
                         entries={podium.pmCallRate}
-                        hint={`Closest to ${board.pmTarget} verified PM calls a day`}
+                        hint={`Closest to ${board.pmTarget} ${phoenix ? "PM visits" : "verified PM calls"} a day`}
                         title="PM call rate"
                       />
                     ) : null}
@@ -1353,7 +1437,7 @@ export function KpisBoardView({
                     {tab === "summary" || tab === "call-rate" ? (
                       <KpiPodiumCard
                         entries={podium.pharmacyCallRate}
-                        hint="Most verified pharmacy calls a day — no target set yet"
+                        hint={`Most ${phoenix ? "pharmacy visits" : "verified pharmacy calls"} a day — no target set yet`}
                         suffix=""
                         title="Pharmacy"
                       />
@@ -1371,6 +1455,7 @@ export function KpisBoardView({
                         pmTarget={board.pmTarget}
                         rank={context.showRank ? index + 1 : undefined}
                         row={row}
+                        rules={board.kpiRules}
                       />
                     </div>
                   ))}
@@ -1399,8 +1484,10 @@ export function KpisBoardView({
               {board.range.notStarted
                 ? `Call rate is not scored — ${periodPhrase} has not started.`
                 : `Call rate is scored over ${periodPhrase} to ${board.range.dateTo}.`}{" "}
-              Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation,
-              not a win. The bands below are these same three measures cut into ranges; nothing on this board blends
+              {phoenix
+                ? "Every submitted regular visit counts toward the call rate; GPS is evidence only. PM passes at 10 a day and AM at 2, judged apart. Frequency passes when a doctor gets the visits his grade asks for (A 3, B 2, C 1) — extra visits are fine and ungraded doctors are left out."
+                : "Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation, not a win."}{" "}
+              The bands below are these same three measures cut into ranges; nothing on this board blends
               them into a single score.
             </p>
             <p className={`mt-1.5 flex flex-wrap items-center gap-1.5 leading-4 ${CAPTION}`}>

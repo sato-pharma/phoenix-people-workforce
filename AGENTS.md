@@ -200,7 +200,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 
 - When he says he will list several requests, **log each as a task and wait for the go-ahead.**
 - **Ask when the answer changes the outcome; decide when it does not.**
-- **Ask business-fact questions as an XLSX with dropdowns, never in prose** — one row per item, a locked validation list, context, a free-text Note column. Never guess to avoid asking.
+- **Ask business-fact questions IN CHAT as multiple choice, never in prose** — short options, one idea each, recommended first; read his typed "Other" answers closely. An XLSX with dropdowns is only for long per-item lists. Never guess to avoid asking. `ask-business-questions-as-in-chat-multiple-choice`
 - Take ownership. Automate the work rather than returning a checklist he has to execute.
 - 🔴 **THE SOURCE OF SALES AUDIT IS FINISHED — never restart it.** Its findings are a FIX backlog: start from `sos-remeasure-2026-09-06.md` in the vault (`RESUME-2026-09-05.md` records completion). Never restart the finder agents, never `resumeFromRunId`, never overwrite the inputs — write a NEW file.
 

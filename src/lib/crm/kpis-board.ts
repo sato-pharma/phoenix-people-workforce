@@ -80,9 +80,12 @@ import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
 import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
-import type { RepKpiReports } from "@/lib/crm/rep-kpi-reports";
+import { resolveRepKpiStandards, type RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
 import { AM_CALL_RATE_TARGET, PHARMACY_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
+import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
+import { loadPhoenixRepKpis } from "@/lib/crm/phoenix-kpi-data";
+import { kpiRulesFor, type KpiRules, type PhoenixRepKpis } from "@/lib/crm/phoenix-kpi-rules";
 import type { AccessContext } from "@/lib/auth/permissions";
 
 /** One option in the board's month or period picker. */
@@ -246,6 +249,13 @@ export type KpiRepRow = {
   gradeC: number;
   /** Doctors whose PLAN asks for fewer calls than the grade norm — plan quality, never a KPI. */
   underPlannedVsGrade: number;
+
+  /**
+   * PHASE 6 — the Phoenix KPI detail: the daily follow-up, the campaign line and graded frequency.
+   * Set only when the CRM cutover has made the Phoenix rules score this period (see
+   * crm/phoenix-kpi-rules.ts); absent before it, when every field above means what it always meant.
+   */
+  phoenix?: PhoenixRepKpis | null;
 };
 
 export type KpisBoard = {
@@ -344,6 +354,16 @@ export type KpisBoard = {
   pharmacyTarget: number | null;
   /** The owner's coverage floor (2026-09-05). See kpis-filters.ts's COVERAGE_TARGET_FLOOR_PCT. */
   coverageFloorPct: number;
+  /** Which rules scored this board: "legacy" until the CRM cutover date. See phoenix-kpi-rules.ts. */
+  kpiRules?: KpiRules;
+  /** Why a period split by the cutover kept the old rules. */
+  kpiRulesNote?: string | null;
+  /** Team lines only the Phoenix rules have. Null under the old rules. */
+  phoenixTotals?: {
+    campaignVisits: number;
+    gradedDoctors: number;
+    ungradedDoctors: number;
+  } | null;
 };
 
 /** One place on a podium. `value` is already the percentage the caption prints. */
@@ -380,7 +400,11 @@ export type KpiPodium = {
  * nothing is excluded from call rate — not because they did badly, but because they have no value
  * on that axis at all. Ranking them would put "0%" on a podium, which is both wrong and cruel.
  */
-export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
+export function buildKpiPodium(rows: readonly KpiRepRow[], rules: KpiRules = "legacy"): KpiPodium {
+  // Under the Phoenix rules every submitted visit counts and frequency is the grade norm, so the
+  // captions stop saying "verified" and "exactly on plan".
+  const phoenix = rules === "phoenix";
+  const callWord = phoenix ? "visits" : "verified";
   const top = (
     eligible: (row: KpiRepRow) => boolean,
     score: (row: KpiRepRow) => number,
@@ -402,17 +426,17 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
     frequency: top(
       (row) => row.hasMeasurablePlan,
       (row) => row.frequencyPct,
-      (row) => `${row.onPlanDoctors} doctors exactly on plan`,
+      (row) => (phoenix ? `${row.onPlanDoctors} doctors at their grade norm` : `${row.onPlanDoctors} doctors exactly on plan`),
     ),
     amCallRate: top(
       (row) => row.hasCallRate && row.amAttainmentPct != null,
       (row) => row.amAttainmentPct ?? 0,
-      (row) => `${row.amVerified} verified AM calls in ${row.workingDays} days`,
+      (row) => (phoenix ? `${row.amVerified} AM visits in ${row.workingDays} days` : `${row.amVerified} verified AM calls in ${row.workingDays} days`),
     ),
     pmCallRate: top(
       (row) => row.hasCallRate && row.pmAttainmentPct != null,
       (row) => row.pmAttainmentPct ?? 0,
-      (row) => `${row.pmVerified} verified PM calls in ${row.workingDays} days`,
+      (row) => (phoenix ? `${row.pmVerified} PM visits in ${row.workingDays} days` : `${row.pmVerified} verified PM calls in ${row.workingDays} days`),
     ),
     // Scored on the RATE, not an attainment percentage — no pharmacy target exists to score
     // against (see PHARMACY_CALL_RATE_TARGET). A rep with zero pharmacy calls is excluded here for
@@ -424,7 +448,7 @@ export function buildKpiPodium(rows: readonly KpiRepRow[]): KpiPodium {
     pharmacyCallRate: top(
       (row) => row.hasCallRate && row.pharmacyVerified > 0,
       (row) => Math.round((row.pharmacyRate ?? 0) * 100) / 100,
-      (row) => `${row.pharmacyVerified} verified pharmacy calls in ${row.workingDays} days`,
+      (row) => `${row.pharmacyVerified} ${callWord} pharmacy calls in ${row.workingDays} days`,
     ),
   };
 }
@@ -669,6 +693,60 @@ function attainmentPct(row: KpiRepRow, verified: number, target: number | null):
   return Math.round((verified / expected) * 100);
 }
 
+/**
+ * PHASE 6 — restamps one row with the Phoenix KPI rules, in place.
+ *
+ * Only called once the CRM cutover makes those rules apply. The row keeps its shape, so the tabs,
+ * filters, bands and podium read it unchanged; what the fields MEAN moves with the owner's rules:
+ *   - the "verified" and "reported" counts are both every submitted regular visit (GPS is evidence);
+ *   - the rep's working days are the days he was employed in the window;
+ *   - coverage is the period's planned doctors with a visit;
+ *   - `onPlanDoctors` / `underDoctors` are doctors at or below their grade norm, and `overDoctors`
+ *     is always zero, because an extra visit is no longer a deviation.
+ */
+export function applyPhoenixKpis(row: KpiRepRow, kpis: PhoenixRepKpis): KpiRepRow {
+  const fieldVisits = kpis.am.visits + kpis.pm.visits + kpis.campaignVisits;
+  row.phoenix = kpis;
+  row.workingDays = kpis.workingDays;
+  row.amVerified = kpis.am.visits;
+  row.pmVerified = kpis.pm.visits;
+  row.amRate = kpis.am.rate;
+  row.pmRate = kpis.pm.rate;
+  row.amReported = kpis.am.visits;
+  row.pmReported = kpis.pm.visits;
+  row.amReportedRate = kpis.am.rate;
+  row.pmReportedRate = kpis.pm.rate;
+  row.amAttainmentPct = kpis.am.attainmentPct;
+  row.pmAttainmentPct = kpis.pm.attainmentPct;
+  row.pharmacyVerified = kpis.pharmacy.visits;
+  row.pharmacyReported = kpis.pharmacy.visits;
+  row.pharmacyRate = kpis.pharmacy.rate;
+  row.pharmacyReportedRate = kpis.pharmacy.rate;
+  row.pharmacyAttainmentPct = kpis.pharmacy.attainmentPct;
+  row.totalCalls = fieldVisits;
+  row.campaignCalls = kpis.campaignVisits;
+  row.campaignShare = fieldVisits > 0 ? kpis.campaignVisits / fieldVisits : 0;
+  row.hasCallRate = row.hasCallRate || fieldVisits + kpis.pharmacy.visits > 0;
+  row.plannedDoctors = kpis.coverage.planned;
+  row.visitedDoctors = kpis.coverage.visited;
+  row.missedDoctors = kpis.coverage.missed;
+  row.coveragePct = kpis.coverage.pct ?? 0;
+  row.hasMeasurablePlan = kpis.coverage.planned > 0;
+  row.meetsCoverageFloor = row.hasMeasurablePlan ? row.coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null;
+  row.onPlanDoctors = kpis.frequency.met;
+  row.underDoctors = kpis.frequency.below;
+  row.overDoctors = 0;
+  row.frequencyPct = kpis.frequency.pct ?? 0;
+  return row;
+}
+
+/** The KPI standards with the PM 8-12 band removed — rule 2 of phase 6. The shared defaults keep the
+ * band, because the old rules still score every period before the cutover. */
+function withoutPmBand() {
+  const base = resolveRepKpiStandards(null);
+  return { ...base, PM: { ...base.PM, callRateBand: null } };
+}
+
 /** Builds the whole board for one viewer. */
 export async function getKpisBoard(input: {
   access: AccessContext;
@@ -733,6 +811,9 @@ export async function getKpisBoard(input: {
     pmTarget: PM_CALL_RATE_TARGET,
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
     coverageFloorPct: COVERAGE_TARGET_FLOOR_PCT,
+    kpiRules: "legacy",
+    kpiRulesNote: null,
+    phoenixTotals: null,
   };
 
   if (scope.kind === "none") {
@@ -743,7 +824,7 @@ export async function getKpisBoard(input: {
   // both CRM sources for the days he worked, and dropping his identity here would print those days
   // against a blank line and area — the reads door already decides who is excluded, and this call
   // is only ever putting a name to an id.
-  const [callRate, docList, employees, windowHolidays] = await Promise.all([
+  const [callRate, docList, employees, windowHolidays, cutover] = await Promise.all([
     loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
     // THE PERIOD REACHES BOTH KPIs. Until 2026-09-04 this was `{ month: input.month }` and the
     // picker moved the call rate alone, so "Week 1" scored week 1's calls against the whole month's
@@ -758,7 +839,11 @@ export async function getKpisBoard(input: {
     // counts the days the window contains. The pair is what separates "the team is behind" from
     // "it is the 3rd of the month" — see workingDaysInWindow on KpisBoard.
     loadCallRateHolidays(range.dateFrom, range.windowEnd),
+    // Phase 6's switch. An unreadable setting is "no cutover": the board then shows exactly what it
+    // showed before phase 6, which is never a wrong number, only an old rule.
+    getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
   ]);
+  const rules = kpiRulesFor(cutover, range.dateFrom, range.windowEnd);
 
   const workingDaysInWindow = range.notStarted
     ? 0
@@ -792,6 +877,22 @@ export async function getKpisBoard(input: {
   // seat model never enters here.
   const scopedReps = keepMedicalRepsOnly(allInScope);
 
+  // PHASE 6. Restamped BEFORE the facets, filters, podium and totals, so every one of them reads the
+  // Phoenix numbers and the page describes one set of rules. Never runs without a cutover date.
+  const phoenix =
+    rules.rules === "phoenix"
+      ? await loadPhoenixRepKpis({
+          scope,
+          window: { dateFrom: range.dateFrom, dateTo: range.dateTo, windowEnd: range.windowEnd },
+          month: { start: `${input.month}-01`, end: range.monthEnd },
+          today: input.todayIso,
+          employees,
+        })
+      : null;
+  if (phoenix) {
+    for (const row of scopedReps) applyPhoenixKpis(row, phoenix.kpisFor(row.agentHrId));
+  }
+
   // Facets are built from the SCOPED rows and the filters applied after, in that order. Building
   // them from the filtered rows instead would make every facet collapse to whatever is already
   // selected — pick "Pedia" and Line would then offer only Pedia, with no way back except editing
@@ -814,6 +915,8 @@ export async function getKpisBoard(input: {
     dateTo: range.dateTo,
     workingDays: callRate.workingDays,
     holidays: windowHolidays.dates,
+    // Rule 2: the 8-12 PM band is gone under the Phoenix rules — PM passes at 10 or more.
+    standards: phoenix ? withoutPmBand() : undefined,
     repNameByHrId: new Map(
       scopedReps.flatMap((row) => (row.agentHrId ? [[row.agentHrId, row.repName] as const] : [])),
     ),
@@ -840,6 +943,9 @@ export async function getKpisBoard(input: {
       accumulator.overDoctors += row.overDoctors;
       accumulator.pharmacyVerified += row.pharmacyVerified;
       accumulator.pharmacyReported += row.pharmacyReported;
+      accumulator.repWorkingDays += row.workingDays;
+      accumulator.gradedDoctors += row.phoenix?.frequency.judged ?? 0;
+      accumulator.ungradedDoctors += row.phoenix?.frequency.ungraded ?? 0;
       return accumulator;
     },
     {
@@ -857,13 +963,20 @@ export async function getKpisBoard(input: {
       overDoctors: 0,
       pharmacyVerified: 0,
       pharmacyReported: 0,
+      repWorkingDays: 0,
+      gradedDoctors: 0,
+      ungradedDoctors: 0,
     },
   );
 
   // The team rate is the team's calls over ONE rep-equivalent's working days times the head count —
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
   // look six times better than any of its reps.
-  const denominator = callRate.workingDays * totals.reps;
+  //
+  // Summed per rep rather than `callRate.workingDays * reps`. Under the old rules every row carries
+  // the same working days, so the two are the same number; under the Phoenix rules a mid-month
+  // joiner carries only the days he was employed (rule 4), and multiplying would charge him the rest.
+  const denominator = totals.repWorkingDays;
   const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
 
   return {
@@ -871,7 +984,16 @@ export async function getKpisBoard(input: {
     workingDays: callRate.workingDays,
     workingDaysInWindow,
     holidayDays: callRate.holidayDays,
-    holidaysComplete: callRate.holidaysComplete,
+    holidaysComplete: callRate.holidaysComplete && (phoenix?.holidaysComplete ?? true),
+    kpiRules: rules.rules,
+    kpiRulesNote: rules.note,
+    phoenixTotals: phoenix
+      ? {
+          campaignVisits: totals.campaignCalls,
+          gradedDoctors: totals.gradedDoctors,
+          ungradedDoctors: totals.ungradedDoctors,
+        }
+      : null,
     asOf: docList.asOf,
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
@@ -883,7 +1005,7 @@ export async function getKpisBoard(input: {
     // The podium ranks the FILTERED rows on purpose: filter to Pedia and the leaderboard answers
     // "best in Pedia", which is the question the filter just asked. A podium that ignored the
     // filter would show three names the visible table does not even contain.
-    podium: buildKpiPodium(reps),
+    podium: buildKpiPodium(reps, rules.rules),
     totals: {
       reps: totals.reps,
       workingDays: callRate.workingDays,
@@ -905,7 +1027,10 @@ export async function getKpisBoard(input: {
       underDoctors: totals.underDoctors,
       overDoctors: totals.overDoctors,
       // ONE denominator under both plan KPIs — the window's whole list. See the header.
-      frequencyPct: pct(totals.onPlanDoctors, totals.plannedDoctors),
+      // Under the Phoenix rules frequency is judged over GRADED doctors only (rule 7).
+      frequencyPct: phoenix
+        ? pct(totals.onPlanDoctors, totals.gradedDoctors)
+        : pct(totals.onPlanDoctors, totals.plannedDoctors),
       // Two scores, never their blend — the owner's rule. See `attainmentPct`.
       amAttainmentPct:
         denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null,
