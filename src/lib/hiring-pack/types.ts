@@ -33,6 +33,23 @@ export type HiringPackDocument =
   | "experienceCertificate"
   | "experienceCertificateEn"
   | "salaryLetterEn"
+  | "disciplinaryWarning"
+  | "disciplinaryPenalty"
+  | "transferDecision"
+  | "salaryAdjustment"
+  | "socialInsuranceAuthorization"
+  | "healthInsuranceAuthorization"
+  | "insurancePrintLetter"
+  | "handoverRecord"
+  | "exitInterview"
+  | "maternityCompensation"
+  | "insuranceForm2"
+  | "carInsuranceCertificate"
+  | "wageProgressSheet"
+  | "officialHolidaysSheet"
+  | "sickLeaveSheet"
+  | "penaltiesSheet"
+  | "penaltyRegulationsApproval"
   | "contractRenewal"
   | "contractNonRenewal"
   | "form6"
@@ -124,14 +141,73 @@ export const HOUSE_LEAVING_DOCUMENTS = [
   "appointmentDocsReturn",
   "experienceCertificate",
   "experienceCertificateEn",
+  "handoverRecord",
+  "exitInterview",
+] as const;
+
+/**
+ * The decisions HR issues about somebody still employed — a warning, a penalty, a transfer, and the
+ * memo that sends a salary change to payroll. From the owner's letters pack of 2026-09-13, rebuilt
+ * on the house template. Neither arriving nor leaving, so "other", with a drive folder of their own.
+ */
+export const HOUSE_DECISION_DOCUMENTS = [
+  "disciplinaryWarning",
+  "disciplinaryPenalty",
+  "transferDecision",
+  "salaryAdjustment",
+] as const;
+
+/**
+ * The company's own letters to the insurance offices — two authorisations and the print request.
+ * Same pack, same template. Filed beside the Authority's own forms in the insurance folder.
+ */
+export const HOUSE_INSURANCE_DOCUMENTS = [
+  "socialInsuranceAuthorization",
+  "healthInsuranceAuthorization",
+  "insurancePrintLetter",
 ] as const;
 
 /** All of Sato's own papers, in the order a career runs through them. */
 export const HOUSE_PAPER_DOCUMENTS = [
   ...HOUSE_JOINING_DOCUMENTS,
   ...HOUSE_ATTENDANCE_DOCUMENTS,
+  ...HOUSE_DECISION_DOCUMENTS,
+  ...HOUSE_INSURANCE_DOCUMENTS,
   ...HOUSE_LEAVING_DOCUMENTS,
 ] as const;
+
+/**
+ * GOVERNMENT FORMS FROM THE SAME PACK, printed exactly as issued — owner, 2026-09-13: "governmental
+ * leave as is". Page surfaces with no compiled placements, like an uploaded company template: the
+ * artwork prints, and anything written on it is a field somebody placed. None is signable here.
+ */
+export const OFFICIAL_INSURANCE_FORM_DOCUMENTS = [
+  "maternityCompensation",
+  "insuranceForm2",
+  "carInsuranceCertificate",
+] as const;
+
+/** The Labour Office registers and the penalty-regulations approval request. */
+export const LABOUR_OFFICE_DOCUMENTS = [
+  "wageProgressSheet",
+  "officialHolidaysSheet",
+  "sickLeaveSheet",
+  "penaltiesSheet",
+  "penaltyRegulationsApproval",
+] as const;
+
+/** Every government form from the 2026-09-13 pack. */
+export const OFFICIAL_PACK_FORM_DOCUMENTS = [
+  ...OFFICIAL_INSURANCE_FORM_DOCUMENTS,
+  ...LABOUR_OFFICE_DOCUMENTS,
+] as const;
+
+export type OfficialPackFormDocument = (typeof OFFICIAL_PACK_FORM_DOCUMENTS)[number];
+
+/** Whether a document is one of the pack's government forms. */
+export function isOfficialPackFormDocument(document: string): document is OfficialPackFormDocument {
+  return (OFFICIAL_PACK_FORM_DOCUMENTS as readonly string[]).includes(document);
+}
 
 /**
  * The HR letters an employee asks for while he works here — today the salary letter, which states
@@ -180,6 +256,7 @@ export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
   ...ASSET_DOCUMENTS,
   ...HOUSE_PAPER_DOCUMENTS,
   ...HOUSE_LETTER_DOCUMENTS,
+  ...OFFICIAL_PACK_FORM_DOCUMENTS,
   ...RENEWAL_DOCUMENTS,
   ...EXIT_DOCUMENTS,
 ];

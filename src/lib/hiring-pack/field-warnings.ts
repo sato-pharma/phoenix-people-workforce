@@ -35,6 +35,7 @@ import {
   LABOUR_PAGE_HEIGHT_PT,
   LABOUR_PAGE_WIDTH_PT,
 } from "@/lib/hiring-pack/labour-exit-layout";
+import { OFFICIAL_PACK_FORMS } from "@/lib/hiring-pack/official-pack-forms";
 import type { HiringPackDocument } from "@/lib/hiring-pack/types";
 
 export type PageSize = { width: number; height: number };
@@ -56,6 +57,18 @@ export function pageSizeFor(document: HiringPackDocument): PageSize | null {
     case "resignation":
     case "mutualTermination":
       return { height: LABOUR_PAGE_HEIGHT_PT, width: LABOUR_PAGE_WIDTH_PT };
+    case "maternityCompensation":
+    case "insuranceForm2":
+    case "carInsuranceCertificate":
+    case "wageProgressSheet":
+    case "officialHolidaysSheet":
+    case "sickLeaveSheet":
+    case "penaltiesSheet":
+    case "penaltyRegulationsApproval":
+      return {
+        height: OFFICIAL_PACK_FORMS[document].heightPt,
+        width: OFFICIAL_PACK_FORMS[document].widthPt,
+      };
     default:
       // Every flow document. Not a default for its own sake: `documentSurface` already answers the
       // same question, and the two are checked against each other in the tests so a new page

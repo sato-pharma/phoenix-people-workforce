@@ -560,6 +560,508 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
   footerAr: "شهادة خبرة · صادرة عن إدارة الموارد البشرية",
 };
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE LETTERS PACK — 2026-09-13.
+ *
+ * Nine of the owner's own papers, moved onto the house template: "Move them onto the Sato Pharma
+ * template". THEIR WORDING IS HIS, kept as written — including the older phrasing and citations he
+ * chose to keep — and nothing is added to what they say. What the template changes is only what a
+ * template changes: the letterhead, the grids, the signature block, and filling from the record the
+ * facts Phoenix already holds (a name, a post, a national ID, the company) where the Word file had a
+ * dotted line.
+ *
+ * WHAT STAYS RULED, and why: the act and the article on a warning or a penalty, the new post on a
+ * transfer, the office an authorisation is addressed to, the tasks on a handover. Phoenix holds no
+ * register of any of them, and each is the fact on its paper that must not be wrong.
+ *
+ * THE FOOTER is the owner's own, 2026-09-13: «ساتو فارما | إدارة الموارد البشرية».
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+
+const PACK_FOOTER_AR = "ساتو فارما | إدارة الموارد البشرية";
+
+/** The same signing block on every HR column of the pack — the seal lands on التوقيع والختم. */
+const HR_SIGNING_FIELDS_AR: readonly string[] = ["الاسم والصفة:", "التوقيع والختم:", "التاريخ:"];
+const PERSON_SIGNING_FIELDS_AR: readonly string[] = ["الاسم:", "التوقيع:", "التاريخ:"];
+
+/** The person a decision is addressed to. */
+const ADDRESSEE_FIELDS: HrPaperTemplate["secondPartyFields"] = [
+  { labelAr: "الاسم", token: "EMPLOYEE_NAME", wide: true },
+  { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+  { labelAr: "الوظيفة", token: "JOB_TITLE" },
+  { labelAr: "الإدارة", token: "DEPARTMENT" },
+  { labelAr: "التاريخ", token: "ISSUE_DATE", ltr: true },
+];
+
+/** 8 — إنذار. */
+export const HR_PAPER_DISCIPLINARY_WARNING_V1: HrPaperTemplate = {
+  id: "disciplinary-warning-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "إنذار",
+  subtitleAr: "طبقًا للائحة الجزاءات التأديبية المعتمدة بالشركة",
+  purposeAr: "يُحرَّر من نسختين — نسخة تُسلَّم للعامل بتوقيعه بالعلم، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: "موجه إلى",
+  secondPartyFields: ADDRESSEE_FIELDS,
+  sections: [],
+
+  bodyParagraphsAr: [
+    "بالإشارة إلى الموضوع أعلاه، ونتيجة لقيامكم بـ «………………………………………………………»، فهذا يعتبر إنذاراً بعدم التكرار، وفي حالة التكرار ستطبق العقوبة المقررة بلائحة الجزاءات التأديبية.",
+    "وذلك طبقاً للمادة رقم (……) من لائحة الجزاءات التي تنص على «………………………………………………………».",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR },
+    { headingAr: "التوقيع بالعلم — العامل", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/** 9 — جزاء إداري. Signed by the direct manager, as the original was; HR's column takes the seal. */
+export const HR_PAPER_DISCIPLINARY_PENALTY_V1: HrPaperTemplate = {
+  id: "disciplinary-penalty-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "جزاء إداري",
+  subtitleAr: "طبقًا للائحة الجزاءات التأديبية المعتمدة بالشركة",
+  purposeAr: "يُحرَّر من نسختين — نسخة تُسلَّم للعامل بتوقيعه بالعلم، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: "موجه إلى",
+  secondPartyFields: ADDRESSEE_FIELDS,
+  sections: [],
+
+  bodyParagraphsAr: [
+    "بالإشارة إلى الموضوع أعلاه، ونتيجة لقيامكم بـ «………………………………………………………»، ستطبق العقوبة المقررة بلائحة الجزاءات التأديبية.",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [
+    "نوع الجزاء: ………………………………   عدد الأيام: (……)",
+    "وذلك طبقاً للمادة رقم (……) من لائحة الجزاءات.",
+  ],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "المدير المباشر", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR },
+    { headingAr: "التوقيع بالعلم — العامل", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/** 10 — قرار نقل. The current post is filled; the new one is ruled. */
+export const HR_PAPER_TRANSFER_DECISION_V1: HrPaperTemplate = {
+  id: "transfer-decision-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "قرار نقل",
+  subtitleAr: "صادر عن إدارة الموارد البشرية",
+  purposeAr: "يُحرَّر من نسختين — نسخة تُسلَّم للعامل، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: "البيانات العامة",
+  secondPartyFields: [
+    { labelAr: "الاسم", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+    { labelAr: "تاريخ القرار", token: "ISSUE_DATE", ltr: true },
+    { labelAr: "الوظيفة", token: "JOB_TITLE" },
+    { labelAr: "الإدارة", token: "DEPARTMENT" },
+    { labelAr: "المدير المباشر", token: null, wide: true },
+  ],
+  sections: [
+    {
+      headingAr: "بيانات النقل",
+      fields: [
+        { labelAr: "النقل إلى إدارة", token: null, wide: true },
+        { labelAr: "الوظيفة", token: null },
+        { labelAr: "المدير المباشر", token: null },
+      ],
+    },
+  ],
+
+  bodyParagraphsAr: [],
+  operativeHeadingAr: "قرار النقل",
+  operativeParagraphsAr: [
+    "قررنا نحن {{COMPANY_NAME}} نقل سيادتكم للعمل في إدارة ……………………………… بدءاً من …… / …… / ………… وسيتم تسليمكم الوصف الوظيفي وأهداف الإدارة لمعرفتها جيداً والعمل على تحقيقها.",
+    "نتمنى لكم التوفيق والنجاح الدائم ...",
+  ],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "المدير المباشر", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "مدير الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/**
+ * 11 — مذكرة تعديل راتب.
+ *
+ * NO FIGURE PRINTS, neither the old salary nor the new. The memo instructs payroll to act; the
+ * amount is decided in the payroll run, and a number typed onto a sheet is a second source for it.
+ */
+export const HR_PAPER_SALARY_ADJUSTMENT_V1: HrPaperTemplate = {
+  id: "salary-adjustment-memo-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "مذكرة تعديل راتب",
+  subtitleAr: "من إدارة الموارد البشرية إلى إدارة الرواتب",
+  purposeAr: "نسخة واحدة تُرسل إلى إدارة الرواتب، وتُحفظ صورتها بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: "بيانات المذكرة",
+  secondPartyFields: [
+    { labelAr: "القاهرة في", token: "ISSUE_DATE", ltr: true },
+    { labelAr: "رقم القرار", token: null, ltr: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "بناءً على قرار رقم (……) وطبقاً للصلاحيات الممنوحة لمدير الموارد البشرية في لائحة تنظيم العمل وطبقاً لجدول الأجور المعتمد فيرجى تعديل رواتب المذكورين أدناه للأسباب المذكورة بدءاً من تاريخ …… / …… / …………",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: {
+    headingAr: "بيان المذكورين",
+    columnsAr: ["م", "الاسم", "الإدارة", "سبب التعديل"],
+    rows: 8,
+    firstRowTokens: ["EMPLOYEE_NAME", "DEPARTMENT", null],
+  },
+  declarationAr: null,
+
+  signaturesHeadingAr: "الاعتماد",
+  signatureColumns: [{ headingAr: "مدير الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR }],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/** 12 — تفويض التأمين الاجتماعي. His list of what the delegate may do, kept exactly. */
+export const HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1: HrPaperTemplate = {
+  id: "social-insurance-authorization-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "تفويض — التأمينات الاجتماعية",
+  subtitleAr: "خطاب تفويض إلى مكتب التأمينات الاجتماعية المختص",
+  purposeAr: "يُحرَّر من نسختين — الأصل يُسلَّم لمكتب التأمينات، وصورة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: null,
+  secondPartyFields: [],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "التاريخ: {{ISSUE_DATE}}",
+    "السيد / مدير مكتب تأمينات ……………………………",
+    "بعد التحية ...",
+    "فوضنا نحن {{COMPANY_NAME}} السيد / {{EMPLOYEE_NAME}} ، بطاقة رقم قومي / {{NATIONAL_ID}} والرقم التأميني / {{INSURANCE_NUMBER}} للتعامل في كل ما يخص التأمينات الاجتماعية (الاستعلام - س1 – س6 – س2 – التفتيش – متابعة صرف الإجازات – طباعة برينت منشأة – طباعة برينت للموظفين – تأمين السيارات)",
+    "وشكراً لحسن تعاونكم المثمر.",
+    "وتفضلوا بقبول فائق الاحترام",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: null,
+  signatureColumns: [{ headingAr: "المدير المسئول — عن الشركة", fieldsAr: HR_SIGNING_FIELDS_AR }],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/** 13 — تفويض التأمين الصحي. */
+export const HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1: HrPaperTemplate = {
+  id: "health-insurance-authorization-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "تفويض — التأمين الصحي",
+  subtitleAr: "خطاب تفويض إلى الهيئة العامة للتأمين الصحي",
+  purposeAr: "يُحرَّر من نسختين — الأصل يُسلَّم للهيئة، وصورة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: null,
+  secondPartyFields: [],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "التاريخ: {{ISSUE_DATE}}",
+    "السادة / هيئة التأمين الصحي",
+    "بعد التحية ...",
+    "فوضنا نحن {{COMPANY_NAME}} السيد / {{EMPLOYEE_NAME}} ، بطاقة رقم قومي / {{NATIONAL_ID}} لاستخراج وتجديد البطاقات الصحية الخاصة بالشركة وجميع الإجراءات الخاصة بالتأمين الصحي",
+    "وتفضلوا بقبول فائق الاحترام",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: null,
+  signatureColumns: [{ headingAr: "مدير الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR }],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/** 14 — خطاب استخراج برينت تأميني. */
+export const HR_PAPER_INSURANCE_PRINT_LETTER_V1: HrPaperTemplate = {
+  id: "insurance-print-request-v1",
+  kind: "letter",
+  version: 1,
+  titleAr: "خطاب استخراج برينت تأميني",
+  subtitleAr: "إلى مكتب التأمينات الاجتماعية المختص",
+  purposeAr: "يُحرَّر من نسختين — الأصل يُسلَّم لمكتب التأمينات، وصورة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: null,
+  secondPartyFields: [],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "القاهرة في: {{ISSUE_DATE}}",
+    "السادة / مكتب تأمينات ……………………………",
+    "بعد التحية ...",
+    "نحيط سيادتكم علماً بأن السيد / {{EMPLOYEE_NAME}} - يعمل لدى {{COMPANY_NAME}} برقم تأميني {{INSURANCE_NUMBER}}",
+    "برجاء استخراج برينت.",
+    "ولكم جزيل الشكر ...",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: null,
+  signatureColumns: [{ headingAr: "إدارة الموارد البشرية", fieldsAr: HR_SIGNING_FIELDS_AR }],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/**
+ * 15 — محضر إداري داخلي بتسليم وتسلم المهام الوظيفية.
+ *
+ * THE ADDRESS IS LITERAL, as the owner confirmed it on 2026-09-13 — not the settings head office.
+ * It is the address this record was written against, and he checked it.
+ */
+export const HR_PAPER_HANDOVER_RECORD_V1: HrPaperTemplate = {
+  id: "handover-record-v1",
+  kind: "undertaking",
+  version: 1,
+  titleAr: "محضر إداري داخلي بتسليم وتسلم المهام الوظيفية",
+  subtitleAr: "يُحفظ بأرشيف الشركة ويُودع أصله بملف الموظف بإدارة الموارد البشرية",
+  purposeAr: "هذا المحضر مكون من أصل واحد.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [
+    "إنه في يوم {{ISSUE_DAY_NAME}} الموافق {{ISSUE_DATE}} م",
+    "شركة ساتو فارما بمقرها الإداري الكائن بمركزها الرئيسي : 8 ن مربع 1258 ز – شيراتون - القاهرة.",
+  ],
+
+  secondPartyHeadingAr: "الحضور",
+  secondPartyFields: [
+    { labelAr: "1 — السيد /", token: null },
+    { labelAr: "بصفته", token: null },
+    { labelAr: "2 — السيد /", token: null },
+    { labelAr: "بصفته", token: null },
+  ],
+  sections: [
+    {
+      headingAr: "الموظف المسلِّم",
+      fields: [
+        { labelAr: "الاسم", token: "EMPLOYEE_NAME", wide: true },
+        { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+        { labelAr: "الرقم القومي", token: "NATIONAL_ID", ltr: true },
+        { labelAr: "الوظيفة", token: "JOB_TITLE" },
+        { labelAr: "الإدارة", token: "DEPARTMENT" },
+      ],
+    },
+  ],
+
+  bodyParagraphsAr: [
+    "وحيث أنه بناءً على ما تقدم به السيد / {{EMPLOYEE_NAME}} ويشغل وظيفة {{JOB_TITLE}} بإدارة {{DEPARTMENT}} باستقالته من الشركة ؛ ولما كان معه من مهام وظيفته، وبعد قبول استقالته من منصبه فقد تقرر أن يتم تحرير محضر إداري داخلي بتسليم وتسلم المهام الوظيفية منه:",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: {
+    headingAr: "المهام الوظيفية المسلَّمة",
+    columnsAr: ["م", "المهمة الوظيفية", "المستلم / بصفته", "توقيع المستلم"],
+    rows: 5,
+  },
+  closingParagraphsAr: [
+    "على أن يقوم المستلم لتلك المهام الوظيفية بالقيام بذلك العمل على الوجه الأكمل بما يحقق مصلحة الشركة وحسن سير العمل بها، وأنه تسلم تلك المهام بالحالة التامة النافية للجهالة، وقد قام بالتسلم الفعلي لتلك المهام الوظيفية.",
+    "وبناءً عليه: وبانتهاء أعمال المحضر الإداري الداخلي على ما جاء فيه، فأقفل المحضر الإداري وانتهت أعماله وتحريره وحفظه بأرشيف الشركة. وكذا إيداع الأصل بملف الموظف بإدارة الموارد البشرية.",
+  ],
+  declarationAr:
+    "أقر أنا / {{EMPLOYEE_NAME}} وأحمل بطاقة رقم قومي {{NATIONAL_ID}} بأنني قد قمت بتسليم كافة مهامي الوظيفية التي كانت بحوزتي ومكلف بها للسادة المذكور أسماؤهم أعلاه، ولا توجد أية متعلقات أو ملاحظات لم يتم تسليمها، أو أية مهام لم يتم الإبلاغ والتنويه عنها. وفي حالة ظهور خلاف ذلك أتحمل المسؤولية الإدارية والقانونية المترتبة على ذلك.",
+
+  signaturesHeadingAr: "توقيع أعضاء الحضور على المحضر الإداري الداخلي",
+  signatureColumns: [
+    { headingAr: "عضو الحضور (1)", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "عضو الحضور (2)", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "الموظف المسلِّم — المُقِر", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+  ],
+  signatoryNoteLinesAr: ["ملحوظة: هذا المحضر مكون من أصل، ويحتوي على عدد (……) ورقة لكل محضر على حدة."],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
+/**
+ * 16 — مقابلة نهاية الخدمة (Employee Exit Interview).
+ *
+ * BILINGUAL, AS HE WROTE IT. Every English line is its own block pinned left-to-right — a bilingual
+ * line turns wholly one way and prints half of itself backwards. Nothing is pre-marked: the ratings
+ * are the employee's own. An HR column sits beside his so the filed copy shows who took it.
+ */
+export const HR_PAPER_EXIT_INTERVIEW_V1: HrPaperTemplate = {
+  id: "exit-interview-v1",
+  kind: "checklist",
+  version: 1,
+  titleAr: "مقابلة نهاية الخدمة",
+  subtitleAr: "Employee Exit Interview",
+  purposeAr: "نسخة واحدة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: null,
+  firstPartyLinesAr: [],
+
+  secondPartyHeadingAr: "البيانات العامة",
+  secondPartyFields: [
+    { labelAr: "الاسم", labelEn: "Name", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "الكود الوظيفي", labelEn: "Employee No.", token: "HR_ID", ltr: true },
+    { labelAr: "التاريخ", labelEn: "Date", token: "ISSUE_DATE", ltr: true },
+    { labelAr: "المسمى الوظيفي", labelEn: "Position", token: "JOB_TITLE" },
+    { labelAr: "الإدارة", labelEn: "Department", token: "DEPARTMENT" },
+    { labelAr: "تاريخ التعيين", labelEn: "Hiring Date", token: "HIRE_DATE", ltr: true },
+    { labelAr: "تاريخ انتهاء الخدمة", labelEn: "End of Service Date", token: "LAST_WORKING_DATE", ltr: true },
+    { labelAr: "اسم المدير المباشر", labelEn: "Direct Manager", token: null, wide: true },
+    { labelAr: "أسباب انتهاء فترة الخدمة", labelEn: "End of Service Reasons", token: null, wide: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [],
+  operativeHeadingAr: "بيانات المقابلة",
+  operativeParagraphsAr: [
+    "تؤكد وتلتزم الشركة لجميع الموظفين الذين يقومون بتعبئة هذا النموذج بأنه لن يضار أحد مهما كانت المعلومات التي يتم ذكرها، وأن الشركة تنظر بتقدير عالي لأبنائها الذين انتهت خدماتهم بالشركة وقاموا بتعبئة هذا النموذج بموضوعية. المرجو تعبئة رمز التقييم أدناه بالإجابة التي تعتقد أنها مناسبة حيث أن : 1 (منخفض) و 5 (مرتفع).",
+    "The company confirms and commits to all employees who will fill out this form that no one will be harmed, whatever information is mentioned, and that the company highly appreciates its former employees who have objectively filled out this form. Please fill in the rating code below with the answer you think is appropriate as: 1 is \"low\" and 5 is \"high\".",
+  ],
+
+  checklist: {
+    headingAr: "التقييم",
+    itemHeadingAr: "الموضوع",
+    columnsAr: ["5", "4", "3", "2", "1"],
+    rows: [
+      { number: "1", labelAr: "ما هو تقييمك العام للشركة كمكان ومحل عمل ؟", labelEn: "What is your general assessment of the company as a place of work?" },
+      { number: "2", labelAr: "ما هو تقييمك العام لسياسات وإجراءات الشركة ؟", labelEn: "What is your general assessment of the company's policies and procedures?" },
+      { number: "3", labelAr: "ما هو تقييمك لمكان العمل وللمرافق ولظروف العمل الصحية؟", labelEn: "What is your assessment of the workplace, facilities and healthy working conditions?" },
+      { number: "4", labelAr: "ما هو تقييمك للمزايا التي تمنحها الشركة لموظفيها مقارنة بالشركات المماثلة ؟", labelEn: "What is your assessment of the benefits that the company grants to its employees compared to similar companies?" },
+      { number: "5", labelAr: "ما هو تقييمك لمستوى الرواتب بالشركة بشكل عام مقارنة بالشركات المماثلة ؟", labelEn: "What is your assessment of the level of salaries in the company in general compared to similar companies?" },
+      { number: "6", labelAr: "ما هو تقييمك لمستوى اهتمام الشركة بموظفيها ؟", labelEn: "What is your assessment of the company's level of interest in its employees?" },
+      { number: "7", labelAr: "ما هو تقييمك لرغبة الوحدة التنظيمية في التغيير والتصحيح والتعديل ؟", labelEn: "What is your assessment of the organizational unit's desire for change, correction and modification?" },
+      { number: "8", labelAr: "ما هو مقدار التدريب الذي تم توفيره لك عند التوظيف؟", labelEn: "How much training was provided to you upon employment?" },
+      { number: "9", labelAr: "ما هو المدى الذي كان من الممكن للتدريب أن يؤهلك للقيام بوظيفة أعلى وزيادة في الراتب ؟", labelEn: "To what extent could the training have qualified you for a higher job and an increase in salary?" },
+      { number: "10", labelAr: "ما هو فهمك خلال فترة خدمتك بالشركة لواجبات ومسؤوليات وظيفتك ؟", labelEn: "What is your understanding, during your tenure in the company, of the duties and responsibilities of your job?" },
+      { number: "11", labelAr: "ما هو فهمك خلال فترة خدمتك بالشركة للمعايير وأهداف الأداء المطلوب منك تحقيقها؟", labelEn: "What is your understanding, during your service in the company, of the performance standards and objectives that you are required to achieve?" },
+      { number: "12", labelAr: "ما هو فهمك خلال فترة خدمتك بالشركة لما يجري بالشركة ككل ؟", labelEn: "What is your understanding during your service in the company of what is happening in the company in general?" },
+      { number: "13", labelAr: "ما هو تقييمك للتقدير الذي كنت تتلقاه من الشركة عندما كنت تؤدي عملاً بشكل جيد ؟", labelEn: "What is your assessment of the appreciation you received from the company when you were doing a good job?" },
+      { number: "14", labelAr: "ما هو تقييمك لرغبة الرئيس المباشر في الاستماع والإصغاء والرغبة في المساعدة ؟", labelEn: "What is your assessment of your direct manager’s willingness to listen and help?" },
+      { number: "15", labelAr: "ما هو مدى تشجيع رئيسك المباشر لك في تقديم الاقتراحات والتحسينات في أساليب العمل؟", labelEn: "To what extent does your immediate superior encourage you in making suggestions and improvements in working methods?" },
+      { number: "16", labelAr: "ما هو تقييمك لفرص الترقية وزيادة الراتب والتطور الوظيفي في الشركة ؟", labelEn: "What is your assessment of the opportunities for promotion, salary increase and career development in the company?" },
+      { number: "17", labelAr: "ما هو تقييمك لمستوى التعاون بين الزملاء في الوحدة التنظيمية التي كنت تعمل بها ؟", labelEn: "What is your assessment of the level of cooperation between colleagues in the organizational unit in which you work?" },
+    ],
+    footNoteAr: "1 (منخفض) — 5 (مرتفع)",
+  },
+  openQuestions: {
+    headingAr: "أسئلة مفتوحة",
+    lines: 2,
+    rows: [
+      { number: "18", labelAr: "ما الذي أعجبك أكثر في العمل في الشركة؟", labelEn: "What did you like most about working at the company?" },
+      { number: "19", labelAr: "ما الذي لم يعجبك في العمل في الشركة ؟", labelEn: "What did you dislike about working at the company?" },
+      { number: "20", labelAr: "ما هي اقتراحاتك لتحسين العمل في الوحدة التنظيمية التي كنت تعمل فيها ؟", labelEn: "What are your suggestions for improving the work in the organizational unit in which you were working?" },
+      { number: "21", labelAr: "ما هي اقتراحاتك لتحسين العمل في الشركة ككل ؟", labelEn: "What are your suggestions to improve the work in the company as a whole?" },
+      { number: "22", labelAr: "برأيك ما هو السبب الحقيقي لانتهاء خدماتك بالشركة ؟", labelEn: "In your opinion, what is the real reason for the end of your services in the company?" },
+      { number: "23", labelAr: "ما هي الاقتراحات والملاحظات التي تعتقد أن من شأنها العودة بالنفع على الشركة؟", labelEn: "What are the suggestions and observations that you think would benefit the company?" },
+    ],
+  },
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "الموظف", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: PERSON_SIGNING_FIELDS_AR },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: PACK_FOOTER_AR,
+};
+
 /**
  * All of them, in the order a career runs through them.
  *
@@ -573,8 +1075,17 @@ export const HR_PAPERS: readonly HrPaperTemplate[] = [
   HR_PAPER_SOCIAL_STATUS_V1,
   HR_PAPER_ABSENCE_WARNING_V1,
   HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DISCIPLINARY_WARNING_V1,
+  HR_PAPER_DISCIPLINARY_PENALTY_V1,
+  HR_PAPER_TRANSFER_DECISION_V1,
+  HR_PAPER_SALARY_ADJUSTMENT_V1,
+  HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
+  HR_PAPER_HANDOVER_RECORD_V1,
+  HR_PAPER_EXIT_INTERVIEW_V1,
 ];
 
 /** One paper by id, or null when the id is not one of ours. */

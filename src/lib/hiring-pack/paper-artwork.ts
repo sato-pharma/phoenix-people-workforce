@@ -60,6 +60,27 @@ function readAsset(publicPath: string): string | null {
       return svg(read(join(process.cwd(), "public", "forms", "labour-mutual-termination-page2.svg")));
     case "/forms/labour-mutual-termination-page3.svg":
       return svg(read(join(process.cwd(), "public", "forms", "labour-mutual-termination-page3.svg")));
+    // THE LETTERS PACK'S GOVERNMENT FORMS (2026-09-13) — see official-pack-forms.ts.
+    case "/forms/insurance-maternity-compensation.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "insurance-maternity-compensation.svg")));
+    case "/forms/insurance-form2.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "insurance-form2.svg")));
+    case "/forms/insurance-car-certificate-page1.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "insurance-car-certificate-page1.svg")));
+    case "/forms/insurance-car-certificate-page2.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "insurance-car-certificate-page2.svg")));
+    case "/forms/labour-office-wage-progress.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-wage-progress.svg")));
+    case "/forms/labour-office-official-holidays.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-official-holidays.svg")));
+    case "/forms/labour-office-sick-leave.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-sick-leave.svg")));
+    case "/forms/labour-office-penalties.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-penalties.svg")));
+    case "/forms/labour-office-penalty-regulations-page1.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-penalty-regulations-page1.svg")));
+    case "/forms/labour-office-penalty-regulations-page2.svg":
+      return svg(read(join(process.cwd(), "public", "forms", "labour-office-penalty-regulations-page2.svg")));
     // The two logo files are NOT interchangeable. `sato-pharma-logo.png` draws the word SATO in
     // WHITE — correct on the navy sidebar it was made for, invisible on paper. Each renderer
     // already chooses; this only has to read what it chose.

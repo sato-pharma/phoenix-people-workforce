@@ -116,6 +116,12 @@ export type HrPaperToken =
 /** One labelled box in an identity or data grid. */
 export type HrPaperField = {
   labelAr: string;
+  /**
+   * The English label, on a paper the owner supplied in both languages (the exit interview). Printed
+   * on its own line pinned left-to-right — a bilingual label on ONE line turns wholly one way and
+   * renders the other half backwards.
+   */
+  labelEn?: string;
   /** The token whose value fills it. Null prints a ruled blank for a pen. */
   token: HrPaperToken | null;
   /** Latin digits — a national ID, an employee code, a date. Pinned left-to-right. */
@@ -135,6 +141,21 @@ export type HrPaperChecklistRow = {
   /** Printed as the serial. Kept as a string so the paper decides its own numbering. */
   number: string;
   labelAr: string;
+  /** The English line under it, on a bilingual paper. See `HrPaperField.labelEn`. */
+  labelEn?: string;
+};
+
+/**
+ * Numbered questions answered in writing — a question, then ruled lines for the pen.
+ *
+ * Not a grid: a question is a sentence, and a sentence squeezed into a label column wraps into a
+ * tower of three-word lines beside an empty box.
+ */
+export type HrPaperOpenQuestions = {
+  headingAr: string;
+  rows: readonly HrPaperChecklistRow[];
+  /** How many ruled lines under each question. */
+  lines: number;
 };
 
 /**
@@ -161,6 +182,12 @@ export type HrPaperOpenTable = {
   columnsAr: readonly string[];
   /** How many blank rows to draw. Enough to be useful, few enough to fit the page. */
   rows: number;
+  /**
+   * The person the paper is printed for, as the table's first row — one token per column after the
+   * serial, null for a cell left to the pen. The salary memo lists several people; the one whose pack
+   * is open is the first of them, and the rest are written in.
+   */
+  firstRowTokens?: readonly (HrPaperToken | null)[];
 };
 
 /** One column of the signature block. */
@@ -200,7 +227,11 @@ export type HrPaperTemplate = {
   operativeHeadingAr: string | null;
   operativeParagraphsAr: readonly string[];
   checklist: HrPaperChecklist | null;
+  /** Written answers, after the checklist. */
+  openQuestions?: HrPaperOpenQuestions | null;
   openTable: HrPaperOpenTable | null;
+  /** Paragraphs that follow the table they refer to — the handover record's closing recitals. */
+  closingParagraphsAr?: readonly string[];
   /** A closing declaration the signer is agreeing to. */
   declarationAr: string | null;
   signaturesHeadingAr: string | null;
@@ -265,9 +296,16 @@ export function hrPaperTemplateStrings(template: HrPaperTemplate): string[] {
           ...template.checklist.rows.map((row) => row.labelAr),
         ]
       : []),
+    ...(template.openQuestions
+      ? [
+          template.openQuestions.headingAr,
+          ...template.openQuestions.rows.flatMap((row) => [row.labelAr, row.labelEn]),
+        ]
+      : []),
     ...(template.openTable
       ? [template.openTable.headingAr, ...template.openTable.columnsAr]
       : []),
+    ...(template.closingParagraphsAr ?? []),
     template.declarationAr,
     template.signaturesHeadingAr,
     ...template.signatureColumns.flatMap((column) => [column.headingAr, ...column.fieldsAr]),
@@ -297,5 +335,6 @@ export function hrPaperTemplateTokens(template: HrPaperTemplate): string[] {
     ...template.serviceFields,
   ];
   for (const field of gridFields) if (field.token) found.add(field.token);
+  for (const token of template.openTable?.firstRowTokens ?? []) if (token) found.add(token);
   return [...found].sort();
 }

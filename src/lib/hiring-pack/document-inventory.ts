@@ -52,7 +52,7 @@ import { buildForm1Values } from "@/lib/hiring-pack/render-form1";
 import { buildForm6Values } from "@/lib/hiring-pack/render-form6";
 import { buildExitValues } from "@/lib/hiring-pack/render-labour-exit";
 import { buildWorkerFormValues } from "@/lib/hiring-pack/render-worker-form";
-import { isBuiltInDocument } from "@/lib/hiring-pack/types";
+import { isBuiltInDocument, isOfficialPackFormDocument } from "@/lib/hiring-pack/types";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
 
 /** One row of the field table: what it is called, what it would print, and whether it is a record value. */
@@ -94,6 +94,9 @@ export function documentValues(
   // there is no shorter list that could be right — what it asks for is decided by whoever drops
   // the boxes. See buildCustomTemplateValues.
   if (!isBuiltInDocument(document)) return buildCustomTemplateValues(data);
+  // The letters pack's government forms have no compiled placements either, for the same reason —
+  // see official-pack-forms.ts — so they are offered the same whole catalogue.
+  if (isOfficialPackFormDocument(document)) return buildCustomTemplateValues(data);
 
   const raw: Partial<Record<string, string>> =
     document === "form1"

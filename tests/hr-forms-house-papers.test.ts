@@ -22,11 +22,20 @@ import {
   HR_PAPERS,
   HR_PAPER_ABSENCE_WARNING_V1,
   HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DISCIPLINARY_PENALTY_V1,
+  HR_PAPER_DISCIPLINARY_WARNING_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_EXIT_INTERVIEW_V1,
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
+  HR_PAPER_HANDOVER_RECORD_V1,
+  HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
+  HR_PAPER_SALARY_ADJUSTMENT_V1,
+  HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
+  HR_PAPER_TRANSFER_DECISION_V1,
   hrPaperById,
 } from "../src/lib/hiring-pack/hr-paper-text.ts";
 import {
@@ -74,8 +83,16 @@ import type {
   HiringPackData,
   HiringPackEmployeeFacts,
   HiringPackProfile,
+  OfficialPackFormDocument,
   OffboardingProfile,
 } from "../src/lib/hiring-pack/types.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import {
+  OFFICIAL_PACK_FORMS,
+  type OfficialPackForm,
+} from "../src/lib/hiring-pack/official-pack-forms.ts";
+import { renderOfficialPackFormHtml } from "../src/lib/hiring-pack/render-official-form.ts";
 
 /**
  * SATO'S SIX OWN HR PAPERS.
@@ -289,7 +306,12 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
   // 2026-09-06. Hard-coded on purpose, like the count in the registry test: adding a paper to this
   // module touches nine files, and a number somebody has to change is what makes that a decision
   // rather than an omission.
-  assert.equal(HR_PAPERS.length, 7, "six papers were supplied, and the certificate makes seven");
+  // SIXTEEN since 2026-09-13: the letters pack added nine of the owner's own papers.
+  assert.equal(
+    HR_PAPERS.length,
+    16,
+    "six papers were supplied, the certificate makes seven, and the letters pack adds nine",
+  );
 
   for (const document of HOUSE_PAPER_DOCUMENTS) {
     assert.ok(
@@ -321,6 +343,15 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
     ["deemedResignation", HR_PAPER_DEEMED_RESIGNATION_V1],
     ["appointmentDocsReturn", HR_PAPER_DOCUMENTS_RETURN_V1],
     ["experienceCertificate", HR_PAPER_EXPERIENCE_CERTIFICATE_V1],
+    ["disciplinaryWarning", HR_PAPER_DISCIPLINARY_WARNING_V1],
+    ["disciplinaryPenalty", HR_PAPER_DISCIPLINARY_PENALTY_V1],
+    ["transferDecision", HR_PAPER_TRANSFER_DECISION_V1],
+    ["salaryAdjustment", HR_PAPER_SALARY_ADJUSTMENT_V1],
+    ["socialInsuranceAuthorization", HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1],
+    ["healthInsuranceAuthorization", HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1],
+    ["insurancePrintLetter", HR_PAPER_INSURANCE_PRINT_LETTER_V1],
+    ["handoverRecord", HR_PAPER_HANDOVER_RECORD_V1],
+    ["exitInterview", HR_PAPER_EXIT_INTERVIEW_V1],
   ];
   for (const [document, template] of pairs) {
     const version = currentTemplateVersion(document as (typeof HOUSE_PAPER_DOCUMENTS)[number]);
@@ -514,6 +545,15 @@ function testCopyCountsAreEachPapersOwnRequirement(): void {
     [HR_PAPER_ABSENCE_WARNING_V1, systemContractDefaults.absenceWarningCopies],
     [HR_PAPER_DEEMED_RESIGNATION_V1, systemContractDefaults.deemedResignationCopies],
     [HR_PAPER_DOCUMENTS_RETURN_V1, systemContractDefaults.appointmentDocsReturnCopies],
+    [HR_PAPER_DISCIPLINARY_WARNING_V1, systemContractDefaults.disciplinaryWarningCopies],
+    [HR_PAPER_DISCIPLINARY_PENALTY_V1, systemContractDefaults.disciplinaryPenaltyCopies],
+    [HR_PAPER_TRANSFER_DECISION_V1, systemContractDefaults.transferDecisionCopies],
+    [HR_PAPER_SALARY_ADJUSTMENT_V1, systemContractDefaults.salaryAdjustmentCopies],
+    [HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1, systemContractDefaults.socialInsuranceAuthorizationCopies],
+    [HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1, systemContractDefaults.healthInsuranceAuthorizationCopies],
+    [HR_PAPER_INSURANCE_PRINT_LETTER_V1, systemContractDefaults.insurancePrintLetterCopies],
+    [HR_PAPER_HANDOVER_RECORD_V1, systemContractDefaults.handoverRecordCopies],
+    [HR_PAPER_EXIT_INTERVIEW_V1, systemContractDefaults.exitInterviewCopies],
   ];
   for (const [paper, copies] of expected) {
     assert.equal(copyCount(renderHrPaperHtml(packFixture(), copies, paper)), copies);
@@ -1228,7 +1268,124 @@ function testTheCertificateIsStampedInItsStampColumn(): void {
   assert.ok(ndaCells[1].includes('class="phx-seal"'), "a التوقيع والختم paper is still sealed on that cell");
 }
 
+// ---------------------------------------------------------------------------------------------
+// THE LETTERS PACK — 2026-09-13
+// ---------------------------------------------------------------------------------------------
+
+const LETTERS_PACK_PAPERS: readonly HrPaperTemplate[] = [
+  HR_PAPER_DISCIPLINARY_WARNING_V1,
+  HR_PAPER_DISCIPLINARY_PENALTY_V1,
+  HR_PAPER_TRANSFER_DECISION_V1,
+  HR_PAPER_SALARY_ADJUSTMENT_V1,
+  HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_INSURANCE_PRINT_LETTER_V1,
+  HR_PAPER_HANDOVER_RECORD_V1,
+  HR_PAPER_EXIT_INTERVIEW_V1,
+];
+
+/** The printed copies of a house paper, with the banner and stylesheet cut away. */
+function copiesOnly(html: string): string {
+  const start = html.indexOf('<article class="copy');
+  assert.ok(start >= 0, "a house paper must contain a copy");
+  return html.slice(start);
+}
+
+function count(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+function testTheLettersPackPapersAreFilledFromTheRecord(): void {
+  const pack = packFixture();
+  for (const paper of LETTERS_PACK_PAPERS) {
+    const page = copiesOnly(renderHrPaperHtml(pack, 1, paper));
+    assert.ok(page.includes("نور عادل"), `${paper.id}: the person it is printed for is named on it`);
+    assert.ok(!page.includes("{{"), `${paper.id}: a token reached the page unfilled`);
+    assert.ok(
+      page.includes("ساتو فارما | إدارة الموارد البشرية"),
+      `${paper.id}: the owner's own footer for the pack`,
+    );
+    assert.ok(
+      !textOf(paper).includes("لسنة"),
+      `${paper.id}: no law citation was added to the owner's wording — his papers cite none`,
+    );
+    assert.ok(!page.includes("شركة شركة"), `${paper.id}: the company name already begins «شركة»`);
+    // NO SALARY FIGURE on any of them — the salary memo instructs payroll, it does not price anybody.
+    for (const figure of ["11000", "11,000", "14300", "14,300"]) {
+      assert.ok(!page.includes(figure), `${paper.id}: printed the salary figure ${figure}`);
+    }
+  }
+
+  // The authorisation and print letters name the delegate by his national ID and insurance number.
+  const social = copiesOnly(renderHrPaperHtml(pack, 1, HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1));
+  assert.ok(social.includes("29709091234567") && social.includes("123456789"));
+  assert.ok(
+    textOf(HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1).includes(
+      "(الاستعلام - س1 – س6 – س2 – التفتيش – متابعة صرف الإجازات – طباعة برينت منشأة – طباعة برينت للموظفين – تأمين السيارات)",
+    ),
+    "the list of what the delegate may do is the owner's, word for word",
+  );
+
+  // The handover record keeps the head office exactly as the owner confirmed it.
+  assert.ok(
+    textOf(HR_PAPER_HANDOVER_RECORD_V1).includes("8 ن مربع 1258 ز – شيراتون - القاهرة"),
+    "the handover record's address is the one the owner confirmed on 2026-09-13",
+  );
+
+  // The salary memo's FIRST row is the person the pack is open for; the rows under it stay ruled.
+  const memo = copiesOnly(renderHrPaperHtml(pack, 1, HR_PAPER_SALARY_ADJUSTMENT_V1));
+  const table = memo.slice(memo.indexOf("بيان المذكورين"));
+  assert.ok(table.indexOf("نور عادل") > 0, "the memo's first row names the person");
+  assert.equal(count(table, "نور عادل"), 1, "and only the first row — the others are written in");
+}
+
+function testTheExitInterviewPrintsBothLanguagesAndNoAnswers(): void {
+  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXIT_INTERVIEW_V1);
+  const page = copiesOnly(html);
+  assert.equal(count(page, 'class="doc-list__box"'), 17 * 5, "seventeen rated questions, five empty boxes each");
+  assert.equal(count(page, 'class="doc-open__item"'), 6, "six written questions");
+  assert.equal(count(page, 'class="doc-open__line"'), 6 * 2, "two ruled lines under each");
+  // Every English line is its own left-to-right block: 17 rated + 6 written + 9 grid labels.
+  assert.equal(count(page, '<span class="doc-en" dir="ltr">'), 17 + 6 + 9);
+  assert.ok(
+    page.includes('<p class="doc-para" dir="ltr">The company confirms'),
+    "the English paragraph runs left-to-right on its own",
+  );
+  assert.ok(page.includes('class="doc-list__rate"'), "the rating columns take a narrow box");
+  assert.ok(html.includes("Every rating box prints blank"), "the banner speaks of ratings");
+  assert.ok(!html.includes("certificates were handed over"), "not of certificates");
+}
+
+function testTheLettersPackGovernmentFormsPrintAsIssued(): void {
+  const pack = packFixture();
+  const forms = Object.entries(OFFICIAL_PACK_FORMS) as [OfficialPackFormDocument, OfficialPackForm][];
+  assert.equal(forms.length, 8, "eight government forms came in the pack");
+  for (const [document, form] of forms) {
+    const one = renderOfficialPackFormHtml(document)(pack, 1);
+    const body = one.slice(one.indexOf("<body>"));
+    for (const artwork of form.pages) {
+      assert.ok(existsSync(join(process.cwd(), "public", artwork)), `${document}: ${artwork} is on disk`);
+      assert.ok(body.includes(artwork), `${document}: ${artwork} prints`);
+    }
+    assert.ok(!body.includes("نور عادل"), `${document}: nothing Phoenix wrote is on the office's form`);
+    assert.equal(
+      body.includes("photograph of a copy"),
+      form.provisional,
+      `${document}: the banner says so exactly when the artwork is a photograph`,
+    );
+    const two = renderOfficialPackFormHtml(document)(pack, 2);
+    assert.equal(
+      count(two.slice(two.indexOf("<body>")), form.pages[0]),
+      2 * count(body, form.pages[0]),
+      `${document}: two copies print every page twice`,
+    );
+  }
+}
+
 export function runHrFormsHousePapersTests(): void {
+  testTheLettersPackPapersAreFilledFromTheRecord();
+  testTheExitInterviewPrintsBothLanguagesAndNoAnswers();
+  testTheLettersPackGovernmentFormsPrintAsIssued();
   testEveryPaperCarriesExactlyOneSeal();
   testTheCertificateIsStampedInItsStampColumn();
   testTheCustodyReturnProtocolIsNotSealed();

@@ -46,12 +46,22 @@ import {
 import {
   HR_PAPER_ABSENCE_WARNING_V1,
   HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DISCIPLINARY_PENALTY_V1,
+  HR_PAPER_DISCIPLINARY_WARNING_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
+  HR_PAPER_EXIT_INTERVIEW_V1,
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
+  HR_PAPER_HANDOVER_RECORD_V1,
+  HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1,
+  HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
+  HR_PAPER_SALARY_ADJUSTMENT_V1,
+  HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
+  HR_PAPER_TRANSFER_DECISION_V1,
 } from "@/lib/hiring-pack/hr-paper-text";
+import { renderOfficialPackFormHtml } from "@/lib/hiring-pack/render-official-form";
 import { renderExperienceCertificateEnHtml } from "@/lib/hiring-pack/experience-certificate-en";
 import { renderSalaryLetterEnHtml } from "@/lib/hiring-pack/salary-letter-en";
 import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
@@ -162,6 +172,76 @@ const RENDERERS: Record<
   salaryLetterEn: {
     render: renderSalaryLetterEnHtml,
     copies: systemContractDefaults.salaryLetterCopies,
+  },
+  // THE LETTERS PACK OF 2026-09-13. The company's own papers are house papers; the government
+  // forms print their artwork as issued — see official-pack-forms.ts.
+  disciplinaryWarning: {
+    render: housePaper(HR_PAPER_DISCIPLINARY_WARNING_V1),
+    copies: systemContractDefaults.disciplinaryWarningCopies,
+  },
+  disciplinaryPenalty: {
+    render: housePaper(HR_PAPER_DISCIPLINARY_PENALTY_V1),
+    copies: systemContractDefaults.disciplinaryPenaltyCopies,
+  },
+  transferDecision: {
+    render: housePaper(HR_PAPER_TRANSFER_DECISION_V1),
+    copies: systemContractDefaults.transferDecisionCopies,
+  },
+  salaryAdjustment: {
+    render: housePaper(HR_PAPER_SALARY_ADJUSTMENT_V1),
+    copies: systemContractDefaults.salaryAdjustmentCopies,
+  },
+  socialInsuranceAuthorization: {
+    render: housePaper(HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1),
+    copies: systemContractDefaults.socialInsuranceAuthorizationCopies,
+  },
+  healthInsuranceAuthorization: {
+    render: housePaper(HR_PAPER_HEALTH_INSURANCE_AUTHORIZATION_V1),
+    copies: systemContractDefaults.healthInsuranceAuthorizationCopies,
+  },
+  insurancePrintLetter: {
+    render: housePaper(HR_PAPER_INSURANCE_PRINT_LETTER_V1),
+    copies: systemContractDefaults.insurancePrintLetterCopies,
+  },
+  handoverRecord: {
+    render: housePaper(HR_PAPER_HANDOVER_RECORD_V1),
+    copies: systemContractDefaults.handoverRecordCopies,
+  },
+  exitInterview: {
+    render: housePaper(HR_PAPER_EXIT_INTERVIEW_V1),
+    copies: systemContractDefaults.exitInterviewCopies,
+  },
+  maternityCompensation: {
+    render: renderOfficialPackFormHtml("maternityCompensation"),
+    copies: systemContractDefaults.maternityCompensationCopies,
+  },
+  insuranceForm2: {
+    render: renderOfficialPackFormHtml("insuranceForm2"),
+    copies: systemContractDefaults.insuranceForm2Copies,
+  },
+  carInsuranceCertificate: {
+    render: renderOfficialPackFormHtml("carInsuranceCertificate"),
+    copies: systemContractDefaults.carInsuranceCertificateCopies,
+  },
+  wageProgressSheet: {
+    render: renderOfficialPackFormHtml("wageProgressSheet"),
+    copies: systemContractDefaults.wageProgressSheetCopies,
+  },
+  officialHolidaysSheet: {
+    render: renderOfficialPackFormHtml("officialHolidaysSheet"),
+    copies: systemContractDefaults.officialHolidaysSheetCopies,
+  },
+  sickLeaveSheet: {
+    render: renderOfficialPackFormHtml("sickLeaveSheet"),
+    copies: systemContractDefaults.sickLeaveSheetCopies,
+  },
+  penaltiesSheet: {
+    render: renderOfficialPackFormHtml("penaltiesSheet"),
+    copies: systemContractDefaults.penaltiesSheetCopies,
+  },
+  penaltyRegulationsApproval: {
+    render: renderOfficialPackFormHtml("penaltyRegulationsApproval"),
+    copies: systemContractDefaults.penaltyRegulationsApprovalCopies,
   },
   contractRenewal: {
     render: renderContractRenewalHtml,

@@ -143,6 +143,27 @@ const DOCUMENT_BINDINGS: Record<
   // The HR letter, for the certificate's reason: nobody signs it back, and it is issued as often as
   // a bank asks for one, so one date on the employee row could hold only the newest.
   salaryLetterEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // The letters pack of 2026-09-13. None records a date against the person: a warning, a penalty or
+  // a transfer can be issued many times in a career, the insurance letters are issued whenever an
+  // office asks, and the government forms are registers or one-off applications — one date on the
+  // employee row could hold only the newest of any of them.
+  disciplinaryWarning: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  disciplinaryPenalty: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  transferDecision: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  salaryAdjustment: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  socialInsuranceAuthorization: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  healthInsuranceAuthorization: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  insurancePrintLetter: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  handoverRecord: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  exitInterview: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  maternityCompensation: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  insuranceForm2: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  carInsuranceCertificate: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  wageProgressSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  officialHolidaysSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  sickLeaveSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  penaltiesSheet: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  penaltyRegulationsApproval: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {

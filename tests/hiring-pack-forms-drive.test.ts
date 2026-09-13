@@ -16,7 +16,11 @@ import {
   sanitizeManualValues,
 } from "../src/lib/hiring-pack/manual-pack.ts";
 import { isPaperReference, stampPaperReference } from "../src/lib/hiring-pack/paper-reference.ts";
-import { HIRING_PACK_DOCUMENTS, type HiringPackCandidate } from "../src/lib/hiring-pack/types.ts";
+import {
+  HIRING_PACK_DOCUMENTS,
+  OFFICIAL_PACK_FORM_DOCUMENTS,
+  type HiringPackCandidate,
+} from "../src/lib/hiring-pack/types.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // THE HR FORMS DRIVE (the owner, 2026-09-13): folders of papers, an employee list that follows the
@@ -52,6 +56,43 @@ function testEveryPaperIsInExactlyOneFolder() {
   assert.equal(folderOfDocument(folders, "contract")?.id, "joining");
   assert.equal(folderOfDocument(folders, "custodyLaptop")?.id, "devices");
   assert.deepEqual(folders.find((folder) => folder.id === "company")?.entries, []);
+}
+
+/** The owner's letters pack of 2026-09-13: every file in it has a folder, and a named one. */
+function testTheLettersPackIsFiled() {
+  const folders = buildFormsDrive();
+  const documentsIn = (id: string) =>
+    (folders.find((folder) => folder.id === id)?.entries ?? []).map((entry) => entry.document).sort();
+
+  assert.deepEqual(
+    documentsIn("decisions"),
+    ["disciplinaryPenalty", "disciplinaryWarning", "salaryAdjustment", "transferDecision"],
+  );
+  assert.deepEqual(
+    documentsIn("insurance"),
+    [
+      "carInsuranceCertificate",
+      "healthInsuranceAuthorization",
+      "insuranceForm2",
+      "insurancePrintLetter",
+      "maternityCompensation",
+      "socialInsuranceAuthorization",
+    ],
+  );
+  assert.deepEqual(
+    documentsIn("labourOffice"),
+    ["officialHolidaysSheet", "penaltiesSheet", "penaltyRegulationsApproval", "sickLeaveSheet", "wageProgressSheet"],
+  );
+  assert.equal(folderOfDocument(folders, "handoverRecord")?.id, "leaving");
+  assert.equal(folderOfDocument(folders, "exitInterview")?.id, "leaving");
+
+  // "governmental leave as is": nothing Phoenix writes lands on an office's form, and the company's
+  // own papers carry their number like every other house paper.
+  for (const document of OFFICIAL_PACK_FORM_DOCUMENTS) {
+    assert.equal(paperReferencePrintsOnFace(document), false, `${document} prints as issued`);
+  }
+  assert.equal(paperReferencePrintsOnFace("disciplinaryWarning"), true);
+  assert.equal(paperReferencePrintsOnFace("handoverRecord"), true);
 }
 
 function testUploadedTemplatesAreFiledByTheirPackage() {
@@ -185,6 +226,7 @@ function testManualPack() {
 
 export function runHiringPackFormsDriveTests() {
   testEveryPaperIsInExactlyOneFolder();
+  testTheLettersPackIsFiled();
   testUploadedTemplatesAreFiledByTheirPackage();
   testLeavingPapersListLeaversOnly();
   testReferenceStamping();
