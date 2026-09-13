@@ -174,11 +174,12 @@ export function runRecruitmentHubPortalCoverageTests() {
   // ── 3. Every card she owns opens ────────────────────────────────────────────────────────────
   assert.equal(
     cards.length,
-    8,
-    "the hub must carry exactly eight cards for the recruiting seat (Recruitment, CV Database, " +
-      "Hiring Documents, HR Forms, Job Offers, Inbound Intake Health, Missing Contact " +
+    9,
+    "the hub must carry exactly nine cards for the recruiting seat (Recruitment, CV Database, " +
+      "Hiring Documents, HR Forms, Business Cards, Job Offers, Inbound Intake Health, Missing Contact " +
       "Details, WhatsApp Replies) — if that count moves, decide the reachability of the new one " +
-      "in the same change. " +
+      "in the same change. Business Cards (2026-09-13) is employee_documents paperwork like HR Forms, " +
+      "on her rail through the hub promotion and on HR Operations' own rail under /hr. " +
       `Got: ${cards.map((c) => c.href).join(", ")}`,
   );
   for (const card of cards) {
@@ -211,8 +212,8 @@ export function runRecruitmentHubPortalCoverageTests() {
   const opsCards = hubCardsFor("HR Operations").map((c) => c.href).sort();
   assert.deepEqual(
     opsCards,
-    ["/hiring-documents", "/hiring-pack"],
-    "HR Operations may clear only the shared hiring-paperwork cards, never a recruiting one",
+    ["/business-cards", "/hiring-documents", "/hiring-pack"],
+    "HR Operations may clear only the shared employee-paperwork cards (Business Cards, Hiring Documents, HR Forms), never a recruiting one",
   );
   // …and those two are currently reachable ONLY from a hub she is not offered, so the grant is
   // real and the route to it is not. That is the granted-but-unreachable shape every-offered-link

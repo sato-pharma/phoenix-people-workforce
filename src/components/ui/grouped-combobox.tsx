@@ -381,7 +381,7 @@ export function GroupedComboBox({
           it, so nothing here doubles up. */}
       <div
         className={cn(
-          "flex h-8 w-full items-center gap-1.5 overflow-hidden rounded-md border bg-white px-2 transition",
+          "flex h-8 w-full items-center gap-1.5 overflow-hidden border bg-white px-2 transition",
           open ? "border-orange-400 ring-2 ring-orange-100" : "border-slate-300 hover:border-slate-400",
           disabled ? "opacity-50" : "cursor-text",
         )}
@@ -396,7 +396,7 @@ export function GroupedComboBox({
             that the field is holding a LIST — without it a second pick looks like it replaced the
             first, which is how a multi-select quietly loses somebody's CV. */}
         {selected.length > 1 ? (
-          <span className="shrink-0 rounded bg-orange-100 px-1.5 text-phx-2xs font-black tabular-nums text-orange-700">
+          <span className="shrink-0 bg-orange-100 px-1.5 text-phx-2xs font-black tabular-nums text-orange-700">
             {selected.length}
           </span>
         ) : (
@@ -443,10 +443,13 @@ export function GroupedComboBox({
       </div>
 
       {mounted && open && panel
-        ? createPortal(
+        ? // The panel is portaled to <body>, OUTSIDE `.admin-shell` and `.employee-portal-shell`, so
+          // the shells' square-corner sweep never reaches it. Square edges are therefore stated here,
+          // by leaving every `rounded-*` off — pinned by tests/business-cards.test.ts.
+          createPortal(
             <div
               aria-multiselectable={multiple || undefined}
-              className="fixed z-[1000] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.18)]"
+              className="fixed z-[1000] overflow-hidden border border-slate-200 bg-white shadow-[0_20px_48px_rgba(15,23,42,0.18)]"
               id={panelId}
               ref={panelRef}
               role="listbox"
@@ -476,7 +479,7 @@ export function GroupedComboBox({
                 <div className="flex flex-wrap items-center gap-1 border-b border-orange-100 bg-orange-50/60 px-2.5 py-1.5">
                   {selected.map((item) => (
                     <button
-                      className="group inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border border-orange-200 bg-white py-0.5 pl-2 pr-1 text-phx-2xs font-semibold text-orange-800 transition hover:border-orange-400 hover:bg-orange-100"
+                      className="group inline-flex max-w-full items-center gap-1 whitespace-nowrap border border-orange-200 bg-white py-0.5 pl-2 pr-1 text-phx-2xs font-semibold text-orange-800 transition hover:border-orange-400 hover:bg-orange-100"
                       key={item.id}
                       onMouseDown={(event) => {
                         event.preventDefault();
@@ -492,7 +495,7 @@ export function GroupedComboBox({
                   ))}
                   {selected.length > 1 ? (
                     <button
-                      className="ml-auto shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-semibold text-slate-500 transition hover:bg-white hover:text-slate-800"
+                      className="ml-auto shrink-0 whitespace-nowrap px-2 py-0.5 text-phx-2xs font-semibold text-slate-500 transition hover:bg-white hover:text-slate-800"
                       onMouseDown={(event) => {
                         event.preventDefault();
                         onChange([]);
@@ -523,7 +526,7 @@ export function GroupedComboBox({
                           <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-wide text-slate-600">
                             {row.label}
                           </span>
-                          <span className="rounded-full bg-white px-1.5 text-phx-2xs font-black tabular-nums text-slate-500 ring-1 ring-slate-200">
+                          <span className="bg-white px-1.5 text-phx-2xs font-black tabular-nums text-slate-500 ring-1 ring-slate-200">
                             {row.count}
                           </span>
                         </div>
@@ -534,7 +537,7 @@ export function GroupedComboBox({
                     if (row.kind === "subgroup") {
                       return (
                         <div className="flex items-center gap-1.5 px-3 pb-0.5 pt-1.5" key={row.key}>
-                          <span className="h-2 w-0.5 shrink-0 rounded-full bg-orange-300" />
+                          <span className="h-2 w-0.5 shrink-0 bg-orange-300" />
                           <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide text-orange-600/90">
                             {row.label}
                           </span>
@@ -568,7 +571,7 @@ export function GroupedComboBox({
                         {multiple ? (
                           <span
                             className={cn(
-                              "flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition",
+                              "flex h-3.5 w-3.5 shrink-0 items-center justify-center border transition",
                               picked ? "border-orange-600 bg-orange-600" : "border-slate-300 bg-white",
                             )}
                           >

@@ -1954,6 +1954,7 @@ const hrNavigationSectionSeeds = [
       // `excludedRoles`, so without it these rows would silently relocate on his rail as well.
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // Probation moved OUT of this section on 2026-09-01, down to its own "Probation" section,
       // where it sits beside the outcomes dashboard. It is one module and it was in two minds
       // here: People is who is on the payroll, probation is how a new joiner is performing.
@@ -2021,6 +2022,7 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }] },
+      { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }] },
       // NO "Missing Contact Details" (/hr/recruitment/contact-review) and NO "Inbound Intake
       // Health" (/hr/recruitment/intake-health) row. Both sat here until 2026-09-01, when the
       // owner cut them: "I think there are irrelevant modules... I don't want any crowd... remove
@@ -3506,6 +3508,14 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     roles: hrAuthorityNavigationRoles,
   },
   {
+    href: "/business-cards",
+    icon: IdCard,
+    label: "Business Cards",
+    description: "Print-ready Sato Pharma business cards for any employees — one PDF for all, or one per person.",
+    permissions: [{ resource: "employee_documents" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
     href: "/offers",
     icon: MailCheck,
     label: "Job Offers",
@@ -4359,6 +4369,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/offers",
           "/hiring-documents",
           "/hiring-pack",
+          "/business-cards",
         ],
       },
       {
