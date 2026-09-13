@@ -1338,6 +1338,7 @@ import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharm
 import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm-contact-link.test.ts";
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
+import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -4261,6 +4262,11 @@ await runTest(
 await runTest(
   "native visits, the pilot (one type table shared by the rules, the migration and pay meaning, with -4 the only leave; today or yesterday only; a missing GPS fix is a flag; AM/PM comes from the contact's list; the pilot is a dated row; only the named partner answers, once, for a rep beneath him; the rep is the session; nothing outside the module names the native tables)",
   runCrmNativeVisitsTests,
+);
+
+await runTest(
+  "native rep plans, the pilot (a Saturday-to-Thursday week with Thursday a morning; only pilot days from today on can change; AM/PM comes from the contact's list; one row and one id per rep, doctor and day for good, so a re-save keeps ids and a dropped doctor comes back as the same row; only the manager the plan was sent to verifies or returns it, with a note on a return, for a rep beneath that manager; the vendor plan is untouched; nothing outside the module names the plan tables)",
+  runCrmNativePlansTests,
 );
 
 await runTest(

@@ -11,3 +11,8 @@ export const CRM_NATIVE_VISIT_PILOTS_TABLE = "crm_native_visit_pilots";
 export const CRM_NATIVE_VISITS_TABLE = "crm_native_visits";
 export const CRM_NATIVE_VISIT_PARTNERS_TABLE = "crm_native_visit_partners";
 export const CRM_NATIVE_VISIT_EVENTS_TABLE = "crm_native_visit_events";
+
+// Native rep plans (phase 4). Same rule: nothing outside this folder names them before cutover.
+export const CRM_NATIVE_PLANS_TABLE = "crm_native_plans";
+export const CRM_NATIVE_PLAN_ITEMS_TABLE = "crm_native_plan_items";
+export const CRM_NATIVE_PLAN_EVENTS_TABLE = "crm_native_plan_events";

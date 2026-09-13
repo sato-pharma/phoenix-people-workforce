@@ -1,10 +1,11 @@
 /**
  * Native visits — the server service (CRM phase 3, the pilot).
  *
- * THE ONLY CODE THAT TOUCHES THE NATIVE TABLES. Until the cutover nothing else may read them: every
- * report, KPI, deduction, probation count and payroll input keeps reading the iReports360 mirror,
- * and the pilot line keeps entering there too, so a native row read anywhere else double-counts.
- * tests/crm-native-visits.test.ts fails if another file references the table constants.
+ * THE ONLY CODE THAT TOUCHES THE NATIVE TABLES, with plans-service.ts beside it. Until the cutover
+ * nothing else may read them: every report, KPI, deduction, probation count and payroll input keeps
+ * reading the iReports360 mirror, and the pilot line keeps entering there too, so a native row read
+ * anywhere else double-counts. tests/crm-native-visits.test.ts fails if another file references the
+ * table constants.
  *
  * WHO. The rep is always the session's own person, looked up in the employee directory — never a
  * field of the request. A partner decides only a row naming HIM, and only for a rep beneath him
@@ -33,14 +34,24 @@ import {
   parseNativeVisitDraft,
   type NativePartnerStatus,
   type NativeVisitGpsStatus,
-  type NativeVisitPilot,
   type NativeVisitShift,
   type NativeVisitTypeKey,
 } from "@/lib/crm/native-visits/rules";
 import {
+  chunk,
+  employeeName,
+  isMissingTable,
+  isUniqueViolation,
+  loadDirectory,
+  loadPilots,
+  loadRepContacts,
+  managementChain,
+  requireActiveSelf,
+} from "@/lib/crm/native-visits/server-shared";
+import {
+  CRM_NATIVE_PLAN_ITEMS_TABLE,
   CRM_NATIVE_VISIT_EVENTS_TABLE,
   CRM_NATIVE_VISIT_PARTNERS_TABLE,
-  CRM_NATIVE_VISIT_PILOTS_TABLE,
   CRM_NATIVE_VISITS_TABLE,
 } from "@/lib/crm/native-visits/tables";
 import type {
@@ -48,164 +59,19 @@ import type {
   NativeVisitContactOption,
   NativeVisitEntryAvailability,
   NativeVisitFormOptions,
-  NativeVisitPartnerOption,
   NativeVisitPartnerView,
   NativeVisitRow,
   NativeVisitSaveResult,
 } from "@/lib/crm/native-visits/types";
-import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
-import {
-  getEmployeeDirectoryRows,
-  isActiveDirectoryEmployee,
-  type EmployeeDirectoryRow,
-} from "@/lib/employees/employee-directory";
+import { isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** How far back "my visits" and "my confirmations" look. The pilot is one week. */
 const HISTORY_DAYS = 14;
-/** The management chain offered as partners: direct manager and up to three rungs above. */
-const PARTNER_CHAIN_DEPTH = 4;
-const IN_CHUNK = 300;
-
-type SupabaseError = { code?: string | null; message?: string | null } | null;
-
-function isMissingTable(error: SupabaseError): boolean {
-  const code = String(error?.code ?? "");
-  return code === "PGRST205" || code === "42P01";
-}
-
-function isUniqueViolation(error: SupabaseError): boolean {
-  return String(error?.code ?? "") === "23505";
-}
-
-function chunk<T>(values: readonly T[], size = IN_CHUNK): T[][] {
-  const out: T[][] = [];
-  for (let index = 0; index < values.length; index += size) out.push(values.slice(index, index + size));
-  return out;
-}
 
 // ── Loading ─────────────────────────────────────────────────────────────────────────────────────
-
-async function loadPilots(): Promise<NativeVisitPilot[]> {
-  const { data, error } = await getSupabaseAdmin()
-    .from(CRM_NATIVE_VISIT_PILOTS_TABLE)
-    .select("line_name,starts_on,ends_on,is_active");
-  // Before the migration is applied there is simply no pilot — never an error page.
-  if (error) {
-    if (isMissingTable(error)) return [];
-    throw error;
-  }
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-    lineName: String(row.line_name ?? ""),
-    startsOn: String(row.starts_on ?? ""),
-    endsOn: String(row.ends_on ?? ""),
-    isActive: row.is_active === true,
-  }));
-}
-
-type Directory = { rows: EmployeeDirectoryRow[]; byKey: Map<string, EmployeeDirectoryRow> };
-
-async function loadDirectory(): Promise<Directory> {
-  const rows = await getEmployeeDirectoryRows({ includeInactive: true });
-  const byKey = new Map<string, EmployeeDirectoryRow>();
-  for (const row of rows) {
-    const key = canonicalHrIdKey(row.hrId);
-    if (key) byKey.set(key, row);
-  }
-  return { rows, byKey };
-}
-
-function employeeName(row: EmployeeDirectoryRow | null | undefined): string {
-  return row?.displayName || row?.fullName || "Unknown employee";
-}
-
-function requireActiveSelf(access: AccessContext, directory: Directory): EmployeeDirectoryRow {
-  const key = canonicalHrIdKey(access.hrId);
-  const row = key ? directory.byKey.get(key) : undefined;
-  if (!row || !isActiveDirectoryEmployee(row)) {
-    throw forbiddenError("Forbidden: visit entry needs an active employee record.");
-  }
-  return row;
-}
-
-/** The rep's management chain, nearest first, active people only. */
-function managementChain(rep: EmployeeDirectoryRow, directory: Directory): NativeVisitPartnerOption[] {
-  const out: NativeVisitPartnerOption[] = [];
-  const seen = new Set<string>([canonicalHrIdKey(rep.hrId) ?? ""]);
-  let current: EmployeeDirectoryRow | undefined = rep;
-  for (let depth = 0; depth < PARTNER_CHAIN_DEPTH && current; depth += 1) {
-    const managerKey = canonicalHrIdKey(current.managerHrId);
-    if (!managerKey || seen.has(managerKey)) break;
-    seen.add(managerKey);
-    const manager = directory.byKey.get(managerKey);
-    if (!manager) break;
-    if (isActiveDirectoryEmployee(manager)) {
-      out.push({
-        hrId: manager.hrId,
-        name: employeeName(manager),
-        jobTitle: manager.jobTitle,
-        isDirectManager: depth === 0,
-      });
-    }
-    current = manager;
-  }
-  return out;
-}
-
-async function loadRepContacts(rep: EmployeeDirectoryRow): Promise<NativeVisitContactOption[]> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-    .select("contact_crm_id,list_type,grade")
-    .is("effective_to", null)
-    .in("agent_hr_id", hrIdLookupKeys(rep.hrId))
-    // A pharmacy is not a contact: PM and AM lists only.
-    .in("list_type", ["AM", "PM"]);
-  if (error) {
-    if (isMissingTable(error)) return [];
-    throw error;
-  }
-
-  const byContact = new Map<number, { lists: Set<NativeVisitShift>; grade: string | null }>();
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-    const contactCrmId = Number(row.contact_crm_id);
-    if (!Number.isInteger(contactCrmId) || contactCrmId <= 0 || contactCrmId === 100000) continue;
-    const list = row.list_type === "AM" ? "AM" : row.list_type === "PM" ? "PM" : null;
-    if (!list) continue;
-    const entry = byContact.get(contactCrmId) ?? { lists: new Set<NativeVisitShift>(), grade: null };
-    entry.lists.add(list);
-    if (!entry.grade && row.grade) entry.grade = String(row.grade);
-    byContact.set(contactCrmId, entry);
-  }
-  if (byContact.size === 0) return [];
-
-  const details = new Map<number, { name: string; speciality: string | null }>();
-  for (const ids of chunk(Array.from(byContact.keys()))) {
-    const { data: contacts, error: contactError } = await supabase
-      .from(CRM_CONTACT_MASTER_TABLE)
-      .select("contact_crm_id,name,speciality")
-      .in("contact_crm_id", ids);
-    if (contactError) throw contactError;
-    for (const row of (contacts ?? []) as Array<Record<string, unknown>>) {
-      details.set(Number(row.contact_crm_id), {
-        name: String(row.name ?? "").trim(),
-        speciality: row.speciality ? String(row.speciality) : null,
-      });
-    }
-  }
-
-  return Array.from(byContact.entries())
-    .map(([contactCrmId, entry]) => ({
-      contactCrmId,
-      name: details.get(contactCrmId)?.name || "Unnamed doctor",
-      speciality: details.get(contactCrmId)?.speciality ?? null,
-      grade: entry.grade,
-      lists: (["AM", "PM"] as const).filter((list) => entry.lists.has(list)),
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name));
-}
 
 async function loadAppRole(hrId: string): Promise<string | null> {
   const { data, error } = await getSupabaseAdmin()
@@ -228,6 +94,27 @@ async function loadSeatId(hrId: string): Promise<string | null> {
   if (error) return null;
   const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
   return row?.seat_id ? String(row.seat_id) : null;
+}
+
+/**
+ * The rep's own live plan item for this doctor on this day, if the rep planned one (phase 4). Before
+ * the plan tables exist there is simply no item.
+ */
+async function findPlanItemId(hrId: string, contactCrmId: number, visitDate: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(CRM_NATIVE_PLAN_ITEMS_TABLE)
+    .select("id")
+    .in("hr_id", hrIdLookupKeys(hrId))
+    .eq("contact_crm_id", contactCrmId)
+    .eq("plan_date", visitDate)
+    .is("removed_at", null)
+    .limit(1);
+  if (error) {
+    if (isMissingTable(error)) return null;
+    throw error;
+  }
+  const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
+  return row?.id ? String(row.id) : null;
 }
 
 async function recordEvent(visitId: string, event: string, actorHrId: string | null, detail: Record<string, unknown>) {
@@ -366,9 +253,14 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   const type = nativeVisitType(draft.visitType);
   if (!type) throw validationError("Choose what kind of visit or day this is.");
 
-  const [seatId, partnerRoles] = await Promise.all([
+  // The plan link: a doctor visit keeps the rep's own planned item for that doctor and day, if any.
+  // Only a doctor visit keeps a plan, as in the vendor plan-vs-actual (code 0 only).
+  const [seatId, partnerRoles, planItemId] = await Promise.all([
     loadSeatId(rep.hrId),
     Promise.all(partners.map((partner) => loadAppRole(partner.hrId))),
+    type.key === "regular" && draft.contactCrmId != null
+      ? findPlanItemId(rep.hrId, draft.contactCrmId, draft.visitDate)
+      : Promise.resolve(null),
   ]);
 
   const { data: inserted, error: insertError } = await supabase
@@ -400,6 +292,7 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
       gps_address: draft.gpsAddress,
       gps_status: draft.gpsStatus,
       comment: draft.comment,
+      plan_item_id: planItemId,
       device_recorded_at: draft.deviceRecordedAt,
     })
     .select("id")
@@ -431,6 +324,7 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
     await recordEvent(visitId, "created", access.hrId, {
       gpsStatus: draft.gpsStatus,
       partners: partners.length,
+      planItemId,
       visitType: type.key,
     });
   } catch (error) {

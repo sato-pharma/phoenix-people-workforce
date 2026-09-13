@@ -619,6 +619,13 @@ export const accessRegistry = [
   // the visit may answer, and only for a rep inside his downward scope.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // Native rep plans — the pilot (CRM phase 4). A rep plans only the rep's own week (the session).
+  // `approve` is narrowed again inside the service: only the manager the plan was sent to decides it,
+  // for a rep inside that manager's downward scope. Nothing reaches the vendor plan or its write-back.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/plans", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plans", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by
