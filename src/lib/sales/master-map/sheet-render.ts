@@ -101,8 +101,12 @@ const ROW_HEIGHT = { area: 30, base: 21, line: 34, region: 38 } as const;
  */
 export const MANAGER_COLUMN_WIDTH = 330;
 
-/** An organogram region column: the longest thing it ever holds is "Not in the organogram". */
-const REGION_COLUMN_WIDTH = 180;
+/**
+ * An organogram region column. Its header, not its cells, is the widest thing in it: at 180 the
+ * live sheet cut "Anti Infective region" to "nti Infective regio" once the filter button took its
+ * share. 230 fits the header, the button and "Not in the organogram".
+ */
+const REGION_COLUMN_WIDTH = 230;
 
 /** Width of a column appended after provenance, told apart by its header, never by position. */
 export function appendedColumnWidth(header: string | undefined): number {
