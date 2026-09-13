@@ -19,6 +19,7 @@ import {
 const ROOT = process.cwd();
 const MIGRATION = join(ROOT, "supabase/migrations/20260910230000_sos_mapping_guard.sql");
 const PERMIT_FIX = join(ROOT, "supabase/migrations/20260911013000_sos_mapping_guard_permit_not_a_flag.sql");
+const CONFIDENCE_FIX = join(ROOT, "supabase/migrations/20260913020000_sos_map_guard_decide_carries_confidence.sql");
 
 /**
  * The hole that was live on production for twenty minutes on 2026-09-11.
@@ -54,6 +55,37 @@ function theBypassIsNotSomethingAWriterCanAssertAboutItself() {
 
   assert.match(fix, /It does not defend against the table owner, and nothing can/,
     "the migration must state what this does NOT buy, or the next reader over-trusts it again");
+}
+
+/**
+ * A released ruling that lands at its OLD confidence does not bind.
+ *
+ * Until 2026-09-13 the release path copied brick, area, region, source and active out of the hold and
+ * left confidence and mapped_by at their pre-hold values. An owner ruling binds only at confidence
+ * 100, so 214 released rulings sat on the map at null/10/35/56, open to the next automatic remap,
+ * until they were repaired by hand. These assertions pin the two columns into the customer-map
+ * branch, and pin that the permit scoping around them survived the rewrite.
+ */
+function aReleasedRulingCarriesItsConfidenceAndAuthor() {
+  const sql = readFileSync(CONFIDENCE_FIX, "utf8");
+  const start = sql.indexOf("if h.table_name = 'source_of_sales_customer_map' then");
+  const end = sql.indexOf("elsif h.table_name = 'source_of_sales_bricks' then");
+  assert.ok(start >= 0 && end > start, "the customer-map branch must exist in the replacement");
+  const branch = sql.slice(start, end);
+
+  assert.match(branch, /confidence\s+= coalesce\(\(h\.after_json->>'confidence'\)::int, m\.confidence\)/,
+    "the hold's confidence must reach the map, or an owner ruling lands below 100 and does not bind");
+  assert.match(branch, /mapped_by\s+= coalesce\(h\.after_json->>'mapped_by', m\.mapped_by\)/,
+    "the hold's mapped_by must reach the map, or a released batch is stamped unlike every direct write");
+
+  assert.match(sql, /values \(txid_current\(\), h\.table_name, h\.entity_key, h\.id\)/,
+    "the permit must stay scoped to this transaction, this table and this entity, naming its hold");
+  assert.match(sql, /delete from public\.sos_map_guard_permits where txid = txid_current\(\);/,
+    "the permit must be deleted after the write");
+  assert.match(sql, /delete from public\.sos_map_guard_permits where issued_at < now\(\) - interval '1 hour';/,
+    "stale permits must still be purged");
+  assert.doesNotMatch(sql, /map_guard_bypass/, "the session-setting bypass must not return");
+  assert.match(sql, /revoke execute on function public\.sos_map_guard_decide\(bigint, text, text\) from public, anon, authenticated;/);
 }
 
 function hold(overrides: Partial<MappingGuardHold> & { createdAt: string; writer: string }): MappingGuardHold {
@@ -304,4 +336,5 @@ export async function runSosMappingGuardTests() {
   theLinkGoesToTheScreenThatCanReleaseAHold();
   theMigrationKeepsItsLoadBearingClauses();
   theBypassIsNotSomethingAWriterCanAssertAboutItself();
+  aReleasedRulingCarriesItsConfidenceAndAuthor();
 }
