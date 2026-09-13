@@ -62,6 +62,7 @@ import { calculatePaymentForRequest } from "@/lib/vacation/service";
 import { listPriorMonthHolds } from "./draft-store.ts";
 import { resolveHoldReason } from "./hold-reason.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
+import { loadStandingAdditions, type StandingAdditionsForEmployee } from "./standing-additions.ts";
 import type {
   DraftRow,
   PayrollPeriod,
@@ -1595,18 +1596,33 @@ function recommendCrm(
   return rows;
 }
 
-function recommendAdditions(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
+/**
+ * Part 2 Additions. Recommends zero, except where a standing addition falls due this month
+ * (standing-additions.ts — owner request 2026-09-13, a quarterly incentive that was forgotten in
+ * August because this step had no feeder). A value HR already saved on the draft row always wins,
+ * and the standing reason is offered only while HR has not saved the row's additions themselves —
+ * otherwise a figure HR changed would carry an explanation written for a different one.
+ */
+export function recommendAdditions(
+  members: PopulationMember[],
+  drafts: Map<string, DraftRow>,
+  standing: Map<string, StandingAdditionsForEmployee> = new Map(),
+): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
+    const due = standing.get(member.compact);
     const row = baseRow(member);
     row.context = { "Hire Date": member.employee.hireDate ?? "" };
-    row.recommended = { incentive: 0, bonus: 0, overtime: 0 };
+    const incentive = due?.incentive ?? 0;
+    const bonus = due?.bonus ?? 0;
+    row.recommended = { incentive, bonus, overtime: 0 };
     row.values = {
-      incentive: pick(draft?.incentive, 0),
-      bonus: pick(draft?.bonus, 0),
+      incentive: pick(draft?.incentive, incentive),
+      bonus: pick(draft?.bonus, bonus),
       overtime: pick(draft?.overtime, 0),
     };
-    row.reason = draft?.additionsReason ?? null;
+    const hrSavedAdditions = draft?.incentive != null || draft?.bonus != null;
+    row.reason = draft?.additionsReason ?? (hrSavedAdditions ? null : (due?.reason ?? null));
     return row;
   });
 }
@@ -2303,7 +2319,7 @@ async function recommendStepRows(
         drafts,
       );
     case "p2_additions":
-      return recommendAdditions(input.members, drafts);
+      return recommendAdditions(input.members, drafts, await loadStandingAdditions(input.period));
     case "p2_manual_deductions":
       return recommendManualDeductions(
         input.members,

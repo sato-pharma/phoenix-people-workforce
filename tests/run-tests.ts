@@ -1159,6 +1159,7 @@ import { runAutomatedPayrollRunTransitionClaimTests } from "./automated-payroll-
 import { runAutomatedPayrollReadsDeductionsModuleTests } from "./automated-payroll-reads-deductions-module.test.ts";
 import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
+import { runAutomatedPayrollStandingAdditionsTests } from "./automated-payroll-standing-additions.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
 import { runPayrollDayRateDivisorTests } from "./payroll-day-rate-divisor.test.ts";
@@ -3595,6 +3596,7 @@ await runTest(
 await runTest("automated payroll reads the Deductions module (only what HR confirmed reaches the sheet; unknown statuses fail closed)", runAutomatedPayrollReadsDeductionsModuleTests);
 await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
 await runTest("automated payroll recurring non-employees (a new run seeds itself from the standing roster; the full finance sheet carries bank details)", runAutomatedPayrollRecurringNonEmployeesTests);
+await runTest("automated payroll standing additions (a quarterly incentive pre-fills Part 2 Additions when due; August's missed one lands in September only; HR's saved value wins)", runAutomatedPayrollStandingAdditionsTests);
 await runTest("field workforce Thursday half day (Thu costs 0.5; Sat title-dependent; holiday-outage guard)", runFieldWorkforceThursdayHalfDayTests);
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);
