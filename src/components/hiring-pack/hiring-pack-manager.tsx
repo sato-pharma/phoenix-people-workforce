@@ -38,7 +38,7 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -47,7 +47,10 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { FormsDrive } from "@/components/hiring-pack/forms-drive";
+import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
+import { candidateOptionLabel, type FormsDriveEntry } from "@/lib/hiring-pack/forms-drive";
 import { TemplateStudio } from "@/components/hiring-pack/template-studio";
 import {
   templateNamesOf,
@@ -569,16 +572,9 @@ function formatStamp(iso: string | null): string {
   });
 }
 
+/** One line per person — shared with the drive so both lists read the same. See `candidateOptionLabel`. */
 function candidateLabel(candidate: HiringPackCandidate): string {
-  const parts = [candidate.hrId, candidate.fullName];
-  if (candidate.nameAr) parts.push(candidate.nameAr);
-  if (candidate.jobTitle) parts.push(candidate.jobTitle);
-  // A leaver carries the date they left, because that is what identifies them here: two people can
-  // share a job title, and the one whose Form 6 is due is the one who left last week.
-  if (candidate.departed && candidate.lastWorkingDate) {
-    parts.push(`left ${candidate.lastWorkingDate}`);
-  }
-  return parts.join(" · ");
+  return candidateOptionLabel(candidate);
 }
 
 function gapsFor(gaps: HiringPackGap[], document: HiringPackDocument): HiringPackGap[] {
@@ -828,8 +824,9 @@ export function HiringPackManager({
     }
   }, []);
 
+  // Answers whether the employee's pack is now loaded, so the drive knows whether to open a paper.
   const selectEmployee = useCallback(
-    async (hrId: string) => {
+    async (hrId: string): Promise<boolean> => {
       setSelectedHrId(hrId);
       setNotice(null);
       setError(null);
@@ -839,7 +836,7 @@ export function HiringPackManager({
       if (!hrId) {
         setPack(null);
         setForm(emptyForm());
-        return;
+        return false;
       }
       setBusy("load");
       try {
@@ -849,12 +846,14 @@ export function HiringPackManager({
         if (!response.ok) {
           setPack(null);
           setError(await readError(response));
-          return;
+          return false;
         }
         applyPack((await response.json()) as HiringPackData);
+        return true;
       } catch (cause) {
         setPack(null);
         setError(cause instanceof Error ? cause.message : "Could not load this employee.");
+        return false;
       } finally {
         setBusy("");
       }
@@ -1098,6 +1097,23 @@ export function HiringPackManager({
     [openPreview, openPrint],
   );
 
+  /**
+   * A paper pressed in the drive, for one employee: load them (unless already loaded) and open the
+   * paper in the editor, which sits directly under the drive.
+   */
+  const editorRef = useRef<HTMLDivElement>(null);
+  const openForEmployee = useCallback(
+    async (entry: FormsDriveEntry, hrId: string) => {
+      const loaded = pack?.employee.hrId === hrId && selectedHrId === hrId ? true : await selectEmployee(hrId);
+      if (!loaded) return;
+      openPreview(entry.document, entry.versionId ?? undefined);
+      window.requestAnimationFrame(() =>
+        editorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      );
+    },
+    [openPreview, pack, selectEmployee, selectedHrId],
+  );
+
   const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
   }, []);
@@ -1105,6 +1121,22 @@ export function HiringPackManager({
   const setSignDateFor = useCallback((document: HiringPackDocument, value: string) => {
     setSignDates((current) => ({ ...current, [document]: value }));
   }, []);
+
+  /**
+   * THE LEAVING TAB LISTS LEAVERS — the owner's bug report, 2026-09-13: "if i choose a document
+   * related to resignations the drop list of employees who resigned appear". Every paper on that tab
+   * is a leaving paper, so the list follows it. The person already loaded stays in the list, or the
+   * box would empty itself the moment the tab is switched while their pack is still on screen.
+   * (A certificate of experience for somebody still employed is issued from the drive's Leaving
+   * folder, which lists everyone for those two papers.)
+   */
+  const pickerCandidates = useMemo(
+    () =>
+      activePackage === "leaver"
+        ? candidates.filter((candidate) => candidate.departed || candidate.hrId === selectedHrId)
+        : candidates,
+    [activePackage, candidates, selectedHrId],
+  );
 
   const departedCount = candidates.filter((candidate) => candidate.departed).length;
   const currentCount = candidates.length - departedCount;
@@ -1134,7 +1166,7 @@ export function HiringPackManager({
               </AdminInsightChip>
             </>
           }
-          description="Fill the five statutory documents from the employee record, print them ready to sign, and record the date they were signed. Nothing is filled in by hand."
+          description="Open a folder and press the paper you need. Fill it from an employee's record, or type the details in while the company's own details fill themselves. Everything on the paper stays editable, and every print is numbered."
           eyebrow="Employee documents"
           icon={<FileSignature className="h-5 w-5" />}
           title="HR Forms"
@@ -1159,6 +1191,15 @@ export function HiringPackManager({
           in it are the same values the boxes below hold, so having both on screen at once is what
           makes the connection between them obvious instead of something to be learned.
         */}
+        <FormsDrive
+          candidates={candidates}
+          loadingEmployee={busy === "load"}
+          onOpenForEmployee={(entry, hrId) => void openForEmployee(entry, hrId)}
+          selectedHrId={selectedHrId}
+          templates={companyTemplates.templates}
+        />
+
+        <div className="scroll-mt-4" ref={editorRef} />
         {pack && preview ? (
           <HiringPackPaperEditor
             // THE SAME AUTHORITY THE COMPANY-TEMPLATE UPLOAD USES, and the same one the
@@ -1171,6 +1212,16 @@ export function HiringPackManager({
             hrId={pack.employee.hrId}
             key={`${pack.employee.hrId}-${preview.documentKey}-${preview.versionId ?? "current"}`}
             onClose={() => setPreview(null)}
+            onIssueReference={() =>
+              issuePaperReference({
+                copies: resolveCopyCount(copies[preview.documentKey], preview.documentKey),
+                document: preview.documentKey,
+                documentLabel: documentLabel(preview.documentKey, customTemplateNames),
+                hrId: pack.employee.hrId,
+                mode: "employee",
+                subjectName: pack.employee.nameAr ?? pack.employee.fullName,
+              })
+            }
             onPackChange={applyPack}
             pack={pack}
             {...preview}
@@ -1224,7 +1275,7 @@ export function HiringPackManager({
                 value={selectedHrId}
               >
                 <option value="">Select an employee</option>
-                {candidates.map((candidate) => (
+                {pickerCandidates.map((candidate) => (
                   <option key={candidate.hrId} value={candidate.hrId}>
                     {candidateLabel(candidate)}
                   </option>

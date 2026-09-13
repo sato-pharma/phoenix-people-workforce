@@ -4,7 +4,13 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { documentFieldInventory } from "@/lib/hiring-pack/document-inventory";
 import { pageSizeFor } from "@/lib/hiring-pack/field-warnings";
-import { asPrintableDocument, type PrintableDocument } from "@/lib/hiring-pack/document-registry";
+import {
+  asPrintableDocument,
+  documentLabel,
+  type PrintableDocument,
+} from "@/lib/hiring-pack/document-registry";
+import { stampPaperReference } from "@/lib/hiring-pack/paper-reference";
+import { issuePaperNumber } from "@/lib/hiring-pack/paper-register-store";
 import { isCustomTemplateLayerMissing } from "@/lib/hiring-pack/custom-template-store";
 import { documentCarriesHousePageNumbers } from "@/lib/hiring-pack/house-identity";
 import {
@@ -183,6 +189,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
+    // EVERY PRINT TAKES A NUMBER — "make sure every paper and document is auto numbered".
+    //
+    // Awaited, unlike the stamp above, because the number has to be ON the page being served. It
+    // cannot fail the print: `issuePaperNumber` answers null when the register is not set up or the
+    // write failed, and the paper then prints exactly as it did before numbering existed. The
+    // Authority's own forms are numbered in the register and left untouched on the page — see
+    // `paperReferencePrintsOnFace`.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    const reference = isPreview
+      ? null
+      : await issuePaperNumber({
+          copies: paper.copies,
+          document: requested,
+          documentLabel: paper.template ? paper.template.name : documentLabel(requested),
+          hrId,
+          issuedByHrId: access.hrId ?? null,
+          mode: "employee",
+          subjectName: paper.data.employee.nameAr ?? paper.data.employee.fullName,
+        });
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
     // `format=pdf` SERVES THE SAME DOCUMENT AS A FILE, and exists for one reason: page numbers.
     //
     // The contract and the two clearances flow, so how many sheets they occupy is decided by the
@@ -212,7 +239,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
         if (!one.ok) {
           return NextResponse.json({ error: one.code, message: one.message }, { status: one.status });
         }
-        const pdf = await renderHiringPaperPdf(one.html, {
+        const pdf = await renderHiringPaperPdf(stampPaperReference(one.html, reference, requested), {
           copies: paper.copies,
           pageNumbers: documentCarriesHousePageNumbers(requested),
         });
@@ -252,7 +279,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       }
     }
 
-    return new Response(paper.html, {
+    return new Response(stampPaperReference(paper.html, reference, requested), {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         // Never cached: the document carries live salary and identity data, and a stale copy
