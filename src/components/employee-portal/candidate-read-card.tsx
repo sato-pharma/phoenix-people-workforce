@@ -13,7 +13,6 @@ import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-ac
 import { Card } from "@/components/ui/card";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { CandidateCallClaim } from "@/lib/recruitment/candidate-call-claims";
-import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import { cairoDateTime } from "@/lib/format/cairo-datetime";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -45,17 +44,11 @@ export function CandidateReadCard({
   claim: initialClaim = null,
   canCall = false,
   files,
-  onFeedbackGiven,
   onSkipped,
-  outstandingFeedback = null,
   viewerHrId,
   footer,
 }: {
   candidate: Candidate;
-  /** The CV this manager owes feedback on, which blocks him opening any other. */
-  outstandingFeedback?: OutstandingFeedback | null;
-  /** Called when he writes the feedback he owed, so the block lifts without a reload. */
-  onFeedbackGiven?: (candidateId: string) => void;
   /**
    * Who has said "I will call" this candidate, loaded with the list.
    *
@@ -142,7 +135,6 @@ export function CandidateReadCard({
       <CandidateCvActions
         candidateId={candidate.id}
         initialFiles={files}
-        outstandingFeedback={outstandingFeedback}
         showPhoneNumbers={call.mine}
       />
 
@@ -159,11 +151,7 @@ export function CandidateReadCard({
         viewerHrId={viewerHrId}
       />
 
-      <CandidateCommentThread
-        candidateId={candidate.id}
-        onCommentAdded={onFeedbackGiven}
-        viewerHrId={viewerHrId}
-      />
+      <CandidateCommentThread candidateId={candidate.id} viewerHrId={viewerHrId} />
 
       {footer ? <div className="border-t border-slate-100 pt-3">{footer}</div> : null}
     </Card>

@@ -14,6 +14,7 @@ import {
   skipCandidateForManager,
 } from "@/lib/recruitment/candidate-call-claims-db";
 import { isCandidateInViewerDistrictScope } from "@/lib/recruitment/district-manager-folders-db";
+import { recordManagerCvOpen } from "@/lib/recruitment/manager-cv-engagement";
 import {
   isCandidateInCallerRequisition,
   isCandidateSentToCaller,
@@ -120,8 +121,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
       );
     }
 
-    const contact =
-      action === "will_call" && outcome.claim ? await loadCandidateContact(candidateId) : null;
+    const revealed = action === "will_call" && Boolean(outcome.claim);
+    const contact = revealed ? await loadCandidateContact(candidateId) : null;
+
+    // REVEALING THE NUMBER MARKS THE CV SEEN. The owner, 2026-09-13, removing the feedback lock:
+    // *"when the manager request to view the number, then the number appear, and the CV is marked as
+    // seen."* This is the same silent write a CV open makes (ats_candidate_views, under his own
+    // HR_ID), so the engagement report counts it. Best-effort: a tracking write must never be the
+    // reason the number fails to appear.
+    if (revealed) {
+      try {
+        await recordManagerCvOpen({ candidateId, viewerHrId: access.hrId });
+      } catch {
+        /* the number is still revealed; the seen mark is advisory */
+      }
+    }
 
     return NextResponse.json({
       claim: outcome.claim,

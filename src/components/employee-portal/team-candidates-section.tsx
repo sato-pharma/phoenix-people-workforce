@@ -9,7 +9,6 @@ import { CandidateReadCard } from "@/components/employee-portal/candidate-read-c
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
-import type { OutstandingFeedback } from "@/lib/recruitment/cv-feedback-lock";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -55,15 +54,9 @@ function teamManagerLabel(manager: TeamManagerOption): string {
 
 export function TeamCandidatesSection({
   managers,
-  onFeedbackGiven,
-  outstandingFeedback = null,
   viewerHrId,
 }: {
   managers: TeamManagerOption[];
-  /** He writes the feedback he owed, and the block lifts in place. */
-  onFeedbackGiven?: (candidateId: string) => void;
-  /** The CV he owes feedback on, which blocks him opening any other. */
-  outstandingFeedback?: OutstandingFeedback | null;
   viewerHrId: string | null;
 }) {
   const [selected, setSelected] = useState<TeamManagerOption | null>(null);
@@ -203,8 +196,6 @@ export function TeamCandidatesSection({
                 claim={callClaims[candidate.id] ?? null}
                 files={files[candidate.id] ?? []}
                 key={candidate.id}
-                onFeedbackGiven={onFeedbackGiven}
-                outstandingFeedback={outstandingFeedback}
                 viewerHrId={viewerHrId}
               />
             ))
@@ -219,8 +210,6 @@ export function TeamCandidatesSection({
               boards={districtBoards.filter((board) => board.intake !== "district_managers")}
               callClaims={callClaims}
               files={files}
-              onFeedbackGiven={onFeedbackGiven}
-              outstandingFeedback={outstandingFeedback}
               heading={`${teamManagerLabel(selected)}'s areas`}
               subheading={`Every area ${teamManagerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
               viewerHrId={viewerHrId}
@@ -238,8 +227,6 @@ export function TeamCandidatesSection({
               callClaims={callClaims}
               files={files}
               heading={`District manager applicants under ${teamManagerLabel(selected)}`}
-              onFeedbackGiven={onFeedbackGiven}
-              outstandingFeedback={outstandingFeedback}
               subheading={`People applying to run one of the districts ${teamManagerLabel(selected)} covers, filed by the district they asked for.`}
               viewerHrId={viewerHrId}
             />
