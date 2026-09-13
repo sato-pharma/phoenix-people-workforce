@@ -14,21 +14,61 @@ import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { kpiRulesFor } from "@/lib/crm/phoenix-kpi-rules";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 
 const VISIT_COLUMNS =
   "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,speciality,visit_date,visit_type,visit_type_description";
-const CHECKIN_COLUMNS = "agent_crm_id,contact_crm_id,check_date";
+// `agent_hr_id` is what matches a check-in to the visit of a rep hired after the CRM cutover: both
+// carry a NULL CRM id, so without it every one of his visits reads as unproved.
+const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,contact_crm_id,check_date";
 
-type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string | null };
+type CheckinRow = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  check_date: string | null;
+};
 
 export type CallRateInput = {
   dateFrom: string;
   dateTo: string;
-  /** Restrict to one rep by CRM agent id. Omit for the whole field force. */
+  /** Restrict to one rep by CRM agent id. Omit (with `agentHrId`) for the whole field force. */
   agentCrmId?: number | null;
+  /** Restrict to one rep hired after the CRM cutover, who has no CRM id. Read only when `agentCrmId` is null. */
+  agentHrId?: string | null;
   /** Overrides the owner's daily campaign limit of 3. Only for a caller that exposes the control. */
   campaignLimit?: number;
 };
+
+/**
+ * Narrows the rows to one rep, or hands them back whole when no rep is named.
+ *
+ * A rep with a CRM id is matched on it exactly as before. A rep hired after the CRM cutover has none,
+ * so his native visits and check-ins are matched on the CANONICAL hr id instead — never a raw
+ * equality, because hr ids are stored in mixed case and a plain `===` would under-return.
+ */
+export function scopeCallRateRows<
+  V extends { agent_crm_id: number | null; agent_hr_id: string | null },
+  C extends { agent_crm_id: number | null; agent_hr_id?: string | null },
+>(
+  visits: readonly V[],
+  checkins: readonly C[],
+  rep: { agentCrmId?: number | null; agentHrId?: string | null },
+): { visits: V[]; checkins: C[] } {
+  const crmId = rep.agentCrmId;
+  if (crmId != null) {
+    return {
+      visits: visits.filter((visit) => visit.agent_crm_id === crmId),
+      checkins: checkins.filter((checkin) => checkin.agent_crm_id === crmId),
+    };
+  }
+  const hrKey = canonicalHrIdKey(rep.agentHrId);
+  if (!hrKey) return { visits: [...visits], checkins: [...checkins] };
+  return {
+    visits: visits.filter((visit) => canonicalHrIdKey(visit.agent_hr_id) === hrKey),
+    checkins: checkins.filter((checkin) => canonicalHrIdKey(checkin.agent_hr_id) === hrKey),
+  };
+}
 
 /**
  * The split call rate for a period, per rep, with national holidays already out of the denominator.
@@ -58,10 +98,7 @@ export async function loadCallRateReport(
   // The same collapse every other CRM consumer applies, so this cannot disagree with the visit
   // count shown beside it on the same screen.
   const collapsed = collapseDuplicateVisitSubmissions(rawVisits);
-  const visits =
-    input.agentCrmId == null ? collapsed : collapsed.filter((visit) => visit.agent_crm_id === input.agentCrmId);
-  const scopedCheckins =
-    input.agentCrmId == null ? checkins : checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId);
+  const { visits, checkins: scopedCheckins } = scopeCallRateRows(collapsed, checkins, input);
 
   const report = computeCallRate(visits, scopedCheckins, {
     dateFrom: input.dateFrom,

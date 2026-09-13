@@ -52,6 +52,8 @@ export type NativePlanWeekView = {
 
 export type NativePlannerView = {
   pilot: { lineName: string; startsOn: string; endsOn: string } | null;
+  /** crm_cutover.cutover_date: from it every rep of every line plans here. Null before it is set. */
+  cutoverDate: string | null;
   cairoToday: string;
   /** Who a submitted plan goes to: the rep's nearest active manager. */
   managerName: string | null;
@@ -86,4 +88,6 @@ export type NativePlanAvailability = {
   canPlan: boolean;
   canReview: boolean;
   pendingReviews: number;
+  /** Phoenix is not yet this viewer's record (no cutover reached), so the links say "pilot". */
+  pilotOnly: boolean;
 };

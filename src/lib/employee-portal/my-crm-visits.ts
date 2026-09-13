@@ -22,6 +22,7 @@ export type MyCrmWindow = { dateFrom: string; dateTo: string };
 type RawVisit = {
   id: string;
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   contact_crm_id: number | null;
   visit_date: string | null;
   ampm: string | null;
@@ -54,6 +55,7 @@ type RawCheckin = {
   id: string;
   check_date: string | null;
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
   address: string | null;
@@ -95,7 +97,7 @@ export type MyCrmCheckinRow = {
 };
 
 const VISIT_COLUMNS =
-  "id,agent_crm_id,contact_crm_id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date";
+  "id,agent_crm_id,agent_hr_id,contact_crm_id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date";
 const DOUBLE_VISIT_COLUMNS =
   "id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date";
 const TEAM_VISIT_COLUMNS = `${VISIT_COLUMNS},agent_name`;
@@ -104,7 +106,8 @@ const TEAM_VISIT_COLUMNS = `${VISIT_COLUMNS},agent_name`;
 // server-only file — which reaches node:crypto via the employee directory. A bare
 // `export { X } from "..."` would re-export without binding the name locally, so import + export.
 export { TEAM_VISIT_ROW_CAP };
-const CHECKIN_COLUMNS = "id,check_date,agent_crm_id,contact_crm_id,contact_name,address";
+// `agent_hr_id` on both column lists: a rep with no CRM id matches his check-ins on it (checkin-match).
+const CHECKIN_COLUMNS = "id,check_date,agent_crm_id,agent_hr_id,contact_crm_id,contact_name,address";
 
 function byVisitDateDesc(a: { visitDate: string | null }, b: { visitDate: string | null }): number {
   return (b.visitDate ?? "").localeCompare(a.visitDate ?? "");
@@ -148,6 +151,7 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
     const match = pickCheckinForVisit(
       {
         agentCrmId: row.agent_crm_id,
+          agentHrId: row.agent_hr_id,
         contactCrmId: row.contact_crm_id,
         crmSaveDate: row.crm_save_date,
         visitDay: row.visit_date ? row.visit_date.slice(0, 10) : null,
@@ -222,6 +226,7 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
       const match = pickCheckinForVisit(
         {
           agentCrmId: row.agent_crm_id,
+          agentHrId: row.agent_hr_id,
           contactCrmId: row.contact_crm_id,
           crmSaveDate: row.crm_save_date,
           visitDay: row.visit_date ? row.visit_date.slice(0, 10) : null,

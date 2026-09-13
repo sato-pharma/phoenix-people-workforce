@@ -76,9 +76,10 @@ import {
   getDoctorCoverageConfig,
   type DoctorCoverageNorms,
 } from "@/lib/crm/doctor-coverage-config";
-import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
+import { expandHrIdFilterValues, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const MONTH_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -125,7 +126,8 @@ export type RepDoctorListRepRow = {
   /** Collapsed type-0 calls this rep made to doctors that are ON his plan. Off-plan work is not
    * counted here — it has its own column, so this number and `plannedCallsToDate` are comparable. */
   actualCalls: number;
-  agentCrmId: number;
+  /** Null for a rep hired after the CRM cutover who has no CRM id — he is keyed `hr:<id>` instead. */
+  agentCrmId: number | null;
   agentHrId: string | null;
   /** KPI 1 — percentage of planned doctors reached AT ALL, on the plan SO FAR. 0 when nothing was
    * planned. Shipped as `adherencePct` in #2259. The numerator is unchanged; the denominator is
@@ -288,7 +290,8 @@ export type RepDoctorListsBoard = {
 /** The plan-mirror projection this board reads. Exported so tests can build fixtures against the
  * real shape rather than a hand-written lookalike that can drift from it. */
 export type PlanRow = {
-  agent_crm_id: number;
+  /** Null on a native (post-cutover) plan row for a rep with no CRM id; `agent_hr_id` then carries him. */
+  agent_crm_id: number | null;
   agent_hr_id: string | null;
   contact_crm_id: number | null;
   contact_grade: string | null;
@@ -390,6 +393,10 @@ export function frequencyStatusOf(input: {
  * is the house limit. */
 const PLAN_AGENT_CHUNK = 50;
 
+/** Chunk size for the `agent_hr_id` filter. Each hr id is sprayed into up to five casing/alias
+ * variants (`expandHrIdFilterValues`), so 10 ids keep the URL list inside the same 50-value limit. */
+const PLAN_HR_ID_CHUNK = 10;
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
  * ships, so the page renders an honest empty state instead of a crash.
  *
@@ -401,36 +408,52 @@ const PLAN_AGENT_CHUNK = 50;
  * null on a large and *varying* share of rows — measured on production 2026-08-27, 791 of 18,645
  * August rows but 5,795 of 20,778 May rows (27.9%), and 26 of 98 agents in a four-month window
  * carry no hr id on a single plan row. An hr-id filter would silently drop a quarter of a month's
- * lists. `agent_crm_id` is null on none of them. An EMPTY array means "no agents in scope" and
- * returns no rows — never everything. */
+ * lists. `agent_crm_id` is null on none of the VENDOR rows. An EMPTY array means "no agents in
+ * scope" and returns no rows — never everything.
+ *
+ * `agentHrIds` exists for the CRM cutover, and is never a replacement for `agentCrmIds`. A rep hired
+ * after it has no CRM id, so his native plan rows carry a NULL `agent_crm_id` and only an hr id can
+ * find them. Pass BOTH for a mixed set: the two lists are read as separate passes and UNIONED (a row
+ * found by both is returned once), so the vendor rows with no hr id are still found by their CRM id.
+ * Supplied lists that are all empty → no rows. */
 export async function scanPlanEntries(
   from: string,
   to: string,
-  options?: { agentCrmIds?: readonly number[] },
+  options?: { agentCrmIds?: readonly number[]; agentHrIds?: readonly string[] },
 ): Promise<PlanRow[]> {
   const supabase = getSupabaseAdmin();
-  const agentChunks: (readonly number[] | null)[] = [];
-  if (options?.agentCrmIds) {
-    if (options.agentCrmIds.length === 0) return [];
-    for (let start = 0; start < options.agentCrmIds.length; start += PLAN_AGENT_CHUNK) {
-      agentChunks.push(options.agentCrmIds.slice(start, start + PLAN_AGENT_CHUNK));
+  type AgentChunk = { column: "agent_crm_id" | "agent_hr_id"; values: readonly (number | string)[] } | null;
+  const agentChunks: AgentChunk[] = [];
+  if (options?.agentCrmIds || options?.agentHrIds) {
+    const crmIds = options.agentCrmIds ?? [];
+    const hrIds = (options.agentHrIds ?? []).map((id) => String(id ?? "").trim()).filter((id) => id.length > 0);
+    if (crmIds.length === 0 && hrIds.length === 0) return [];
+    for (let start = 0; start < crmIds.length; start += PLAN_AGENT_CHUNK) {
+      agentChunks.push({ column: "agent_crm_id", values: crmIds.slice(start, start + PLAN_AGENT_CHUNK) });
+    }
+    for (let start = 0; start < hrIds.length; start += PLAN_HR_ID_CHUNK) {
+      // Every casing variant: the plan mirror stores whatever casing the roster used.
+      agentChunks.push({ column: "agent_hr_id", values: expandHrIdFilterValues(hrIds.slice(start, start + PLAN_HR_ID_CHUNK)) });
     }
   } else {
     agentChunks.push(null);
   }
 
   const rows: PlanRow[] = [];
+  // Only a union of two passes can return one entry twice; its id makes that exact.
+  const seenEntryIds = new Set<number | string>();
+  const dedupe = agentChunks.length > 1;
   for (const chunk of agentChunks) {
     let offset = 0;
     for (;;) {
       let query = supabase
         .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
         .select(
-          "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_region_name, plan_date, plan_status, speciality, synced_at",
+          "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_plan_entry_id, crm_region_name, plan_date, plan_status, speciality, synced_at",
         )
         .gte("plan_date", from)
         .lte("plan_date", to);
-      if (chunk) query = query.in("agent_crm_id", [...chunk]);
+      if (chunk) query = query.in(chunk.column, [...chunk.values]);
       const { data, error } = await query
         .order("crm_plan_entry_id", { ascending: true })
         .range(offset, offset + PLAN_PAGE_SIZE - 1);
@@ -438,8 +461,15 @@ export async function scanPlanEntries(
         if (isPlanSchemaMissing(error)) return [];
         throw new Error(error.message);
       }
-      const page = (data ?? []) as unknown as PlanRow[];
-      rows.push(...page);
+      const page = (data ?? []) as unknown as Array<PlanRow & { crm_plan_entry_id?: number | string | null }>;
+      for (const row of page) {
+        const entryId = row.crm_plan_entry_id;
+        if (dedupe && entryId != null) {
+          if (seenEntryIds.has(entryId)) continue;
+          seenEntryIds.add(entryId);
+        }
+        rows.push(row);
+      }
       if (page.length < PLAN_PAGE_SIZE) break;
       offset += PLAN_PAGE_SIZE;
     }
@@ -460,8 +490,21 @@ function isPlanSchemaMissing(error: unknown): boolean {
   );
 }
 
-function contactKey(agentCrmId: number, contactCrmId: number): string {
-  return `${agentCrmId}:${contactCrmId}`;
+/**
+ * The rep half of every key on this board: the CRM id as a string — exactly the `repKey` every rep
+ * with a CRM id has always had — or `hr:<canonical hr id>` for a rep hired after the CRM cutover,
+ * who has none. Keyed on the CRM id alone, all such reps shared ONE `null` key: their plans merged
+ * into a single "Unmapped CRM agent null" row and their visits were skipped, so each read 0% against
+ * the whole cohort's doctors. `null` only when neither id is present.
+ */
+export function repDoctorListRepKey(agentCrmId: number | null | undefined, agentHrId: string | null | undefined): string | null {
+  if (agentCrmId) return String(agentCrmId);
+  const hrKey = canonicalHrIdKey(agentHrId);
+  return hrKey ? `hr:${hrKey}` : null;
+}
+
+function contactKey(repKey: string, contactCrmId: number): string {
+  return `${repKey}:${contactCrmId}`;
 }
 
 export type RepDoctorListsInput = {
@@ -619,43 +662,47 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   const campaignRows = windowVisitRows.filter((row) => row.visit_type === CAMPAIGN_TYPE);
 
   // Symmetry with the visits door, which has already dropped these agents from `visitRows`.
+  // `?? -1` mirrors the view's `exclusion_crm_id`: a rep with no CRM id is excluded by nothing here,
+  // just as the visits door never excludes his rows.
   const excluded = new Set(input.excludedAgentCrmIds);
-  const planRows = windowPlanRows.filter((row) => !excluded.has(row.agent_crm_id));
+  const planRows = windowPlanRows.filter((row) => !excluded.has(row.agent_crm_id ?? -1));
 
   // Rep display names: the employee record first (the owner's rule is human-readable names, and the
   // directory carries the nickname-aware one), then the vendor's own label from the visits mirror,
   // then an explicit unmapped marker. A plan entry carries no agent name field at all, so a rep who
   // planned but never visited has only the first source.
   const nameByHrId = input.employeeNameByHrId;
-  const vendorNameByCrmId = new Map<number, string>();
+  const vendorNameByRepKey = new Map<string, string>();
   // windowVisitRows, not visitRows: a rep whose whole window is campaign work has NO type-0 row,
   // so reading only the joinable rows would leave them nameless and print "Unmapped CRM agent 1550".
   for (const visit of windowVisitRows) {
-    const crmId = visit.agent_crm_id;
+    const repKey = repDoctorListRepKey(visit.agent_crm_id, visit.agent_hr_id);
     const name = visit.agent_name?.trim();
-    if (crmId && name && !vendorNameByCrmId.has(crmId)) vendorNameByCrmId.set(crmId, name);
+    if (repKey && name && !vendorNameByRepKey.has(repKey)) vendorNameByRepKey.set(repKey, name);
   }
-  const hrIdByCrmId = new Map<number, string | null>();
-  for (const row of planRows) {
-    if (!hrIdByCrmId.has(row.agent_crm_id)) hrIdByCrmId.set(row.agent_crm_id, row.agent_hr_id);
-  }
-  for (const visit of windowVisitRows) {
-    if (visit.agent_crm_id && !hrIdByCrmId.has(visit.agent_crm_id)) {
-      hrIdByCrmId.set(visit.agent_crm_id, visit.agent_hr_id);
-    }
-  }
-  const repNameOf = (agentCrmId: number): string => {
-    const hrId = hrIdByCrmId.get(agentCrmId);
+  const hrIdByRepKey = new Map<string, string | null>();
+  const crmIdByRepKey = new Map<string, number | null>();
+  const noteIdentity = (agentCrmId: number | null, agentHrId: string | null): void => {
+    const repKey = repDoctorListRepKey(agentCrmId, agentHrId);
+    if (!repKey || hrIdByRepKey.has(repKey)) return;
+    hrIdByRepKey.set(repKey, agentHrId);
+    crmIdByRepKey.set(repKey, agentCrmId || null);
+  };
+  for (const row of planRows) noteIdentity(row.agent_crm_id, row.agent_hr_id);
+  for (const visit of windowVisitRows) noteIdentity(visit.agent_crm_id, visit.agent_hr_id);
+  const repNameOf = (repKey: string): string => {
+    const hrId = hrIdByRepKey.get(repKey);
     const fromDirectory = hrId ? nameByHrId.get(hrId.trim().toUpperCase()) : undefined;
     if (fromDirectory) return fromDirectory;
-    const fromVendor = vendorNameByCrmId.get(agentCrmId);
+    const fromVendor = vendorNameByRepKey.get(repKey);
     if (fromVendor) return fromVendor;
-    return `Unmapped CRM agent ${agentCrmId}`;
+    const crmId = crmIdByRepKey.get(repKey);
+    return crmId != null ? `Unmapped CRM agent ${crmId}` : `Unmapped agent ${hrId ?? repKey}`;
   };
 
   // ── Plan side ────────────────────────────────────────────────────────────────────────────────
   type PlanContact = {
-    agentCrmId: number;
+    repKey: string;
     contactCrmId: number;
     gradeRaw: string | null;
     kind: CrmContactKind;
@@ -676,7 +723,9 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     const contactCrmId = row.contact_crm_id;
     // 0 is the vendor's "unspecified contact" sentinel, exactly as on a visit — not a real person.
     if (!contactCrmId) continue;
-    const key = contactKey(row.agent_crm_id, contactCrmId);
+    const repKey = repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id);
+    if (!repKey) continue;
+    const key = contactKey(repKey, contactCrmId);
     const kind = classifyCrmContactSpeciality(row.speciality);
     if (kind === "unclassified" && row.speciality?.trim()) {
       const label = row.speciality.trim();
@@ -696,7 +745,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       continue;
     }
     planned.set(key, {
-      agentCrmId: row.agent_crm_id,
+      repKey,
       contactCrmId,
       gradeRaw: row.contact_grade,
       kind,
@@ -712,7 +761,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   // ── Actual side ──────────────────────────────────────────────────────────────────────────────
   type VisitedContact = {
-    agentCrmId: number;
+    repKey: string;
     contactCrmId: number;
     gradeRaw: string | null;
     lastVisitDate: string | null;
@@ -720,14 +769,14 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     visits: number;
   };
   const visited = new Map<string, VisitedContact>();
-  const repsWithVisits = new Set<number>();
+  const repsWithVisits = new Set<string>();
   for (const visit of visitRows) {
-    const agentCrmId = visit.agent_crm_id;
+    const repKey = repDoctorListRepKey(visit.agent_crm_id, visit.agent_hr_id);
     const contactCrmId = visit.contact_crm_id;
-    if (!agentCrmId) continue;
-    repsWithVisits.add(agentCrmId);
+    if (!repKey) continue;
+    repsWithVisits.add(repKey);
     if (!contactCrmId) continue;
-    const key = contactKey(agentCrmId, contactCrmId);
+    const key = contactKey(repKey, contactCrmId);
     const visitDate = visit.visit_date ? visit.visit_date.slice(0, 10) : null;
     const existing = visited.get(key);
     if (existing) {
@@ -738,7 +787,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       continue;
     }
     visited.set(key, {
-      agentCrmId,
+      repKey,
       contactCrmId,
       gradeRaw: visit.crm_contact_grade,
       lastVisitDate: visitDate,
@@ -749,14 +798,14 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   // ── Join ─────────────────────────────────────────────────────────────────────────────────────
   const doctorRows: RepDoctorListDoctorRow[] = [];
-  const repAccumulator = new Map<number, RepDoctorListRepRow>();
-  const repFor = (agentCrmId: number): RepDoctorListRepRow => {
-    const existing = repAccumulator.get(agentCrmId);
+  const repAccumulator = new Map<string, RepDoctorListRepRow>();
+  const repFor = (repKey: string): RepDoctorListRepRow => {
+    const existing = repAccumulator.get(repKey);
     if (existing) return existing;
     const created: RepDoctorListRepRow = {
       actualCalls: 0,
-      agentCrmId,
-      agentHrId: hrIdByCrmId.get(agentCrmId) ?? null,
+      agentCrmId: crmIdByRepKey.get(repKey) ?? null,
+      agentHrId: hrIdByRepKey.get(repKey) ?? null,
       campaignCalls: 0,
       coverageDueDoctors: 0,
       coveragePct: 0,
@@ -775,19 +824,19 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       plannedCallsToDate: 0,
       plannedDoctors: 0,
       plannedUnclassified: 0,
-      repKey: String(agentCrmId),
-      repName: repNameOf(agentCrmId),
+      repKey,
+      repName: repNameOf(repKey),
       underDoctors: 0,
       underPlannedVsGrade: 0,
       unverifiedCalls: 0,
       visitedDoctors: 0,
     };
-    repAccumulator.set(agentCrmId, created);
+    repAccumulator.set(repKey, created);
     return created;
   };
 
   for (const [key, contact] of planned) {
-    const rep = repFor(contact.agentCrmId);
+    const rep = repFor(contact.repKey);
     rep.plannedCalls += contact.plannedCalls;
     rep.plannedCallsToDate += contact.plannedCallsToDate;
     rep.unverifiedCalls += contact.unverifiedCalls;
@@ -858,7 +907,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   for (const [key, contact] of visited) {
     if (planned.has(key)) continue;
     const kind = classifyCrmContactSpeciality(contact.speciality);
-    const rep = repFor(contact.agentCrmId);
+    const rep = repFor(contact.repKey);
     if (kind === "sp") rep.offPlanDoctors += 1;
     doctorRows.push({
       contactCrmId: contact.contactCrmId,
@@ -899,9 +948,10 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // Campaign work, counted against the rep and never against a doctor. repFor() is used so a rep
   // whose ONLY activity is campaign still gets a row rather than vanishing from the board.
   for (const row of campaignRows) {
-    if (!row.agent_crm_id) continue;
-    repsWithVisits.add(row.agent_crm_id);
-    repFor(row.agent_crm_id).campaignCalls += 1;
+    const repKey = repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id);
+    if (!repKey) continue;
+    repsWithVisits.add(repKey);
+    repFor(repKey).campaignCalls += 1;
   }
 
   for (const rep of repAccumulator.values()) {
@@ -914,8 +964,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     rep.frequencyPct = dueDoctors > 0 ? Math.round((rep.onPlanDoctors / dueDoctors) * 100) : 0;
   }
 
-  const repsWithPlan = new Set([...planned.values()].map((contact) => contact.agentCrmId));
-  const repsWithoutPlan = [...repsWithVisits].filter((agentCrmId) => !repsWithPlan.has(agentCrmId)).length;
+  const repsWithPlan = new Set([...planned.values()].map((contact) => contact.repKey));
+  const repsWithoutPlan = [...repsWithVisits].filter((repKey) => !repsWithPlan.has(repKey)).length;
   // Has a plan, reached none of it, and did campaign work instead. Arithmetically 0%, and the one
   // shape on this board most likely to be misread as an idle rep.
   const repsAllCampaign = [...repAccumulator.values()].filter(

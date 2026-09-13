@@ -1346,6 +1346,10 @@ import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
 import { runCrmNativeVacationDaysTests } from "./crm-native-vacation-days.test.ts";
+import { runCrmContactListChangesTests } from "./crm-contact-list-changes.test.ts";
+import { runCrmSwitchOffSafetyTests } from "./crm-switch-off-safety.test.ts";
+import { runCrmNewHireKeyingTests } from "./crm-new-hire-keying.test.ts";
+import { runCrmReportsReadPhoenixTests } from "./crm-reports-read-phoenix.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -4296,6 +4300,26 @@ await runTest(
 await runTest(
   "CRM native vacation-day work, phase 6 rule 9 (dormant until the CRM cutover; a doctor or campaign visit on an HR-approved vacation day is refused until the stored manager AND HR both approved the rep's request; annual vacation itself stays recordable; nobody answers their own request or both halves; the service never writes a decision literal and the rep is the session)",
   runCrmNativeVacationDaysTests,
+);
+
+await runTest(
+  "CRM doctor lists maintained in Phoenix, phase 7 (not before the CRM cutover; a rep asks only for his own AM or PM list and it goes to his nearest manager; only that stored manager approves, for a rep beneath him, and the database re-checks it; the SFE Manager and the administrator apply a change directly within their scope; no pharmacy goes on a doctor list; the nightly scrape stops touching lists from the cutover and never closes a row Phoenix wrote)",
+  runCrmContactListChangesTests,
+);
+
+await runTest(
+  "CRM switch-off safety (Phoenix double visits with negative ids are captured for probation; once iReports360 is retired the heartbeat sweep stops watching vendor jobs, reconciliation check 10 holds, the FWC live snapshot is not stale, the first-visit board stops waiting for a vendor sync, the Early Birds Sync button and the admin backfill are hidden, and a Phoenix plan reads Reviewed in Phoenix)",
+  runCrmSwitchOffSafetyTests,
+);
+
+await runTest(
+  "CRM keys a rep with no CRM id by his HR id (check-in match, call rate, KPIs join, doctor lists, participant and check-in filters, double visits only, rep day, workload, partners, plan actuals, coverage)",
+  runCrmNewHireKeyingTests,
+);
+
+await runTest(
+  "CRM reports read Phoenix's own lists and visits (KPI list sizes and the Reps List read open doctor-list assignments by HR id; double visits, vacations as type -4, the master datasets and the customer brick punch-list read the unified views and exclude on exclusion_crm_id)",
+  runCrmReportsReadPhoenixTests,
 );
 
 await runTest(

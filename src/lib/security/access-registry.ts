@@ -632,6 +632,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plans", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/plan-reviews", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // Doctor lists maintained in Phoenix (CRM phase 7). `guard: "domain-helper"` — the gate is
+  // assertContactListAccess(): a rep asks for his own list (create), the stored manager answers for a
+  // rep beneath him (approve), and the SFE Manager or administrator edits directly (update). Each action
+  // re-checks its own permission inside the service. Changes open on the CRM cutover date.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by

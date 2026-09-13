@@ -19,6 +19,7 @@ import {
   type VisitForRepDrilldown,
 } from "@/lib/crm/rep-visits";
 import { CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE } from "@/lib/crm/tables";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Everything crm/rep-visits.ts reads, plus the two columns the duplicate collapse fingerprints on.
@@ -45,9 +46,14 @@ const VISIT_COLUMNS = [
   "visit_type_description",
 ].join(",");
 
-const CHECKIN_COLUMNS = "agent_crm_id,contact_crm_id,check_date";
+const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,contact_crm_id,check_date";
 
-type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string | null };
+type CheckinRow = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  check_date: string | null;
+};
 
 /**
  * crm_region_id -> the Phoenix brick/area/region it resolves to.
@@ -293,8 +299,16 @@ export async function loadRepVisits(
       : input.agentCrmId != null
         ? collapsed.filter((visit) => visit.agent_crm_id === input.agentCrmId)
         : collapsed;
+  // By CRM id when the rep has one, exactly as before. A rep hired after the CRM cutover has none —
+  // his check-ins carry a NULL `agent_crm_id` — so he is narrowed by hr id instead, rather than being
+  // handed every check-in in the company.
+  const hrKey = canonicalHrIdKey(hrId);
   const scopedCheckins =
-    input.agentCrmId != null ? checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId) : checkins;
+    input.agentCrmId != null
+      ? checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId)
+      : hrKey
+        ? checkins.filter((checkin) => checkin.agent_crm_id == null && canonicalHrIdKey(checkin.agent_hr_id) === hrKey)
+        : checkins;
 
   // THE CHEAP-MODEL ASSIST, ON THE RESIDUE ONLY.
   //

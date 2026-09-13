@@ -64,6 +64,8 @@ export type VisitRow = {
   double_hr_id: string | null;
   double_name: string | null;
   comment: string | null;
+  /** 'phoenix' on a native row, 'ireports360' on a vendor row (crm_visits_unified). */
+  source?: string | null;
 };
 
 // Shared "does this row count as a productive visit" check for callers that only
@@ -163,7 +165,9 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     agentHrIds: [hrId],
     dateFrom: window.from,
     dateTo: window.to,
-    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment",
+    // `source` marks a Phoenix native row, where a partner with no CRM id is still a double visit
+    // (isCrmDoubleVisitRow). Without it a new hire's confirmed double visits never count here.
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment,source",
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
     // the activity mix is unchanged.

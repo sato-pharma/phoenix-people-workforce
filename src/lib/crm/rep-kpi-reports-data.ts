@@ -10,10 +10,12 @@
 // on it looks exactly like a board with the right number of rows on it. One
 // resolution, one gate, applied here with the same `isAgentInScope` the board uses.
 //
-// The mirror is queried directly rather than through crm/reads.ts for CONTACTS only:
-// `ireports360_contacts` is not one of the tables the single-source door owns (it
-// guards visits, checkins, sync runs, identity resolutions and plan entries), and
-// crm/contact-lists.ts already reads it the same way. VISITS go through the door,
+// CONTACT LISTS are read directly rather than through crm/reads.ts: Phoenix's own
+// list, the open periods of `crm_contact_assignments`, is not one of the tables the
+// single-source door owns (it guards visits, checkins, sync runs, identity
+// resolutions and plan entries), and crm/contact-lists.ts reads it the same way.
+// Never the vendor scrape `ireports360_contacts`: it freezes the day the sweep is
+// switched off, and every KPI denominator would freeze with it. VISITS go through the door,
 // which is also what applies the departed-agent exclusion — so these numbers
 // reconcile with every other CRM board rather than quietly counting reps who left.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,11 +34,12 @@ import {
   type RepKpiReports,
   type RepKpiStandards,
 } from "@/lib/crm/rep-kpi-reports";
+import { CRM_CONTACT_ASSIGNMENTS_TABLE } from "@/lib/crm/tables";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
-/** PostgREST caps a page at 1000 rows; the whole contacts table was 9,705 rows on 2026-09-05. */
+/** PostgREST caps a page at 1000 rows; the open contact lists were 9,756 rows on 2026-09-14. */
 const PAGE_SIZE = 1000;
 
 const VISIT_COLUMNS = "agent_hr_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment";
@@ -72,13 +75,41 @@ export function narrowListType(value: string | null): CrmListType | null {
   return (LIST_TYPES as readonly string[]).includes(value ?? "") ? (value as CrmListType) : null;
 }
 
+/** One open list assignment as the panel reads it — `grade` is the assignment's own column name. */
+export type OpenPanelAssignment = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  grade: string | null;
+  list_type: string | null;
+};
+
+/** An open assignment in the panel's row shape. Pure; exported for its test. */
+export function toPanelContactRecord(row: OpenPanelAssignment): ContactRecord {
+  return {
+    agent_crm_id: row.agent_crm_id,
+    agent_hr_id: row.agent_hr_id,
+    contact_crm_id: row.contact_crm_id,
+    contact_grade: row.grade,
+    list_type: row.list_type,
+  };
+}
+
 /**
- * Every contact-list row, paged.
+ * Every contact on every rep's list TODAY, paged: the open periods of Phoenix's own list,
+ * `crm_contact_assignments` where `effective_to is null`.
+ *
+ * NOT `ireports360_contacts`. That is the vendor scrape; it stops moving the day the sweep is
+ * switched off, and every KPI denominator built on it would freeze with it while Phoenix's own list
+ * changes went uncounted. The open assignments carry the same list today — measured on production
+ * 2026-09-14 before this reader moved: all 137 rep AM and PM counts identical, 7,831 contacts on
+ * each side, and identical grades on every row (the assignment folds A+ into A, as the rules do).
  *
  * THE PAGES ARE FETCHED AT ONCE, not one after another — counted first so the fan-out is exact.
- * crm/contact-lists.ts does the same thing for the same reason: the table was 9,705 rows on
- * 2026-09-05, which is ten pages, and ten sequential round trips is ten times the latency on a
- * board that already waits on four other queries.
+ * crm/contact-lists.ts does the same thing for the same reason: ~9,800 rows is ten pages, and ten
+ * sequential round trips is ten times the latency on a board that already waits on four other
+ * queries. The count carries the same open-period filter as the pages, or it would size the fan-out
+ * for closed periods no page returns.
  *
  * An unbounded `.select()` silently stops at 1000 rows with NO marker, so the count is not an
  * optimisation here — it is the only thing that makes the read complete. A missing page would not
@@ -86,26 +117,23 @@ export function narrowListType(value: string | null): CrmListType | null {
  */
 export async function loadPanelRows(): Promise<ContactRecord[]> {
   const supabase = getSupabaseAdmin();
-  const select = "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, list_type";
   const { count, error: countError } = await supabase
-    .from("ireports360_contacts")
-    .select("contact_crm_id", { count: "exact", head: true });
+    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .is("effective_to", null);
   if (countError) throw new Error(countError.message);
 
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const results = await Promise.all(
     Array.from({ length: pages }, (_, page) =>
       supabase
-        .from("ireports360_contacts")
-        .select(select)
-        // ORDERED BY THE PRIMARY KEY, all three columns of it. `contact_crm_id` alone is NOT
-        // unique — the table is keyed (agent_crm_id, contact_crm_id, list_type), so one contact
-        // appears once per agent who carries him. Range-paging over a non-unique order lets the
+        .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+        .select("id, agent_crm_id, agent_hr_id, contact_crm_id, grade, list_type")
+        .is("effective_to", null)
+        // ORDERED BY `id`, the table's identity key. Range-paging over a non-unique order lets the
         // database break ties differently between pages, which silently duplicates some rows and
         // drops others. Neither shows up as an error; it just moves somebody's coverage.
-        .order("agent_crm_id", { ascending: true })
-        .order("contact_crm_id", { ascending: true })
-        .order("list_type", { ascending: true })
+        .order("id", { ascending: true })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
     ),
   );
@@ -113,7 +141,7 @@ export async function loadPanelRows(): Promise<ContactRecord[]> {
   const rows: ContactRecord[] = [];
   for (const { data, error } of results) {
     if (error) throw new Error(error.message);
-    rows.push(...((data ?? []) as ContactRecord[]));
+    for (const row of (data ?? []) as unknown as OpenPanelAssignment[]) rows.push(toPanelContactRecord(row));
   }
   return rows;
 }

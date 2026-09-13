@@ -205,11 +205,15 @@ export function NativePlanWorkspace() {
     );
   }
 
-  if (!planner.pilot || planner.weeks.length === 0) {
+  if (planner.weeks.length === 0) {
     return (
-      <PortalSection eyebrow="Pilot" title="My weekly plan">
+      <PortalSection eyebrow={planner.cutoverDate ? "Weekly plan" : "Pilot"} title="My weekly plan">
         <PortalEmptyState
-          message="Planning in Phoenix is open only to the pilot line, for weeks with pilot days still ahead. Keep planning in iReports360."
+          message={
+            planner.cutoverDate
+              ? `Planning in Phoenix opens the week before ${dayLabel(planner.cutoverDate)}, the day Phoenix becomes the record. Until then keep planning in iReports360.`
+              : "Planning in Phoenix is open only to the pilot line, for weeks with pilot days still ahead. Keep planning in iReports360."
+          }
           title="Nothing to plan here"
         />
       </PortalSection>
@@ -250,8 +254,12 @@ export function NativePlanWorkspace() {
                 Refresh
               </Button>
             }
-            description={`The ${planner.pilot.lineName} pilot runs from ${dayLabel(planner.pilot.startsOn)} to ${dayLabel(planner.pilot.endsOn)}. Days that have passed are fixed.`}
-            eyebrow="Pilot"
+            description={
+              planner.pilot && !planner.cutoverDate
+                ? `The ${planner.pilot.lineName} pilot runs from ${dayLabel(planner.pilot.startsOn)} to ${dayLabel(planner.pilot.endsOn)}. Days that have passed are fixed.`
+                : "Plan the doctors you will visit on each day, AM or PM, and send the week to your manager. Days that have passed are fixed."
+            }
+            eyebrow={planner.cutoverDate ? "Weekly plan" : "Pilot"}
             title={`Week of ${weekLabel(week)}`}
           >
             <div className="grid gap-px bg-slate-100">

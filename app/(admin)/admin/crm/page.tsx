@@ -18,6 +18,7 @@ import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
 import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
 import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
 import { isIReports360Configured } from "@/lib/crm/config";
+import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -167,6 +168,12 @@ export default async function CrmHubPage({
     masterTable = <CrmMasterTable data={data} key={tableKey} />;
   }
 
+  // THE CRM CUTOVER. Once iReports360 is retired the sync panel says so and offers no backfill (the
+  // route would answer 409). An unreadable setting leaves the panel exactly as it was.
+  const vendorSyncRetiredAt = await getCrmCutoverSetting()
+    .then((setting) => setting.vendorSyncRetiredAt)
+    .catch(() => null);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -196,7 +203,13 @@ export default async function CrmHubPage({
         </div>
       </div>
 
-      <CrmSyncStatusPanel configured={syncPanel.configured} dateFrom={dateFrom} dateTo={dateTo} latestSyncRuns={syncPanel.latestSyncRuns} />
+      <CrmSyncStatusPanel
+        configured={syncPanel.configured}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        latestSyncRuns={syncPanel.latestSyncRuns}
+        retiredAt={vendorSyncRetiredAt}
+      />
 
       <CrmTabBar active={activeTab} />
 

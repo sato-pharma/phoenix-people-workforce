@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function NativeWeeklyPlanPage() {
   const access = await resolveAccessContextFromPage();
-  if (!(await canAccess(access, "crm_visit_entry", "create"))) {
+  // A district manager holds create only for his rare single visits: he files no weekly plan.
+  if (!(await canAccess(access, "crm_visit_entry", "create")) || (await canAccess(access, "crm_visit_entry", "approve"))) {
     redirect("/employee-portals/visits");
   }
 

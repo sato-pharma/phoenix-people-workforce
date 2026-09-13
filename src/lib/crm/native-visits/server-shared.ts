@@ -7,7 +7,13 @@
  */
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import type { NativeVisitPilot, NativeVisitShift } from "@/lib/crm/native-visits/rules";
+import { getCrmCutoverSetting } from "@/lib/crm/cutover";
+import {
+  nativeVisitPilotForLine,
+  type NativeEntryGate,
+  type NativeVisitPilot,
+  type NativeVisitShift,
+} from "@/lib/crm/native-visits/rules";
 import { CRM_NATIVE_VISIT_PILOTS_TABLE } from "@/lib/crm/native-visits/tables";
 import type { NativeVisitContactOption, NativeVisitPartnerOption } from "@/lib/crm/native-visits/types";
 import { CRM_CONTACT_ASSIGNMENTS_TABLE, CRM_CONTACT_MASTER_TABLE } from "@/lib/crm/tables";
@@ -56,6 +62,18 @@ export async function loadPilots(): Promise<NativeVisitPilot[]> {
     endsOn: String(row.ends_on ?? ""),
     isActive: row.is_active === true,
   }));
+}
+
+/**
+ * What opens a day for this rep: his own line's pilot row and the CRM cutover date. THROWS when the
+ * cutover setting cannot be read, so a save never guesses which days are open.
+ */
+export async function loadEntryGate(
+  lineName: string | null | undefined,
+  pilots: readonly NativeVisitPilot[],
+): Promise<NativeEntryGate> {
+  const setting = await getCrmCutoverSetting();
+  return { pilot: nativeVisitPilotForLine(lineName, pilots), cutoverDate: setting.cutoverDate };
 }
 
 export type Directory = { rows: EmployeeDirectoryRow[]; byKey: Map<string, EmployeeDirectoryRow> };
@@ -108,21 +126,51 @@ export function managementChain(rep: EmployeeDirectoryRow, directory: Directory)
 }
 
 export async function loadRepContacts(rep: EmployeeDirectoryRow): Promise<NativeVisitContactOption[]> {
+  return loadListContacts(hrIdLookupKeys(rep.hrId));
+}
+
+/** The active people whose direct manager is this manager: a district manager's reps. */
+export function directReports(manager: EmployeeDirectoryRow, directory: Directory): EmployeeDirectoryRow[] {
+  const managerKey = canonicalHrIdKey(manager.hrId);
+  if (!managerKey) return [];
+  return directory.rows.filter(
+    (row) =>
+      canonicalHrIdKey(row.managerHrId) === managerKey &&
+      canonicalHrIdKey(row.hrId) !== managerKey &&
+      isActiveDirectoryEmployee(row),
+  );
+}
+
+/**
+ * The doctors a district manager may visit alone: the union of his reps' open AM and PM lists. A
+ * doctor on two reps' lists appears once, carrying every list that holds him.
+ */
+export async function loadTeamContacts(manager: EmployeeDirectoryRow, directory: Directory): Promise<NativeVisitContactOption[]> {
+  const keys = directReports(manager, directory).flatMap((rep) => hrIdLookupKeys(rep.hrId));
+  if (keys.length === 0) return [];
+  return loadListContacts(Array.from(new Set(keys)));
+}
+
+async function loadListContacts(agentHrIds: string[]): Promise<NativeVisitContactOption[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-    .select("contact_crm_id,list_type,grade")
-    .is("effective_to", null)
-    .in("agent_hr_id", hrIdLookupKeys(rep.hrId))
-    // A pharmacy is not a contact: PM and AM lists only.
-    .in("list_type", ["AM", "PM"]);
-  if (error) {
-    if (isMissingTable(error)) return [];
-    throw error;
+  const rows: Array<Record<string, unknown>> = [];
+  for (const keys of chunk(agentHrIds)) {
+    const { data, error } = await supabase
+      .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+      .select("contact_crm_id,list_type,grade")
+      .is("effective_to", null)
+      .in("agent_hr_id", keys)
+      // A pharmacy is not a contact: PM and AM lists only.
+      .in("list_type", ["AM", "PM"]);
+    if (error) {
+      if (isMissingTable(error)) return [];
+      throw error;
+    }
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
   }
 
   const byContact = new Map<number, { lists: Set<NativeVisitShift>; grade: string | null }>();
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const row of rows) {
     const contactCrmId = Number(row.contact_crm_id);
     if (!Number.isInteger(contactCrmId) || contactCrmId <= 0 || contactCrmId === 100000) continue;
     const list = row.list_type === "AM" ? "AM" : row.list_type === "PM" ? "PM" : null;

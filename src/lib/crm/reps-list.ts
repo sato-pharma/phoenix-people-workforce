@@ -8,8 +8,9 @@
  *
  * ## Three things this file is deliberately built around
  *
- * 1. THE CONTACT LIST, NOT VISITS. Rows come from `ireports360_contacts` — the list the CRM says a
- *    rep was GIVEN — via `contact-lists.ts`. Every other CRM board in Phoenix is built from visit or
+ * 1. THE CONTACT LIST, NOT VISITS. Rows come from Phoenix's own list — the open periods of
+ *    `crm_contact_assignments`, what a rep was GIVEN — via `contact-lists.ts`, found by the rep's HR
+ *    id so a rep hired without a CRM account still has one. Every other CRM board in Phoenix is built from visit or
  *    plan history and is therefore blind to a doctor who was assigned and never touched. That was
  *    the owner's own wording when he specified the board this one replaces ("Not visits."), and it
  *    is why the retired Doctor List existed at all.
@@ -37,7 +38,7 @@
  * The grouping core is pure and fixture-testable; everything touching Supabase sits below it.
  */
 
-import { getAgentContactList, type DoctorListRow } from "@/lib/crm/contact-lists";
+import { getAgentContactList, getRepContactList, type DoctorListRow } from "@/lib/crm/contact-lists";
 import {
   loadTradeCounterparties,
   matchContactTrade,
@@ -61,7 +62,8 @@ import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
   CRM_CHECKINS_UNIFIED_VIEW,
-  CRM_CONTACTS_TABLE,
+  CRM_CONTACT_ASSIGNMENTS_TABLE,
+  CRM_CONTACT_MASTER_TABLE,
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
 } from "@/lib/crm/tables";
@@ -181,6 +183,12 @@ export type RepsListCounts = {
   pm: number;
   /** Every row on the list, contacts PLUS pharmacies. Never shown under the word "contacts". */
   total: number;
+};
+
+/** Who a Reps List is for. `hrId` finds the list; `agentCrmId` is null for a rep with no CRM account. */
+export type RepsListAgent = {
+  agentCrmId: number | null;
+  hrId: string | null;
 };
 
 export type RepsListForRep = {
@@ -465,22 +473,67 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
   return byContact;
 }
 
+/** One open assignment with the contact fields identity matching needs, embedded from the master. */
+export type RosterAssignmentRecord = {
+  agent_crm_id: number | null;
+  contact: {
+    crm_region_name: string | null;
+    name: string | null;
+    phone: string | null;
+    speciality: string | null;
+  } | null;
+  contact_crm_id: number;
+};
+
 /**
- * Every contact in the company, reduced to the six fields identity matching needs.
+ * An open assignment as a roster entry, or null when it cannot be one. Pure; exported for its test.
+ *
+ * A row with no CRM account is left out: the sharing and insight matchers key a partner on
+ * `agentCrmId`, so such a row could never be named, and dropping it keeps a rep with no account
+ * from being mistaken for "someone else" against every other such rep.
+ */
+export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | null {
+  if (record.agent_crm_id == null) return null;
+  // Flattened first, so every field below reads one plain row. Speciality and CRM region are what
+  // corroborate a name match: drop either and every distant twin falls silent.
+  const row = {
+    contact_name: record.contact?.name ?? null,
+    crm_region_name: record.contact?.crm_region_name ?? null,
+    phone: record.contact?.phone ?? null,
+    speciality: record.contact?.speciality ?? null,
+  };
+  return {
+    agentCrmId: record.agent_crm_id,
+    contactCrmId: record.contact_crm_id,
+    name: row.contact_name?.trim() || "",
+    nameKey: nameKey(row.contact_name),
+    phoneKey: phoneKey(row.phone),
+    regionKey: row.crm_region_name?.trim().toLowerCase() || null,
+    speciality: row.speciality?.trim() || null,
+  };
+}
+
+/**
+ * Every contact on every rep's list today, reduced to the fields identity matching needs.
+ *
+ * READ FROM PHOENIX'S OWN LIST — the open periods of `crm_contact_assignments`, with the contact's
+ * name, phone, speciality and region embedded from `crm_contacts` — never from the vendor scrape,
+ * which stops moving the day the sweep is switched off.
  *
  * A COMPANY-WIDE READ IS THE POINT, and it is safe here because nothing from it reaches the screen
  * except a rep's NAME on a row the viewer can already see. Sharing cannot be detected from one rep's
  * own list by construction: the other half of the pair is, by definition, on somebody else's.
  *
- * Deliberately NOT `unstable_cache`d. At roughly 9,500 rows this sits close enough to the 2 MB data
+ * Deliberately NOT `unstable_cache`d. At roughly 9,800 rows this sits close enough to the 2 MB data
  * cache entry limit to be a hazard, and exceeding that limit throws only in dev and kills the dev
- * server outright. Four narrow columns fetched fresh cost far less than that failure mode.
+ * server outright. A few narrow columns fetched fresh cost far less than that failure mode.
  */
 async function loadContactRoster(): Promise<RosterEntry[]> {
   const supabase = getSupabaseAdmin();
   const { count, error: countError } = await supabase
-    .from(CRM_CONTACTS_TABLE)
-    .select("contact_crm_id", { count: "exact", head: true });
+    .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+    .select("id", { count: "exact", head: true })
+    .is("effective_to", null);
   if (countError) {
     if (isCrmSchemaMissingError(countError)) return [];
     throw new Error(`Could not size the contact roster: ${countError.message}`);
@@ -488,13 +541,15 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
 
   // Counted first, then every page requested at once. Sequential paging over ten pages is ten round
   // trips on a board a human is waiting for; the count makes the fan-out exact rather than a guess.
+  // Ordered by the assignment `id` — unique, so no page repeats or skips a row.
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const results = await Promise.all(
     Array.from({ length: pages }, (_unused, page) =>
       supabase
-        .from(CRM_CONTACTS_TABLE)
-        .select("contact_crm_id, agent_crm_id, contact_name, phone, speciality, crm_region_name")
-        .order("contact_crm_id", { ascending: true })
+        .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
+        .select(`id, contact_crm_id, agent_crm_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
+        .is("effective_to", null)
+        .order("id", { ascending: true })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
     ),
   );
@@ -505,23 +560,9 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
       if (isCrmSchemaMissingError(error)) return [];
       throw new Error(`Could not read the contact roster: ${error.message}`);
     }
-    for (const row of (data ?? []) as Array<{
-      agent_crm_id: number;
-      contact_crm_id: number;
-      contact_name: string | null;
-      crm_region_name: string | null;
-      phone: string | null;
-      speciality: string | null;
-    }>) {
-      roster.push({
-        agentCrmId: row.agent_crm_id,
-        contactCrmId: row.contact_crm_id,
-        name: row.contact_name?.trim() || "",
-        nameKey: nameKey(row.contact_name),
-        phoneKey: phoneKey(row.phone),
-        regionKey: row.crm_region_name?.trim().toLowerCase() || null,
-        speciality: row.speciality?.trim() || null,
-      });
+    for (const row of (data ?? []) as unknown as RosterAssignmentRecord[]) {
+      const entry = toRosterEntry(row);
+      if (entry) roster.push(entry);
     }
   }
   return roster;
@@ -568,7 +609,11 @@ async function loadPinsFor(contactIds: readonly number[]): Promise<Map<number, {
  * contacts) that is four round trips.
  */
 export async function getRepsListForAgent(
-  agentCrmId: number,
+  /**
+   * The rep. A bare number is a CRM account (Plan Verification's callers hold only that); the object
+   * form carries the HR id, which is what finds the list of a rep hired without a CRM account.
+   */
+  agent: number | RepsListAgent,
   /**
    * agentCrmId -> the rep's readable name, for the "also on X's list" line. REQUIRED rather than
    * optional on purpose: with an empty map the sharing check silently finds nothing, which looks
@@ -576,7 +621,13 @@ export async function getRepsListForAgent(
    */
   repNames: ReadonlyMap<number, string>,
 ): Promise<RepsListForRep> {
-  const rows = await getAgentContactList(agentCrmId);
+  const { agentCrmId: ownCrmId, hrId } = typeof agent === "number" ? { agentCrmId: agent, hrId: null } : agent;
+  // The HR id wins whenever it is known: it is who the rep IS, and it also finds his rows written by
+  // a Phoenix list change, which carry no CRM account.
+  const rows = hrId ? await getRepContactList(hrId) : ownCrmId != null ? await getAgentContactList(ownCrmId) : [];
+  // The sharing and insight matchers key "someone else" on a CRM account. A rep with none has no
+  // roster row of his own (see `toRosterEntry`), so -1, which no account ever carries, is safe.
+  const agentCrmId = ownCrmId ?? -1;
   if (rows.length === 0) {
     return {
       counts: { am: 0, contacts: 0, pharmacy: 0, pm: 0, total: 0 },
@@ -651,7 +702,7 @@ export async function getRepsListForAgent(
   const pins = new Map(otherPins);
   for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
   const sharedByContact = findSharedCustomers(
-    rows.map((row) => ({ agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId })),
+    rows.map((row) => ({ agentCrmId, contactCrmId: row.contactCrmId })),
     roster,
     pins,
     repNames,
@@ -683,7 +734,7 @@ export async function getRepsListForAgent(
   // owner does not want highlighted.
   const insightsByContact = buildPhoenixInsights(
     rows.map((row) => ({
-      agentCrmId: row.agentCrmId,
+      agentCrmId,
       contactCrmId: row.contactCrmId,
       points: checkins.get(row.contactCrmId)?.points ?? [],
     })),

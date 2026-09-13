@@ -9,7 +9,7 @@ import { Sunrise } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsDistrictSwitcher } from "@/components/early-birds/early-birds-district-switcher";
-import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEarlyBirdsBoard } from "@/lib/early-birds/service";
 import { assertDistrictInScope, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
@@ -95,7 +95,7 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
         districts={scope.districts}
         selectedHrIdKey={district.hrIdKey}
       />
-      <EarlyBirdsBoard action={<EarlyBirdsSyncButton />} data={data} viewerHrIdKey={scope.viewerHrIdKey} />
+      <EarlyBirdsBoard action={<EarlyBirdsSyncAction />} data={data} viewerHrIdKey={scope.viewerHrIdKey} />
     </div>
   );
 }

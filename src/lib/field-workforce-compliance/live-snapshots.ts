@@ -64,6 +64,9 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
   monthKey: string;
   nowIso: string;
   runs: Array<{ completedAt: string | null; startedAt: string; status: string }>;
+  /** True once the CRM cutover has retired iReports360. Phoenix then records visits directly, so an
+   * old last sync is the designed state and never makes the data stale. */
+  vendorSyncRetired?: boolean;
 }): FieldWorkforceMirrorFreshness {
   const latestSuccess = input.runs.find((run) => run.status === "success") ?? null;
   const lastSyncedAt = latestSuccess?.completedAt ?? latestSuccess?.startedAt ?? null;
@@ -71,7 +74,8 @@ export function summarizeFieldWorkforceMirrorFreshness(input: {
   const ageHours = lastSyncedAt
     ? Math.max(0, Math.round(((nowMs - new Date(lastSyncedAt).getTime()) / 3_600_000) * 10) / 10)
     : null;
-  const isStale = ageHours == null || ageHours > FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS;
+  const isStale =
+    !input.vendorSyncRetired && (ageHours == null || ageHours > FIELD_WORKFORCE_MIRROR_STALE_THRESHOLD_HOURS);
   // Which month is "open" is a CAIRO calendar question. Slicing the UTC month out of nowIso got
   // this wrong for the ~3 hours after every Cairo midnight, and at a month rollover it got it
   // backwards: the "still filling in" warning would sit on the previous month while HR was

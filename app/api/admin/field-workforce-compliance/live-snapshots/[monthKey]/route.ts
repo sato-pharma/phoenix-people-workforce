@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import {
   getFieldWorkforceComplianceLiveView,
   summarizeFieldWorkforceMirrorFreshness,
@@ -40,7 +41,9 @@ export async function GET(request: Request, context: RouteContext) {
 
     // Mirror freshness so the UI can warn when this month's data may be incomplete (a stale
     // sync or the still-open current month) before HR acts on any "N" day.
-    const syncRuns = await getLatestVisitsSyncRuns(10);
+    // After the CRM cutover retires iReports360 the sync ledger stops growing by design, so it must
+    // not raise the stale warning. An unreadable setting answers null: the warning behaves as before.
+    const [syncRuns, vendorStandDown] = await Promise.all([getLatestVisitsSyncRuns(10), resolveVendorSyncStandDown()]);
     const mirrorFreshness = summarizeFieldWorkforceMirrorFreshness({
       monthKey,
       nowIso: new Date().toISOString(),
@@ -49,6 +52,7 @@ export async function GET(request: Request, context: RouteContext) {
         startedAt: run.startedAt,
         status: run.status,
       })),
+      vendorSyncRetired: vendorStandDown !== null,
     });
 
     await writeAuditLog({

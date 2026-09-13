@@ -34,6 +34,12 @@ export type JobScheduleDeclaration = {
   periodSeconds?: number;
   /** How late a ping may be, in seconds, before the job counts as stranded. */
   graceSeconds: number;
+  /**
+   * Set on a job that pulls from iReports360. Once the CRM cutover retires the vendor these jobs
+   * stand down and stop pinging BY DESIGN, so the sweep stops watching them — see
+   * {@link watchedJobSchedules}.
+   */
+  vendorSync?: true;
 };
 
 /**
@@ -87,12 +93,12 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // shape a naive "expected period" calculation gets wrong — it would read the 23-hour gap as a
   // strand every single day. The register computes the previous scheduled fire from the expression
   // instead, which is why cron-parser is used rather than an interval.
-  { slug: "phoenix-crm-contact-lists", kind: "cron", schedule: "*/5 5 * * *", graceSeconds: 10 * MINUTE },
+  { slug: "phoenix-crm-contact-lists", kind: "cron", schedule: "*/5 5 * * *", graceSeconds: 10 * MINUTE, vendorSync: true },
   { slug: "phoenix-expense-claims-refresh", kind: "cron", schedule: "51 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-recruitment-cv-digest", kind: "cron", schedule: "47 0,6,12,18 * * *", graceSeconds: 1 * HOUR },
-  { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 15 * MINUTE },
-  { slug: "phoenix-ireports360-sync", kind: "cron", schedule: "0 6-21/3 * * *", graceSeconds: 2 * HOUR },
-  { slug: "phoenix-reconcile-visits", kind: "cron", schedule: "0 4 * * 0", graceSeconds: 12 * HOUR },
+  { slug: "phoenix-ireports360-live-poll", kind: "simple", periodSeconds: 5 * MINUTE, graceSeconds: 15 * MINUTE, vendorSync: true },
+  { slug: "phoenix-ireports360-sync", kind: "cron", schedule: "0 6-21/3 * * *", graceSeconds: 2 * HOUR, vendorSync: true },
+  { slug: "phoenix-reconcile-visits", kind: "cron", schedule: "0 4 * * 0", graceSeconds: 12 * HOUR, vendorSync: true },
   // The sweeper itself. Declared like any other job so it holds a row and verifies itself on every
   // run. It cannot report its OWN silence — see the migration header and docs/observability.md.
   { slug: "phoenix-job-heartbeat-sweep", kind: "cron", schedule: "*/15 * * * *", graceSeconds: 30 * MINUTE },
@@ -103,6 +109,19 @@ export const JOB_HEARTBEAT_SWEEP_SLUG = "phoenix-job-heartbeat-sweep" as const;
 /** Declared slugs, for the sweeper's bootstrap and for the doc-parity test. */
 export function declaredJobSlugs(): string[] {
   return JOB_SCHEDULES.map((declaration) => declaration.slug);
+}
+
+/**
+ * The declarations the sweep should judge. Pure — the caller resolves the stand-down reason
+ * (`resolveVendorSyncStandDown`, which fails OPEN to null), so this module stays importable by the
+ * unit test. With a reason, the iReports360 jobs are left out: after the cutover they are silent on
+ * purpose, and judging them would page in-app, Telegram and push once a Cairo day, forever.
+ */
+export function watchedJobSchedules(
+  declarations: readonly JobScheduleDeclaration[],
+  vendorStandDownReason: string | null,
+): JobScheduleDeclaration[] {
+  return vendorStandDownReason ? declarations.filter((declaration) => !declaration.vendorSync) : [...declarations];
 }
 
 export function findJobSchedule(slug: string): JobScheduleDeclaration | undefined {

@@ -11,10 +11,13 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
-import { CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { getCurrentBrickIndex } from "@/lib/crm/region-brick";
+import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 
-const visitsTable = CRM_VISITS_TABLE;
+// The unified view: vendor history plus Phoenix's own visits from the cutover on. The vendor table
+// alone stops listing new customers the day the vendor sync is switched off.
+const visitsTable = CRM_VISITS_UNIFIED_VIEW;
 const resolutionsTable = CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE;
 
 /** Admin resolution for a CRM customer that never auto-maps: mapped (a real brick_id was
@@ -72,12 +75,14 @@ async function loadResolutionsByContactId(): Promise<Map<number, StoredResolutio
   return map;
 }
 
-/** Full keyset scan (id > cursor) of every distinct contact_crm_id in ireports360_visits, with its
- * display name, visit count, and first/last-seen dates. contact_crm_id = 0 is the vendor's
- * "unspecified contact" sentinel (same convention as computeTriplesInRange in crm/master.ts) and is
- * excluded — it names no real customer, so there is nothing to map. The single scan both
- * getUnmappedCrmCustomers and getAllCrmCustomersForTemplate build on, so the two can never disagree
- * about what customers exist. */
+/** Full keyset scan (id > cursor) of every distinct contact_crm_id in crm_visits_unified — vendor
+ * history plus Phoenix's own visits, so a customer first visited after the vendor sync is switched
+ * off still reaches the mapping punch-list. The view's `id` is a uuid on both halves, so the keyset
+ * cursor stays a plain string comparison. Two ids are excluded because neither names a customer
+ * there is anything to map: 0, the vendor's "unspecified contact" sentinel (same convention as
+ * computeTriplesInRange in crm/master.ts), and 100000, the catch-all contact that is never a doctor.
+ * The single scan both getUnmappedCrmCustomers and getAllCrmCustomersForTemplate build on, so the two
+ * can never disagree about what customers exist. */
 async function scanAllCrmCustomers(): Promise<Map<number, MutableUnmappedCustomer>> {
   const supabase = getSupabaseAdmin();
   const customers = new Map<number, MutableUnmappedCustomer>();
@@ -89,6 +94,7 @@ async function scanAllCrmCustomers(): Promise<Map<number, MutableUnmappedCustome
       .select("id, contact_crm_id, contact_name, visit_date")
       .not("contact_crm_id", "is", null)
       .neq("contact_crm_id", 0)
+      .neq("contact_crm_id", CATCH_ALL_CONTACT_CRM_ID)
       .order("id", { ascending: true })
       .limit(pageSize);
     if (cursor) query = query.gt("id", cursor);

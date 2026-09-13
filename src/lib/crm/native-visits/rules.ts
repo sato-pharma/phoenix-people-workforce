@@ -125,6 +125,50 @@ export function isNativeVisitPilotDay(pilot: NativeVisitPilot | null, visitDate:
   return visitDate >= pilot.startsOn && visitDate <= pilot.endsOn;
 }
 
+// ── Which days are open ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * What opens a day for native entry and planning. Before the CRM cutover only a pilot line's pilot
+ * days are open. From the cutover date on, every day is open to every rep of every line at once (the
+ * owner, 2026-09-13: "All lines at once"), because Phoenix is then the only record.
+ */
+export type NativeEntryGate = {
+  /** The pilot row for the rep's own line, or null. */
+  pilot: NativeVisitPilot | null;
+  /** crm_cutover.cutover_date (YYYY-MM-DD), or null while iReports360 is still the record. */
+  cutoverDate: string | null;
+};
+
+/** True when `day` is on or after the cutover date: Phoenix is the record for it. */
+export function isOnOrAfterNativeCutover(gate: NativeEntryGate, day: string): boolean {
+  return gate.cutoverDate != null && ISO_DAY_PATTERN.test(day) && day >= gate.cutoverDate;
+}
+
+/** True when a rep may enter or plan work for `day`: a pilot day of his line, or on or after the cutover. */
+export function isNativeEntryDay(gate: NativeEntryGate, day: string): boolean {
+  return isOnOrAfterNativeCutover(gate, day) || isNativeVisitPilotDay(gate.pilot, day);
+}
+
+/**
+ * Whether My Visits offers the visit form at all: once a cutover date is set (the form says when it
+ * opens), or while his line's pilot still has a day left.
+ */
+export function isNativeEntryOffered(gate: NativeEntryGate, cairoToday: string): boolean {
+  if (gate.cutoverDate != null) return true;
+  return Boolean(gate.pilot && gate.pilot.isActive && cairoToday <= gate.pilot.endsOn);
+}
+
+/** A calendar day as people read it: "3 October 2026". Anything that is not a day comes back unchanged. */
+export function nativeDayLabel(isoDay: string): string {
+  if (!ISO_DAY_PATTERN.test(isoDay)) return isoDay;
+  return new Date(`${isoDay}T12:00:00Z`).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+    year: "numeric",
+  });
+}
+
 // ── Entry window ────────────────────────────────────────────────────────────────────────────────
 
 /** The days a rep may enter today: today and yesterday, Cairo (owner decision 8). */
@@ -328,11 +372,42 @@ export function nativeVisitPlanRefusal(input: {
   visitTypeKey: string;
   /** The rep's live plan item for this doctor on the visit day, with its week plan's status; null when none. */
   planItem: { planStatus: string } | null;
+  /** A district manager's single visit without his rep. He files no week plan, so the rule does not reach it. */
+  managerSingleVisit?: boolean;
 }): string | null {
-  if (!input.ruleActive || input.visitTypeKey !== "regular") return null;
+  if (!input.ruleActive || input.visitTypeKey !== "regular" || input.managerSingleVisit) return null;
   if (!input.planItem) return NATIVE_VISIT_NOT_PLANNED_MESSAGE;
   if (input.planItem.planStatus !== "verified") return NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE;
   return null;
+}
+
+/**
+ * The doctors the form offers for a regular visit on one day while the plan rule is active: the rep's
+ * live plan items for that day, in a week plan his manager verified. The same test the save applies.
+ */
+export function nativeVisitPlannedContactIds(
+  items: ReadonlyArray<{ contactCrmId: number; planDate: string; planStatus: string }>,
+  day: string,
+): number[] {
+  const ids = new Set<number>();
+  for (const item of items) {
+    if (item.planDate === day && item.planStatus === "verified") ids.add(item.contactCrmId);
+  }
+  return Array.from(ids).sort((left, right) => left - right);
+}
+
+export const NATIVE_VISIT_MANAGER_SINGLE_PARTNERS_MESSAGE =
+  "A single visit names nobody accompanying you. When you visit with a rep, the rep enters the visit and names you.";
+
+export const NATIVE_PLAN_MANAGER_MESSAGE =
+  "Forbidden: a district manager files no weekly plan here. Your reps plan their weeks and you verify them.";
+
+/**
+ * The owner, 2026-09-14: a district manager normally goes on a double visit and the REP submits it,
+ * naming him. In rare cases he submits a single visit without the rep. That visit names nobody.
+ */
+export function nativeVisitManagerSinglePartnerRefusal(managerSingleVisit: boolean, partnerHrIds: readonly string[]): string | null {
+  return managerSingleVisit && partnerHrIds.length > 0 ? NATIVE_VISIT_MANAGER_SINGLE_PARTNERS_MESSAGE : null;
 }
 
 /** A rep can never record himself as his own partner. */

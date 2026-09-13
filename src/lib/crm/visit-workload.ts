@@ -17,6 +17,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
@@ -105,11 +106,13 @@ export type RepVisitWorkload = {
 
 type WorkloadVisitRow = {
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   ampm: string | null;
   contact_name: string | null;
   crm_save_date: string | null;
   customer_name: string | null;
   double_crm_id: number | null;
+  double_hr_id: string | null;
   speciality: string | null;
   visit_date: string;
   visit_type: number | null;
@@ -174,22 +177,36 @@ export async function getRepTripVisitWorkload(input: {
   const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   const key = canonicalHrIdKey(hrId);
   const employee = directory.find((row) => canonicalHrIdKey(row.hrId) === key) ?? null;
-  const crmId = employee?.crmId == null ? null : Number(employee.crmId);
-  if (!crmId || Number.isNaN(crmId)) {
-    return emptyWorkload(dates, "This rep has no CRM id, so their visits can't be matched.", "unmapped");
-  }
+  const rawCrmId = employee?.crmId == null ? null : Number(employee.crmId);
+  const crmId = rawCrmId && !Number.isNaN(rawCrmId) ? rawCrmId : null;
+  // This person's identity on a visit or a check-in — the same key the check-in matcher uses: the
+  // CRM id when he has one, else his hr id. `hrId` is non-blank here, so the key always exists.
+  const selfKey = checkinAgentKey(crmId, hrId) ?? "";
 
   // Through the CRM read door. `includeResignedAgents: true` keeps this read's documented contract
   // (no departed-agent exclusion — see the module note); `visit_date` is a DATE column, so `dateTo`
   // as YYYY-MM-DD is the same bound the old `${end}T23:59:59.999Z` literal cast down to. The door
   // keyset-pages, so a window past PostgREST's 1,000-row response cap is returned in full.
+  //
+  // By CRM id when the person has one — exactly the read every such rep has always had, since his
+  // native visits carry the same `agent_crm_id`/`double_crm_id` — and by hr id when he has none. A
+  // rep hired after the CRM cutover has no CRM id, and this used to stop right here as "unmapped",
+  // so his outstation trip carried no workload evidence however many visits he logged.
   const data = await queryVisits<WorkloadVisitRow>({
-    columns: "agent_crm_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, speciality, visit_date, visit_type",
+    columns:
+      "agent_crm_id, agent_hr_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, double_hr_id, speciality, visit_date, visit_type",
     dateFrom: start,
     dateTo: end,
     includeResignedAgents: true,
-    participantCrmIds: [crmId],
+    ...(crmId != null ? { participantCrmIds: [crmId] } : { participantHrIds: [hrId] }),
   });
+  // Still "unmapped" for a person with no CRM id and nothing under his hr id either. Before the cutover
+  // that is everyone without a CRM account — office staff included — and a zero read for them was never
+  // evidence of anything; calling it `no_activity` would put an accusation on a trip nobody could have
+  // logged against. A person with no CRM id who DID log visits is matched below like anyone else.
+  if (crmId == null && data.length === 0) {
+    return emptyWorkload(dates, "This person has no CRM id and no visits under their HR ID, so their visits can't be matched.", "unmapped");
+  }
 
   const byDate = new Map<string, RepVisitWorkloadDay>();
   for (const date of dates) {
@@ -199,9 +216,11 @@ export async function getRepTripVisitWorkload(input: {
   // Who logs the GPS check-in each day: the person who SUBMITTED the visit (its agent_crm_id).
   // Managers (DM/TM/NSM) never submit — the rep does and tags them as the double-visitor — so a
   // manager's route/check-in must be borrowed from the rep (memory: dv-checkin-attribution-…).
-  // checkinOwnersByDate maps each active day to the submitter crm_ids whose check-ins are this
-  // person's route that day (self when they submitted, else the rep(s) they were double with).
-  const checkinOwnersByDate = new Map<string, Set<number>>();
+  // checkinOwnersByDate maps each active day to the submitter keys (checkinAgentKey: crm id, else
+  // `hr:<id>`) whose check-ins are this person's route that day (self when they submitted, else the
+  // rep(s) they were double with). `ownerIdentity` remembers which ids each key stands for.
+  const checkinOwnersByDate = new Map<string, Set<string>>();
+  const ownerIdentity = new Map<string, { crmId: number | null; hrId: string | null }>();
 
   for (const row of data) {
     const day = String(row.visit_date ?? "").slice(0, 10);
@@ -229,10 +248,17 @@ export async function getRepTripVisitWorkload(input: {
     if (ampm.startsWith("A")) entry.am += 1;
     else entry.pm += 1; // PM or unmarked → PM, so every counted field visit lands in AM or PM
 
-    const submitter = Number(row.agent_crm_id);
-    if (Number.isFinite(submitter)) {
+    const submitterCrm = row.agent_crm_id == null ? null : Number(row.agent_crm_id);
+    const submitterKey = checkinAgentKey(
+      submitterCrm != null && Number.isFinite(submitterCrm) ? submitterCrm : null,
+      row.agent_hr_id,
+    );
+    if (submitterKey != null) {
       if (!checkinOwnersByDate.has(day)) checkinOwnersByDate.set(day, new Set());
-      checkinOwnersByDate.get(day)!.add(submitter);
+      checkinOwnersByDate.get(day)!.add(submitterKey);
+      if (!ownerIdentity.has(submitterKey)) {
+        ownerIdentity.set(submitterKey, { crmId: submitterKey.startsWith("hr:") ? null : submitterCrm, hrId: row.agent_hr_id });
+      }
     }
 
     entry.visits.push({
@@ -241,7 +267,7 @@ export async function getRepTripVisitWorkload(input: {
       contactKind,
       customer: row.customer_name ?? null,
       kind: isRegular ? "regular" : "campaign",
-      role: submitter === crmId ? "agent" : "partner",
+      role: submitterKey === selfKey ? "agent" : "partner",
       submittedAt: row.crm_save_date ?? null,
     });
   }
@@ -249,16 +275,27 @@ export async function getRepTripVisitWorkload(input: {
   // Best-effort: pull check-ins for every submitter this person shares a visit with (self + the
   // reps they were double/triple-visited with), then attribute each to a day only if its owner is a
   // route-owner for THAT day. A check-in hiccup must never break the workload the approver relies on.
-  const ownerIds = new Set<number>([crmId]);
-  for (const owners of checkinOwnersByDate.values()) for (const id of owners) ownerIds.add(id);
-  const nameByCrm = new Map<number, string>();
+  ownerIdentity.set(selfKey, { crmId, hrId });
+  const ownerCrmIds = new Set<number>();
+  const ownerHrIds = new Set<string>();
+  for (const [ownerKey, identity] of ownerIdentity) {
+    if (!ownerKey.startsWith("hr:") && identity.crmId != null) ownerCrmIds.add(identity.crmId);
+    else if (identity.hrId) ownerHrIds.add(identity.hrId);
+  }
+  const nameByOwnerKey = new Map<string, string>();
   for (const emp of directory) {
+    if (!emp.fullName) continue;
     const empCrm = emp.crmId == null ? null : Number(emp.crmId);
-    if (empCrm != null && !Number.isNaN(empCrm) && emp.fullName) nameByCrm.set(empCrm, emp.fullName);
+    if (empCrm != null && !Number.isNaN(empCrm)) nameByOwnerKey.set(String(empCrm), emp.fullName);
+    const empHrKey = canonicalHrIdKey(emp.hrId);
+    if (empHrKey) nameByOwnerKey.set(`hr:${empHrKey}`, emp.fullName);
   }
 
   const checkinRows = await queryCheckins<CrmCheckinRow>({
-    agentCrmIds: [...ownerIds],
+    // With no owner lacking a CRM id this is the crm-id read it always was.
+    ...(ownerHrIds.size === 0
+      ? { agentCrmIds: [...ownerCrmIds] }
+      : { agentCrmOrHrIds: { crmIds: [...ownerCrmIds], hrIds: [...ownerHrIds] } }),
     ascending: true,
     dateFrom: start,
     dateTo: end,
@@ -269,16 +306,18 @@ export async function getRepTripVisitWorkload(input: {
     const day = String(row.check_date ?? "").slice(0, 10);
     const entry = byDate.get(day);
     if (!entry) continue;
-    const owner = Number(row.agent_crm_id);
+    const ownerCrm = row.agent_crm_id == null ? null : Number(row.agent_crm_id);
+    const owner = checkinAgentKey(ownerCrm != null && Number.isFinite(ownerCrm) ? ownerCrm : null, row.agent_hr_id);
     const dayOwners = checkinOwnersByDate.get(day);
-    if (!dayOwners || !dayOwners.has(owner)) continue; // not part of this person's route that day
+    if (owner == null || !dayOwners || !dayOwners.has(owner)) continue; // not part of this person's route that day
+    const ownerLabel = owner.startsWith("hr:") ? (row.agent_hr_id ?? owner.slice(3)) : owner;
     entry.checkins.push({
       address: row.address ?? null,
       at: row.check_date ?? null,
       contact: row.contact_name ?? null,
       lat: row.lat ?? null,
       lon: row.lon ?? null,
-      via: owner === crmId ? null : nameByCrm.get(owner) ?? `rep ${owner}`,
+      via: owner === selfKey ? null : nameByOwnerKey.get(owner) ?? `rep ${ownerLabel}`,
     });
   }
 

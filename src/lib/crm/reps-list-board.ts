@@ -37,7 +37,8 @@ import {
   type CoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
 import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
-import { getDoctorListRepSummaries, type DoctorListRepSummary } from "@/lib/crm/contact-lists";
+import { getRepListSummaries, type RepListSummary } from "@/lib/crm/contact-lists";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
 import { getRepsListForAgent, type RepsListForRep } from "@/lib/crm/reps-list";
 // Month vocabulary is BORROWED, never restated. `monthLabelOf` and `resolveRepDoctorListMonth`
@@ -107,7 +108,6 @@ export type RepsListBoard = {
 };
 
 const EMPTY_OPTIONS: CoverageFilterOptions = { areas: [], lines: [], regions: [], reps: [] };
-const lower = (value: string | null | undefined): string => (value ?? "").trim().toLowerCase();
 
 /**
  * Which rep hr-ids the viewer may see, in the shape `restrictCoverageFilterTree` wants.
@@ -230,7 +230,7 @@ export async function buildRepsCascade(input: {
     };
   }
 
-  const [companyTree, summaries] = await Promise.all([loadCoverageFilterTree(), getDoctorListRepSummaries()]);
+  const [companyTree, summaries] = await Promise.all([loadCoverageFilterTree(), getRepListSummaries()]);
   // RESTRICT FIRST. Every option list below is derived from `tree`, never from `companyTree`.
   const tree = restrictCoverageFilterTree(companyTree, allowedHrIdsFor(input.scope));
 
@@ -241,12 +241,19 @@ export async function buildRepsCascade(input: {
     regions: regionsForLine(tree, selection.line, narrowed.regions),
   };
 
-  const summaryByHrId = new Map<string, DoctorListRepSummary>();
+  // KEYED ON THE CANONICAL HR ID, on both sides. A rep is joined to his list by who he is, never by
+  // his CRM account: a rep hired after the cutover has no account, and a join through one reported
+  // him as holding no list whatever he held. HR ids are also stored in more than one casing across
+  // this system, which `canonicalHrIdKey` absorbs.
+  const summaryByHrId = new Map<string, RepListSummary>();
   for (const summary of summaries) {
-    // HR ids are mixed-case across this system, so both sides are lowered. An exact-case join
-    // happens to return everything today; it is one CRM re-import away from silently under-returning.
-    if (summary.hrId) summaryByHrId.set(lower(summary.hrId), summary);
+    const key = canonicalHrIdKey(summary.hrId);
+    if (key) summaryByHrId.set(key, summary);
   }
+  const summaryFor = (hrId: string | null | undefined): RepListSummary | undefined => {
+    const key = canonicalHrIdKey(hrId);
+    return key ? summaryByHrId.get(key) : undefined;
+  };
 
   // Area NAMES per seat, so the rep list can show where each person works without ever printing a
   // raw area code at the reader (owner's standing rule). Built once from the restricted tree rather
@@ -271,7 +278,7 @@ export async function buildRepsCascade(input: {
   // the one the grid browses and the one the status picker counts.
   const repsIgnoringRep: RepsListRep[] = repsMatching(tree, { ...selection, rep: undefined })
     .map((rep) => {
-      const summary = summaryByHrId.get(lower(rep.hrId));
+      const summary = summaryFor(rep.hrId);
       return {
         agentCrmId: summary?.agentCrmId ?? null,
         areaNames: [...(areaNamesBySeat.get(rep.seatId) ?? [])].sort((left, right) => left.localeCompare(right)),
@@ -311,7 +318,7 @@ export async function buildRepsCascade(input: {
   // 3,334 cross-rep same-name pairs 2,842 (85%) sit under a different manager, and of the 62
   // shared-phone pairs ALL 62 do.
   //
-  // AND NOT FROM `summaries`. getDoctorListRepSummaries constructs every row with `name: ""` and
+  // AND NOT FROM `summaries`. getRepListSummaries constructs every row with `name: ""` and
   // never fills it — the name is resolved against the org tree by whichever board is assembling the
   // screen. Reading `summary.name` here therefore produced an EMPTY MAP, and an empty map means
   // every match is dropped for want of a name: the whole shared-customer feature rendered nothing,
@@ -322,13 +329,13 @@ export async function buildRepsCascade(input: {
   // may read the NAME of a rep outside his own team, on a shared row he can already see.
   const repNameByAgentId = new Map<number, string>();
   for (const rep of companyTree.reps) {
-    const summary = summaryByHrId.get(lower(rep.hrId));
+    const summary = summaryFor(rep.hrId);
     const name = rep.repName?.trim();
     if (summary?.agentCrmId != null && name) repNameByAgentId.set(summary.agentCrmId, name);
   }
 
   const syncedAt = reps.reduce<string | null>((latest, rep) => {
-    const summary = summaryByHrId.get(lower(rep.hrId));
+    const summary = summaryFor(rep.hrId);
     const at = summary?.syncedAt ?? null;
     return at && (!latest || at > latest) ? at : latest;
   }, null);
@@ -378,9 +385,12 @@ export async function getRepsListBoard(input: {
   // catastrophic collapse in coverage rather than as a month that has barely started.
   const activityAsOf = today < monthEnd ? today : monthEnd;
 
+  // The list is found by the rep's HR id, so a rep with no CRM account still gets his list. Gated on
+  // the summary counts only — pharmacies included, since a pharmacy-only list is still a list.
+  const selectedRep = cascade.selected;
   const rawList =
-    cascade.selected?.agentCrmId != null
-      ? await getRepsListForAgent(cascade.selected.agentCrmId, cascade.repNameByAgentId)
+    selectedRep && selectedRep.contactCount + selectedRep.pharmacyCount > 0
+      ? await getRepsListForAgent({ agentCrmId: selectedRep.agentCrmId, hrId: selectedRep.hrId }, cascade.repNameByAgentId)
       : null;
 
   // THE ACTIVITY MUST NEVER TAKE THE CONTACT LIST DOWN WITH IT. The list is this board's whole
@@ -388,6 +398,9 @@ export async function getRepsListBoard(input: {
   // environments' schemas and `scanPlanEntries` already degrades to empty rather than throwing. A
   // failure here therefore drops the annotation and says so, and the board below still renders every
   // contact — the behaviour this board had before the column existed.
+  //
+  // STILL KEYED ON A CRM ACCOUNT: `loadRepsListActivity` takes one, so a rep with no account shows his
+  // list with the activity column marked unavailable, never with every doctor reading "unvisited".
   let activityIndex: Map<number, RepsListActivity> | null = null;
   if (rawList && cascade.selected?.agentCrmId != null) {
     try {

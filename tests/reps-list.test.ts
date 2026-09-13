@@ -1519,7 +1519,7 @@ export function runRepsListTests() {
     // and a page that looks exactly like a clean month. Pinned on the source because the loader is
     // IO and the rules above are pure, so nothing else here ever reads it.
     assert.ok(
-      /\.select\("contact_crm_id, agent_crm_id, contact_name, phone, speciality, crm_region_name"\)/.test(loader),
+      /contact:\$\{CRM_CONTACT_MASTER_TABLE\}\(name, phone, speciality, crm_region_name\)/.test(loader),
       "the roster must SELECT speciality and the CRM region: without them nothing corroborates a name match and every distant twin falls silent",
     );
     assert.ok(

@@ -519,8 +519,14 @@ export function joinKpiRows(input: {
     if (key) identityByHrId.set(key, entry);
   }
 
-  const byCrmId = new Map<number, KpiRepRow>();
+  // `crm:<id>` for a rep with a CRM id — the join described above, unchanged — and `hr:<canonical>`
+  // for a rep hired after the CRM cutover who has none. Those reps carry a NULL `agent_crm_id` on both
+  // sources, and a crm-only dedupe gave each of them TWO rows: one holding the call rate with no
+  // coverage, one holding the coverage with no call rate — half a rep, twice.
+  const byRepKey = new Map<string, KpiRepRow>();
   const rows: KpiRepRow[] = [];
+  const repKeyOf = (agentCrmId: number | null, agentHrId: string | null): string | null =>
+    agentCrmId != null ? `crm:${agentCrmId}` : agentHrId ? `hr:${agentHrId}` : null;
 
   const blank = (agentCrmId: number | null, agentHrId: string | null, repName: string): KpiRepRow => ({
     agentCrmId,
@@ -574,8 +580,10 @@ export function joinKpiRows(input: {
   });
 
   const claim = (agentCrmId: number | null, agentHrId: string | null, repName: string): KpiRepRow => {
-    if (agentCrmId != null) {
-      const existing = byCrmId.get(agentCrmId);
+    // `agentHrId` arrives already canonical (both call sites pass canonicalHrIdKey).
+    const repKey = repKeyOf(agentCrmId, agentHrId);
+    if (repKey != null) {
+      const existing = byRepKey.get(repKey);
       if (existing) {
         // A name resolved on one side but not the other is still the same rep — keep the real one
         // rather than letting a blank overwrite it.
@@ -585,7 +593,7 @@ export function joinKpiRows(input: {
       }
     }
     const created = blank(agentCrmId, agentHrId, repName);
-    if (agentCrmId != null) byCrmId.set(agentCrmId, created);
+    if (repKey != null) byRepKey.set(repKey, created);
     rows.push(created);
     return created;
   };

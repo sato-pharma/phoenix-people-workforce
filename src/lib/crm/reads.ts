@@ -39,14 +39,26 @@ export type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
  * DV detection, the employee portal, and probation feedback. */
 export const CRM_DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
-/** Pure predicate: is this row a real double visit (a genuine partner on a fieldwork type)? */
+/** Pure predicate: is this row a real double visit (a genuine partner on a fieldwork type)?
+ *
+ * A partner is a real `double_crm_id` (never 0). On a Phoenix native row — `source` 'phoenix', or the
+ * negative `crm_visit_id` the unified view gives it — a confirmed partner hired after the CRM cutover
+ * has no CRM id, so his resolved `double_hr_id` counts too. On a vendor row it never does: a stray
+ * resolved hr id beside a null or 0 partner is not a double visit (employee-360 audit finding A). A
+ * caller that selects neither column keeps the vendor rule. */
 export function isCrmDoubleVisitRow(row: {
+  crm_visit_id?: number | null;
   double_crm_id: number | null | undefined;
+  double_hr_id?: string | null;
+  source?: string | null;
   visit_type: number | null | undefined;
 }): boolean {
+  const isNative = row.source === "phoenix" || (row.crm_visit_id != null && row.crm_visit_id < 0);
+  const hasPartner =
+    (row.double_crm_id != null && row.double_crm_id !== 0) ||
+    (isNative && String(row.double_hr_id ?? "").trim().length > 0);
   return (
-    row.double_crm_id != null &&
-    row.double_crm_id !== 0 &&
+    hasPartner &&
     row.visit_type != null &&
     (CRM_DOUBLE_VISIT_TYPE_CODES as readonly number[]).includes(row.visit_type)
   );
@@ -409,6 +421,15 @@ export type CrmVisitFilter = {
    * workload evidence, the manager partner roll-up).
    */
   participantCrmIds?: readonly number[];
+  /**
+   * The hr-id twin of `participantCrmIds`: visits these people took part in as EITHER the agent OR
+   * the double-visit partner (`agent_hr_id IN ids OR double_hr_id IN ids`), matched
+   * case-insensitively like `agentHrIds`. For a rep hired after the CRM cutover, who has no CRM id
+   * and so can never be found by `participantCrmIds`. Supplied together with `participantCrmIds`
+   * the two are UNIONED into one `or` — a visit matching either list is returned. Empty (or all
+   * blank) with no usable `participantCrmIds` beside it → no rows.
+   */
+  participantHrIds?: readonly string[];
   /** Require a `double_crm_id` (NOT NULL only). Unlike `doubleOnly` it keeps the vendor's `0`
    * sentinel, for callers that already discard it themselves. */
   requireDoubleCrmId?: boolean;
@@ -426,9 +447,50 @@ export function buildParticipantCrmIdOrFilter(ids: readonly number[]): string | 
   return `agent_crm_id.in.(${list}),double_crm_id.in.(${list})`;
 }
 
-/** True when a `participantCrmIds` filter was supplied but can match nobody. */
+/** A PostgREST `in` list of text values, double-quoted so an hr id carrying a comma, a dot or a
+ * parenthesis can never be read as list syntax. */
+function quotedInList(values: readonly string[]): string {
+  return values.map((value) => `"${value.replace(/(["\\])/g, "\\$1")}"`).join(",");
+}
+
+/** Every casing/alias variant of the non-blank ids — {@link expandHrIdFilterValues}, blanks dropped. */
+function usableHrIdFilterValues(ids: readonly string[]): string[] {
+  return expandHrIdFilterValues(ids.map((id) => String(id ?? "").trim()).filter((id) => id.length > 0)).filter(
+    (value) => value.length > 0,
+  );
+}
+
+/**
+ * PostgREST `or` expression for {@link CrmVisitFilter.participantHrIds}: agent OR double-visit
+ * partner hr id in the list, every casing variant included. `null` when no usable id is left.
+ * Pure, exported for its unit test.
+ */
+export function buildParticipantHrIdOrFilter(ids: readonly string[]): string | null {
+  const values = usableHrIdFilterValues(ids);
+  if (values.length === 0) return null;
+  const list = quotedInList(values);
+  return `agent_hr_id.in.(${list}),double_hr_id.in.(${list})`;
+}
+
+/**
+ * The one participant `or` the door applies: the CRM-id half, the hr-id half, or both joined into a
+ * single expression so they UNION. With only `participantCrmIds` supplied this is exactly
+ * {@link buildParticipantCrmIdOrFilter}, so every caller that predates the hr half reads the same
+ * rows as before. `null` means "no rows".
+ */
+export function buildParticipantOrFilter(filter: Pick<CrmVisitFilter, "participantCrmIds" | "participantHrIds">): string | null {
+  const parts = [
+    filter.participantCrmIds != null ? buildParticipantCrmIdOrFilter(filter.participantCrmIds) : null,
+    filter.participantHrIds != null ? buildParticipantHrIdOrFilter(filter.participantHrIds) : null,
+  ].filter((part): part is string => part != null);
+  return parts.length > 0 ? parts.join(",") : null;
+}
+
+/** True when a participant filter was supplied but can match nobody. */
 function participantFilterMatchesNobody(filter: CrmVisitFilter): boolean {
-  return filter.participantCrmIds != null && buildParticipantCrmIdOrFilter(filter.participantCrmIds) === null;
+  return (
+    (filter.participantCrmIds != null || filter.participantHrIds != null) && buildParticipantOrFilter(filter) === null
+  );
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape; the
@@ -464,13 +526,21 @@ export function applyVisitFilter(
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.doubleHrIds && filter.doubleHrIds.length > 0) result = result.in("double_hr_id", expandHrIdFilterValues(filter.doubleHrIds));
   if (filter.visitTypes && filter.visitTypes.length > 0) result = result.in("visit_type", [...filter.visitTypes]);
-  if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
+  // A real partner is a partner crm id that is not the `0` sentinel, OR — on a Phoenix native row only
+  // — a resolved partner hr id. The hr half exists for the CRM cutover: a native double visit with a
+  // partner who has no CRM id carries `double_hr_id` and a NULL `double_crm_id`, and the crm-only test
+  // dropped every one of them from Double Visit Analytics. It is limited to `source = phoenix` because
+  // a vendor row can carry a stray resolved hr id beside a null or 0 partner, which is not a double
+  // visit (employee-360 audit finding A; the same rule as isCrmDoubleVisitRow).
+  if (filter.doubleOnly) {
+    result = result.or("and(source.eq.phoenix,double_hr_id.not.is.null),and(double_crm_id.not.is.null,double_crm_id.neq.0)");
+  }
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
   if (filter.requireDoubleHrId) result = result.not("double_hr_id", "is", null);
   if (filter.contactCrmIds && filter.contactCrmIds.length > 0) result = result.in("contact_crm_id", [...filter.contactCrmIds]);
   if (filter.requireDoubleCrmId) result = result.not("double_crm_id", "is", null);
-  if (filter.participantCrmIds != null) {
-    const participantOr = buildParticipantCrmIdOrFilter(filter.participantCrmIds);
+  if (filter.participantCrmIds != null || filter.participantHrIds != null) {
+    const participantOr = buildParticipantOrFilter(filter);
     // Fail CLOSED: a supplied-but-unusable id list must never silently drop the filter and widen
     // the read to every row. The doors short-circuit this case before querying; this is the backstop.
     result = participantOr ? result.or(participantOr) : result.in("agent_crm_id", []);
@@ -806,6 +876,13 @@ export type CrmCheckinFilter = {
   /** Case-insensitive exact match on the resolved agent hr id (`agent_hr_id ILIKE`) — see the
    * visit-filter note. */
   agentHrIdILike?: string;
+  /**
+   * Check-ins by EITHER a CRM id OR an hr id (`agent_crm_id IN crmIds OR agent_hr_id IN hrIds`), the
+   * hr half matched case-insensitively. For a set of agents where some have a CRM id and some — reps
+   * hired after the CRM cutover — have only an hr id: `agentCrmIds` and `agentHrIds` together would
+   * AND, and find nobody. No usable id in either list → no rows.
+   */
+  agentCrmOrHrIds?: { crmIds?: readonly number[]; hrIds?: readonly string[] };
   /** Inclusive `check_date` lower bound as a date (YYYY-MM-DD); expanded to `T00:00:00`. */
   dateFrom?: string;
   /** Inclusive `check_date` upper bound as a date (YYYY-MM-DD); expanded to `T23:59:59`. */
@@ -826,10 +903,23 @@ type CheckinFilterableQuery = {
   ilike: (...args: any[]) => CheckinFilterableQuery;
   in: (...args: any[]) => CheckinFilterableQuery;
   not: (...args: any[]) => CheckinFilterableQuery;
+  or: (...args: any[]) => CheckinFilterableQuery;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-function applyCheckinFilter(
+/** PostgREST `or` expression for {@link CrmCheckinFilter.agentCrmOrHrIds}; `null` means no rows.
+ * Pure, exported for its unit test. */
+export function buildAgentCrmOrHrIdOrFilter(ids: { crmIds?: readonly number[]; hrIds?: readonly string[] }): string | null {
+  const crmIds = Array.from(new Set((ids.crmIds ?? []).map((id) => Number(id)).filter((id) => Number.isFinite(id))));
+  const hrValues = usableHrIdFilterValues(ids.hrIds ?? []);
+  const parts: string[] = [];
+  if (crmIds.length > 0) parts.push(`agent_crm_id.in.(${crmIds.join(",")})`);
+  if (hrValues.length > 0) parts.push(`agent_hr_id.in.(${quotedInList(hrValues)})`);
+  return parts.length > 0 ? parts.join(",") : null;
+}
+
+/** Exported for its unit test only — callers use {@link queryCheckins}. */
+export function applyCheckinFilter(
   query: CheckinFilterableQuery,
   filter: CrmCheckinFilter,
   excludedInList: string = CRM_RESIGNED_IN_LIST,
@@ -840,6 +930,11 @@ function applyCheckinFilter(
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
+  if (filter.agentCrmOrHrIds) {
+    const identityOr = buildAgentCrmOrHrIdOrFilter(filter.agentCrmOrHrIds);
+    // Fail CLOSED, as the visit door's participant filter does: never widen to every check-in.
+    result = identityOr ? result.or(identityOr) : result.in("agent_crm_id", []);
+  }
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
   if (filter.dateTo) result = result.lte("check_date", `${filter.dateTo}T23:59:59`);
   if (filter.bounds) {
@@ -888,6 +983,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
+  if (options.agentCrmOrHrIds && buildAgentCrmOrHrIdOrFilter(options.agentCrmOrHrIds) === null) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
 
@@ -1065,7 +1161,13 @@ function applyVisitsReportFilters(
   return result;
 }
 
-type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string; address: string | null };
+type NearestCheckinRow = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  check_date: string;
+  address: string | null;
+};
 
 /**
  * Best-effort GPS check-in correlation via the shared CRM matcher (see crm/checkin-match.ts): for
@@ -1076,20 +1178,33 @@ type NearestCheckinRow = { agent_crm_id: number | null; contact_crm_id: number |
  */
 async function attachNearestCheckins(rows: VisitsReportRow[], dateFrom: string, dateTo: string): Promise<VisitsReportRow[]> {
   if (rows.length === 0) return rows;
-  const agentIds = Array.from(new Set(rows.map((row) => row.agentCrmId)));
+  // `mapVisitRow` turns a NULL `agent_crm_id` into 0 (`Number(null)`), and 0 is no agent. A rep
+  // hired after the CRM cutover has no CRM id, so his check-ins are found by hr id instead.
+  const crmOf = (row: VisitsReportRow): number | null =>
+    Number.isFinite(row.agentCrmId) && row.agentCrmId !== 0 ? row.agentCrmId : null;
+  const agentIds = Array.from(new Set(rows.map(crmOf).filter((id): id is number => id != null)));
+  const agentHrIds = Array.from(
+    new Set(rows.filter((row) => crmOf(row) == null && row.agentHrId).map((row) => String(row.agentHrId))),
+  );
   // Full keyset scan via queryCheckins — every check-in for these agents in the window, so the
   // nearest-check-in correlation is complete (no silent 20k cap).
   const checkinRows = await queryCheckins<NearestCheckinRow>({
-    agentCrmIds: agentIds,
+    agentCrmOrHrIds: { crmIds: agentIds, hrIds: agentHrIds },
     dateFrom,
     dateTo,
-    columns: "agent_crm_id, contact_crm_id, check_date, address",
+    columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date, address",
   });
 
   const index = indexCheckinsByAgentContactDay(checkinRows);
   return rows.map((row) => {
     const match = pickCheckinForVisit(
-      { agentCrmId: row.agentCrmId, contactCrmId: row.contactCrmId, visitDay: row.visitDate, crmSaveDate: row.crmSaveDate },
+      {
+        agentCrmId: crmOf(row),
+        agentHrId: row.agentHrId,
+        contactCrmId: row.contactCrmId,
+        visitDay: row.visitDate,
+        crmSaveDate: row.crmSaveDate,
+      },
       index,
     );
     if (!match) return row;

@@ -9,7 +9,8 @@
  *   15 A rep plans a WEEK: rep × doctor × day.
  *   16 The rep's district manager verifies the plan or returns it, with a note. The system never
  *      verifies, and nobody verifies on the manager's behalf.
- *   17 One line for one week — the same pilot row the visit form reads.
+ *   17 One line for one week — the same pilot row the visit form reads — until the CRM cutover date,
+ *      from which every line plans here at once (the owner, 2026-09-13).
  *
  * And the audit's §6.3 trap: a vendor re-save issues NEW entry ids, so `plannedCalls` counted entries.
  * A native item has ONE row, and one id, per rep, doctor and day for good. Dropping a doctor marks the
@@ -18,7 +19,7 @@
 
 import { addDaysIso } from "@/lib/crm/dates";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { isNativeVisitPilotDay, nativeVisitShiftRefusal, type NativeVisitPilot, type NativeVisitShift } from "@/lib/crm/native-visits/rules";
+import { isNativeEntryDay, nativeVisitShiftRefusal, type NativeEntryGate, type NativeVisitShift } from "@/lib/crm/native-visits/rules";
 
 export type NativePlanStatus = "draft" | "submitted" | "verified" | "returned";
 export type NativePlanDecision = "verified" | "returned";
@@ -68,19 +69,19 @@ export function nativePlanDayShifts(isoDay: string): NativeVisitShift[] {
 }
 
 /**
- * The weeks a rep may open: this field week and the next one, and only where they still have a pilot
- * day ahead. A week that has fully passed is never offered.
+ * The weeks a rep may open: this field week and the next one, and only where they still have an open
+ * day ahead — a pilot day, or a day on or after the CRM cutover. A week that has fully passed is never
+ * offered. So the first cutover week can be planned throughout the week before it.
  */
-export function nativePlanOpenWeeks(pilot: NativeVisitPilot | null, cairoToday: string): string[] {
-  if (!pilot) return [];
+export function nativePlanOpenWeeks(gate: NativeEntryGate, cairoToday: string): string[] {
   const thisWeek = nativePlanWeekStart(cairoToday);
-  return [thisWeek, addDaysIso(thisWeek, 7)].filter((weekStart) => nativePlanEditableDays(pilot, weekStart, cairoToday).length > 0);
+  return [thisWeek, addDaysIso(thisWeek, 7)].filter((weekStart) => nativePlanEditableDays(gate, weekStart, cairoToday).length > 0);
 }
 
-/** The days of a week a rep may still change: pilot days from today on. A past day is fixed. */
-export function nativePlanEditableDays(pilot: NativeVisitPilot | null, weekStart: string, cairoToday: string): string[] {
-  if (!pilot || !isNativePlanWeekStart(weekStart)) return [];
-  return nativePlanWeekDays(weekStart).filter((day) => day >= cairoToday && isNativeVisitPilotDay(pilot, day));
+/** The days of a week a rep may still change: open days from today on. A past day is fixed. */
+export function nativePlanEditableDays(gate: NativeEntryGate, weekStart: string, cairoToday: string): string[] {
+  if (!isNativePlanWeekStart(weekStart)) return [];
+  return nativePlanWeekDays(weekStart).filter((day) => day >= cairoToday && isNativeEntryDay(gate, day));
 }
 
 // ── Items ───────────────────────────────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ export function nativePlanLockedDayRefusal(
 ): string | null {
   const editable = new Set(editableDays);
   if (changedDays(diff).some((day) => !editable.has(day))) {
-    return "A day that has passed, or a day outside the pilot, cannot be changed.";
+    return "A day that has passed, or a day not yet open for planning in Phoenix, cannot be changed.";
   }
   return null;
 }

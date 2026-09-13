@@ -50,6 +50,7 @@ import { getRepsListForAgent } from "@/lib/crm/reps-list";
 import { buildRepsCascade, type RepsListRep } from "@/lib/crm/reps-list-board";
 import type { CoverageFilterOptions, CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 import type { CrmManagerScope } from "@/lib/crm/manager-scope";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** A rep card on this tab: the Reps List card plus what he filed for the chosen week. */
 export type RepsWeeklyPlanRep = RepsListRep & {
@@ -136,6 +137,42 @@ export function foldRepPlanStatus(plans: readonly { status: number | null }[]): 
   );
 }
 
+/** The canonical hr id of a plan's owner, for a plan that carries NO CRM id; null otherwise. */
+function newHirePlanKey(plan: Pick<PlanSummary, "agentCrmId" | "agentHrId">): string | null {
+  return plan.agentCrmId == null ? canonicalHrIdKey(plan.agentHrId ?? null) : null;
+}
+
+/**
+ * The week's plans, grouped so each rep card finds its own.
+ *
+ * A plan with a CRM id is matched on the NUMERIC agent id, as it always was. A rep hired after the
+ * CRM cutover has no CRM id, so the plans he files in Phoenix carry only his hr id; those are matched
+ * on the CANONICAL hr id — trimmed, lower-cased, aliases folded — so the mixed casing that rules out
+ * a raw hr-id join cannot under-return here.
+ */
+export function indexWeekPlansByRep(
+  weekPlans: readonly PlanSummary[],
+): (rep: Pick<RepsListRep, "agentCrmId" | "hrId">) => PlanSummary[] {
+  const plansByAgent = new Map<number, PlanSummary[]>();
+  const plansByNewHire = new Map<string, PlanSummary[]>();
+  for (const plan of weekPlans) {
+    const hrKey = newHirePlanKey(plan);
+    if (hrKey) {
+      const bucket = plansByNewHire.get(hrKey);
+      if (bucket) bucket.push(plan);
+      else plansByNewHire.set(hrKey, [plan]);
+    } else if (plan.agentCrmId != null) {
+      const bucket = plansByAgent.get(plan.agentCrmId);
+      if (bucket) bucket.push(plan);
+      else plansByAgent.set(plan.agentCrmId, [plan]);
+    }
+  }
+  return (rep) => {
+    const byHrId = plansByNewHire.get(canonicalHrIdKey(rep.hrId) ?? "") ?? [];
+    return rep.agentCrmId == null ? [...byHrId] : [...(plansByAgent.get(rep.agentCrmId) ?? []), ...byHrId];
+  };
+}
+
 export async function getRepsWeeklyPlansBoard(input: {
   params: RepsWeeklyPlansParams;
   scope: CrmManagerScope;
@@ -179,18 +216,14 @@ export async function getRepsWeeklyPlansBoard(input: {
   // ONE read for the whole week across the viewer's reach, then matched in memory on the NUMERIC
   // agent id. Never on `agent_hr_id`: hr ids are mixed case in this database, and an under-returning
   // join here would tell a district manager his rep filed nothing — an accusation, and the worst
-  // direction for this particular error to fall in.
+  // direction for this particular error to fall in. The one exception is a plan with NO CRM id (a rep
+  // hired after the cutover), matched on the canonical hr id — see `indexWeekPlansByRep`.
   const weekPlans = await getWeeklyPlansForWeek({ scope: input.scope, weekEnd: week.end, weekStart: week.start });
 
-  const plansByAgent = new Map<number, PlanSummary[]>();
-  for (const plan of weekPlans) {
-    const bucket = plansByAgent.get(plan.agentCrmId);
-    if (bucket) bucket.push(plan);
-    else plansByAgent.set(plan.agentCrmId, [plan]);
-  }
+  const plansFor = indexWeekPlansByRep(weekPlans);
 
   const withPlanStatus = (rep: RepsListRep): RepsWeeklyPlanRep => {
-    const filed = rep.agentCrmId == null ? [] : (plansByAgent.get(rep.agentCrmId) ?? []);
+    const filed = plansFor(rep);
     return {
       ...rep,
       planStatus: foldRepPlanStatus(filed),
@@ -218,19 +251,18 @@ export async function getRepsWeeklyPlansBoard(input: {
     ? (allReps.find((rep) => rep.repKey === cascade.selected?.repKey) ?? null)
     : null;
 
-  const plans =
-    selected?.agentCrmId == null
-      ? []
-      : [...(plansByAgent.get(selected.agentCrmId) ?? [])]
-          .map((plan) => ({ ...plan, repName: selected.name }))
-          .sort((left, right) => {
-            // Pending first — this tab exists to clear a backlog, and the owner's standing rule is
-            // that a screen answers its own question without the reader sorting it.
-            const leftPending = (left.status ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW ? 0 : 1;
-            const rightPending = (right.status ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW ? 0 : 1;
-            if (leftPending !== rightPending) return leftPending - rightPending;
-            return (left.firstDate ?? "").localeCompare(right.firstDate ?? "");
-          });
+  const plans = !selected
+    ? []
+    : plansFor(selected)
+        .map((plan) => ({ ...plan, repName: selected.name }))
+        .sort((left, right) => {
+          // Pending first — this tab exists to clear a backlog, and the owner's standing rule is
+          // that a screen answers its own question without the reader sorting it.
+          const leftPending = (left.status ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW ? 0 : 1;
+          const rightPending = (right.status ?? PLAN_STATUS_NEW) === PLAN_STATUS_NEW ? 0 : 1;
+          if (leftPending !== rightPending) return leftPending - rightPending;
+          return (left.firstDate ?? "").localeCompare(right.firstDate ?? "");
+        });
 
   // A hand-typed plan id the rep does not own resolves to nothing, exactly as if it did not exist.
   // `plans` is already both scope-restricted and rep-restricted, so membership of it IS the check.
@@ -275,10 +307,17 @@ export async function getRepsWeeklyPlansBoard(input: {
   const [entries, contactList, actuals] = selectedPlan
     ? await Promise.all([
         getPlanEntries(selectedPlan.crmPlanId, selectedPlan.agentCrmId),
-        getRepsListForAgent(selectedPlan.agentCrmId, cascade.repNameByAgentId).catch(() => null),
-        selectedPlan.agentCrmId != null && selectedPlan.firstDate && selectedPlan.lastDate
+        // A rep with a CRM id keeps the CRM-account read he always had; a rep hired without one is
+        // found by his hr id, through the object form.
+        getRepsListForAgent(
+          selectedPlan.agentCrmId ?? { agentCrmId: null, hrId: selectedPlan.agentHrId },
+          cascade.repNameByAgentId,
+        ).catch(() => null),
+        selectedPlan.firstDate && selectedPlan.lastDate
           ? loadPlanActuals({
               agentCrmId: selectedPlan.agentCrmId,
+              // Read only when the CRM id is null. With neither id, loadPlanActuals answers null itself.
+              agentHrId: selectedPlan.agentHrId,
               dateFrom: selectedPlan.firstDate,
               dateTo: selectedPlan.lastDate,
               // The board's OWN today, which a test can pin — never a second clock read. Two reads of

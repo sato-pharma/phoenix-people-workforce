@@ -11,7 +11,8 @@
  * field of the request. A partner decides only a row naming HIM, and only for a rep beneath him
  * (scope runs downward only). Nothing here decides anything on anyone's behalf.
  *
- * WHEN. Only the pilot line, only on pilot days, only today or yesterday (Cairo).
+ * WHEN. Only today or yesterday (Cairo), and only on an open day: before the CRM cutover a pilot day of
+ * the rep's own line; from the cutover date on, every day, for every rep of every line at once.
  */
 
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
@@ -22,12 +23,16 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import {
   NATIVE_VISIT_DELETE_REASON_MAX,
   NATIVE_VISIT_TYPES,
-  isNativeVisitPilotDay,
+  isNativeEntryDay,
+  isNativeEntryOffered,
+  isOnOrAfterNativeCutover,
+  nativeDayLabel,
   nativePartnerDecisionRefusal,
   nativeVisitDeleteRefusal,
   nativeVisitEntryDays,
+  nativeVisitManagerSinglePartnerRefusal,
   nativeVisitPartnerRefusal,
-  nativeVisitPilotForLine,
+  nativeVisitPlannedContactIds,
   nativeVisitPlanRefusal,
   nativeVisitShiftRefusal,
   nativeVisitType,
@@ -45,10 +50,13 @@ import {
   isMissingTable,
   isUniqueViolation,
   loadDirectory,
+  loadEntryGate,
   loadPilots,
   loadRepContacts,
+  loadTeamContacts,
   managementChain,
   requireActiveSelf,
+  type Directory,
 } from "@/lib/crm/native-visits/server-shared";
 import {
   CRM_NATIVE_PLAN_ITEMS_TABLE,
@@ -67,7 +75,7 @@ import type {
   NativeVisitSaveResult,
 } from "@/lib/crm/native-visits/types";
 import { vacationDayWorkRefusalForRep } from "@/lib/crm/native-visits/vacation-days";
-import { isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
+import { isActiveDirectoryEmployee, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -133,6 +141,60 @@ async function findPlanItem(
   return { id: String(row.id), planStatus: String((plan as Record<string, unknown> | null)?.status ?? "") };
 }
 
+/**
+ * A district manager's entry is his rare single visit without the rep (the owner, 2026-09-14): he holds
+ * create beside approve, and approve is what marks him. A rep never holds approve.
+ */
+async function isManagerSingleEntry(access: AccessContext): Promise<boolean> {
+  return canAccess(access, "crm_visit_entry", "approve");
+}
+
+/** The doctors this entry may name: a rep's own lists, or the union of a district manager's reps' lists. */
+function loadEntryContacts(managerSingle: boolean, rep: EmployeeDirectoryRow, directory: Directory) {
+  return managerSingle ? loadTeamContacts(rep, directory) : loadRepContacts(rep);
+}
+
+/**
+ * For each open day the plan rule reaches (on or after the cutover date), the doctors planned that day
+ * in a verified week plan. Null when the rule reaches none of the days, so the form filters nothing.
+ */
+async function loadPlannedContactIdsByDay(
+  hrId: string,
+  openDays: readonly string[],
+  cutoverDate: string | null,
+): Promise<Record<string, number[]> | null> {
+  const ruleDays = cutoverDate ? openDays.filter((day) => day >= cutoverDate) : [];
+  if (ruleDays.length === 0) return null;
+  const out: Record<string, number[]> = Object.fromEntries(ruleDays.map((day) => [day, [] as number[]]));
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(CRM_NATIVE_PLAN_ITEMS_TABLE)
+    .select("contact_crm_id,plan_date,plan_id")
+    .in("hr_id", hrIdLookupKeys(hrId))
+    .in("plan_date", ruleDays)
+    .is("removed_at", null);
+  if (error) {
+    if (isMissingTable(error)) return out;
+    throw error;
+  }
+  const items = (data ?? []) as Array<Record<string, unknown>>;
+  const planIds = Array.from(new Set(items.map((row) => String(row.plan_id))));
+  const statusByPlan = new Map<string, string>();
+  for (const ids of chunk(planIds)) {
+    const { data: plans, error: planError } = await supabase.from(CRM_NATIVE_PLANS_TABLE).select("id,status").in("id", ids);
+    if (planError) throw planError;
+    for (const plan of (plans ?? []) as Array<Record<string, unknown>>) statusByPlan.set(String(plan.id), String(plan.status ?? ""));
+  }
+  const planned = items.map((row) => ({
+    contactCrmId: Number(row.contact_crm_id),
+    planDate: String(row.plan_date),
+    planStatus: statusByPlan.get(String(row.plan_id)) ?? "",
+  }));
+  for (const day of ruleDays) out[day] = nativeVisitPlannedContactIds(planned, day);
+  return out;
+}
+
 async function recordEvent(visitId: string, event: string, actorHrId: string | null, detail: Record<string, unknown>) {
   const { error } = await getSupabaseAdmin()
     .from(CRM_NATIVE_VISIT_EVENTS_TABLE)
@@ -144,29 +206,43 @@ async function recordEvent(visitId: string, event: string, actorHrId: string | n
 
 export async function getNativeVisitFormOptions(access: AccessContext): Promise<NativeVisitFormOptions> {
   await assertPermission(access, "crm_visit_entry", "create");
-  const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+  const [directory, pilots, managerSingle] = await Promise.all([loadDirectory(), loadPilots(), isManagerSingleEntry(access)]);
   const rep = requireActiveSelf(access, directory);
-  const pilot = nativeVisitPilotForLine(rep.lineName, pilots);
-  const entryDays = nativeVisitEntryDays(cairoTodayIso());
-  const openDays = [entryDays.today, entryDays.yesterday].filter((day) => isNativeVisitPilotDay(pilot, day));
+  const gate = await loadEntryGate(rep.lineName, pilots);
+  const { pilot } = gate;
+  const cairoToday = cairoTodayIso();
+  const entryDays = nativeVisitEntryDays(cairoToday);
+  const openDays = [entryDays.today, entryDays.yesterday].filter((day) => isNativeEntryDay(gate, day));
+  const offered = isNativeEntryOffered(gate, cairoToday);
+
+  let contacts: NativeVisitContactOption[] = [];
+  let plannedContactIdsByDay: Record<string, number[]> | null = null;
+  if (offered) {
+    [contacts, plannedContactIdsByDay] = await Promise.all([
+      loadEntryContacts(managerSingle, rep, directory),
+      managerSingle ? Promise.resolve(null) : loadPlannedContactIdsByDay(rep.hrId, openDays, gate.cutoverDate),
+    ]);
+  }
 
   return {
     pilot: pilot ? { lineName: pilot.lineName, startsOn: pilot.startsOn, endsOn: pilot.endsOn } : null,
+    cutoverDate: gate.cutoverDate,
+    phoenixIsRecord: isOnOrAfterNativeCutover(gate, cairoToday),
     entryDays,
     openDays,
     types: NATIVE_VISIT_TYPES.map((type) => ({ key: type.key, label: type.label, contact: type.contact })),
-    contacts: pilot ? await loadRepContacts(rep) : [],
-    partners: pilot ? managementChain(rep, directory) : [],
-    vacationDayRuleInForce: await getCrmCutoverSetting().then(
-      (setting) => setting.cutoverDate != null,
-      () => false,
-    ),
+    contacts,
+    // A manager's single visit names nobody accompanying him.
+    partners: offered && !managerSingle ? managementChain(rep, directory) : [],
+    vacationDayRuleInForce: gate.cutoverDate != null,
+    entryAs: managerSingle ? "manager" : "rep",
+    plannedContactIdsByDay,
   };
 }
 
 /** What the My Visits page offers this viewer. Never throws — the page must render without it. */
 export async function getNativeVisitEntryAvailability(access: AccessContext): Promise<NativeVisitEntryAvailability> {
-  const none: NativeVisitEntryAvailability = { canLog: false, canConfirm: false, pendingConfirmations: 0 };
+  const none: NativeVisitEntryAvailability = { canLog: false, canConfirm: false, pendingConfirmations: 0, pilotOnly: true };
   try {
     const [mayCreate, mayApprove] = await Promise.all([
       canAccess(access, "crm_visit_entry", "create"),
@@ -175,13 +251,19 @@ export async function getNativeVisitEntryAvailability(access: AccessContext): Pr
     if (!mayCreate && !mayApprove) return none;
 
     let canLog = false;
+    let pilotOnly = true;
     if (mayCreate) {
       const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
       const key = canonicalHrIdKey(access.hrId);
       const rep = key ? directory.byKey.get(key) : undefined;
-      const pilot = rep && isActiveDirectoryEmployee(rep) ? nativeVisitPilotForLine(rep.lineName, pilots) : null;
-      // Offered from the day the pilot row exists until its last day; the form says when it opens.
-      canLog = Boolean(pilot && cairoTodayIso() <= pilot.endsOn);
+      if (rep && isActiveDirectoryEmployee(rep)) {
+        const gate = await loadEntryGate(rep.lineName, pilots);
+        const cairoToday = cairoTodayIso();
+        // Offered once a pilot row or a cutover date exists; the form says when it opens.
+        canLog = isNativeEntryOffered(gate, cairoToday);
+        // Once a cutover date is set, entry here is for everyone, not a pilot.
+        pilotOnly = gate.cutoverDate == null;
+      }
     }
 
     let pendingConfirmations = 0;
@@ -194,7 +276,7 @@ export async function getNativeVisitEntryAvailability(access: AccessContext): Pr
       if (!error) pendingConfirmations = count ?? 0;
     }
 
-    return { canLog, canConfirm: mayApprove && pendingConfirmations > 0, pendingConfirmations };
+    return { canLog, canConfirm: mayApprove && pendingConfirmations > 0, pendingConfirmations, pilotOnly };
   } catch {
     return none;
   }
@@ -205,16 +287,21 @@ export async function getNativeVisitEntryAvailability(access: AccessContext): Pr
 export async function createNativeVisit(access: AccessContext, raw: unknown): Promise<NativeVisitSaveResult> {
   await assertPermission(access, "crm_visit_entry", "create");
   const supabase = getSupabaseAdmin();
-  const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+  const [directory, pilots, managerSingle] = await Promise.all([loadDirectory(), loadPilots(), isManagerSingleEntry(access)]);
   const rep = requireActiveSelf(access, directory);
 
   const parsed = parseNativeVisitDraft(raw, { cairoToday: cairoTodayIso(), now: new Date() });
   if (!parsed.ok) throw validationError(parsed.error);
   const draft = parsed.value;
 
-  const pilot = nativeVisitPilotForLine(rep.lineName, pilots);
-  if (!isNativeVisitPilotDay(pilot, draft.visitDate)) {
-    throw forbiddenError("Forbidden: visit entry in Phoenix is open only to the pilot line, on the pilot days.");
+  const gate = await loadEntryGate(rep.lineName, pilots);
+  const { pilot } = gate;
+  if (!isNativeEntryDay(gate, draft.visitDate)) {
+    throw forbiddenError(
+      gate.cutoverDate
+        ? `Forbidden: visits are entered in Phoenix from ${nativeDayLabel(gate.cutoverDate)}. Enter an earlier day in iReports360.`
+        : "Forbidden: visit entry in Phoenix is open only to the pilot line, on the pilot days.",
+    );
   }
 
   // A resend from the offline queue answers with the visit it already saved.
@@ -232,13 +319,16 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
     return { visitId: String(row.id), duplicate: true, gpsStatus: row.gps_status as NativeVisitGpsStatus };
   }
 
-  const selfPartner = nativeVisitPartnerRefusal(rep.hrId, draft.partnerHrIds);
+  const selfPartner =
+    nativeVisitPartnerRefusal(rep.hrId, draft.partnerHrIds) ??
+    nativeVisitManagerSinglePartnerRefusal(managerSingle, draft.partnerHrIds);
   if (selfPartner) throw validationError(selfPartner);
 
-  // The contact must be on this rep's own open AM or PM list, and its list decides the half-day.
+  // The contact must be on this rep's own open AM or PM list (a district manager's single visit: on one
+  // of his reps' lists), and its list decides the half-day.
   let contact: NativeVisitContactOption | null = null;
   if (draft.contactCrmId != null) {
-    const contacts = await loadRepContacts(rep);
+    const contacts = await loadEntryContacts(managerSingle, rep, directory);
     contact = contacts.find((option) => option.contactCrmId === draft.contactCrmId) ?? null;
     const shiftRefusal = nativeVisitShiftRefusal(draft, contact?.lists ?? []);
     if (shiftRefusal) throw validationError(shiftRefusal);
@@ -287,7 +377,7 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   const [seatId, partnerRoles, planItem, cutover] = await Promise.all([
     loadSeatId(rep.hrId),
     Promise.all(partners.map((partner) => loadAppRole(partner.hrId))),
-    type.key === "regular" && draft.contactCrmId != null
+    type.key === "regular" && draft.contactCrmId != null && !managerSingle
       ? findPlanItem(rep.hrId, draft.contactCrmId, draft.visitDate)
       : Promise.resolve(null),
     type.key === "regular" ? getCrmCutoverSetting() : Promise.resolve(null),
@@ -295,10 +385,12 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
 
   // The owner, 2026-09-13: from the CRM cutover a doctor visit is a doctor on the rep's list AND
   // planned on that very day, in a week plan his manager verified. Dormant while the date is null.
+  // A district manager's single visit files no plan, so the rule does not reach it (2026-09-14).
   const planRefusal = nativeVisitPlanRefusal({
     ruleActive: cutover != null && isOnOrAfterCrmCutover(cutover, draft.visitDate),
     visitTypeKey: type.key,
     planItem,
+    managerSingleVisit: managerSingle,
   });
   if (planRefusal) throw forbiddenError(`Forbidden: ${planRefusal}`);
   const planItemId = planItem?.id ?? null;
