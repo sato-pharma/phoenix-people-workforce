@@ -30,7 +30,8 @@ import {
   getEffectiveExcludedAgentCrmIds,
   queryCheckins,
 } from "@/lib/crm/reads";
-import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { getCrmCutoverSetting, isOnOrAfterCrmCutover, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
+import { CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
 export type IReports360RepDayVisit = IReports360Visit & {
@@ -329,7 +330,7 @@ async function fetchRepDayFromMirror(
 ): Promise<IReports360RepDayResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from(CRM_VISITS_TABLE)
+    .from(CRM_VISITS_UNIFIED_VIEW)
     .select(
       "agent_crm_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
         "crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, " +
@@ -391,7 +392,15 @@ export async function getIReports360RepDayVisits(input: {
   if (!rep.crmId) return { checkins: [], rep, route: null, visits: [] };
   const agentId = Number(rep.crmId);
 
-  const wantLive = (input.preferLive ?? isRecentRepDay(day)) && isIReports360Configured();
+  // THE CRM CUTOVER. From the cutover date the day is Phoenix's own record, and after the vendor is
+  // retired there is no live CRM to ask — both read the unified view only. An unreadable setting falls
+  // back to no cutover, which is the pre-cutover behaviour and never hides a row.
+  const cutover = await getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER);
+  const wantLive =
+    (input.preferLive ?? isRecentRepDay(day)) &&
+    isIReports360Configured() &&
+    !cutover.vendorSyncRetiredAt &&
+    !isOnOrAfterCrmCutover(cutover, day);
   if (wantLive) {
     try {
       return await fetchRepDayFromLive(rep, agentId, day);

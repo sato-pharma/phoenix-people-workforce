@@ -4,7 +4,6 @@ import { isNationalSalesManager } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isHrIdInNsmTeamScope } from "@/lib/employee-portal/team-calendar";
 import { IReports360ApiError } from "@/lib/crm/client";
-import { isIReports360Configured } from "@/lib/crm/config";
 import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
 import { loadSingleEmployeeDayPunchSummary } from "@/lib/attendance/punch-minutes";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -46,14 +45,6 @@ export async function GET(request: Request) {
         message: "This rep is not in your line.",
         success: false,
       }, { status: 403 });
-    }
-
-    if (!isIReports360Configured()) {
-      return NextResponse.json({
-        error: "ireports360_not_configured",
-        message: "The iReports360 connection is not configured on the server.",
-        success: false,
-      }, { status: 503 });
     }
 
     const result = await getIReports360RepDayVisits({ date, hrId });

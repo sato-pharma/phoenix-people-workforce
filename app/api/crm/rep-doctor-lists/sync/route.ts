@@ -6,6 +6,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { isIReports360Configured } from "@/lib/crm/config";
+import { resolveVendorSyncStandDown, VENDOR_SYNC_RETIRED_MESSAGE } from "@/lib/crm/cutover";
 import { monthBounds, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
 import { assertRepDoctorListsAccess } from "@/lib/crm/rep-doctor-lists-access";
 import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
@@ -45,6 +46,13 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     assertRepDoctorListsAccess(access);
     await assertPermission(access, "crm_visits", "update");
+
+    // THE CRM CUTOVER. This pulls plans from iReports360; once it is retired, plans are filed in
+    // Phoenix and already on the board.
+    const standDown = await resolveVendorSyncStandDown();
+    if (standDown) {
+      return NextResponse.json({ error: VENDOR_SYNC_RETIRED_MESSAGE }, { status: 409 });
+    }
 
     if (!isIReports360Configured()) {
       return NextResponse.json(

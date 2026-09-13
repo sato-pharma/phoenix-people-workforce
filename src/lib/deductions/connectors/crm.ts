@@ -21,6 +21,7 @@
 
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 import { getAgentCrmIdentityRows, scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import type { CrmAgentIdentityRow } from "@/lib/crm/reads.ts";
 import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
@@ -748,6 +749,13 @@ export async function collectCrmCandidates(input: {
   month: number;
   year: number;
 }): Promise<DeductionsCandidateDraft[]> {
+  // OWNER DECISION 18 — CRM no-activity days are never charged in the month Phoenix replaced
+  // iReports360. That month's record is half vendor and half Phoenix, and a rep still learning the new
+  // screen must not lose pay to the switch. A FRESH read that throws when unreadable: the collector
+  // turns a throw into a warning before any ledger write, so an outage can never charge the month.
+  // Returning nothing also retracts any live candidates an earlier collection left for the month.
+  if (isCrmCutoverMonth(await readCrmCutoverSetting(), input)) return [];
+
   const monthStr = String(input.month).padStart(2, "0");
   const periodStart = `${input.year}-${monthStr}-01`;
   const periodEnd = `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;

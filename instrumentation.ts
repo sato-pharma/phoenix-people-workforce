@@ -37,6 +37,17 @@ export async function register() {
     } catch (error) {
       console.error("[early-birds:close] failed to start:", error);
     }
+
+    // The CRM housekeeping timer keeps the probation double-visit capture running after the CRM
+    // cutover stands the poller and the vendor crons down. Same host guards, no vendor credentials,
+    // and its own try for the same reason as the close above.
+    try {
+      const { startCrmHousekeepingScheduler } = await import("@/lib/crm/housekeeping-scheduler");
+      const result = startCrmHousekeepingScheduler();
+      if (!result.started) console.log(`[crm:housekeeping] not started: ${result.reason}`);
+    } catch (error) {
+      console.error("[crm:housekeeping] failed to start:", error);
+    }
   }
 }
 

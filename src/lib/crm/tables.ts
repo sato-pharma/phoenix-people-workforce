@@ -44,6 +44,23 @@ export const CRM_CONTACTS_TABLE = "ireports360_contacts";
  * `weekly-planning` module, which is an unrelated in-app feature with a confusingly similar name. */
 export const CRM_PLAN_ENTRIES_TABLE = "ireports360_plan_entries";
 
+/** The one CRM cutover setting (a single row): the first day Phoenix's own visits and plans are the
+ * record, and whether the vendor pulls have been stood down. See src/lib/crm/cutover.ts. */
+export const CRM_CUTOVER_TABLE = "crm_cutover";
+
+/** What the read door serves for VISITS: ireports360_visits before the cutover date, native visits on
+ * and after it. Identical to CRM_VISITS_TABLE's rows while no date is set. Carries `exclusion_crm_id`
+ * for the resigned-agent filter, because a native rep with no CRM id has a null agent_crm_id and
+ * `null not in (…)` would drop him from every read. */
+export const CRM_VISITS_UNIFIED_VIEW = "crm_visits_unified";
+
+/** CHECK-INS on the same date split; a native visit with a captured GPS fix is its own check-in. */
+export const CRM_CHECKINS_UNIFIED_VIEW = "crm_checkins_unified";
+
+/** PLAN ENTRIES on the same date split; native ids are negative so they never meet a vendor id. The
+ * plan VERIFICATION write path stays on CRM_PLAN_ENTRIES_TABLE — it writes back to the vendor. */
+export const CRM_PLAN_ENTRIES_UNIFIED_VIEW = "crm_plan_entries_unified";
+
 /** Phoenix's own CONTACT MASTER — one row per CRM contact, keyed on the CRM contact id, built from
  * the three read-only mirrors above. Unlike CRM_CONTACTS_TABLE it never forgets a contact. See
  * src/lib/crm/contact-master.ts. */

@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isIReports360Configured } from "@/lib/crm/config";
+import { resolveVendorSyncStandDown, VENDOR_SYNC_RETIRED_MESSAGE } from "@/lib/crm/cutover";
 import { IReports360ApiError } from "@/lib/crm/client";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { isPlanVerificationAction } from "@/lib/crm/plan-verification";
@@ -47,6 +48,13 @@ export async function POST(request: Request) {
     }
     await assertPermission(access, "crm_plans", "approve");
 
+    // THE CRM CUTOVER. This route writes a signature into iReports360; once it is retired there is no
+    // CRM to write into.
+    const standDown = await resolveVendorSyncStandDown();
+    if (standDown) {
+      return NextResponse.json({ error: VENDOR_SYNC_RETIRED_MESSAGE }, { status: 409 });
+    }
+
     if (!isIReports360Configured()) {
       return NextResponse.json(
         { error: "The iReports360 connection is not configured in this environment." },
@@ -56,6 +64,14 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as { action?: unknown; crmPlanId?: unknown };
     const crmPlanId = Number(body?.crmPlanId);
+    // A NEGATIVE id is a plan filed in Phoenix after the CRM cutover (crm_plan_entries_unified). It
+    // has no iReports360 record to sign, and it is decided on Phoenix's own plan review screen.
+    if (Number.isInteger(crmPlanId) && crmPlanId < 0) {
+      return NextResponse.json(
+        { error: "This plan was filed in Phoenix, so it is reviewed on Phoenix's plan review screen, not verified in iReports360." },
+        { status: 409 },
+      );
+    }
     if (!Number.isInteger(crmPlanId) || crmPlanId <= 0) {
       return NextResponse.json({ error: "Give the plan id to verify." }, { status: 400 });
     }

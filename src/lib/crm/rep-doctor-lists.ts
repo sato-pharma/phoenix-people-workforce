@@ -68,7 +68,7 @@
  * arithmetic — never Date-object parsing or ISO re-serialization, either of which shifts the clock.
  */
 
-import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
+import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import {
@@ -424,7 +424,7 @@ export async function scanPlanEntries(
     let offset = 0;
     for (;;) {
       let query = supabase
-        .from(CRM_PLAN_ENTRIES_TABLE)
+        .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
         .select(
           "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_region_name, plan_date, plan_status, speciality, synced_at",
         )
@@ -453,6 +453,7 @@ function isPlanSchemaMissing(error: unknown): boolean {
   const message = String((error as { message?: unknown })?.message ?? error ?? "").toLowerCase();
   return (
     message.includes(CRM_PLAN_ENTRIES_TABLE) ||
+    message.includes(CRM_PLAN_ENTRIES_UNIFIED_VIEW) ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
     (message.includes("relation") && message.includes("does not exist"))

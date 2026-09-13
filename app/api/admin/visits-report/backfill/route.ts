@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { syncIReports360Visits } from "@/lib/crm/sync";
+import { resolveVendorSyncStandDown, VENDOR_SYNC_RETIRED_MESSAGE } from "@/lib/crm/cutover";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -30,6 +31,12 @@ export async function POST(request: Request) {
         { error: "forbidden", message: "Only Super Admin can trigger a visits backfill.", success: false },
         { status: 403 },
       );
+    }
+
+    // THE CRM CUTOVER. A backfill pulls from iReports360; once it is retired there is nothing to pull.
+    const standDown = await resolveVendorSyncStandDown();
+    if (standDown) {
+      return NextResponse.json({ error: standDown, message: VENDOR_SYNC_RETIRED_MESSAGE, success: false }, { status: 409 });
     }
 
     const body = await request.json().catch(() => ({}));

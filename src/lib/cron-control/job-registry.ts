@@ -53,19 +53,22 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
   {
     gcpJobName: "phoenix-ireports360-sync",
     label: "iReports360 Visits Sync",
-    description: "Syncs field-visit check-ins from the iReports360 CRM three times a day.",
+    description:
+      "Backstop for the in-process CRM poller's rolling iReports360 sync; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
     route: "/api/cron/ireports360-visits-sync",
   },
   {
     gcpJobName: "phoenix-reconcile-visits",
     label: "iReports360 Wide Reconcile",
-    description: "Weekly full-window reconciliation of iReports360 visit data against the local mirror.",
+    description:
+      "Backstop for the in-process CRM poller's weekly full-window iReports360 reconciliation; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
     route: "/api/cron/ireports360-visits-reconcile",
   },
   {
     gcpJobName: "phoenix-ireports360-live-sync",
     label: "iReports360 Live Morning Sync",
-    description: "High-frequency same-day-only sync, 8:30 AM-12:01 PM Cairo, so CRM First Visit / Early Birds reflects a visit+check-in within minutes of submission during the compliance window.",
+    description:
+      "Backstop for the in-process CRM poller's same-day iReports360 pull, 8:30 AM-12:01 PM Cairo, so CRM First Visit / Early Birds reflects a visit+check-in within minutes; OFF at cron-job.org by design while the poller runs. Stands down (answers skipped) once the CRM cutover retires the vendor.",
     route: "/api/cron/ireports360-visits-live-sync",
   },
   {

@@ -95,6 +95,22 @@ export function resolveCrmVacationEmployee(input: {
   return person;
 }
 
+/**
+ * The key that ties one person's work rows to their vacation rows on the same day.
+ *
+ * The CRM slot when the row has one — every iReports360 row does, so vendor months key exactly as
+ * before. From the CRM cutover a visit filed in Phoenix by someone with no CRM slot (a new hire) has
+ * no `agent_crm_id`; keying on the slot alone skipped his rows entirely, so his half-day leave was
+ * never seen as mixed and was charged as a full day. Such a row keys on his canonical hr id instead,
+ * prefixed so it can never collide with a numeric slot.
+ */
+export function crmVacationPersonKey(agentCrmId: unknown, agentHrId: unknown): string {
+  const crmId = String(agentCrmId ?? "").trim();
+  if (crmId) return crmId;
+  const hrKey = canonicalHrIdKey(agentHrId == null ? null : String(agentHrId));
+  return hrKey ? `hr:${hrKey}` : "";
+}
+
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
@@ -481,10 +497,10 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   const workAmpmByDay = new Map<string, Set<string>>();
   const vacationAmpmByDay = new Map<string, Set<string>>();
   for (const visit of visits) {
-    const crmId = String(visit.agent_crm_id ?? "").trim();
+    const personKey = crmVacationPersonKey(visit.agent_crm_id, visit.agent_hr_id);
     const day = String(visit.visit_date ?? "").slice(0, 10);
-    if (!crmId || !day) continue;
-    const key = `${crmId}:${day}`;
+    if (!personKey || !day) continue;
+    const key = `${personKey}:${day}`;
     const ampm = String(visit.ampm ?? "").trim().toUpperCase();
     const bucket = Number(visit.visit_type) === CRM_ANNUAL_VACATION_VISIT_TYPE ? vacationAmpmByDay : workAmpmByDay;
     const set = bucket.get(key) ?? new Set<string>();
@@ -529,7 +545,7 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   // One entry per (employee, day): several -4 rows on one date is still one vacation day.
   const daysByHrId = new Map<
     string,
-    { name: string | null; hireDate: string | null; crmId: string; days: Set<string> }
+    { name: string | null; hireDate: string | null; personKey: string; days: Set<string> }
   >();
   for (const visit of (visitRows ?? []) as Array<{ agent_crm_id: unknown; agent_hr_id: unknown; visit_date: unknown }>) {
     const crmId = String(visit.agent_crm_id ?? "").trim();
@@ -553,7 +569,7 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     const entry = daysByHrId.get(employee.hrId) ?? {
       name: employee.name,
       hireDate: employee.hireDate,
-      crmId,
+      personKey: crmVacationPersonKey(visit.agent_crm_id, visit.agent_hr_id),
       days: new Set<string>(),
     };
     entry.days.add(day);
@@ -604,7 +620,7 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
       // Did this SAME day also carry real work? If so it is very likely a part
       // day, and it is flagged for the owner to confirm full/AM/PM rather than
       // charged at 1.00 on the connector's own authority.
-      const dayKey = `${entry.crmId}:${day}`;
+      const dayKey = `${entry.personKey}:${day}`;
       const workAmpm = [...(workAmpmByDay.get(dayKey) ?? [])].sort();
       const vacationAmpm = [...(vacationAmpmByDay.get(dayKey) ?? [])].sort();
       const isMixedDay = workAmpm.length > 0;

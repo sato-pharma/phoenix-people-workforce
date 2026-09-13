@@ -11,6 +11,7 @@
 // one at a time via `collectOneConnectorForMonth`.
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
+import { crmCutoverMonthDeductionNote, isCrmCutoverMonth, readCrmCutoverSetting } from "@/lib/crm/cutover.ts";
 
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
 import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
@@ -35,6 +36,24 @@ export type DeductionCollectorKey =
 export type MonthlyCollectionResult = Record<DeductionCollectorKey, CandidateDraftInsertResult>;
 
 type CollectorInput = { month: number; year: number; createdBy: string };
+
+/**
+ * Owner decision 18's visible half. The CRM connector returns nothing for the cutover month; this
+ * says WHY on the collection result, so "created 0" is never read as "every rep was active".
+ * Never throws: the connector already failed closed on an unreadable setting, and a note must not
+ * turn a finished reconcile into "connector failed".
+ */
+async function withCrmCutoverMonthNote(
+  result: CandidateDraftInsertResult,
+  period: { month: number; year: number },
+): Promise<CandidateDraftInsertResult> {
+  try {
+    if (!isCrmCutoverMonth(await readCrmCutoverSetting(), period)) return result;
+  } catch {
+    return result;
+  }
+  return { ...result, warnings: [...result.warnings, crmCutoverMonthDeductionNote(period)] };
+}
 
 type Collector = {
   key: DeductionCollectorKey;
@@ -213,7 +232,7 @@ export async function collectOneConnectorForMonth(
       });
     }
     if (collector.reconcilesSourceScope) {
-      return await reconcileCandidateDrafts({
+      const reconciled = await reconcileCandidateDrafts({
         createdBy,
         drafts,
         scope: {
@@ -223,6 +242,7 @@ export async function collectOneConnectorForMonth(
         },
         sourceLabel: collector.label,
       });
+      return collector.key === "crm" ? await withCrmCutoverMonthNote(reconciled, { month, year }) : reconciled;
     }
     return await insertCandidateDrafts({ createdBy, drafts, sourceLabel: collector.label });
   } catch (error) {

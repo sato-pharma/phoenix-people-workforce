@@ -60,7 +60,7 @@ import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-ins
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
-  CRM_CHECKINS_TABLE,
+  CRM_CHECKINS_UNIFIED_VIEW,
   CRM_CONTACTS_TABLE,
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
@@ -423,7 +423,7 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
     const chunk = ids.slice(from, from + IN_CHUNK);
     for (let page = 0; ; page += 1) {
       const { data, error } = await supabase
-        .from(CRM_CHECKINS_TABLE)
+        .from(CRM_CHECKINS_UNIFIED_VIEW)
         .select("contact_crm_id, agent_crm_id, lat, lon, address, check_date")
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
@@ -541,7 +541,7 @@ async function loadPinsFor(contactIds: readonly number[]): Promise<Map<number, {
   for (let from = 0; from < ids.length; from += IN_CHUNK) {
     const chunk = ids.slice(from, from + IN_CHUNK);
     const { data, error } = await supabase
-      .from(CRM_CHECKINS_TABLE)
+      .from(CRM_CHECKINS_UNIFIED_VIEW)
       .select("contact_crm_id, lat, lon, check_date")
       .in("contact_crm_id", chunk)
       .not("lat", "is", null)

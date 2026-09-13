@@ -85,7 +85,9 @@ export function runCrmParticipantFilterTests() {
   const defaultCalls: Call[] = [];
   applyVisitFilter(recordingQuery(defaultCalls), { participantCrmIds: [5] }, "(1,2)");
   assert.deepEqual(defaultCalls, [
-    ["not", "agent_crm_id", "in", "(1,2)"],
+    // exclusion_crm_id, not agent_crm_id: a native rep with no CRM id carries -1 there, where a null
+    // would make `not in` drop the row (see supabase/migrations/20260913230000_crm_cutover.sql).
+    ["not", "exclusion_crm_id", "in", "(1,2)"],
     ["or", "agent_crm_id.in.(5),double_crm_id.in.(5)"],
   ]);
 }

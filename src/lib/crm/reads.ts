@@ -11,7 +11,10 @@
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
-import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+// The doors read the cutover's UNIFIED VIEWS (vendor history before crm_cutover.cutover_date, Phoenix's
+// own rows from it). CRM_VISITS_TABLE stays for the two IDENTITY reads only — who a CRM id belonged
+// to is a fact about the vendor's records, not about visits in general.
+import { CRM_CHECKINS_UNIFIED_VIEW, CRM_VISITS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
@@ -453,7 +456,7 @@ export function applyVisitFilter(
   // Resigned/departed agents are invisible across every CRM read (single source). `excludedInList`
   // is the effective (static ∪ live) list; it defaults to the static safety-net for any caller that
   // has not resolved the live set.
-  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
+  if (excludedInList) result = result.not("exclusion_crm_id", "in", excludedInList);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.dateFrom) result = result.gte("visit_date", filter.dateFrom);
   if (filter.dateTo) result = result.lte("visit_date", filter.dateTo);
@@ -719,7 +722,7 @@ export async function queryVisits<T = CrmVisitRow>(
   const rows: T[] = [];
   let cursor: string | null = null;
   for (;;) {
-    let query = supabase.from(CRM_VISITS_TABLE).select(projection);
+    let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
     query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order("id", { ascending: true }).limit(pageSize);
     if (cursor) query = query.gt("id", cursor);
@@ -754,7 +757,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   const excludedInList = await getEffectiveExcludedInList();
   // See queryVisits: widen the projection so the collapse fingerprint columns are present.
   const limitedColumns = options.collapseDoubleVisits ? (withDuplicateDetectionColumns(options.columns ?? "*") ?? "*") : (options.columns ?? "*");
-  let query = supabase.from(CRM_VISITS_TABLE).select(limitedColumns);
+  let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(limitedColumns);
   query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
   query = query
     .order(options.orderBy ?? "visit_date", { ascending: options.ascending ?? false })
@@ -833,7 +836,7 @@ function applyCheckinFilter(
 ): CheckinFilterableQuery {
   let result = query;
   // Resigned/departed agents are invisible across every CRM read (single source). See applyVisitFilter.
-  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
+  if (excludedInList) result = result.not("exclusion_crm_id", "in", excludedInList);
   if (filter.agentCrmIds && filter.agentCrmIds.length > 0) result = result.in("agent_crm_id", [...filter.agentCrmIds]);
   if (filter.agentHrIds && filter.agentHrIds.length > 0) result = result.in("agent_hr_id", expandHrIdFilterValues(filter.agentHrIds));
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
@@ -889,7 +892,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
 
   if (options.limit != null) {
-    let query = supabase.from(CRM_CHECKINS_TABLE).select(options.columns ?? "*");
+    let query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(options.columns ?? "*");
     query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
     query = query.order(options.orderBy ?? "check_date", { ascending: options.ascending ?? true }).limit(options.limit);
     const { data, error } = await query;
@@ -906,7 +909,7 @@ export async function queryCheckins<T = CrmCheckinRow>(
   const seenIds = new Set<string>();
   let cursor: string | null = null;
   for (;;) {
-    let query = supabase.from(CRM_CHECKINS_TABLE).select(projection);
+    let query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(projection);
     query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
     // Secondary sort on the unique `id` makes the order within one timestamp deterministic.
     query = query.order("check_date", { ascending: true }).order("id", { ascending: true }).limit(pageSize);
@@ -1044,7 +1047,7 @@ function applyVisitsReportFilters(
   // Resigned/departed agents are invisible across every CRM read — the Visits Report is no exception,
   // so its totals reconcile with DV Analytics, FWC, probation, and the CRM master tab. `excludedInList`
   // is the effective (static ∪ live) list.
-  if (excludedInList) result = result.not("agent_crm_id", "in", excludedInList);
+  if (excludedInList) result = result.not("exclusion_crm_id", "in", excludedInList);
   if (filters.agentName) result = result.eq("agent_name", filters.agentName);
   if (filters.ampm) result = result.eq("ampm", filters.ampm);
   if (filters.visitType) result = result.eq("visit_type_description", filters.visitType);
@@ -1120,9 +1123,9 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select("id, agent_name")
-      .not("agent_crm_id", "in", excludedInList)
+      .not("exclusion_crm_id", "in", excludedInList)
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
       .order("id", { ascending: true })
@@ -1150,9 +1153,9 @@ async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select("id, visit_type_description")
-      .not("agent_crm_id", "in", excludedInList)
+      .not("exclusion_crm_id", "in", excludedInList)
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
       .order("id", { ascending: true })
@@ -1198,7 +1201,7 @@ export async function getVisitsReportData(
 
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
-  const baseQuery = supabase.from(CRM_VISITS_TABLE).select(visitReportColumns, { count: "exact" });
+  const baseQuery = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
@@ -1242,7 +1245,7 @@ export async function getVisitsReportExportRows(input: VisitsReportFilterInput):
 
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
-  const baseQuery = supabase.from(CRM_VISITS_TABLE).select(visitReportColumns, { count: "exact" });
+  const baseQuery = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(visitReportColumns, { count: "exact" });
   const filteredQuery = (applyVisitsReportFilters(baseQuery as unknown as ReportFilterableQuery, { ...input, dateFrom, dateTo }, excludedInList) as unknown as typeof baseQuery)
     .order("visit_date", { ascending: false })
     .order("crm_visit_id", { ascending: false })
@@ -1276,9 +1279,9 @@ export async function getVisitAgentNames(dateFrom: string, dateTo: string): Prom
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select("id, agent_name")
-      .not("agent_crm_id", "in", excludedInList)
+      .not("exclusion_crm_id", "in", excludedInList)
       .gte("visit_date", dateFrom)
       .lte("visit_date", dateTo)
       .order("id", { ascending: true })
@@ -1323,7 +1326,7 @@ export async function queryVisitsPage<T = CrmVisitRow>(options: {
 }): Promise<{ rows: T[]; count: number }> {
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
-  const baseQuery = supabase.from(CRM_VISITS_TABLE).select(options.columns, { count: "exact" });
+  const baseQuery = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(options.columns, { count: "exact" });
   let query = applyVisitFilter(baseQuery as unknown as VisitFilterableQuery, {
     dateFrom: options.dateFrom,
     dateTo: options.dateTo,
@@ -1362,8 +1365,8 @@ async function keysetScanVisitsForRange<T>(options: {
   let cursor: string | null = null;
   try {
     for (;;) {
-      let query = supabase.from(CRM_VISITS_TABLE).select(projection);
-      if (options.excludedInList) query = query.not("agent_crm_id", "in", options.excludedInList);
+      let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
+      if (options.excludedInList) query = query.not("exclusion_crm_id", "in", options.excludedInList);
       query = query
         .gte("visit_date", options.dateFrom)
         .lte("visit_date", options.dateTo)
@@ -1448,7 +1451,7 @@ export async function getMappedAgentHrIds(
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select("id, agent_hr_id")
       .in("agent_hr_id", expandHrIdFilterValues(hrIds))
       .order("id", { ascending: true })

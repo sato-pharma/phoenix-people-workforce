@@ -18,27 +18,31 @@ import { join, sep } from "node:path";
 // read door), so a new consumer file reaching the visits table directly must fail here.
 
 // `.from("ireports360_...")` — a raw string-literal mirror query.
+//
+// The CRM cutover's three unified views (crm_visits_unified, crm_checkins_unified,
+// crm_plan_entries_unified) ARE the mirror from a reader's point of view — vendor history plus native
+// rows — so they sit behind the same door and the same allow-lists as the tables they union.
 const literalFrom =
-  /\.from\(\s*["'`]ireports360_(?:visits|checkins|visits_sync_runs|crm_identity_resolutions|plan_entries|visits_effective)\b/;
+  /\.from\(\s*["'`](?:ireports360_(?:visits|checkins|visits_sync_runs|crm_identity_resolutions|plan_entries|visits_effective)|crm_(?:visits|checkins|plan_entries)_unified)\b/;
 // `.from(SOME_CONST)` where the const names a mirror table — the migrated local consts plus the
 // canonical crm/tables constants (importing those into a non-CRM file and querying would bypass
 // the door just as surely as a string literal).
 const constFrom =
-  /\.from\(\s*(?:visitsTable|checkinsTable|DV_SOURCE_TABLE|VISITS_MIRROR_TABLE|CRM_VISITS_TABLE|CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_PLAN_ENTRIES_TABLE|CRM_VISITS_EFFECTIVE_VIEW)\s*\)/;
+  /\.from\(\s*(?:visitsTable|checkinsTable|DV_SOURCE_TABLE|VISITS_MIRROR_TABLE|CRM_VISITS_TABLE|CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_PLAN_ENTRIES_TABLE|CRM_VISITS_EFFECTIVE_VIEW|CRM_VISITS_UNIFIED_VIEW|CRM_CHECKINS_UNIFIED_VIEW|CRM_PLAN_ENTRIES_UNIFIED_VIEW)\s*\)/;
 
 // Inside src/lib/crm/: any reference to the VISITS mirror — a literal/local-const `.from`, or ANY use
 // of the canonical visits constants (which also catches `.from(table)` indirection over a list).
 const visitsMirrorRef: RegExp[] = [
-  /\.from\(\s*["'`]ireports360_visits(?:_effective)?\b/,
+  /\.from\(\s*["'`](?:ireports360_visits(?:_effective)?|crm_visits_unified)\b/,
   /\.from\(\s*visitsTable\s*\)/,
-  /\b(?:CRM_VISITS_TABLE|CRM_VISITS_EFFECTIVE_VIEW)\b/,
+  /\b(?:CRM_VISITS_TABLE|CRM_VISITS_EFFECTIVE_VIEW|CRM_VISITS_UNIFIED_VIEW)\b/,
 ];
 // Inside src/lib/crm/: any reference to the OTHER mirror tables (check-ins, sync runs, identity
 // resolutions, plan entries).
 const otherMirrorRef: RegExp[] = [
-  /\.from\(\s*["'`]ireports360_(?:checkins|visits_sync_runs|crm_identity_resolutions|plan_entries)\b/,
+  /\.from\(\s*["'`](?:ireports360_(?:checkins|visits_sync_runs|crm_identity_resolutions|plan_entries)|crm_(?:checkins|plan_entries)_unified)\b/,
   /\.from\(\s*checkinsTable\s*\)/,
-  /\b(?:CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_PLAN_ENTRIES_TABLE)\b/,
+  /\b(?:CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_PLAN_ENTRIES_TABLE|CRM_CHECKINS_UNIFIED_VIEW|CRM_PLAN_ENTRIES_UNIFIED_VIEW)\b/,
 ];
 
 /** Files in src/lib/crm/ allowed to touch the VISITS mirror directly. Each is machinery, not a
@@ -54,7 +58,7 @@ export const CRM_VISITS_MIRROR_ALLOW_LIST: Readonly<Record<string, string>> = {
   "src/lib/crm/region-brick.ts": "distinct CRM region scan feeding the region→brick resolution table",
   "src/lib/crm/contacts-sync.ts": "resolves contact-list sync targets (hr id → agent crm id)",
   "src/lib/crm/master.ts": "CRM Master raw-mirror browser (Super Admin exact-mirror tabs)",
-  "src/lib/crm/rep-day.ts": "live-first rep-day drill-down with its mirror FALLBACK (live-vs-mirror machinery; cutover follow-up)",
+  "src/lib/crm/rep-day.ts": "rep-day drill-down: live-first before the CRM cutover, the unified visits view as its fallback and its only source after it",
 };
 
 /** Files in src/lib/crm/ allowed to touch the OTHER mirrors (check-ins, sync runs, identity
