@@ -94,6 +94,9 @@ function directory(): EmployeeDirectoryRow[] {
     person({ hrId: "X-1", fullName: "Mixed Titles", jobTitle: "Medical Representative", positionTitle: "District Sales Manager", managerHrId: "R-1" }),
     // Off the ladder entirely, on the line.
     person({ hrId: "U-1", fullName: "Line Admin", jobTitle: "Line Coordinator", positionTitle: null, managerHrId: "N-1" }),
+    // A Training Manager — no sales rank, but a real double visitor (role code TM). Owner 2026-09-13:
+    // shown on a PM/GPM/RM board.
+    person({ hrId: "T-1", fullName: "Line Trainer", jobTitle: "Training Manager", managerHrId: "N-1" }),
     // His OWN report with an off-ladder title — downward by construction, stays in.
     person({ hrId: "S-1", fullName: "His Assistant", jobTitle: "Brand Assistant", positionTitle: null, managerHrId: "A-8" }),
     // A National Sales Manager whose own boss is MIS-TITLED as a DSM (rank 2, "below" him on the
@@ -117,6 +120,7 @@ function rows(): Rows {
     row({ visitor: "D-1", visited: "REP-2", visits: 6 }), // DSM at his rank → hidden (ladder)
     row({ visitor: "P-2", visited: "REP-1", visits: 1 }), // peer PM → hidden (ladder)
     row({ visitor: "CRM:777", visited: null, visits: 2 }), // unmapped visitor, vacant territory → KEPT
+    row({ visitor: "T-1", visited: "REP-1", visits: 7 }), // Training Manager, no sales rank → KEPT (owner 2026-09-13)
   ] as unknown as Rows;
 }
 
@@ -136,8 +140,13 @@ export function runDoubleVisitDownwardScopeTests() {
     assert.ok(scope.excludedVisitorKeys.has(k(id)), `chain cut: ${id} is above the viewer and must be excluded (through a departed link)`);
     assert.ok(!scope.allowedHrIds.has(k(id)), `chain cut: ${id} must never sit in allowedHrIds`);
   }
-  for (const id of ["P-2", "D-1", "R-1", "X-1", "U-1"]) {
-    assert.ok(scope.excludedVisitorKeys.has(k(id)), `ladder: ${id} is not strictly below a Product Manager and must be excluded`);
+  for (const id of ["P-2", "D-1", "R-1", "X-1"]) {
+    assert.ok(scope.excludedVisitorKeys.has(k(id)), `ladder: ${id} is ranked at or above a Product Manager and must be excluded`);
+  }
+  // Owner, 2026-09-13 (questions workbook row 5, "Shown"): a visitor with NO sales rank is not cut by
+  // the ladder on this board.
+  for (const id of ["U-1", "T-1"]) {
+    assert.ok(!scope.excludedVisitorKeys.has(k(id)), `ladder: ${id} has no sales rank and must NOT be excluded from a Product Manager's double-visit board`);
   }
   assert.ok(!scope.excludedVisitorKeys.has(k("A-8")), "the viewer is never excluded from his own scope");
   assert.ok(scope.allowedHrIds.has(k("A-8")), "the viewer stays in his own scope");
@@ -160,7 +169,15 @@ export function runDoubleVisitDownwardScopeTests() {
   // ── 4. The dashboard core: every emitter shrinks together, and the totals reconcile. ────────────
   const core = buildScopedDoubleVisitDashboardCore({ access: pm, dateTo: "2026-09-30", employees, rows: allRows });
   const leaderboardSum = core.managerSummaries.reduce((sum, s) => sum + s.totalDvs, 0);
-  assert.equal(core.kpis.totalVisits, 5, "the headline shrinks to his own 3 + the unmapped 2 (owner 2026-09-13)");
+  assert.equal(
+    core.kpis.totalVisits,
+    12,
+    "the headline shrinks to his own 3 + the unmapped 2 + the Training Manager's 7 (owner 2026-09-13: out-of-scope rows leave the totals, unranked visitors stay)",
+  );
+  assert.ok(
+    core.filteredRows.some((r) => r.double_visitor_hr_id === "T-1"),
+    "a Training Manager's double visit to a same-line rep stays on a Product Manager's board",
+  );
   assert.equal(core.kpis.totalVisits, leaderboardSum, "KPI total must equal the leaderboard sum");
   const names = (list: Array<{ managerHrId: string }>) => list.map((entry) => entry.managerHrId);
   assert.ok(!names(core.managerSummaries).includes(ck("M-1")), "his manager is absent from the leaderboard");
@@ -178,6 +195,7 @@ export function runDoubleVisitDownwardScopeTests() {
     assert.ok(!gpmScope.excludedVisitorKeys.has(k("D-1")), "a DSM is strictly below a Group Product Manager");
     assert.ok(!gpmScope.excludedVisitorKeys.has(k("A-8")), "a PM is strictly below a Group Product Manager");
     assert.ok(gpmScope.excludedVisitorKeys.has(k("R-1")), "an RSM is at a Group Product Manager's rank");
+    assert.ok(!gpmScope.excludedVisitorKeys.has(k("T-1")), "a Training Manager has no sales rank and stays on a Group Product Manager's board");
   }
 
   // ── 6. Non-widening roles take the CHAIN cut only. ───────────────────────────────────────────────
@@ -230,6 +248,9 @@ export function runDoubleVisitDownwardScopeTests() {
   assert.equal(canAccessCoachingEmployee(pm, byId("D-1"), employees), false, "coaching: a PM cannot open a same-line DSM");
   assert.equal(canAccessCoachingEmployee(pm, byId("REP-1"), employees), true, "coaching: a PM still opens a same-line rep");
   assert.equal(canAccessCoachingEmployee(pm, byId("S-1"), employees), true, "coaching: his own off-ladder report stays open");
+  // The 2026-09-13 "Shown" answer was about the double-visit BOARD only. Coaching keeps the stricter
+  // ladder — an unranked colleague outside his subtree stays closed — until the owner says otherwise.
+  assert.equal(canAccessCoachingEmployee(pm, byId("T-1"), employees), false, "coaching: an unranked Training Manager outside his subtree stays closed");
   assert.equal(
     canAccessCoachingEmployee(access("National Sales Manager", "Q-1"), byId("Q-0"), employees),
     false,

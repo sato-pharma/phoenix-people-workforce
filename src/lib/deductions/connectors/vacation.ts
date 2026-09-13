@@ -44,6 +44,57 @@ type VacationRequestRow = {
  */
 const CRM_ANNUAL_VACATION_VISIT_TYPE = -4;
 
+/**
+ * WHO A CRM VACATION DAY BELONGS TO — owner decision 2026-09-13 (questions workbook, rows 1–4).
+ *
+ * Until now a -4 day was matched on `employees.crm_id` = the visit's CRM slot, as the slot stands
+ * TODAY. That misses leave logged under a slot that was later cleared (a resigned rep), and it would
+ * hand a reused slot's old days to whoever holds it now. The owner chose "the new join, but only
+ * within each person's own employment dates", and for the three reused slots (1399, 1475, 1485)
+ * "Nobody — drop them":
+ *
+ *   1. The visit's sync-stamped `agent_hr_id` wins — this is what finds a resigned rep's leave after
+ *      their slot was cleared.
+ *   2. No stamp (a mapping added after the row was last synced): the CURRENT slot holder.
+ *   Either way, only for a day on or after that person's hire date and on or before their last
+ *   working date. A day before the holder was hired belongs to nobody — the previous occupant's
+ *   leave is never charged to the new joiner.
+ *
+ * PUBLISHED MONTHS NEVER MOVE. The rule applies from `CRM_VACATION_EMPLOYMENT_JOIN_FROM` onward; an
+ * earlier month is collected with the old slot-as-it-stands join, byte-for-byte as before, so
+ * re-collecting a month payroll already published can never add or retract a day.
+ */
+export const CRM_VACATION_EMPLOYMENT_JOIN_FROM = "2026-09";
+
+export type CrmVacationEmployee = {
+  hrId: string;
+  name: string | null;
+  hireDate: string | null;
+  lastWorkingDate: string | null;
+};
+
+export function resolveCrmVacationEmployee(input: {
+  monthKey: string;
+  day: string;
+  crmId: string;
+  agentHrId: string | null;
+  byCrmId: ReadonlyMap<string, CrmVacationEmployee>;
+  byHrIdKey: ReadonlyMap<string, CrmVacationEmployee>;
+}): CrmVacationEmployee | null {
+  if (input.monthKey < CRM_VACATION_EMPLOYMENT_JOIN_FROM) {
+    return input.byCrmId.get(input.crmId) ?? null;
+  }
+  const stampKey = canonicalHrIdKey(input.agentHrId);
+  const person = stampKey ? input.byHrIdKey.get(stampKey) : input.byCrmId.get(input.crmId);
+  // The employment window binds a STAMPED person too, not only the slot holder: the sync's guard
+  // keeps a stamp past the last working date while the CRM label still matches, and it re-resolves
+  // only a recent window, so a stamp can outlive a corrected hire date.
+  if (!person || !person.hireDate) return null;
+  if (input.day < person.hireDate) return null;
+  if (person.lastWorkingDate && input.day > person.lastWorkingDate) return null;
+  return person;
+}
+
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
@@ -384,18 +435,20 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   // so excluding them would silently drop exactly the people whose final month matters.
   const [{ data: employeeRows, error: employeeError }, visits, { data: requestRows, error: requestError }] =
     await Promise.all([
-      supabase.from("employees").select("hr_id,full_name,crm_id,hire_date"),
+      supabase.from("employees").select("hr_id,full_name,crm_id,hire_date,last_working_date"),
       // `ampm` and the NON-vacation rows are both needed to spot a part-day. A
       // rep can log AM annual leave and then work the afternoon — see the mixed
       // day below — and filtering to visit_type -4 before looking would throw
       // away the very evidence that says it was half a day.
       scanVisitsForRangeIncludingDeparted<{
         agent_crm_id: unknown;
+        agent_hr_id: unknown;
         visit_date: unknown;
         visit_type: unknown;
         ampm: unknown;
       }>({
-        columns: "agent_crm_id,visit_date,visit_type,ampm",
+        // agent_hr_id: the sync's employment-guarded stamp — see resolveCrmVacationEmployee.
+        columns: "agent_crm_id,agent_hr_id,visit_date,visit_type,ampm",
         dateFrom: start,
         dateTo: end,
       }),
@@ -439,10 +492,25 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     bucket.set(key, set);
   }
 
-  const employeeByCrmId = new Map<string, { hrId: string; name: string | null; hireDate: string | null }>();
-  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; crm_id: string | null; hire_date: string | null }>) {
+  const employeeByCrmId = new Map<string, CrmVacationEmployee>();
+  const employeeByHrIdKey = new Map<string, CrmVacationEmployee>();
+  for (const row of (employeeRows ?? []) as Array<{
+    hr_id: string;
+    full_name: string | null;
+    crm_id: string | null;
+    hire_date: string | null;
+    last_working_date: string | null;
+  }>) {
+    const employee: CrmVacationEmployee = {
+      hrId: row.hr_id,
+      name: row.full_name,
+      hireDate: row.hire_date,
+      lastWorkingDate: row.last_working_date ? String(row.last_working_date).slice(0, 10) : null,
+    };
     const crmId = row.crm_id != null ? String(row.crm_id).trim() : "";
-    if (crmId) employeeByCrmId.set(crmId, { hrId: row.hr_id, name: row.full_name, hireDate: row.hire_date });
+    if (crmId) employeeByCrmId.set(crmId, employee);
+    const hrKey = canonicalHrIdKey(row.hr_id);
+    if (hrKey) employeeByHrIdKey.set(hrKey, employee);
   }
 
   // Keyed canonically, never on the raw string. The two sides come from different
@@ -463,12 +531,19 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     string,
     { name: string | null; hireDate: string | null; crmId: string; days: Set<string> }
   >();
-  for (const visit of (visitRows ?? []) as Array<{ agent_crm_id: unknown; visit_date: unknown }>) {
+  for (const visit of (visitRows ?? []) as Array<{ agent_crm_id: unknown; agent_hr_id: unknown; visit_date: unknown }>) {
     const crmId = String(visit.agent_crm_id ?? "").trim();
-    const employee = employeeByCrmId.get(crmId);
-    if (!employee) continue;
     const day = String(visit.visit_date ?? "").slice(0, 10);
     if (!day) continue;
+    const employee = resolveCrmVacationEmployee({
+      monthKey,
+      day,
+      crmId,
+      agentHrId: visit.agent_hr_id == null ? null : String(visit.agent_hr_id),
+      byCrmId: employeeByCrmId,
+      byHrIdKey: employeeByHrIdKey,
+    });
+    if (!employee) continue;
     const covered = (coveredByHrId.get(canonicalHrIdKey(employee.hrId) ?? "") ?? []).some(
       (range) => day >= range.start && day <= range.end,
     );

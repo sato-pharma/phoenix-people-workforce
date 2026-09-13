@@ -253,7 +253,10 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
   //   1. CHAIN — every ancestor of the viewer, climbed over the FULL directory (callers pass
   //      includeInactive: true, so a departed middle manager does not stop the climb). Applied to
   //      EVERY scoped viewer.
-  //   2. LADDER — anyone not ranked strictly below the viewer's seat (unranked titles included).
+  //   2. LADDER — anyone whose title is on the ladder at or above the viewer's seat. UNRANKED titles
+  //      are NOT cut here (owner, 2026-09-13 questions workbook: "Shown") — a Training Manager's or
+  //      SFE Manager's double visit to the viewer's reps stays on the board. The doctor-coverage
+  //      resolver and coaching still exclude unranked titles; this board alone differs.
   //      Applied ONLY for the roles whose scope WIDENS past their own reporting subtree — PM/GPM
   //      (whole line) and RM (line ∩ region). The subtree itself is downward by construction and is
   //      exempt from the ladder, exactly as doctor coverage exempts its `team` basis: ranking it
@@ -276,7 +279,7 @@ export function resolveDoubleVisitAccessScope(access: AccessContext, employees: 
     for (const employee of employees) {
       const key = normalizedHrKey(employee.hrId);
       if (!key || key === viewerKey || subtreeHrIds.has(key)) continue;
-      if (!cut.isStrictlyBelowViewer(employee)) excludedVisitorKeys.add(key);
+      if (cut.isRankedAtOrAboveViewer(employee)) excludedVisitorKeys.add(key);
     }
   }
   const isExcluded = (key: string | null | undefined) => Boolean(key && excludedVisitorKeys.has(key));

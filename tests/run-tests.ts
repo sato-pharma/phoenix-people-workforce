@@ -331,6 +331,7 @@ import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
+import { runDeductionsCrmVacationEmploymentJoinTests } from "./deductions-crm-vacation-employment-join.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runPlanSyncConversationEmailTests } from "./plan-sync-conversation-email.test.ts";
@@ -2423,6 +2424,10 @@ await runTest(
 await runTest(
   "deductions vacation ledger guard (the HR-request path must not re-charge a day a CRM-signal candidate already claims)",
   runDeductionsVacationLedgerGuardTests,
+);
+await runTest(
+  "deductions CRM vacation join (from Sep 2026: the sync stamp, else the slot holder within employment; a reused slot's old leave belongs to nobody)",
+  runDeductionsCrmVacationEmploymentJoinTests,
 );
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
