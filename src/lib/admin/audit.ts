@@ -104,6 +104,10 @@ export type AuditEntityType =
   // Pulling the mobile numbers behind the organogram export. The only route in the module
   // that hands back personal contact details in bulk, so who took the list is recorded.
   | "organogram_contact_export"
+  // Printing business cards: every file carries a person's name, work email and mobile, and one
+  // request can take up to 500 of them, so who took which cards is recorded. Not written on the
+  // screen's dry run, which hands back no file.
+  | "business_cards_export"
   | "crm_plan_sync"
   // A manager verifying a rep's plan. The ONLY thing Phoenix writes back into the customer's CRM,
   // so who signed off which plan is recorded on our side rather than being recoverable only from

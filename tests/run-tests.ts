@@ -1620,6 +1620,7 @@ import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
+import { runBusinessCardsTests } from "./business-cards.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5427,6 +5428,11 @@ await runTest(
 await runTest(
   "outstation meaning sheet answered (owner 2026-09-12): publishing marks the approved trips it paid at HR's edited figure, and trips before July 2026 are imported history — values only, never awaiting a decision",
   runOutstationPaidStampAndImportedHistoryTests,
+);
+
+await runTest(
+  "business cards: the owner's design is byte-locked, every card is trim + 3 mm bleed with its OutputIntent, the text is embedded Montserrat (no pixels added), and separate PDFs stream as a valid ZIP",
+  runBusinessCardsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

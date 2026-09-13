@@ -241,6 +241,10 @@ const nextConfig: NextConfig = {
       // needs to fetch it over HTTP, and a real signature on a guessable public URL is worth
       // avoiding. Server-read only, which means it ships only if it is traced — hence this line.
       "./assets/brand/*.png",
+      // The business-card design and its two Montserrat faces (src/lib/business-cards/render-pdf.ts).
+      // Same reasoning as the signature: the owner's card artwork is read by the server, never served.
+      "./assets/business-cards/*.pdf",
+      "./assets/business-cards/*.ttf",
       "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
       "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
       "./node_modules/@napi-rs/*/**",
@@ -387,6 +391,18 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
         ],
         source: "/api/hiring-pack/:hrId/print",
+      },
+      // Business cards: the screen saves a ZIP of separate PDFs by posting into a hidden same-origin
+      // frame, so the browser writes the stream to disk instead of holding it in the page. The
+      // site-wide DENY blocks that response like the CV preview above, and the download never starts.
+      // Same scoped loosening as the two file routes: the route returns PDF/ZIP bytes or a JSON
+      // error, never HTML that runs script, so a frame-ancestors-only CSP loses nothing.
+      {
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+        source: "/api/business-cards",
       },
       ...(process.env.NODE_ENV === "production"
         ? [

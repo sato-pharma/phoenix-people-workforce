@@ -503,6 +503,11 @@ export const accessRegistry = [
   // cannot fill in.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PUT", "POST", "DELETE"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
+  // ── Business cards ─────────────────────────────────────────────────────────────────────────
+  // POST only because the chosen people and their on-screen corrections travel in a body; it writes
+  // nothing and returns a file, so the resource is read. The handler also requires an HR seat.
+  // Every file hands over names, work emails and mobiles in bulk, so it is an audited export.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/business-cards", permission: { resource: "employee_documents", action: "read" }, csrfRequired: true }),
   // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
   // Registered route by route rather than under one `/api/offers/**` blanket, for the reason the
   // hiring pack above gives and one more: this module's three verbs are not variations of each
