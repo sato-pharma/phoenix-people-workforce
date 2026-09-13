@@ -19,6 +19,8 @@ import {
   findUnfilledPlaceholders,
   type SatoEmailRecipient,
 } from "./plan";
+import { computeListCoverage } from "./list-groups";
+import { satoTypedAddressPolicy } from "./typed-policy";
 import { renderSatoEmail, satoEmailHtmlToText } from "./render";
 
 /**
@@ -51,6 +53,8 @@ export type SatoEmailTemplate = {
 };
 
 export type SatoEmailListOption = {
+  /** Offered lists whose rule already reaches everyone this one does — see ./list-groups. */
+  coveredBy: string[];
   description: string;
   label: string;
   listKey: string;
@@ -83,6 +87,8 @@ export type SatoEmailDraft = {
   attachmentIds: string[];
   bodyHtml: string;
   clientRequestId: string;
+  /** Addresses the sender typed by hand, already validated and lower-cased by parseSatoEmailDraft. */
+  emails: string[];
   externalJustification?: string | null;
   hrIds: string[];
   listKeys: string[];
@@ -104,8 +110,12 @@ export type SatoEmailPreview = {
   audience: SatoEmailAudience;
   emailCount: number;
   html: string;
+  /** Typed addresses outside the company domains, so the screen can say which ones need a reason. */
+  outsideAddresses: string[];
   placeholders: string[];
   recipientCount: number;
+  /** Why the typed addresses cannot go yet — blocks Send exactly as attachmentProblem does. */
+  recipientProblem: string | null;
   text: string;
 };
 
@@ -261,9 +271,17 @@ export async function getSatoEmailComposerOptions(): Promise<SatoEmailComposerOp
 
   const lists: SatoEmailListOption[] = [];
   if (specsResult.status === "fulfilled") {
-    for (const spec of specsResult.value) {
-      if (!isAddressableList(spec)) continue;
-      lists.push({ description: spec.description, label: spec.label, listKey: spec.listKey });
+    const addressable = specsResult.value.filter(isAddressableList);
+    // Coverage is computed over the OFFERED lists only, so a hint can never point at a list the
+    // sender cannot see or pick.
+    const coverage = computeListCoverage(addressable);
+    for (const spec of addressable) {
+      lists.push({
+        coveredBy: coverage.get(spec.listKey) ?? [],
+        description: spec.description,
+        label: spec.label,
+        listKey: spec.listKey,
+      });
     }
   } else {
     warnings.push("The distribution lists could not be loaded.");
@@ -310,6 +328,7 @@ export async function getSatoEmailComposerOptions(): Promise<SatoEmailComposerOp
  * failure nobody sees, and the confirm step shows the sender this count before anything is sent.
  */
 export async function resolveSatoEmailAudience(input: {
+  emails: readonly string[];
   hrIds: readonly string[];
   listKeys: readonly string[];
 }): Promise<SatoEmailAudience> {
@@ -375,6 +394,12 @@ export async function resolveSatoEmailAudience(input: {
     }
   }
 
+  // Typed by hand. Each is its own recipient, deduped against the lists and the named colleagues by
+  // the send plan — so an address that is also on a picked list is counted, and mailed, once.
+  for (const email of new Set(input.emails.map((value) => value.trim().toLowerCase()).filter(Boolean))) {
+    recipients.push({ email, hrId: null, name: email });
+  }
+
   return { recipients, skipped, warnings };
 }
 
@@ -383,6 +408,7 @@ function normalizeDraft(draft: SatoEmailDraft) {
     attachmentIds: Array.isArray(draft.attachmentIds) ? draft.attachmentIds : [],
     bodyHtml: String(draft.bodyHtml ?? "").trim(),
     clientRequestId: String(draft.clientRequestId ?? "").trim(),
+    emails: Array.isArray(draft.emails) ? draft.emails : [],
     externalJustification: draft.externalJustification ?? null,
     hrIds: Array.isArray(draft.hrIds) ? draft.hrIds : [],
     listKeys: Array.isArray(draft.listKeys) ? draft.listKeys : [],
@@ -394,7 +420,11 @@ function normalizeDraft(draft: SatoEmailDraft) {
 
 export async function previewSatoEmail(draft: SatoEmailDraft): Promise<SatoEmailPreview> {
   const normalized = normalizeDraft(draft);
-  const audience = await resolveSatoEmailAudience({ hrIds: normalized.hrIds, listKeys: normalized.listKeys });
+  const audience = await resolveSatoEmailAudience({
+    emails: normalized.emails,
+    hrIds: normalized.hrIds,
+    listKeys: normalized.listKeys,
+  });
   const plan = buildSatoEmailSendPlan(audience.recipients);
   const { html, text } = renderSatoEmail({
     bodyHtml: normalized.bodyHtml,
@@ -402,6 +432,7 @@ export async function previewSatoEmail(draft: SatoEmailDraft): Promise<SatoEmail
     subject: normalized.subject,
   });
   const attachments = await resolveSatoEmailAttachments(normalized.attachmentIds);
+  const typed = satoTypedAddressPolicy(normalized.emails, normalized.externalJustification);
 
   return {
     attachmentProblem: attachments.problem,
@@ -409,8 +440,10 @@ export async function previewSatoEmail(draft: SatoEmailDraft): Promise<SatoEmail
     audience: { ...audience, recipients: plan.recipients },
     emailCount: plan.batches.length,
     html,
+    outsideAddresses: typed.outside,
     placeholders: findUnfilledPlaceholders(normalized.subject, satoEmailHtmlToText(normalized.bodyHtml)),
     recipientCount: plan.recipients.length,
+    recipientProblem: typed.problem,
     text,
   };
 }
@@ -430,7 +463,11 @@ export function satoEmailFrom(configured: string): string {
 
 export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext): Promise<SatoEmailSendResult> {
   const normalized = normalizeDraft(draft);
-  const audience = await resolveSatoEmailAudience({ hrIds: normalized.hrIds, listKeys: normalized.listKeys });
+  const audience = await resolveSatoEmailAudience({
+    emails: normalized.emails,
+    hrIds: normalized.hrIds,
+    listKeys: normalized.listKeys,
+  });
   const plan = buildSatoEmailSendPlan(audience.recipients);
 
   const empty: SatoEmailSendResult = {
@@ -448,6 +485,13 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
   const invalid = invalidCommunicationEmails(plan.recipients.map((recipient) => recipient.email));
   if (invalid.length > 0) {
     return { ...empty, skippedReason: `Invalid email address: ${invalid[0]}`, status: "failed" };
+  }
+
+  // A typed address outside the company goes only with the sender's own reason, and the whole send
+  // is refused without one — see ./typed-policy for why a partial send is the wrong answer here.
+  const typed = satoTypedAddressPolicy(normalized.emails, normalized.externalJustification);
+  if (typed.problem) {
+    return { ...empty, skippedReason: typed.problem, status: "failed" };
   }
 
   if (!emailNotificationsEnabled()) {
@@ -623,11 +667,13 @@ async function recordSatoEmailSend(input: {
     entityType: "sato_email_send",
     newValues: {
       emailCount: result.emailCount,
+      externalJustification: draft.externalJustification,
       listKeys: draft.listKeys,
       recipientCount: result.recipientCount,
       status: result.status,
       subject: draft.subject,
       templateKey: draft.templateKey,
+      typedEmails: draft.emails,
     },
     summary: `Sent a Sato email "${draft.subject}" to ${result.recipientCount} recipient(s) in ${result.emailCount} email(s)`,
   });

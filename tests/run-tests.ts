@@ -791,6 +791,8 @@ import {
   runSatoEmailRenderTests,
 } from "./sato-email.test.ts";
 import { runSatoEmailListsOnlyComposerTests } from "./sato-email-lists-only-composer.test.ts";
+import { runSatoEmailListGroupsTests } from "./sato-email-list-groups.test.ts";
+import { runSatoEmailTypedRecipientsTests } from "./sato-email-typed-recipients.test.ts";
 import { runSatoEmailPolishTests } from "./sato-email-polish.test.ts";
 import { runSatoEmailToolboxTests } from "./sato-email-toolbox.test.ts";
 import { runSatoEmailAttachmentTests } from "./sato-email-attachments.test.ts";
@@ -5379,6 +5381,16 @@ await runTest(
 await runTest(
   "the distribution lists reach the Sato Email Composer and nothing else — the closing Cc names its roles in code, the older HR reply composer is untouched, and a composer send passes no origin and never bypasses the confidence gate",
   runSatoEmailListsOnlyComposerTests,
+);
+
+await runTest(
+  "the Sato composer groups its distribution lists without losing one, and marks a list 'included' only when a picked list's RULE provably reaches everyone it does — never from the label",
+  runSatoEmailListGroupsTests,
+);
+
+await runTest(
+  "an address typed into the Sato composer is read the same on screen and server, is never dropped without a word, and an outside one never goes without the sender's own reason",
+  runSatoEmailTypedRecipientsTests,
 );
 
 await runTest(
