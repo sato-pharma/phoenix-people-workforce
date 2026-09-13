@@ -84,15 +84,20 @@ const MANAGERS: AreaManagerInput[] = [
 export function runMasterMapDistrictManagersTests() {
   // ---- The columns are last, and the finder's letters have not moved -------------------------
   assert.deepEqual(
-    MASTER_MAP_FLAT_COLUMNS.slice(-3),
+    MASTER_MAP_FLAT_COLUMNS.slice(-6, -3),
     ["Anti Infective manager", "CNS manager", "Pedia manager"],
     "the manager columns are appended, so every column letter the finder hardcodes still points where it did",
+  );
+  assert.deepEqual(
+    MASTER_MAP_FLAT_COLUMNS.slice(-3),
+    ["Anti Infective region", "CNS region", "Pedia region"],
+    "and each line's organogram region follows them, appended too, never inserted before Address",
   );
   assert.equal(MASTER_MAP_FLAT_COLUMNS.indexOf("Region"), 0, "Find a pharmacy filters region on column A");
   assert.equal(MASTER_MAP_FLAT_COLUMNS.indexOf("Pharmacy"), 4, "its search box reads pharmacy names from column E");
   assert.equal(MASTER_MAP_FLAT_COLUMNS.indexOf("Address"), 9, "and addresses from column J");
   assert.deepEqual(
-    MASTER_MAP_GAP_COLUMNS.slice(-3),
+    MASTER_MAP_GAP_COLUMNS.slice(-6, -3),
     ["Anti Infective manager", "CNS manager", "Pedia manager"],
     "the gaps tab carries them too — chasing a nameless shop means asking one of these three people",
   );
@@ -135,7 +140,7 @@ export function runMasterMapDistrictManagersTests() {
   }
   const miniaRow = flat.find((row) => row[6] === "1001");
   assert.deepEqual(
-    miniaRow?.slice(-3),
+    miniaRow?.slice(-6, -3),
     ["Nosiba Salah Hussenin Moussa", "Vacant", "Sales only, no manager"],
     "the shop's three managers are the three managers of its area, in Anti Infective, CNS, Pedia order",
   );
@@ -259,8 +264,15 @@ export function runMasterMapDistrictManagersTests() {
   const bareFlat = renderFlatRows(bare, distributorName);
   assert.equal(bareFlat.length, 2, "the workbook still renders every shop when the org chart is unreadable");
   assert.deepEqual(
-    bareFlat[0].slice(-3),
-    ["Not in the organogram", "Not in the organogram", "Not in the organogram"],
+    bareFlat[0].slice(-6),
+    [
+      "Not in the organogram",
+      "Not in the organogram",
+      "Not in the organogram",
+      "Not in the organogram",
+      "Not in the organogram",
+      "Not in the organogram",
+    ],
     "and says the managers are unknown rather than failing the load or inventing a name",
   );
 }

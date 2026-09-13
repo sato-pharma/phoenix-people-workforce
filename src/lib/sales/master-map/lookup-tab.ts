@@ -27,8 +27,8 @@
 import { MASTER_MAP_FLAT_COLUMNS } from "@/lib/sales/master-map/tree";
 import {
   FONT,
-  MANAGER_COLUMN_WIDTH,
   STYLE,
+  appendedColumnWidth,
   rgb,
   renderedTabColor,
   repeatCellRequest,
@@ -40,7 +40,7 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-const LAYOUT_VERSION = "v4";
+const LAYOUT_VERSION = "v5";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
@@ -436,7 +436,7 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
   ];
 
   const widths = [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320];
-  while (widths.length < COLUMN_COUNT) widths.push(MANAGER_COLUMN_WIDTH);
+  while (widths.length < COLUMN_COUNT) widths.push(appendedColumnWidth(MASTER_MAP_FLAT_COLUMNS[widths.length]));
   widths.forEach((width, column) => {
     requests.push({
       updateDimensionProperties: {
