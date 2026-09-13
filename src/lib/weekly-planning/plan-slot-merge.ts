@@ -8,6 +8,18 @@ export function planSlotsOverlap(left: PlanSlot, right: PlanSlot): boolean {
   return left === right || left === "full" || right === "full";
 }
 
+/**
+ * Which half of a day's Full day / AM / PM switch is lit. Only a day holding exactly one FULL-day
+ * row is "full"; a day with more than one row, or with a lone AM or PM row, is "split".
+ *
+ * Counting rows alone lit "Full day" over a Field Force Thursday (owner's video, 2026-09-13): that
+ * day is seeded as a single AM row by design (planRequiredSlotsByDate), so its one row read as a
+ * full day while its own pill said AM.
+ */
+export function planDayMode(rows: readonly { slot: PlanSlot }[]): "full" | "split" {
+  return rows.length > 1 || rows.some((row) => row.slot !== "full") ? "split" : "full";
+}
+
 export type SourcedSlotRow = {
   activityDate: string;
   key: string;

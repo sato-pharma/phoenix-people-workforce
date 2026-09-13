@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { placeSourcedPlanRow, planSlotsOverlap } from "../src/lib/weekly-planning/plan-slot-merge.ts";
+import { placeSourcedPlanRow, planDayMode, planSlotsOverlap } from "../src/lib/weekly-planning/plan-slot-merge.ts";
 
 /**
  * Regression cover for the AM / PM switch on the monthly plan (owner, 2026-09-13: "it clicked but
@@ -112,4 +112,15 @@ export function runPlanSlotMergeTests() {
     { activityDate: DAY, key: "m-pm", label: "monthly pm", slot: "pm" },
   );
   assert.deepEqual(shape(lockedDay), [`${DAY} full approved vacation`]);
+
+  // The day's switch (owner's video, 2026-09-13): a Field Force Thursday is seeded as ONE AM row,
+  // and counting rows alone lit "Full day" over a row whose own pill said AM.
+  assert.equal(
+    planDayMode([{ slot: "am" }]),
+    "split",
+    "a day holding a lone AM row must not light the Full day button",
+  );
+  assert.equal(planDayMode([{ slot: "pm" }]), "split", "nor a lone PM row");
+  assert.equal(planDayMode([{ slot: "full" }]), "full", "a single full-day row is a full day");
+  assert.equal(planDayMode([{ slot: "am" }, { slot: "pm" }]), "split", "a day split into AM + PM");
 }
