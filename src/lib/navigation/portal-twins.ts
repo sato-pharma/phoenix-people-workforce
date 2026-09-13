@@ -163,6 +163,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/sales/import", to: SOS },
   { from: "/sales/mapping-database", to: SOS },
   { from: "/sales/missing-data", to: SOS },
+  { from: "/sales/make-it-happen", to: "/employee-portals/make-it-happen" },
   { from: "/sales/monthly-closing", to: SOS },
   { from: "/sales/monthly-closing/performance-review", to: SOS },
   { from: "/sales/normalizer", to: SOS },

@@ -1250,6 +1250,10 @@ export const adminNavigationSectionSeeds = [
     id: "sales-vs-target-module",
     items: [
       { href: "/sales/vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+      // Make It Happen — the forecast planner (owner 2026-09-13). Of the admin-shell roles only SFE
+      // Manager and Super Admin were named; the CEO was not. Enforced by canUseMakeItHappen in
+      // src/lib/sales/make-it-happen/scope.ts; portal roles are redirected to their own twin.
+      { href: "/sales/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager"] },
     ],
     label: "Sales vs Target",
   },
@@ -1555,6 +1559,8 @@ const employeePortalNavigationSectionSeeds = [
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
       // role here with no resolvable territory still fails closed to an empty scope.
       { href: "/employee-portals/sales-vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Make It Happen — roles mirror showMakeItHappenTab; the enforcing gate is canUseMakeItHappen.
+      { href: "/employee-portals/make-it-happen", icon: Sparkles, label: "Make It Happen", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal counterpart of /business-review, scoped per viewer. Medical Rep is deliberately
       // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it
       // through the admin entry instead, since that is the shell they land in.

@@ -113,6 +113,13 @@ export type EmployeePortalNavVisibility = {
   // this flag must stay in sync with. Marketing Manager is included because their Head-Office line
   // resolves through MARKETING_OVERSIGHT to the three product lines, so the page is not empty.
   showSalesVsTargetTab?: boolean;
+  // Make It Happen (/employee-portals/make-it-happen) — the forecast planner: units per
+  // concentration, and "Press here and Phoenix will Make It Happen". Owner roles 2026-09-13:
+  // Medical Rep, District Manager, NSM, PM, GPM, Marketing Manager (SFE Manager and Super Admin use
+  // the admin twin). Mirrors MAKE_IT_HAPPEN_PORTAL_ROLES in src/lib/sales/make-it-happen/scope.ts,
+  // which is the enforcing gate. Explicit "District Manager", not isDistrictManager: the Head-Office
+  // "Manager" rung has no sales rows to plan.
+  showMakeItHappenTab?: boolean;
   // Territory & Sales Drilldown — geography-rooted (Region>Area>Block>Brick>Pharmacy) sales
   // tree at /employee-portals/territory-drilldown. All four sales roles now shipped (see
   // TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the server-side gate
@@ -681,6 +688,13 @@ export function resolveEmployeePortalNavVisibility(
       isMedicalRep ||
       isDistrictManager ||
       resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
+    showMakeItHappenTab:
+      isMedicalRep ||
+      resolvedRole === "District Manager" ||
       isNationalSalesManager ||
       isProductManager ||
       isGroupProductManager ||
