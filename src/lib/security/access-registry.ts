@@ -758,6 +758,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/marketing-requests/coverage-report/presets", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/:id/decision", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 
+  // Make It Happen — the forecast planner. `sales:read` is the ROLE gate; canUseMakeItHappen then
+  // admits only the eight owner-named roles, and the workspace is rebuilt in the caller's own scope
+  // before anything is suggested or saved. A plan is saved for its owner only, never for someone else.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/sales/make-it-happen/suggest", permission: { resource: "sales", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/make-it-happen/plans", permission: { resource: "sales", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+
   // Market Awareness — conferences, round tables and speaker programmes raised by the product
   // managers. Gated on its OWN `market_awareness` resource rather than borrowing `expenses`, which
   // already gates the whole /api/marketing-requests/** namespace: widening that key would hand this

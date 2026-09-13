@@ -113,6 +113,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // sales destination a Medical Rep can open, so it must be reachable from the phone bottom bar
   // rather than the desktop sidebar alone.
   { label: "vs Target", fullLabel: "Sales vs Target", href: "/employee-portals/sales-vs-target", icon: Gauge, flags: ["showSalesVsTargetTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Forecast", fullLabel: "Make It Happen", href: "/employee-portals/make-it-happen", icon: Sparkles, flags: ["showMakeItHappenTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"], permission: { resource: "sales", action: "read" } },
   // The three sales destinations below plus My Visits/Team Calendar further down were in the
