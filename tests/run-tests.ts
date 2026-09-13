@@ -1168,6 +1168,7 @@ import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./au
 import { runAutomatedPayrollRecurringNonEmployeesTests } from "./automated-payroll-recurring-non-employees.test.ts";
 import { runAutomatedPayrollStandingAdditionsTests } from "./automated-payroll-standing-additions.test.ts";
 import { runPayrollAcknowledgmentTokenTests } from "./payroll-acknowledgment-token.test.ts";
+import { runClosingPdfLinkSealTests } from "./closing-pdf-link-seal.test.ts";
 import { runPayrollSilentScreensTests } from "./payroll-silent-screens.test.ts";
 import { runPayrollDayRateDivisorTests } from "./payroll-day-rate-divisor.test.ts";
 import { runPayrollAuditLedgerTests } from "./payroll-audit-ledger.test.ts";
@@ -5484,6 +5485,11 @@ await runTest(
 await runTest(
   "a payroll warning can only be acknowledged by the person it was shown to, for the run and gate it was raised on, while it still says the same thing — a yes on the first request answers nothing",
   runPayrollAcknowledgmentTokenTests,
+);
+
+await runTest(
+  "anyone who receives a closing workbook can export its PDF — the link's seal, never its query string, decides the line, month and filters, and El Qema stays masked for the reader",
+  runClosingPdfLinkSealTests,
 );
 
 await runTest(
