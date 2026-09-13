@@ -240,12 +240,13 @@ export function BusinessCardsManager({
               <Users className="h-4 w-4 text-phx-accent-press" />
               Employees
             </span>
-            <label className="flex min-w-0 items-center gap-2 lg:w-60 lg:shrink-0">
+            {/* On desktop the select takes its widest option's width, so no month label is ever cut off. */}
+            <label className="flex min-w-0 items-center gap-2 lg:shrink-0">
               <span className="sr-only">Hiring month</span>
               <CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-phx-accent-press" />
               <select
                 aria-label="Filter by hiring month"
-                className="h-10 w-full min-w-0 rounded-none border border-phx-line bg-white/95 px-2 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent-line focus:outline-none focus:ring-2 focus:ring-phx-accent/15"
+                className="h-10 w-full min-w-0 rounded-none lg:w-auto border border-phx-line bg-white/95 px-2 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent-line focus:outline-none focus:ring-2 focus:ring-phx-accent/15"
                 onChange={(event) => setHireMonth(event.target.value)}
                 value={hireMonth}
               >
