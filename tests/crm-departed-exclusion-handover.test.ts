@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { resolveLiveDepartedExclusion } from "../src/lib/crm/reads.ts";
+import { CRM_RESIGNED_AGENT_CRM_IDS, resolveLiveDepartedExclusion } from "../src/lib/crm/reads.ts";
 
 /**
  * Production incident, 2026-08-05: CRM slot 1399 belonged to B-97 (Nada Elsharkawy) from
@@ -34,6 +34,18 @@ export function runCrmDepartedExclusionHandoverTests() {
     handedOver,
     [],
     "a crm_id reassigned to a currently active employee must be dropped from the live exclusion, or the successor's own visits vanish everywhere",
+  );
+
+  // ── The STATIC list outranks employment status, so a handed-over slot left on it stays hidden ─
+  // ── no matter what the roster says. 1166 carries AI-0018 (Samah Ashraf, active) since ────────
+  // ── 2026-09-05 (owner decision 2026-09-13); the CEO's owner exclusion must survive. ─────────
+  assert.ok(
+    !CRM_RESIGNED_AGENT_CRM_IDS.includes(1166),
+    "crm_id 1166 is an active rep's handed-over slot and must not sit on the static resigned list, or her visits stay invisible to Field Workforce Compliance and the no-activity detector",
+  );
+  assert.ok(
+    CRM_RESIGNED_AGENT_CRM_IDS.includes(1474),
+    "the owner's deliberate exclusions (the CEO, 1474) must stay on the static list",
   );
 
   // ── A genuinely still-departed slot (no current active owner) stays excluded ────────────────

@@ -57,7 +57,7 @@ export function isCrmDoubleVisitRow(row: {
  * modules import from here. Resolved from the owner's display-name lists (see memory
  * crm-resigned-agents-exclusion-list). */
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
-  832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
+  832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1221,
   1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
   1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
@@ -112,6 +112,12 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // the vendor) is real — there is no other occupant's work to protect from misattribution here,
   // unlike the label-scoped multi-occupant handovers (1102/1395/1399). Seventh of this failure
   // class after 1477/1102/1395/1521/1247/1523.
+  // 2026-09-13: crm_id 1166 REMOVED (owner decision, CRM decisions workbook) — a leaver's Qalyubia
+  // slot (manual resolution "( Qal / E )", status resigned) now carrying AI-0018 (Samah Ashraf,
+  // Medical Representative, ACTIVE, hired 2026-09-02), whose employees.crm_id is 1166. From 5 Sep
+  // to 12 Sep she logged 39 visits there, all invisible — to Field Workforce Compliance and the
+  // no-activity deduction detector as well. The previous occupant's rows stay unattributed: the
+  // pre-hire guard refuses every row dated before her hire. Eighth of this failure class.
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
