@@ -40,7 +40,7 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-const LAYOUT_VERSION = "v6";
+const LAYOUT_VERSION = "v7";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;

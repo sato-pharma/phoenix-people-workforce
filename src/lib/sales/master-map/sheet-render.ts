@@ -522,7 +522,9 @@ export function renderFlatSheet(
   for (const column of FLAT_CENTRED_COLUMNS) requests.push(centreColumnRequest(sheetId, column));
 
   // The eleven data columns, then one per manager or region column the header actually carries.
-  const widths = [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320];
+  // Brick code is 150, not the 100 its codes need: this header is 15pt bold with a filter button,
+  // and at 100 the live sheet showed "rick cod". Distributor, the same length, fits at 150.
+  const widths = [140, 170, 200, 150, 400, 150, 130, 250, 90, 600, 320];
   while (widths.length < header.length) widths.push(appendedColumnWidth(header[widths.length]));
   requests.push(...columnWidthRequests(sheetId, widths));
 

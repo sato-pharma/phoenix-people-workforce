@@ -55,8 +55,9 @@ const REQUESTS_PER_CHUNK = 300;
  *
  * f2: the organogram region columns went from 180 to 230 because the live sheet clipped their
  * header, and All customers and Gaps would otherwise have kept the clipped width.
+ * f3: All customers' Brick code column went from 100 to 150 for the same reason.
  */
-const FORMAT_VERSION = "f2";
+const FORMAT_VERSION = "f3";
 
 /** How long a loaded snapshot may be reused for slices without re-checking the source. */
 const CACHE_TTL_MS = 15 * 60 * 1000;
