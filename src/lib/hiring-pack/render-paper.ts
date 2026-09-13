@@ -53,6 +53,7 @@ import {
   HR_PAPER_SOCIAL_STATUS_V1,
 } from "@/lib/hiring-pack/hr-paper-text";
 import { renderExperienceCertificateEnHtml } from "@/lib/hiring-pack/experience-certificate-en";
+import { renderSalaryLetterEnHtml } from "@/lib/hiring-pack/salary-letter-en";
 import { renderHrPaperHtml } from "@/lib/hiring-pack/render-hr-paper";
 import type { HrPaperTemplate } from "@/lib/hiring-pack/hr-paper-template";
 import { renderForm1Html } from "@/lib/hiring-pack/render-form1";
@@ -156,6 +157,11 @@ const RENDERERS: Record<
   experienceCertificateEn: {
     render: renderExperienceCertificateEnHtml,
     copies: systemContractDefaults.experienceCertificateCopies,
+  },
+  // The HR letter — English, its own renderer, and it states the BASIC salary only.
+  salaryLetterEn: {
+    render: renderSalaryLetterEnHtml,
+    copies: systemContractDefaults.salaryLetterCopies,
   },
   contractRenewal: {
     render: renderContractRenewalHtml,

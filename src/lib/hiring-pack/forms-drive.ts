@@ -35,6 +35,7 @@ import {
   HOUSE_ATTENDANCE_DOCUMENTS,
   HOUSE_JOINING_DOCUMENTS,
   HOUSE_LEAVING_DOCUMENTS,
+  HOUSE_LETTER_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
   isBuiltInDocument,
@@ -48,6 +49,7 @@ export type FormsDriveFolderId =
   | "attendance"
   | "devices"
   | "renewal"
+  | "letters"
   | "leaving"
   | "company";
 
@@ -107,6 +109,13 @@ const FOLDER_DEFINITIONS: ReadonlyArray<{
     labelAr: "تجديد العقد",
     description: "The renewal annex and the non-renewal notice.",
     documents: [...RENEWAL_DOCUMENTS],
+  },
+  {
+    id: "letters",
+    labelEn: "Letters",
+    labelAr: "خطابات",
+    description: "HR letters an employee asks for — the salary letter for a bank or an embassy.",
+    documents: [...HOUSE_LETTER_DOCUMENTS],
   },
   {
     id: "leaving",

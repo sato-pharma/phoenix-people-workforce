@@ -608,6 +608,7 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     appointmentDocsReturn: value("appointmentDocsReturn"),
     experienceCertificate: value("experienceCertificate"),
     experienceCertificateEn: value("experienceCertificateEn"),
+    salaryLetterEn: value("salaryLetterEn"),
     form6: value("form6"),
     resignation: value("resignation"),
     mutualTermination: value("mutualTermination"),
@@ -649,6 +650,8 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     // and it is reissued whenever it is asked for, so one date here could hold only the newest.
     experienceCertificate: "",
     experienceCertificateEn: "",
+    // The HR letter likewise: the company certifies it, nobody signs it back.
+    salaryLetterEn: "",
     form6: pack?.offboarding.form6SignedDate ?? "",
     resignation: pack?.offboarding.resignationSignedDate ?? "",
     mutualTermination: pack?.offboarding.mutualTerminationSignedDate ?? "",
@@ -1878,6 +1881,32 @@ export function HiringPackManager({
                     signable={false}
                     subtitle="إخطار باعتبار العامل مستقيلًا حكمًا — المادة (166)"
                     title="Deemed resignation notice"
+                  />
+                </div>
+
+                {/*
+                  THE HR LETTER. Asked for by somebody still employed — a bank, an embassy — so it
+                  sits with the papers of a working life. It states the BASIC salary only.
+                */}
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.salaryLetterEn}
+                    gaps={gapsFor(pack.gaps, "salaryLetterEn")}
+                    onCopiesChange={(value) => setCopiesFor("salaryLetterEn", value)}
+                    footnote="For a bank, an embassy or a landlord. It states the BASIC monthly salary derived from the base salary on record, in figures and in words — never the net or the gross."
+                    onPreview={() => openPreview("salaryLetterEn")}
+                    onPrint={() => openPrint("salaryLetterEn")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="Two copies. One is handed over; the other is filed as the record of the salary the company certified."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="شهادة راتب — باللغة الإنجليزية"
+                    title="HR letter — basic salary"
                   />
                 </div>
 

@@ -80,7 +80,7 @@ export const EN_BLANK_RULE = "……………………";
  * where being wrong is both immediately visible and insulting, and the combined form is what a
  * careful letter uses when it does not know — it reads as a form, not as an error.
  */
-function honorific(gender: string | null): string {
+export function honorific(gender: string | null): string {
   const value = (gender ?? "").trim().toLowerCase();
   if (value === "male") return "Mr.";
   if (value === "female") return "Ms.";
@@ -95,14 +95,14 @@ function honorific(gender: string | null): string {
  * person, and it costs nothing here: the document names him in full one line above, so there is no
  * ambiguity about who is meant.
  */
-function pronounsFor(honorificValue: string): { subject: string; possessive: string } {
+export function pronounsFor(honorificValue: string): { subject: string; possessive: string } {
   if (honorificValue === "Mr.") return { subject: "he", possessive: "his" };
   if (honorificValue === "Ms.") return { subject: "she", possessive: "her" };
   return { subject: "they", possessive: "their" };
 }
 
 /** "he" → "He", for a sentence that opens on the pronoun. */
-function sentenceCase(word: string): string {
+export function sentenceCase(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
@@ -117,7 +117,7 @@ function rule(token: string): string {
 }
 
 /** Either, on one rule: never an empty string, which would close the sentence up around a gap. */
-function value(token: string, text: string | null | undefined): string {
+export function value(token: string, text: string | null | undefined): string {
   const clean = typeof text === "string" ? text.trim() : "";
   return clean.length > 0 ? fill(token, clean) : rule(token);
 }

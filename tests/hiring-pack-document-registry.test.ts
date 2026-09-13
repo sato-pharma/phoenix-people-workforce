@@ -57,14 +57,15 @@ function testEveryBuiltInTableIsComplete() {
 function testEveryBuiltInDocumentResolvesAllThree() {
   // TWENTY since 2026-09-06: ten, plus the two renewal papers, plus Sato's own six — the
   // confidentiality undertaking, both appointment-documents forms, both absence notices and the
-  // service-file sheet — plus BOTH certificates of experience, Arabic and English. Deliberately
+  // service-file sheet — plus BOTH certificates of experience, Arabic and English. TWENTY-ONE since
+  // 2026-09-13, with the English HR letter stating the basic salary. Deliberately
   // hard-coded rather than derived: it is what makes adding a document a decision somebody had to
   // write down, in a repo where `ignoreBuildErrors` means an incomplete Record compiles and deploys
   // perfectly happily.
   assert.equal(
     HIRING_PACK_DOCUMENTS.length,
-    20,
-    "the built-in document list should still be twenty — update this only alongside the four " +
+    21,
+    "the built-in document list should still be twenty-one — update this only alongside the four " +
       "tables in document-registry.ts, the surfaces, the renderers and the template registry",
   );
 
@@ -266,6 +267,7 @@ function testEveryDocumentIsInExactlyOnePackage() {
       "custodyLaptop",
       "custodyMobile",
       "deemedResignation",
+      "salaryLetterEn",
     ].sort(),
     "\"other\" is the DURING-employment package: a custody receipt is printed whenever a device " +
       "changes hands, and the two renewal papers whenever a fixed term is coming to its end. Neither " +

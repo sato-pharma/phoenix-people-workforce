@@ -32,6 +32,7 @@ export type HiringPackDocument =
   | "appointmentDocsReturn"
   | "experienceCertificate"
   | "experienceCertificateEn"
+  | "salaryLetterEn"
   | "contractRenewal"
   | "contractNonRenewal"
   | "form6"
@@ -133,6 +134,17 @@ export const HOUSE_PAPER_DOCUMENTS = [
 ] as const;
 
 /**
+ * The HR letters an employee asks for while he works here — today the salary letter, which states
+ * the BASIC salary (the owner, 2026-09-13). Neither arriving nor leaving, so it is filed under
+ * "other" with a folder of its own on the drive.
+ *
+ * NOT IN `HOUSE_PAPER_DOCUMENTS`: that list is the Arabic house-paper family, each one an
+ * `HrPaperTemplate`, and this letter has its own English renderer the way the English certificate
+ * of experience does.
+ */
+export const HOUSE_LETTER_DOCUMENTS = ["salaryLetterEn"] as const;
+
+/**
  * The two clearance papers — إخلاء طرف — which are Sato's own instruments rather than a government
  * form, and which run in OPPOSITE directions.
  *
@@ -167,6 +179,7 @@ export const HIRING_PACK_DOCUMENTS: readonly HiringPackDocument[] = [
   ...ONBOARDING_FORM_DOCUMENTS,
   ...ASSET_DOCUMENTS,
   ...HOUSE_PAPER_DOCUMENTS,
+  ...HOUSE_LETTER_DOCUMENTS,
   ...RENEWAL_DOCUMENTS,
   ...EXIT_DOCUMENTS,
 ];

@@ -30,6 +30,7 @@ import {
 import {
   ASSET_DOCUMENTS,
   HIRING_PACK_DOCUMENTS,
+  HOUSE_LETTER_DOCUMENTS,
   HOUSE_PAPER_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
@@ -652,6 +653,8 @@ function testACustodyReceiptRecordsNoSignatureAgainstThePerson(): void {
     ) {
       continue;
     }
+    // The HR letter is issued on request, as often as a bank or an embassy asks — nothing to sign.
+    if (HOUSE_LETTER_DOCUMENTS.includes(document as (typeof HOUSE_LETTER_DOCUMENTS)[number])) continue;
     assert.equal(
       isSignableDocument(document),
       true,

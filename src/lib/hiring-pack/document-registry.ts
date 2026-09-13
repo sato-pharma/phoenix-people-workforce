@@ -37,6 +37,7 @@ import {
   HOUSE_ATTENDANCE_DOCUMENTS,
   HOUSE_JOINING_DOCUMENTS,
   HOUSE_LEAVING_DOCUMENTS,
+  HOUSE_LETTER_DOCUMENTS,
   ONBOARDING_FORM_DOCUMENTS,
   RENEWAL_DOCUMENTS,
   isBuiltInDocument,
@@ -69,6 +70,7 @@ const BUILT_IN_LABELS: Readonly<Record<HiringPackDocument, string>> = {
   appointmentDocsReturn: "Appointment documents returned",
   experienceCertificate: "Certificate of experience (Arabic)",
   experienceCertificateEn: "Certificate of experience (English)",
+  salaryLetterEn: "HR letter — basic salary (English)",
   contractRenewal: "Contract renewal annex",
   contractNonRenewal: "Non-renewal notice",
   form6: "Form 6",
@@ -93,6 +95,7 @@ const BUILT_IN_COPIES: Readonly<Record<HiringPackDocument, number>> = {
   appointmentDocsReturn: systemContractDefaults.appointmentDocsReturnCopies,
   experienceCertificate: systemContractDefaults.experienceCertificateCopies,
   experienceCertificateEn: systemContractDefaults.experienceCertificateCopies,
+  salaryLetterEn: systemContractDefaults.salaryLetterCopies,
   contractRenewal: systemContractDefaults.contractRenewalCopies,
   contractNonRenewal: systemContractDefaults.contractNonRenewalCopies,
   form6: systemContractDefaults.form6Copies,
@@ -172,6 +175,7 @@ const BUILT_IN_SURFACE_HINT: Readonly<Record<HiringPackDocument, DocumentSurface
   appointmentDocsReturn: "flow",
   experienceCertificate: "flow",
   experienceCertificateEn: "flow",
+  salaryLetterEn: "flow",
   contractRenewal: "flow",
   contractNonRenewal: "flow",
   form6: "page",
@@ -219,6 +223,7 @@ const BUILT_IN_GROUPS: Readonly<Record<HiringPackDocument, CustomTemplateGroup>>
   ...fromList(HOUSE_JOINING_DOCUMENTS, "joining"),
   ...fromList(HOUSE_ATTENDANCE_DOCUMENTS, "other"),
   ...fromList(HOUSE_LEAVING_DOCUMENTS, "leaving"),
+  ...fromList(HOUSE_LETTER_DOCUMENTS, "other"),
 } as Readonly<Record<HiringPackDocument, CustomTemplateGroup>>;
 
 function fromList(

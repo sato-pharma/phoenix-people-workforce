@@ -1204,8 +1204,33 @@ function testTheCustodyReturnProtocolIsNotSealed(): void {
   );
 }
 
+/**
+ * THE CERTIFICATE'S SEAL SITS IN ITS OWN خاتم الشركة BOX, NEVER OVER التوقيع.
+ *
+ * The owner, 2026-09-13: "fix the Arabic stamp". The certificate's signature row reads الاسم والصفة /
+ * التوقيع / خاتم الشركة, and the seal used to land on the second cell — over the word التوقيع and the
+ * line the HR manager signs — because every other paper's second cell is التوقيع والختم.
+ */
+function testTheCertificateIsStampedInItsStampColumn(): void {
+  const html = renderHrPaperHtml(packFixture(), 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1);
+  const tbody = /<table class="doc-sig">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(html);
+  assert.ok(tbody, "the certificate must still carry its signature table");
+  const cells = [...tbody[1].matchAll(/<td class="doc-sig__cell"[\s\S]*?<\/td>/g)].map((m) => m[0]);
+  assert.equal(cells.length, 3, "الاسم والصفة / التوقيع / خاتم الشركة");
+  assert.ok(!cells[1].includes('class="phx-seal"'), "the seal covers التوقيع — the line somebody signs");
+  assert.ok(cells[2].includes('class="phx-seal"'), "the seal belongs in the خاتم الشركة box");
+
+  // The contract's التوقيع والختم column keeps its seal where it always was.
+  const nda = renderHrPaperHtml(packFixture(), 1, HR_PAPER_NDA_V1);
+  const ndaBody = /<table class="doc-sig">[\s\S]*?<tbody>([\s\S]*?)<\/tbody>/.exec(nda);
+  assert.ok(ndaBody, "the NDA must still carry its signature table");
+  const ndaCells = [...ndaBody[1].matchAll(/<td class="doc-sig__cell"[\s\S]*?<\/td>/g)].map((m) => m[0]);
+  assert.ok(ndaCells[1].includes('class="phx-seal"'), "a التوقيع والختم paper is still sealed on that cell");
+}
+
 export function runHrFormsHousePapersTests(): void {
   testEveryPaperCarriesExactlyOneSeal();
+  testTheCertificateIsStampedInItsStampColumn();
   testTheCustodyReturnProtocolIsNotSealed();
   testTheBandSurvivesAnInlineStyleAttribute();
   testTheBandTilesAtOneWavelength();

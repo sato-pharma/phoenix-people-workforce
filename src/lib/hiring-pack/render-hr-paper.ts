@@ -295,6 +295,12 @@ function openTable(template: HrPaperTemplate): string {
     <table class="doc-list"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
+/** Which signing field carries the seal: a dedicated خاتم column when there is one, else index 1. */
+export function sealFieldIndex(fieldsAr: readonly string[]): number {
+  const stampColumn = fieldsAr.findIndex((label) => /خاتم/.test(label));
+  return stampColumn >= 0 ? stampColumn : 1;
+}
+
 /** The signature block: one ruled row per party, one column per signing field. */
 function signatureTable(columns: readonly HrPaperSignatureColumn[]): string {
   const first = columns[0];
@@ -309,9 +315,14 @@ function signatureTable(columns: readonly HrPaperSignatureColumn[]): string {
         `<tr><th class="doc-sig__party">${escapeHtml(column.headingAr)}</th>` +
         // The seal lands on the COMPANY's own التوقيع والختم cell — column index 1 of
         // الاسم / التوقيع والختم / التاريخ. Which party that is comes from one shared predicate.
+        //
+        // A PAPER WITH ITS OWN خاتم الشركة COLUMN is stamped there instead. The certificate of
+        // experience reads الاسم والصفة / التوقيع / خاتم الشركة, and index 1 on it is the bare
+        // signature — the seal sat over the word التوقيع and the line somebody signs (owner,
+        // 2026-09-13: "fix the Arabic stamp").
         column.fieldsAr
           .map((_label, index) =>
-            partyIndex === sealAt && index === 1
+            partyIndex === sealAt && index === sealFieldIndex(column.fieldsAr)
               ? `<td class="doc-sig__cell"${HOUSE_SEALED_ATTRS}>${houseSealImg({ sizeMm: 34 })}</td>`
               : `<td class="doc-sig__cell"></td>`,
           )
@@ -679,6 +690,9 @@ export function renderHrPaperHtml(
   .doc-sig tbody tr:nth-child(even) th,
   .doc-sig tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
   .doc-sig__cell { height: 12mm; text-align: center; vertical-align: top; }
+  /* The certificate's stamp column holds the whole impression. At 12mm the 34mm seal spilled over
+     its own heading and below the table; the page has the room, and one signature row. */
+  .copy--certificate .doc-sig__cell { height: 36mm; }
 
   .doc-signnote {
     display: flex;
