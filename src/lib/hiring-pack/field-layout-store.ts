@@ -34,7 +34,11 @@ import {
   documentSurfaceOf,
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
-import type { CustomHiringPackDocument, HiringPackDocument } from "@/lib/hiring-pack/types";
+import {
+  HIRING_PACK_DOCUMENTS,
+  type CustomHiringPackDocument,
+  type HiringPackDocument,
+} from "@/lib/hiring-pack/types";
 
 const TABLE = "hiring_pack_document_fields";
 
@@ -300,27 +304,16 @@ export type DocumentFieldWriteInput = {
 };
 
 /**
- * The ten written in code, named one by one so this gate never widens by accident.
+ * The gate below narrows through `asPrintableDocument`, which admits every built-in in
+ * `HIRING_PACK_DOCUMENTS` and a `custom:<uuid>` company template. That list is what the table's
+ * `hiring_pack_document_fields_document_known` constraint names (20260913190000), and
+ * tests/hiring-pack-field-layout.test.ts holds the two level. The rejection message reads the same
+ * list, so it can never name ten documents while the gate admits thirty-eight.
  *
- * A COMPANY TEMPLATE IS ACCEPTED TOO, and not through this set — `asPrintableDocument` below
- * validates the uuid inside a `custom:<uuid>`, which is the only thing that could be checked here
- * anyway. The keys of uploaded templates are not knowable at build time; that is what makes them
- * uploaded. What the check still guarantees is the same thing it always did: whatever reaches the
- * table is a document this build can print, not an arbitrary string a caller supplied.
+ * The keys of uploaded templates are not knowable at build time; that is what makes them uploaded.
+ * What the check still guarantees is that whatever reaches the table is a document this build can
+ * print, not an arbitrary string a caller supplied.
  */
-const KNOWN_DOCUMENTS = new Set<HiringPackDocument>([
-  "contract",
-  "form1",
-  "workerDataForm",
-  "custodyLaptop",
-  "custodyMobile",
-  "form6",
-  "resignation",
-  "mutualTermination",
-  "clearanceEmployee",
-  "clearanceCompany",
-]);
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -342,7 +335,7 @@ export function parseDocumentFieldWrite(
     return {
       ok: false,
       message:
-        `document must be one of ${Array.from(KNOWN_DOCUMENTS).join(", ")}, ` +
+        `document must be one of ${HIRING_PACK_DOCUMENTS.join(", ")}, ` +
         "or a company template as custom:<uuid>.",
     };
   }

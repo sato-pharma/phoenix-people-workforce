@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 
 import {
   DOCUMENT_SURFACES,
@@ -992,7 +993,48 @@ function testBoxesThatWillNotPrintAreNamed() {
   }
 }
 
+/**
+ * The table's document CHECK must name exactly `HIRING_PACK_DOCUMENTS`.
+ *
+ * It did not: the constraint still listed the first ten while the app had grown to 38, so a box
+ * dropped on any of the other 28 passed `parseDocumentFieldWrite` and was then refused by Postgres
+ * as a raw constraint violation. Nothing compares a CHECK constraint to a TypeScript list unless a
+ * test does, so this reads the NEWEST migration that (re)adds the constraint and compares the two.
+ * A built-in added without a migration fails here, in CI, instead of on somebody's first save.
+ */
+function testTheTableAdmitsEveryBuiltInDocument() {
+  const dir = "supabase/migrations";
+  const definers = readdirSync(dir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .filter((file) =>
+      /add\s+constraint\s+hiring_pack_document_fields_document_known/i.test(readFileSync(`${dir}/${file}`, "utf8")),
+    );
+  assert.ok(definers.length > 0, "some migration must define hiring_pack_document_fields_document_known");
+  const latest = definers[definers.length - 1];
+  const sql = readFileSync(`${dir}/${latest}`, "utf8");
+  const list = /add\s+constraint\s+hiring_pack_document_fields_document_known\s+check\s*\(\s*document\s+in\s*\(([^)]*)\)/i.exec(sql);
+  assert.ok(list, `${latest}: the constraint must name its documents as document in (...)`);
+  const admitted = [...list[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+
+  assert.deepEqual(
+    admitted,
+    [...HIRING_PACK_DOCUMENTS].sort(),
+    `${latest}: the table's document CHECK must name exactly HIRING_PACK_DOCUMENTS — add a migration for any new built-in`,
+  );
+
+  for (const document of HIRING_PACK_DOCUMENTS) {
+    const write =
+      documentSurface(document) === "page"
+        ? pageWrite({ document })
+        : flowWrite({ document });
+    const parsed = parseDocumentFieldWrite(write);
+    assert.equal(parsed.ok, true, `${document}: a box on a built-in paper must pass the write validator`);
+  }
+}
+
 export async function runHiringPackFieldLayoutTests() {
+  testTheTableAdmitsEveryBuiltInDocument();
   testEveryDocumentDeclaresItsSurface();
   testAnUntouchedDocumentIsUnchanged();
   testMovingADefaultKeepsWhatItIs();
