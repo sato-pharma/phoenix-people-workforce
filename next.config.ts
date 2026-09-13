@@ -130,9 +130,19 @@ const securityHeaders = [
           value: "DENY",
         },
       ]),
+  // camera=(self), NOT camera=(). The empty allowlist made Chromium refuse getUserMedia before any
+  // prompt, so every live-photo capture — the outstation arrival and departure photos, the direct-order
+  // storefront photo, the marketing venue photo — failed on Android Chrome, Samsung Internet and
+  // desktop Chrome/Edge with a "permission blocked" message no site setting could clear. Safari and
+  // Firefox ignore this header, which is why photos kept arriving and the outage stayed invisible.
+  //
+  // Site-wide on purpose, not scoped to those routes: a permissions policy is fixed when the DOCUMENT
+  // loads, and App Router navigation never loads a new one, so a rep who opens the portal and taps
+  // through to Submit Expense would still carry the landing page's camera=(). `self` keeps
+  // third-party frames locked out. microphone stays () — nothing here records audio.
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(self), payment=()",
+    value: "camera=(self), microphone=(), geolocation=(self), payment=()",
   },
   {
     key: "Cross-Origin-Opener-Policy",
