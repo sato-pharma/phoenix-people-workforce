@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Download, Eye, FileArchive, IdCard, Loader2, RotateCcw, Users, X } from "lucide-react";
+import { AlertTriangle, CalendarDays, Download, Eye, FileArchive, IdCard, Loader2, RotateCcw, Users, X } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import type { ComboItem } from "@/components/ui/grouped-combobox";
 import { Input } from "@/components/ui/input";
 import { CARD_FIELD_MAX_LENGTH, EDITABLE_CARD_FIELDS } from "@/lib/business-cards/card-content";
 import type { EditableCardField } from "@/lib/business-cards/card-content";
+import { formatHireDate, hireMonthKey, hireMonthLabel, hireMonthOptions, NO_HIRE_MONTH } from "@/lib/business-cards/hire-month";
 import type { BusinessCardEmployee } from "@/lib/business-cards/service";
 import { cn } from "@/lib/utils";
 
@@ -111,24 +112,34 @@ export function BusinessCardsManager({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hireMonth, setHireMonth] = useState("");
 
   const byId = useMemo(() => new Map(employees.map((employee) => [employee.hrId, employee])), [employees]);
+  const monthOptions = useMemo(() => hireMonthOptions(employees), [employees]);
 
-  // Grouped by line, then job title, so a whole district reads as one block in the list.
+  // Grouped by line, then job title, so a whole district reads as one block in the list. A hiring
+  // month narrows the list to the people who joined in it; anyone already chosen stays listed, so
+  // the picker's summary still counts them and they can still be taken off.
   const items: ComboItem[] = useMemo(
     () =>
       [...employees]
+        .filter((employee) => !hireMonth || hireMonthKey(employee.hireDate) === hireMonth || selected.includes(employee.hrId))
         .sort((a, b) => (a.lineName ?? "~").localeCompare(b.lineName ?? "~") || a.name.localeCompare(b.name))
-        .map((employee) => ({
-          group: employee.lineName ?? "No line",
-          id: employee.hrId,
-          name: employee.name,
-          search: [employee.hrId, employee.regionName, employee.fields.mobile, employee.fields.email].filter(Boolean).join(" "),
-          secondary: employee.areaName,
-          subgroup: employee.jobTitle,
-        })),
-    [employees],
+        .map((employee) => {
+          const hired = formatHireDate(employee.hireDate);
+          return {
+            group: employee.lineName ?? "No line",
+            id: employee.hrId,
+            name: employee.name,
+            search: [employee.hrId, employee.regionName, employee.fields.mobile, employee.fields.email].filter(Boolean).join(" "),
+            secondary: [employee.areaName, hired && `Hired ${hired}`].filter(Boolean).join(" · ") || null,
+            subgroup: employee.jobTitle,
+          };
+        }),
+    [employees, hireMonth, selected],
   );
+
+  const monthPeople = hireMonth ? employees.filter((employee) => hireMonthKey(employee.hireDate) === hireMonth) : employees;
 
   const chosen = selected.map((hrId) => byId.get(hrId)).filter((employee): employee is BusinessCardEmployee => Boolean(employee));
   const missingName = chosen.filter((employee) => !(edits[employee.hrId]?.name ?? employee.fields.name));
@@ -229,6 +240,23 @@ export function BusinessCardsManager({
               <Users className="h-4 w-4 text-phx-accent-press" />
               Employees
             </span>
+            <label className="flex min-w-0 items-center gap-2 lg:w-60 lg:shrink-0">
+              <span className="sr-only">Hiring month</span>
+              <CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-phx-accent-press" />
+              <select
+                aria-label="Filter by hiring month"
+                className="h-10 w-full min-w-0 rounded-none border border-phx-line bg-white/95 px-2 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent-line focus:outline-none focus:ring-2 focus:ring-phx-accent/15"
+                onChange={(event) => setHireMonth(event.target.value)}
+                value={hireMonth}
+              >
+                <option value="">Hired in any month</option>
+                {monthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.key === NO_HIRE_MONTH ? option.label : `Hired in ${option.label}`} ({option.count})
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="min-w-0 flex-1">
               <GroupedComboBox
                 ariaLabel="Choose employees for business cards"
@@ -244,8 +272,14 @@ export function BusinessCardsManager({
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button className="h-10 rounded-none" onClick={() => setSelected(items.map((item) => item.id))} type="button" variant="outline">
-                Everyone
+              <Button
+                className="h-10 rounded-none"
+                disabled={monthPeople.length === 0}
+                onClick={() => setSelected((current) => [...new Set([...current, ...monthPeople.map((employee) => employee.hrId)])])}
+                type="button"
+                variant="outline"
+              >
+                {hireMonth ? `Everyone hired in ${hireMonthLabel(hireMonth)} (${monthPeople.length})` : "Everyone"}
               </Button>
               <Button className="h-10 rounded-none" disabled={count === 0} onClick={() => setSelected([])} type="button" variant="ghost">
                 Clear
@@ -307,7 +341,14 @@ export function BusinessCardsManager({
                     <div className="min-w-0">
                       <h2 className="text-sm font-black text-phx-ink">{employee.name}</h2>
                       <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">
-                        {[employee.jobTitle, employee.lineName, employee.areaName].filter(Boolean).join(" · ")}
+                        {[
+                          employee.jobTitle,
+                          employee.lineName,
+                          employee.areaName,
+                          employee.hireDate ? `Hired ${formatHireDate(employee.hireDate)}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
