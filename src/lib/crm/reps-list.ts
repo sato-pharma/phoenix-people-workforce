@@ -58,6 +58,7 @@ import {
   type SharedWith,
 } from "@/lib/crm/location-confidence";
 import { buildPhoenixInsights, type PhoenixInsight } from "@/lib/crm/phoenix-insights";
+import { repDoctorListRepKey } from "@/lib/crm/rep-doctor-lists";
 import type { RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import {
@@ -432,7 +433,7 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
     for (let page = 0; ; page += 1) {
       const { data, error } = await supabase
         .from(CRM_CHECKINS_UNIFIED_VIEW)
-        .select("contact_crm_id, agent_crm_id, lat, lon, address, check_date")
+        .select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")
         .in("contact_crm_id", chunk)
         .not("lat", "is", null)
         .not("lon", "is", null)
@@ -450,20 +451,28 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
       const rows = (data ?? []) as Array<{
         address: string | null;
         agent_crm_id: number | null;
+        agent_hr_id: string | null;
         check_date: string | null;
         contact_crm_id: number;
         lat: number;
         lon: number;
       }>;
       for (const row of rows) {
+        // Keyed like the roster, so a rep with no CRM account counts as an observer and a partner.
+        const point: CheckinPoint = {
+          at: row.check_date,
+          lat: row.lat,
+          lon: row.lon,
+          repKey: repDoctorListRepKey(row.agent_crm_id, row.agent_hr_id),
+        };
         const existing = byContact.get(row.contact_crm_id);
         if (existing) {
-          existing.points.push({ agentCrmId: row.agent_crm_id, at: row.check_date, lat: row.lat, lon: row.lon });
+          existing.points.push(point);
           continue;
         }
         // Newest first, so the FIRST row seen for a contact is the pin the board shows.
         byContact.set(row.contact_crm_id, {
-          points: [{ agentCrmId: row.agent_crm_id, at: row.check_date, lat: row.lat, lon: row.lon }],
+          points: [point],
           seenAt: { address: row.address?.trim() || null, at: row.check_date, lat: row.lat, lon: row.lon },
         });
       }
@@ -476,6 +485,7 @@ async function loadCheckins(contactIds: readonly number[]): Promise<Map<number, 
 /** One open assignment with the contact fields identity matching needs, embedded from the master. */
 export type RosterAssignmentRecord = {
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   contact: {
     crm_region_name: string | null;
     name: string | null;
@@ -488,12 +498,14 @@ export type RosterAssignmentRecord = {
 /**
  * An open assignment as a roster entry, or null when it cannot be one. Pure; exported for its test.
  *
- * A row with no CRM account is left out: the sharing and insight matchers key a partner on
- * `agentCrmId`, so such a row could never be named, and dropping it keeps a rep with no account
- * from being mistaken for "someone else" against every other such rep.
+ * Keyed on the rep key — the CRM id, or `hr:<id>` for a rep with no CRM account — so a rep hired
+ * without an account is a partner the sharing and insight matchers can name. Only a row naming
+ * nobody at all is left out: it could never be named, and a shared null key would make every such
+ * row "the same rep" as every other.
  */
 export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | null {
-  if (record.agent_crm_id == null) return null;
+  const repKey = repDoctorListRepKey(record.agent_crm_id, record.agent_hr_id);
+  if (!repKey) return null;
   // Flattened first, so every field below reads one plain row. Speciality and CRM region are what
   // corroborate a name match: drop either and every distant twin falls silent.
   const row = {
@@ -503,12 +515,12 @@ export function toRosterEntry(record: RosterAssignmentRecord): RosterEntry | nul
     speciality: record.contact?.speciality ?? null,
   };
   return {
-    agentCrmId: record.agent_crm_id,
     contactCrmId: record.contact_crm_id,
     name: row.contact_name?.trim() || "",
     nameKey: nameKey(row.contact_name),
     phoneKey: phoneKey(row.phone),
     regionKey: row.crm_region_name?.trim().toLowerCase() || null,
+    repKey,
     speciality: row.speciality?.trim() || null,
   };
 }
@@ -547,7 +559,7 @@ async function loadContactRoster(): Promise<RosterEntry[]> {
     Array.from({ length: pages }, (_unused, page) =>
       supabase
         .from(CRM_CONTACT_ASSIGNMENTS_TABLE)
-        .select(`id, contact_crm_id, agent_crm_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
+        .select(`id, contact_crm_id, agent_crm_id, agent_hr_id, contact:${CRM_CONTACT_MASTER_TABLE}(name, phone, speciality, crm_region_name)`)
         .is("effective_to", null)
         .order("id", { ascending: true })
         .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1),
@@ -615,20 +627,21 @@ export async function getRepsListForAgent(
    */
   agent: number | RepsListAgent,
   /**
-   * agentCrmId -> the rep's readable name, for the "also on X's list" line. REQUIRED rather than
-   * optional on purpose: with an empty map the sharing check silently finds nothing, which looks
-   * exactly like a company with no shared customers instead of like a caller that forgot.
+   * Rep key -> the rep's readable name, for the "also on X's list" line. The key is the CRM id as a
+   * string, or `hr:<id>` for a rep with no CRM account. REQUIRED rather than optional on purpose:
+   * with an empty map the sharing check silently finds nothing, which looks exactly like a company
+   * with no shared customers instead of like a caller that forgot.
    */
-  repNames: ReadonlyMap<number, string>,
+  repNames: ReadonlyMap<string, string>,
 ): Promise<RepsListForRep> {
   const { agentCrmId: ownCrmId, hrId } = typeof agent === "number" ? { agentCrmId: agent, hrId: null } : agent;
   // The HR id wins whenever it is known: it is who the rep IS, and it also finds his rows written by
   // a Phoenix list change, which carry no CRM account.
   const rows = hrId ? await getRepContactList(hrId) : ownCrmId != null ? await getAgentContactList(ownCrmId) : [];
-  // The sharing and insight matchers key "someone else" on a CRM account. A rep with none has no
-  // roster row of his own (see `toRosterEntry`), so -1, which no account ever carries, is safe.
-  const agentCrmId = ownCrmId ?? -1;
-  if (rows.length === 0) {
+  // "Someone else" to the sharing and insight matchers is a different rep KEY — the same key the
+  // roster and the check-ins carry — so a rep with no CRM account is himself, not a stranger.
+  const repKey = repDoctorListRepKey(ownCrmId, hrId);
+  if (rows.length === 0 || !repKey) {
     return {
       counts: { am: 0, contacts: 0, pharmacy: 0, pm: 0, total: 0 },
       groups: [],
@@ -668,7 +681,7 @@ export async function getRepsListForAgent(
   const candidateIds = roster
     .filter(
       (entry) =>
-        entry.agentCrmId !== agentCrmId &&
+        entry.repKey !== repKey &&
         !mineIds.has(entry.contactCrmId) &&
         ((entry.nameKey !== "" && mineNameKeys.has(entry.nameKey)) ||
           (entry.phoneKey != null && minePhoneKeys.has(entry.phoneKey))),
@@ -702,7 +715,7 @@ export async function getRepsListForAgent(
   const pins = new Map(otherPins);
   for (const [contactCrmId, found] of checkins) pins.set(contactCrmId, { lat: found.seenAt.lat, lon: found.seenAt.lon });
   const sharedByContact = findSharedCustomers(
-    rows.map((row) => ({ agentCrmId, contactCrmId: row.contactCrmId })),
+    rows.map((row) => ({ contactCrmId: row.contactCrmId, repKey })),
     roster,
     pins,
     repNames,
@@ -734,9 +747,9 @@ export async function getRepsListForAgent(
   // owner does not want highlighted.
   const insightsByContact = buildPhoenixInsights(
     rows.map((row) => ({
-      agentCrmId,
       contactCrmId: row.contactCrmId,
       points: checkins.get(row.contactCrmId)?.points ?? [],
+      repKey,
     })),
     roster,
     pins,

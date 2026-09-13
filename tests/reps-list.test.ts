@@ -579,7 +579,7 @@ export function runRepsListTests() {
     const daysAgo = (days: number) => new Date(now - days * 86_400_000).toISOString();
     const pin = { lat: 30, lon: 31 };
 
-    const once = scoreLocationConfidence(pin, [{ agentCrmId: 1, at: daysAgo(10), lat: 30, lon: 31 }], now);
+    const once = scoreLocationConfidence(pin, [{ repKey: "1", at: daysAgo(10), lat: 30, lon: 31 }], now);
     assert.ok(once, "one check-in is still evidence — it must produce a score, not a null");
     assert.equal(once.total, 1, "the popup states how many check-ins are behind the score");
     assert.equal(
@@ -595,11 +595,11 @@ export function runRepsListTests() {
     const agreeing = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(9), lat: 30.0001, lon: 31 },
-        { agentCrmId: 2, at: daysAgo(20), lat: 30, lon: 31.0001 },
-        { agentCrmId: 2, at: daysAgo(30), lat: 30, lon: 31 },
-        { agentCrmId: 2, at: daysAgo(40), lat: 30.0002, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(9), lat: 30.0001, lon: 31 },
+        { repKey: "2", at: daysAgo(20), lat: 30, lon: 31.0001 },
+        { repKey: "2", at: daysAgo(30), lat: 30, lon: 31 },
+        { repKey: "2", at: daysAgo(40), lat: 30.0002, lon: 31 },
       ],
       now,
     );
@@ -617,11 +617,11 @@ export function runRepsListTests() {
     const split = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(6), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(7), lat: 30.05, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(8), lat: 30.05, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(9), lat: 30.05, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(6), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(7), lat: 30.05, lon: 31 },
+        { repKey: "1", at: daysAgo(8), lat: 30.05, lon: 31 },
+        { repKey: "1", at: daysAgo(9), lat: 30.05, lon: 31 },
       ],
       now,
     );
@@ -650,13 +650,13 @@ export function runRepsListTests() {
     // asserts the two halves agree: once the other rep's visits are passed in, the observer count
     // rises AND the popup carries a line naming whose evidence was counted. A score that quietly
     // absorbed another rep's visits without saying so would be the worse bug of the two.
-    const lone = scoreLocationConfidence(pin, [{ agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 }, { agentCrmId: 1, at: daysAgo(6), lat: 30, lon: 31 }], now);
+    const lone = scoreLocationConfidence(pin, [{ repKey: "1", at: daysAgo(5), lat: 30, lon: 31 }, { repKey: "1", at: daysAgo(6), lat: 30, lon: 31 }], now);
     const withPartner = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(6), lat: 30, lon: 31 },
-        { agentCrmId: 2, at: daysAgo(7), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(6), lat: 30, lon: 31 },
+        { repKey: "2", at: daysAgo(7), lat: 30, lon: 31 },
       ],
       now,
       { count: 1, repNames: ["Sara Mohy Eldeen"] },
@@ -698,8 +698,8 @@ export function runRepsListTests() {
     const distantOnly = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(6), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(6), lat: 30, lon: 31 },
       ],
       now,
       { count: 0, distant: [{ metres: 11_000, repName: "Mariem Hany" }], repNames: [] },
@@ -729,8 +729,8 @@ export function runRepsListTests() {
     const single = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(6), lat: 30.05, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(6), lat: 30.05, lon: 31 },
       ],
       now,
     );
@@ -746,16 +746,16 @@ export function runRepsListTests() {
     const sameRep = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 1, at: daysAgo(7), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(7), lat: 30, lon: 31 },
       ],
       now,
     );
     const twoReps = scoreLocationConfidence(
       pin,
       [
-        { agentCrmId: 1, at: daysAgo(5), lat: 30, lon: 31 },
-        { agentCrmId: 2, at: daysAgo(7), lat: 30, lon: 31 },
+        { repKey: "1", at: daysAgo(5), lat: 30, lon: 31 },
+        { repKey: "2", at: daysAgo(7), lat: 30, lon: 31 },
       ],
       now,
     );
@@ -835,19 +835,19 @@ export function runRepsListTests() {
   // that unrelated doctors who happen to share a common Egyptian name are the same customer.
   {
     const repNames = new Map([
-      [10, "Mahmoud Alslamony"],
-      [20, "Omnia Ismael"],
+      ["10", "Mahmoud Alslamony"],
+      ["20", "Omnia Ismael"],
     ]);
     const entry = (agentCrmId: number, contactCrmId: number, name: string, phone: string | null): RosterEntry => ({
-      agentCrmId,
       contactCrmId,
       name,
       nameKey: nameKey(name),
       phoneKey: phoneKey(phone),
       regionKey: null,
+      repKey: String(agentCrmId),
       speciality: null,
     });
-    const mine = [{ agentCrmId: 10, contactCrmId: 101 }];
+    const mine = [{ repKey: "10", contactCrmId: 101 }];
     const roster = [
       entry(10, 101, "Ahmed Fouad", "0100 123 4567"),
       entry(20, 201, "Ahmed Fouad", "0100 999 8888"),
@@ -974,6 +974,56 @@ export function runRepsListTests() {
     );
   }
 
+  // ── A REP HIRED WITHOUT A CRM ACCOUNT IS STILL SOMEBODY ─────────────────────────────────────
+  // Keyed on the CRM id, a rep hired after the cutover had no key at all: his roster rows were
+  // dropped, so a customer he shared was never highlighted from either side, and his check-ins never
+  // counted as a second observer. Both halves now carry the rep key — the CRM id as a string, or
+  // `hr:<id>` for a rep with none — and the name map is keyed the same way.
+  {
+    const roster: RosterEntry[] = [
+      { contactCrmId: 11, name: "Dr Adel", nameKey: "dradel", phoneKey: null, regionKey: null, repKey: "1001", speciality: null },
+      { contactCrmId: 22, name: "Dr Adel", nameKey: "dradel", phoneKey: null, regionKey: null, repKey: "hr:b-40", speciality: null },
+    ];
+    const pins = new Map([
+      [11, { lat: 30, lon: 31 }],
+      [22, { lat: 30, lon: 31 }],
+    ]);
+    const names = new Map([
+      ["1001", "Ahmed Fathy"],
+      ["hr:b-40", "Mona Samir"],
+    ]);
+
+    const fromCrmSide = findSharedCustomers([{ contactCrmId: 11, repKey: "1001" }], roster, pins, names).get(11) ?? [];
+    assert.deepEqual(
+      fromCrmSide.map((shared) => shared.repName),
+      ["Mona Samir"],
+      "a partner with no CRM account must be NAMED as the other half of a shared customer — keyed on the CRM id she could never be",
+    );
+    assert.deepEqual(fromCrmSide[0]?.contactCrmIds, [22], "and her row is carried out, so her check-ins reach the score");
+
+    const fromHerSide = findSharedCustomers([{ contactCrmId: 22, repKey: "hr:b-40" }], roster, pins, names).get(22) ?? [];
+    assert.deepEqual(
+      fromHerSide.map((shared) => shared.repName),
+      ["Ahmed Fathy"],
+      "from her own list the shared customer is found too, and her own row is her, not a stranger",
+    );
+
+    const now = Date.parse("2026-09-14T12:00:00.000Z");
+    const confirmed = scoreLocationConfidence(
+      { lat: 30, lon: 31 },
+      [
+        { at: "2026-09-10T09:00:00.000Z", lat: 30, lon: 31, repKey: "1001" },
+        { at: "2026-09-11T09:00:00.000Z", lat: 30, lon: 31, repKey: "hr:b-40" },
+      ],
+      now,
+    );
+    assert.equal(
+      confirmed?.observers,
+      2,
+      "a rep with no CRM account who stood at the pin is a second observer — dropping his check-in told the popup only one rep had ever been there",
+    );
+  }
+
   // ── THE REP-NAME MAP MUST NOT BE BUILT FROM THE SUMMARIES ────────────────────────────────────
   // This one shipped and rendered NOTHING. getDoctorListRepSummaries constructs every row with
   // `name: ""` and never fills it — the name is resolved against the org tree by whichever board
@@ -991,7 +1041,7 @@ export function runRepsListTests() {
       "DoctorListRepSummary still carries an unfilled name — the hazard this pin guards is live, and if the loader ever starts resolving names this assertion is the place to say so",
     );
 
-    const declaration = "const repNameByAgentId = new Map<number, string>();";
+    const declaration = "const repNameByRepKey = new Map<string, string>();";
     const start = board.indexOf(declaration);
     assert.ok(
       start > 0,
@@ -1040,10 +1090,10 @@ export function runRepsListTests() {
       ["A-2", 2002],
     ]);
     const namesFrom = (source: { reps: readonly { hrId: string; repName: string }[] }) => {
-      const names = new Map<number, string>();
+      const names = new Map<string, string>();
       for (const rep of source.reps) {
         const agentCrmId = agentByHrId.get(rep.hrId);
-        if (agentCrmId != null) names.set(agentCrmId, rep.repName);
+        if (agentCrmId != null) names.set(String(agentCrmId), rep.repName);
       }
       return names;
     };
@@ -1057,14 +1107,14 @@ export function runRepsListTests() {
 
     // One doctor, two reps, standing in the same place: exactly the shape the board tints violet.
     const roster: RosterEntry[] = [
-      { agentCrmId: 1001, contactCrmId: 11, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
-      { agentCrmId: 2002, contactCrmId: 22, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
+      { repKey: "1001", contactCrmId: 11, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
+      { repKey: "2002", contactCrmId: 22, name: "Dr Adel", nameKey: "dr adel", phoneKey: null, regionKey: null, speciality: "Pediatrics" },
     ];
     const pins = new Map([
       [11, { lat: 30, lon: 31 }],
       [22, { lat: 30, lon: 31 }],
     ]);
-    const mine = [{ agentCrmId: 1001, contactCrmId: 11 }];
+    const mine = [{ repKey: "1001", contactCrmId: 11 }];
 
     const withCompanyNames = findSharedCustomers(mine, roster, pins, namesFrom(company)).get(11) ?? [];
     const withScopedNames = findSharedCustomers(mine, roster, pins, namesFrom(scopedToOwnTeam)).get(11) ?? [];
@@ -1181,18 +1231,18 @@ export function runRepsListTests() {
       speciality: string | null = null,
       region: string | null = null,
     ): RosterEntry => ({
-      agentCrmId,
       contactCrmId,
       name,
       nameKey: nameKey(name),
       phoneKey: phoneKey(phone),
       regionKey: region,
+      repKey: String(agentCrmId),
       speciality,
     });
     const reps = new Map([
-      [10, "Mina Adel"],
-      [20, "Sara Ali"],
-      [30, "Karim Fouad"],
+      ["10", "Mina Adel"],
+      ["20", "Sara Ali"],
+      ["30", "Karim Fouad"],
     ]);
 
     // THE OWNER'S OWN EXAMPLE: one distinctive name, two reps, forty kilometres apart.
@@ -1205,7 +1255,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       const insights = found.get(1) ?? [];
       assert.equal(insights.length, 1, "a distinctive name forty kilometres away under another rep is the owner's own example of a weird thing and must be reported");
       assert.equal(insights[0].kind, "distant twin");
@@ -1244,7 +1294,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       assert.equal(
         found.has(1),
         false,
@@ -1263,7 +1313,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       const insights = found.get(1) ?? [];
       assert.equal(insights.length, 1, "one phone number on two records forty kilometres apart is the strongest evidence this board has that a pin is wrong");
       assert.ok(
@@ -1287,7 +1337,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       const insights = found.get(1) ?? [];
       assert.equal(insights.length, 1, "two records filed in one locality but pinned forty kilometres apart contradict each other whichever of them names the place");
       assert.ok(
@@ -1306,7 +1356,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       const insights = found.get(1) ?? [];
       assert.ok(
         (insights[0]?.detail ?? "").includes("the same phone number, area and speciality"),
@@ -1334,7 +1384,7 @@ export function runRepsListTests() {
         [4, northOf(60)],
         [5, northOf(70)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       assert.equal(
         found.has(1),
         false,
@@ -1355,7 +1405,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(0.8)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       assert.equal(found.has(1), false, "a same-name pair 800 m apart is a rep who pinned the next street, and is already handled by the shared-customer highlight");
     }
 
@@ -1371,7 +1421,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(40)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       assert.equal(found.has(1), false, "with no readable rep name the only sentence available names a raw agent id, which the owner's naming rule forbids");
     }
 
@@ -1383,7 +1433,7 @@ export function runRepsListTests() {
         [1, at(30)],
         [2, northOf(12)],
       ]);
-      const found = buildPhoenixInsights([{ agentCrmId: 10, contactCrmId: 1, points: [] }], roster, pins, reps);
+      const found = buildPhoenixInsights([{ repKey: "10", contactCrmId: 1, points: [] }], roster, pins, reps);
       const insights = found.get(1) ?? [];
       assert.equal(insights.length, 1, "one rep carrying the same name on two rows is a duplicate and must be reported");
       assert.equal(insights[0].kind, "duplicate row");
@@ -1408,7 +1458,7 @@ export function runRepsListTests() {
         entry(5, 30, "Tarek Nabil", "01001234567"),
       ];
       const found = buildPhoenixInsights(
-        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        [{ repKey: "10", contactCrmId: 1, points: [] }],
         roster,
         new Map([[1, at(30)]]),
         reps,
@@ -1427,7 +1477,7 @@ export function runRepsListTests() {
     {
       const roster = [entry(1, 10, "Nadia Samir", "01001234567"), entry(2, 20, "Hala Mostafa", "01001234567")];
       const found = buildPhoenixInsights(
-        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        [{ repKey: "10", contactCrmId: 1, points: [] }],
         roster,
         new Map([[1, at(30)]]),
         reps,
@@ -1444,7 +1494,7 @@ export function runRepsListTests() {
         entry(index + 1, index === 0 ? 10 : 20, `Doctor ${index + 1} Distinctive`, "01001234567"),
       );
       const found = buildPhoenixInsights(
-        [{ agentCrmId: 10, contactCrmId: 1, points: [] }],
+        [{ repKey: "10", contactCrmId: 1, points: [] }],
         roster,
         new Map([[1, at(30)]]),
         reps,
@@ -1459,7 +1509,7 @@ export function runRepsListTests() {
     // CHECK-INS TOO FAR APART TO BE ONE PLACE.
     {
       const roster = [entry(1, 10, "Nadia Samir", null)];
-      const rows = [{ agentCrmId: 10, contactCrmId: 1, points: [at(30), northOf(60)] }];
+      const rows = [{ repKey: "10", contactCrmId: 1, points: [at(30), northOf(60)] }];
       const found = buildPhoenixInsights(rows, roster, new Map([[1, at(30)]]), reps);
       const insights = found.get(1) ?? [];
       assert.equal(insights.length, 1);
@@ -1472,7 +1522,7 @@ export function runRepsListTests() {
     // mark a sixth of the board with something a reader can already see.
     {
       const roster = [entry(1, 10, "Nadia Samir", null)];
-      const rows = [{ agentCrmId: 10, contactCrmId: 1, points: [at(30), northOf(3)] }];
+      const rows = [{ repKey: "10", contactCrmId: 1, points: [at(30), northOf(3)] }];
       assert.equal(
         buildPhoenixInsights(rows, roster, new Map([[1, at(30)]]), reps).has(1),
         false,
@@ -1485,7 +1535,7 @@ export function runRepsListTests() {
     {
       const roster = [entry(1, 10, "Nadia Samir", "01001234567"), entry(2, 20, "Hala Mostafa", null)];
       const found = buildPhoenixInsights(
-        [{ agentCrmId: 10, contactCrmId: 1, points: [at(30)] }],
+        [{ repKey: "10", contactCrmId: 1, points: [at(30)] }],
         roster,
         new Map([[1, at(30)]]),
         reps,

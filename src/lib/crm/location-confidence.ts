@@ -79,7 +79,12 @@ export const MAX_CONTACTS_PER_SHARED_PHONE = 3;
 
 /** One check-in, reduced to what scoring needs. */
 export type CheckinPoint = {
-  agentCrmId: number | null;
+  /**
+   * Who stood there: the CRM id as a string, or `hr:<id>` for a rep with no CRM account (the key
+   * `repDoctorListRepKey` builds). Null only when the check-in names nobody, and then it is not
+   * counted as an observer. Keyed on the CRM id alone, a rep hired after the cutover was never one.
+   */
+  repKey: string | null;
   /** ISO timestamp. Null is tolerated — it costs only the recency term. */
   at: string | null;
   lat: number;
@@ -187,7 +192,7 @@ export function scoreLocationConfidence(
   // wrong", when the truth is "no one has been here yet".
   if (!pin || checkins.length === 0) return null;
 
-  const observers = new Set(checkins.map((point) => point.agentCrmId).filter((id) => id != null)).size;
+  const observers = new Set(checkins.map((point) => point.repKey).filter((key) => key != null)).size;
   const lastSeen = checkins.reduce<string | null>(
     (newest, point) => (point.at && (!newest || point.at > newest) ? point.at : newest),
     null,
@@ -222,15 +227,15 @@ export function scoreLocationConfidence(
   let near = 0;
   let close = 0;
   let far = 0;
-  const agreeingObservers = new Set<number>();
+  const agreeingObservers = new Set<string>();
   for (const point of checkins) {
     const metres = metresBetween(pin.lat, pin.lon, point.lat, point.lon);
     if (metres <= NEAR_M) {
       near += 1;
-      if (point.agentCrmId != null) agreeingObservers.add(point.agentCrmId);
+      if (point.repKey != null) agreeingObservers.add(point.repKey);
     } else if (metres <= CLOSE_M) {
       close += 1;
-      if (point.agentCrmId != null) agreeingObservers.add(point.agentCrmId);
+      if (point.repKey != null) agreeingObservers.add(point.repKey);
     } else {
       far += 1;
     }
@@ -352,7 +357,6 @@ export function confidenceLabel(confidence: LocationConfidence | null): string {
 
 /** Another rep holding what is, on the evidence, the same customer. */
 export type SharedWith = {
-  agentCrmId: number;
   /** Why the two rows were judged the same customer — stated on screen, never left implicit. */
   basis: "name and location" | "shared phone";
   /**
@@ -430,7 +434,6 @@ export function findNeighbours(
 
 /** One row of the company-wide contact roster, reduced to what identity matching needs. */
 export type RosterEntry = {
-  agentCrmId: number;
   contactCrmId: number;
   name: string;
   nameKey: string;
@@ -446,6 +449,12 @@ export type RosterEntry = {
    * whichever of the two names the place.
    */
   regionKey: string | null;
+  /**
+   * Whose list the row is on: the CRM id as a string, or `hr:<id>` for a rep with no CRM account —
+   * `repDoctorListRepKey`'s key. Keyed on the CRM id alone, a rep hired without an account could
+   * never be named as the other half of a shared customer.
+   */
+  repKey: string;
   /**
    * The CRM speciality, verbatim.
    *
@@ -475,10 +484,11 @@ export type RosterEntry = {
  * name match is exactly the false positive this function exists to avoid.
  */
 export function findSharedCustomers(
-  rows: readonly { agentCrmId: number; contactCrmId: number }[],
+  rows: readonly { contactCrmId: number; repKey: string }[],
   roster: readonly RosterEntry[],
   pins: ReadonlyMap<number, { lat: number; lon: number }>,
-  repNames: ReadonlyMap<number, string>,
+  /** Rep key -> readable name. A partner whose key is not here is never named, so never matched. */
+  repNames: ReadonlyMap<string, string>,
 ): Map<number, SharedWith[]> {
   const byName = new Map<string, RosterEntry[]>();
   const byPhone = new Map<string, RosterEntry[]>();
@@ -504,12 +514,12 @@ export function findSharedCustomers(
     const myPin = pins.get(row.contactCrmId) ?? null;
     // Keyed by the other REP, not the other contact: the owner asked who this customer is shared
     // with, and two of one rep's rows matching is a duplicate in that rep's own list, not sharing.
-    const hits = new Map<number, SharedWith>();
+    const hits = new Map<string, SharedWith>();
 
     const consider = (other: RosterEntry, basis: SharedWith["basis"], metres: number | null) => {
-      if (other.agentCrmId === row.agentCrmId) return;
+      if (other.repKey === row.repKey) return;
       if (other.contactCrmId === row.contactCrmId) return;
-      const repName = repNames.get(other.agentCrmId);
+      const repName = repNames.get(other.repKey);
       // No name means no readable way to say who it is shared with, and the owner's standing rule is
       // that a screen never prints a raw id at the reader. Silence beats "shared with agent 4412".
       if (!repName) return;
@@ -526,7 +536,7 @@ export function findSharedCustomers(
       // about a customer who does not exist. So the label keeps the looser rule and the score gets
       // the strict one.
       const samePlace = metres != null && metres <= SAME_CUSTOMER_M;
-      const existing = hits.get(other.agentCrmId);
+      const existing = hits.get(other.repKey);
       if (existing) {
         // One rep can hold the same customer on more than one row of their own, and both rows are a
         // record of the same doctor — so every matched id is kept as evidence even though only one
@@ -536,11 +546,10 @@ export function findSharedCustomers(
         }
         // Phone is the stronger signal, so it wins the label when both fire on the same rep.
         if (!(basis === "shared phone" && existing.basis === "name and location")) return;
-        hits.set(other.agentCrmId, { ...existing, basis, metres });
+        hits.set(other.repKey, { ...existing, basis, metres });
         return;
       }
-      hits.set(other.agentCrmId, {
-        agentCrmId: other.agentCrmId,
+      hits.set(other.repKey, {
         basis,
         contactCrmIds: samePlace ? [other.contactCrmId] : [],
         metres,

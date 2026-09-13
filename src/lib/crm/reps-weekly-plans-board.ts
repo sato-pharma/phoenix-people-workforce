@@ -311,7 +311,7 @@ export async function getRepsWeeklyPlansBoard(input: {
         // found by his hr id, through the object form.
         getRepsListForAgent(
           selectedPlan.agentCrmId ?? { agentCrmId: null, hrId: selectedPlan.agentHrId },
-          cascade.repNameByAgentId,
+          cascade.repNameByRepKey,
         ).catch(() => null),
         selectedPlan.firstDate && selectedPlan.lastDate
           ? loadPlanActuals({

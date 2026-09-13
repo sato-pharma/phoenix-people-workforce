@@ -161,15 +161,50 @@ export function runCrmReportsReadPhoenixTests() {
     assert.ok(summaries.some((summary) => summary.hrId === null && summary.agentCrmId === 500), "a vendor row with no HR id stays visible under its CRM account");
   }
   assert.equal(
-    toRosterEntry({ agent_crm_id: null, contact: { crm_region_name: "x", name: "Dr A", phone: null, speciality: null }, contact_crm_id: 1 }),
+    toRosterEntry({ agent_crm_id: null, agent_hr_id: " ", contact: { crm_region_name: "x", name: "Dr A", phone: null, speciality: null }, contact_crm_id: 1 }),
     null,
-    "a roster row with no CRM account is left out: the sharing matcher could never name its rep",
+    "a roster row naming nobody is left out: the sharing matcher could never name its rep",
+  );
+  assert.equal(
+    toRosterEntry({ agent_crm_id: null, agent_hr_id: "b-40", contact: { crm_region_name: null, name: "Dr A", phone: null, speciality: null }, contact_crm_id: 1 })?.repKey,
+    "hr:b-40",
+    "a roster row of a rep with no CRM account is KEPT, keyed on his HR id — dropping it meant a customer he shared was never highlighted and never named",
   );
   assert.deepEqual(
-    toRosterEntry({ agent_crm_id: 4, contact: { crm_region_name: " Tanta ", name: "Dr B", phone: null, speciality: " ENT " }, contact_crm_id: 2 }),
-    { agentCrmId: 4, contactCrmId: 2, name: "Dr B", nameKey: toRosterEntry({ agent_crm_id: 4, contact: { crm_region_name: null, name: "Dr B", phone: null, speciality: null }, contact_crm_id: 2 })?.nameKey, phoneKey: null, regionKey: "tanta", speciality: "ENT" },
-    "the roster keeps speciality and CRM region from the embedded contact — they corroborate every name match",
+    toRosterEntry({ agent_crm_id: 4, agent_hr_id: "B-4", contact: { crm_region_name: " Tanta ", name: "Dr B", phone: null, speciality: " ENT " }, contact_crm_id: 2 }),
+    { contactCrmId: 2, name: "Dr B", nameKey: toRosterEntry({ agent_crm_id: 4, agent_hr_id: null, contact: { crm_region_name: null, name: "Dr B", phone: null, speciality: null }, contact_crm_id: 2 })?.nameKey, phoneKey: null, regionKey: "tanta", repKey: "4", speciality: "ENT" },
+    "the roster keeps speciality and CRM region from the embedded contact — they corroborate every name match — and a rep with a CRM id keeps it as his key",
   );
+  {
+    const board = readFileSync("src/lib/crm/reps-list-board.ts", "utf8");
+    assert.match(
+      board,
+      /if \(rawList && selectedRep && \(selectedRep\.agentCrmId != null \|\| selectedRep\.hrId\)\)/,
+      "a rep with no CRM account gets his activity column too — gated on a CRM account, his whole list read 'unavailable'",
+    );
+    assert.ok(
+      board.includes("agentCrmId: selectedRep.agentCrmId,\n        hrId: selectedRep.hrId,\n        month: activityMonth,"),
+      "the activity loader is handed the HR id, which is the only thing that finds a rep with no CRM account",
+    );
+    assert.match(
+      board,
+      /const key = repDoctorListRepKey\(summaryFor\(rep\.hrId\)\?\.agentCrmId, rep\.hrId\);/,
+      "the shared-customer name map is keyed on the rep key, so a partner with no CRM account can be named",
+    );
+    const repsList = readFileSync("src/lib/crm/reps-list.ts", "utf8");
+    assert.ok(
+      repsList.includes('.select("contact_crm_id, agent_crm_id, agent_hr_id, lat, lon, address, check_date")'),
+      "check-ins carry the HR id, or a rep with no CRM account never counts as a second observer",
+    );
+    assert.ok(
+      repsList.includes("id, contact_crm_id, agent_crm_id, agent_hr_id, contact:"),
+      "the roster carries the HR id, or a partner with no CRM account has no key to be named by",
+    );
+    assert.ok(
+      repsList.includes("const repKey = repDoctorListRepKey(ownCrmId, hrId);") && repsList.includes("entry.repKey !== repKey"),
+      "'someone else' is a different rep key, so a rep with no CRM account is never a stranger to his own rows",
+    );
+  }
 
   // ── E2 · E3 · E4 · the CRM Master reads the unified views ────────────────────────────────────
   {

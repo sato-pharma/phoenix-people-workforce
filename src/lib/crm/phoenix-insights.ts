@@ -158,10 +158,11 @@ function joinWords(words: readonly string[]): string {
 
 /** One of the rep's rows, reduced to what the insights need. */
 export type InsightRow = {
-  agentCrmId: number;
   contactCrmId: number;
   /** Every check-in filed against THIS contact row. Partner rows are deliberately not folded in. */
   points: readonly { lat: number; lon: number }[];
+  /** The rep's key, as `RosterEntry.repKey` carries it — so a rep with no CRM account is a rep too. */
+  repKey: string;
 };
 
 /**
@@ -178,7 +179,7 @@ export function buildPhoenixInsights(
   rows: readonly InsightRow[],
   roster: readonly RosterEntry[],
   pins: ReadonlyMap<number, { lat: number; lon: number }>,
-  repNames: ReadonlyMap<number, string>,
+  repNames: ReadonlyMap<string, string>,
 ): Map<number, PhoenixInsight[]> {
   const byId = new Map<number, RosterEntry>();
   const byName = new Map<string, RosterEntry[]>();
@@ -212,7 +213,7 @@ export function buildPhoenixInsights(
     // 1. THE SAME NAME TWICE ON ONE REP'S OWN LIST. Two rows, one rep, one name — the CRM's own
     //    duplicate, not sharing, which is why `findSharedCustomers` skips it by design.
     const duplicates = sameName.filter(
-      (other) => other.agentCrmId === row.agentCrmId && other.contactCrmId !== row.contactCrmId,
+      (other) => other.repKey === row.repKey && other.contactCrmId !== row.contactCrmId,
     );
     if (duplicates.length > 0) {
       const times = duplicates.length + 1;
@@ -238,12 +239,12 @@ export function buildPhoenixInsights(
     if (myPin && mine.nameKey.length >= MIN_NAME_KEY && sameName.length <= RARE_NAME_MAX) {
       const twins: { agrees: string[]; metres: number; repName: string }[] = [];
       for (const other of sameName) {
-        if (other.agentCrmId === row.agentCrmId) continue;
+        if (other.repKey === row.repKey) continue;
         const otherPin = pins.get(other.contactCrmId);
         if (!otherPin) continue;
         const metres = metresBetween(myPin.lat, myPin.lon, otherPin.lat, otherPin.lon);
         if (metres <= DISTANT_TWIN_M) continue;
-        const repName = repNames.get(other.agentCrmId);
+        const repName = repNames.get(other.repKey);
         // No readable name means no way to say whose list it is on, and the standing rule is that a
         // screen never prints a raw id at a reader. Silence beats "also under agent 4412".
         if (!repName) continue;
