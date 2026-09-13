@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Minus, Plus, X } from "lucide-react";
 
+import { OwedFeedbackBox } from "@/components/employee-portal/owed-feedback-box";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { hasPhoneLike, maskPhoneLike } from "@/lib/recruitment/cv-phone-redaction";
@@ -444,19 +445,14 @@ export function CvDocumentView({
   // THE LOCK SPEAKS FIRST, and it is not an error. It is a step the reader has to take, so it reads
   // as an instruction with the way out attached, not as a red failure about a document that is
   // perfectly fine.
+  // The feedback is written right here, for the CV the lock names — the `#candidate-` link alone was
+  // a dead end whenever that card sat in a closed folder or had left the reader's lists.
   const lockNotice = locked ? (
-    <div className="border-l-2 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
-      <p className="font-semibold">{locked.message}</p>
-      {locked.candidateId ? (
-        <a
-          className="mt-1 inline-block font-semibold text-amber-900 underline underline-offset-2"
-          href={`#candidate-${locked.candidateId}`}
-          onClick={onLockedLinkFollowed}
-        >
-          Go to that CV →
-        </a>
-      ) : null}
-    </div>
+    <OwedFeedbackBox
+      candidateId={locked.candidateId}
+      message={locked.message}
+      onLinkFollowed={onLockedLinkFollowed}
+    />
   ) : null;
 
   const failureNotice = error ? (
