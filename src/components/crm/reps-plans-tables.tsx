@@ -403,9 +403,12 @@ export function RepsPlansRepTable({
   month,
   monthLabel,
   periodKey,
+  rateBasis = "verified",
   rows,
   scoredThrough,
 }: {
+  /** What the headline rate counts. "submitted" from the CRM cutover — see CallRateBasis. */
+  rateBasis?: "verified" | "submitted";
   /** Carried into the drill-down so Back returns to the board the reader was actually reading. */
   appliedLine: string | null;
   appliedRegion: string | null;
@@ -426,6 +429,8 @@ export function RepsPlansRepTable({
   rows: RepsPlansRepRow[];
   scoredThrough: string;
 }) {
+  // "Proved" before the CRM cutover; from it every submitted regular visit counts (phase 6).
+  const headlineLabel = rateBasis === "submitted" ? "Visits" : "Proved";
   /**
    * The drill-down for one row: the visits this rate is made of.
    *
@@ -505,14 +510,14 @@ export function RepsPlansRepTable({
               : []),
             { key: "hr_id", label: "HR ID" },
             { key: "working_days", label: "Working Days", numeric: true },
-            { key: "am_proved", label: "AM Proved Rate", numeric: true },
+            { key: "am_proved", label: `AM ${headlineLabel} Rate`, numeric: true },
             { key: "am_reported", label: "AM Reported Rate", numeric: true },
             { key: "am_pct", label: "AM % Of Target", numeric: true },
-            { key: "pm_proved", label: "PM Proved Rate", numeric: true },
+            { key: "pm_proved", label: `PM ${headlineLabel} Rate`, numeric: true },
             { key: "pm_reported", label: "PM Reported Rate", numeric: true },
             { key: "pm_pct", label: "PM % Of Target", numeric: true },
             // No "% Of Target" column — none exists yet (see PHARMACY_CALL_RATE_TARGET).
-            { key: "pharmacy_proved", label: "Pharmacy Proved Rate", numeric: true },
+            { key: "pharmacy_proved", label: `Pharmacy ${headlineLabel} Rate`, numeric: true },
             { key: "pharmacy_reported", label: "Pharmacy Reported Rate", numeric: true },
             { key: "unproven", label: "Unproven %", numeric: true },
             { key: "campaign_calls", label: "Campaign Calls", numeric: true },
@@ -751,7 +756,7 @@ export function RepsPlansRepTable({
                       <SortButton
                         align="right"
                         className="text-emerald-300"
-                        label="Proved"
+                        label={headlineLabel}
                         onSort={table.toggleSort}
                         sort={table.sort}
                         sortKey="amVerifiedRate"
@@ -783,7 +788,7 @@ export function RepsPlansRepTable({
                       <SortButton
                         align="right"
                         className="text-emerald-300"
-                        label="Proved"
+                        label={headlineLabel}
                         onSort={table.toggleSort}
                         sort={table.sort}
                         sortKey="pmVerifiedRate"

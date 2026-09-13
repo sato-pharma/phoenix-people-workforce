@@ -1341,6 +1341,9 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
 import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
+import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
+import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
+import { runCrmNativeVacationDaysTests } from "./crm-native-vacation-days.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -4275,6 +4278,21 @@ await runTest(
 await runTest(
   "CRM cutover (dormant until a date is set: vendor rows before it and Phoenix rows from it, never both; every read door serves the unified views and filters resigned agents on a column a rep with no CRM id survives; the cutover month's CRM no-activity is never charged and the collection says why; a retired vendor stands the poller, the four crons and the four sync buttons down; probation double visits keep being captured; a native rep's half-day leave still finds his work)",
   runCrmCutoverTests,
+);
+
+await runTest(
+  "CRM vendor reads unified (the departed-agent scan and the contact master's activity pass read the unified views; rep lists stay on the scraped list; a regular visit with no GPS check-in is flagged, never reclassified as campaign)",
+  runCrmUnifyVendorReadsTests,
+);
+
+await runTest(
+  "Phoenix KPI rules, phase 6 (dormant until the CRM cutover; PM passes at 10 with no 8-12 band; every submitted regular visit counts and the contact's list decides AM or PM; working days are Sat-Wed minus holidays clipped to employment; the daily follow-up; coverage of the period's planned doctors; frequency against the grade norm with ungraded doctors left out; campaign visits, unplanned ones included, on their own line)",
+  runPhoenixKpiRulesTests,
+);
+
+await runTest(
+  "CRM native vacation-day work, phase 6 rule 9 (dormant until the CRM cutover; a doctor or campaign visit on an HR-approved vacation day is refused until the stored manager AND HR both approved the rep's request; annual vacation itself stays recordable; nobody answers their own request or both halves; the service never writes a decision literal and the rep is the session)",
+  runCrmNativeVacationDaysTests,
 );
 
 await runTest(

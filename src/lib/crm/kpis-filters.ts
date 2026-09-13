@@ -210,6 +210,33 @@ export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "below-coverage-floor": "Owner's floor, 2026-09-05: coverage should be no less than 95%.",
 };
 
+/**
+ * The flag wording that changes once the Phoenix KPI rules score a period (phase 6, after the CRM
+ * cutover). Frequency then passes at the grade norm with extra visits allowed, so "exactly on plan"
+ * would describe a rule that no longer exists.
+ */
+export const KPI_FLAG_LABEL_PHOENIX: Partial<Record<KpiFlag, string>> = {
+  "perfect-frequency": "Every graded doctor at his grade norm",
+  "under-visiting": "Doctors below their grade norm",
+};
+
+export const KPI_FLAG_HINT_PHOENIX: Partial<Record<KpiFlag, string>> = {
+  "perfect-frequency": "100% frequency: every graded doctor got the visits his grade asks for. Extra visits are fine.",
+  "under-visiting": "At least one graded doctor got fewer visits than his grade asks for.",
+  "below-am-target": "Submitted morning visits came in under the AM target, judged on its own.",
+  "below-pm-target": "Submitted afternoon visits came in under the PM target, judged on its own.",
+};
+
+/** A flag's label under the rules that scored the board. */
+export function kpiFlagLabel(flag: KpiFlag, rules?: "legacy" | "phoenix"): string {
+  return (rules === "phoenix" ? KPI_FLAG_LABEL_PHOENIX[flag] : undefined) ?? KPI_FLAG_LABEL[flag];
+}
+
+/** A flag's hint under the rules that scored the board. */
+export function kpiFlagHint(flag: KpiFlag, rules?: "legacy" | "phoenix"): string {
+  return (rules === "phoenix" ? KPI_FLAG_HINT_PHOENIX[flag] : undefined) ?? KPI_FLAG_HINT[flag];
+}
+
 /** Every flag that is true of this row. */
 export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   const flags: KpiFlag[] = [];

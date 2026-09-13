@@ -10,6 +10,8 @@
 
 import { computeCallRate, type CallRateReport, type VisitForCallRate } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
+import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
+import { kpiRulesFor } from "@/lib/crm/phoenix-kpi-rules";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
@@ -39,7 +41,7 @@ export type CallRateInput = {
 export async function loadCallRateReport(
   input: CallRateInput,
 ): Promise<CallRateReport & { holidaysComplete: boolean }> {
-  const [rawVisits, checkins, holidays] = await Promise.all([
+  const [rawVisits, checkins, holidays, cutover] = await Promise.all([
     queryVisits<VisitForCallRate & { crm_visit_id: number | null; double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
@@ -47,7 +49,11 @@ export async function loadCallRateReport(
     }),
     queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
     loadCallRateHolidays(input.dateFrom, input.dateTo),
+    // Phase 6: from the CRM cutover every submitted regular visit counts. With no date set, or an
+    // unreadable setting, this answers the old rule and nothing on any screen moves.
+    getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),
   ]);
+  const rules = kpiRulesFor(cutover, input.dateFrom, input.dateTo);
 
   // The same collapse every other CRM consumer applies, so this cannot disagree with the visit
   // count shown beside it on the same screen.
@@ -62,8 +68,9 @@ export async function loadCallRateReport(
     dateTo: input.dateTo,
     campaignLimit: input.campaignLimit,
     holidays: holidays.dates,
+    basis: rules.rules === "phoenix" ? "submitted" : "verified",
   });
-  return { ...report, holidaysComplete: holidays.complete };
+  return { ...report, basisNote: rules.note, holidaysComplete: holidays.complete };
 }
 
 /**

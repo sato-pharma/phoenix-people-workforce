@@ -14,6 +14,7 @@ import {
   CRM_CHECKINS_TABLE,
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
+  CRM_VISITS_CHECKIN_FLAGS_VIEW,
   CRM_VISITS_TABLE,
 } from "@/lib/crm/tables";
 import { addDaysIso } from "@/lib/crm/dates";
@@ -49,10 +50,8 @@ export { CRM_MASTER_DATASETS, CRM_MASTER_SUPPORTED_FILTERS, crmMasterSupportsFil
 const TRIPLE_CONFIRMED = "Confirmed — same doctor";
 const TRIPLE_UNSPECIFIED = "Contact unspecified — same day";
 
-/** DB view (migration crm_effective_visit_type_view) exposing has_checkin + effective_visit_type +
- * reclassified_no_checkin. Used only for the "Regular · No Check-in" tab's DB-level filter/count;
- * the other tabs read the base table and derive the flag in memory. */
-const CRM_VISITS_EFFECTIVE_VIEW = "ireports360_visits_effective";
+/** A regular visit with no matched GPS check-in. Still Regular: GPS is evidence, not the count. */
+export const REGULAR_NO_GPS_CHECKIN_LABEL = "Regular — no GPS check-in";
 
 /** A visit-based dataset (everything except check-ins reads the visits table). */
 function isVisitDataset(dataset: CrmMasterDataset): boolean {
@@ -502,9 +501,9 @@ async function preloadCheckinsIndexForExport(range: { dateFrom: string | null; d
     return indexCheckinsByAgentContactDay(data);
   } catch (error) {
     // DELIBERATELY NOT SWALLOWED (it used to return an empty Map). An empty index makes every
-    // Regular visit look like it has no check-in, and attachEffectiveType then RECLASSIFIES all of
-    // them as "Campaign — reclassified". In a downloadable workbook that is a permanent artifact
-    // stating, with total confidence, that an entire team did zero verified regular visits — a
+    // Regular visit look like it has no check-in, and attachEffectiveType then FLAGS all of them
+    // "no GPS check-in". In a downloadable workbook that is a permanent artifact stating, with
+    // total confidence, that an entire team had no GPS evidence for any regular visit — a
     // classification manufactured out of an infrastructure error. A failed export the user retries
     // is strictly better than a plausible, wrong one they act on.
     //
@@ -637,17 +636,19 @@ function attachSaveTierVisitTime(rows: CrmMasterRow[]): void {
   }
 }
 
-/** Effective visit type: a Regular visit (0) with NO matched GPS check-in is COUNTED as Campaign,
- * but ALWAYS flagged here — never a silent recount. For regular_no_checkin every row is reclassified
- * (the tab filters to it); for visits/double it's derived from the in-memory check-in correlation
- * (checkin_id null). Datasets that don't correlate (vacations, triples) keep the raw type.
+/** Effective visit type: a Regular visit (0) with NO matched GPS check-in STAYS Regular and is
+ * flagged "no GPS check-in". Owner decisions 1 and 7 (13 Sep): every submitted regular visit counts
+ * and GPS is evidence only, so the old relabelling of such a visit as Campaign is gone. For the two
+ * No-Check-in tabs every row carries the flag (the tab filters to it); for visits/double it's derived
+ * from the in-memory check-in correlation (checkin_id null). Datasets that don't correlate
+ * (vacations, triples) keep the raw type.
  *
  * DEGRADATION RULE (the module-wide one): a cosmetic OVERLAY may fall back to null — a blank
- * Check-in Address or GPS brick reads as "unknown", which is honest. A CLASSIFICATION may not. When
+ * Check-in Address or GPS brick reads as "unknown", which is honest. A FLAG may not. When
  * `checkinCorrelationAvailable` is false the check-in read FAILED, so every `checkin_id` is null for
- * that reason alone; reclassifying then would turn an infrastructure error into the confident,
- * wrong statement that a whole team did no verified regular visits. Keep the raw vendor type
- * instead — the one value we still actually know.
+ * that reason alone; flagging then would turn an infrastructure error into the confident, wrong
+ * statement that a whole team had no GPS evidence. Keep the raw vendor type instead — the one value
+ * we still actually know.
  *
  * `checkinCorrelationAvailable` is REQUIRED, deliberately not defaulted. A `= true` default fails
  * OPEN, which is precisely backwards for a rule about classifications: a future caller that simply
@@ -666,14 +667,14 @@ export function attachEffectiveType(
     (dataset === "double_visits" && checkinCorrelationAvailable) ||
     dataset === "regular_no_checkin" ||
     dataset === "regular_dv_no_checkin";
-  // The two No-Check-in tabs are filtered at the DB by the `reclassified_no_checkin` column, so they
+  // The two No-Check-in tabs are filtered at the DB by the `regular_no_checkin` column, so they
   // never depended on the in-memory correlation and stay correct even when it fails.
-  const alwaysReclassified = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin";
+  const alwaysFlagged = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin";
   for (const row of rows) {
     const isRegular = row.visit_type === 0;
-    const reclassified = alwaysReclassified ? true : knowsCheckin && isRegular && row.checkin_id == null;
-    row.effective_type = reclassified
-      ? "Campaign — reclassified (Regular, no check-in)"
+    const noCheckin = alwaysFlagged ? true : knowsCheckin && isRegular && row.checkin_id == null;
+    row.effective_type = noCheckin
+      ? REGULAR_NO_GPS_CHECKIN_LABEL
       : resolveVisitTypeLabel(
           typeof row.visit_type === "number" ? row.visit_type : null,
           typeof row.visit_type_description === "string" ? row.visit_type_description : null,
@@ -1523,9 +1524,9 @@ function applyMasterFilters(
   // it would fail OPEN: a future caller that did reach here would silently get EVERY visit type
   // instead of vacations. Read it as a safety net, not as how the Vacations tab is filtered.
   if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
-  if (dataset === "regular_no_checkin") q = q.eq("reclassified_no_checkin", true);
+  if (dataset === "regular_no_checkin") q = q.eq("regular_no_checkin", true);
   if (dataset === "regular_dv_no_checkin") {
-    q = q.eq("reclassified_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
+    q = q.eq("regular_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
   }
 
   // Advanced filters. agent_hr_id exists on both tables; double_hr_id is visits-only. Match
@@ -1796,7 +1797,7 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
   }
 
   const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_CHECKIN_FLAGS_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
@@ -1935,7 +1936,7 @@ export async function* streamCrmMasterExportPages(
   const supabase = getSupabaseAdmin();
   const table =
     dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin"
-      ? CRM_VISITS_EFFECTIVE_VIEW
+      ? CRM_VISITS_CHECKIN_FLAGS_VIEW
       : isCheckins
         ? CRM_CHECKINS_TABLE
         : CRM_VISITS_TABLE;

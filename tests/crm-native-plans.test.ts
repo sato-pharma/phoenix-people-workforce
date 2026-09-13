@@ -24,6 +24,11 @@ import {
   parseNativePlanItems,
   type NativePlanStoredItem,
 } from "../src/lib/crm/native-visits/plan-rules.ts";
+import {
+  NATIVE_VISIT_NOT_PLANNED_MESSAGE,
+  NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE,
+  nativeVisitPlanRefusal,
+} from "../src/lib/crm/native-visits/rules.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Native rep plans — the PILOT (CRM phase 4).
@@ -278,6 +283,31 @@ export function runCrmNativePlansTests() {
   assert.match(visitService, /plan_item_id: planItemId/, "a native visit records the plan item it kept");
   assert.match(visitService, /type\.key === "regular" && draft\.contactCrmId != null/, "only a doctor visit keeps a planned call");
   assert.match(visitService, /\.eq\("plan_date", visitDate\)\s*\.is\("removed_at", null\)/, "a visit links only to a live item for that doctor and day");
+
+  // The owner, 2026-09-13: a regular visit is a doctor on the rep's list AND planned on that very day,
+  // in a week plan his manager verified. Dormant until the CRM cutover.
+  const plannedIn = (planStatus: string) => ({ planStatus });
+  assert.equal(nativeVisitPlanRefusal({ ruleActive: false, visitTypeKey: "regular", planItem: null }), null, "before the CRM cutover an unplanned doctor visit still saves");
+  assert.equal(nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: null }), NATIVE_VISIT_NOT_PLANNED_MESSAGE, "a doctor not planned on the visit day is refused");
+  for (const status of ["draft", "submitted", "returned"]) {
+    assert.equal(
+      nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: plannedIn(status) }),
+      NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE,
+      `a ${status} plan is not enough — only a verified one`,
+    );
+  }
+  assert.equal(nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: plannedIn("verified") }), null, "planned that day in a verified plan: saves");
+  assert.equal(nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "campaign", planItem: null }), null, "campaign (unplanned) waits for its own rule");
+  assert.match(
+    visitService,
+    /nativeVisitPlanRefusal\(\{\s*ruleActive: cutover != null && isOnOrAfterCrmCutover\(cutover, draft\.visitDate\)/,
+    "the plan rule is switched by the cutover, for the visit day",
+  );
+  assert.match(visitService, /from\(CRM_NATIVE_PLANS_TABLE\)\s*\.select\("status"\)/, "the plan's own status is read, not assumed");
+  const planCheckAt = visitService.indexOf("nativeVisitPlanRefusal(");
+  const visitInsertAt = visitService.search(/\.insert\(\{\s*client_submission_id/);
+  assert.ok(planCheckAt > 0 && visitInsertAt > 0 && planCheckAt < visitInsertAt, "the plan rule runs before the visit is inserted");
+  assert.match(visitService, /if \(planRefusal\) throw forbiddenError\(/);
 
   for (const route of ["app/api/crm/native-visits/plans/route.ts", "app/api/crm/native-visits/plan-reviews/route.ts"]) {
     assert.doesNotMatch(read(route), /body\.(hrId|hr_id|repHrId|agentHrId|verifierHrId)|searchParams/, `${route} must not take a person from the request`);

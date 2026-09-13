@@ -216,6 +216,8 @@ export type MrFieldKpis = {
   pharmacyTarget: number | null;
   /** False when the rep logged nothing in the window — distinct from a real zero rate. */
   hasCallRate: boolean;
+  /** "phoenix" from the CRM cutover, when every submitted regular visit counts (phase 6). */
+  kpiRules?: "legacy" | "phoenix";
 };
 
 export type PortalHomeSnapshot = {
@@ -719,6 +721,7 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrF
     pharmacyRate: row.pharmacyRate,
     pharmacyTarget: board.pharmacyTarget,
     hasCallRate: row.hasCallRate,
+    kpiRules: board.kpiRules ?? "legacy",
   };
 }
 

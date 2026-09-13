@@ -61,6 +61,11 @@ export const CRM_CHECKINS_UNIFIED_VIEW = "crm_checkins_unified";
  * plan VERIFICATION write path stays on CRM_PLAN_ENTRIES_TABLE — it writes back to the vendor. */
 export const CRM_PLAN_ENTRIES_UNIFIED_VIEW = "crm_plan_entries_unified";
 
+/** CRM_VISITS_UNIFIED_VIEW plus `has_checkin` and `regular_no_checkin`. A FLAG, never a recount: a
+ * regular visit with no GPS check-in stays regular (owner decisions 1 and 7, 13 Sep). Replaces
+ * `ireports360_visits_effective`, which reclassified such a visit as campaign. */
+export const CRM_VISITS_CHECKIN_FLAGS_VIEW = "crm_visits_checkin_flags";
+
 /** Phoenix's own CONTACT MASTER — one row per CRM contact, keyed on the CRM contact id, built from
  * the three read-only mirrors above. Unlike CRM_CONTACTS_TABLE it never forgets a contact. See
  * src/lib/crm/contact-master.ts. */

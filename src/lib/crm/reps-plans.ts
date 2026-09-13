@@ -26,6 +26,7 @@ import {
   PM_CALL_RATE_TARGET,
   countCallRateWorkingDays,
   zeroRepCallRate,
+  type CallRateBasis,
   type CallRateReport,
   type CallRateSlice,
   type PharmacyCallRateSlice,
@@ -575,8 +576,11 @@ export type RepsPlansTotals = {
  * measured by it. `buildRepsPlansBoard` is the only caller and it filters first; the assertion is
  * kept there rather than here so this stays a plain fold.
  */
-function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPlansTotals {
+function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number, basis: CallRateBasis = "verified"): RepsPlansTotals {
   const denominator = workingDays * rows.length;
+  // The same count the per-rep headline used — see CallRateBasis. Campaign stays out either way.
+  const headlineOf = (session: { verified: number; unverified: number }) =>
+    basis === "submitted" ? session.verified + session.unverified : session.verified;
   const blank = (target: number): RepsPlansSession => ({
     verified: 0,
     unverified: 0,
@@ -628,17 +632,17 @@ function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPl
 
   for (const session of [am, pm]) {
     if (denominator > 0) {
-      session.verifiedRate = round2(session.verified / denominator);
+      session.verifiedRate = round2(headlineOf(session) / denominator);
       session.reportedRate = round2(session.reported / denominator);
-      session.attainmentPct = roundPct((session.verified / denominator / session.target) * 100);
+      session.attainmentPct = roundPct((headlineOf(session) / denominator / session.target) * 100);
     }
   }
   if (denominator > 0) {
-    pharmacy.verifiedRate = round2(pharmacy.verified / denominator);
+    pharmacy.verifiedRate = round2(headlineOf(pharmacy) / denominator);
     pharmacy.reportedRate = round2(pharmacy.reported / denominator);
     // Null target -> null attainment, never a division. See PHARMACY_CALL_RATE_TARGET.
     pharmacy.attainmentPct =
-      pharmacy.target != null ? roundPct((pharmacy.verified / denominator / pharmacy.target) * 100) : null;
+      pharmacy.target != null ? roundPct((headlineOf(pharmacy) / denominator / pharmacy.target) * 100) : null;
   }
 
   const reportedCalls = am.reported + pm.reported + unspecified;
@@ -720,6 +724,13 @@ export type RepsPlansBoard = {
    * and the screen has to say so.
    */
   scopeLabel: string | null;
+  /**
+   * What the headline rate counts: "verified" (visit + GPS) before the CRM cutover, "submitted"
+   * (every submitted regular visit, GPS as evidence only) from it. The screen words its labels by it.
+   */
+  rateBasis: CallRateBasis;
+  /** Why a period split by the cutover kept the old rule. Null otherwise. */
+  kpiRulesNote: string | null;
 };
 
 /**
@@ -969,7 +980,8 @@ export function buildRepsPlansBoard(
   const visibleRows = geographyActive ? [...inScope, ...unplacedOutOfScope] : allRows;
 
   // ONLY the scored rows. A manager in scope is visible above and absent here, by the owner's rule.
-  const totals = totalsOf(inScope.filter((row) => row.scored), report.workingDays);
+  const rateBasis: CallRateBasis = report.basis ?? "verified";
+  const totals = totalsOf(inScope.filter((row) => row.scored), report.workingDays, rateBasis);
   // Both are 0 with no organogram: "37 people hold no seat" would be a claim about a chart nothing
   // managed to read, and the note under the tiles states these as facts about the org.
   const managersShown = orgAvailable ? visibleRows.filter((row) => !row.scored && row.territories.length > 0).length : 0;
@@ -1024,5 +1036,7 @@ export function buildRepsPlansBoard(
     geographyAvailable: lineOptions.length > 0,
     scopeLabel:
       scope == null || scope.kind === "company" ? null : scope.kind === "agents" ? scope.label : scope.reason,
+    rateBasis,
+    kpiRulesNote: report.basisNote ?? null,
   };
 }

@@ -15,6 +15,7 @@
  */
 
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
+import { getCrmCutoverSetting, isOnOrAfterCrmCutover } from "@/lib/crm/cutover";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
@@ -27,6 +28,7 @@ import {
   nativeVisitEntryDays,
   nativeVisitPartnerRefusal,
   nativeVisitPilotForLine,
+  nativeVisitPlanRefusal,
   nativeVisitShiftRefusal,
   nativeVisitType,
   nativeVisitTypeLabel,
@@ -50,6 +52,7 @@ import {
 } from "@/lib/crm/native-visits/server-shared";
 import {
   CRM_NATIVE_PLAN_ITEMS_TABLE,
+  CRM_NATIVE_PLANS_TABLE,
   CRM_NATIVE_VISIT_EVENTS_TABLE,
   CRM_NATIVE_VISIT_PARTNERS_TABLE,
   CRM_NATIVE_VISITS_TABLE,
@@ -63,6 +66,7 @@ import type {
   NativeVisitRow,
   NativeVisitSaveResult,
 } from "@/lib/crm/native-visits/types";
+import { vacationDayWorkRefusalForRep } from "@/lib/crm/native-visits/vacation-days";
 import { isActiveDirectoryEmployee } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -97,13 +101,18 @@ async function loadSeatId(hrId: string): Promise<string | null> {
 }
 
 /**
- * The rep's own live plan item for this doctor on this day, if the rep planned one (phase 4). Before
- * the plan tables exist there is simply no item.
+ * The rep's own live plan item for this doctor on this day, if the rep planned one (phase 4), with the
+ * status of the week plan holding it. Before the plan tables exist there is simply no item.
  */
-async function findPlanItemId(hrId: string, contactCrmId: number, visitDate: string): Promise<string | null> {
-  const { data, error } = await getSupabaseAdmin()
+async function findPlanItem(
+  hrId: string,
+  contactCrmId: number,
+  visitDate: string,
+): Promise<{ id: string; planStatus: string } | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
     .from(CRM_NATIVE_PLAN_ITEMS_TABLE)
-    .select("id")
+    .select("id,plan_id")
     .in("hr_id", hrIdLookupKeys(hrId))
     .eq("contact_crm_id", contactCrmId)
     .eq("plan_date", visitDate)
@@ -114,7 +123,14 @@ async function findPlanItemId(hrId: string, contactCrmId: number, visitDate: str
     throw error;
   }
   const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
-  return row?.id ? String(row.id) : null;
+  if (!row?.id) return null;
+  const { data: plan, error: planError } = await supabase
+    .from(CRM_NATIVE_PLANS_TABLE)
+    .select("status")
+    .eq("id", String(row.plan_id))
+    .maybeSingle();
+  if (planError) throw planError;
+  return { id: String(row.id), planStatus: String((plan as Record<string, unknown> | null)?.status ?? "") };
 }
 
 async function recordEvent(visitId: string, event: string, actorHrId: string | null, detail: Record<string, unknown>) {
@@ -141,6 +157,10 @@ export async function getNativeVisitFormOptions(access: AccessContext): Promise<
     types: NATIVE_VISIT_TYPES.map((type) => ({ key: type.key, label: type.label, contact: type.contact })),
     contacts: pilot ? await loadRepContacts(rep) : [],
     partners: pilot ? managementChain(rep, directory) : [],
+    vacationDayRuleInForce: await getCrmCutoverSetting().then(
+      (setting) => setting.cutoverDate != null,
+      () => false,
+    ),
   };
 }
 
@@ -253,15 +273,35 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   const type = nativeVisitType(draft.visitType);
   if (!type) throw validationError("Choose what kind of visit or day this is.");
 
+  // Rule 9 (phase 6): from the CRM cutover, a visit on an approved vacation day saves only after the
+  // manager and HR both approved the rep's request. Dormant while the cutover date is null.
+  const vacationRefusal = await vacationDayWorkRefusalForRep({
+    hrId: rep.hrId,
+    visitDate: draft.visitDate,
+    contactRule: type.contact,
+  });
+  if (vacationRefusal) throw forbiddenError(`Forbidden: ${vacationRefusal}`);
+
   // The plan link: a doctor visit keeps the rep's own planned item for that doctor and day, if any.
   // Only a doctor visit keeps a plan, as in the vendor plan-vs-actual (code 0 only).
-  const [seatId, partnerRoles, planItemId] = await Promise.all([
+  const [seatId, partnerRoles, planItem, cutover] = await Promise.all([
     loadSeatId(rep.hrId),
     Promise.all(partners.map((partner) => loadAppRole(partner.hrId))),
     type.key === "regular" && draft.contactCrmId != null
-      ? findPlanItemId(rep.hrId, draft.contactCrmId, draft.visitDate)
+      ? findPlanItem(rep.hrId, draft.contactCrmId, draft.visitDate)
       : Promise.resolve(null),
+    type.key === "regular" ? getCrmCutoverSetting() : Promise.resolve(null),
   ]);
+
+  // The owner, 2026-09-13: from the CRM cutover a doctor visit is a doctor on the rep's list AND
+  // planned on that very day, in a week plan his manager verified. Dormant while the date is null.
+  const planRefusal = nativeVisitPlanRefusal({
+    ruleActive: cutover != null && isOnOrAfterCrmCutover(cutover, draft.visitDate),
+    visitTypeKey: type.key,
+    planItem,
+  });
+  if (planRefusal) throw forbiddenError(`Forbidden: ${planRefusal}`);
+  const planItemId = planItem?.id ?? null;
 
   const { data: inserted, error: insertError } = await supabase
     .from(CRM_NATIVE_VISITS_TABLE)

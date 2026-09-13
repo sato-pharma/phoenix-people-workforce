@@ -96,6 +96,8 @@ function pct(value: number | null): string {
 
 export function RepsPlansBoardView({ basePath, board }: { basePath: string; board: RepsPlansBoard }) {
   const totals = board.totals;
+  // "proved" before the CRM cutover; from it every submitted regular visit counts (phase 6).
+  const headlineWord = board.rateBasis === "submitted" ? "visits" : "proved";
   const scoredThrough = dayLabel(board.dateTo);
   // WHICH WINDOW, in the header, whenever it is not the whole month. The rate is per working day and
   // always was; what it divides by is what the reader could not see, and a week's numbers under a
@@ -221,26 +223,26 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
           {/* Row one: the KPI itself, AM then PM, each with the target it is measured against. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile
-              label="AM proved"
+              label={`AM ${headlineWord}`}
               sub={`target ${totals.am.target} · reported ${rate(totals.am.reportedRate)}`}
               tone={attainmentTone(totals.am.attainmentPct)}
               value={rate(totals.am.verifiedRate)}
             />
             <Tile
               label="AM of target"
-              sub="proved rate ÷ target"
+              sub={`${headlineWord} rate ÷ target`}
               tone={attainmentTone(totals.am.attainmentPct)}
               value={pct(totals.am.attainmentPct)}
             />
             <Tile
-              label="PM proved"
+              label={`PM ${headlineWord}`}
               sub={`target ${totals.pm.target} · reported ${rate(totals.pm.reportedRate)}`}
               tone={attainmentTone(totals.pm.attainmentPct)}
               value={rate(totals.pm.verifiedRate)}
             />
             <Tile
               label="PM of target"
-              sub="proved rate ÷ target"
+              sub={`${headlineWord} rate ÷ target`}
               tone={attainmentTone(totals.pm.attainmentPct)}
               value={pct(totals.pm.attainmentPct)}
             />
@@ -262,7 +264,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
               "of target" tile. A rep with zero pharmacy calls is normal, not a shortfall to flag. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile
-              label="Pharmacy proved"
+              label={`Pharmacy ${headlineWord}`}
               sub={`reported ${rate(totals.pharmacy.reportedRate)} · no target set yet`}
               value={rate(totals.pharmacy.verifiedRate)}
             />
@@ -324,7 +326,13 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
       </Section>
 
       <Section
-        description="Proved is the rate that counts. Reported is the same rep's number if nobody checks — the gap between the two columns is the point of this page."
+        description={
+          board.rateBasis === "submitted"
+            ? "Visits is the rate that counts: every submitted regular visit per working day. GPS check-ins are evidence, shown in the Proof columns."
+            : board.kpiRulesNote
+              ? `Proved is the rate that counts. ${board.kpiRulesNote}`
+              : "Proved is the rate that counts. Reported is the same rep's number if nobody checks — the gap between the two columns is the point of this page."
+        }
         title={board.appliedRepKey ? "Selected rep" : "By rep"}
       >
         <RepsPlansRepTable
@@ -336,6 +344,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
           month={board.month}
           monthLabel={board.isWholeMonth ? board.monthLabel : `${board.monthLabel} · ${board.periodLabel}`}
           periodKey={board.periodKey}
+          rateBasis={board.rateBasis}
           rows={board.reps}
           scoredThrough={scoredThrough}
         />

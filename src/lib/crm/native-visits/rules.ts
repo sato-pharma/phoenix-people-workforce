@@ -309,6 +309,32 @@ export function nativeVisitShiftRefusal(
   return null;
 }
 
+export const NATIVE_VISIT_NOT_PLANNED_MESSAGE =
+  "That doctor is not in your plan for that day. A doctor visit must be to a doctor planned on the day you visit.";
+
+export const NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE =
+  "Your plan for that week is not verified by your manager yet. A doctor visit saves only from a verified plan.";
+
+/**
+ * Why a doctor visit is refused for being outside the plan, or null.
+ *
+ * The owner, 2026-09-13: a regular visit is a doctor on the rep's list AND in his plan — planned on
+ * that very day, in a week plan his manager VERIFIED. Dormant until the CRM cutover. Only the doctor
+ * visit is judged: an unplanned visit is now called campaign, and its own rule is still to come.
+ */
+export function nativeVisitPlanRefusal(input: {
+  /** The CRM cutover date is set and the visit day is on or after it. */
+  ruleActive: boolean;
+  visitTypeKey: string;
+  /** The rep's live plan item for this doctor on the visit day, with its week plan's status; null when none. */
+  planItem: { planStatus: string } | null;
+}): string | null {
+  if (!input.ruleActive || input.visitTypeKey !== "regular") return null;
+  if (!input.planItem) return NATIVE_VISIT_NOT_PLANNED_MESSAGE;
+  if (input.planItem.planStatus !== "verified") return NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE;
+  return null;
+}
+
 /** A rep can never record himself as his own partner. */
 export function nativeVisitPartnerRefusal(repHrId: string, partnerHrIds: readonly string[]): string | null {
   const repKey = canonicalHrIdKey(repHrId);
