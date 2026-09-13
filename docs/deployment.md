@@ -167,7 +167,7 @@ switching them back on:
 
 | Disabled job | Schedule it had | Why it is off |
 |---|---|---|
-| `phoenix-ireports360-sync` | 9:07 / 12:07 / 19:07 daily | Superseded by the in-process poller, which runs the same rolling 10-day sync itself and pings the same `phoenix-ireports360-sync` check |
+| `phoenix-ireports360-sync` | 9:07 / 12:07 / 19:07 daily | Superseded by the in-process poller, which runs the same rolling 10-day sync itself and pings the same `phoenix-ireports360-sync` check. The route also captured probation double-visit days; nothing did from 2026-08-16 until the poller took that over on 2026-09-13 |
 | `phoenix-ireports360-reconcile` | Sundays 7:25 AM | Superseded the same way by the poller's weekly wide reconcile |
 | `phoenix-reconcile-visits` | Sundays 4:24 AM | Older duplicate of the same reconcile endpoint, off long before the poller |
 | `phoenix-ireports360-live-sync` | :01/:16/:31/:46, 8 AM–12 PM | Superseded by the poller's 20–30 s ticks. ⚠️ Its route is still wired to the `phoenix-ireports360-live-sync` dead-man's-switch and **nothing else pings that slug**, so that check has been red since 2026-08-16 for no real reason — delete the check (see [observability.md](observability.md)) |

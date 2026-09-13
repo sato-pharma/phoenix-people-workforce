@@ -25,10 +25,15 @@ import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
+import { authRoleForHrId, loadDistrictManagerAppRoleMatcher } from "@/lib/weekly-planning/service";
 import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
-import { isDistrictManagerPlanTitle, resolvePlanCeoDecision } from "@/lib/weekly-planning/plan-v1";
+import {
+  isDistrictManagerPlanSubmitter,
+  isDistrictManagerPlanTitle,
+  resolvePlanCeoDecision,
+} from "@/lib/weekly-planning/plan-v1";
 import type {
   VacationActionAvailability,
   VacationActionButton,
@@ -1875,7 +1880,16 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   // confirmed live during e2e testing, 0 production rows ever hold that status). Own plans are
   // never actionable by the owner.
   const approverStage = resolveApproverPlanStage(status, managerHrId, access, String(row.employee_job_title ?? ""));
-  const isDistrictManagerPlan = isDistrictManagerPlanTitle(String(row.employee_job_title ?? ""));
+  // A District Manager plan by title, or by the submitter's app role (an acting District Manager
+  // keeps a Medical Representative title). The app-role half is skipped for a plan that really did
+  // go through a CEO stage — resting at manager_approved, or carrying a CEO decision, from before
+  // the app-role check existed (2026-09-13) — so its tracker keeps the CEO step it actually has.
+  const keptCeoStage =
+    status === "manager_approved" ||
+    resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id) !== null;
+  const isDistrictManagerPlan =
+    isDistrictManagerPlanTitle(String(row.employee_job_title ?? "")) ||
+    (!keptCeoStage && isDistrictManagerPlanSubmitter(null, await authRoleForHrId(employeeHrId)));
   const canAcknowledge = status === "final_approved" && isSuperAdmin && !own;
   const decisionStage = !own && approverStage ? approverStage : null;
   // The employee's edit-request (reopen a submitted plan) is decided ONLY by the actual direct
@@ -2041,10 +2055,19 @@ async function fetchCompanyPlanRequestItems(
     return [];
   }
 
+  // Acting District Managers are titled Medical Representative, so the District Manager feed also
+  // admits a submitter who holds the District Manager app role.
+  const hasDistrictManagerAppRole = options?.districtManagersOnly ? await loadDistrictManagerAppRoleMatcher() : null;
   const items: CompanyRequestItem[] = [];
   for (const row of (data as Array<Record<string, unknown>> | null) ?? []) {
     const jobTitle = row.employee_job_title ? String(row.employee_job_title) : null;
-    if (options?.districtManagersOnly && !isDistrictManagerPlanTitle(jobTitle)) continue;
+    if (
+      options?.districtManagersOnly &&
+      !isDistrictManagerPlanTitle(jobTitle) &&
+      !hasDistrictManagerAppRole?.(String(row.employee_hr_id ?? ""))
+    ) {
+      continue;
+    }
     const status = String(row.status ?? "");
     const id = String(row.id ?? "");
     items.push({

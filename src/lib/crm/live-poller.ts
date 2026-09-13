@@ -61,6 +61,7 @@ import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-syn
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
+import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -584,6 +585,37 @@ async function runScheduledParitySweep(): Promise<void> {
   }
 }
 
+// How far back each rolling run re-captures probation Double-Visit days. Wider than the rolling
+// sync's own 10 days because a double visit can be saved up to 16 days late (August 2026 maximum),
+// and because the first run after 2026-09-13 has to heal the gap left since capture stopped on
+// 2026-08-16. It reads only the mirror and writes new days only, so the width costs a few reads.
+export const PROBATION_DV_LOOKBACK_DAYS = 45;
+
+/**
+ * Captures probation Double-Visit days from the mirror after a deep run refreshed it.
+ *
+ * Capture used to be called ONLY from the two cron-job.org routes (ireports360-visits-sync and
+ * -reconcile). When this poller took those runs over, the jobs were switched off and nothing else
+ * called it, so no probation DV day was captured after 2026-08-16 and every scorecard since had to
+ * be opened by hand. Firewalled like runScheduledPlanSync: it never throws, never pings the visits
+ * dead-man's switch, and never sends the visits digest — a probation hiccup must not read as
+ * "today's attendance data is broken". It sends no email either (dv-sync.ts, MOD-1).
+ */
+async function runProbationDvCapture(window: { dateFrom: string; dateTo: string }): Promise<void> {
+  try {
+    const summary = await syncProbationDvDays(getSupabaseAdmin(), window);
+    console.log(
+      `[crm:live-poll] probation DV capture ${window.dateFrom}..${window.dateTo} — detected ${summary.detected}, ` +
+        `inserted ${summary.inserted}, needs review ${summary.needsReview}, ingest issues ${summary.ingestIssues}`,
+    );
+  } catch (error) {
+    logError("Probation DV-day capture failed after a CRM deep run; the next run retries the same window", {
+      error,
+      labels: { event: "probation_dv_capture_failed", job: "probation-dv-capture" },
+    });
+  }
+}
+
 /** Runs one due deep job (rolling sync or wide reconcile) in place of this tick's probe, with the
  * same dead-man's-switch slugs and digest behavior the external cron routes use — so monitoring
  * continuity holds no matter which scheduler fired last. Reconcile always notifies (weekly
@@ -632,6 +664,11 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
         status: "success",
       }).catch(() => undefined);
     }
+    await runProbationDvCapture(
+      isReconcile
+        ? resolveWideReconciliationSlice(scheduledAt)
+        : { dateFrom: addDaysIso(today, -PROBATION_DV_LOOKBACK_DAYS), dateTo: today },
+    );
   } catch (error) {
     if (isReconcile) state.lastReconcileFailureMs = Date.now();
     else state.lastRollingFailureMs = Date.now();

@@ -103,6 +103,7 @@ import {
   employeePlanActivityTypes,
   getNextEmployeePlanStatus,
   isClosedEmployeePlanStatus,
+  isDistrictManagerPlanSubmitter,
   isDistrictManagerPlanTitle,
   isWeeklyMonthlyPlanEligibleTitle,
   planPeriodMove,
@@ -1361,7 +1362,20 @@ async function authUsersByRole(role: PhoenixRole) {
   return (data ?? []) as AuthUserRow[];
 }
 
-async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
+/**
+ * Answers "does this person hold the District Manager app role?" for many plans with one read —
+ * acting District Managers included, whose job title says Medical Representative.
+ */
+export async function loadDistrictManagerAppRoleMatcher(): Promise<(hrId: string | null | undefined) => boolean> {
+  const rows = await authUsersByRole("District Manager");
+  const keys = new Set(rows.map((row) => normalizeHrId(row.hr_id)).filter(Boolean));
+  return (hrId) => {
+    const key = normalizeHrId(hrId);
+    return Boolean(key) && keys.has(key);
+  };
+}
+
+export async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
   // app_auth_users.hr_id is stored in canonical display form (e.g. "B-10"), never the
   // separator-stripped comparison key normalizeHrId produces ("b10") - querying by the
   // stripped form silently matched nothing for every hyphenated id.
@@ -3470,6 +3484,12 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     // auto-cascades straight to final_approved further down. The CEO stage exists for every
     // other eligible role; block it here rather than only hiding it in the UI, so a direct
     // API call can't still push a DM plan through ceo_approve/ceo_reject/ceo_return.
+    //
+    // Title-only ON PURPOSE, unlike bypassCeo below. A plan whose submitter is a District
+    // Manager by app role alone (an acting DM) could already be resting at manager_approved from
+    // before the app-role check existed (2026-09-13), and the CEO stage is the only path left to
+    // it — blocking it here would strand that plan with no one able to act. From then on such a
+    // plan never reaches manager_approved, so there is nothing else for this guard to catch.
     if (isDistrictManagerPlanTitle(plan.employee_job_title)) {
       throw new Error("Forbidden: District Manager plans are decided by HR, not the CEO.");
     }
@@ -3480,7 +3500,11 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   // that writes NO ceo_approve row — never a fabricated CEO decision stamped with the
   // manager's own identity. bypassCeo carries that through both the client-side next-status
   // computation and the RPC's server-side one (phx_weekly_plan_next_status.bypass_ceo).
-  const isDistrictManagerPlan = isDistrictManagerPlanTitle(plan.employee_job_title);
+  //
+  // The submitter's APP ROLE counts as well as the title: an acting District Manager is titled a
+  // Medical Representative (isDistrictManagerPlanSubmitter). The title alone put her plans at
+  // manager_approved, waiting on a CEO stage a DM plan does not have.
+  const isDistrictManagerPlan = isDistrictManagerPlanSubmitter(plan.employee_job_title, await authRoleForHrId(plan.employee_hr_id));
   const bypassCeo = input.action === "manager_approve" && isDistrictManagerPlan;
 
   // The next status is computed client-side for the audit-log entry and the

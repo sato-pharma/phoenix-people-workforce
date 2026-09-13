@@ -155,6 +155,24 @@ export function isDistrictManagerPlanTitle(jobTitle: string | null): boolean {
 }
 
 /**
+ * Whether a plan's approval follows the District Manager pipeline: submit → NSM (or RSM) → HR
+ * acknowledge, with no CEO stage.
+ *
+ * The job title is what someone IS; the app role is what they MAY DO. An acting District Manager
+ * keeps her Medical Representative title and holds the District Manager app role (owner rule,
+ * 2026-08-22), so the title alone sent Nosiba Salah's plans through a CEO stage DM plans do not
+ * have. Either signal is enough. An unknown role (no login row, failed lookup) falls back to the
+ * title, which is exactly the rule before 2026-09-13.
+ */
+export function isDistrictManagerPlanSubmitter(
+  jobTitle: string | null,
+  submitterAppRole: string | null | undefined,
+): boolean {
+  if (submitterAppRole === "District Manager") return true;
+  return isDistrictManagerPlanTitle(jobTitle);
+}
+
+/**
  * The CEO decision a read path may DISPLAY for a plan — `null` whenever that plan kind has no
  * CEO stage at all.
  *
