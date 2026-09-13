@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-import { getNextEmployeePlanStatus } from "../src/lib/weekly-planning/plan-v1.ts";
+import { getNextEmployeePlanStatus, isDistrictManagerPlanSubmitter } from "../src/lib/weekly-planning/plan-v1.ts";
 
 // District Manager plans skip the CEO stage entirely: the manager's (National Manager's)
 // approval IS the final approval -- it lands straight on final_approved in ONE decision that
@@ -42,6 +42,33 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "submitted",
     "bypassCeo must be inert for non-manager_approve actions",
   );
+
+  // 0b. WHO IS A DISTRICT MANAGER, EXECUTED. An acting District Manager keeps her Medical
+  // Representative title and holds the District Manager APP ROLE (owner rule 2026-08-22). Reading
+  // the title alone put her plans at manager_approved, waiting on a CEO stage a DM plan does not
+  // have (her week-37 plan, 2026-09-10). The app role must count as well as the title.
+  assert.equal(
+    isDistrictManagerPlanSubmitter("Medical Representative", "District Manager"),
+    true,
+    "an acting District Manager (Medical Representative title, District Manager app role) must follow the District Manager plan pipeline",
+  );
+  assert.equal(
+    isDistrictManagerPlanSubmitter("District Sales Manager", null),
+    true,
+    "a District Manager by title still follows the pipeline when the app role is unknown",
+  );
+  assert.equal(
+    isDistrictManagerPlanSubmitter("Medical Representative", "Medical Rep"),
+    false,
+    "a Medical Representative with no District Manager role keeps the CEO stage",
+  );
+  assert.equal(
+    isDistrictManagerPlanSubmitter("National Sales Manager", "National Sales Manager"),
+    false,
+    "a National Sales Manager plan keeps the CEO stage",
+  );
+  assert.equal(isDistrictManagerPlanSubmitter(null, undefined), false, "no title and no role is not a District Manager");
+
   const planV1Source = readFileSync("src/lib/weekly-planning/plan-v1.ts", "utf8");
   const serviceSource = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
   const workspaceSource = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
@@ -84,8 +111,16 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   // call is made and no ceo_approve row is written under the manager's identity.
   assert.match(
     serviceSource,
-    /const isDistrictManagerPlan = isDistrictManagerPlanTitle\(plan\.employee_job_title\);\s*\n\s*const bypassCeo = input\.action === "manager_approve" && isDistrictManagerPlan;/,
-    "decideEmployeePlan must derive bypassCeo from a District Manager manager_approve",
+    /const isDistrictManagerPlan = isDistrictManagerPlanSubmitter\(plan\.employee_job_title, await authRoleForHrId\(plan\.employee_hr_id\)\);\s*\n\s*const bypassCeo = input\.action === "manager_approve" && isDistrictManagerPlan;/,
+    "decideEmployeePlan must derive bypassCeo from a District Manager manager_approve, reading the submitter's app role as well as the title",
+  );
+  // The ceo_* guard (section 2) stays TITLE-only on purpose: a plan by an acting District Manager
+  // that already rests at manager_approved from before the app-role check must keep the one
+  // decision path it has. Widening that guard to the app role would strand it.
+  assert.doesNotMatch(
+    serviceSource,
+    /isDistrictManagerPlanSubmitter\([^)]*\)\) \{\s*\n\s*throw new Error\("Forbidden: District Manager plans are decided by HR, not the CEO\."\);/,
+    "the ceo_* guard must stay title-only so a pre-existing manager_approved plan is never stranded",
   );
   assert.match(
     serviceSource,
@@ -235,8 +270,13 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   );
   assert.match(
     approvalsHubSource,
-    /if \(options\?\.districtManagersOnly && !isDistrictManagerPlanTitle\(jobTitle\)\) continue;/,
-    "the shared company-plan-request fetcher must filter by isDistrictManagerPlanTitle, the same classifier used everywhere else in this feature",
+    /options\?\.districtManagersOnly &&\s*\n\s*!isDistrictManagerPlanTitle\(jobTitle\) &&\s*\n\s*!hasDistrictManagerAppRole\?\.\(String\(row\.employee_hr_id \?\? ""\)\)\s*\n\s*\) \{\s*\n\s*continue;/,
+    "the District Manager feed must admit a plan by title OR by the submitter's District Manager app role (an acting DM is titled Medical Representative)",
+  );
+  assert.match(
+    approvalsHubSource,
+    /const isDistrictManagerPlan =\s*\n\s*isDistrictManagerPlanTitle\(String\(row\.employee_job_title \?\? ""\)\) \|\|\s*\n\s*\(!keptCeoStage && isDistrictManagerPlanSubmitter\(null, await authRoleForHrId\(employeeHrId\)\)\);/,
+    "the plan detail must treat an acting District Manager's plan as a DM plan, unless it really went through a CEO stage",
   );
   assert.match(
     approvalsHubSource,

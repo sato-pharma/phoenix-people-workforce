@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   computeCrmDelta,
@@ -10,6 +11,7 @@ import {
   PARITY_SWEEP_MIN_GAP_MS,
   PLAN_SYNC_FAILURE_RETRY_GAP_MS,
   PLAN_SYNC_MIN_GAP_MS,
+  PROBATION_DV_LOOKBACK_DAYS,
   RECONCILE_FAILURE_RETRY_GAP_MS,
   RECONCILE_MIN_GAP_MS,
   resolveDueScheduledWork,
@@ -389,6 +391,27 @@ export function runCrmLivePollerTests() {
   const subset = filterRowsToUpsert(rows, (row) => row.crm_visit_id, new Set([2]));
   assert.deepEqual(subset, [{ crm_visit_id: 2 }]);
   assert.equal(rows.length, 3);
+
+  // ── Probation Double-Visit capture rides every deep run ──────────────────────────────────────
+  // Capture was called only from the two cron-job.org routes. When this poller took those runs
+  // over, the jobs were switched off and no probation DV day was captured after 2026-08-16. The
+  // poller must call it after both deep runs, and never let it fail the visits run.
+  const pollerSource = readFileSync("src/lib/crm/live-poller.ts", "utf8");
+  const scheduledWork = pollerSource.match(/async function runScheduledWork\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  assert.ok(scheduledWork, "runScheduledWork must exist");
+  const successPath = scheduledWork.slice(0, scheduledWork.indexOf("} catch (error) {"));
+  assert.match(
+    successPath,
+    /await runProbationDvCapture\(\s*\n\s*isReconcile\s*\n\s*\? resolveWideReconciliationSlice\(scheduledAt\)\s*\n\s*: \{ dateFrom: addDaysIso\(today, -PROBATION_DV_LOOKBACK_DAYS\), dateTo: today \},\s*\n\s*\);/,
+    "both deep runs (rolling sync and wide reconcile) must capture probation DV days on success",
+  );
+  const capture = pollerSource.match(/async function runProbationDvCapture\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  assert.match(capture, /await syncProbationDvDays\(getSupabaseAdmin\(\), window\)/, "the capture must run syncProbationDvDays over the run's window");
+  assert.match(capture, /\} catch \(error\) \{\s*\n\s*logError\(/, "a capture failure must be logged, never thrown into the visits run");
+  assert.doesNotMatch(capture, /pingDeadMansSwitch|notifyIReports360SyncResult/, "a capture failure must not read as a broken visits sync");
+  // A double visit can be saved up to 16 days late, so the rolling window must reach further back
+  // than that.
+  assert.ok(PROBATION_DV_LOOKBACK_DAYS >= 17, "the probation DV lookback must cover the 16-day late-save lag");
 
   // ── startLiveCrmPoller guards: must refuse to start outside the Railway production service ───
   const savedFlag = process.env.PHOENIX_LIVE_CRM_POLL;
