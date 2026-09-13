@@ -16,11 +16,10 @@ each traced to a named merged PR on the day this document was recovered. See
 [audit-cycle-4.md](audit-cycle-4.md) for that trace and [audit-ledger.md](audit-ledger.md) for the
 per-finding rows. **Do not re-open a finding from this document without checking the ledger first.**
 
-**One item is still open, and it is inside finding 1.** The double-payment exposure is closed, but
-the real repair — stamping the outstation trips the wizard actually paid — was deliberately not
-written, because the wizard's expense figures are typed rather than derived and no honest link exists
-between a typed figure and the trips it settled. That needs an owner decision about what the typed
-figure means.
+**Nothing is open.** The last item sat inside finding 1: the double-payment exposure was closed, but
+stamping the outstation trips the wizard actually paid waited on an owner decision about what the
+typed expense figure means. He ruled on 2026-09-12 and PR #3786 closed it the same day — publishing
+marks the approved trips of its payout period, and trips before 1 July 2026 are imported history.
 
 ---
 

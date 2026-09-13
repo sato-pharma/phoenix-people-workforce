@@ -93,7 +93,13 @@ enabled and four policies, alongside `automated_payroll_carry_forward` (4 polici
 `heldSecondPartTotal` and `heldWithoutMeaningfulReason` into the published audit row — described in
 the source as "the permanent answer to who was held this month, for how much, and why".
 
-## What is still open
+## What was still open — closed 2026-09-12 by PR #3786
+
+> **CLOSED.** The owner answered the expense-meaning sheet the same day: stamp the trips automatically,
+> at the value HR edited or else the original claim, and treat trips up to June as values only.
+> PR #3786 shipped it — `recordPaidExpenseStamp` runs on publish and marks the approved trips of the
+> run's payout period, and trips before 1 July 2026 are imported history. July and August are not
+> backfilled, so September's publish is the first to mark. The account below is kept as it was written.
 
 **Half of finding 1, deliberately.** The double-payment exposure is closed at the database. The real
 repair — stamping the outstation trips whose money the wizard actually paid — was not written, and
@@ -105,7 +111,7 @@ holding zero trips in August's payout period and 55 unstamped trips spread acros
 
 **There is no honest way to say which trips that 4,203 settled.** Recording the consumed trips at
 confirm time is the real fix, and it needs an owner decision about what the typed figure means. That
-decision is the one outstanding item from the whole audit.
+decision was the one outstanding item from the whole audit.
 
 ## Two decoys — do not "recover" a finding from either
 
