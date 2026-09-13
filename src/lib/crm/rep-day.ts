@@ -25,7 +25,9 @@ import {
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import {
+  buildParticipantHrIdOrFilter,
   collapseDuplicateVisitSubmissionsLiveShape,
   getEffectiveExcludedAgentCrmIds,
   queryCheckins,
@@ -145,6 +147,41 @@ export function resolveRepDayCheckinOwners(
   return owners;
 }
 
+/**
+ * The person a visit or check-in names, as one comparable key: the CRM id when the row carries a
+ * real one, else `hr:<canonical hr id>`. A vendor row always carries a CRM id, so for it this is the
+ * plain id comparison the drill-down always made; a native row for a rep hired after the CRM cutover
+ * carries a NULL CRM id and is recognised by its hr id instead.
+ */
+export function repDayPersonKey(crmId: number | null | undefined, hrId: string | null | undefined): string | null {
+  return checkinAgentKey(crmId != null && Number.isFinite(crmId) && crmId !== 0 ? crmId : null, hrId);
+}
+
+/**
+ * resolveRepDayCheckinOwners over person keys (repDayPersonKey), so a submitter with no CRM id — a
+ * rep hired after the cutover — can own a check-in. Same rule, same display names: self is always an
+ * owner with a null name, every other submitter of the day's visits is a borrowed owner.
+ */
+export function resolveRepDayCheckinOwnerKeys(
+  selfKey: string,
+  dayVisits: Array<{ agentID: number | null; agentHrId?: string | null; agentName?: string | null }>,
+): Map<string, string | null> {
+  const owners = new Map<string, string | null>([[selfKey, null]]);
+  for (const visit of dayVisits) {
+    const key = repDayPersonKey(visit.agentID, visit.agentHrId);
+    if (key == null || owners.has(key)) continue;
+    owners.set(key, cleanAgentDisplayName(visit.agentName));
+  }
+  return owners;
+}
+
+/** The drilled person: his CRM id when he has one (null for a rep hired after the cutover), and his hr id. */
+type RepDaySelf = { crmId: number | null; hrId: string };
+
+/** The live client's shapes, plus the hr ids only the unified view carries (absent on a live row). */
+type RepDayVisitSource = IReports360Visit & { agentHrId?: string | null; doubleHrId?: string | null };
+type RepDayCheckinSource = IReports360Checkin & { agentHrId?: string | null };
+
 /** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */
 function cleanAgentDisplayName(name: string | null | undefined): string | null {
   const cleaned = String(name ?? "").split("(")[0].replace(/\./g, " ").replace(/\s+/g, " ").trim();
@@ -152,9 +189,10 @@ function cleanAgentDisplayName(name: string | null | undefined): string | null {
 }
 
 /** Maps a stored `ireports360_checkins` row back onto the live client's check-in shape. */
-function checkinFromMirrorRow(row: CrmCheckinRow): IReports360Checkin {
+function checkinFromMirrorRow(row: CrmCheckinRow): RepDayCheckinSource {
   return {
     address: row.address,
+    agentHrId: row.agent_hr_id,
     agentID: row.agent_crm_id,
     checkDate: row.check_date,
     contactID: row.contact_crm_id,
@@ -167,6 +205,7 @@ function checkinFromMirrorRow(row: CrmCheckinRow): IReports360Checkin {
 
 type RepDayVisitMirrorRow = {
   agent_crm_id: number;
+  agent_hr_id: string | null;
   agent_name: string | null;
   ampm: string | null;
   attendance: number | null;
@@ -181,6 +220,7 @@ type RepDayVisitMirrorRow = {
   crm_visit_id: number;
   customer_name: string | null;
   double_crm_id: number | null;
+  double_hr_id: string | null;
   double_name: string | null;
   speciality: string | null;
   visit_date: string;
@@ -190,8 +230,9 @@ type RepDayVisitMirrorRow = {
 
 /** Maps a stored `ireports360_visits` row back onto the live client's visit shape so the same
  * annotate/route pipeline runs regardless of whether the source was live or the mirror. */
-function visitFromMirrorRow(row: RepDayVisitMirrorRow): IReports360Visit {
+function visitFromMirrorRow(row: RepDayVisitMirrorRow): RepDayVisitSource {
   return {
+    agentHrId: row.agent_hr_id,
     agentID: row.agent_crm_id,
     agentName: row.agent_name,
     ampm: row.ampm,
@@ -202,6 +243,7 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): IReports360Visit {
     contactName: row.contact_name,
     contactGrade: row.crm_contact_grade,
     customerName: row.customer_name,
+    doubleHrId: row.double_hr_id,
     doubleID: row.double_crm_id,
     doubleName: row.double_name,
     id: row.crm_visit_id,
@@ -223,11 +265,14 @@ function visitFromMirrorRow(row: RepDayVisitMirrorRow): IReports360Visit {
  */
 async function buildRepDayResult(
   rep: { crmId: string | null; fullName: string | null; hrId: string },
-  agentId: number,
+  self: RepDaySelf,
   day: string,
-  allVisits: IReports360Visit[],
-  allCheckins: IReports360Checkin[],
+  allVisits: RepDayVisitSource[],
+  allCheckins: RepDayCheckinSource[],
 ): Promise<IReports360RepDayResult> {
+  // Every "is this him" test compares person keys: his CRM id when he has one — the plain id
+  // comparison this always was — else his hr id. `hrId` comes from the directory, so the key exists.
+  const selfKey = repDayPersonKey(self.crmId, self.hrId) ?? "";
   // Effective (static ∪ live departed) exclusion, resolved per call so a newly-resigned rep is
   // dropped without a redeploy. Applied to BOTH the live and mirror sources so this drill-down
   // stays consistent with the aggregate metric that links to it (a double visit whose PRIMARY
@@ -240,7 +285,8 @@ async function buildRepDayResult(
     .filter((visit) => !excludedAgentIds.has(visit.agentID))
     .filter(
       (visit) =>
-        (visit.agentID === agentId || visit.doubleID === agentId) &&
+        (repDayPersonKey(visit.agentID, visit.agentHrId) === selfKey ||
+          repDayPersonKey(visit.doubleID, visit.doubleHrId) === selfKey) &&
         (visit.visitDate ?? "").slice(0, 10) === day,
     );
   // Burst-duplicate collapse: every aggregate that links INTO this page (FWC day cells, portal
@@ -251,8 +297,10 @@ async function buildRepDayResult(
   // raw duplicates too.
   const visits: IReports360RepDayVisit[] = collapseDuplicateVisitSubmissionsLiveShape(dayVisits)
     .map((visit) => {
-      const role: "primary" | "double" = visit.agentID === agentId ? "primary" : "double";
-      const hasPartner = visit.doubleID != null && visit.doubleID !== 0;
+      const role: "primary" | "double" = repDayPersonKey(visit.agentID, visit.agentHrId) === selfKey ? "primary" : "double";
+      // A native double visit with a partner who has no CRM id carries a NULL `double_crm_id` and
+      // names the partner by `double_hr_id` alone — still a double visit.
+      const hasPartner = (visit.doubleID != null && visit.doubleID !== 0) || canonicalHrIdKey(visit.doubleHrId) != null;
       const partnerName = hasPartner
         ? cleanAgentDisplayName(role === "primary" ? visit.doubleName : visit.agentName)
         : null;
@@ -279,12 +327,13 @@ async function buildRepDayResult(
   // own id — which covers a rep who submitted their own visits and the triple-visit case where a DM
   // submits while tagging the NSM. Derived from `dayVisits`, so departed-agent exclusion already
   // applies and a borrowed check-in can never come from a visit this page refuses to show.
-  const checkinOwners = resolveRepDayCheckinOwners(agentId, dayVisits);
+  const checkinOwners = resolveRepDayCheckinOwnerKeys(selfKey, dayVisits);
+  const ownerKeyOf = (checkin: RepDayCheckinSource) => repDayPersonKey(checkin.agentID, checkin.agentHrId) ?? "";
 
   const checkins: IReports360RepDayCheckin[] = allCheckins
     .filter((checkin) => !excludedAgentIds.has(checkin.agentID))
-    .filter((checkin) => checkinOwners.has(checkin.agentID) && (checkin.checkDate ?? "").slice(0, 10) === day)
-    .map((checkin) => ({ ...checkin, via: checkinOwners.get(checkin.agentID) ?? null }))
+    .filter((checkin) => checkinOwners.has(ownerKeyOf(checkin)) && (checkin.checkDate ?? "").slice(0, 10) === day)
+    .map((checkin) => ({ ...checkin, via: checkinOwners.get(ownerKeyOf(checkin)) ?? null }))
     // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
     // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
     // data. The route legs below are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
@@ -307,7 +356,7 @@ async function buildRepDayResult(
 /** Live-source visits + check-ins for one rep-day (one login, both fetched in parallel). */
 async function fetchRepDayFromLive(
   rep: { crmId: string | null; fullName: string | null; hrId: string },
-  agentId: number,
+  self: RepDaySelf,
   day: string,
 ): Promise<IReports360RepDayResult> {
   const config = getIReports360Config();
@@ -318,26 +367,33 @@ async function fetchRepDayFromLive(
     iReports360GetVisits(config, token, day, day),
     iReports360GetCheckins(config, token, day, day).catch(() => [] as IReports360Checkin[]),
   ]);
-  return buildRepDayResult(rep, agentId, day, allVisits, allCheckins);
+  return buildRepDayResult(rep, self, day, allVisits, allCheckins);
 }
 
 /** Mirror-source visits + check-ins for one rep-day. Reads the synced tables directly (this
  * module is inside the CRM domain, so it owns the raw table access). */
 async function fetchRepDayFromMirror(
   rep: { crmId: string | null; fullName: string | null; hrId: string },
-  agentId: number,
+  self: RepDaySelf,
   day: string,
 ): Promise<IReports360RepDayResult> {
+  // By CRM id when he has one — the exact expression this read always used. A rep hired after the
+  // CRM cutover has none, so his day is found by hr id (agent or double partner, every casing variant).
+  const participantOr =
+    self.crmId != null
+      ? `agent_crm_id.eq.${self.crmId},double_crm_id.eq.${self.crmId}`
+      : buildParticipantHrIdOrFilter([self.hrId]);
+  if (participantOr == null) return { checkins: [], rep, route: null, visits: [] };
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(CRM_VISITS_UNIFIED_VIEW)
     .select(
-      "agent_crm_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
+      "agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, contact_crm_id, contact_name, " +
         "crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, crm_visit_id, customer_name, " +
-        "double_crm_id, double_name, speciality, visit_date, visit_type, visit_type_description",
+        "double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type, visit_type_description",
     )
     .eq("visit_date", day)
-    .or(`agent_crm_id.eq.${agentId},double_crm_id.eq.${agentId}`);
+    .or(participantOr);
   if (error) throw new Error(error.message);
   const allVisits = ((data ?? []) as unknown as RepDayVisitMirrorRow[]).map(visitFromMirrorRow);
 
@@ -348,13 +404,20 @@ async function fetchRepDayFromMirror(
   //
   // Over-fetching slightly is safe and deliberate: buildRepDayResult re-derives the owner set from
   // the exclusion-filtered visits, so a departed submitter's check-ins are dropped there.
-  const checkinAgentIds = new Set<number>([agentId]);
+  //
+  // A submitter with no CRM id (a rep hired after the cutover) is fetched by hr id. With none of
+  // those on the day, the read is the crm-id read it always was.
+  const checkinAgentIds = new Set<number>(self.crmId != null ? [self.crmId] : []);
+  const checkinAgentHrIds = new Set<string>(self.crmId != null ? [] : [self.hrId]);
   for (const visit of allVisits) {
-    if (Number.isFinite(visit.agentID)) checkinAgentIds.add(visit.agentID);
+    if (visit.agentID != null && Number.isFinite(visit.agentID) && visit.agentID !== 0) checkinAgentIds.add(visit.agentID);
+    else if (visit.agentHrId?.trim()) checkinAgentHrIds.add(visit.agentHrId.trim());
   }
 
   const checkinRows = await queryCheckins<CrmCheckinRow>({
-    agentCrmIds: Array.from(checkinAgentIds),
+    ...(checkinAgentHrIds.size === 0
+      ? { agentCrmIds: Array.from(checkinAgentIds) }
+      : { agentCrmOrHrIds: { crmIds: Array.from(checkinAgentIds), hrIds: Array.from(checkinAgentHrIds) } }),
     dateFrom: day,
     dateTo: day,
     orderBy: "check_date",
@@ -362,7 +425,7 @@ async function fetchRepDayFromMirror(
   });
   const allCheckins = checkinRows.map(checkinFromMirrorRow);
 
-  return buildRepDayResult(rep, agentId, day, allVisits, allCheckins);
+  return buildRepDayResult(rep, self, day, allVisits, allCheckins);
 }
 
 /**
@@ -389,28 +452,34 @@ export async function getIReports360RepDayVisits(input: {
     fullName: employee.fullName ?? null,
     hrId: employee.hrId,
   };
-  if (!rep.crmId) return { checkins: [], rep, route: null, visits: [] };
-  const agentId = Number(rep.crmId);
+  // A rep with no CRM id is no longer an empty day: a rep hired after the CRM cutover has none, and
+  // his native visits are found by hr id. The vendor never knew him, so he is never sent live.
+  const crmNumber = rep.crmId ? Number(rep.crmId) : Number.NaN;
+  const self: RepDaySelf = {
+    crmId: Number.isFinite(crmNumber) && crmNumber !== 0 ? crmNumber : null,
+    hrId: rep.hrId,
+  };
 
   // THE CRM CUTOVER. From the cutover date the day is Phoenix's own record, and after the vendor is
   // retired there is no live CRM to ask — both read the unified view only. An unreadable setting falls
   // back to no cutover, which is the pre-cutover behaviour and never hides a row.
   const cutover = await getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER);
   const wantLive =
+    self.crmId != null &&
     (input.preferLive ?? isRecentRepDay(day)) &&
     isIReports360Configured() &&
     !cutover.vendorSyncRetiredAt &&
     !isOnOrAfterCrmCutover(cutover, day);
   if (wantLive) {
     try {
-      return await fetchRepDayFromLive(rep, agentId, day);
+      return await fetchRepDayFromLive(rep, self, day);
     } catch (liveError) {
       // Recent-day live call failed — degrade to the mirror. Only surface the CRM error when
       // the mirror has nothing to show either (so a genuine outage isn't hidden as an empty day).
-      const mirror = await fetchRepDayFromMirror(rep, agentId, day);
+      const mirror = await fetchRepDayFromMirror(rep, self, day);
       if (mirror.visits.length > 0 || mirror.checkins.length > 0) return mirror;
       throw liveError;
     }
   }
-  return fetchRepDayFromMirror(rep, agentId, day);
+  return fetchRepDayFromMirror(rep, self, day);
 }

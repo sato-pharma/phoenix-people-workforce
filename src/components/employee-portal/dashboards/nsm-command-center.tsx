@@ -37,7 +37,7 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
-import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
@@ -188,7 +188,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
-      <CrmFirstVisitBoard action={<EarlyBirdsSyncButton />} crm={nsmBoard?.crm ?? null} />
+      <CrmFirstVisitBoard action={<EarlyBirdsSyncAction />} crm={nsmBoard?.crm ?? null} />
 
       <ActionStrip items={ACTIONS} />
 

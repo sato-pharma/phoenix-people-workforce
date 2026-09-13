@@ -28,7 +28,7 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
-import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
@@ -117,7 +117,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <CrmFirstVisitBoard
-        action={<EarlyBirdsSyncButton />}
+        action={<EarlyBirdsSyncAction />}
         crm={dsmTeam?.crm ?? null}
         allClearMessage="Every rep on your team has submitted their first visit."
         rankHint="all submitters, ranked"

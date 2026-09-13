@@ -4008,6 +4008,19 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
   },
   {
+    // Doctor lists maintained in Phoenix (CRM phase 7, owner 2026-09-14: "Rep asks, DM approves, SFE and
+    // system admin can edit, add or delete"). The editing half: the SFE Manager and the administrator
+    // add, remove or re-grade a doctor on any rep's list directly. Reps and managers use the portal twin.
+    // NOT the retired "Rep Doctor Lists" board under a new name — that one scored plans; this one edits
+    // the list itself. The enforcing gate is crm_contact_lists `update` inside the service.
+    href: "/admin/doctor-list-changes",
+    icon: ListChecks,
+    label: "Doctor List Changes",
+    description: "Add a doctor to a rep's AM or PM list, remove one or change a grade — applied at once — and see the requests still waiting for a manager.",
+    permissions: [{ resource: "crm_contact_lists", action: "update" }],
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
     // 2026-09-03 — first to the Regional and District Managers who supervise the reps it scores,
     // then to the marketing, field-support and national sales seats — and of the nine roles now
@@ -4562,6 +4575,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/reps-plans",
           "/admin/kpis",
           "/admin/plan-verification",
+          "/admin/doctor-list-changes",
         ],
       },
       {

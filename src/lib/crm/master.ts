@@ -10,12 +10,15 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+// The unified views, never the vendor tables: vendor history plus Phoenix's own visits and
+// check-ins from the cutover on. Every exclusion below is on `exclusion_crm_id`, which the views
+// carry for both halves — `agent_crm_id` is null for a rep hired without a CRM account.
 import {
-  CRM_CHECKINS_TABLE,
+  CRM_CHECKINS_UNIFIED_VIEW,
   CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
   CRM_REGION_BRICK_RESOLUTIONS_TABLE,
   CRM_VISITS_CHECKIN_FLAGS_VIEW,
-  CRM_VISITS_TABLE,
+  CRM_VISITS_UNIFIED_VIEW,
 } from "@/lib/crm/tables";
 import { addDaysIso } from "@/lib/crm/dates";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -546,18 +549,32 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
     const agentIds = Array.from(
       new Set(rows.map((r) => r.agent_crm_id).filter((v): v is number => typeof v === "number")),
     );
+    // A rep with no CRM account is found by his HR id. Asking by CRM id alone left every visit he
+    // made on this page with no check-in to match, however many he captured.
+    const agentHrIds = Array.from(
+      new Set(
+        rows
+          .filter((r) => typeof r.agent_crm_id !== "number" && typeof r.agent_hr_id === "string" && r.agent_hr_id.trim())
+          .map((r) => String(r.agent_hr_id)),
+      ),
+    );
     const days = rows
       .map((r) => (typeof r.visit_date === "string" ? r.visit_date.slice(0, 10) : null))
       .filter((v): v is string => Boolean(v));
-    // Nothing correlatable on this page (no agent ids or no dates) — not a failure: no check-in
+    // Nothing correlatable on this page (no rep identity or no dates) — not a failure: no check-in
     // could match these rows anyway, so the "no check-in" answer is genuine and reclassifying is
     // correct. Distinct from the catch below, which is a failure.
-    if (agentIds.length === 0 || days.length === 0) return true;
+    if ((agentIds.length === 0 && agentHrIds.length === 0) || days.length === 0) return true;
     const from = days.reduce((a, b) => (a < b ? a : b));
     const to = days.reduce((a, b) => (a > b ? a : b));
     let data: CheckinLite[];
     try {
-      data = await queryCheckins<CheckinLite>({ agentCrmIds: agentIds, dateFrom: from, dateTo: to, columns: NEAREST_CHECKIN_COLUMNS });
+      data = await queryCheckins<CheckinLite>({
+        agentCrmOrHrIds: { crmIds: agentIds, hrIds: agentHrIds },
+        dateFrom: from,
+        dateTo: to,
+        columns: NEAREST_CHECKIN_COLUMNS,
+      });
     } catch (error) {
       // The paginated table view degrades rather than throwing (unlike the export above): the page
       // still renders with the GPS/geography overlay columns blank, which is honestly "unknown".
@@ -581,6 +598,7 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
     const best = pickCheckinForVisit(
       {
         agentCrmId: typeof row.agent_crm_id === "number" ? row.agent_crm_id : null,
+        agentHrId: typeof row.agent_hr_id === "string" ? row.agent_hr_id : null,
         contactCrmId: typeof row.contact_crm_id === "number" ? row.contact_crm_id : null,
         visitDay: typeof row.visit_date === "string" ? row.visit_date.slice(0, 10) : null,
         crmSaveDate: typeof row.crm_save_date === "string" ? row.crm_save_date : null,
@@ -755,7 +773,7 @@ async function computeTriplesUncached(range: {
   const dv: TripleDvRow[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const base = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select(
         "crm_visit_id, visit_date, agent_crm_id, agent_name, agent_hr_id, double_crm_id, double_name, double_hr_id, contact_crm_id, contact_name",
       )
@@ -764,7 +782,9 @@ async function computeTriplesUncached(range: {
       .in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
     let q = base as unknown as MasterQuery;
     if (excludedInList) {
-      q = q.not("agent_crm_id", "in", excludedInList);
+      // `exclusion_crm_id`, never `agent_crm_id`: a Phoenix visit by a rep with no CRM account has a
+      // null `agent_crm_id`, and `not in` over a null drops the row silently.
+      q = q.not("exclusion_crm_id", "in", excludedInList);
     }
     if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
     if (range.dateTo) q = q.lte("visit_date", range.dateTo);
@@ -1343,7 +1363,7 @@ export function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
   }
   const ids = run.map((r) => r.crm_visit_id).filter((v): v is number => typeof v === "number");
   return {
-    id: `vac-${first.agent_crm_id}-${fromDate}-${toDate}`,
+    id: `vac-${first.agent_crm_id ?? canonicalHrIdKey(first.agent_hr_id)}-${fromDate}-${toDate}`,
     vacation_id: ids.length ? Math.min(...ids) : null,
     from_date: fromDate,
     to_date: toDate,
@@ -1362,16 +1382,28 @@ export function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
   } as CrmMasterRow;
 }
 
+/** Which rep a vacation day-row belongs to: the CRM account when the row has one, else the rep's
+ * canonical HR id — a Phoenix visit by a rep hired without a CRM account has only the HR id, and
+ * skipping those rows hid every day of leave he logged. Null only for a row naming neither. */
+export function vacationAgentKey(row: Pick<VacationDayRow, "agent_crm_id" | "agent_hr_id">): string | null {
+  if (row.agent_crm_id != null) return `crm:${row.agent_crm_id}`;
+  const hrKey = canonicalHrIdKey(row.agent_hr_id);
+  return hrKey ? `hr:${hrKey}` : null;
+}
+
 /**
- * Group CRM vacation day-rows (visit_type_description ILIKE '%vacation%') into vacation PERIODS: one
- * row per run of consecutive calendar days for the same agent (a gap starts a new period; two rows on
+ * Group CRM vacation day-rows (visit_type = -4, from crm_visits_unified) into vacation PERIODS: one
+ * row per run of consecutive calendar days for the same rep (a gap starts a new period; two rows on
  * the same date — an AM + a PM half — stay in the same run). Resigned agents excluded. Duration counts
  * half-days as 0.5. Walks paginated rows (PostgREST caps a single request). Newest period first.
  *
+ * READS THE UNIFIED VIEW BY CODE. The vendor table alone stops receiving leave the day the vendor sync
+ * is switched off, and Phoenix's own visits carry no vendor description a `%vacation%` word match
+ * could find. `-4` is the only leave type (owner rule); every vendor row the old word match returned
+ * was -4, so the switch drops nothing.
+ *
  * SCOPE — this is the RAW CRM vacation view and is DELIBERATELY broader than the Company Vacation
- * Report (src/lib/vacation/company-vacation-report.ts). This tab matches ANY vacation-worded
- * description (ILIKE '%vacation%'). The Company Vacation Report is narrower: only Annual Vacation
- * (visit_type = -4, NOT Health Day -15), and it drops public-holiday / excuse-labeled /
+ * Report (src/lib/vacation/company-vacation-report.ts), which drops public-holiday / excuse-labeled /
  * proven-worked days and merges in HR-approved leave. BOTH honor the CRM's own AM/PM half-day
  * marking (ampm → 0.5 day). So this raw tab still shows more/other rows than that de-noised,
  * advisory report — they answer different questions and are kept in sync by intent, never by
@@ -1391,12 +1423,15 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
   const days: VacationDayRow[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const base = supabase
-      .from(CRM_VISITS_TABLE)
+      .from(CRM_VISITS_UNIFIED_VIEW)
       .select("crm_visit_id, visit_date, ampm, agent_crm_id, agent_name, agent_hr_id, visit_type_description, comment")
-      .ilike("visit_type_description", "%vacation%");
+      // The CODE, not the label. Phoenix's own visits carry no vendor description to match a word
+      // in, so `%vacation%` would find none of them. Every vendor row that matched the word is -4
+      // (693 of 693 on production, 2026-09-14), so the code drops nothing the label found.
+      .eq("visit_type", -4);
     let q = base as unknown as MasterQuery;
     if (excludedInList) {
-      q = q.not("agent_crm_id", "in", excludedInList);
+      q = q.not("exclusion_crm_id", "in", excludedInList);
     }
     // Fetch a MARGIN either side of the requested window. A vacation period is grouped from a run
     // of consecutive days, so clipping the day rows at the filter boundary rebuilt a period from
@@ -1409,6 +1444,9 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
     const { data, error } = await (q as unknown as typeof base)
       .order("agent_crm_id", { ascending: true })
       .order("visit_date", { ascending: true })
+      // `crm_visit_id` completes a TOTAL order: several rows share an agent and a date (an AM + a PM
+      // half), and ranged paging over ties can repeat one row and skip another between pages.
+      .order("crm_visit_id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error || !data) {
       if (days.length === 0) return { periods: [], truncated: false };
@@ -1419,13 +1457,14 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
     if (rows.length < PAGE) break;
   }
 
-  // Group by agent, then split each agent's (date-sorted) days into consecutive-day runs.
-  const byAgent = new Map<number, VacationDayRow[]>();
+  // Group by rep, then split each rep's (date-sorted) days into consecutive-day runs.
+  const byAgent = new Map<string, VacationDayRow[]>();
   for (const d of days) {
-    if (d.agent_crm_id == null || !d.visit_date) continue;
-    const list = byAgent.get(d.agent_crm_id);
+    const key = vacationAgentKey(d);
+    if (!key || !d.visit_date) continue;
+    const list = byAgent.get(key);
     if (list) list.push(d);
-    else byAgent.set(d.agent_crm_id, [d]);
+    else byAgent.set(key, [d]);
   }
 
   const periods: CrmMasterRow[] = [];
@@ -1490,9 +1529,11 @@ function applyMasterFilters(
   let q = query;
   // Resigned/departed agents (owner-flagged + live status) are invisible across every CRM tab —
   // visits + check-ins alike. `excludedInList` is the effective (static ∪ live) list; defaults to
-  // the static safety-net.
+  // the static safety-net. Filtered on `exclusion_crm_id`, which every unified view carries for both
+  // halves: a Phoenix row by a rep with no CRM account has a null `agent_crm_id`, and `not in` over a
+  // null drops the row silently.
   if (excludedInList) {
-    q = q.not("agent_crm_id", "in", excludedInList);
+    q = q.not("exclusion_crm_id", "in", excludedInList);
   }
   // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
   if (allowedHrIds) {
@@ -1523,7 +1564,8 @@ function applyMasterFilters(
   // periods in memory, well before reaching this builder. Kept rather than deleted because deleting
   // it would fail OPEN: a future caller that did reach here would silently get EVERY visit type
   // instead of vacations. Read it as a safety net, not as how the Vacations tab is filtered.
-  if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
+  // By code, as computeVacationPeriods reads it: Phoenix's own visits carry no vendor description.
+  if (dataset === "vacations") q = q.eq("visit_type", -4);
   if (dataset === "regular_no_checkin") q = q.eq("regular_no_checkin", true);
   if (dataset === "regular_dv_no_checkin") {
     q = q.eq("regular_no_checkin", true).not("double_crm_id", "is", null).neq("double_crm_id", 0);
@@ -1797,7 +1839,7 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
   }
 
   const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_CHECKIN_FLAGS_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_CHECKIN_FLAGS_VIEW : isCheckins ? CRM_CHECKINS_UNIFIED_VIEW : CRM_VISITS_UNIFIED_VIEW;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
@@ -1938,8 +1980,8 @@ export async function* streamCrmMasterExportPages(
     dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin"
       ? CRM_VISITS_CHECKIN_FLAGS_VIEW
       : isCheckins
-        ? CRM_CHECKINS_TABLE
-        : CRM_VISITS_TABLE;
+        ? CRM_CHECKINS_UNIFIED_VIEW
+        : CRM_VISITS_UNIFIED_VIEW;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   // The export never renders raw_payload: its column set comes from crmMasterExportColumns, which

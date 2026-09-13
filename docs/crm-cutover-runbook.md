@@ -17,9 +17,32 @@ point-in-time recovery; the 7 daily backups are the whole recovery story.
 | --- | --- |
 | `cutover_date` null | Nothing changes. Vendor rows only, everywhere. |
 | `cutover_date` set | Every CRM read (visits, check-ins, plan boards, rep doctor lists, rep day, reps list, Visits Report, FWC, probation double visits, deductions) serves vendor rows **before** the date and Phoenix rows **on and after** it — never both for one day. The rep day stops asking the live vendor for days on or after the date. The CRM no-activity deduction is not charged for the calendar month the date falls in (decision 18), and the collection result says so. |
-| `vendor_sync_retired_at` set | The live poller's tick stands down whole (no pulls, no pings). The four cron routes answer `200 {skipped: true, reason: "vendor_sync_retired"}` before their dead-man's switch. The Early Birds Sync button, the Visits Report backfill, the rep doctor lists Refresh and plan verification answer 409 with a plain message. The housekeeping timer takes over the probation double-visit capture every 6 hours. |
+| `vendor_sync_retired_at` set | The live poller's tick stands down whole (no pulls, no pings). The four cron routes answer `200 {skipped: true, reason: "vendor_sync_retired"}` before their dead-man's switch. The Visits Report backfill, the rep doctor lists Refresh and plan verification answer 409 with a plain message; the Early Birds Sync button is no longer shown, and the admin CRM sync panel says iReports360 was retired on that date and hides its backfill. The heartbeat sweep stops watching the four vendor jobs, reconciliation check 10 (sync freshness) holds, the FWC live snapshot stops warning it is stale, and the first-visit board stops waiting for a vendor sync. The housekeeping timer takes over the probation double-visit capture every 6 hours, and Phoenix double visits (negative ids) are captured. |
 
 The table's check constraint refuses a retirement without a date.
+
+## Who enters what from the cutover date
+
+- **Every rep of every line** enters visits in Phoenix (My Visits → Log a visit). A regular (doctor)
+  visit saves only for a doctor on the rep's list AND planned that very day in a week plan the manager
+  verified; the form offers only those doctors.
+- **A double visit** is entered by the rep, who names the district manager; the manager confirms it
+  himself. It counts to both.
+- **A district manager's single visit** (rare, owner 2026-09-14): he enters it himself, to a doctor
+  on one of his reps' lists, naming nobody. The plan rule does not reach it, and he files no weekly
+  plan of his own.
+- **Doctor lists** (owner 2026-09-14): the rep asks for an add, a removal or a grade change (My Visits
+  → My doctor list); his district manager approves or refuses. The SFE Manager and the Super Admin
+  add, remove or regrade directly (Admin → Doctor List Changes). A change is in force only from the
+  cutover date; before it the nightly iReports360 contact-list scrape still owns every list.
+  Pharmacy lists are not edited in Phoenix for now.
+
+## Migrations this depends on
+
+Apply to production, in order, each with the owner's separate go, **before** the cutover date is set:
+`20260913230000_crm_cutover`, `20260914000000_crm_unify_vendor_reads`,
+`20260914010000_crm_native_visit_vacation_day_requests`, `20260914020000_crm_contact_list_changes`.
+Check `pg_class`/`pg_proc` for each object, never the migration ledger alone.
 
 ## The steps
 
@@ -53,12 +76,16 @@ The table's check constraint refuses a retirement without a date.
    poller stopped pulling.
 7. **cron-job.org.** Disable the one vendor job still enabled, the CRM contact lists job. The 4 OFF
    iReports360 jobs are already OFF by design; leave them OFF. The API allows 100 requests a day.
-8. **Healthchecks.** Delete the vendor checks (`phoenix-ireports360-sync`, `phoenix-reconcile-visits`,
-   `phoenix-ireports360-live-sync`, `phoenix-ireports360-live-poll`, `phoenix-crm-contact-lists`) and
-   their entries in `src/lib/observability/job-schedule.ts` once the
-   owner agrees — retired jobs never ping, so they would page forever.
-9. **Secrets.** Remove `IREPORTS360_*` and `PHOENIX_LIVE_CRM_POLL` from GitHub first (it overwrites
-   Railway), then confirm Railway no longer has them. Rotate nothing else; `CRON_SECRET` stays.
+8. **Healthchecks.** The in-app heartbeat sweep already skips the jobs tagged vendor in
+   `src/lib/observability/job-schedule.ts` once vendor sync is retired, so nothing pages from Phoenix.
+   On Healthchecks.io itself, pause or delete the vendor checks (`phoenix-ireports360-sync`,
+   `phoenix-reconcile-visits`, `phoenix-ireports360-live-sync`, `phoenix-ireports360-live-poll`,
+   `phoenix-crm-contact-lists`) once the owner agrees.
+9. **Secrets.** Remove `IREPORTS360_*` from GitHub first (it overwrites Railway), then confirm Railway
+   no longer has them. **Keep `PHOENIX_LIVE_CRM_POLL`**: the guard it feeds
+   (`resolveInProcessHostRefusal`, `live-poller.ts`) also gates the CRM housekeeping timer and the
+   Early Birds close timer, so removing it stops probation double-visit capture and the Early Birds
+   close. Rotate nothing else; `CRON_SECRET` stays.
 10. **Follow-up deletion PR** — the vendor sync engine, the poller, the vendor cron routes, the
     scraper and their tests — only after a full month has run clean on Phoenix's own records.
 
@@ -77,12 +104,19 @@ The table's check constraint refuses a retirement without a date.
 
 ## Known gaps at cutover (not handled by this code)
 
-- **Database objects that read the vendor tables directly** do not see Phoenix rows:
-  `public.crm_contact_master_refresh`, `public.phx_crm_agent_crm_ids_for_hr_ids` and the view
-  `public.ireports360_visits_effective`. CRM phase 6 (KPI unification) owns them.
-- **Rep contact lists** come from the vendor scraper. Once it stops, someone must own adding and
-  removing a rep's doctors in Phoenix.
-- **A rep with no CRM id** (a new hire after the cutover) has a null `agent_crm_id` in the views.
-  Reads that filter by CRM id, and the rep day, do not find him yet.
-- **Plans filed in Phoenix** appear on the plan boards with a negative plan id. They are verified on
-  Phoenix's own plan review screen; the iReports360 verify button answers 409 for them.
+- **`public.ireports360_visits_effective`** still reads the vendor table directly and does not see
+  Phoenix rows. (`crm_contact_master_refresh` and `phx_crm_agent_crm_ids_for_hr_ids` read the unified
+  views since `20260914000000`.)
+- **Rep doctor lists** are rebuilt nightly from the vendor scrape until the cutover date. From the
+  date, only Phoenix's doctor-list changes move them (see "Who enters what"); disable the scrape job
+  at step 7 so a stale scrape never competes with them.
+- **A rep with no CRM id** (a new hire after the cutover) has a null `agent_crm_id` and an
+  `exclusion_crm_id` of -1 in the views. Check-in matching, the call rate, the KPIs board, rep doctor
+  lists, the rep day, visit workload, visit partners, plan actuals, the reps weekly plans board and
+  doctor coverage key him by his HR id instead. A double visit whose partner has no CRM id counts on a
+  Phoenix row only (`source = 'phoenix'`); a vendor row's stray HR id never does. Still keyed on the
+  CRM id: the Reps List activity loader and the shared-customer partners (location confidence, Phoenix
+  insights). `getAgentCrmIdentityRows` deliberately stays on the vendor table (it maps a leaver's
+  historical CRM id), and the plan view has no `exclusion_crm_id` column.
+- **Plans filed in Phoenix** appear on the plan boards with a negative plan id and read "Reviewed in
+  Phoenix" there, with no verify button. They are verified on Phoenix's own plan review screen.

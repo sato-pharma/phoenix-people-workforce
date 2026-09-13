@@ -53,7 +53,7 @@ export const SOURCE_BADGE: Record<EarlyBirdSource, { label: string; className: s
   none: {
     label: "No time",
     className: "bg-amber-100 text-amber-700",
-    title: "Visit submitted, but iReports360 sent no usable clock for it — ranked last",
+    title: "Visit submitted, but no usable clock was recorded for it — ranked last",
   },
 };
 
@@ -123,11 +123,13 @@ export function CrmFirstVisitBoard({
           </p>
         </div>
       ) : !crm || (!crm.synced && !crm.polled) ? (
+        // Only reachable while iReports360 is still the record: from the CRM cutover on,
+        // getNsmCrmCompliance marks the day checked, so a quiet morning reaches the red state below.
         <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
           <Clock className="h-4 w-4 shrink-0 text-slate-400" />
           <p className="text-sm text-slate-500">
-            Awaiting today&apos;s first CRM sync — visits mirror from iReports360 roughly every 15&nbsp;minutes from 8:30&nbsp;AM
-            to noon, then again at 12:07&nbsp;PM and 7:07&nbsp;PM.
+            Awaiting today&apos;s first iReports360 sync — visits mirror roughly every 15&nbsp;minutes from 8:30&nbsp;AM to
+            noon, then again at 12:07&nbsp;PM and 7:07&nbsp;PM.
           </p>
         </div>
       ) : !crm.synced ? (

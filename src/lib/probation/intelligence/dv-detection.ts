@@ -60,7 +60,10 @@ export function detectDvDays(rows: RawDvVisitRow[]): DvDetectionResult {
   for (const raw of rows) {
     const visit = mapRawDvVisit(raw);
 
-    if (!Number.isFinite(visit.crmVisitId) || visit.crmVisitId <= 0) {
+    // Zero is the only "no id". A NEGATIVE id is a real visit Phoenix recorded itself after the CRM
+    // cutover (the unified views carry it as -legacy_id); rejecting it would turn every Phoenix
+    // double visit into an ingest issue with no id, and the probation DV-Day would never form.
+    if (!Number.isFinite(visit.crmVisitId) || visit.crmVisitId === 0) {
       unresolved.push({ crmVisitId: null, reason: "missing_crm_visit_id", visit });
       continue;
     }

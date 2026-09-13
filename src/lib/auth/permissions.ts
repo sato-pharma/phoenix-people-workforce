@@ -133,6 +133,12 @@ export type PermissionResource =
   // manager confirming he accompanied one — narrowed again, below the matrix, to the partner named on
   // that visit and to reps beneath him.
   | "crm_visit_entry"
+  // Doctor lists maintained in Phoenix (CRM phase 7). SEPARATE from `crm_visit_entry` because a list
+  // change is not a visit: `create` is a rep asking for a change to his OWN list; `approve` is the
+  // manager the request was sent to answering it — narrowed again, below the matrix, to that stored
+  // manager and to reps beneath him; `update` is the SFE Manager and the administrator changing any
+  // rep's list directly (owner, 2026-09-14: "Rep asks, DM approves, SFE and system admin can edit").
+  | "crm_contact_lists"
   | "early_birds"
   | "user_activity"
   | "synthetic_journeys"
@@ -221,6 +227,9 @@ export const permissionResources: PermissionResource[] = [
   // Omitting this would offer native visit entry — a write into Phoenix's own visit record — to every
   // role. Mechanism at the head of this array.
   "crm_visit_entry",
+  // Omitting this would offer doctor-list changes — a write into every rep's list — to every role.
+  // Mechanism at the head of this array.
+  "crm_contact_lists",
   // Omitting this would show the Early Birds tab to every role — Finance Manager, HR Operations,
   // Employee. "with no test failure" was true when this was written; it no longer is.
   "early_birds",
@@ -806,6 +815,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // Reads the native-visit pilot. No create/delete/approve: he is nobody's rep and nobody's
     // accompanying manager, and a confirmation is the named partner's own click.
     crm_visit_entry: ["read"],
+    // Changes any rep's doctor list directly. No `approve`: a rep's request is his manager's click.
+    crm_contact_lists: ["read", "update"],
     // `update` added 2026-08-09 for the Doctor Coverage visit-norms editor
     // (/admin/doctor-coverage-settings). It gates ONLY that policy singleton — the CRM visit
     // mirror itself stays read-only everywhere, since it is a vendor mirror nothing may write.
@@ -1113,6 +1124,8 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     // Native visit entry — his OWN visits only, and only while his line is the pilot line.
     crm_visit_entry: ["read", "create", "delete"],
+    // Asks for a change to his OWN doctor list; his manager decides it.
+    crm_contact_lists: ["read", "create"],
     early_birds: ["read"],
     overview: [],
     coaching: ["read"],
@@ -1142,8 +1155,11 @@ const defaultPermissionMatrix: PermissionMap = {
     // tree — the permission says he may verify a plan, not that he may verify anyone's.
     crm_plans: ["read", "approve"],
     // Confirms a native visit a rep says he accompanied — only when HE is the partner named on it and
-    // the rep is beneath him.
-    crm_visit_entry: ["read", "approve"],
+    // the rep is beneath him. `create`/`delete`: the owner, 2026-09-14 — in rare cases he submits a
+    // single visit without the rep, to one of his reps' doctors. He files no weekly plan.
+    crm_visit_entry: ["read", "create", "delete", "approve"],
+    // Answers a doctor-list request — only one sent to HIM, for a rep beneath him.
+    crm_contact_lists: ["read", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1176,6 +1192,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // seat is vacant — which is exactly when someone above has to act.
     crm_plans: ["read", "approve"],
     crm_visit_entry: ["read", "approve"],
+    // A request goes to the rep's NEAREST active manager, so this seat answers one only while the
+    // district seat above that rep is vacant.
+    crm_contact_lists: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
@@ -1231,6 +1250,8 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     crm_visit_entry: ["read", "approve"],
+    // Same as the Regional Manager: a request reaches him only when he is the rep's nearest manager.
+    crm_contact_lists: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1326,6 +1347,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // Manager owns this module, so he sets the norms. CEO is deliberately NOT granted it —
     // that account stays observational by design.
     crm_visits: ["read", "update"],
+    // Owns the doctor lists once iReports360 stops: changes any rep's list directly.
+    crm_contact_lists: ["read", "update"],
     early_birds: ["read"],
     overview: ["read"],
     // Read-only org structure (2026-08-02): needed for /organogram. Grants no write anywhere —

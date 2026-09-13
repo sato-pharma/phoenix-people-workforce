@@ -4,9 +4,9 @@
  * Only ever called once `kpiRulesFor` has answered "phoenix", which needs a CRM cutover date. Until
  * that date is set nothing reaches this file. The rules themselves are crm/phoenix-kpi-rules.ts.
  *
- * Reads the same doors the rest of the CRM uses: the scraped contact lists (the rep's own list
- * decides AM, PM and pharmacy), the unified plan view and the unified visit view, which serve
- * Phoenix's own rows from the cutover on.
+ * Reads the same doors the rest of the CRM uses: Phoenix's own contact lists (the open periods of
+ * `crm_contact_assignments`, via `loadPanelRows` — the rep's own list decides AM, PM and pharmacy),
+ * the unified plan view and the unified visit view, which serve Phoenix's own rows from the cutover on.
  */
 
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";

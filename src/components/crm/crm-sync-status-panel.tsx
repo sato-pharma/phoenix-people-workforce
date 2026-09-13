@@ -23,6 +23,12 @@ function formatDate(value: string) {
   return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+/** The retirement INSTANT as a Cairo calendar day — the day the owner switched the vendor off, as he
+ * would name it, not the UTC day it happened to fall on. */
+function formatCairoDay(value: string) {
+  return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "Africa/Cairo" });
+}
+
 /** Full sync-run history + a manual backfill trigger — every dataset tab on the CRM hub shares the
  * same underlying sync, so this renders once above the tab bar rather than per-tab. Ported from the
  * former Visits Report page's Sync Status panel; same backfill endpoint. */
@@ -31,11 +37,16 @@ export function CrmSyncStatusPanel({
   dateFrom,
   dateTo,
   latestSyncRuns,
+  retiredAt = null,
 }: {
   configured: boolean;
   dateFrom: string;
   dateTo: string;
   latestSyncRuns: VisitsSyncRun[];
+  /** `crm_cutover.vendor_sync_retired_at`, resolved on the server. Once set there is nothing to sync
+   * or backfill: the panel says so in one line, hides the backfill control, and keeps the run
+   * history as the record of what was pulled before. */
+  retiredAt?: string | null;
 }) {
   const [backfillFrom, setBackfillFrom] = useState(dateFrom);
   const [backfillTo, setBackfillTo] = useState(dateTo);
@@ -75,12 +86,17 @@ export function CrmSyncStatusPanel({
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
 
-      {!configured && (
+      {retiredAt ? (
+        <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          iReports360 was retired on {formatCairoDay(retiredAt)}. Phoenix records visits directly.
+        </div>
+      ) : !configured ? (
         <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           iReports360 is not configured (missing IREPORTS360_BASE_URL/USERNAME/PASSWORD) — the scheduled sync cannot run.
         </div>
-      )}
+      ) : null}
 
       <div className="divide-y divide-slate-100">
         {latestSyncRuns.length === 0 ? (
@@ -124,6 +140,7 @@ export function CrmSyncStatusPanel({
         )}
       </div>
 
+      {retiredAt ? null : (
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
         <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           Backfill from
@@ -144,6 +161,7 @@ export function CrmSyncStatusPanel({
         </button>
         {message && <p className="text-xs font-medium text-slate-600">{message}</p>}
       </div>
+      )}
     </div>
   );
 }

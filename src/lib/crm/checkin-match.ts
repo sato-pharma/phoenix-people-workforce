@@ -14,22 +14,42 @@
  */
 
 import { hasRealVendorTime } from "@/lib/crm/dates";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** Minimum shape the matcher needs from a check-in; callers pass richer rows and read extra fields
  * off the returned candidate. */
 export type CheckinForMatch = {
   agent_crm_id: number | null;
+  /** The fallback identity for a rep with no CRM id — see {@link checkinAgentKey}. Optional so a
+   * caller that has not selected it keeps compiling; such a caller matches CRM-id reps only. */
+  agent_hr_id?: string | null;
   contact_crm_id: number | null;
   // Nullable so both caller row shapes satisfy the constraint; the index-builder's `!check_date`
   // guard drops null/empty timestamps, so every candidate that reaches pickCheckinForVisit has a real one.
   check_date: string | null;
 };
 
+/**
+ * The agent half of the match key: the CRM id when the rep has one, else `hr:<canonical hr id>`.
+ *
+ * After the CRM cutover a rep hired without a CRM account logs native visits whose `agent_crm_id`
+ * is NULL on BOTH the visit and its check-in. Keyed on the CRM id alone, every such visit returned
+ * early and its verified call rate read zero — a new hire who checked in at every doctor, scored as
+ * never having checked in once. The CRM id stays first, so every rep who has one keeps exactly the
+ * key he always had; the hr id only ever speaks for a rep with no CRM id.
+ */
+export function checkinAgentKey(agentCrmId: number | null | undefined, agentHrId: string | null | undefined): string | null {
+  if (agentCrmId != null) return String(agentCrmId);
+  const hrKey = canonicalHrIdKey(agentHrId);
+  return hrKey ? `hr:${hrKey}` : null;
+}
+
 /** Group check-ins by `agent | contact | Cairo-day` so a visit can look up its candidates in O(1).
  * Check-ins with no agent, no real contact, or no timestamp can never match a visit and are skipped. */
 export function indexCheckinsByAgentContactDay<C extends CheckinForMatch>(checkins: readonly C[]): Map<string, C[]> {
   const index = new Map<string, C[]>();
   for (const checkin of checkins) {
+    const agentKey = checkinAgentKey(checkin.agent_crm_id, checkin.agent_hr_id);
     // `0` is the vendor's "no contact" placeholder and is rejected here exactly as pickCheckinForVisit
     // rejects it on the visit side. The two sides were asymmetric: the visit side normalised 0 to
     // null (so it returns early and never looks up), but the index still stored those check-ins under
@@ -38,8 +58,8 @@ export function indexCheckinsByAgentContactDay<C extends CheckinForMatch>(checki
     // contact-less check-in of the same rep and day, and the match would read as a verified
     // same-contact GPS hit. Rejecting it on both sides makes the rule true rather than load-bearing
     // in one place, and matches this function's own docstring ("no real contact").
-    if (checkin.agent_crm_id == null || checkin.contact_crm_id == null || checkin.contact_crm_id === 0 || !checkin.check_date) continue;
-    const key = `${checkin.agent_crm_id}|${checkin.contact_crm_id}|${String(checkin.check_date).slice(0, 10)}`;
+    if (agentKey == null || checkin.contact_crm_id == null || checkin.contact_crm_id === 0 || !checkin.check_date) continue;
+    const key = `${agentKey}|${checkin.contact_crm_id}|${String(checkin.check_date).slice(0, 10)}`;
     const list = index.get(key);
     if (list) list.push(checkin);
     else index.set(key, [checkin]);
@@ -50,12 +70,20 @@ export function indexCheckinsByAgentContactDay<C extends CheckinForMatch>(checki
 /** The matched check-in for a visit, or null when the visit has no real contact / no same-contact
  * check-in that day. `crmSaveDate` is the tie-break anchor (never `visit_date_time`). */
 export function pickCheckinForVisit<C extends CheckinForMatch>(
-  visit: { agentCrmId: number | null; contactCrmId: number | null; visitDay: string | null; crmSaveDate: string | null },
+  visit: {
+    agentCrmId: number | null;
+    /** Pass it: without it a visit by a rep with no CRM id can never find its check-in. */
+    agentHrId?: string | null;
+    contactCrmId: number | null;
+    visitDay: string | null;
+    crmSaveDate: string | null;
+  },
   index: Map<string, C[]>,
 ): C | null {
   const contact = typeof visit.contactCrmId === "number" && visit.contactCrmId !== 0 ? visit.contactCrmId : null;
-  if (visit.agentCrmId == null || contact == null || !visit.visitDay) return null;
-  const candidates = index.get(`${visit.agentCrmId}|${contact}|${visit.visitDay}`);
+  const agentKey = checkinAgentKey(visit.agentCrmId, visit.agentHrId);
+  if (agentKey == null || contact == null || !visit.visitDay) return null;
+  const candidates = index.get(`${agentKey}|${contact}|${visit.visitDay}`);
   if (!candidates || candidates.length === 0) return null;
 
   // The anchor must carry a REAL clock. `crm_save_date` is a midnight placeholder on ~3% of rows

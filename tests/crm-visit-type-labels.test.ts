@@ -60,11 +60,12 @@ export function runCrmVisitTypeLabelTests() {
   assert.equal(resolveVisitTypeLabel(-8, "Campaign (Prospection)", "x"), "Campaign (Prospection)", "parens survive");
 
   // TRIPWIRE — read this before "simplifying" the resolver into an ingest-time normalization.
-  // -5/-6 resolve to a label that MATCHES the CRM master's vacations dataset, which selects with
-  // .ilike("visit_type_description", "%vacation%"). That is safe ONLY because these labels are
-  // display-only and are never written back to ireports360_visits. If a future change ever stores
-  // a resolved label in that column, 1,659 public-holiday and casual-leave rows silently join the
-  // Vacations dataset. This assertion states that consequence here rather than in payroll.
+  // -5/-6 resolve to a label that contains "vacation". The CRM master's vacations dataset now selects
+  // on visit_type = -4 (master.ts), so the label no longer decides membership there — but any reader
+  // that still matches the description text (an ad-hoc query, an older export) would count these as
+  // leave. The labels stay display-only and are never written back to ireports360_visits: stored,
+  // 1,659 public-holiday and casual-leave rows would read as vacations wherever the text is matched.
+  // This assertion states that consequence here rather than in payroll.
   assert.match(
     resolveVisitTypeLabel(-5, "Unknown", null),
     /vacation/i,

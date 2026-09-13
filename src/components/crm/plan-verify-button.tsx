@@ -71,9 +71,15 @@ export function VerifyButton({ canVerify, plan }: { canVerify: boolean; plan: Pl
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
 
+  // A NEGATIVE id is a plan filed in Phoenix after the CRM cutover. There is no iReports360 record to
+  // sign, the route refuses both directions, and its status 0/1 is Phoenix's own review, not the
+  // vendor's — so it offers no verb and says where it was decided instead.
+  const phoenixPlan = plan.crmPlanId < 0;
+
   // Which direction this plan can move, or null when it can move neither.
-  const action: PlanVerificationAction | null =
-    plan.status === PLAN_STATUS_NEW
+  const action: PlanVerificationAction | null = phoenixPlan
+    ? null
+    : plan.status === PLAN_STATUS_NEW
       ? "verify"
       : plan.status === PLAN_STATUS_SUPERVISOR_VERIFIED
         ? "unverify"
@@ -122,7 +128,7 @@ export function VerifyButton({ canVerify, plan }: { canVerify: boolean; plan: Pl
   if (action === null || !canVerify) {
     return (
       <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${planStatusClass(plan.status)}`}>
-        {planStatusLabel(plan.status)}
+        {phoenixPlan ? "Reviewed in Phoenix" : planStatusLabel(plan.status)}
       </span>
     );
   }

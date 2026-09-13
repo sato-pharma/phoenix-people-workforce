@@ -88,6 +88,7 @@
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit, type CheckinForMatch } from "@/lib/crm/checkin-match";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { classifyVisit } from "@/lib/crm/visit-types";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 
 /** Two AM accounts every working day (owner's standard). */
 export const AM_CALL_RATE_TARGET = 2;
@@ -470,6 +471,7 @@ export function classifyCallProof<C extends CheckinForMatch>(
   const matched = pickCheckinForVisit(
     {
       agentCrmId: visit.agent_crm_id,
+      agentHrId: visit.agent_hr_id,
       contactCrmId: visit.contact_crm_id,
       visitDay: (visit.visit_date ?? "").slice(0, 10) || null,
       crmSaveDate: visit.crm_save_date,
@@ -527,7 +529,12 @@ export function computeCallRate<C extends CheckinForMatch>(
     const proof = classifyCallProof(visit, checkinIndex);
     if (!proof) continue;
 
-    const key = visit.agent_crm_id != null ? `crm:${visit.agent_crm_id}` : `name:${visit.agent_name ?? ""}`;
+    // CRM id first, so a rep who has one keeps his key. A native rep hired after the cutover has
+    // none, and grouping him by NAME would split him from — or merge him with — anyone who shares
+    // the spelling; his hr id is the identity he actually has. The name stays the last resort only.
+    const hrKey = canonicalHrIdKey(visit.agent_hr_id);
+    const key =
+      visit.agent_crm_id != null ? `crm:${visit.agent_crm_id}` : hrKey ? `hr:${hrKey}` : `name:${visit.agent_name ?? ""}`;
     let rep = byRep.get(key);
     if (!rep) {
       rep = {

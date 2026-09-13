@@ -99,6 +99,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   // Vacation-day work (CRM phase 6): the administrator answers on the admin page; reps ask and
   // managers answer on the portal page, which the admin page's own source also names.
   { from: "/admin/approvals/vacation-day-work", to: "/employee-portals/visits/vacation-day-requests" },
+  // Doctor lists (CRM phase 7): the SFE Manager and administrator edit on the admin page; reps ask and
+  // managers answer on the portal page.
+  { from: "/admin/doctor-list-changes", to: "/employee-portals/visits/doctor-list" },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },

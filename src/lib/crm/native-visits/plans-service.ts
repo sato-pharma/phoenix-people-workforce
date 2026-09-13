@@ -10,7 +10,8 @@
  * plan; only that manager verifies or returns it, only for a rep inside the manager's downward scope.
  * The system never verifies and no one verifies on the manager's behalf.
  *
- * WHEN. Only the pilot line, only weeks with pilot days still ahead, only days from today on.
+ * WHEN. Only open days from today on, in this field week or the next: before the CRM cutover a pilot
+ * day of the rep's own line; from the cutover date on, every day, for every rep of every line at once.
  *
  * STABLE IDS. One item row per rep, doctor and day for good. A save sends the whole week; the service
  * diffs it against what is stored, so a kept doctor keeps its row and a dropped doctor is marked
@@ -55,13 +56,14 @@ import type {
   NativePlanSaveResult,
   NativePlanWeekView,
 } from "@/lib/crm/native-visits/plan-types";
-import { nativeVisitPilotForLine, type NativeVisitShift } from "@/lib/crm/native-visits/rules";
+import { NATIVE_PLAN_MANAGER_MESSAGE, type NativeVisitShift } from "@/lib/crm/native-visits/rules";
 import {
   chunk,
   employeeName,
   isMissingTable,
   isUniqueViolation,
   loadDirectory,
+  loadEntryGate,
   loadPilots,
   loadRepContacts,
   managementChain,
@@ -329,20 +331,28 @@ function nameFor(directory: Directory, hrId: string | null): string | null {
 
 // ── The rep's planner ───────────────────────────────────────────────────────────────────────────
 
+/** A district manager holds create only for his rare single visits: he files no weekly plan. */
+async function refuseManagerPlanner(access: AccessContext): Promise<void> {
+  if (await canAccess(access, "crm_visit_entry", "approve")) throw forbiddenError(NATIVE_PLAN_MANAGER_MESSAGE);
+}
+
 export async function getMyNativePlanner(access: AccessContext): Promise<NativePlannerView> {
   await assertPermission(access, "crm_visit_entry", "create");
+  await refuseManagerPlanner(access);
   const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
   const rep = requireActiveSelf(access, directory);
-  const pilot = nativeVisitPilotForLine(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep.lineName, pilots);
+  const { pilot } = gate;
   const cairoToday = cairoTodayIso();
   const manager = managementChain(rep, directory)[0] ?? null;
-  const weekStarts = nativePlanOpenWeeks(pilot, cairoToday);
+  const weekStarts = nativePlanOpenWeeks(gate, cairoToday);
   const base = {
     pilot: pilot ? { lineName: pilot.lineName, startsOn: pilot.startsOn, endsOn: pilot.endsOn } : null,
+    cutoverDate: gate.cutoverDate,
     cairoToday,
     managerName: manager?.name ?? null,
   };
-  if (!pilot || weekStarts.length === 0) return { ...base, contacts: [], weeks: [] };
+  if (weekStarts.length === 0) return { ...base, contacts: [], weeks: [] };
 
   const plans = await loadRepPlans(rep.hrId, weekStarts);
   const from = weekStarts[0];
@@ -357,7 +367,7 @@ export async function getMyNativePlanner(access: AccessContext): Promise<NativeP
 
   const weeks = weekStarts.map((weekStart): NativePlanWeekView => {
     const plan = plans.get(weekStart) ?? null;
-    const editableDays = nativePlanEditableDays(pilot, weekStart, cairoToday);
+    const editableDays = nativePlanEditableDays(gate, weekStart, cairoToday);
     const status = plan?.status ?? null;
     return {
       weekStart,
@@ -460,6 +470,7 @@ export async function saveMyNativePlan(
   input: { weekStart: unknown; action: unknown; items: unknown; revision: unknown },
 ): Promise<NativePlanSaveResult> {
   await assertPermission(access, "crm_visit_entry", "create");
+  await refuseManagerPlanner(access);
   const action = parseNativePlanAction(input.action);
   if (!action) throw validationError("Choose save, submit or reopen.");
   const weekStart = String(input.weekStart ?? "").trim();
@@ -467,12 +478,17 @@ export async function saveMyNativePlan(
 
   const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
   const rep = requireActiveSelf(access, directory);
-  const pilot = nativeVisitPilotForLine(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep.lineName, pilots);
+  const { pilot } = gate;
   const cairoToday = cairoTodayIso();
-  if (!isNativePlanWeekStart(weekStart) || !nativePlanOpenWeeks(pilot, cairoToday).includes(weekStart)) {
-    throw forbiddenError("Forbidden: planning in Phoenix is open only to the pilot line, for weeks with pilot days still ahead.");
+  if (!isNativePlanWeekStart(weekStart) || !nativePlanOpenWeeks(gate, cairoToday).includes(weekStart)) {
+    throw forbiddenError(
+      gate.cutoverDate
+        ? "Forbidden: that week has no day left that can be planned in Phoenix."
+        : "Forbidden: planning in Phoenix is open only to the pilot line, for weeks with pilot days still ahead.",
+    );
   }
-  const editableDays = nativePlanEditableDays(pilot, weekStart, cairoToday);
+  const editableDays = nativePlanEditableDays(gate, weekStart, cairoToday);
 
   const existing = (await loadRepPlans(rep.hrId, [weekStart])).get(weekStart) ?? null;
   if ((existing?.revision ?? 0) !== revision) throw conflictError(STALE_PLAN_MESSAGE);
@@ -702,7 +718,7 @@ export async function decideNativePlan(
 
 /** Never throws — the My Visits page must render without it. */
 export async function getNativePlanAvailability(access: AccessContext): Promise<NativePlanAvailability> {
-  const none: NativePlanAvailability = { canPlan: false, canReview: false, pendingReviews: 0 };
+  const none: NativePlanAvailability = { canPlan: false, canReview: false, pendingReviews: 0, pilotOnly: true };
   try {
     const [mayCreate, mayApprove] = await Promise.all([
       canAccess(access, "crm_visit_entry", "create"),
@@ -712,12 +728,18 @@ export async function getNativePlanAvailability(access: AccessContext): Promise<
     const cairoToday = cairoTodayIso();
 
     let canPlan = false;
-    if (mayCreate) {
+    let pilotOnly = true;
+    // A district manager holds create only for his rare single visits: he files no weekly plan.
+    if (mayCreate && !mayApprove) {
       const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
       const key = canonicalHrIdKey(access.hrId);
       const rep = key ? directory.byKey.get(key) : undefined;
-      const pilot = rep && isActiveDirectoryEmployee(rep) ? nativeVisitPilotForLine(rep.lineName, pilots) : null;
-      canPlan = nativePlanOpenWeeks(pilot, cairoToday).length > 0;
+      if (rep && isActiveDirectoryEmployee(rep)) {
+        const gate = await loadEntryGate(rep.lineName, pilots);
+        canPlan = nativePlanOpenWeeks(gate, cairoToday).length > 0;
+        // Once a cutover date is set, planning here is for everyone, not a pilot.
+        pilotOnly = gate.cutoverDate == null;
+      }
     }
 
     let canReview = false;
@@ -737,7 +759,7 @@ export async function getNativePlanAvailability(access: AccessContext): Promise<
       if (!recent.error) canReview = (recent.count ?? 0) > 0;
     }
 
-    return { canPlan, canReview, pendingReviews };
+    return { canPlan, canReview, pendingReviews, pilotOnly };
   } catch {
     return none;
   }

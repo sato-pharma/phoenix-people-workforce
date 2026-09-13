@@ -1,5 +1,6 @@
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
@@ -161,6 +162,18 @@ const visitsSyncHasARecentSuccess: ReconciliationCheck = {
   // every few minutes: a run finishing between them shifts one side by one row and nothing else.
   // Only a mismatch that survives a fresh read is a read-path defect.
   run: retryOnceIfBreached(async (): Promise<ReconciliationOutcome> => {
+    // THE CRM CUTOVER. Once iReports360 is retired nothing pulls from it, so a sync ledger that has
+    // stopped growing is the designed state, not an outage. An unreadable setting answers null and
+    // the check runs exactly as before.
+    if (await resolveVendorSyncStandDown()) {
+      return {
+        left: { source: "crm_cutover.vendor_sync_retired_at", value: "iReports360 retired" },
+        right: { source: "ireports360_visits_sync_runs — not expected to grow after the cutover", value: "not checked" },
+        holds: true,
+        detail: "iReports360 retired; Phoenix records visits directly.",
+      };
+    }
+
     // 50 rather than the default 10: a short burst of failures must not be able to push the last
     // success out of the window this check can see, which would report a healthy sync as dead.
     const runs = await getLatestVisitsSyncRuns(50);

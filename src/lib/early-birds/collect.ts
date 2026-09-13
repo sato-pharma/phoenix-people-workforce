@@ -218,6 +218,7 @@ export async function collectEarlyBirdsInputs(input: {
     const match = pickCheckinForVisit(
       {
         agentCrmId: row.agent_crm_id,
+        agentHrId: row.agent_hr_id,
         contactCrmId: row.contact_crm_id,
         visitDay: dateIso,
         crmSaveDate: row.crm_save_date,

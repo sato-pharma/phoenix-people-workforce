@@ -124,21 +124,6 @@ export async function GET(request: Request) {
       targets: sliceTargets,
     });
 
-    // THE MIRROR JUST MOVED, SO THE CACHED PICKER COUNTS ARE NOW WRONG. getDoctorListRepSummaries
-    // caches its ~69 summary rows for 300s (contact-lists.ts); without this line the three boards
-    // that read it — /employee-portals/reps-list, /admin/reps-list and Plan Verification — would
-    // quote pre-sweep counts for up to five minutes after each of the twelve slices. Wrapped
-    // because a revalidate failure must never turn a SUCCESSFUL sync into a 500: the rows are
-    // written, and the TTL is the fallback.
-    try {
-      revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
-    } catch (error) {
-      logError("crm-contact-lists: cache revalidation failed", {
-        error,
-        labels: { event: "cache_revalidate_failed", job: JOB_NAME },
-      });
-    }
-
     // THE CONTACT MASTER FOLLOWS THE MIRROR. These rows are the only signal that a doctor joined or
     // left a list, and the master's dated assignments are built from them, so the master is rebuilt
     // right after the slice that changed them. It never throws: a failure is named in the audit row
@@ -150,6 +135,20 @@ export async function GET(request: Request) {
       logError("crm-contact-lists: contact master refresh failed", {
         error: contactMaster.error,
         labels: { event: "contact_master_refresh_failed", job: JOB_NAME },
+      });
+    }
+
+    // THE LISTS JUST MOVED, SO THE CACHED PICKER COUNTS ARE NOW WRONG. getDoctorListRepSummaries
+    // caches its summary rows for 300s (contact-lists.ts) and reads the master's open assignments,
+    // so the tag is busted AFTER the master refresh — busting it before would let a board re-cache
+    // the pre-refresh counts for another five minutes. Wrapped because a revalidate failure must
+    // never turn a SUCCESSFUL sync into a 500: the rows are written, and the TTL is the fallback.
+    try {
+      revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
+    } catch (error) {
+      logError("crm-contact-lists: cache revalidation failed", {
+        error,
+        labels: { event: "cache_revalidate_failed", job: JOB_NAME },
       });
     }
 

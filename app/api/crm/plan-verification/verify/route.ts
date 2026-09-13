@@ -48,6 +48,22 @@ export async function POST(request: Request) {
     }
     await assertPermission(access, "crm_plans", "approve");
 
+    const body = (await request.json().catch(() => ({}))) as { action?: unknown; crmPlanId?: unknown };
+    const crmPlanId = Number(body?.crmPlanId);
+    // A NEGATIVE id is a plan filed in Phoenix after the CRM cutover (crm_plan_entries_unified). It
+    // has no iReports360 record to sign, and it is decided on Phoenix's own plan review screen.
+    // Asked BEFORE the stand-down below: once the vendor is retired every plan a manager sees is a
+    // Phoenix plan, and the generic "iReports360 has been retired" would not tell him where to go.
+    if (Number.isInteger(crmPlanId) && crmPlanId < 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This plan was filed in Phoenix, so it is reviewed on Phoenix's plan review screen (Visits, then Plan reviews), not verified in iReports360.",
+        },
+        { status: 409 },
+      );
+    }
+
     // THE CRM CUTOVER. This route writes a signature into iReports360; once it is retired there is no
     // CRM to write into.
     const standDown = await resolveVendorSyncStandDown();
@@ -62,16 +78,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = (await request.json().catch(() => ({}))) as { action?: unknown; crmPlanId?: unknown };
-    const crmPlanId = Number(body?.crmPlanId);
-    // A NEGATIVE id is a plan filed in Phoenix after the CRM cutover (crm_plan_entries_unified). It
-    // has no iReports360 record to sign, and it is decided on Phoenix's own plan review screen.
-    if (Number.isInteger(crmPlanId) && crmPlanId < 0) {
-      return NextResponse.json(
-        { error: "This plan was filed in Phoenix, so it is reviewed on Phoenix's plan review screen, not verified in iReports360." },
-        { status: 409 },
-      );
-    }
     if (!Number.isInteger(crmPlanId) || crmPlanId <= 0) {
       return NextResponse.json({ error: "Give the plan id to verify." }, { status: 400 });
     }

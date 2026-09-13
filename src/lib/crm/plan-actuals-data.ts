@@ -51,7 +51,14 @@ type ActualVisitRow = {
  * was all campaign work must not read as an idle one, so the day summary counts them separately.
  */
 export async function loadPlanActuals(input: {
-  agentCrmId: number;
+  /** Null for a rep hired after the CRM cutover, who has no CRM id — pass `agentHrId` then. */
+  agentCrmId: number | null;
+  /**
+   * The rep's hr id. Read ONLY when `agentCrmId` is null: such a rep's plan rows carry no CRM id,
+   * so his visits have to be found by hr id instead. With a CRM id this is ignored and the read is
+   * exactly the crm-id read above, for the reason the module note gives.
+   */
+  agentHrId?: string | null;
   /** ISO, inclusive — the plan's own first and last planned day. */
   dateFrom: string;
   dateTo: string;
@@ -59,11 +66,14 @@ export async function loadPlanActuals(input: {
   today: string;
 }): Promise<PlanActuals | null> {
   try {
+    const agentHrId = input.agentHrId?.trim() || null;
+    // No identity at all cannot be compared — never read the whole company's visits as "his".
+    if (input.agentCrmId == null && !agentHrId) return null;
     const excludedAgentCrmIds = await getEffectiveExcludedAgentCrmIds();
-    if (excludedAgentCrmIds.includes(input.agentCrmId)) return null;
+    if (input.agentCrmId != null && excludedAgentCrmIds.includes(input.agentCrmId)) return null;
 
     const rows = await queryVisits<ActualVisitRow>({
-      agentCrmIds: [input.agentCrmId],
+      ...(input.agentCrmId != null ? { agentCrmIds: [input.agentCrmId] } : { agentHrIds: [agentHrId as string] }),
       // A doctor double-visited is one stop, not two. Without this a shared call would count twice
       // in the day summary while satisfying exactly one plan row, and the two would disagree.
       collapseDoubleVisits: true,

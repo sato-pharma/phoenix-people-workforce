@@ -11,7 +11,7 @@
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
 import { EarlyBirdsDistrictSwitcher } from "@/components/early-birds/early-birds-district-switcher";
-import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getEarlyBirdsBoard } from "@/lib/early-birds/service";
 import { assertDistrictInScope, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
@@ -89,7 +89,7 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
         selectedHrIdKey={district.hrIdKey}
       />
       <EarlyBirdsBoard
-        action={canSync ? <EarlyBirdsSyncButton /> : undefined}
+        action={canSync ? <EarlyBirdsSyncAction /> : undefined}
         data={data}
         viewerHrIdKey={scope.viewerHrIdKey}
       />

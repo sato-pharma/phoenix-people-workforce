@@ -1,6 +1,7 @@
 import { getLatestSuccessfulSyncRunFor } from "@/lib/crm/admin";
 import { extractCampaignAccounts } from "@/lib/crm/campaign-account";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
+import { getCrmCutoverSetting, isOnOrAfterCrmCutover, vendorSyncStandDownReason } from "@/lib/crm/cutover";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import {
   CRM_DOUBLE_VISIT_TYPE_CODES,
@@ -179,7 +180,8 @@ async function fetchCheckinsForDate(date: string): Promise<CheckinRow[]> {
   return queryCheckins<CheckinRow>({
     dateFrom: date,
     dateTo: date,
-    columns: "agent_crm_id, contact_crm_id, check_date",
+    // agent_hr_id: a rep with no CRM id matches his check-ins on it (see checkin-match.ts).
+    columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
   });
 }
 
@@ -215,7 +217,17 @@ export async function getNsmCrmCompliance(input: {
   const [visits, checkins, lastSyncRunAt] = await Promise.all([
     fetchVisitsForDate(date),
     fetchCheckinsForDate(date),
-    getLatestSuccessfulSyncRunFor(date).catch(() => null),
+    // THE CRM CUTOVER. On or after the cutover day, or once the vendor sync is stood down, Phoenix
+    // records visits itself and the reads above are live — there is no pull to wait for, so the day
+    // counts as checked NOW. Reading the vendor ledger instead left `polled` false all day, and the
+    // board said "Awaiting today's first CRM sync" in place of "nobody on your roster has submitted".
+    // An unreadable setting falls back to the ledger, exactly as before.
+    getCrmCutoverSetting()
+      .then((setting) =>
+        vendorSyncStandDownReason(setting) || isOnOrAfterCrmCutover(setting, date) ? new Date().toISOString() : null,
+      )
+      .catch(() => null)
+      .then((phoenixCheckedAt) => phoenixCheckedAt ?? getLatestSuccessfulSyncRunFor(date).catch(() => null)),
   ]);
   const data = buildNsmCrmCompliance({
     date,
@@ -318,7 +330,13 @@ export function buildNsmCrmCompliance(input: {
     // no real time sorts last (MAX_SAFE_INTEGER) but still ranks: the person submitted, so the
     // board owes them a chip. It used to drop them silently, which read as "never submitted".
     const match = pickCheckinForVisit(
-      { agentCrmId: row.agent_crm_id, contactCrmId: row.contact_crm_id, visitDay: date, crmSaveDate: row.crm_save_date },
+      {
+        agentCrmId: row.agent_crm_id,
+        agentHrId: row.agent_hr_id,
+        contactCrmId: row.contact_crm_id,
+        visitDay: date,
+        crmSaveDate: row.crm_save_date,
+      },
       checkinIndex,
     );
     const resolved = resolveVisitTime({ nearestCheckinTime: match?.check_date ?? null, crmSaveDate: row.crm_save_date });

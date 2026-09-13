@@ -3,9 +3,16 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import {
+  NATIVE_VISIT_MANAGER_SINGLE_PARTNERS_MESSAGE,
+  NATIVE_VISIT_NOT_PLANNED_MESSAGE,
   NATIVE_VISIT_PARTNERS_MAX,
   NATIVE_VISIT_TYPES,
+  nativeVisitManagerSinglePartnerRefusal,
+  nativeVisitPlannedContactIds,
+  nativeVisitPlanRefusal,
   classifyNativeVisitGps,
+  isNativeEntryDay,
+  isNativeEntryOffered,
   isNativeVisitPilotDay,
   isWithinNativeVisitEntryWindow,
   nativePartnerDecisionRefusal,
@@ -207,6 +214,22 @@ export function runCrmNativeVisitsTests() {
   assert.equal(isNativeVisitPilotDay(pedia, "2026-09-25"), false);
   assert.equal(isNativeVisitPilotDay(null, "2026-09-20"), false);
 
+  // From the CRM cutover date every rep of every line enters here (the owner, 2026-09-13: all lines at once).
+  const pilotGate = { cutoverDate: null, pilot: pedia };
+  assert.equal(isNativeEntryDay(pilotGate, "2026-09-20"), true, "before any cutover a pilot day is open");
+  assert.equal(isNativeEntryDay(pilotGate, "2026-10-05"), false, "and a day after the pilot is not");
+  assert.equal(isNativeEntryDay({ cutoverDate: null, pilot: null }, "2026-10-05"), false, "another line enters nothing before a cutover");
+  const cutoverGate = { cutoverDate: "2026-10-03", pilot: null };
+  assert.equal(isNativeEntryDay(cutoverGate, "2026-10-02"), false, "the day before the cutover stays in iReports360");
+  assert.equal(isNativeEntryDay(cutoverGate, "2026-10-03"), true, "the cutover day is open to a line that never piloted");
+  assert.equal(isNativeEntryDay(cutoverGate, "2027-01-15"), true, "and so is every day after it");
+  assert.equal(isNativeEntryDay(cutoverGate, "2026-10-3"), false, "a malformed day is never open");
+  assert.equal(isNativeEntryDay({ cutoverDate: "2026-10-03", pilot: pedia }, "2026-09-21"), true, "a pilot day before a later cutover stays open");
+  assert.equal(isNativeEntryOffered(cutoverGate, "2026-09-26"), true, "once a date is set the form is offered, and says when it opens");
+  assert.equal(isNativeEntryOffered(pilotGate, "2026-09-13"), true, "a pilot line is offered the form ahead of its pilot");
+  assert.equal(isNativeEntryOffered(pilotGate, "2026-09-25"), false, "and not once the pilot is over");
+  assert.equal(isNativeEntryOffered({ cutoverDate: null, pilot: null }, "2026-09-13"), false, "another line is offered nothing before a cutover");
+
   // ── 7. Partners and deletion ─────────────────────────────────────────────────────────────────
   assert.ok(nativeVisitPartnerRefusal("B-25", ["b-25"]), "a rep cannot name himself");
   assert.equal(nativeVisitPartnerRefusal("B-25", ["B-30"]), null);
@@ -244,8 +267,46 @@ export function runCrmNativeVisitsTests() {
   assert.deepEqual(grants("Medical Rep"), ["create", "delete", "read"], "a rep enters, reads and deletes his own visits");
   for (const manager of ["District Manager", "Regional Manager", "National Sales Manager"] as const) {
     assert.ok(grants(manager).includes("approve"), `${manager} confirms visits naming him`);
-    assert.ok(!grants(manager).includes("create"), `${manager} does not enter rep visits`);
   }
+  // The owner, 2026-09-14: a district manager, in rare cases, submits a single visit without the rep.
+  assert.deepEqual(grants("District Manager"), ["approve", "create", "delete", "read"], "a district manager enters his rare single visits");
+  for (const manager of ["Regional Manager", "National Sales Manager"] as const) {
+    assert.ok(!grants(manager).includes("create"), `${manager} does not enter visits`);
+  }
+
+  // ── 9b. A district manager's single visit, and the planned doctors the form offers ───────────
+  assert.equal(
+    nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: null, managerSingleVisit: true }),
+    null,
+    "a district manager's single visit files no plan, so the plan rule does not reach it",
+  );
+  assert.equal(
+    nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: null, managerSingleVisit: false }),
+    NATIVE_VISIT_NOT_PLANNED_MESSAGE,
+    "a rep's unplanned doctor visit is still refused",
+  );
+  assert.equal(nativeVisitManagerSinglePartnerRefusal(true, ["B-77"]), NATIVE_VISIT_MANAGER_SINGLE_PARTNERS_MESSAGE, "a single visit names nobody");
+  assert.equal(nativeVisitManagerSinglePartnerRefusal(true, []), null);
+  assert.equal(nativeVisitManagerSinglePartnerRefusal(false, ["B-77"]), null, "a rep names his managers as before");
+  assert.deepEqual(
+    nativeVisitPlannedContactIds(
+      [
+        { contactCrmId: 30, planDate: "2026-10-01", planStatus: "verified" },
+        { contactCrmId: 10, planDate: "2026-10-01", planStatus: "verified" },
+        { contactCrmId: 20, planDate: "2026-10-01", planStatus: "submitted" },
+        { contactCrmId: 40, planDate: "2026-09-30", planStatus: "verified" },
+      ],
+      "2026-10-01",
+    ),
+    [10, 30],
+    "the form offers only that day's doctors from a verified plan — the same test the save applies",
+  );
+  const shared = read("src/lib/crm/native-visits/server-shared.ts");
+  assert.match(shared, /canonicalHrIdKey\(row\.managerHrId\) === managerKey/, "a manager's doctors are his own reps' lists");
+  const planService = read("src/lib/crm/native-visits/plans-service.ts");
+  assert.equal((planService.match(/await refuseManagerPlanner\(access\);/g) ?? []).length, 2, "a district manager opens and saves no weekly plan");
+  assert.match(planService, /if \(mayCreate && !mayApprove\) \{/, "My Visits offers a district manager no weekly plan");
+  assert.match(read("app/employee-portals/visits/plan/page.tsx"), /canAccess\(access, "crm_visit_entry", "approve"\)/, "the weekly plan page turns a district manager away");
   assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
     "the Super Admin neither enters nor confirms a visit on anyone's behalf");
   assert.deepEqual(grants("Employee"), [], "an ordinary employee has no visit entry");

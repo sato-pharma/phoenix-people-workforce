@@ -277,7 +277,7 @@ export function NativeVisitEntryWorkspace() {
     };
   }, [flush]);
 
-  const formOpen = Boolean(options?.pilot && options.openDays.length > 0);
+  const formOpen = Boolean(options && (options.pilot || options.cutoverDate) && options.openDays.length > 0);
   useEffect(() => {
     // The location is taken as soon as the form opens; the phone's answer arrives in a callback.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -291,14 +291,19 @@ export function NativeVisitEntryWorkspace() {
   const selectedContact = options?.contacts.find((contact) => contact.contactCrmId === contactCrmId) ?? null;
   const allowedShifts: NativeVisitShift[] = wantsContact && selectedContact ? selectedContact.lists : ["AM", "PM"];
 
+  // From the cutover a regular visit saves only for a doctor planned that day in a verified week plan,
+  // so the form offers only those doctors. Null when the rule reaches neither open day.
+  const plannedIds = visitType === "regular" ? options?.plannedContactIdsByDay?.[visitDate] ?? null : null;
+
   const filteredContacts = useMemo(() => {
     const query = contactSearch.trim().toLowerCase();
-    const list = options?.contacts ?? [];
+    const planned = plannedIds ? new Set(plannedIds) : null;
+    const list = (options?.contacts ?? []).filter((contact) => !planned || planned.has(contact.contactCrmId));
     if (!query) return list;
     return list.filter(
       (contact) => contact.name.toLowerCase().includes(query) || (contact.speciality ?? "").toLowerCase().includes(query),
     );
-  }, [contactSearch, options]);
+  }, [contactSearch, options, plannedIds]);
 
   function chooseContact(id: number) {
     const contact = options?.contacts.find((option) => option.contactCrmId === id);
@@ -388,7 +393,8 @@ export function NativeVisitEntryWorkspace() {
       return <p className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>;
     }
     if (!options) return <p className="px-1 py-2 text-sm text-slate-500">Loading the visit form</p>;
-    if (!options.pilot) {
+    const { cutoverDate, pilot } = options;
+    if (!pilot && !cutoverDate) {
       return (
         <PortalSection>
           <PortalEmptyState
@@ -401,10 +407,17 @@ export function NativeVisitEntryWorkspace() {
     if (!formOpen || !typeDef) {
       return (
         <PortalSection>
-          <PortalEmptyState
-            message={`The ${options.pilot.lineName} pilot runs from ${dayLabel(options.pilot.startsOn)} to ${dayLabel(options.pilot.endsOn)}. Keep entering your visits in iReports360.`}
-            title="The pilot is not open today"
-          />
+          {pilot && !cutoverDate ? (
+            <PortalEmptyState
+              message={`The ${pilot.lineName} pilot runs from ${dayLabel(pilot.startsOn)} to ${dayLabel(pilot.endsOn)}. Keep entering your visits in iReports360.`}
+              title="The pilot is not open today"
+            />
+          ) : (
+            <PortalEmptyState
+              message={`Phoenix becomes the record for visits on ${dayLabel(cutoverDate ?? "")}. Until then keep entering your visits in iReports360.`}
+              title={`Visit entry opens on ${dayLabel(cutoverDate ?? "")}`}
+            />
+          )}
         </PortalSection>
       );
     }
@@ -417,18 +430,31 @@ export function NativeVisitEntryWorkspace() {
 
     return (
       <PortalSection
-        description="Keep entering your visits in iReports360 too. During the pilot it is still the record your pay and reports use."
-        eyebrow={`${options.pilot.lineName} pilot`}
+        description={
+          options.phoenixIsRecord
+            ? "Phoenix is the record for your visits. Your pay and reports read what you save here."
+            : "Keep entering your visits in iReports360 too. Until the cutover it is still the record your pay and reports use."
+        }
+        eyebrow={!options.phoenixIsRecord && pilot ? `${pilot.lineName} pilot` : "Visit entry"}
         title="New visit"
       >
         <div className="grid min-w-0 gap-5 px-4 py-4 sm:px-5">
+          {options.entryAs === "manager" ? (
+            <p className="text-sm text-slate-600">
+              For a single visit without your rep, to a doctor on one of your reps&apos; lists. When you visit with a rep,
+              the rep enters the visit and names you, and you confirm it.
+            </p>
+          ) : null}
           {options.vacationDayRuleInForce ? (
             <p className="text-sm text-slate-600">
               On a day HR approved as your vacation, a visit saves only after your manager and HR approve your{" "}
               <Link className="font-bold text-orange-700 underline" href="/employee-portals/visits/vacation-day-requests">
                 request to work that day
               </Link>
-              . A regular visit saves only for a doctor planned on that very day, in a week plan your manager verified.
+              .
+              {options.entryAs === "rep"
+                ? " A regular visit saves only for a doctor planned on that very day, in a week plan your manager verified."
+                : null}
             </p>
           ) : null}
           <Field label="Day">
@@ -437,7 +463,11 @@ export function NativeVisitEntryWorkspace() {
                 <Button
                   disabled={!options.openDays.includes(day.iso)}
                   key={day.iso}
-                  onClick={() => setVisitDate(day.iso)}
+                  onClick={() => {
+                    setVisitDate(day.iso);
+                    // A doctor planned one day may be unplanned the other.
+                    if (day.iso !== visitDate) setContactCrmId(null);
+                  }}
                   type="button"
                   variant={visitDate === day.iso ? "default" : "outline"}
                 >
@@ -508,7 +538,14 @@ export function NativeVisitEntryWorkspace() {
                 </div>
               ) : options.contacts.length === 0 ? (
                 <p className="text-sm text-slate-600">
-                  Phoenix has no doctors on your AM or PM list. Choose another type, or ask your manager to check your list.
+                  {options.entryAs === "manager"
+                    ? "Phoenix has no doctors on your reps' AM or PM lists."
+                    : "Phoenix has no doctors on your AM or PM list. Choose another type, or ask your manager to check your list."}
+                </p>
+              ) : plannedIds && plannedIds.length === 0 ? (
+                <p className="text-sm text-slate-600">
+                  No doctor is planned for this day in a week plan your manager verified. Choose another type, or plan
+                  the day and send the week to your manager.
                 </p>
               ) : (
                 <div className="grid min-w-0 gap-2">
@@ -516,9 +553,16 @@ export function NativeVisitEntryWorkspace() {
                     aria-label="Search your doctors"
                     className={portalInputClassName}
                     onChange={(event) => setContactSearch(event.target.value)}
-                    placeholder="Search your doctors by name or speciality"
+                    placeholder={
+                      options.entryAs === "manager"
+                        ? "Search your reps' doctors by name or speciality"
+                        : "Search your doctors by name or speciality"
+                    }
                     value={contactSearch}
                   />
+                  {plannedIds ? (
+                    <p className="text-xs font-medium text-slate-500">Only the doctors planned for this day are shown.</p>
+                  ) : null}
                   <div className="grid max-h-80 min-w-0 gap-px overflow-y-auto border border-slate-100 bg-slate-100">
                     {shownContacts.map((contact) => (
                       <button

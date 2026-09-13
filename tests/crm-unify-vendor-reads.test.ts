@@ -50,7 +50,8 @@ export function runCrmUnifyVendorReadsTests() {
   assert.match(
     next,
     /from public\.ireports360_contacts m/,
-    "rep lists still come from the scraped vendor list until Phoenix owns list maintenance",
+    // Why this still holds: the refresh SEEDS the list master from the scrape while the sweep runs, but no report reads the scrape any more — the KPI panels and Reps List read crm_contact_assignments, so switching the sweep off leaves Phoenix's own list as the record.
+    "the refresh still seeds rep lists from the scraped vendor list while the vendor sweep runs",
   );
 
   // ── 3. The check-in flag view ─────────────────────────────────────────────────────────────────

@@ -28,7 +28,9 @@ export type VisitPartnersByPersonDate = Record<string, Record<string, string[]>>
 
 type PairRow = {
   agent_crm_id: number | null;
+  agent_hr_id: string | null;
   double_crm_id: number | null;
+  double_hr_id: string | null;
   visit_date: string | null;
 };
 
@@ -49,26 +51,50 @@ function eachDateInclusive(startIso: string, endIso: string): string[] {
   return dates;
 }
 
-/** Both directions of the CRM id <-> HR id mapping, from the employee directory. */
+/** Both directions of the CRM id <-> HR id mapping, from the employee directory, plus every person's
+ * directory hr id by its canonical key — the only identity a rep hired after the CRM cutover has. */
 async function loadCrmIdentityMaps(): Promise<{
   crmByHr: Map<string, number>;
   hrByCrm: Map<number, string>;
+  hrByKey: Map<string, string>;
 }> {
   const crmByHr = new Map<string, number>();
   const hrByCrm = new Map<number, string>();
+  const hrByKey = new Map<string, string>();
   // Inactive people included on purpose: a rep who has since left still did the visits that
   // justify a manager's trip, and dropping them would silently under-count a real day.
   const directory = await getEmployeeDirectoryRows({ includeInactive: true });
   for (const row of directory) {
     const crmId = row.crmId == null ? null : Number(row.crmId);
     const hrKey = canonicalHrIdKey(row.hrId);
+    if (hrKey && !hrByKey.has(hrKey)) hrByKey.set(hrKey, row.hrId);
     if (!hrKey || crmId == null || Number.isNaN(crmId)) continue;
     crmByHr.set(hrKey, crmId);
     // First writer wins: a CRM slot reused by a second person would otherwise resolve to
     // whoever the directory happened to list last. See the CRM reused-slot memory.
     if (!hrByCrm.has(crmId)) hrByCrm.set(crmId, row.hrId);
   }
-  return { crmByHr, hrByCrm };
+  return { crmByHr, hrByCrm, hrByKey };
+}
+
+/**
+ * One side of a visit, as a person: resolved through the CRM id when the row carries one — the exact
+ * resolution every vendor row has always had — else through the row's own hr id, which is how a
+ * native visit names a person with no CRM id. `key` is what the hop frontier tracks.
+ */
+function personOnVisit(
+  crmValue: number | null,
+  hrValue: string | null,
+  maps: { hrByCrm: Map<number, string>; hrByKey: Map<string, string> },
+): { crmId: number | null; hrId: string; hrKey: string | null; key: string } | null {
+  const crmId = crmValue == null ? null : Number(crmValue);
+  if (crmId != null && !Number.isNaN(crmId) && crmId !== 0) {
+    const hrId = maps.hrByCrm.get(crmId);
+    return hrId ? { crmId, hrId, hrKey: null, key: `crm:${crmId}` } : null;
+  }
+  const hrKey = canonicalHrIdKey(hrValue);
+  const hrId = hrKey ? maps.hrByKey.get(hrKey) : undefined;
+  return hrKey && hrId ? { crmId: null, hrId, hrKey, key: `hr:${hrKey}` } : null;
 }
 
 /**
@@ -92,64 +118,82 @@ export async function getTripVisitPartnersByDate(input: {
   if (dates.length === 0) return partners;
 
   try {
-    const { crmByHr, hrByCrm } = await loadCrmIdentityMaps();
+    const maps = await loadCrmIdentityMaps();
+    const { crmByHr } = maps;
     const start = dates[0];
     const end = dates[dates.length - 1];
 
-    let frontier = new Set<number>();
+    // Two frontiers: people by CRM id, and — for a person hired after the CRM cutover, who has no
+    // CRM id — by canonical hr id. A root with a CRM id is walked by it exactly as before.
+    let frontierCrm = new Set<number>();
+    let frontierHr = new Set<string>();
     for (const hrId of input.rootHrIds) {
-      const crmId = crmByHr.get(canonicalHrIdKey(hrId) ?? "");
-      if (crmId != null) frontier.add(crmId);
+      const hrKey = canonicalHrIdKey(hrId);
+      const crmId = crmByHr.get(hrKey ?? "");
+      if (crmId != null) frontierCrm.add(crmId);
+      else if (hrKey) frontierHr.add(hrKey);
     }
-    if (frontier.size === 0) return partners;
+    if (frontierCrm.size === 0 && frontierHr.size === 0) return partners;
 
-    const queried = new Set<number>();
+    const queriedCrm = new Set<number>();
+    const queriedHr = new Set<string>();
 
     for (let hop = 0; hop < hops; hop += 1) {
-      const toQuery = Array.from(frontier).filter((crmId) => !queried.has(crmId));
-      if (toQuery.length === 0) break;
-      for (const crmId of toQuery) queried.add(crmId);
+      const toQuery = Array.from(frontierCrm).filter((crmId) => !queriedCrm.has(crmId));
+      const toQueryHr = Array.from(frontierHr).filter((hrKey) => !queriedHr.has(hrKey));
+      if (toQuery.length === 0 && toQueryHr.length === 0) break;
+      for (const crmId of toQuery) queriedCrm.add(crmId);
+      for (const hrKey of toQueryHr) queriedHr.add(hrKey);
 
       // Through the CRM read door: agent OR double-visit partner in the frontier, a double partner
       // present (NOT NULL only — the `0` sentinel is discarded below as before), no departed-agent
       // exclusion (a rep who has since left still did the visits that justify a manager's trip).
       // The door keyset-pages, so no hop is cut off at PostgREST's 1,000-row response cap.
+      //
+      // A hop with no hr-id frontier is the exact read it always was. With one, the partner test
+      // becomes `doubleOnly` — a resolved `double_hr_id` or a real `double_crm_id` — because a native
+      // double visit with a partner who has no CRM id carries a NULL `double_crm_id`, which
+      // `requireDoubleCrmId` would drop. The `0` sentinel rows it also drops were discarded below anyway.
       const rows = await queryVisits<PairRow>({
-        columns: "agent_crm_id, double_crm_id, visit_date",
+        columns: "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id, visit_date",
         dateFrom: start,
         dateTo: end,
         includeResignedAgents: true,
         participantCrmIds: toQuery,
-        requireDoubleCrmId: true,
+        // The directory's own spelling of each hr id, not the canonical key: the door expands casing
+        // variants from it, and a legacy alias spelling is only reachable from the raw value.
+        ...(toQueryHr.length > 0
+          ? { participantHrIds: toQueryHr.map((hrKey) => maps.hrByKey.get(hrKey) ?? hrKey), doubleOnly: true }
+          : { requireDoubleCrmId: true }),
       });
 
-      const discovered = new Set<number>();
+      const discoveredCrm = new Set<number>();
+      const discoveredHr = new Set<string>();
       for (const row of rows) {
         const day = String(row.visit_date ?? "").slice(0, 10);
         if (!dates.includes(day)) continue;
 
-        const agent = row.agent_crm_id == null ? null : Number(row.agent_crm_id);
-        const partner = row.double_crm_id == null ? null : Number(row.double_crm_id);
-        if (agent == null || partner == null || Number.isNaN(agent) || Number.isNaN(partner)) continue;
+        const agent = personOnVisit(row.agent_crm_id, row.agent_hr_id, maps);
+        const partner = personOnVisit(row.double_crm_id, row.double_hr_id, maps);
+        if (!agent || !partner) continue;
         // A row pairing someone with themselves carries no information and would make the
         // rollup's cycle guard do the work instead.
-        if (agent === partner) continue;
-
-        const agentHr = hrByCrm.get(agent);
-        const partnerHr = hrByCrm.get(partner);
-        if (!agentHr || !partnerHr) continue;
+        if (agent.key === partner.key) continue;
 
         // Recorded BOTH ways: the rollup walks outward from a manager, and the manager is the
         // one tagged as the double-visitor (`double_crm_id`) while the rep is the agent. A
         // one-directional map would therefore never let a manager reach his rep.
-        addPartner(partners, agentHr, day, partnerHr);
-        addPartner(partners, partnerHr, day, agentHr);
+        addPartner(partners, agent.hrId, day, partner.hrId);
+        addPartner(partners, partner.hrId, day, agent.hrId);
 
-        discovered.add(agent);
-        discovered.add(partner);
+        for (const person of [agent, partner]) {
+          if (person.crmId != null) discoveredCrm.add(person.crmId);
+          else if (person.hrKey) discoveredHr.add(person.hrKey);
+        }
       }
 
-      frontier = discovered;
+      frontierCrm = discoveredCrm;
+      frontierHr = discoveredHr;
     }
 
     return partners;

@@ -6,6 +6,7 @@ import { MyVisitsWorkspace } from "@/components/employee-portal/my-visits-worksp
 import { buttonVariants } from "@/components/ui/button";
 import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getContactListAvailability } from "@/lib/crm/contact-lists/service";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { getNativePlanAvailability } from "@/lib/crm/native-visits/plans-service";
 import { getNativeVisitEntryAvailability } from "@/lib/crm/native-visits/service";
@@ -105,13 +106,20 @@ export default async function MyVisitsPage() {
   // Native visit entry and weekly plans (the pilot). Offered to a pilot-line rep, and to a manager a
   // rep has named on a visit or sent a plan to. Neither throws, so the viewer's own visits always render.
   // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
-  const [nativeEntry, nativePlans, vacationDays] = await Promise.all([
+  // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
+  const [nativeEntry, nativePlans, vacationDays, doctorList] = await Promise.all([
     getNativeVisitEntryAvailability(access),
     getNativePlanAvailability(access),
     getVacationDayRequestAvailability(access),
+    getContactListAvailability(access),
   ]);
   const showNativeLinks =
-    nativeEntry.canLog || nativeEntry.canConfirm || nativePlans.canPlan || nativePlans.canReview || vacationDays.show;
+    nativeEntry.canLog ||
+    nativeEntry.canConfirm ||
+    nativePlans.canPlan ||
+    nativePlans.canReview ||
+    vacationDays.show ||
+    doctorList.show;
 
   return (
     <EmployeePortalPageShell
@@ -127,12 +135,12 @@ export default async function MyVisitsPage() {
         <div className="mb-4 flex flex-wrap gap-2">
           {nativeEntry.canLog ? (
             <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/log">
-              Log a visit (pilot)
+              {nativeEntry.pilotOnly ? "Log a visit (pilot)" : "Log a visit"}
             </Link>
           ) : null}
           {nativePlans.canPlan ? (
             <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan">
-              My weekly plan (pilot)
+              {nativePlans.pilotOnly ? "My weekly plan (pilot)" : "My weekly plan"}
             </Link>
           ) : null}
           {nativeEntry.canConfirm ? (
@@ -150,6 +158,15 @@ export default async function MyVisitsPage() {
               {vacationDays.waitingForYou > 0
                 ? `Vacation-day requests (${vacationDays.waitingForYou} waiting)`
                 : "Vacation-day requests"}
+            </Link>
+          ) : null}
+          {doctorList.show ? (
+            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/doctor-list">
+              {doctorList.canRequest
+                ? "My doctor list"
+                : doctorList.waitingForYou > 0
+                  ? `Doctor list requests (${doctorList.waitingForYou} waiting)`
+                  : "Doctor list requests"}
             </Link>
           ) : null}
         </div>

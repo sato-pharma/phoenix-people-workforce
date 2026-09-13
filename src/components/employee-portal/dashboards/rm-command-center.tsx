@@ -37,7 +37,7 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
-import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
@@ -295,7 +295,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
       <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <CrmFirstVisitBoard
-        action={<EarlyBirdsSyncButton />}
+        action={<EarlyBirdsSyncAction />}
         crm={rmRegional?.crm ?? null}
         allClearMessage="Everyone in your region has submitted their first visit."
       />

@@ -485,24 +485,42 @@ export function runCrmContactListsTests() {
     else process.env.IREPORTS360_WEB_BASE_URL = previous;
   }
   // ── THE REP-PICKER SUMMARIES ARE CACHED, PARALLEL AND DETERMINISTICALLY ORDERED ──────────────
-  // `getDoctorListRepSummaries` produces ~69 summary rows by reading all 9,542 rows of
-  // ireports360_contacts — there is no per-agent aggregate in the database, so the whole-table read
+  // `getRepListSummaries` produces ~70 summary rows by reading every open row of
+  // crm_contact_assignments — there is no per-rep aggregate in the database, so the whole-table read
   // is inherent. Doing it SEQUENTIALLY on every render was not: three boards call this, and the
   // portal board's FIRST screen (the rep picker, before any rep is chosen) paid ten serial round
   // trips to Amsterdam to put a contact count on about five cards.
   //
   // The harness cannot run Next.js, so this locks the SOURCE SHAPE — the same weaker-but-honest
   // instrument tests/crm-brick-centroids-cache.test.ts uses for the identical migration on
-  // loadBrickCentroids. Four invariants, each of which fails silently if it regresses:
+  // loadBrickCentroids. Each invariant fails silently if it regresses:
   {
     const source = readFileSync("src/lib/crm/contact-lists.ts", "utf8");
-    const start = source.indexOf("export const getDoctorListRepSummaries");
-    assert.ok(start > 0, "getDoctorListRepSummaries must exist — three boards read their picker counts from it");
+    const start = source.indexOf("export const getRepListSummaries");
+    assert.ok(start > 0, "getRepListSummaries must exist — three boards read their picker counts from it");
     const block = source.slice(start, source.indexOf("\n);", start));
 
     assert.ok(
-      /^export const getDoctorListRepSummaries = unstable_cache\(/m.test(source.slice(start)),
-      "the summaries must go through unstable_cache: a module-level variable is cold in most route segments (the exact fault loadBrickCentroids was moved off), and without a cache every render re-reads 9,542 rows",
+      /^export const getRepListSummaries = unstable_cache\(/m.test(source.slice(start)),
+      "the summaries must go through unstable_cache: a module-level variable is cold in most route segments (the exact fault loadBrickCentroids was moved off), and without a cache every render re-reads ~9,800 rows",
+    );
+
+    // PHOENIX'S OWN LIST, TODAY'S ROWS. The vendor scrape freezes the day the sweep is switched off,
+    // and a count over closed periods would add every contact a rep ever held.
+    assert.ok(
+      block.includes(".from(CRM_CONTACT_ASSIGNMENTS_TABLE)") && !block.includes("CRM_CONTACTS_TABLE") && !block.includes("ireports360_contacts"),
+      "the summaries must read crm_contact_assignments, never the vendor scrape — the scrape stops moving when the sweep is switched off",
+    );
+    assert.equal(
+      (block.match(/\.is\("effective_to", null\)/g) ?? []).length,
+      2,
+      "the count AND every page read open periods only: a count over all history sizes the fan-out for rows no page returns, and a page without the filter counts closed periods as today's list",
+    );
+    // Plan Verification joins on a CRM account, so it gets a filtered view of the SAME cached read.
+    assert.match(
+      source,
+      /export async function getDoctorListRepSummaries\(\)[^{]*\{\s*return \(await getRepListSummaries\(\)\)\.filter/,
+      "getDoctorListRepSummaries must derive from the one cached read — a second read is how two pickers come to quote different counts",
     );
 
     // PARALLEL, not one page after another. This is the half that fixes the cold path.
@@ -515,23 +533,28 @@ export function runCrmContactListsTests() {
       "the open-ended sequential paging loop must not come back",
     );
 
-    // ORDER BY the table's own conflict key. Without it, ranged paging has no defined row order
-    // between requests, so a contact can be counted twice or skipped and the picker's numbers come
-    // out quietly wrong — a wrong count reads exactly like a real one.
-    for (const column of ["agent_crm_id", "contact_crm_id", "list_type"]) {
-      assert.ok(
-        block.includes(`.order("${column}", { ascending: true })`),
-        `the sweep must order by ${column}: (agent_crm_id, contact_crm_id, list_type) is the table's conflict key, and only a total order makes ranged paging deterministic`,
-      );
-    }
+    // ORDER BY the assignment's unique `id`. Without a total order, ranged paging has no defined row
+    // order between requests, so a contact can be counted twice or skipped and the picker's numbers
+    // come out quietly wrong — a wrong count reads exactly like a real one.
+    assert.ok(
+      block.includes('.order("id", { ascending: true })'),
+      "the sweep must order by id: it is the assignment table's identity key, and only a total order makes ranged paging deterministic",
+    );
 
-    // A CACHE WITH NO INVALIDATION IS A STALENESS BUG WEARING A PERFORMANCE COSTUME. The contacts
-    // cron is the ONLY writer of ireports360_contacts, so it is the only thing that can move these
-    // counts, and it must bust the tag on every successful slice.
+    // A CACHE WITH NO INVALIDATION IS A STALENESS BUG WEARING A PERFORMANCE COSTUME. While the vendor
+    // sweep runs, the contacts cron's master refresh is what moves these counts, and it must bust
+    // the tag on every successful slice.
     const cron = readFileSync("app/api/cron/crm-contact-lists/route.ts", "utf8");
     assert.ok(
       cron.includes("CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG") && cron.includes("revalidateTag("),
       "the contacts sync must revalidate the summaries tag — it is the only writer of the table behind them, and a TTL alone leaves the picker quoting pre-sweep counts for five minutes after each of the twelve slices",
+    );
+    // The summaries read the MASTER's open assignments, so a bust before the master refresh lets a
+    // board re-cache the pre-refresh counts for another five minutes.
+    assert.ok(
+      cron.indexOf("await refreshCrmContactMaster(") >= 0 &&
+        cron.indexOf("revalidateTag(") > cron.indexOf("await refreshCrmContactMaster("),
+      "the contacts sync must bust the summaries tag AFTER the contact master refresh, which is what moves the counts",
     );
   }
 

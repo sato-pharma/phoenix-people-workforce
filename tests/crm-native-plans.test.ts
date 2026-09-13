@@ -95,17 +95,40 @@ export function runCrmNativePlansTests() {
   assert.deepEqual(nativePlanDayShifts("2026-09-20"), ["AM", "PM"]);
 
   // ── 2. Which weeks and days are open ─────────────────────────────────────────────────────────
-  assert.deepEqual(nativePlanOpenWeeks(PILOT, "2026-09-13"), ["2026-09-19"], "the week before the pilot opens the pilot week");
-  assert.deepEqual(nativePlanOpenWeeks(PILOT, "2026-09-22"), ["2026-09-19"], "mid-pilot, only the pilot week is open");
-  assert.deepEqual(nativePlanOpenWeeks(PILOT, "2026-09-25"), [], "once the pilot has passed, nothing is open");
-  assert.deepEqual(nativePlanOpenWeeks(null, "2026-09-13"), [], "another line plans nothing here");
-  assert.deepEqual(nativePlanOpenWeeks({ ...PILOT, isActive: false }, "2026-09-13"), [], "an ended pilot opens nothing");
+  const PILOT_ONLY = { cutoverDate: null, pilot: PILOT };
+  assert.deepEqual(nativePlanOpenWeeks(PILOT_ONLY, "2026-09-13"), ["2026-09-19"], "the week before the pilot opens the pilot week");
+  assert.deepEqual(nativePlanOpenWeeks(PILOT_ONLY, "2026-09-22"), ["2026-09-19"], "mid-pilot, only the pilot week is open");
+  assert.deepEqual(nativePlanOpenWeeks(PILOT_ONLY, "2026-09-25"), [], "once the pilot has passed, nothing is open");
+  assert.deepEqual(nativePlanOpenWeeks({ cutoverDate: null, pilot: null }, "2026-09-13"), [], "another line plans nothing here");
   assert.deepEqual(
-    nativePlanEditableDays(PILOT, "2026-09-19", "2026-09-22"),
+    nativePlanOpenWeeks({ cutoverDate: null, pilot: { ...PILOT, isActive: false } }, "2026-09-13"),
+    [],
+    "an ended pilot opens nothing",
+  );
+  assert.deepEqual(
+    nativePlanEditableDays(PILOT_ONLY, "2026-09-19", "2026-09-22"),
     ["2026-09-22", "2026-09-23", "2026-09-24"],
     "a passed day is fixed; today and later can change",
   );
-  assert.deepEqual(nativePlanEditableDays(PILOT, "2026-09-20", "2026-09-13"), [], "a week that does not start on Saturday is not a week");
+  assert.deepEqual(nativePlanEditableDays(PILOT_ONLY, "2026-09-20", "2026-09-13"), [], "a week that does not start on Saturday is not a week");
+
+  // From the CRM cutover date every rep of every line plans here (the owner, 2026-09-13: all lines at once).
+  const CUTOVER = { cutoverDate: "2026-10-03", pilot: null };
+  assert.deepEqual(nativePlanOpenWeeks(CUTOVER, "2026-09-25"), [], "two weeks ahead of the cutover nothing is open yet");
+  assert.deepEqual(nativePlanOpenWeeks(CUTOVER, "2026-09-26"), ["2026-10-03"], "the week before the cutover opens the first cutover week");
+  assert.deepEqual(nativePlanOpenWeeks(CUTOVER, "2026-10-02"), ["2026-10-03"], "so does the Friday just before it");
+  assert.deepEqual(nativePlanOpenWeeks(CUTOVER, "2026-10-05"), ["2026-10-03", "2026-10-10"], "after the cutover, this week and next are open");
+  assert.deepEqual(nativePlanOpenWeeks(CUTOVER, "2026-12-17"), ["2026-12-12", "2026-12-19"], "and they stay open, week after week, with no end date");
+  assert.deepEqual(
+    nativePlanEditableDays({ cutoverDate: "2026-10-06", pilot: null }, "2026-10-03", "2026-10-01"),
+    ["2026-10-06", "2026-10-07", "2026-10-08"],
+    "a mid-week cutover opens its week from that day, never the days before it",
+  );
+  assert.deepEqual(
+    nativePlanOpenWeeks({ cutoverDate: "2026-10-03", pilot: PILOT }, "2026-09-22"),
+    ["2026-09-19"],
+    "a pilot still running before a later cutover keeps its own week",
+  );
 
   // ── 3. The item list's shape ─────────────────────────────────────────────────────────────────
   assert.equal(parseNativePlanItems("not a list").ok, false);
@@ -252,9 +275,17 @@ export function runCrmNativePlansTests() {
   // ── 11. Permissions ──────────────────────────────────────────────────────────────────────────
   const grants = (role: keyof typeof permissionMatrix) => [...(permissionMatrix[role].crm_visit_entry ?? [])].sort();
   assert.ok(grants("Medical Rep").includes("create") && !grants("Medical Rep").includes("approve"), "a rep plans and never verifies");
-  for (const manager of ["District Manager", "Regional Manager", "National Sales Manager"] as const) {
+  for (const manager of ["Regional Manager", "National Sales Manager"] as const) {
     assert.ok(grants(manager).includes("approve") && !grants(manager).includes("create"), `${manager} verifies and never plans for a rep`);
   }
+  // A district manager holds create only for his rare single visits (the owner, 2026-09-14). Holding
+  // approve beside it is what turns him away from the planner, in the service and on the page.
+  assert.ok(grants("District Manager").includes("approve"), "a district manager verifies his reps' plans");
+  assert.match(
+    read("src/lib/crm/native-visits/plans-service.ts"),
+    /if \(await canAccess\(access, "crm_visit_entry", "approve"\)\) throw forbiddenError\(NATIVE_PLAN_MANAGER_MESSAGE\);/,
+    "a manager who may create single visits still files no weekly plan",
+  );
   assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
     "the Super Admin neither plans nor verifies on anyone's behalf");
 

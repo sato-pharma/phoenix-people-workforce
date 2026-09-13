@@ -45,9 +45,10 @@ function listLabel(contactCount: number, pharmacyCount: number): string {
 
 function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
   // Pharmacies count towards HAVING a list even though they are not contacts: a rep holding only
-  // pharmacies does have a mirrored list, and calling that "no list in the CRM" would be a false
-  // finding pointing at a sync problem that is not there.
-  const hasList = rep.agentCrmId != null && rep.contactCount + rep.pharmacyCount > 0;
+  // pharmacies does have a list, and calling that "no list" would be a false finding.
+  // NOT gated on a CRM account. A rep hired after the cutover has none, and his list is found by his
+  // HR id — requiring `agentCrmId` here labelled every such rep "no list" whatever he held.
+  const hasList = rep.contactCount + rep.pharmacyCount > 0;
   return (
     <Link
       className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"

@@ -1653,9 +1653,25 @@ export async function getSfeDoctorCoverage(input: {
           ),
         )
       : undefined;
+  // The same translation for a rep hired after the CRM cutover, who has no CRM id: his visits carry
+  // a NULL `agent_crm_id`, so he never reached the list above and his plan was never read. Taken only
+  // from such rows, so every rep with a CRM id is read exactly as before; scanPlanEntries unions the
+  // two lists.
+  const scopedAgentHrIds =
+    input.scope.kind === "agents"
+      ? Array.from(
+          new Set(
+            [...collapsed, ...campaignRows]
+              .filter((row) => !(typeof row.agent_crm_id === "number" && row.agent_crm_id > 0))
+              .map((row) => row.agent_hr_id?.trim() ?? "")
+              .filter((hrId) => hrId.length > 0),
+          ),
+        )
+      : undefined;
   const [planRows, excludedAgentCrmIds, directory, { norms }] = await Promise.all([
     scanPlanEntries(`${addMonthsToMonthKey(month, -DOCTOR_COVERAGE_MONTHS_BACK)}-01`, dateTo, {
       ...(scopedAgentCrmIds ? { agentCrmIds: scopedAgentCrmIds } : {}),
+      ...(scopedAgentHrIds && scopedAgentHrIds.length > 0 ? { agentHrIds: scopedAgentHrIds } : {}),
     }),
     getEffectiveExcludedAgentCrmIds(),
     // A rep who holds a list but has logged no visit has no name anywhere in the CRM mirror; the
