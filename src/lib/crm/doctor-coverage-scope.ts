@@ -194,6 +194,10 @@ export type DownwardCut = {
   isAboveViewer: (person: Pick<DownwardCutPerson, "hrId">) => boolean;
   /** Cut 2 — the seat-rank ladder. True for the viewer himself; false for an unranked title. */
   isStrictlyBelowViewer: (person: DownwardCutPerson) => boolean;
+  /** Cut 2, unranked-tolerant — true only for a person whose title IS on the ladder at or above the
+   * viewer's seat. An unranked title answers false. Owner decision 2026-09-13 (double-visit board):
+   * a visitor with no sales rank — Training Manager, SFE Manager — stays visible. */
+  isRankedAtOrAboveViewer: (person: DownwardCutPerson) => boolean;
 };
 
 /**
@@ -253,6 +257,12 @@ export function buildDownwardCut(input: {
         if (viewerKey && normalizeHrIdForAccess(person.hrId) === viewerKey) return true; // you always see yourself
         const rank = rankOf(person);
         return rank != null && rank < viewerRank;
+      },
+      isRankedAtOrAboveViewer: (person) => {
+        if (viewerRank == null) return false;
+        if (viewerKey && normalizeHrIdForAccess(person.hrId) === viewerKey) return false;
+        const rank = rankOf(person);
+        return rank != null && rank >= viewerRank;
       },
     };
   }
