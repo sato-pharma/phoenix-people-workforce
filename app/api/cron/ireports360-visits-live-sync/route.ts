@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { cairoTodayIso, isWithinLiveSyncWindow } from "@/lib/crm/dates";
 import { runLiveIReports360Sync } from "@/lib/crm/sync";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
@@ -52,6 +53,10 @@ export async function GET(request: Request) {
     message: "iReports360 live visits sync is not authorized.",
   });
   if (denied) return denied;
+  // THE CRM CUTOVER. Once iReports360 is retired there is nothing to pull; answer before the
+  // dead-man's switch so a retired job never pings (docs/crm-cutover-runbook.md).
+  const standDown = await resolveVendorSyncStandDown();
+  if (standDown) return NextResponse.json({ reason: standDown, skipped: true });
   try {
     // Wrapped at the whole-request level (not just runLiveIReports360Sync) so an
     // outside-the-window no-op skip still sends an "ok" check-in — every GCP-scheduled

@@ -1339,6 +1339,7 @@ import { runDirectOrderVenueCrmContactLinkTests } from "./direct-order-venue-crm
 import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
 import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
+import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
@@ -4267,6 +4268,11 @@ await runTest(
 await runTest(
   "native rep plans, the pilot (a Saturday-to-Thursday week with Thursday a morning; only pilot days from today on can change; AM/PM comes from the contact's list; one row and one id per rep, doctor and day for good, so a re-save keeps ids and a dropped doctor comes back as the same row; only the manager the plan was sent to verifies or returns it, with a note on a return, for a rep beneath that manager; the vendor plan is untouched; nothing outside the module names the plan tables)",
   runCrmNativePlansTests,
+);
+
+await runTest(
+  "CRM cutover (dormant until a date is set: vendor rows before it and Phoenix rows from it, never both; every read door serves the unified views and filters resigned agents on a column a rep with no CRM id survives; the cutover month's CRM no-activity is never charged and the collection says why; a retired vendor stands the poller, the four crons and the four sync buttons down; probation double visits keep being captured; a native rep's half-day leave still finds his work)",
+  runCrmCutoverTests,
 );
 
 await runTest(

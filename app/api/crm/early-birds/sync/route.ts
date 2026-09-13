@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { syncIReports360Visits } from "@/lib/crm/sync";
+import { resolveVendorSyncStandDown, VENDOR_SYNC_RETIRED_MESSAGE } from "@/lib/crm/cutover";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -44,6 +45,13 @@ export async function POST(request: Request) {
 
     if (access.scope !== "system" && !SYNC_ROLES.has(access.role)) {
       return NextResponse.json({ error: "not_a_sync_role" }, { status: 403 });
+    }
+
+    // THE CRM CUTOVER. After iReports360 is retired there is no vendor to pull today's visits from —
+    // they are already in Phoenix — so the button answers plainly instead of spending a login.
+    const standDown = await resolveVendorSyncStandDown();
+    if (standDown) {
+      return NextResponse.json({ error: standDown, message: VENDOR_SYNC_RETIRED_MESSAGE }, { status: 409 });
     }
 
     const actor = access.hrId || access.loginId || "unknown";

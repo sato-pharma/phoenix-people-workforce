@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { isIReports360Configured } from "@/lib/crm/config";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@/lib/crm/contact-master";
 import {
   CONTACT_SYNC_SLICE_COUNT,
@@ -79,6 +80,12 @@ const SLICE_BUDGET_MS = 21_000;
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/crm-contact-lists");
   if (denied) return denied;
+
+  // THE CRM CUTOVER. Once iReports360 is retired there is no vendor list to scrape, so the job stands
+  // down — before the dead-man's switch and the configuration check, which would otherwise page every
+  // morning about a connection that is gone on purpose (docs/crm-cutover-runbook.md).
+  const standDown = await resolveVendorSyncStandDown();
+  if (standDown) return NextResponse.json({ reason: standDown, skipped: true });
 
   if (!isIReports360Configured()) {
     await pingDeadMansSwitch(JOB_SLUG, "fail", "iReports360 is not configured — the contact mirror is not being refreshed");

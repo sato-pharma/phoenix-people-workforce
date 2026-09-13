@@ -27,7 +27,7 @@
  * applied afterwards.
  */
 
-import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
+import { CRM_PLAN_ENTRIES_TABLE, CRM_PLAN_ENTRIES_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { getAgentContactList, getDoctorListRepSummaries } from "@/lib/crm/contact-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
@@ -123,7 +123,7 @@ type RawPlanRow = {
 function isPlanSchemaMissing(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String((error as { message?: string })?.message ?? "");
   return (
-    message.includes(CRM_PLAN_ENTRIES_TABLE) &&
+    (message.includes(CRM_PLAN_ENTRIES_TABLE) || message.includes(CRM_PLAN_ENTRIES_UNIFIED_VIEW)) &&
     (message.includes("does not exist") || message.includes("schema cache"))
   );
 }
@@ -266,7 +266,10 @@ async function fetchPlanRows(input: {
   for (const chunk of chunks) {
     let offset = 0;
     for (;;) {
-      let query = supabase.from(CRM_PLAN_ENTRIES_TABLE).select(SUMMARY_COLUMNS).eq("plan_kind", input.kind);
+      // The unified view: vendor plans before the CRM cutover date, plans filed in Phoenix from it
+      // (negative crm_plan_id, so they never meet a vendor id). Verification itself stays on the
+      // vendor table below — it writes back into iReports360.
+      let query = supabase.from(CRM_PLAN_ENTRIES_UNIFIED_VIEW).select(SUMMARY_COLUMNS).eq("plan_kind", input.kind);
       if (input.window.kind === "dates") {
         query = query.gte("plan_date", input.window.start).lte("plan_date", input.window.end);
       } else {
@@ -389,7 +392,7 @@ export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | nu
   let offset = 0;
   for (;;) {
     const { data, error } = await supabase
-      .from(CRM_PLAN_ENTRIES_TABLE)
+      .from(CRM_PLAN_ENTRIES_UNIFIED_VIEW)
       .select("ampm, contact_crm_id, contact_grade, contact_name, crm_region_name, plan_date, plan_frequency, speciality")
       .eq("crm_plan_id", crmPlanId)
       .order("plan_date", { ascending: true, nullsFirst: true })

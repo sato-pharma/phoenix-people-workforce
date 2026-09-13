@@ -4,6 +4,7 @@ import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-syn
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from "@/lib/crm/sync";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -74,6 +75,11 @@ export async function GET(request: Request) {
     message: "iReports360 wide reconciliation is not authorized.",
   });
   if (denied) return denied;
+  // THE CRM CUTOVER. Once iReports360 is retired there is nothing to reconcile; answer before the
+  // dead-man's switch so a retired job never pings (docs/crm-cutover-runbook.md). The probation
+  // double-visit capture below moves to src/lib/crm/housekeeping-scheduler.ts.
+  const standDown = await resolveVendorSyncStandDown();
+  if (standDown) return NextResponse.json({ reason: standDown, skipped: true });
   try {
     // Slug matches the live Cloud Scheduler job name (phoenix-reconcile-visits), not JOB_NAME
     // above ("ireports360-visits-reconcile") — the Healthchecks check uses this slug.

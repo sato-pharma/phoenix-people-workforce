@@ -60,6 +60,7 @@ import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySwe
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { logError } from "@/lib/observability/log";
@@ -738,6 +739,12 @@ export function unrefTimer(timer: ReturnType<typeof setTimeout> | ReturnType<typ
 }
 
 async function tick(): Promise<void> {
+  // THE CRM CUTOVER. Once iReports360 is retired every job below would pull from a vendor that is
+  // gone, so the tick stands down whole — no probe, no deep run, no dead-man's-switch ping (the
+  // runbook deletes those checks). The probation double-visit capture that rode on these jobs moves
+  // to src/lib/crm/housekeeping-scheduler.ts. Fails open: an unreadable setting keeps the poller on.
+  if (await resolveVendorSyncStandDown()) return;
+
   const today = cairoTodayIso();
   const { hour, minute } = cairoHourMinute();
 

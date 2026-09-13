@@ -6,6 +6,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { runScheduledIReports360Sync } from "@/lib/crm/sync";
+import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
@@ -84,6 +85,11 @@ export async function GET(request: Request) {
     message: "iReports360 visits sync is not authorized.",
   });
   if (denied) return denied;
+  // THE CRM CUTOVER. Once iReports360 is retired there is nothing to pull; answer before the
+  // dead-man's switch so a retired job never pings (docs/crm-cutover-runbook.md). The probation
+  // double-visit capture below moves to src/lib/crm/housekeeping-scheduler.ts.
+  const standDown = await resolveVendorSyncStandDown();
+  if (standDown) return NextResponse.json({ reason: standDown, skipped: true });
   try {
     // Scheduled at 9:07/12:07/19:07 Africa/Cairo via Google Cloud Scheduler's --time-zone flag
     // (see scripts/setup-gcp-cron.sh), which is genuinely DST-aware — the trigger stays pinned
