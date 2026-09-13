@@ -45,7 +45,7 @@ import path from "node:path";
 // genuinely new employee onto an existing `AA` row. tests/
 // employee-import-hrid-alias-resolution.test.ts pins that. It is counted here
 // (it IS an inline normaliser) but it is not expected to ever leave the set — so
-// the baseline floor for folding is 20, not 0.
+// the baseline floor for folding is 1, not 0 (the BASELINE constant below counts it too).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -68,8 +68,12 @@ import path from "node:path";
  * src/lib/deductions-governance/payroll-handoff.ts. A deleted copy is ground won
  * exactly like a folded one, and 20 is the documented floor (19 foldable + the one
  * deliberately-unfoldable normalizeHrId in employee-normalizers.ts).
+ *
+ * Lowered 20 -> 19 (2026-09-13): deleting the weekly double-visit digest (owner decision) removed
+ * its hand-rolled `cleanHrId` in src/lib/double-visit-analytics/weekly-digest.ts. The unfoldable
+ * employee-normalizers.ts copy is still counted, so the folding floor is now 19.
  */
-const BASELINE = 20;
+const BASELINE = 19;
 
 const ROOTS = ["app", "src"];
 
@@ -340,7 +344,7 @@ export function runHrIdNormalizerRatchetTests() {
     violations.length >= BASELINE,
     `Good news: hand-rolled HR_ID normalisers dropped ${BASELINE} -> ${violations.length}. Lower BASELINE in this file to ` +
       `${violations.length} so the ground that was won cannot be given back.\n` +
-      `(Floor is 20: employee-normalizers.ts normalizeHrId is deliberately unfoldable — see the header.)\n` +
+      `(employee-normalizers.ts normalizeHrId is deliberately unfoldable and always counts — see the header.)\n` +
       `Inline normalisers now present:\n  ${sites.join("\n  ")}`,
   );
 }
