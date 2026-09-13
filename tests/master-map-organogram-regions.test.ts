@@ -168,6 +168,94 @@ export function runMasterMapOrganogramRegionsTests() {
     "and it is printed on the tab, so a broken link between the two masters reads as a broken link",
   );
 
+  // ---- THE PER-LINE HEADLINE: two lines, two districts, one area -------------------------------
+  //
+  // From 2026-09-01 Assuit 1 is Upper Egypt 1 on Pedia and Upper Egypt 2 on Anti Infective. Pooling
+  // the lines' claims put it on BOTH tabs with no line named, so neither tab could say who runs it.
+  const split = buildMasterMapTree({
+    areas: [
+      { areaCode: "UE1", areaName: "Minia 1", regionCode: "UE" },
+      { areaCode: "UE3", areaName: "Assuit 1", regionCode: "UE" },
+    ],
+    bricks: [
+      { areaCode: "UE1", brickId: "B-MINIA", brickName: "Minia Centre" },
+      { areaCode: "UE3", brickId: "B-ASSUIT", brickName: "Assuit Centre" },
+    ],
+    customers: [shop("B-MINIA", "2001", "صيدلية النور"), shop("B-ASSUIT", "2002", "صيدلية الشفاء")],
+    organogramAreas: [
+      { areaCode: "UE1", lineName: "Anti Infective", regionCode: "UE-1" },
+      { areaCode: "UE3", lineName: "Anti Infective", regionCode: "UE-2" },
+      { areaCode: "UE1", lineName: "CNS", regionCode: "UE" },
+      { areaCode: "UE3", lineName: "CNS", regionCode: "UE" },
+      { areaCode: "UE1", lineName: "Pedia", regionCode: "UE-1" },
+      { areaCode: "UE3", lineName: "Pedia", regionCode: "UE-1" },
+    ],
+    regions: [
+      { regionCode: "UE", regionName: "Upper Egypt" },
+      { regionCode: "UE-1", regionName: "Upper Egypt 1" },
+      { regionCode: "UE-2", regionName: "Upper Egypt 2" },
+    ],
+  });
+  const splitRegion = (name: string) => {
+    const found = split.regions.find((candidate) => candidate.regionName === name);
+    assert.ok(found, `expected a region called ${name}`);
+    return found;
+  };
+  const sections = (name: string) =>
+    splitRegion(name).lineSections.map((section) => [
+      section.lineName,
+      section.areas.map((area) => area.areaName),
+    ]);
+
+  assert.deepEqual(
+    sections("Upper Egypt 1"),
+    [
+      ["Anti Infective", ["Minia 1"]],
+      ["Pedia", ["Assuit 1", "Minia 1"]],
+    ],
+    "Upper Egypt 1 lists each line's own areas under that line — Assuit 1 is Pedia's here, never Anti Infective's",
+  );
+  assert.deepEqual(
+    sections("Upper Egypt 2"),
+    [["Anti Infective", ["Assuit 1"]]],
+    "Upper Egypt 2 holds Assuit 1 for Anti Infective only; pooling the lines would put Pedia's Minia 1 here too",
+  );
+
+  const bandsOf = (name: string) =>
+    renderRegionRows(splitRegion(name), distributorName)
+      .filter((row) => row.kind === "line" || row.kind === "area")
+      .map((row) => `${row.kind}:${"label" in row ? row.label.split("   ·   ")[0] : ""}`);
+  assert.deepEqual(
+    bandsOf("Upper Egypt 1"),
+    ["line:Anti Infective", "area:Minia 1", "line:Pedia", "area:Assuit 1", "area:Minia 1"],
+    "the tab is cut into one labelled section per line, and each area sits under the line that files it there",
+  );
+  assert.deepEqual(
+    bandsOf("Upper Egypt 2"),
+    ["line:Anti Infective", "area:Assuit 1"],
+    "and a line that files nothing here gets no section at all",
+  );
+
+  const assuitRow = renderFlatRows(split, distributorName).find((row) => row[6] === "2002");
+  assert.deepEqual(
+    assuitRow?.slice(-3),
+    ["Upper Egypt 2", "Upper Egypt", "Upper Egypt 1"],
+    "every shop carries the region each line's organogram files its area under, in Anti Infective, CNS, Pedia order",
+  );
+  assert.equal(assuitRow?.[0], "Upper Egypt", "while the Region column stays the area master's geography");
+
+  const assuitBand = renderRegionRows(splitRegion("Upper Egypt"), distributorName).find(
+    (row, index, all) =>
+      row.kind === "managers" && all[index - 1]?.kind === "area" && "label" in all[index - 1] &&
+      (all[index - 1] as { label: string }).label.startsWith("Assuit 1"),
+  );
+  assert.ok(
+    assuitBand && assuitBand.kind === "managers" &&
+      assuitBand.label.includes("Anti Infective: Upper Egypt 2") &&
+      assuitBand.label.includes("Pedia: Upper Egypt 1"),
+    "the band under an area on the geography tabs names each line's organogram region too",
+  );
+
   // ---- No organogram at all is a valid sheet ---------------------------------------------------
   const bare = productionShaped([]);
   const bareDistrict = bare.regions.find((candidate) => candidate.regionName === "Upper Egypt 1");

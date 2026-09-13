@@ -22,8 +22,8 @@ import {
   type MasterMapTree,
 } from "@/lib/sales/master-map/tree";
 import {
-  MANAGER_COLUMN_WIDTH,
   STYLE,
+  appendedColumnWidth,
   rgb,
   renderedTabColor,
   repeatCellRequest,
@@ -39,7 +39,9 @@ const COLUMN_COUNT = MASTER_MAP_GAP_COLUMNS.length;
 const CENTRED_COLUMNS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const COLUMN_WIDTHS = [140, 170, 200, 100, 150, 130, 250, 90, 600, 320];
-while (COLUMN_WIDTHS.length < COLUMN_COUNT) COLUMN_WIDTHS.push(MANAGER_COLUMN_WIDTH);
+while (COLUMN_WIDTHS.length < COLUMN_COUNT) {
+  COLUMN_WIDTHS.push(appendedColumnWidth(MASTER_MAP_GAP_COLUMNS[COLUMN_WIDTHS.length]));
+}
 
 /** By name, never by counting — the same reason the flat tab looks it up. */
 const PROVENANCE_COLUMN = MASTER_MAP_GAP_COLUMNS.indexOf(MASTER_MAP_PROVENANCE_HEADER);

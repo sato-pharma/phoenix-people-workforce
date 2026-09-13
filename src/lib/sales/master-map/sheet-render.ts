@@ -76,6 +76,8 @@ export const STYLE = {
     size: 10,
     text: rgb(100, 116, 139),
   },
+  // Between the region band and its areas on an organogram tab: one per line.
+  line: { align: "CENTER", background: rgb(51, 65, 85), bold: true, size: 13, text: WHITE },
   region: { align: "CENTER", background: rgb(15, 23, 42), bold: true, size: 15, text: WHITE },
   unnamed: {
     align: "LEFT",
@@ -87,7 +89,7 @@ export const STYLE = {
 } as const satisfies Record<string, CellStyle>;
 
 /** Bands get room to breathe; everything else stays tight so more shops fit on a screen. */
-const ROW_HEIGHT = { area: 30, base: 21, region: 38 } as const;
+const ROW_HEIGHT = { area: 30, base: 21, line: 34, region: 38 } as const;
 
 /**
  * Width of one district-manager column, wide enough for the longest real name.
@@ -98,6 +100,14 @@ const ROW_HEIGHT = { area: 30, base: 21, region: 38 } as const;
  * owner's rule is that a name is never cut off.
  */
 export const MANAGER_COLUMN_WIDTH = 330;
+
+/** An organogram region column: the longest thing it ever holds is "Not in the organogram". */
+const REGION_COLUMN_WIDTH = 180;
+
+/** Width of a column appended after provenance, told apart by its header, never by position. */
+export function appendedColumnWidth(header: string | undefined): number {
+  return header?.endsWith(" region") ? REGION_COLUMN_WIDTH : MANAGER_COLUMN_WIDTH;
+}
 
 /**
  * The provenance column: pale grey, small, italic. Deliberately the quietest thing on the row —
@@ -131,6 +141,7 @@ function rowValues(row: MasterMapRow): string[] {
     case "area":
     case "brick":
     case "empty-note":
+    case "line":
     case "managers":
     case "region":
       return pad([row.label]);
@@ -150,6 +161,7 @@ function isBand(kind: MasterMapRow["kind"]): boolean {
     kind === "area" ||
     kind === "brick" ||
     kind === "empty-note" ||
+    kind === "line" ||
     kind === "managers"
   );
 }
@@ -164,6 +176,8 @@ function styleFor(row: MasterMapRow): CellStyle | null {
       return STYLE.emptyNote;
     case "header":
       return STYLE.columnHeader;
+    case "line":
+      return STYLE.line;
     // Quiet on purpose: it sits between the area band and the first brick, and it is reference
     // rather than structure. Loud enough to find, not loud enough to compete with the area.
     case "managers":
@@ -427,6 +441,7 @@ export function renderSheet(
   // purpose: there are 697 of them and one request each would cost more than it is worth.
   rows.forEach((row, index) => {
     if (row.kind === "region") requests.push(rowHeightRequest(sheetId, index, index + 1, ROW_HEIGHT.region));
+    else if (row.kind === "line") requests.push(rowHeightRequest(sheetId, index, index + 1, ROW_HEIGHT.line));
     else if (row.kind === "area") requests.push(rowHeightRequest(sheetId, index, index + 1, ROW_HEIGHT.area));
   });
 
@@ -502,9 +517,9 @@ export function renderFlatSheet(
 
   for (const column of FLAT_CENTRED_COLUMNS) requests.push(centreColumnRequest(sheetId, column));
 
-  // The eleven data columns, then one per manager column the header actually carries.
+  // The eleven data columns, then one per manager or region column the header actually carries.
   const widths = [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320];
-  while (widths.length < header.length) widths.push(MANAGER_COLUMN_WIDTH);
+  while (widths.length < header.length) widths.push(appendedColumnWidth(header[widths.length]));
   requests.push(...columnWidthRequests(sheetId, widths));
 
   if (options.tabColor) requests.push(renderedTabColor(sheetId, options.tabColor));
