@@ -1,0 +1,367 @@
+/**
+ * Native visits — the RULES, with no I/O (CRM phase 3, the pilot).
+ *
+ * Pure on purpose: the phone form and the server both apply these, and the tests exercise them
+ * without a database. Nothing here imports the Supabase client, so a "use client" component may
+ * import it.
+ *
+ * The owner's decisions this file carries (numbers from the CRM audit):
+ *   2  AM/PM is decided by the contact's list — a doctor on only the AM list is an AM visit.
+ *   3  A campaign visit names a doctor OR a prospect, never both.
+ *   7  No GPS fix is allowed: it is flagged and still counted. So is a fix outside Egypt.
+ *   8  Entry window: the same Cairo day or the next one.
+ *   10 The rep records who accompanied him; that person confirms with his own click.
+ *   17 One line, for one week — the pilot row, not a code constant.
+ *
+ * And the audit's §11.1: explicit types, each mapped to the vendor's legacy code, so -4 stays the
+ * only leave and no meaning is ever parsed out of a comment again.
+ */
+
+import { isPlausibleCheckinCoordinate } from "@/lib/crm/checkin-coords";
+import { addDaysIso } from "@/lib/crm/dates";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+
+export type NativeVisitContactRule = "required" | "contact_or_prospect" | "none";
+
+export type NativeVisitTypeDefinition = {
+  key: NativeVisitTypeKey;
+  label: string;
+  /** The iReports360 code this type means. Its pay meaning is visit-type-meaning.ts's answer for it. */
+  legacyCode: number;
+  contact: NativeVisitContactRule;
+};
+
+export type NativeVisitTypeKey =
+  | "regular"
+  | "campaign"
+  | "conference"
+  | "group_meeting"
+  | "annual_vacation"
+  | "public_holiday"
+  | "casual_leave"
+  | "training"
+  | "meeting"
+  | "traveling"
+  | "health_day"
+  | "admin_work"
+  | "business_review";
+
+/**
+ * THE catalogue. The migration's `crm_native_visits_legacy_code` check holds the same pairs, and
+ * tests/crm-native-visits.test.ts keeps the two in step.
+ *
+ * Deliberately absent: -7 (Ambiguous) and -19 (a second "Meetings") exist only because the vendor
+ * form let a rep pick a code whose meaning nobody could state; -30 (Unlabelled field visit) is a
+ * regular visit the vendor never labelled. A native entry is explicit, so none of the three can be
+ * created here.
+ */
+export const NATIVE_VISIT_TYPES: readonly NativeVisitTypeDefinition[] = [
+  { key: "regular", label: "Doctor visit", legacyCode: 0, contact: "required" },
+  { key: "campaign", label: "Campaign", legacyCode: -8, contact: "contact_or_prospect" },
+  { key: "conference", label: "Conference", legacyCode: -1, contact: "none" },
+  { key: "group_meeting", label: "Group Meeting", legacyCode: -2, contact: "none" },
+  { key: "annual_vacation", label: "Annual Vacation", legacyCode: -4, contact: "none" },
+  { key: "public_holiday", label: "Public Holiday", legacyCode: -5, contact: "none" },
+  { key: "casual_leave", label: "Casual Leave", legacyCode: -6, contact: "none" },
+  { key: "training", label: "Training", legacyCode: -9, contact: "none" },
+  { key: "meeting", label: "Meeting", legacyCode: -11, contact: "none" },
+  { key: "traveling", label: "Traveling", legacyCode: -12, contact: "none" },
+  { key: "health_day", label: "Health Day", legacyCode: -15, contact: "none" },
+  { key: "admin_work", label: "Admin Work", legacyCode: -20, contact: "none" },
+  { key: "business_review", label: "Business Review", legacyCode: -21, contact: "none" },
+];
+
+const TYPE_BY_KEY = new Map<string, NativeVisitTypeDefinition>(NATIVE_VISIT_TYPES.map((type) => [type.key, type]));
+
+export function nativeVisitType(key: string | null | undefined): NativeVisitTypeDefinition | null {
+  return TYPE_BY_KEY.get(String(key ?? "")) ?? null;
+}
+
+export function nativeVisitTypeLabel(key: string | null | undefined): string {
+  return nativeVisitType(key)?.label ?? "Visit";
+}
+
+export type NativeVisitShift = "AM" | "PM";
+export type NativeVisitGpsStatus = "captured" | "missing" | "out_of_bounds";
+export type NativePartnerStatus = "pending" | "confirmed" | "rejected";
+
+export const NATIVE_VISIT_COMMENT_MAX = 1000;
+export const NATIVE_VISIT_PROSPECT_MAX = 200;
+export const NATIVE_VISIT_PARTNERS_MAX = 3;
+export const NATIVE_VISIT_DELETE_REASON_MAX = 500;
+/** A phone clock this far ahead of the server is refused rather than believed. */
+export const NATIVE_VISIT_DEVICE_CLOCK_SKEW_MS = 15 * 60 * 1000;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+// ── Pilot ───────────────────────────────────────────────────────────────────────────────────────
+
+export type NativeVisitPilot = {
+  lineName: string;
+  startsOn: string;
+  endsOn: string;
+  isActive: boolean;
+};
+
+/** Line names are compared the way the portal nav compares them: case, spaces and dashes ignored. */
+export function nativeVisitLineKey(lineName: string | null | undefined): string {
+  return String(lineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** The pilot row covering this line, whatever the date — null when the line is not piloting. */
+export function nativeVisitPilotForLine(
+  lineName: string | null | undefined,
+  pilots: readonly NativeVisitPilot[],
+): NativeVisitPilot | null {
+  const key = nativeVisitLineKey(lineName);
+  if (!key) return null;
+  return pilots.find((pilot) => pilot.isActive && nativeVisitLineKey(pilot.lineName) === key) ?? null;
+}
+
+/** True when `visitDate` falls inside the pilot, both ends inclusive. */
+export function isNativeVisitPilotDay(pilot: NativeVisitPilot | null, visitDate: string): boolean {
+  if (!pilot || !pilot.isActive || !ISO_DAY_PATTERN.test(visitDate)) return false;
+  return visitDate >= pilot.startsOn && visitDate <= pilot.endsOn;
+}
+
+// ── Entry window ────────────────────────────────────────────────────────────────────────────────
+
+/** The days a rep may enter today: today and yesterday, Cairo (owner decision 8). */
+export function nativeVisitEntryDays(cairoToday: string): { today: string; yesterday: string } {
+  return { today: cairoToday, yesterday: addDaysIso(cairoToday, -1) };
+}
+
+export function isWithinNativeVisitEntryWindow(visitDate: string, cairoToday: string): boolean {
+  if (!ISO_DAY_PATTERN.test(visitDate)) return false;
+  const { today, yesterday } = nativeVisitEntryDays(cairoToday);
+  return visitDate === today || visitDate === yesterday;
+}
+
+// ── GPS ─────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A missing fix and a fix outside Egypt are both FLAGS, never a refusal (owner decision 7). An
+ * out-of-bounds fix keeps its coordinates, so whoever reads the flag can see where the phone said.
+ */
+export function classifyNativeVisitGps(
+  latitude: number | null | undefined,
+  longitude: number | null | undefined,
+): NativeVisitGpsStatus {
+  const hasLat = typeof latitude === "number" && Number.isFinite(latitude);
+  const hasLon = typeof longitude === "number" && Number.isFinite(longitude);
+  if (!hasLat || !hasLon) return "missing";
+  return isPlausibleCheckinCoordinate(latitude, longitude) ? "captured" : "out_of_bounds";
+}
+
+// ── Draft parsing ───────────────────────────────────────────────────────────────────────────────
+
+export type NativeVisitDraft = {
+  clientSubmissionId: string;
+  visitDate: string;
+  shift: NativeVisitShift;
+  visitType: NativeVisitTypeKey;
+  contactCrmId: number | null;
+  prospectName: string | null;
+  prospectSpeciality: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  accuracyMeters: number | null;
+  gpsAddress: string | null;
+  gpsStatus: NativeVisitGpsStatus;
+  comment: string | null;
+  partnerHrIds: string[];
+  deviceRecordedAt: string;
+};
+
+export type NativeVisitRuleResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function text(value: unknown, max: number): string | null {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, max);
+}
+
+function finiteOrNull(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+/**
+ * Shape and self-consistency of one submission. Deliberately says nothing about WHO sends it — the
+ * rep comes from the session, never from the body, and the body has no field that could name one.
+ */
+export function parseNativeVisitDraft(
+  raw: unknown,
+  context: { cairoToday: string; now: Date },
+): NativeVisitRuleResult<NativeVisitDraft> {
+  const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+
+  const clientSubmissionId = String(body.clientSubmissionId ?? "").trim();
+  if (!UUID_PATTERN.test(clientSubmissionId)) {
+    return { ok: false, error: "This visit has no submission id. Reload the form and enter it again." };
+  }
+
+  const type = nativeVisitType(String(body.visitType ?? ""));
+  if (!type) return { ok: false, error: "Choose what kind of visit or day this is." };
+
+  const visitDate = String(body.visitDate ?? "").trim();
+  if (!isWithinNativeVisitEntryWindow(visitDate, context.cairoToday)) {
+    return { ok: false, error: "A visit can only be entered on the same day or the next day." };
+  }
+
+  const shift = String(body.shift ?? "").trim().toUpperCase();
+  if (shift !== "AM" && shift !== "PM") return { ok: false, error: "Choose AM or PM." };
+
+  const contactNumber = finiteOrNull(body.contactCrmId);
+  const contactCrmId = contactNumber != null && Number.isInteger(contactNumber) && contactNumber > 0 ? contactNumber : null;
+  if (contactCrmId === 100000) {
+    return { ok: false, error: "That entry is the CRM's catch-all, not a doctor. Choose the doctor from your list." };
+  }
+  const prospectName = text(body.prospectName, NATIVE_VISIT_PROSPECT_MAX);
+  const prospectSpeciality = text(body.prospectSpeciality, NATIVE_VISIT_PROSPECT_MAX);
+
+  if (type.contact === "required") {
+    if (contactCrmId == null) return { ok: false, error: "Choose the doctor you visited." };
+    if (prospectName) return { ok: false, error: "A doctor visit names a doctor from your list, not a prospect." };
+  } else if (type.contact === "contact_or_prospect") {
+    if ((contactCrmId == null) === (prospectName == null)) {
+      return { ok: false, error: "A campaign visit names either a doctor from your list or a new prospect — one of the two." };
+    }
+  } else if (contactCrmId != null || prospectName) {
+    return { ok: false, error: `${type.label} is not a visit to a doctor, so it takes no doctor.` };
+  }
+
+  let latitude = finiteOrNull(body.latitude);
+  let longitude = finiteOrNull(body.longitude);
+  if (latitude == null || longitude == null) {
+    latitude = null;
+    longitude = null;
+  }
+  const gpsStatus = classifyNativeVisitGps(latitude, longitude);
+  const accuracy = finiteOrNull(body.accuracyMeters);
+  const accuracyMeters = gpsStatus === "missing" || accuracy == null || accuracy < 0 ? null : accuracy;
+
+  const deviceRecordedAtRaw = String(body.deviceRecordedAt ?? "").trim();
+  const deviceTime = Date.parse(deviceRecordedAtRaw);
+  if (!deviceRecordedAtRaw || Number.isNaN(deviceTime)) {
+    return { ok: false, error: "This visit has no recorded time. Reload the form and enter it again." };
+  }
+  if (deviceTime - context.now.getTime() > NATIVE_VISIT_DEVICE_CLOCK_SKEW_MS) {
+    return { ok: false, error: "Your phone's clock is ahead of the real time. Correct the clock, then send again." };
+  }
+
+  const partnerInput = Array.isArray(body.partnerHrIds) ? body.partnerHrIds : [];
+  const seen = new Set<string>();
+  const partnerHrIds: string[] = [];
+  for (const candidate of partnerInput) {
+    const value = String(candidate ?? "").trim();
+    const key = canonicalHrIdKey(value);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    partnerHrIds.push(value);
+  }
+  if (partnerHrIds.length > NATIVE_VISIT_PARTNERS_MAX) {
+    return { ok: false, error: `At most ${NATIVE_VISIT_PARTNERS_MAX} people can be recorded as accompanying one visit.` };
+  }
+
+  return {
+    ok: true,
+    value: {
+      clientSubmissionId: clientSubmissionId.toLowerCase(),
+      visitDate,
+      shift,
+      visitType: type.key,
+      contactCrmId: type.contact === "none" ? null : contactCrmId,
+      prospectName: type.contact === "contact_or_prospect" ? prospectName : null,
+      prospectSpeciality: type.contact === "contact_or_prospect" && prospectName ? prospectSpeciality : null,
+      latitude,
+      longitude,
+      accuracyMeters,
+      gpsAddress: gpsStatus === "missing" ? null : text(body.gpsAddress, 500),
+      gpsStatus,
+      comment: text(body.comment, NATIVE_VISIT_COMMENT_MAX),
+      partnerHrIds,
+      deviceRecordedAt: new Date(deviceTime).toISOString(),
+    },
+  };
+}
+
+// ── Rules that need the rep's own list ──────────────────────────────────────────────────────────
+
+/**
+ * AM/PM is the contact's list (owner decision 2). `listTypes` is the set of THIS rep's open lists
+ * holding the contact: empty means the contact is not on his list at all, and he cannot visit it.
+ * A doctor on both lists takes whichever half-day the rep chose.
+ */
+export function nativeVisitShiftRefusal(
+  draft: Pick<NativeVisitDraft, "contactCrmId" | "shift">,
+  listTypes: readonly string[],
+): string | null {
+  if (draft.contactCrmId == null) return null;
+  const lists = listTypes.filter((list): list is NativeVisitShift => list === "AM" || list === "PM");
+  if (lists.length === 0) return "That doctor is not on your AM or PM list.";
+  if (!lists.includes(draft.shift)) {
+    return `That doctor is on your ${lists.join(" and ")} list, so this is a ${lists.join(" or ")} visit.`;
+  }
+  return null;
+}
+
+/** A rep can never record himself as his own partner. */
+export function nativeVisitPartnerRefusal(repHrId: string, partnerHrIds: readonly string[]): string | null {
+  const repKey = canonicalHrIdKey(repHrId);
+  if (partnerHrIds.some((partner) => canonicalHrIdKey(partner) === repKey)) {
+    return "You cannot record yourself as accompanying your own visit.";
+  }
+  return null;
+}
+
+// ── Deletion and partner decisions ──────────────────────────────────────────────────────────────
+
+export function nativeVisitDeleteRefusal(input: {
+  ownerHrId: string;
+  viewerHrId: string | null;
+  deletedAt: string | null;
+  visitDate: string;
+  cairoToday: string;
+  reason: string | null;
+}): string | null {
+  if (!input.viewerHrId || canonicalHrIdKey(input.ownerHrId) !== canonicalHrIdKey(input.viewerHrId)) {
+    return "Only the rep who entered a visit can delete it.";
+  }
+  if (input.deletedAt) return "This visit is already deleted.";
+  if (!isWithinNativeVisitEntryWindow(input.visitDate, input.cairoToday)) {
+    return "A visit can only be deleted on the day it was for or the next day.";
+  }
+  if (!input.reason || !input.reason.trim()) return "Say why this visit is being deleted.";
+  return null;
+}
+
+export type NativePartnerDecision = "confirmed" | "rejected";
+
+export function parseNativePartnerDecision(value: unknown): NativePartnerDecision | null {
+  const decision = String(value ?? "").trim().toLowerCase();
+  return decision === "confirmed" || decision === "rejected" ? decision : null;
+}
+
+/**
+ * Whether THIS viewer may decide THIS partner row. Only the named partner decides, only once, only
+ * on a live visit of a rep beneath him. Nothing here, or anywhere, decides on anyone's behalf.
+ */
+export function nativePartnerDecisionRefusal(input: {
+  partnerHrId: string;
+  viewerHrId: string | null;
+  status: NativePartnerStatus;
+  visitDeleted: boolean;
+  repInViewerScope: boolean;
+}): string | null {
+  if (!input.viewerHrId || canonicalHrIdKey(input.partnerHrId) !== canonicalHrIdKey(input.viewerHrId)) {
+    return "Only the person named on this visit can confirm it.";
+  }
+  if (input.status !== "pending") return "This visit has already been answered.";
+  if (input.visitDeleted) return "The rep deleted this visit.";
+  if (!input.repInViewerScope) return "This rep is not in your team.";
+  return null;
+}

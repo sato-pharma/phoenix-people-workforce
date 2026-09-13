@@ -1,0 +1,13 @@
+/**
+ * Table names for native (Phoenix-entered) visits — the pilot.
+ *
+ * Kept apart from src/lib/crm/tables.ts on purpose: that file names the read-only vendor mirror, and
+ * tests/crm-native-visits.test.ts fails if any file outside src/lib/crm/native-visits/ references
+ * these constants. Until the cutover no report, KPI, deduction, probation count or payroll input may
+ * read a native row — the same visit also exists in the vendor feed, so reading both double-counts.
+ */
+
+export const CRM_NATIVE_VISIT_PILOTS_TABLE = "crm_native_visit_pilots";
+export const CRM_NATIVE_VISITS_TABLE = "crm_native_visits";
+export const CRM_NATIVE_VISIT_PARTNERS_TABLE = "crm_native_visit_partners";
+export const CRM_NATIVE_VISIT_EVENTS_TABLE = "crm_native_visit_events";

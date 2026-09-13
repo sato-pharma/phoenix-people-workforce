@@ -263,6 +263,14 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // They are now real literals in src/lib/workspace/personal-workspace-nav.ts, which the tab strip
   // and the account menu both render, so the scan finds them the ordinary way. Removed rather than
   // re-worded, per this ratchet's own rule: ground that was won cannot be given back.
+  // ── The native visit pilot (CRM phase 3), recorded 2026-09-13 ───────────────────────────────────
+  //
+  // Both pages exist for ONE line for ONE week. They are reached from buttons on My Visits that show
+  // only to the people the pilot concerns, and neither has a sidebar row on purpose: a rail row would
+  // offer every rep and manager outside the pilot a screen that tells them it is closed. When the
+  // cutover makes native entry the way every rep logs visits, give them rail rows and delete these.
+  { route: "/employee-portals/visits/confirmations", roles: ["District Manager", "National Sales Manager", "Regional Manager"], kind: "linked-from-a-component", reason: "Native visit pilot. Reached from the button on My Visits, shown only to a manager a rep has named on a pilot visit that still waits for his answer. No sidebar row until cutover — outside the pilot the screen is always empty.", recorded: "2026-09-13" },
+  { route: "/employee-portals/visits/log", roles: ["Medical Rep"], kind: "linked-from-a-component", reason: "Native visit pilot. Reached from the button on My Visits, shown only to a rep on the pilot line until the pilot's last day. No sidebar row until cutover — every other rep would be offered a form that tells him it is closed.", recorded: "2026-09-13" },
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

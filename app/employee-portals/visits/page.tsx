@@ -1,10 +1,13 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { MyVisitsWorkspace } from "@/components/employee-portal/my-visits-workspace";
+import { buttonVariants } from "@/components/ui/button";
 import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { getNativeVisitEntryAvailability } from "@/lib/crm/native-visits/service";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
@@ -97,6 +100,10 @@ export default async function MyVisitsPage() {
     teamVisits = [];
   }
 
+  // Native visit entry (the pilot). Offered to a pilot-line rep, and to a manager a rep has named on
+  // a visit. It never throws, so the viewer's own visits always render.
+  const nativeEntry = await getNativeVisitEntryAvailability(access);
+
   return (
     <EmployeePortalPageShell
       badge="Visits"
@@ -107,6 +114,20 @@ export default async function MyVisitsPage() {
       }
       title="My Visits"
     >
+      {nativeEntry.canLog || nativeEntry.canConfirm ? (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {nativeEntry.canLog ? (
+            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/log">
+              Log a visit (pilot)
+            </Link>
+          ) : null}
+          {nativeEntry.canConfirm ? (
+            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/confirmations">
+              {`Visits to confirm (${nativeEntry.pendingConfirmations})`}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
       {loadError ? (
         <p className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
       ) : null}

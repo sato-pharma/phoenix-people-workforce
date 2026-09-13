@@ -609,6 +609,16 @@ export const accessRegistry = [
   // district manager holding `approve` is still only entitled to HIS reps' plans, and that is the
   // gate a role check cannot perform.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/plan-verification/verify", permission: { resource: "crm_plans", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  // Native visit entry — the pilot (CRM phase 3). Writes Phoenix's own visit tables only; nothing
+  // leaves for the vendor and no consumer reads them before cutover. The rep is always the session.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits", permission: { resource: "crm_visit_entry", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/form-options", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/delete", permission: { resource: "crm_visit_entry", action: "delete" }, guard: "assert-permission", csrfRequired: true }),
+  // A partner confirmation. `approve` is narrowed again inside the service: only the partner NAMED on
+  // the visit may answer, and only for a rep inside his downward scope.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by

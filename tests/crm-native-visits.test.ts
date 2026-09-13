@@ -1,0 +1,291 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+
+import { permissionMatrix } from "../src/lib/auth/permissions.ts";
+import {
+  NATIVE_VISIT_PARTNERS_MAX,
+  NATIVE_VISIT_TYPES,
+  classifyNativeVisitGps,
+  isNativeVisitPilotDay,
+  isWithinNativeVisitEntryWindow,
+  nativePartnerDecisionRefusal,
+  nativeVisitDeleteRefusal,
+  nativeVisitPartnerRefusal,
+  nativeVisitPilotForLine,
+  nativeVisitShiftRefusal,
+  parseNativeVisitDraft,
+} from "../src/lib/crm/native-visits/rules.ts";
+import {
+  CRM_LEAVE_VISIT_TYPE_CODES,
+  crmVisitTypeMeaningStrict,
+} from "../src/lib/crm/visit-type-meaning.ts";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Native visits — the PILOT (CRM phase 3).
+//
+// WHAT THIS FILE GUARDS:
+//   · ONE TYPE TABLE. rules.ts and the migration's check constraint map each type to the same vendor
+//     code, and visit-type-meaning.ts gives every code a pay meaning: -4 stays the only leave.
+//   · THE ENTRY WINDOW is the same Cairo day or the next one.
+//   · A MISSING OR FOREIGN GPS FIX IS A FLAG, never a refusal (owner decision 7).
+//   · AM/PM IS THE CONTACT'S LIST (owner decision 2), and a doctor off the rep's list is refused.
+//   · THE PILOT IS A ROW: its line and its dates, both ends inclusive.
+//   · ONLY THE NAMED PARTNER DECIDES, only once, only for a rep beneath him; nothing auto-confirms.
+//   · THE REP IS THE SESSION — no route or rule reads a rep id from the request body.
+//   · NOTHING ELSE READS THE NATIVE TABLES before cutover, or a visit double-counts against the
+//     iReports360 feed the pilot line keeps entering.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MIGRATION = "supabase/migrations/20260913170000_crm_native_visits_pilot.sql";
+
+function read(relativePath: string) {
+  return readFileSync(new URL(`../${relativePath}`, import.meta.url), "utf8");
+}
+
+function stripSqlComments(sql: string) {
+  return sql.replace(/--[^\n]*/g, "");
+}
+
+function sourceFiles(relativeDir: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(new URL(`../${dir}/`, import.meta.url), { withFileTypes: true })) {
+      const child = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        walk(child);
+      } else if (/\.(ts|tsx)$/.test(entry.name)) {
+        out.push(child);
+      }
+    }
+  };
+  walk(relativeDir);
+  return out;
+}
+
+function draftBody(overrides: Record<string, unknown> = {}) {
+  return {
+    clientSubmissionId: "3f1c2a6e-9b4d-4c8e-8a1f-2b3c4d5e6f70",
+    comment: "",
+    contactCrmId: 5123,
+    deviceRecordedAt: "2026-09-20T07:55:00.000Z",
+    latitude: 30.0444,
+    longitude: 31.2357,
+    partnerHrIds: [],
+    shift: "AM",
+    visitDate: "2026-09-20",
+    visitType: "regular",
+    ...overrides,
+  };
+}
+
+const CONTEXT = { cairoToday: "2026-09-20", now: new Date("2026-09-20T08:00:00.000Z") };
+
+export function runCrmNativeVisitsTests() {
+  // ── 1. One type table, in step with the migration and with pay meaning ──────────────────────
+  const keys = NATIVE_VISIT_TYPES.map((type) => type.key);
+  const codes = NATIVE_VISIT_TYPES.map((type) => type.legacyCode);
+  assert.equal(new Set(keys).size, keys.length, "type keys must be unique");
+  assert.equal(new Set(codes).size, codes.length, "each type must map to its own vendor code");
+
+  const migration = stripSqlComments(read(MIGRATION));
+  const legacyBlock = migration.slice(
+    migration.indexOf("crm_native_visits_legacy_code"),
+    migration.indexOf("crm_native_visits_contact_rule"),
+  );
+  const migrationPairs = new Map(
+    [...legacyBlock.matchAll(/when '([a-z_]+)' then (-?\d+)/g)].map((match) => [match[1], Number(match[2])]),
+  );
+  assert.deepEqual(
+    migrationPairs,
+    new Map(NATIVE_VISIT_TYPES.map((type) => [type.key, type.legacyCode])),
+    "the migration's legacy-code check must map exactly the types rules.ts maps, to the same codes",
+  );
+  const typeCheck = migration.match(/crm_native_visits_type check \(\s*visit_type in \(([^)]*)\)/);
+  assert.ok(typeCheck, "the migration must constrain visit_type to a list");
+  assert.deepEqual(
+    [...typeCheck[1].matchAll(/'([a-z_]+)'/g)].map((match) => match[1]).sort(),
+    [...keys].sort(),
+    "the migration's visit_type list must be exactly the catalogue",
+  );
+
+  for (const type of NATIVE_VISIT_TYPES) {
+    if (type.key === "regular") {
+      assert.equal(type.legacyCode, 0, "a doctor visit is the vendor's regular code 0");
+      continue;
+    }
+    const meaning = crmVisitTypeMeaningStrict(type.legacyCode);
+    assert.ok(meaning, `${type.label} (${type.legacyCode}) must carry a pay meaning in visit-type-meaning.ts`);
+    assert.equal(
+      meaning,
+      type.key === "annual_vacation" ? "AV" : "CP",
+      `${type.label} must be ${type.key === "annual_vacation" ? "leave" : "a working day"}`,
+    );
+  }
+  assert.deepEqual(
+    codes.filter((code) => CRM_LEAVE_VISIT_TYPE_CODES.has(code)),
+    [-4],
+    "annual vacation (-4) must be the ONLY leave a native entry can create — public holiday and casual leave are working days",
+  );
+  for (const retired of [-7, -19, -30]) {
+    assert.ok(!codes.includes(retired), `vendor code ${retired} has no stated meaning and must not be creatable natively`);
+  }
+
+  // ── 2. Entry window ──────────────────────────────────────────────────────────────────────────
+  assert.equal(isWithinNativeVisitEntryWindow("2026-09-20", "2026-09-20"), true, "today is open");
+  assert.equal(isWithinNativeVisitEntryWindow("2026-09-19", "2026-09-20"), true, "yesterday is open");
+  assert.equal(isWithinNativeVisitEntryWindow("2026-09-18", "2026-09-20"), false, "two days back is closed");
+  assert.equal(isWithinNativeVisitEntryWindow("2026-09-21", "2026-09-20"), false, "tomorrow is closed");
+  assert.equal(isWithinNativeVisitEntryWindow("2026-10-01", "2026-10-01"), true);
+  assert.equal(isWithinNativeVisitEntryWindow("2026-09-30", "2026-10-01"), true, "yesterday across a month end is open");
+
+  // ── 3. GPS is a flag ─────────────────────────────────────────────────────────────────────────
+  assert.equal(classifyNativeVisitGps(30.0444, 31.2357), "captured", "a Cairo fix is captured");
+  assert.equal(classifyNativeVisitGps(null, null), "missing");
+  assert.equal(classifyNativeVisitGps(51.5072, -0.1276), "out_of_bounds", "a fix outside Egypt is flagged, not dropped");
+
+  const noFix = parseNativeVisitDraft(draftBody({ latitude: null, longitude: null }), CONTEXT);
+  assert.ok(noFix.ok, "a visit with no GPS fix must still save");
+  assert.equal(noFix.ok && noFix.value.gpsStatus, "missing");
+  const abroad = parseNativeVisitDraft(draftBody({ latitude: 51.5072, longitude: -0.1276 }), CONTEXT);
+  assert.ok(abroad.ok && abroad.value.gpsStatus === "out_of_bounds" && abroad.value.latitude === 51.5072,
+    "an out-of-bounds fix saves with its coordinates kept");
+  const halfFix = parseNativeVisitDraft(draftBody({ latitude: 30.1, longitude: null }), CONTEXT);
+  assert.ok(halfFix.ok && halfFix.value.latitude === null && halfFix.value.gpsStatus === "missing",
+    "half a coordinate is no coordinate");
+
+  // ── 4. Draft shape ───────────────────────────────────────────────────────────────────────────
+  assert.ok(parseNativeVisitDraft(draftBody(), CONTEXT).ok, "a plain doctor visit parses");
+  assert.equal(parseNativeVisitDraft(draftBody({ clientSubmissionId: "abc" }), CONTEXT).ok, false, "a submission id must be a UUID");
+  assert.equal(parseNativeVisitDraft(draftBody({ visitDate: "2026-09-18" }), CONTEXT).ok, false, "outside the window is refused");
+  assert.equal(parseNativeVisitDraft(draftBody({ shift: "noon" }), CONTEXT).ok, false, "shift is AM or PM");
+  assert.equal(parseNativeVisitDraft(draftBody({ contactCrmId: null }), CONTEXT).ok, false, "a doctor visit needs a doctor");
+  assert.equal(parseNativeVisitDraft(draftBody({ contactCrmId: 100000 }), CONTEXT).ok, false, "contact 100000 is the catch-all");
+  assert.equal(
+    parseNativeVisitDraft(draftBody({ visitType: "campaign", prospectName: "Dr Hany" }), CONTEXT).ok,
+    false,
+    "a campaign visit names a doctor OR a prospect, never both",
+  );
+  const prospect = parseNativeVisitDraft(draftBody({ visitType: "campaign", contactCrmId: null, prospectName: "Dr Hany" }), CONTEXT);
+  assert.ok(prospect.ok && prospect.value.contactCrmId === null && prospect.value.prospectName === "Dr Hany");
+  assert.equal(parseNativeVisitDraft(draftBody({ visitType: "conference" }), CONTEXT).ok, false, "a conference takes no doctor");
+  assert.ok(parseNativeVisitDraft(draftBody({ visitType: "annual_vacation", contactCrmId: null }), CONTEXT).ok);
+  assert.equal(
+    parseNativeVisitDraft(draftBody({ deviceRecordedAt: "2026-09-20T08:16:00.000Z" }), CONTEXT).ok,
+    false,
+    "a phone clock 16 minutes ahead is refused",
+  );
+  assert.ok(parseNativeVisitDraft(draftBody({ deviceRecordedAt: "2026-09-20T08:14:00.000Z" }), CONTEXT).ok);
+  const partners = parseNativeVisitDraft(draftBody({ partnerHrIds: ["B-25", "b-25", "B-30"] }), CONTEXT);
+  assert.ok(partners.ok && partners.value.partnerHrIds.length === 2, "the same partner named twice counts once");
+  assert.equal(
+    parseNativeVisitDraft(draftBody({ partnerHrIds: ["B-1", "B-2", "B-3", "B-4"].slice(0, NATIVE_VISIT_PARTNERS_MAX + 1) }), CONTEXT).ok,
+    false,
+    `more than ${NATIVE_VISIT_PARTNERS_MAX} partners is refused`,
+  );
+  const withRepId = parseNativeVisitDraft(draftBody({ hrId: "B-999", repHrId: "B-999" }), CONTEXT);
+  assert.ok(withRepId.ok && !("hrId" in withRepId.value) && !("repHrId" in withRepId.value),
+    "a rep id in the body is ignored — the rep is the session");
+
+  // ── 5. AM/PM from the list ───────────────────────────────────────────────────────────────────
+  assert.equal(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "AM" }, ["AM"]), null);
+  assert.ok(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "PM" }, ["AM"]), "an AM-list doctor is an AM visit");
+  assert.ok(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "AM" }, []), "a doctor off the rep's lists is refused");
+  assert.ok(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "AM" }, ["Pharmacy"]), "a pharmacy list is not a contact list");
+  assert.equal(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "PM" }, ["AM", "PM"]), null, "on both lists the rep chooses");
+  assert.equal(nativeVisitShiftRefusal({ contactCrmId: null, shift: "PM" }, []), null, "no contact, no list rule");
+
+  // ── 6. The pilot row ─────────────────────────────────────────────────────────────────────────
+  const pilots = [{ endsOn: "2026-09-24", isActive: true, lineName: "Pedia", startsOn: "2026-09-19" }];
+  const pedia = nativeVisitPilotForLine(" pedia ", pilots);
+  assert.ok(pedia, "the line name matches whatever its spacing or case");
+  assert.equal(nativeVisitPilotForLine("CNS", pilots), null, "another line is not piloting");
+  assert.equal(nativeVisitPilotForLine("Pedia", [{ ...pilots[0], isActive: false }]), null, "an ended pilot is off");
+  assert.equal(isNativeVisitPilotDay(pedia, "2026-09-18"), false);
+  assert.equal(isNativeVisitPilotDay(pedia, "2026-09-19"), true, "the first day is inside");
+  assert.equal(isNativeVisitPilotDay(pedia, "2026-09-24"), true, "the last day is inside");
+  assert.equal(isNativeVisitPilotDay(pedia, "2026-09-25"), false);
+  assert.equal(isNativeVisitPilotDay(null, "2026-09-20"), false);
+
+  // ── 7. Partners and deletion ─────────────────────────────────────────────────────────────────
+  assert.ok(nativeVisitPartnerRefusal("B-25", ["b-25"]), "a rep cannot name himself");
+  assert.equal(nativeVisitPartnerRefusal("B-25", ["B-30"]), null);
+
+  const deletion = { cairoToday: "2026-09-20", deletedAt: null, ownerHrId: "B-25", reason: "wrong doctor", viewerHrId: "b-25", visitDate: "2026-09-19" };
+  assert.equal(nativeVisitDeleteRefusal(deletion), null, "the rep deletes his own visit inside the window, with a reason");
+  assert.ok(nativeVisitDeleteRefusal({ ...deletion, viewerHrId: "B-30" }), "nobody else deletes it");
+  assert.ok(nativeVisitDeleteRefusal({ ...deletion, reason: "  " }), "a deletion needs a reason");
+  assert.ok(nativeVisitDeleteRefusal({ ...deletion, visitDate: "2026-09-18" }), "an old visit cannot be deleted");
+  assert.ok(nativeVisitDeleteRefusal({ ...deletion, deletedAt: "2026-09-20T09:00:00Z" }), "a deleted visit stays deleted");
+
+  const decision = { partnerHrId: "B-30", repInViewerScope: true, status: "pending" as const, viewerHrId: "b-30", visitDeleted: false };
+  assert.equal(nativePartnerDecisionRefusal(decision), null, "the named partner answers a live visit of his own rep");
+  assert.ok(nativePartnerDecisionRefusal({ ...decision, viewerHrId: "B-10" }), "nobody answers for the named partner — not even the Super Admin");
+  assert.ok(nativePartnerDecisionRefusal({ ...decision, status: "confirmed" }), "an answer is given once");
+  assert.ok(nativePartnerDecisionRefusal({ ...decision, visitDeleted: true }), "a deleted visit is not answered");
+  assert.ok(nativePartnerDecisionRefusal({ ...decision, repInViewerScope: false }), "scope runs downward only");
+
+  // ── 8. The migration ─────────────────────────────────────────────────────────────────────────
+  for (const table of ["crm_native_visit_pilots", "crm_native_visits", "crm_native_visit_partners", "crm_native_visit_events"]) {
+    assert.match(migration, new RegExp(`alter table public\\.${table} enable row level security;`), `${table} must have RLS on`);
+    assert.match(migration, new RegExp(`revoke all on table public\\.${table} from anon, authenticated;`), `${table} must grant nothing to browser roles`);
+  }
+  assert.match(migration, /crm_native_visits_one_per_contact_day_uidx\s+on public\.crm_native_visits \(hr_id, contact_crm_id, visit_date\)\s+where deleted_at is null/,
+    "one visit per rep, contact and day must be enforced by the database");
+  assert.match(migration, /constraint crm_native_visits_client_submission_uidx unique \(client_submission_id\)/,
+    "a resent offline visit must save once");
+  assert.match(migration, /contact_crm_id is null or contact_crm_id <> 100000/, "the catch-all contact is refused by the database too");
+  assert.match(migration, /decided_by = partner_hr_id/, "only the partner can be recorded as deciding");
+  assert.match(migration, /'Pedia',\s*date '2026-09-19',\s*date '2026-09-24'/, "the pilot is seeded as Pedia, 19 to 24 September");
+  assert.doesNotMatch(migration, /ireports360_/, "the migration must not touch the vendor mirror");
+
+  // ── 9. Permissions ───────────────────────────────────────────────────────────────────────────
+  const grants = (role: keyof typeof permissionMatrix) => [...(permissionMatrix[role].crm_visit_entry ?? [])].sort();
+  assert.deepEqual(grants("Medical Rep"), ["create", "delete", "read"], "a rep enters, reads and deletes his own visits");
+  for (const manager of ["District Manager", "Regional Manager", "National Sales Manager"] as const) {
+    assert.ok(grants(manager).includes("approve"), `${manager} confirms visits naming him`);
+    assert.ok(!grants(manager).includes("create"), `${manager} does not enter rep visits`);
+  }
+  assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
+    "the Super Admin neither enters nor confirms a visit on anyone's behalf");
+  assert.deepEqual(grants("Employee"), [], "an ordinary employee has no visit entry");
+
+  // ── 10. The service and the routes ───────────────────────────────────────────────────────────
+  const service = read("src/lib/crm/native-visits/service.ts");
+  const exported = [...service.matchAll(/export async function (\w+)\(/g)];
+  assert.ok(exported.length >= 7, "the service's exported functions must be found");
+  exported.forEach((match, index) => {
+    const body = service.slice(match.index, exported[index + 1]?.index ?? service.length);
+    const guard = match[1] === "getNativeVisitEntryAvailability" ? /canAccess\(access, "crm_visit_entry"/ : /assertPermission\(access, "crm_visit_entry"/;
+    assert.match(body, guard, `${match[1]} must check crm_visit_entry itself, not trust its caller`);
+  });
+  assert.match(service, /requireActiveSelf\(access, directory\)/, "the rep must be resolved from the session");
+  assert.doesNotMatch(service, /status:\s*"(confirmed|rejected)"/, "the service must never write a decision literal — only the partner's own answer");
+  assert.match(service, /status: "pending",/, "every partner row starts pending");
+  assert.match(service, /\.eq\("status", "pending"\)/, "a decision may only move a pending row");
+
+  const routes = [
+    "app/api/crm/native-visits/route.ts",
+    "app/api/crm/native-visits/delete/route.ts",
+    "app/api/crm/native-visits/form-options/route.ts",
+    "app/api/crm/native-visits/confirmations/route.ts",
+  ];
+  for (const route of [...routes, "src/lib/crm/native-visits/rules.ts"]) {
+    assert.doesNotMatch(read(route), /body\.(hrId|hr_id|repHrId|agentHrId)|searchParams/, `${route} must not take a person from the request`);
+  }
+
+  // ── 11. Isolation: nothing else reads the native tables before cutover ────────────────────────
+  const offenders = [...sourceFiles("app"), ...sourceFiles("src")]
+    .filter((file) => !file.startsWith("src/lib/crm/native-visits/"))
+    .filter((file) => /crm_native_visit|CRM_NATIVE_VISIT/.test(read(file)));
+  assert.deepEqual(
+    offenders,
+    [],
+    "only src/lib/crm/native-visits/ may name the native visit tables until cutover — a native row read by a report double-counts the iReports360 feed",
+  );
+
+  // ── 12. Reachability: the pages are linked from My Visits ─────────────────────────────────────
+  const myVisits = read("app/employee-portals/visits/page.tsx");
+  assert.match(myVisits, /href="\/employee-portals\/visits\/log"/);
+  assert.match(myVisits, /href="\/employee-portals\/visits\/confirmations"/);
+}
