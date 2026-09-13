@@ -26,6 +26,17 @@ export async function register() {
     } catch (error) {
       console.error("[crm:live-poll] failed to start:", error);
     }
+
+    // The Early Birds fortnight close runs on its own timer, started separately and in its own try:
+    // it needs the poller's host guards but NOT the iReports360 credentials, so a poller that refuses
+    // to start (or fails to) must not take the close down with it.
+    try {
+      const { startEarlyBirdsCloseScheduler } = await import("@/lib/early-birds/close-scheduler");
+      const result = startEarlyBirdsCloseScheduler();
+      if (!result.started) console.log(`[early-birds:close] not started: ${result.reason}`);
+    } catch (error) {
+      console.error("[early-birds:close] failed to start:", error);
+    }
   }
 }
 

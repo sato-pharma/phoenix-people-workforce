@@ -23,9 +23,9 @@
 // public-holiday and casual-leave rows into the Vacations dataset.
 //
 // They are also NOT attendance or payroll semantics. Whether a code counts as a
-// working day or as leave is decided by VISIT_TYPE_TO_STATUS in
-// src/lib/field-workforce-compliance/ireports360-source.ts (and its documented
-// copy in src/lib/automated-payroll/recommend.ts). Renaming a label here must
+// working day or as leave is decided by the one visit-type table in
+// src/lib/crm/visit-type-meaning.ts, which every attendance and payroll map
+// reads. Renaming a label here must
 // never change what an employee is paid; that mapping is owner-confirmed and is
 // deliberately not imported from this file.
 

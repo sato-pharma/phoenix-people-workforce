@@ -143,7 +143,7 @@ function seatRank(titleOrRole: string | null | undefined): number | null {
  */
 function managementChainOf(
   viewerCanonicalHrId: string,
-  byCanonicalHrId: ReadonlyMap<string, DoctorCoverageScopeEmployee>,
+  byCanonicalHrId: ReadonlyMap<string, DownwardCutPerson>,
 ): ReadonlySet<string> {
   const chain = new Set<string>();
   let node = byCanonicalHrId.get(viewerCanonicalHrId);
@@ -163,13 +163,99 @@ function managementChainOf(
 
 /** Cut 1: true when this person is an ancestor of the viewer, so must not appear in his scope. */
 function isAboveViewer(
-  employee: DoctorCoverageScopeEmployee,
+  employee: Pick<DownwardCutPerson, "hrId">,
   viewerCanonicalHrId: string,
   chain: ReadonlySet<string>,
 ): boolean {
   const key = normalizeHrIdForAccess(employee.hrId);
   if (!key || key === viewerCanonicalHrId) return false; // you always see yourself
   return chain.has(key);
+}
+
+/**
+ * The fields the downward rule reads — a narrow slice of a directory row, so any module holding
+ * `EmployeeDirectoryRow`s (double-visit analytics, coaching) can hand them in unchanged.
+ * `positionTitle` is optional because doctor coverage's own rows do not carry it.
+ */
+export type DownwardCutPerson = {
+  hrId: string;
+  jobTitle: string | null;
+  managerHrId: string | null;
+  pendingManagerReplacementForHrId: string | null;
+  positionTitle?: string | null;
+};
+
+export type DownwardCut = {
+  /** Canonical (normalizeHrIdForAccess) viewer key, or null when the session carries no id. */
+  viewerKey: string | null;
+  /** Canonical keys of every ancestor of the viewer. Never contains the viewer. */
+  chain: ReadonlySet<string>;
+  /** Cut 1 — identity-based, title-blind. False for the viewer himself. */
+  isAboveViewer: (person: Pick<DownwardCutPerson, "hrId">) => boolean;
+  /** Cut 2 — the seat-rank ladder. True for the viewer himself; false for an unranked title. */
+  isStrictlyBelowViewer: (person: DownwardCutPerson) => boolean;
+};
+
+/**
+ * THE DOWNWARD RULE, exported for the OTHER surfaces that must obey it (double-visit analytics,
+ * coaching). Built from the very same private helpers `resolveDoctorCoverageScope` uses —
+ * `SEAT_RANK`, `seatRank`, `managementChainOf`, `isAboveViewer` — so there is ONE ladder and ONE
+ * climb in the repo, not a copy that drifts. `resolveDoctorCoverageScope` itself does NOT call this
+ * and its output is unchanged; this is an export, not a refactor.
+ *
+ * `employees` must be the FULL directory including inactive people, for the same reason as above:
+ * a climb that stops at a manager who has left misses every ancestor above him, which fails in the
+ * EXPOSING direction.
+ *
+ * ONE DELIBERATE DIFFERENCE FROM THE LOCKED RESOLVER, and it only ever narrows: a person is ranked by
+ * the MORE SENIOR of `jobTitle` and `positionTitle` (Math.max). Doctor coverage reads `jobTitle`
+ * alone because its rows carry nothing else. Ranking `positionTitle` FIRST was the regression that
+ * sank an earlier attempt (it raised exposure); taking the higher of the two can only push a person
+ * up the ladder and therefore OUT of a viewer's scope, never into it. The VIEWER is ranked exactly as
+ * the resolver ranks him — role first, job title as the fallback.
+ */
+export function buildDownwardCut(input: {
+  role: string;
+  viewerHrId: string | null;
+  employees: readonly DownwardCutPerson[];
+}): DownwardCut {
+  const viewerKey = normalizeHrIdForAccess(input.viewerHrId?.trim() ?? "") || null;
+  const byCanonicalHrId = new Map<string, DownwardCutPerson>();
+  for (const employee of input.employees) {
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
+  }
+  const chain = viewerKey ? managementChainOf(viewerKey, byCanonicalHrId) : new Set<string>();
+  // A self-referencing record puts the viewer in his own chain; he is never above himself.
+  if (viewerKey && chain.has(viewerKey)) {
+    const withoutViewer = new Set(chain);
+    withoutViewer.delete(viewerKey);
+    return buildCut(withoutViewer);
+  }
+  return buildCut(chain);
+
+  function buildCut(finalChain: ReadonlySet<string>): DownwardCut {
+    const viewer = viewerKey ? byCanonicalHrId.get(viewerKey) ?? null : null;
+    const viewerRank = seatRank(input.role) ?? seatRank(viewer?.jobTitle);
+    const rankOf = (person: DownwardCutPerson) => {
+      const byJob = seatRank(person.jobTitle);
+      const byPosition = seatRank(person.positionTitle);
+      if (byJob == null) return byPosition;
+      if (byPosition == null) return byJob;
+      return Math.max(byJob, byPosition);
+    };
+    return {
+      viewerKey,
+      chain: finalChain,
+      isAboveViewer: (person) => (viewerKey ? isAboveViewer(person, viewerKey, finalChain) : false),
+      isStrictlyBelowViewer: (person) => {
+        if (viewerRank == null) return true;
+        if (viewerKey && normalizeHrIdForAccess(person.hrId) === viewerKey) return true; // you always see yourself
+        const rank = rankOf(person);
+        return rank != null && rank < viewerRank;
+      },
+    };
+  }
 }
 
 /**

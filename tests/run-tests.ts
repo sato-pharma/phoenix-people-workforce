@@ -350,7 +350,7 @@ import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.te
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
 import { runDoubleVisitReportExportTests } from "./double-visit-report-export.test.ts";
-import { runDvPlannerWeeklyDigestTests } from "./dv-planner-weekly-digest.test.ts";
+import { runDoubleVisitDownwardScopeTests } from "./double-visit-downward-scope.test.ts";
 import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCallRateTests } from "./crm-call-rate.test.ts";
@@ -403,6 +403,9 @@ import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
 import { runCrmSyncIdentityPreservationTests } from "./crm-sync-identity-preservation.test.ts";
+import { runCrmPlanEntryRestampTests } from "./crm-plan-entry-restamp.test.ts";
+import { runEarlyBirdsCloseSchedulerTests } from "./early-birds-close-scheduler.test.ts";
+import { runCrmParticipantFilterTests } from "./crm-participant-filter.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
@@ -1404,6 +1407,8 @@ import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
+import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
+import { runAutomatedPayrollCrmLeaveFailsClosedTests } from "./automated-payroll-crm-leave-fails-closed.test.ts";
 import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
@@ -2440,7 +2445,7 @@ await runTest("action center weekly plans (approver inbox)", runActionCenterWeek
 await runTest("weekly plans round-3 features (bulk approve, export, autosave, timeline, notifications, a11y, virtualization)", runWeeklyPlansRound3FeaturesTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);
 await runTest("double visit report export (filters, xlsx, pdf)", runDoubleVisitReportExportTests);
-await runTest("dv planner weekly digest", runDvPlannerWeeklyDigestTests);
+await runTest("double visit downward scope (chain + ladder cut, hidden from totals, coaching line roles)", runDoubleVisitDownwardScopeTests);
 await runTest("dv planner date check (confirmed/not-recorded/future/outside-range + visitor names)", runDvPlannerDateCheckTests);
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
@@ -2509,6 +2514,9 @@ await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicat
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
 await runTest("crm sync identity preservation (a SILENT null never overwrites a resolved agent_hr_id; a BLOCKED null still does)", runCrmSyncIdentityPreservationTests);
+await runTest("crm plan entry re-stamp (null agent_hr_id rows re-linked through the employment guard; plan upserts preserve resolved identities)", runCrmPlanEntryRestampTests);
+await runTest("early birds close scheduler (runs beside the CRM poller with its host guards, never gated on iReports360 credentials)", runEarlyBirdsCloseSchedulerTests);
+await runTest("crm participant visit filter (agent-or-partner door filter fails closed)", runCrmParticipantFilterTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
@@ -4554,6 +4562,8 @@ await runTest(
   + "Holiday -5 and Casual Leave -6 are working time; all three copies pinned against each other)",
   runCrmDayMapVisitTypeStatusTests,
 );
+await runTest("CRM visit-type meaning (one table; all 16 production codes keep each copy's old answer)", runCrmVisitTypeMeaningTests);
+await runTest("automated payroll CRM leave reads fail closed (CRM leave, v2 dates, balance check rethrow)", runAutomatedPayrollCrmLeaveFailsClosedTests);
 await runTest(
   "CV read honesty (five EMPTY arrays are not five fields; a read that produced nothing reports EMPTY, "
     + "never READ, and gets its own summary line so 'Failed: 0' cannot mean 'nothing was extracted')",

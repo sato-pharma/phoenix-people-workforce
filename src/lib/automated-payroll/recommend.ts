@@ -54,6 +54,7 @@ import {
 // This one import survives for loadCrmLeaveDatesByCompact, which feeds the leave
 // BALANCE ledger on confirm — leave bookkeeping, not money.
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
+import { crmVisitTypeMeaningStrict } from "@/lib/crm/visit-type-meaning";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
@@ -566,9 +567,27 @@ function eachDateInclusive(startIso: string, endIso: string): string[] {
 }
 
 /**
+ * A failed read on the payroll vacation path: a refusal whose words reach the step, never an empty
+ * map. An empty CRM-leave map reads as "nobody took CRM leave this month", which silently books ZERO
+ * leave days against the balance ledger — indistinguishable from a real answer. An empty v2-dates
+ * map double-counts a day a Phoenix request already covers, and a swallowed balance check prices
+ * every CRM leave day as a salary deduction. All three refuse instead.
+ */
+export class PayrollCrmLeaveUnavailableError extends Error {
+  constructor(period: PayrollPeriod, what: string) {
+    super(
+      `Conflict: ${what} for ${monthNameAndYear(period.month, period.year)} could not be read, so this payroll run ` +
+        "cannot compute vacation deductions without CRM leave data. Try again in a moment.",
+    );
+    this.name = "PayrollCrmLeaveUnavailableError";
+  }
+}
+
+/**
  * CRM-recorded leave (AV / vacation-signal) dates per employee, reusing the FWC live engine
  * so the visit-type→AV mapping + excuse nuances stay identical to the Field Workforce
- * Compliance report (owner rule 2026-07-20: treat CRM leave as real vacation). Defensive.
+ * Compliance report (owner rule 2026-07-20: treat CRM leave as real vacation). Fails closed:
+ * a failed read throws PayrollCrmLeaveUnavailableError rather than returning an empty map.
  */
 async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<string, Set<string>>> {
   const byCompact = new Map<string, Set<string>>();
@@ -586,10 +605,11 @@ async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<st
       byCompact.set(compact, dates);
     }
   } catch (error) {
-    logError("Automated payroll: CRM leave load failed (non-fatal)", {
+    logError("Automated payroll: CRM leave load failed — the run cannot compute vacation deductions", {
       labels: { event: "automated_payroll_crm_leave_load_failed", month: period.month, year: period.year },
       error,
     });
+    throw new PayrollCrmLeaveUnavailableError(period, "the CRM leave records");
   }
   return byCompact;
 }
@@ -610,7 +630,7 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
         labels: { event: "automated_payroll_v2_vacation_dates_load_failed", month: period.month, year: period.year },
         error,
       });
-      return byCompact;
+      throw new PayrollCrmLeaveUnavailableError(period, "the Phoenix vacation requests");
     }
     for (const row of (data ?? []) as Array<{
       employee_hr_id: string | null;
@@ -626,48 +646,26 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
       byCompact.set(compact, dates);
     }
   } catch (error) {
+    // The refusal raised inside the try above is already the answer; only a THROWN read is logged here.
+    if (error instanceof PayrollCrmLeaveUnavailableError) throw error;
     logError("Automated payroll: v2 vacation dates load threw an exception", {
       labels: { event: "automated_payroll_v2_vacation_dates_load_threw", month: period.month, year: period.year },
       error,
     });
+    throw new PayrollCrmLeaveUnavailableError(period, "the Phoenix vacation requests");
   }
   return byCompact;
 }
 
 /**
- * Faithful copy of ireports360-source.ts's VISIT_TYPE_TO_STATUS map (owner-confirmed
- * 2026-07-20; that map is private to that file, so it's duplicated here — keep in sync if
- * it ever changes). visitType 0 = a regular visit, handled separately below.
- */
-const LEAVER_VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
-  [-1, "CP"], // Conference
-  [-2, "CP"], // Group Meeting
-  [-4, "AV"], // Annual Vacation — the only genuine leave type here
-  // Public Holiday (-5) and Casual Leave (-6) are WORKING time (owner ruling 2026-08-21).
-  // Both already behaved this way — but only because they were ABSENT from this map and fell
-  // through to the CP default. That was an accident, not a decision. Listing them explicitly
-  // means a later change to that fallback cannot silently turn 1,659 production days into
-  // charged leave, which is exactly how the Health Day mistake below happened. iReports360
-  // sends no description for either; see src/lib/crm/visit-types.ts for what each code means.
-  [-5, "CP"],
-  [-6, "CP"],
-  [-8, "CP"], // Campaign (Prospection)
-  [-9, "CP"], // Training
-  [-11, "CP"], // Meeting
-  [-12, "CP"], // Traveling
-  // Health Day is WORKING time, not leave (owner ruling 2026-08-01): "an activity
-  // they do for patients in the dr clinic." Kept in lockstep with the source map
-  // in ireports360-source.ts — see the note there for what the old AV mapping cost.
-  [-15, "CP"],
-]);
-
-/**
- * Read accessor for the map above, exported so the AV/CP ruling is unit-testable
- * without exposing the mutable Map itself. Undefined for a type the map does not
- * list (callers treat that as CP, matching dayCellValue).
+ * The AV/CP ruling for a CRM visit type, read from the single table in
+ * src/lib/crm/visit-type-meaning.ts (this used to be a hand-kept copy of that table). Strict:
+ * undefined for a type the table does not list — callers treat that as CP, matching dayCellValue.
+ * Annual Vacation (-4) is the only AV code; Health Day (-15), Public Holiday (-5) and Casual
+ * Leave (-6) are working time. visitType 0 = a regular visit, never looked up here.
  */
 export function leaverVisitTypeStatus(visitType: number): "AV" | "CP" | undefined {
-  return LEAVER_VISIT_TYPE_TO_STATUS.get(visitType);
+  return crmVisitTypeMeaningStrict(visitType);
 }
 
 // ---- Part 1 -----------------------------------------------------------------
@@ -1345,6 +1343,12 @@ export async function computeVacationDeductionTotals(
         labels: { event: "automated_payroll_crm_leave_balance_check_failed", hrId: member.employee.hrId },
         error,
       });
+      // Swallowing this left balanceDays at 0, which priced every CRM leave day as a salary
+      // deduction and settled the ledger as "salary" — a wrong answer that looks like a real one.
+      throw new PayrollCrmLeaveUnavailableError(
+        period,
+        `the vacation balance of ${member.employee.fullName || member.employee.hrId}`,
+      );
     }
     const unpaidDays = Math.max(0, crmOnly.length - balanceDays);
     const base = roundCurrency(lookupSource(sources, member.employee.hrId)?.baseSalary ?? 0);
@@ -1386,7 +1390,7 @@ export async function computeVacationDeductionTotals(
         Dates: dateIso,
         // Annual Vacation (-4) only. Health Day (-15) is working time and no
         // longer classifies as leave at all, so it never reaches this step —
-        // see LEAVER_VISIT_TYPE_TO_STATUS.
+        // see src/lib/crm/visit-type-meaning.ts.
         Type: "Annual vacation",
         Days: 1,
         "Covered by Balance": isCovered ? 1 : 0,

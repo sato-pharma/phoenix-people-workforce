@@ -2,8 +2,9 @@
 //
 // GCP Cloud Scheduler is dead and cron-control/job-registry.ts is inert. The real production
 // scheduler is a third-party cron-job.org account outside this repo with a 30-second request cap —
-// far too short for a company-wide close across every district. So this runs IN-PROCESS from the
-// live CRM poller's tick, exactly as the rolling sync and the weekly reconcile already do.
+// far too short for a company-wide close across every district. So this runs IN-PROCESS, on its own
+// timer (close-scheduler.ts). It rode the live CRM poller's tick until 2026-09-13, which tied it to
+// the iReports360 credentials it never uses.
 //
 // The marker is the DATABASE, not an in-memory timestamp: "which periods already have a snapshot?"
 // A process down for a week comes back, sees the gap and fills it. That is deliberately unlike the
@@ -271,10 +272,11 @@ async function crownNationalWinners(todayIso: string): Promise<number> {
 }
 
 /**
- * The whole sweep. Called from the CRM poller's tick; never throws into it.
+ * The whole sweep. Called from the Early Birds close scheduler's timer (close-scheduler.ts); never
+ * throws into it.
  *
  * Bounded to EARLY_BIRDS_CLOSE_MAX_PER_TICK closes so a cold start with several missing fortnights
- * spreads across ticks instead of blocking the vendor probe for minutes.
+ * spreads across ticks instead of holding one call open for minutes.
  */
 export async function runDueEarlyBirdsClose(nowMs = Date.now()): Promise<{
   ran: boolean;

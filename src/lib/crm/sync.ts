@@ -333,8 +333,11 @@ export function countBlockedAttributions(
  * upsert proceed, because refusing to sync at all would be a worse outcome than the sync we have
  * been running for weeks. The reconciliation check and assertCrmIdentityCoverage are what turn a
  * lookup outage into something a human hears about.
+ *
+ * Exported because the plan sync (plan-sync.ts) upserts whole rows too, and had the same silent-null
+ * overwrite on `ireports360_plan_entries.agent_hr_id` until it started calling this.
  */
-async function preserveResolvedIdentities<TRow extends Record<string, unknown>>(input: {
+export async function preserveResolvedIdentities<TRow extends Record<string, unknown>>(input: {
   /** `of` returns null when the column does not apply to this row at all — a visit with no
    * `double_crm_id` has no second person, so its null `double_hr_id` is correct and must be kept. */
   attributions: ReadonlyArray<{ column: "agent_hr_id" | "double_hr_id"; of: (row: TRow) => CrmAttribution | null }>;
@@ -374,8 +377,8 @@ async function preserveResolvedIdentities<TRow extends Record<string, unknown>>(
       }
     }
   } catch (error) {
-    logError("CRM sync could not read stored visit identities; a resolved agent_hr_id may be overwritten", {
-      labels: { event: "crm_sync_identity_preserve_lookup_failed" },
+    logError("CRM sync could not read stored identities; a resolved hr id may be overwritten", {
+      labels: { event: "crm_sync_identity_preserve_lookup_failed", table: input.table },
       error,
     });
     return 0;

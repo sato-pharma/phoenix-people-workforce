@@ -271,7 +271,7 @@ export function blockReasonFor(
  * count.
  *
  * NOT PAYROLL SEMANTICS, and never to be reused as such. Whether a code costs an employee money is
- * decided by VISIT_TYPE_TO_STATUS in field-workforce-compliance/ireports360-source.ts, which is
+ * decided by the one visit-type table in crm/visit-type-meaning.ts, which is
  * owner-confirmed and deliberately separate. This answers one narrower question: can an identity
  * override change anything about this row? Only the two codes are listed — a meeting, a campaign or
  * an admin-work row IS activity somebody performed, and a block on one still wants acting on.
