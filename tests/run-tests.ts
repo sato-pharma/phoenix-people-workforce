@@ -1221,6 +1221,7 @@ import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evid
 import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
 import { runOutstationDeparturePhotoReminderTests } from "./outstation-departure-photo-reminder.test.ts";
+import { runOutstationNotificationFramingTests } from "./outstation-notification-framing.test.ts";
 import { runOutstationDeparturePhotoResendTests } from "./outstation-departure-photo-resend.test.ts";
 import { runOutstationWorkloadRepairTests } from "./outstation-workload-repair.test.ts";
 import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retarget-guard.test.ts";
@@ -3699,6 +3700,7 @@ await runTest("evidence photo watermark panel (grows to hold the location block;
 await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
 await runTest("outstation workload repair (a hand-entered figure is refused not coerced; a blank box is never a measured zero; a re-grab restates the match status so the row cannot contradict itself; the retry reports the release's own reason; the panel lists what the GATE holds rather than only what was accepted, never a rejected request, and never a trip still running; both repairs are Super Admin only, the list is read-only)", runOutstationWorkloadRepairTests);
 await runTest("outstation departure-photo reminder (only the departure blocker triggers it; never before the trip's last day; the LAST-DAY reminder had never once fired in production because the 06:36 job cannot see a request submitted at 20:49, so the submit path raises it too; the email must name its subject employee or it is skipped outright)", runOutstationDeparturePhotoReminderTests);
+await runTest("outstation notification framing (non-submit events pin the plain email template instead of the 'requires your review' submit one; the role lookup matches the stored hr id so a portal manager's link is not the admin queue; the hold notice blames no governorate; a deleted request says so, scoped like the request)", runOutstationNotificationFramingTests);
 await runTest("outstation departure-photo resend (the one action that deliberately steps around delivery dedupe — a claimed key can never send again, which is how eight real reminders went silent; the automatic key must stay the DEFAULT or shipping it re-mails every historic hold; approve-level only, so the read-only CEO cannot mail employees; refuses a row not held on that photo; obeys the same timing rule so it cannot nag mid-trip; keyed on the CAIRO date; audited)", runOutstationDeparturePhotoResendTests);
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 

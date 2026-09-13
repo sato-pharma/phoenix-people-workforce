@@ -1428,6 +1428,9 @@ async function notifyExpensesAddedToPayroll(input: { batchId: string; hrIds: str
           actionUrl: "/employee-portals/expenses",
           category: "general",
           channels: ["in_app", "email", "telegram", "push"],
+          // Plain template — module "outstation" otherwise frames this in the submit template
+          // ("submitted automatically and requires your review").
+          email: { templateKey: "general" },
           eventType: "added_to_payroll",
           message: `Your approved expense has been added to the ${period} payroll run and will be paid with that payroll.`,
           metadata: {

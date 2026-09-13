@@ -4,7 +4,7 @@ import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/
 import { ManagerOutstationReview } from "@/components/outstation/manager-outstation-review";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { getOutstationSubmissionForManager } from "@/lib/outstation/service";
+import { getDeletedOutstationRequestNotice, getOutstationSubmissionForManager } from "@/lib/outstation/service";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +61,11 @@ export default async function OutstationReviewPage({
   }
 
   if (!submission) {
+    // A deleted request is not a permissions fault — say which it is when the audit trail knows.
+    const deletedNotice = await getDeletedOutstationRequestNotice(access, requestId).catch(() => null);
+    if (deletedNotice) {
+      return <EmployeePortalEmptyState message={deletedNotice} title="Request deleted" />;
+    }
     return (
       <EmployeePortalEmptyState
         message="This outstation request is not available, or is outside what you can view."
