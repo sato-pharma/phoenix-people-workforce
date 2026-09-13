@@ -102,6 +102,24 @@ const BASELINE_KEYS = [
   "employee.hireDate",
 ] as const;
 
+/**
+ * What the ENGLISH papers print that the field inventory cannot offer a box for.
+ *
+ * Their tokens — `EMPLOYEE_NAME_EN`, `JOB_TITLE_EN`, `BASIC_SALARY_EN` — carry no binding (they are
+ * English-only or derived), so without this a typed-in English paper would have no box for the name
+ * it certifies. The salary letter asks for the BASE salary: the paper prints the basic derived from it.
+ */
+const DOCUMENT_KEYS: Readonly<Partial<Record<string, readonly string[]>>> = {
+  experienceCertificateEn: ["employee.fullName", "employee.gender", "employee.hrId", "employee.jobTitle"],
+  salaryLetterEn: [
+    "employee.fullName",
+    "employee.gender",
+    "employee.hrId",
+    "employee.jobTitle",
+    "employee.baseSalary",
+  ],
+};
+
 export type ManualPaperValues = Readonly<Record<string, string>>;
 
 /** Keep only the keys a typed-in paper may set, each trimmed and bounded. */
@@ -238,6 +256,9 @@ export function manualPaperInputs(
 ): ManualPaperInput[] {
   const keys: string[] = [...BASELINE_KEYS];
   if (leaving) keys.push("offboarding.lastWorkingDate");
+  for (const key of DOCUMENT_KEYS[document] ?? []) {
+    if (!keys.includes(key)) keys.push(key);
+  }
 
   for (const entry of documentFieldInventory(document, data, html)) {
     const binding = paperFieldBinding(entry.key);

@@ -361,6 +361,11 @@ export const systemContractDefaults = {
   deemedResignationCopies: 2,
   appointmentDocsReturnCopies: 2,
   experienceCertificateCopies: 2,
+  /**
+   * The HR letter (salary) is TWO for the certificate's reason: nobody signs it back, and the
+   * filed copy is the company's record of the salary it certified to a bank or an embassy.
+   */
+  salaryLetterCopies: 2,
 } as const;
 
 export const systemAuthEmailText = {

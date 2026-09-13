@@ -140,6 +140,9 @@ const DOCUMENT_BINDINGS: Record<
   // The English certificate, for the same reasons and written out separately rather than shared,
   // so that giving either language a real register later cannot silently move the other.
   experienceCertificateEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  // The HR letter, for the certificate's reason: nobody signs it back, and it is issued as often as
+  // a bank asks for one, so one date on the employee row could hold only the newest.
+  salaryLetterEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   contractNonRenewal: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   form6: {

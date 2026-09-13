@@ -266,6 +266,18 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     note: "The English counterpart of `experience-certificate-v1`, for a reader outside Egypt — an embassy, a Gulf employer, a bank. BOTH ARE CURRENT AT ONCE and HR prints whichever is asked for; they are two documents rather than two versions of one for the reason the custody pair are, since the archive’s rule is exactly one current version per document and filing the English one as a version of the Arabic would tell HR the Arabic had been withdrawn. It states the same three omissions and the same period, and the period is resolved in `service-period.ts` which BOTH read — the two are routinely printed minutes apart for one person, and a pair that disagrees about how long he worked here is worse than either being wrong alone. Two differences from the Arabic paper, both deliberate: it names the position and NOT the department, because the pack holds the department only in Arabic and an Arabic department name inside an English sentence read at a visa window is worse than none; and it is written as prose rather than around a bordered identity grid, because the owner asked for a PDF that stays editable when imported into Canva and every cell border in such a grid arrives there as its own vector rectangle. Its date format spells the month out — `08 / 09 / 2026` is two different days either side of the Atlantic, and this is the copy read by a stranger.",
   },
   {
+    id: "salary-letter-en-v1",
+    document: "salaryLetterEn",
+    version: 1,
+    status: "current",
+    labelEn: "HR letter — basic salary (English)",
+    labelAr: "شهادة راتب — باللغة الإنجليزية",
+    effectiveFrom: "2026-09-13",
+    supersededOn: null,
+    supersededBy: null,
+    note: "The salary letter an employee takes to a bank, an embassy or a landlord. It states the BASIC monthly salary and nothing else about pay — the owner, 2026-09-13: \"salary we put basic not net\". The figure is the payroll policy's own `calculateBasicSalary` off the base salary on record, imported rather than restated, so the letter cannot quote a basic salary payroll does not pay; it prints in figures and in words, and one sentence says it excludes allowances, incentives and variable pay. A missing base salary prints a rule for a pen, never EGP 0.00. A leaver's letter states the period of service and the LAST basic salary, never that he is employed. It borrows the English certificate of experience's shape — prose, one page, real text for a Canva import — and its honorific and service-period rules.",
+  },
+  {
     id: "contract-renewal-v1",
     document: "contractRenewal",
     version: 1,
