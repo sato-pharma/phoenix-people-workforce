@@ -127,6 +127,12 @@ export type PermissionResource =
   // either the district managers this feature is FOR cannot verify, or granting them the verify
   // hands them company-wide visit norms as well. A plan approval is its own authority.
   | "crm_plans"
+  // Native visit ENTRY (CRM phase 3, the pilot). SEPARATE from `crm_visits` for the same reason as
+  // `crm_plans`: `crm_visits` reads the vendor mirror and every portal role holds it, while this key
+  // WRITES Phoenix's own visit record. `create`/`delete` are a rep's own visits; `approve` is a
+  // manager confirming he accompanied one — narrowed again, below the matrix, to the partner named on
+  // that visit and to reps beneath him.
+  | "crm_visit_entry"
   | "early_birds"
   | "user_activity"
   | "synthetic_journeys"
@@ -212,6 +218,9 @@ export const permissionResources: PermissionResource[] = [
   // Omitting this from the array would offer Plan Verification — a button that writes into the
   // customer's CRM — to every role in the company. Mechanism at the head of this array.
   "crm_plans",
+  // Omitting this would offer native visit entry — a write into Phoenix's own visit record — to every
+  // role. Mechanism at the head of this array.
+  "crm_visit_entry",
   // Omitting this would show the Early Birds tab to every role — Finance Manager, HR Operations,
   // Employee. "with no test failure" was true when this was written; it no longer is.
   "early_birds",
@@ -794,6 +803,9 @@ const defaultPermissionMatrix: PermissionMap = {
     market_awareness: allActions,
     admin: allActions,
     attendance: allActions,
+    // Reads the native-visit pilot. No create/delete/approve: he is nobody's rep and nobody's
+    // accompanying manager, and a confirmation is the named partner's own click.
+    crm_visit_entry: ["read"],
     // `update` added 2026-08-09 for the Doctor Coverage visit-norms editor
     // (/admin/doctor-coverage-settings). It gates ONLY that policy singleton — the CRM visit
     // mirror itself stays read-only everywhere, since it is a vendor mirror nothing may write.
@@ -1099,6 +1111,8 @@ const defaultPermissionMatrix: PermissionMap = {
   "Medical Rep": {
     attendance: ["read"],
     crm_visits: ["read"],
+    // Native visit entry — his OWN visits only, and only while his line is the pilot line.
+    crm_visit_entry: ["read", "create", "delete"],
     early_birds: ["read"],
     overview: [],
     coaching: ["read"],
@@ -1127,6 +1141,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // it is narrowed AGAIN, below the matrix, to the reps actually beneath this manager in the org
     // tree — the permission says he may verify a plan, not that he may verify anyone's.
     crm_plans: ["read", "approve"],
+    // Confirms a native visit a rep says he accompanied — only when HE is the partner named on it and
+    // the rep is beneath him.
+    crm_visit_entry: ["read", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1158,6 +1175,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // already inside this seat's subtree. Granted so a plan is not stranded whenever a district
     // seat is vacant — which is exactly when someone above has to act.
     crm_plans: ["read", "approve"],
+    crm_visit_entry: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
@@ -1212,6 +1230,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    crm_visit_entry: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
