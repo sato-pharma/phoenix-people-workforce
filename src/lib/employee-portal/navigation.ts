@@ -652,13 +652,16 @@ export function resolveEmployeePortalNavVisibility(
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
     showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager,
     showRoiIntelligenceTab,
+    // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
+    // he sees his own area's pharmacy action lists only, never the distributor dashboard.
     showSourceOfSalesTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
-      resolvedRole === "Marketing Manager",
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Medical Rep",
     showWeeklyTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||

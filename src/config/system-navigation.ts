@@ -1528,7 +1528,7 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "sales-operations",
     items: [
-      { href: "/employee-portals/source-of-sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/source-of-sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Medical Rep"] },
       // ONE Direct Orders row. `direct_orders:read`, not `create`: approvers who never raise an
       // order still need the workspace, and their queue lives in it now that the standalone
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
