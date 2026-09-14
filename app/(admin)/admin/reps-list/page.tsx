@@ -18,8 +18,12 @@
 // THE TWO TABS DO NOT SHARE A GATE, and must not. Reps List admits National Sales Manager and SFE
 // Manager; plan verification deliberately admits neither, because reading a rep's list and signing
 // his plan are not the same authority. So the plans tab is gated separately here, the tab strip
-// renders nothing for a viewer holding only the first, and a hand-typed `?tab=plans` falls back to
-// the contact list rather than explaining what it is refusing.
+// offers no plans tab to a viewer holding only the first, and a hand-typed `?tab=plans` falls back
+// to the contact list rather than explaining what it is refusing.
+//
+// TAB THREE — VACANT AREAS — was added on 2026-09-14 ("the doctors list in vacant areas exactly as
+// the other tab"). It reads the same lists under the same Reps List gate and scope, so every viewer
+// of the contact tab gets it. Assembly: src/lib/crm/reps-list-vacant-areas.ts.
 //
 // Nothing about WHO may open this lives in this file. The role lists and the scopes are in
 // src/lib/crm/doctor-list-access.ts and src/lib/crm/plan-verification-access.ts; the assemblies are
@@ -32,12 +36,14 @@ import { redirect } from "next/navigation";
 
 import { RepsListBoardView } from "@/components/crm/reps-list-board";
 import { RepsListTabs, resolveRepsListTab } from "@/components/crm/reps-list-tabs";
+import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas";
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
+import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 
 export const runtime = "nodejs";
@@ -55,6 +61,7 @@ type PageProps = {
     rep?: string;
     status?: string;
     tab?: string;
+    vacancy?: string;
     week?: string;
   }>;
 };
@@ -79,10 +86,43 @@ export default async function RepsListPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const cascade = { area: params?.area, line: params?.line, region: params?.region, rep: params?.rep };
 
-  // The plans tab's own gate, checked BEFORE the tab is resolved so an unauthorised `?tab=plans`
-  // lands on the contact list instead of a refusal.
+  // The plans tab's own gate, passed INTO the tab resolver so an unauthorised `?tab=plans` lands on
+  // the contact list instead of a refusal.
   const canSeePlans = canAccessPlanVerification(access) && (await canAccess(access, "crm_plans", "read"));
-  const tab = canSeePlans ? resolveRepsListTab(params?.tab) : "contacts";
+  const tab = resolveRepsListTab(params?.tab, canSeePlans);
+
+  // TAB THREE — VACANT AREAS, added 2026-09-14: the doctors of the areas with nobody in the seat,
+  // read under the Reps List scope because they are the same lists.
+  if (tab === "vacant") {
+    let vacantBoard: Awaited<ReturnType<typeof getVacantAreasBoard>> | null = null;
+    let vacantError: string | null = null;
+    try {
+      const scope = await getDoctorListScope(access);
+      vacantBoard = await getVacantAreasBoard({
+        params: { ...cascade, month: params?.month, vacancy: params?.vacancy },
+        scope,
+      });
+    } catch (error) {
+      vacantError = error instanceof Error ? error.message : "Vacant Areas data is unavailable.";
+    }
+
+    return (
+      <>
+        <RepsListTabs
+          active="vacant"
+          basePath={BASE_PATH}
+          canSeePlans={canSeePlans}
+          selection={vacantBoard?.selection ?? cascade}
+          week={params?.week ?? null}
+        />
+        {vacantBoard ? (
+          <RepsListVacantAreasView basePath={BASE_PATH} board={vacantBoard} />
+        ) : (
+          <LoadFailure message={vacantError} />
+        )}
+      </>
+    );
+  }
 
   if (tab === "plans") {
     // Read separately from `crm_plans:read`: more seats may READ a plan than may sign one. This

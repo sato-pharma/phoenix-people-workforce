@@ -3,29 +3,34 @@ import Link from "next/link";
 import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
 
 /**
- * The Reps List tab strip — Contact List and Reps Weekly Plans.
+ * The Reps List tab strip — Contact List, Reps Weekly Plans and Vacant Areas.
  *
  * ## This is not the tab strip that was retired
  *
  * `DistrictManagerTabs` was removed on 2026-08-31 when the owner retired Doctor List: it put two
  * boards over the SAME data behind two tabs, and "a one-item tab strip is not a tab strip" once one
- * of them went. This strip is the opposite case — two different questions about one rep, asked from
- * one picker: what is on his list, and what has he planned this week. The owner asked for it on
- * 2026-09-01 in those words: "another tab called Reps Weekly Plans".
+ * of them went. This strip is the opposite case — different questions asked from one picker: what
+ * is on a rep's list, what has he planned this week, and whose doctors sit in the areas nobody
+ * covers. The owner asked for the second on 2026-09-01 ("another tab called Reps Weekly Plans") and
+ * the third on 2026-09-14 ("a third tab that is showing the doctors list in vacant areas").
  *
- * ## It renders NOTHING when the viewer has only one tab
+ * ## The plans tab appears only for a viewer who may verify
  *
  * Plan verification admits a strictly shorter role list than Reps List does — National Sales Manager
  * and SFE Manager reach the contact list and are deliberately refused the plans, because reading a
- * rep's list and signing his plan are not the same authority. For those seats this returns null and
- * the page looks exactly as it did before the tab existed, rather than showing a tab that answers
- * "not available to your role" when pressed.
+ * rep's list and signing his plan are not the same authority. Vacant Areas reads the same lists as
+ * the contact tab under the same scope, so every Reps List viewer gets it, and the strip therefore
+ * always holds at least two tabs.
  */
 
-export type RepsListTab = "contacts" | "plans";
+export type RepsListTab = "contacts" | "plans" | "vacant";
 
-export function resolveRepsListTab(value: string | undefined): RepsListTab {
-  return value === "plans" ? "plans" : "contacts";
+/** The tab to open. `plans` resolves only THROUGH the gate — a hand-typed `?tab=plans` from a seat
+ * without it lands on the contact list rather than on a refusal. */
+export function resolveRepsListTab(value: string | undefined, canSeePlans: boolean): RepsListTab {
+  if (value === "vacant") return "vacant";
+  if (value === "plans" && canSeePlans) return "plans";
+  return "contacts";
 }
 
 /** The current cascade as a query string, with the tab set and the week carried when it applies. */
@@ -36,17 +41,21 @@ function tabHref(input: {
   week: string | null;
 }): string {
   const query = new URLSearchParams();
-  // Switching tabs KEEPS the rep. A manager who has just read a rep's contact list and presses
-  // Plans means "this rep's plans" — dropping the selection would send him back to the picker to
-  // choose the same person again.
+  // Switching tabs KEEPS the geography, and the rep wherever a rep means something. A manager who
+  // has just read a rep's contact list and presses Plans means "this rep's plans" — dropping the
+  // selection would send him back to the picker to choose the same person again.
   if (input.selection.line) query.set("line", input.selection.line);
   if (input.selection.region) query.set("region", input.selection.region);
   if (input.selection.area) query.set("area", input.selection.area);
-  if (input.selection.rep) query.set("rep", input.selection.rep);
+  // A vacant area has no rep, so the rep is not carried INTO that tab.
+  if (input.tab !== "vacant") {
+    if (input.selection.rep) query.set("rep", input.selection.rep);
+  }
   if (input.tab === "plans") {
     query.set("tab", "plans");
     if (input.week) query.set("week", input.week);
   }
+  if (input.tab === "vacant") query.set("tab", "vacant");
   const search = query.toString();
   return search ? `${input.basePath}?${search}` : input.basePath;
 }
@@ -64,12 +73,9 @@ export function RepsListTabs({
   selection: CoverageFilterSelection;
   week: string | null;
 }) {
-  if (!canSeePlans) return null;
-
-  const tabs: Array<{ key: RepsListTab; label: string }> = [
-    { key: "contacts", label: "Contact list" },
-    { key: "plans", label: "Reps weekly plans" },
-  ];
+  const tabs: Array<{ key: RepsListTab; label: string }> = [{ key: "contacts", label: "Contact list" }];
+  if (canSeePlans) tabs.push({ key: "plans", label: "Reps weekly plans" });
+  tabs.push({ key: "vacant", label: "Vacant areas" });
 
   return (
     // A strip, not a card: it sits directly on top of the board it switches, sharing its border so

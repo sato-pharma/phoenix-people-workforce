@@ -3,6 +3,7 @@ import Link from "next/link";
 import { RepsListContacts } from "@/components/crm/reps-list-tables";
 import { RepsListFilters, RepsListMonthPicker } from "@/components/crm/reps-list-filters";
 import { cairoStamp, Section, Tile } from "@/components/crm/reps-list-chrome";
+import type { RepsListForRep } from "@/lib/crm/reps-list";
 import type { RepsListBoard, RepsListRep } from "@/lib/crm/reps-list-board";
 
 // Server half of Reps List. The Section/Tile vocabulary is copied verbatim from
@@ -37,7 +38,7 @@ function hrefWithRep(basePath: string, board: RepsListBoard, repKey: string | nu
  * "contacts" never covers both. A rep with pharmacies and no doctors then reads honestly —
  * "0 contacts · 12 pharmacies" is a real statement about that list, not an empty one.
  */
-function listLabel(contactCount: number, pharmacyCount: number): string {
+export function listLabel(contactCount: number, pharmacyCount: number): string {
   const contacts = `${contactCount} ${contactCount === 1 ? "contact" : "contacts"}`;
   if (pharmacyCount === 0) return contacts;
   return `${contacts} · ${pharmacyCount} ${pharmacyCount === 1 ? "pharmacy" : "pharmacies"}`;
@@ -80,6 +81,126 @@ function RepCard({ href, rep }: { href: string; rep: RepsListRep }) {
 function shareOf(count: number, contacts: number): string {
   if (contacts <= 0) return "no contacts";
   return `${Math.round((count / contacts) * 100)}% of contacts`;
+}
+
+/**
+ * One opened list — the month window, the tiles and the brick-grouped contacts.
+ *
+ * SHARED BY THE CONTACT TAB AND THE VACANT AREAS TAB. The owner asked for the vacant areas' doctors
+ * "exactly as the other tab", and two copies of this block are two screens that disagree the first
+ * time one is edited — about what counts as a contact, of all things.
+ */
+export function RepsListListBody({
+  basePath,
+  board,
+  list,
+  listName,
+  monthPreserve,
+  activityUnavailableNote,
+}: {
+  /**
+   * What to say when no activity is shown and the reason is KNOWN rather than a failed read. A
+   * vacant area's list belongs to a departed rep, whom every CRM read excludes by standing rule, so
+   * "could not be read" there would blame an outage for a rule.
+   */
+  activityUnavailableNote?: string;
+  basePath: string;
+  board: Pick<
+    RepsListBoard,
+    "activityAsOf" | "activityAvailable" | "activityMonth" | "activityMonthLabel" | "activityUnvisited" | "monthOptions"
+  >;
+  list: RepsListForRep;
+  /** Heads the contact table and its export. */
+  listName: string;
+  /** Everything the month picker must carry — the cascade, the open tab, the selected rep or area. */
+  monthPreserve: Record<string, string | undefined>;
+}) {
+  return (
+    <>
+      {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES. On the 2nd of a month almost every
+          contact is legitimately unvisited, so the span is stated rather than implied — a board
+          showing only "Not visited 84" would read as a collapse in coverage instead of as a
+          month that has barely started. The picker is separate from the cascade above because
+          it answers a different question: those four say whose list, this says over what window.
+
+          The contact list itself is NOT scoped by it and never becomes so. Changing the month
+          re-scores the annotation beside each name and can never add or remove a contact. */}
+      <div className="flex flex-wrap items-end gap-3 px-5 pt-5">
+        <RepsListMonthPicker
+          basePath={basePath}
+          month={board.activityMonth}
+          options={board.monthOptions}
+          preserve={monthPreserve}
+        />
+        <p className="pb-2 text-phx-2xs font-semibold text-slate-500">
+          {board.activityAvailable
+            ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
+            : (activityUnavailableNote ??
+              "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that.")}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
+        {/* The list names are the CRM's own and the owner's own — PM list, AM list,
+            Pharmacist. The sub-line carries each one's share rather than a description,
+            because naming what a list "is" invents a meaning the CRM never stated.
+
+            A PHARMACY IS NOT A CONTACT. Owner, 2026-09-01: "you will not count the
+            pharmacies as contacts... the contacts is divided into AM and PM, and the
+            pharmacies are separate." So the Contacts tile is PM + AM, the two beneath it
+            are its halves and add to 100%, and Pharmacies stands apart with its own count
+            and no share — a share would only re-imply the total he separated them out of. */}
+        <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
+        <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
+        <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
+        <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
+        {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
+            too would have this tile report bricks that do not exist — on a rep whose whole
+            area is unmapped it read "Bricks 8 / 0 mapped", which is a contradiction. */}
+        <Tile
+          label="Bricks"
+          sub="mapped territories"
+          value={String(list.groups.length - list.unmappedRegionCount)}
+        />
+        {/* Stated on screen rather than left to be noticed: an unmapped locality is a
+            mapping backlog, and the board is the punch-list for it. */}
+        <Tile
+          label="Awaiting a brick"
+          sub={
+            list.unmappedContactCount > 0
+              ? `${list.unmappedRegionCount} localities not yet mapped`
+              : "every locality is mapped"
+          }
+          tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
+          value={String(list.unmappedContactCount)}
+        />
+        {/* THE REASON THIS COLUMN EXISTS, AS A NUMBER. It counts ROWS and is deliberately never
+            labelled "contacts": a pharmacy is not a contact (owner, 2026-09-01) and this figure
+            spans both tabs, so that word would restate the very total he separated.
+
+            `untouched` PLUS `missed`, and nothing else — see UNVISITED_STATUSES. A doctor planned
+            for next Tuesday has not been neglected, and counting him here would put a manager on
+            the phone about nothing.
+
+            It wraps onto a second row rather than squeezing the six above it. The golden rule
+            forbids buying width from a neighbour, and a lone tile under the others reads as the
+            summary line it is. */}
+        {board.activityAvailable ? (
+          <Tile
+            label="Not visited"
+            sub={`no visit in ${board.activityMonthLabel}`}
+            tone={board.activityUnvisited > 0 ? "amber" : "emerald"}
+            value={String(board.activityUnvisited)}
+          />
+        ) : null}
+      </div>
+      <RepsListContacts
+        activityAvailable={board.activityAvailable}
+        activityMonthLabel={board.activityMonthLabel}
+        groups={list.groups}
+        repName={listName}
+      />
+    </>
+  );
 }
 
 export function RepsListBoardView({ basePath, board }: { basePath: string; board: RepsListBoard }) {
@@ -148,94 +269,18 @@ export function RepsListBoardView({ basePath, board }: { basePath: string; board
               </p>
             </div>
           ) : (
-            <>
-              {/* THE WINDOW, PRINTED ABOVE THE NUMBERS IT SCORES. On the 2nd of a month almost every
-                  contact is legitimately unvisited, so the span is stated rather than implied — a board
-                  showing only "Not visited 84" would read as a collapse in coverage instead of as a
-                  month that has barely started. The picker is separate from the cascade above because
-                  it answers a different question: those four say whose list, this says over what window.
-
-                  The contact list itself is NOT scoped by it and never becomes so. Changing the month
-                  re-scores the annotation beside each name and can never add or remove a contact. */}
-              <div className="flex flex-wrap items-end gap-3 px-5 pt-5">
-                <RepsListMonthPicker
-                  basePath={basePath}
-                  month={board.activityMonth}
-                  options={board.monthOptions}
-                  preserve={{
-                    area: selection.area,
-                    line: selection.line,
-                    region: selection.region,
-                    rep: selection.rep,
-                  }}
-                />
-                <p className="pb-2 text-phx-2xs font-semibold text-slate-500">
-                  {board.activityAvailable
-                    ? `Visits and plan counted from ${board.activityMonth}-01 to ${board.activityAsOf} Cairo.`
-                    : "The plan and visits for this month could not be read, so no activity is shown beside the contacts. The list below is complete and unaffected by that."}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 px-5 pt-3 sm:grid-cols-3 lg:grid-cols-6">
-                {/* The list names are the CRM's own and the owner's own — PM list, AM list,
-                    Pharmacist. The sub-line carries each one's share rather than a description,
-                    because naming what a list "is" invents a meaning the CRM never stated.
-
-                    A PHARMACY IS NOT A CONTACT. Owner, 2026-09-01: "you will not count the
-                    pharmacies as contacts... the contacts is divided into AM and PM, and the
-                    pharmacies are separate." So the Contacts tile is PM + AM, the two beneath it
-                    are its halves and add to 100%, and Pharmacies stands apart with its own count
-                    and no share — a share would only re-imply the total he separated them out of. */}
-                <Tile label="Contacts" sub="PM and AM lists" value={String(list.counts.contacts)} />
-                <Tile label="PM list" sub={shareOf(list.counts.pm, list.counts.contacts)} value={String(list.counts.pm)} />
-                <Tile label="AM list" sub={shareOf(list.counts.am, list.counts.contacts)} value={String(list.counts.am)} />
-                <Tile label="Pharmacies" sub="counted apart from contacts" value={String(list.counts.pharmacy)} />
-                {/* The VALUE is the mapped bricks alone. Counting the unmapped localities here
-                    too would have this tile report bricks that do not exist — on a rep whose whole
-                    area is unmapped it read "Bricks 8 / 0 mapped", which is a contradiction. */}
-                <Tile
-                  label="Bricks"
-                  sub="mapped territories"
-                  value={String(list.groups.length - list.unmappedRegionCount)}
-                />
-                {/* Stated on screen rather than left to be noticed: an unmapped locality is a
-                    mapping backlog, and the board is the punch-list for it. */}
-                <Tile
-                  label="Awaiting a brick"
-                  sub={
-                    list.unmappedContactCount > 0
-                      ? `${list.unmappedRegionCount} localities not yet mapped`
-                      : "every locality is mapped"
-                  }
-                  tone={list.unmappedContactCount > 0 ? "amber" : "emerald"}
-                  value={String(list.unmappedContactCount)}
-                />
-                {/* THE REASON THIS COLUMN EXISTS, AS A NUMBER. It counts ROWS and is deliberately never
-                    labelled "contacts": a pharmacy is not a contact (owner, 2026-09-01) and this figure
-                    spans both tabs, so that word would restate the very total he separated.
-
-                    `untouched` PLUS `missed`, and nothing else — see UNVISITED_STATUSES. A doctor planned
-                    for next Tuesday has not been neglected, and counting him here would put a manager on
-                    the phone about nothing.
-
-                    It wraps onto a second row rather than squeezing the six above it. The golden rule
-                    forbids buying width from a neighbour, and a lone tile under the others reads as the
-                    summary line it is. */}
-                {board.activityAvailable ? (
-                  <Tile
-                    label="Not visited"
-                    sub={`no visit in ${board.activityMonthLabel}`}
-                    tone={board.activityUnvisited > 0 ? "amber" : "emerald"}
-                    value={String(board.activityUnvisited)}
-                  />
-                ) : null}
-              </div>
-              <RepsListContacts
-                activityAvailable={board.activityAvailable}
-                activityMonthLabel={board.activityMonthLabel}
-                groups={list.groups}
-                repName={selected.name}
-              />
-            </>
+            <RepsListListBody
+              basePath={basePath}
+              board={board}
+              list={list}
+              listName={selected.name}
+              monthPreserve={{
+                area: selection.area,
+                line: selection.line,
+                region: selection.region,
+                rep: selection.rep,
+              }}
+            />
           )}
         </Section>
       ) : (

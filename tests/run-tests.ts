@@ -431,6 +431,7 @@ import {
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
+import { runRepsListVacantAreasTests } from "./reps-list-vacant-areas.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
@@ -4166,6 +4167,11 @@ await runTest(
 await runTest(
   "reps list activity (the status printed beside every contact on a rep's own list — the join that turns \"32 missed\" back into 32 NAMES. Its output is an accusation about a named person, so every failure mode is pinned: the plan is narrowed by agent_crm_id and NEVER by the hr id, which the mirror leaves null on up to 27.9% of a month and whose every dropped row would read as an ignored doctor; a read that FAILED answers null and hides the column rather than printing \"No activity\" beside all 84 names; indexing two reps at once THROWS instead of letting a shared doctor carry the other rep's visits; a mid-month rep is scored against the calls DUE, not the month's whole ask; `not_due` is kept out of the unvisited count; and on-plan is the only green, because over-visiting is a deviation and not a win)",
   runRepsListActivityTests,
+);
+
+await runTest(
+  "reps list vacant areas (tab three — the doctors of an area with nobody in the seat are the open list its LAST rep left behind: the latest occupancy wins and a vacant placeholder never does; a holder now seated elsewhere keeps his list for the territory he works today and it is never shown under the vacant area; a vacancy with no list stays on screen and says why; the vacancy cascade offers only lines and regions a vacancy sits in; and both doors read it under the Reps List scope, restricted before any option is derived)",
+  runRepsListVacantAreasTests,
 );
 
 await runTest(

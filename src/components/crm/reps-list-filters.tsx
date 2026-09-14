@@ -56,6 +56,7 @@ export function RepsListFilters({
   options,
   preserve,
   selection,
+  withRep,
 }: {
   basePath: string;
   options: CoverageFilterOptions;
@@ -70,9 +71,15 @@ export function RepsListFilters({
    */
   preserve?: Record<string, string | undefined>;
   selection: CoverageFilterSelection;
+  /**
+   * False on the Vacant Areas tab. A vacant area has nobody in the seat, so a Medical rep picker
+   * there could only ever read "No medical rep available" — a control that looks broken.
+   */
+  withRep?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const levels = withRep === false ? LEVELS.filter((level) => level.key !== "rep") : LEVELS;
 
   const apply = (key: string, value: string, clears: readonly string[]) => {
     const next = new URLSearchParams();
@@ -92,8 +99,8 @@ export function RepsListFilters({
   };
 
   return (
-    <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
-      {LEVELS.map((level) => {
+    <div className={`grid gap-3 px-5 py-4 sm:grid-cols-2 ${levels.length === 3 ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
+      {levels.map((level) => {
         const list = options[level.options];
         // A level with nothing to offer is disabled rather than hidden: the owner asked for four
         // filters and a filter that vanishes reads as a broken page, while a disabled one reads as

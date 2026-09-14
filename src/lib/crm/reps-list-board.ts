@@ -115,8 +115,11 @@ const EMPTY_OPTIONS: CoverageFilterOptions = { areas: [], lines: [], regions: []
  * `null` means "no restriction" and is returned ONLY for a company-scoped viewer. A team-scoped
  * viewer whose seat resolves to nobody gets an empty array — never `null` — because the difference
  * between those two is the difference between seeing nothing and seeing everyone.
+ *
+ * Exported for the Vacant Areas tab, which restricts the same tree by the same rule — a vacancy is
+ * offered to a team-scoped viewer only when it stands in a region and line his own reps work.
  */
-function allowedHrIdsFor(scope: CrmManagerScope): readonly string[] | null {
+export function allowedHrIdsFor(scope: CrmManagerScope): readonly string[] | null {
   if (scope.kind === "company") return null;
   if (scope.kind === "agents") return scope.agentHrIds;
   return [];
@@ -358,8 +361,10 @@ export async function buildRepsCascade(input: {
  * answer to "what was this rep given". The activity is an ANNOTATION over that list, and keeping the
  * two apart is what lets the board still render a complete, correct contact list on a day the plan
  * mirror cannot be read at all.
+ *
+ * Exported for the Vacant Areas tab, which annotates a departed rep's list the same way.
  */
-function withActivity(
+export function withActivity(
   list: RepsListForRep,
   index: ReadonlyMap<number, RepsListActivity> | null,
 ): RepsListForRep {
