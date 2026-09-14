@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   DIRECT_ORDER_CORE_FIELD_LABELS,
   DIRECT_ORDER_NOTIFICATION_MAX_CHARS,
+  buildDirectOrderApprovalNarrative,
   buildDirectOrderDetailFields,
   buildDirectOrderNotificationLine,
   buildDirectOrderNotificationMetrics,
@@ -15,6 +16,7 @@ import {
   formatDistributorNames,
   toDistributorRows,
 } from "../src/lib/direct-orders/geo-names.ts";
+import { describeReturnedDirectOrderWait } from "../src/lib/direct-orders/status-labels.ts";
 import {
   areaRepKey,
   normalizeLineKey,
@@ -1623,5 +1625,71 @@ export function runDirectOrdersApprovalDetailNamesTests() {
         `${label} must validate codes through the shared normalizer, not its own copy`,
       );
     }
+  }
+
+  // ── A RETURNED order's open rung (owner, 2026-09-14) ─────────────────────────────────────────
+  // A return leaves the returning rung `pending` so a resubmission resumes there. Read on its own,
+  // that rung said "Waiting on SFE Manager now" on an order sitting with its requester, and the SFE
+  // Manager went looking for an Approve button a returned order never has. The open rung must name
+  // the requester instead — and only on a returned order.
+  {
+    assert.equal(
+      describeReturnedDirectOrderWait("Nermeen Salah Abdelaty Abohussien"),
+      "Returned — waiting for Nermeen Salah",
+    );
+    assert.equal(describeReturnedDirectOrderWait("  Nermeen  "), "Returned — waiting for Nermeen");
+    assert.equal(describeReturnedDirectOrderWait(null), "Returned — waiting for the person who raised it");
+
+    const chain = [
+      { order: 1, label: "SFE Manager", kind: "role", role: "SFE Manager", approverHrId: null, status: "pending", decisionComment: null, approverName: "SFE Manager", decidedByName: null },
+      { order: 2, label: "Regional Sales Manager", kind: "person", role: null, approverHrId: "PD-0001", status: "pending", decisionComment: null, approverName: "Hany Saad", decidedByName: null },
+    ] as unknown as Parameters<typeof buildDirectOrderApprovalNarrative>[0];
+
+    const returned = buildDirectOrderApprovalNarrative(chain, {
+      requestStatus: "returned",
+      requesterName: "Nermeen Salah Abdelaty Abohussien",
+      returnedByName: "Khaled Bedair",
+    });
+    assert.equal(
+      returned[0].trackerLabel,
+      "Returned — waiting for Nermeen Salah",
+      "a returned order's open rung must name its requester on the progress bar, not the SFE Manager",
+    );
+    assert.equal(
+      returned[0].sentence,
+      "Khaled Bedair returned this order — waiting for Nermeen Salah Abdelaty Abohussien to correct and resubmit.",
+    );
+    assert.equal(returned[0].state, "current");
+    assert.equal(returned[0].label, "SFE Manager", "the rung keeps its own name — only what the bar and sentence say changes");
+    assert.equal(returned[1].trackerLabel, "Regional Sales Manager");
+    assert.equal(returned[1].sentence, "Will move to Hany Saad next.");
+
+    // The same chain on an order still in approval is untouched.
+    const pending = buildDirectOrderApprovalNarrative(chain, { requestStatus: "pending_approval", requesterName: "Nermeen Salah" });
+    assert.equal(pending[0].trackerLabel, "SFE Manager");
+    assert.equal(pending[0].sentence, "Waiting on SFE Manager now.");
+    assert.deepEqual(
+      buildDirectOrderApprovalNarrative(chain).map((step) => step.trackerLabel),
+      ["SFE Manager", "Regional Sales Manager"],
+    );
+
+    // Every surface naming the open rung goes through the rule: both service list builders (the
+    // approvals list and the report's "Awaiting" column) and the order window's progress bar.
+    const svc = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.equal(
+      (svc.match(/activeStepLabel:\s*request\.status === "returned"\s*\?\s*describeReturnedDirectOrderWait\(/g) ?? []).length,
+      2,
+      "both activeStepLabel builders in service.ts must name the requester on a returned order",
+    );
+    assert.doesNotMatch(svc, /activeStepLabel: active\?\.label \?\? ""/, "no activeStepLabel may read the open rung's label unconditionally");
+    const detailSource = readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8");
+    assert.match(detailSource, /requestStatus: request\.status/, "the order window must pass the request's status to the narrative");
+    assert.match(detailSource, /label: step\.trackerLabel/, "the progress bar must print trackerLabel, not the rung's raw label");
+    const primitives = readFileSync(new URL("../src/components/approvals-hub/direct-order-detail-primitives.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      topLevelBlock(primitives, primitives.indexOf("export function ApprovalTracker(")),
+      /\btruncate\b/,
+      "progress-bar labels wrap — never an ellipsis (owner rule)",
+    );
   }
 }

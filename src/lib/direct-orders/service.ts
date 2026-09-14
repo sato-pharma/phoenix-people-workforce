@@ -88,7 +88,7 @@ import {
   resolveSalesMonthBooking,
 } from "@/lib/direct-orders/sales-month-lock-guard";
 import { listLockedPeriodsForLine } from "@/lib/sales/monthly-closing-lock";
-import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
+import { describeDirectOrderStatus, describeReturnedDirectOrderWait } from "@/lib/direct-orders/status-labels";
 import type { DirectOrderQueueRow } from "@/lib/direct-orders/needs-action";
 import {
   clampDirectOrderPage,
@@ -5106,7 +5106,12 @@ function toApprovalListItem(
     status: request.status,
     createdAt: request.createdAt,
     decidedAt: request.decidedAt,
-    activeStepLabel: active?.label ?? "",
+    // A returned order's open rung stays `pending` so a resubmission resumes there, but the order is
+    // waiting on its requester, not on that approver (owner, 2026-09-14).
+    activeStepLabel:
+      request.status === "returned"
+        ? describeReturnedDirectOrderWait(requesterName ?? request.requesterHrId)
+        : active?.label ?? "",
     activeStepOrder: active?.order ?? null,
     bonusOverCap,
   };
@@ -6669,7 +6674,12 @@ export async function getDirectOrderReport(
           ? (nameOf(decidedByReq.get(request.id) as string) ?? String(decidedByReq.get(request.id)))
           : "(system)")
         : "",
-      activeStepLabel: active?.label ?? "",
+      // Same rule as the approvals list: a returned order is waiting on its requester (the report's
+      // "Awaiting" column read the SFE Manager for it, 2026-09-14).
+      activeStepLabel:
+        request.status === "returned"
+          ? describeReturnedDirectOrderWait(nameOf(request.requesterHrId) ?? request.requesterHrId)
+          : active?.label ?? "",
       activeStepOrder: active?.order ?? null,
       pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "",
       pharmacyName: pharmacy?.pharmacyName ?? "",

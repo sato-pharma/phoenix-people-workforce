@@ -170,7 +170,9 @@ export function ApprovalTracker({
       {steps.map((step) => (
         <div key={step.order} className="min-w-0 flex-1">
           <div className={`h-1.5 w-full ${tone[step.state].bar}`} />
-          <p className={`mt-1.5 truncate text-phx-2xs uppercase tracking-wide ${tone[step.state].text}`} title={step.label}>
+          {/* Wraps, never an ellipsis (owner rule): a returned order's rung reads "Returned —
+              waiting for <name>", which a four-segment bar on a phone would otherwise cut. */}
+          <p className={`mt-1.5 break-words text-phx-2xs uppercase tracking-wide ${tone[step.state].text}`} title={step.label}>
             {step.label}
           </p>
         </div>
