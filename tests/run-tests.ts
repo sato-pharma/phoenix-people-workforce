@@ -1645,6 +1645,7 @@ import { runManagerAreaRegionGuardTests } from "./manager-area-region-guard.test
 import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
+import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
@@ -5504,6 +5505,11 @@ await runTest(
 await runTest(
   "every Phoenix mark the system draws — browser and app icons, app shell, notification, email signature, Excel exports — is the owner's ringed emblem, and the retired drawings stay gone",
   runPhoenixOfficialLogoTests,
+);
+
+await runTest(
+  "the CV viewer serves pdf.js's legacy build, library and worker both carrying the Promise.withResolvers polyfill, so a CV opens on older phone browsers",
+  runPdfjsLegacyBrowserAssetsTests,
 );
 
 await runTest(
