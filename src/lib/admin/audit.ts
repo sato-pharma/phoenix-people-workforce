@@ -132,6 +132,7 @@ export type AuditEntityType =
   | "double_visit_import"
   | "employee_decline_offer"
   | "employee_resignation"
+  | "resignation_history_export"
   | "excuse_request"
   | "field_workforce_compliance_import"
   // The hiring-document checklist. Four types because the module writes four different

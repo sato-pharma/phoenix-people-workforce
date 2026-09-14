@@ -60,6 +60,11 @@ import type {
 } from "@/lib/resignations/types";
 
 type Props = {
+  /**
+   * resignations:export, resolved on the server by the page. It only decides whether the "Export full
+   * history" button renders — /api/resignations/export asserts the same permission itself.
+   */
+  canExportHistory?: boolean;
   initialData: ResignationDashboardData | null;
   initialError: string | null;
   /** The portal route supplies its own page header, so it suppresses the hero. */
@@ -80,7 +85,12 @@ function newForm(): CreateResignationInput {
   };
 }
 
-export function ResignationsWorkspace({ initialData, initialError, surface = "admin" }: Props) {
+export function ResignationsWorkspace({
+  canExportHistory = false,
+  initialData,
+  initialError,
+  surface = "admin",
+}: Props) {
   const [data, setData] = React.useState<ResignationDashboardData | null>(initialData);
   const [error, setError] = React.useState<string | null>(initialError);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -353,6 +363,37 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
     });
   }
 
+  /**
+   * The whole history, every field — built on the server, so it ignores the tab, the line filter and
+   * the search box on purpose (exportCurrentTab above is the one that follows them).
+   */
+  async function exportFullHistory() {
+    setBusy("export-history");
+    setError(null);
+    try {
+      const response = await fetch("/api/resignations/export", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string; message?: string } | null;
+        setError(payload?.message ?? payload?.error ?? "Unable to export the resignation history.");
+        return;
+      }
+      const blob = await response.blob();
+      const match = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "");
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "phoenix-resignations-full-history.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Unable to export the resignation history.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const toolbar = (
     <>
       <RgButton kind={surface === "admin" ? "onDark" : "quiet"} onClick={() => setCreating(true)}>
@@ -408,9 +449,21 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
 
       <RgPanel
         action={
-          <RgButton kind="onDark" onClick={() => void exportCurrentTab()}>
-            Export
-          </RgButton>
+          <span className="inline-flex flex-wrap justify-end gap-1">
+            <RgButton kind="onDark" onClick={() => void exportCurrentTab()}>
+              Export
+            </RgButton>
+            {canExportHistory ? (
+              <RgButton
+                disabled={busy === "export-history"}
+                kind="onDark"
+                onClick={() => void exportFullHistory()}
+                title="Every resignation, open and closed, with all fields. Ignores the tab and filters."
+              >
+                {busy === "export-history" ? "Exporting…" : "Export full history"}
+              </RgButton>
+            ) : null}
+          </span>
         }
         title="Resignations"
       >
