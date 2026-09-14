@@ -404,9 +404,10 @@ export function buildWhatsAppIntakeInput(
   attachment: InboundCvAttachment | null,
   options?: { importSenders?: readonly string[] },
 ): Omit<InboundCvIntakeInput, "channel"> {
-  // The webhook never enqueues a CV from a sender with no phone number — it records it instead
-  // (whatsapp-unattributed-sender). This still copes with one, so no path can print "+null" as a
-  // phone or a name: the BSUID identifies the sender, and no phone is invented.
+  // A sender with no phone number — a WhatsApp username, where Meta shared only the BSUID — is
+  // processed with its identity read from the CV (owner decision, 15 Sep 2026). There is no number to
+  // trust, so the document's own name, phone and email build the candidate: the rule a forwarded
+  // import already follows. No phone is ever invented, so nothing can print "+null".
   const phone = message.from ? `+${message.from}` : null;
   const senderIdentifier = phone ?? message.userId ?? `whatsapp:${message.wamid}`;
   const isImport = isWhatsAppImportSender(message.from, options?.importSenders);
@@ -429,14 +430,17 @@ export function buildWhatsAppIntakeInput(
 
   // senderIdentifier stays the forwarding account either way — it is genuinely who transmitted
   // this message, and the intake-events log needs it to trace an import back to its source.
-  if (isImport) {
+  if (isImport || !phone) {
+    // The fallback name for a CV that yields none. A forwarder's profile name is the forwarder's, so an
+    // import never uses it; a username sender's profile name is the applicant's own, so it does.
+    const fallbackName = isImport
+      ? (nameFromAttachmentFilename(message.document?.filename ?? null) ?? `WhatsApp Import (${message.wamid.slice(-8)})`)
+      : message.contactName || `WhatsApp Applicant (${message.username ? `@${message.username}` : senderIdentifier})`;
     return {
       attachment,
       candidate: {
         email: null,
-        fullName:
-          nameFromAttachmentFilename(message.document?.filename ?? null) ??
-          `WhatsApp Import (${message.wamid.slice(-8)})`,
+        fullName: fallbackName,
         notes: null,
         phone: null,
       },
@@ -448,10 +452,9 @@ export function buildWhatsAppIntakeInput(
     };
   }
 
-  const fallbackLabel = phone ?? (message.username ? `@${message.username}` : senderIdentifier);
   return {
     attachment,
-    candidate: { email: null, fullName: message.contactName || `WhatsApp Applicant (${fallbackLabel})`, notes: null, phone },
+    candidate: { email: null, fullName: message.contactName || `WhatsApp Applicant (${phone})`, notes: null, phone },
     identitySource: "sender",
     providerMessageId: message.wamid,
     rawMetadata,

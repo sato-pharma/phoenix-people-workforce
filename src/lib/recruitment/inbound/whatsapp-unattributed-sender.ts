@@ -8,9 +8,10 @@
 // Future Talents intern with a username sent his closing videos and his submission id, and
 // production held nothing from him at all.
 //
-// His videos and typed id now reach the FTP holding tables under the BSUID (the webhook does that
-// before this module is ever reached). Everything else from a phone-less sender — a CV, a greeting,
-// a tap — has nowhere safe to go: every recruitment path keys a person on a phone number, and several
+// His videos and typed id now reach the FTP holding tables under the BSUID, and a CV is queued for
+// intake with its identity read from the CV (owner decision, 15 Sep 2026) — the webhook does all of
+// that before this module is ever reached. Everything else from a phone-less sender — a greeting, a
+// tap — has nowhere safe to go: every conversation path keys a person on a phone number, and several
 // of them answer the sender. So it lands HERE, as one ats_cv_intake_events row, and nothing else:
 //
 //   * no reply. Sending to a BSUID needs Meta's `recipient` field rather than `to`, and on this line

@@ -185,6 +185,56 @@ export async function runWhatsAppUsernameSenderTests() {
   assert.equal((intake.rawMetadata as { userId?: string }).userId, BSUID);
   assert.doesNotMatch(intake.candidate.fullName, /\+null|undefined/, "the fallback name never prints a missing phone");
 
+  // --- a username sender's CV IS processed, its identity read from the CV (owner, 15 Sep 2026) ---
+  // With no phone number there is nothing about the sender to key a person on, so the candidate's
+  // name, phone and email come from the document — the same rule a forwarded import already uses.
+  assert.equal(intake.identitySource, "cv", "a username sender's CV builds the candidate from the CV, not from a sender with no number");
+  assert.match(intake.candidate.fullName, /Sheena Nelson/, "the profile name is only the fallback for a CV that yields no name");
+  assert.equal((intake.rawMetadata as { bulkImport?: boolean }).bulkImport, undefined, "a username applicant is not a forwarder, so the arrival still alerts a human");
+
+  // What happens after the CV is read. The owner's thank-you rule is unchanged: nothing is sent to a
+  // sender with no phone number, and the answers and buffer keyed on a number are left alone.
+  const followUpsModule = await import("../src/lib/recruitment/inbound/whatsapp-cv-follow-ups.ts");
+  const created = { historical: false, isImport: false, outcome: "candidate_created" as const };
+  const noPhoneFollowUps = followUpsModule.decideWhatsAppCvFollowUps({ ...created, hasPhone: false });
+  assert.equal(noPhoneFollowUps.acknowledge, false, "a username sender is never sent the CV acknowledgement");
+  assert.equal(noPhoneFollowUps.applyAnswers, false, "no classification answers exist for a sender we never asked");
+  assert.equal(noPhoneFollowUps.clearBuffer, false, "the text buffer is keyed on a phone number");
+  assert.equal(noPhoneFollowUps.mirrorToOwner, true, "the owner still sees the new applicant on Telegram");
+  const phoneFollowUps = followUpsModule.decideWhatsAppCvFollowUps({ ...created, hasPhone: true });
+  assert.deepEqual(
+    phoneFollowUps,
+    { acknowledge: true, applyAnswers: true, clearBuffer: true, mirrorToOwner: true },
+    "a sender with a phone number is handled exactly as before",
+  );
+  assert.equal(
+    followUpsModule.decideWhatsAppCvFollowUps({ ...created, hasPhone: true, isImport: true }).acknowledge,
+    false,
+    "an import sender is still never acknowledged",
+  );
+
+  // The owner's Telegram mirror names the sender by username, never as a broken number.
+  const mirror = await import("../src/lib/recruitment/inbound/whatsapp-conversation-mirror.ts");
+  const mirrored = mirror.buildWhatsAppMirrorMessage({
+    candidateName: null,
+    contactName: "Sheena Nelson",
+    filename: "cv.pdf",
+    kind: "cv_received",
+    note: null,
+    username: USERNAME,
+    waId: null,
+  });
+  assert.match(mirrored.message, new RegExp(`@${USERNAME}, no phone number shared`), "the mirror says the sender shared no number");
+  assert.doesNotMatch(mirrored.message, /unknown number|\+null/, "and never prints a missing number");
+
+  // An unreadable CV from a username sender pages a human and asks the sender nothing.
+  const unreadable = await import("../src/lib/recruitment/inbound/whatsapp-unreadable-cv.ts");
+  assert.deepEqual(
+    unreadable.decideUnreadableCvAction({ canReply: false, historical: false, isImportSender: false, priorUnreadableInWindow: 0, replyEnabled: true }),
+    { ask: false, notify: true, reason: "no_phone_number" },
+    "an unreadable CV from a sender with no phone number is never answered, only reported",
+  );
+
   // --- the intake event written for a message that cannot be processed -------------------------
   const unattributed = await import("../src/lib/recruitment/inbound/whatsapp-unattributed-sender.ts");
   const usernameText = parser.parseWhatsAppWebhookPayload(usernamePayload([usernameSubmissionId]))[0];
@@ -230,6 +280,22 @@ export async function runWhatsAppUsernameSenderTests() {
     assert.ok(videoAt < at && recordAt < at, `a phone-less sender is settled before ${replying}, which can message them`);
   }
   assert.match(webhook, /userId: message\.userId/, "the BSUID reaches the holding tables");
+
+  // A username sender's CV is queued for intake before the no-phone record, and that branch reaches
+  // nothing that can message the sender.
+  const noPhoneAt = webhook.indexOf("if (!message.from) {");
+  assert.ok(noPhoneAt > 0, "the webhook still has a branch for a sender with no phone number");
+  const noPhoneBlock = webhook.slice(noPhoneAt, webhook.indexOf("recordUnattributedWhatsAppMessage(", noPhoneAt));
+  assert.match(noPhoneBlock, /if \(message\.document\)[\s\S]*enqueueInbound\(/, "a username sender's CV is queued for intake, not only recorded");
+  assert.doesNotMatch(
+    noPhoneBlock,
+    /startClassification|bufferWhatsAppMessage|takeRecentWhatsAppMessages|handleTextOnlyMessage|sendWhatsApp/,
+    "the username CV branch calls nothing that answers the sender",
+  );
+
+  // The worker acts on the follow-up decision, so the acknowledgement cannot reach a sender with no number.
+  const worker = readFileSync(new URL("../src/lib/recruitment/inbound/intake-worker.ts", import.meta.url), "utf8");
+  assert.match(worker, /if \(followUps\.acknowledge && isWhatsAppAutoReplyEnabled\(\)/, "the CV acknowledgement is gated on the follow-up decision");
 
   // --- the thank-you is never aimed at a sender with no phone --------------------------------
   // Sending to a BSUID needs Meta's `recipient` field, not `to`; until the owner decides, the one
