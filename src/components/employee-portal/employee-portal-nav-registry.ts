@@ -25,6 +25,7 @@ import {
   Inbox,
   type LucideIcon,
   MapPinned,
+  Package,
   ReceiptText,
   Send,
   Settings2,
@@ -122,6 +123,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // sales tabs. The sync test only checked registry -> sidebar, so the reverse drift stayed silent;
   // it now checks both directions.
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"], permission: { resource: "sales", action: "read" } },
+  { label: "Stock", fullLabel: "Weekly Stock", href: "/employee-portals/weekly-stock", icon: Package, flags: ["showWeeklyStockTab"], permission: { resource: "sales", action: "read" } },
   { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"], permission: { resource: "sales", action: "read" } },
   { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"], permission: { resource: "sales", action: "read" } },
   { label: "Review", fullLabel: "Business Review", href: "/employee-portals/business-review", icon: ChartColumnBig, flags: ["showBusinessReviewTab"] },

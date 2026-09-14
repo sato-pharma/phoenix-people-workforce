@@ -96,6 +96,9 @@ export type EmployeePortalNavVisibility = {
   showSourceOfSalesTab?: boolean;
   // Weekly Sales — de-cumulated weekly distributor sell-in, same role set as Source of Sales.
   showWeeklyTab?: boolean;
+  // Weekly Stock — stock on hand per product at every depot, with weeks of cover. Scoped exactly like
+  // Weekly Sales (resolveWeeklyAccessScope); Medical Rep included (owner, 2026-09-14).
+  showWeeklyStockTab?: boolean;
   // Monthly Closing — the portal render of the admin /sales/monthly-closing Closing Matrix +
   // Details, published-gated and scoped to the viewer (see loadPortalMonthlyClosing /
   // canAccessPortalClosing). Shown to the field-sales management roles that own a line (DM/RM/NSM/
@@ -663,6 +666,16 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Marketing Manager" ||
       resolvedRole === "Medical Rep",
     showWeeklyTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      resolvedRole === "National Sales Manager" ||
+      resolvedRole === "Product Manager" ||
+      resolvedRole === "Group Product Manager" ||
+      resolvedRole === "Marketing Manager",
+    // Weekly Stock — mirrors PORTAL_WEEKLY_STOCK_ROLES (stock-dashboard-service.ts), the server-side
+    // gate this flag must stay in sync with.
+    showWeeklyStockTab:
+      resolvedRole === "Medical Rep" ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||

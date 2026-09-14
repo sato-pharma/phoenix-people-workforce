@@ -1534,6 +1534,9 @@ const employeePortalNavigationSectionSeeds = [
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Weekly Stock — roles mirror PORTAL_WEEKLY_STOCK_ROLES. Unlike Weekly Sales it INCLUDES Medical Rep
+      // (owner, 2026-09-14), scoped to his own line and region by resolveWeeklyAccessScope.
+      { href: "/employee-portals/weekly-stock", icon: Package, label: "Weekly Stock", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
       // PORTAL_CLOSING_ROLES: no Medical Rep (no line). Marketing Manager added 2026-08-12 (owner)
@@ -2955,6 +2958,14 @@ export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
     excludedRoles: ["Marketing Manager"],
   },
   {
+    href: "/sales/weekly/stock",
+    icon: Package,
+    label: "Weekly Stock",
+    description: "Stock on hand per product at every depot, with weeks of cover, filters and export.",
+    permissions: [{ resource: "weekly_sales" }],
+    excludedRoles: ["Marketing Manager"],
+  },
+  {
     href: "/sales/weekly",
     icon: FileUp,
     label: "Weekly Sales Upload",
@@ -4337,6 +4348,7 @@ const HUB_ROW_RAIL_LABELS: Readonly<Record<string, string>> = {
   "/admin/weekly-plans/calendar": "Planning Calendar",
   "/attendance/employee-day-report": "Day-by-Day Report",
   "/sales/weekly/dashboard": "Weekly Dashboard",
+  "/sales/weekly/stock": "Weekly Stock",
   "/sales/weekly/distributor-editor": "Distributor Columns",
 };
 
