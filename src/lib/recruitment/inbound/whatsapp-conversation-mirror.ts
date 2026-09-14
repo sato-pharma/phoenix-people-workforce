@@ -29,7 +29,9 @@ const MESSAGE_PREVIEW_MAX = 600;
 export type WhatsAppMirrorEvent =
   | {
       kind: "cv_received";
-      waId: string;
+      /** Null for a WhatsApp username sender who shared no phone number. */
+      waId: string | null;
+      username?: string | null;
       /** WhatsApp profile name — what the applicant calls themselves. */
       contactName: string | null;
       /** Name read off the CV, once extraction has run. Preferred over the profile name. */
@@ -134,7 +136,13 @@ export function buildWhatsAppMirrorMessage(event: WhatsAppMirrorEvent): { title:
 
   return {
     message: [
-      `${nameLine} · ${formatWaId(event.waId)}`,
+      `${nameLine} · ${
+        event.waId
+          ? formatWaId(event.waId)
+          : event.username
+            ? `@${event.username}, no phone number shared`
+            : "WhatsApp username, no phone number shared"
+      }`,
       event.filename ? `CV: ${event.filename}` : "CV: file name not given",
       previewOf(event.note) ? `\nThey wrote:\n${previewOf(event.note)}` : null,
     ]

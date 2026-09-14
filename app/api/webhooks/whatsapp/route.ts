@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { logError, logWarning } from "@/lib/observability/log";
-import { assembleWhatsAppSourceContext, MAX_WHATSAPP_SOURCE_MESSAGES } from "@/lib/recruitment/candidate-source-context";
-import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
+import {
+  assembleWhatsAppSourceContext,
+  MAX_WHATSAPP_SOURCE_MESSAGES,
+  type WhatsAppSourceContext,
+} from "@/lib/recruitment/candidate-source-context";
+import { enqueueInbound, type WhatsAppQueuePayload } from "@/lib/recruitment/inbound/intake-queue";
 import {
   handleClassifyReply,
   handleClassifyText,
@@ -18,6 +22,7 @@ import {
   isWhatsAppImportSender,
   parseWhatsAppImportSenders,
   parseWhatsAppWebhookDelivery,
+  type ParsedWhatsAppMessage,
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { recordUnattributedWhatsAppMessage } from "@/lib/recruitment/inbound/whatsapp-unattributed-sender";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
@@ -40,6 +45,34 @@ export const maxDuration = 60;
 // not a limit anyone reaches in normal traffic. Anything over the budget is simply not asked; the
 // CV itself is unaffected because it was already enqueued.
 const MAX_CLASSIFY_PROMPTS_PER_DELIVERY = 3;
+
+// One queue-payload shape for both CV branches below, so a username sender's row cannot drift from a
+// phone sender's. `from` is null for a username sender; userId and username are null for a phone
+// sender who has none.
+function cvQueuePayload(
+  message: ParsedWhatsAppMessage,
+  document: NonNullable<ParsedWhatsAppMessage["document"]>,
+  sourceContext: WhatsAppSourceContext | null,
+): WhatsAppQueuePayload {
+  return {
+    caption: document.caption,
+    contactName: message.contactName,
+    deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+    deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+    filename: document.filename,
+    forwarded: message.forwarded,
+    from: message.from,
+    historical: message.historical,
+    kind: "whatsapp",
+    mediaId: document.mediaId,
+    messageType: message.messageType,
+    mimeType: document.mimeType,
+    sourceContext,
+    userId: message.userId,
+    username: message.username,
+    wamid: message.wamid,
+  };
+}
 
 // Meta's one-time webhook verification handshake — dormant (403s) until WHATSAPP_WEBHOOK_VERIFY_TOKEN
 // is configured and the same value is entered into the Meta App dashboard's webhook config.
@@ -215,11 +248,36 @@ export async function POST(request: Request) {
       }
 
       // A SENDER WITH NO PHONE NUMBER (a WhatsApp username, and Meta did not share the phone). Its
-      // videos and typed submission id were kept above. Everything else — a CV, a greeting, a tap —
-      // is RECORDED as one intake event and goes no further: every path below keys a person on a
-      // phone number, and several of them answer the sender, which on this line is never done except
-      // for the owner's thank-you. Never throws.
+      // videos and typed submission id were kept above.
+      //
+      // A CV is QUEUED for intake like any other (owner decision, 15 Sep 2026), and the worker builds
+      // the candidate from what the CV says, because there is no number to trust. It is never
+      // classified, buffered or answered: those paths key a person on a phone number and message
+      // them, and the owner decided the same day that a username sender is sent nothing. The caption
+      // alone is the source context, since the text buffer is keyed on a phone number too.
+      //
+      // Everything else — a greeting, a tap — is RECORDED as one intake event and goes no further.
+      // Never throws.
       if (!message.from) {
+        if (message.document) {
+          let sourceContext: WhatsAppSourceContext | null = null;
+          try {
+            sourceContext = assembleWhatsAppSourceContext(message.document.caption, []);
+          } catch (contextError) {
+            logError("WhatsApp source-context assembly failed", {
+              error: contextError,
+              labels: { event: "whatsapp_source_context_failed", wamid: message.wamid },
+            });
+          }
+          const { enqueued } = await enqueueInbound({
+            channel: "whatsapp",
+            payload: cvQueuePayload(message, message.document, sourceContext),
+            providerMessageId: message.wamid,
+            source: "whatsapp_webhook",
+          });
+          outcomes.push({ outcome: enqueued ? "no_phone_cv_enqueued" : "no_phone_cv_duplicate", wamid: message.wamid });
+          continue;
+        }
         const recorded = await recordUnattributedWhatsAppMessage({ kind: "no_phone", message });
         outcomes.push({ outcome: `no_phone_${recorded.outcome}`, wamid: message.wamid });
         continue;
@@ -335,22 +393,7 @@ export async function POST(request: Request) {
 
       const { enqueued } = await enqueueInbound({
         channel: "whatsapp",
-        payload: {
-          caption: message.document.caption,
-          contactName: message.contactName,
-          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
-          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
-          filename: message.document.filename,
-          forwarded: message.forwarded,
-          from: message.from,
-          historical: message.historical,
-          kind: "whatsapp",
-          mediaId: message.document.mediaId,
-          messageType: message.messageType,
-          mimeType: message.document.mimeType,
-          sourceContext,
-          wamid: message.wamid,
-        },
+        payload: cvQueuePayload(message, message.document, sourceContext),
         providerMessageId: message.wamid,
         source: "whatsapp_webhook",
       });

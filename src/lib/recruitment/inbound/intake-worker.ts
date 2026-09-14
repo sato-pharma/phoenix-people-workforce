@@ -15,6 +15,7 @@ import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-contex
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { applyPendingClassification, sweepFinishedClassifications } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import { decideWhatsAppCvFollowUps } from "@/lib/recruitment/inbound/whatsapp-cv-follow-ups";
 import { applyPendingExtraAnswers } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
 import {
   candidateDisplayName,
@@ -78,6 +79,8 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
         historical: payload.historical === true,
         importSenders: parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS),
         maxBytes: maxInboundCvBytes(),
+        userId: payload.userId ?? null,
+        username: payload.username ?? null,
         waId: payload.from,
         wamid: payload.wamid,
       });
@@ -103,10 +106,10 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     // shape of rows already queued, for a field only the video inbox needs.
     sentAt: null,
     text: null,
-    // The webhook enqueues a CV only from a sender with a phone number; a username sender's CV is
-    // recorded there instead. Neither identity beyond the phone is carried on the queue payload.
-    userId: null,
-    username: null,
+    // Set for a WhatsApp username sender, whose `from` is null; their identity is then read from the
+    // CV (buildWhatsAppIntakeInput). Rows enqueued by an older build carry neither key.
+    userId: payload.userId ?? null,
+    username: payload.username ?? null,
     // A queued row is a CV by construction: a video is captured in the webhook and never enqueued,
     // so this can only be null. Stated rather than left to inference, so that a video somehow
     // reaching this function would be a visible contradiction rather than a silent CV.
@@ -141,9 +144,18 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   const result = await ingestInboundCv({ channel: "whatsapp", ...input, bulkArrival, reclaim: true });
   if (result.outcome === "error") throw new IntakeErrorOutcome("WhatsApp");
 
+  // Which follow-ups this CV earns. A username sender with no phone number gets the owner's mirror and
+  // nothing keyed on, or sent to, a number — see whatsapp-cv-follow-ups.ts.
+  const followUps = decideWhatsAppCvFollowUps({
+    hasPhone: payload.from !== null,
+    historical: payload.historical === true,
+    isImport,
+    outcome: result.outcome,
+  });
+
   // Consume the sender's buffered messages once a direct applicant's CV produced/matched a
   // candidate, so a later CV from the same number doesn't re-inherit stale context.
-  if (!isImport && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
+  if (followUps.clearBuffer && payload.from) {
     await clearWhatsAppMessages(payload.from).catch(() => {});
   }
 
@@ -151,7 +163,7 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // conversation runs in seconds, the worker runs on a cron tick. When that happens the answers are
   // already stored against their number with no candidate to write them to, so they are applied
   // here, the moment the candidate exists. Best-effort and flag-gated.
-  if (!isImport && result.candidateId && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
+  if (followUps.applyAnswers && payload.from && result.candidateId) {
     await applyPendingClassification({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
     // Same race, for the admin-defined extra questions that can finish after the fixed six.
     await applyPendingExtraAnswers({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
@@ -176,7 +188,7 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // Same gate as the acknowledgement below, for the same reasons: an import sender is a forwarder
   // and not the applicant, a match already applied, and a coexistence history replay would mirror
   // months of past CVs in one burst the moment the handset is linked.
-  if (!isImport && !payload.historical && result.outcome === "candidate_created") {
+  if (followUps.mirrorToOwner) {
     await mirrorWhatsAppEventToOwner({
       candidateName: await candidateDisplayName(result.candidateId),
       contactName: payload.contactName,
@@ -186,6 +198,7 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
         [payload.sourceContext?.caption, ...(payload.sourceContext?.firstMessages ?? [])]
           .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
           .join("\n") || null,
+      username: payload.username ?? null,
       waId: payload.from,
     }).catch(() => {});
   }
@@ -193,9 +206,10 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // Acknowledge a genuinely NEW direct applicant (flag-gated; strict no-op when off). Never on an
   // import (that's a forwarder, not the applicant), never on a match (they already applied), and
   // never on a coexistence history replay — thanking someone for a CV they sent two months ago,
-  // the instant the handset is linked, would message every past applicant at once.
+  // the instant the handset is linked, would message every past applicant at once. And never to a
+  // username sender with no phone number (owner decision, 15 Sep 2026).
   // Best-effort — an acknowledgement must never affect the CV that was already captured.
-  if (!isImport && !payload.historical && result.outcome === "candidate_created" && isWhatsAppAutoReplyEnabled()) {
+  if (followUps.acknowledge && isWhatsAppAutoReplyEnabled() && payload.from) {
     await sendWhatsAppCvAcknowledgement({ phoneNumberId: payload.deliveredToPhoneNumberId, toWaId: payload.from }).catch(() => {});
   }
 
@@ -213,6 +227,8 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
       historical: payload.historical === true,
       importSenders,
       maxBytes: maxInboundCvBytes(),
+      userId: payload.userId ?? null,
+      username: payload.username ?? null,
       waId: payload.from,
       wamid: payload.wamid,
     });

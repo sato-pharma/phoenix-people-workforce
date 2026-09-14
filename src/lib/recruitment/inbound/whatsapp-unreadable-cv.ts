@@ -69,12 +69,15 @@ export type UnreadableCvContext = {
   priorUnreadableInWindow: number;
   /** The kill switch, read once by the caller so the decision stays pure. */
   replyEnabled: boolean;
+  /** False for a WhatsApp username sender who shared no phone number: there is no number to answer,
+   *  and the owner decided (15 Sep 2026) that such a sender is sent nothing. Absent means true. */
+  canReply?: boolean;
 };
 
 export type UnreadableCvAction = {
   ask: boolean;
   notify: boolean;
-  reason: "import_sender" | "historical" | "already_handled" | "reply_disabled" | "unreadable";
+  reason: "import_sender" | "historical" | "already_handled" | "no_phone_number" | "reply_disabled" | "unreadable";
 };
 
 const SILENT = { ask: false, notify: false } as const;
@@ -97,6 +100,8 @@ export function decideUnreadableCvAction(context: UnreadableCvContext): Unreadab
   if (context.isImportSender) return { ...SILENT, reason: "import_sender" };
   if (context.historical) return { ...SILENT, reason: "historical" };
   if (context.priorUnreadableInWindow > 0) return { ...SILENT, reason: "already_handled" };
+  // Like the kill switch, a sender we cannot answer still has a human told about them.
+  if (context.canReply === false) return { ask: false, notify: true, reason: "no_phone_number" };
   if (!context.replyEnabled) return { ask: false, notify: true, reason: "reply_disabled" };
   return { ask: true, notify: true, reason: "unreadable" };
 }
@@ -211,7 +216,10 @@ export type HandleUnreadableCvResult = {
  * reply budget to respect — the worker handles one queued row at a time.
  */
 export async function handleUnreadableWhatsAppCv(input: {
-  waId: string;
+  /** Null for a WhatsApp username sender who shared no phone number — reported, never answered. */
+  waId: string | null;
+  userId?: string | null;
+  username?: string | null;
   wamid: string;
   contactName: string | null;
   filename: string | null;
@@ -227,26 +235,31 @@ export async function handleUnreadableWhatsAppCv(input: {
   if (input.historical) return { asked: false, reason: "historical" };
 
   const now = input.now ?? new Date();
-  const phone = `+${input.waId}`;
+  const phone = input.waId ? `+${input.waId}` : null;
+  // The intake event names a username sender by BSUID (buildWhatsAppIntakeInput), so the loop guard
+  // counts that sender's rows by the same identifier.
+  const senderIdentifier = phone ?? input.userId ?? `whatsapp:${input.wamid}`;
 
   try {
     const action = decideUnreadableCvAction({
+      canReply: input.waId !== null,
       historical: input.historical,
       isImportSender: false,
-      priorUnreadableInWindow: await countPriorUnreadable({ now, phone }),
+      priorUnreadableInWindow: await countPriorUnreadable({ now, phone: senderIdentifier }),
       replyEnabled: isUnreadableCvReplyEnabled(),
     });
 
     if (!action.ask && !action.notify) return { asked: false, reason: action.reason };
 
-    const asked = action.ask
-      ? await askForCvAsFile({
-          cause: input.cause,
-          maxBytes: input.maxBytes,
-          phoneNumberId: input.deliveredToPhoneNumberId,
-          waId: input.waId,
-        })
-      : false;
+    const asked =
+      action.ask && input.waId
+        ? await askForCvAsFile({
+            cause: input.cause,
+            maxBytes: input.maxBytes,
+            phoneNumberId: input.deliveredToPhoneNumberId,
+            waId: input.waId,
+          })
+        : false;
 
     if (action.notify) {
       // Best-effort: a notification failure must not cost the reply that already succeeded.
@@ -254,7 +267,11 @@ export async function handleUnreadableWhatsAppCv(input: {
         asked,
         cause: input.cause,
         filename: input.filename,
-        senderLabel: textOnlySenderLabel(input.contactName, phone),
+        noPhoneNumber: action.reason === "no_phone_number",
+        senderLabel: textOnlySenderLabel(
+          input.contactName,
+          phone ?? (input.username ? `@${input.username}` : "WhatsApp username, no number shared"),
+        ),
         wamid: input.wamid,
       }).catch((error) => {
         logError("WhatsApp unreadable-CV notification failed", {
