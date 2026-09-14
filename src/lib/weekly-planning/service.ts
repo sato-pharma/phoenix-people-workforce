@@ -87,6 +87,14 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import type { PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherenceForPlans } from "@/lib/weekly-planning/plan-adherence-data";
+import {
+  canPlanMarketingDoubleVisit,
+  findMarketingDoubleVisitPartner,
+  isMarketingDoubleVisit,
+  MARKETING_DOUBLE_VISIT_TITLE,
+  marketingDoubleVisitPartners,
+  type MarketingDoubleVisitPartner,
+} from "@/lib/weekly-planning/marketing-double-visit";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -381,8 +389,12 @@ export type EmployeePlansSummary = {
 export type EmployeePlansWorkspace = {
   canAcknowledgeHr: boolean;
   canMovePlanPeriod: boolean;
+  /** Product Managers and Group Product Managers only — see marketing-double-visit.ts. */
+  canPlanMarketingDoubleVisit: boolean;
   canSubmitPlans: boolean;
   hasMorePlans: boolean;
+  /** Who a Marketing Double Visit can be with: active PMs, GPMs and the Marketing Manager, never the owner. */
+  marketingDoubleVisitPartners: MarketingDoubleVisitPartner[];
   loadedPlanCount: number;
   planLimit: number;
   currentEmployee: {
@@ -793,7 +805,38 @@ function assertCeoReviewer(access: AccessContext) {
   }
 }
 
+type MarketingDoubleVisitContext = {
+  allowed: boolean;
+  partners: MarketingDoubleVisitPartner[];
+};
+
+// The owner-side half of Marketing Double Visit: whether this plan owner is offered it, and the
+// people they may pick. An owner who is not offered it gets an empty list, so the picker can never
+// carry a name the submit check would then refuse.
+async function marketingDoubleVisitContextFor(
+  employee: EmployeeDirectoryRow | null,
+  role: PhoenixRole,
+): Promise<MarketingDoubleVisitContext> {
+  if (!employee || !canPlanMarketingDoubleVisit(employeeTitle(employee, role), role)) {
+    return { allowed: false, partners: [] };
+  }
+  const directory = await getEmployeeDirectory();
+  return {
+    allowed: true,
+    partners: marketingDoubleVisitPartners(
+      directory.employees.filter(isActiveEmployee).map((candidate) => ({
+        fullName: candidate.fullName,
+        hrId: candidate.hrId,
+        jobTitle: employeeTitle(candidate),
+      })),
+      employee.hrId,
+    ),
+  };
+}
+
 type NormalizeItemsOptions = {
+  /** Omitted by a caller that never offers the option: a Marketing Double Visit then cannot be submitted. */
+  marketingDoubleVisit?: MarketingDoubleVisitContext;
   submit?: boolean;
   /**
    * The AU seat map for the plan owner's line. Empty when it could not be loaded, which makes
@@ -841,6 +884,7 @@ function areaHasAssignableRep(options: PlanningMedicalRepOption[], area: string 
 
 function validActivityType(value: string): EmployeePlanActivityType {
   if (value === "Coaching") return "Other";
+  if (value === MARKETING_DOUBLE_VISIT_TITLE) return "Other";
   if (value === "Single Visit") return "Field";
   if ((employeePlanActivityTypes as readonly string[]).includes(value)) return value as EmployeePlanActivityType;
   return "Other";
@@ -907,8 +951,16 @@ function normalizeItem(
   const activityType = validActivityType(rawActivityType);
   const activityTitle = rawActivityType === "Coaching" ? "Coaching" : cleanText(item.activityTitle);
   const isCoaching = rawActivityType === "Coaching" || isCoachingActivity(activityType, activityTitle);
-  const usesGeography = activityUsesGeography(activityType, isCoaching);
-  const requiresGeography = activityRequiresGeography(activityType, isCoaching);
+  const isMarketingVisit = !isCoaching && isMarketingDoubleVisit(rawActivityType, activityTitle);
+  const activityLabel = isCoaching
+    ? "Coaching"
+    : isMarketingVisit
+      ? MARKETING_DOUBLE_VISIT_TITLE
+      : activityDisplayLabel(activityType);
+  // A Marketing Double Visit asks for a region and an area exactly as Coaching does, but never
+  // for a Medical Rep — its partner is a marketing colleague, resolved below.
+  const usesGeography = activityUsesGeography(activityType, isCoaching || isMarketingVisit);
+  const requiresGeography = activityRequiresGeography(activityType, isCoaching || isMarketingVisit);
   const requiresRep = activityRequiresRep(activityType, isCoaching);
   const locationText = activityType === "Training"
     ? normalizeTrainingFormat(item.locationText)
@@ -942,10 +994,10 @@ function normalizeItem(
     selectedRepName = selectedRep?.fullName ?? null;
   }
   if (options.submit && requiresGeography && !locationText) {
-    throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an approved region.`);
+    throw new Error(`${activityLabel} requires selecting an approved region.`);
   }
   if (options.submit && requiresGeography && !area) {
-    throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an area.`);
+    throw new Error(`${activityLabel} requires selecting an area.`);
   }
   // The Area picker narrows to the owner's district, but until now nothing server-side looked
   // at the area at all — any string was stored. This is the backstop. It rejects only an area
@@ -975,12 +1027,30 @@ function normalizeItem(
   ) {
     throw new Error("Selected Medical Rep is not assigned to the selected area.");
   }
+  // The partner is stored by NAME in `attendees` and is always re-read against the live list, so a
+  // submitted name that is not an active PM, GPM or Marketing Manager — or is the owner — never lands.
+  let attendees = nullableText(item.attendees);
+  if (isMarketingVisit) {
+    const context = options.marketingDoubleVisit;
+    if (options.submit && !context?.allowed) {
+      throw new Error("Marketing Double Visit is only for Product Managers and Group Product Managers.");
+    }
+    const partner = findMarketingDoubleVisitPartner(context?.partners ?? [], attendees);
+    if (options.submit && !partner) {
+      throw new Error(
+        attendees
+          ? `"${attendees}" is not a Product Manager, Group Product Manager or Marketing Manager you can double-visit with.`
+          : "Marketing Double Visit requires choosing who you are visiting with.",
+      );
+    }
+    if (partner) attendees = partner.fullName;
+  }
   return {
     activityDate,
-    activityTitle: isCoaching ? "Coaching" : activityTitle || activityDisplayLabel(activityType),
+    activityTitle: isCoaching || isMarketingVisit ? activityLabel : activityTitle || activityDisplayLabel(activityType),
     activityType,
     area,
-    attendees: nullableText(item.attendees),
+    attendees,
     doubleVisitMedicalRepHrId: requiresRep ? selectedRepHrId : null,
     doubleVisitMedicalRepName: requiresRep ? selectedRepName : null,
     endTime: nullableText(item.endTime),
@@ -2328,6 +2398,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     await resolveViewerAllowedLines(access),
     seatDirectory,
   );
+  const marketingDoubleVisit = await marketingDoubleVisitContextFor(employee, access.role);
   // Fails soft: an unreachable/empty seat map leaves the picker on its roster-derived
   // fallback rather than blanking it, which is the failure this whole change exists to end.
   let planningAreaSeats: PlanningAreaSeat[] = [];
@@ -2372,6 +2443,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     return {
       canAcknowledgeHr,
       canMovePlanPeriod,
+      canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -2392,6 +2464,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         : null,
       hasMorePlans,
       loadedPlanCount: cappedRows.length,
+      marketingDoubleVisitPartners: marketingDoubleVisit.partners,
       medicalRepOptions,
       planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
@@ -2404,6 +2477,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     return {
       canAcknowledgeHr,
       canMovePlanPeriod,
+      canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -2424,6 +2498,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
         : null,
       hasMorePlans: false,
       loadedPlanCount: 0,
+      marketingDoubleVisitPartners: marketingDoubleVisit.partners,
       medicalRepOptions,
       planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
@@ -2533,6 +2608,7 @@ function approverItemLabel(activityType: EmployeePlanActivityType, activityTitle
   const title = String(activityTitle ?? "").trim();
   const isCoaching = activityType === "Other" && title.toLowerCase() === "coaching";
   if (isCoaching) return { label: "Coaching", isCoaching: true };
+  if (isMarketingDoubleVisit(activityType, title)) return { label: MARKETING_DOUBLE_VISIT_TITLE, isCoaching: false };
   return { label: title || activityDisplayLabel(activityType), isCoaching: false };
 }
 
@@ -2541,6 +2617,7 @@ function mapApproverPlanItem(item: {
   activity_title: string;
   activity_type: EmployeePlanActivityType;
   area: string | null;
+  attendees?: string | null;
   double_visit_medical_rep_name: string | null;
   end_time: string | null;
   location_text: string | null;
@@ -2559,7 +2636,10 @@ function mapApproverPlanItem(item: {
     notes: nullableText(item.notes),
     objective: nullableText(item.objective),
     region: nullableText(item.location_text),
-    repName: nullableText(item.double_visit_medical_rep_name),
+    // The approver calendar prints "with <repName>"; a Marketing Double Visit's partner is the name there.
+    repName: isMarketingDoubleVisit(item.activity_type, item.activity_title)
+      ? nullableText(item.attendees)
+      : nullableText(item.double_visit_medical_rep_name),
     timeLabel: approverTimeLabel(item.start_time, item.end_time),
     visitDetails: (item.employee_plan_visit_details ?? [])
       .map((d) => ({
@@ -2598,7 +2678,7 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
     const { data, error } = await getSupabaseAdmin()
       .from("employee_plan_headers")
       .select(
-        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
+        "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,created_at,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,attendees,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
       )
       .in("status", ["submitted", "manager_approved"])
       .order("submitted_at", { ascending: true })
@@ -3273,7 +3353,11 @@ export async function createEmployeePlan(access: AccessContext, input: {
       isOrgWidePlanningEmployee(employee, access.role),
       await resolveViewerAllowedLines(access),
     ),
-    { planningSeats: await planningSeatsForOwner(employee), submit: Boolean(input.submit) },
+    {
+      marketingDoubleVisit: await marketingDoubleVisitContextFor(employee, access.role),
+      planningSeats: await planningSeatsForOwner(employee),
+      submit: Boolean(input.submit),
+    },
   );
   if (input.submit) {
     await assertSubmissionComplete({
@@ -3359,7 +3443,11 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
         isOrgWidePlanningEmployee(owner, access.role),
         await resolveViewerAllowedLines(access),
       ),
-      { planningSeats: await planningSeatsForOwner(owner), submit: Boolean(input.submit) },
+      {
+        marketingDoubleVisit: await marketingDoubleVisitContextFor(owner, access.role),
+        planningSeats: await planningSeatsForOwner(owner),
+        submit: Boolean(input.submit),
+      },
     );
     if (input.submit) {
       await assertSubmissionComplete({
@@ -3428,7 +3516,11 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       isOrgWidePlanningEmployee(owner, access.role),
       await resolveViewerAllowedLines(access),
     ),
-    { planningSeats: await planningSeatsForOwner(owner), submit: Boolean(input.submit) },
+    {
+      marketingDoubleVisit: await marketingDoubleVisitContextFor(owner, access.role),
+      planningSeats: await planningSeatsForOwner(owner),
+      submit: Boolean(input.submit),
+    },
   );
   if (input.submit) {
     await assertSubmissionComplete({

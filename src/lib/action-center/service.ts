@@ -3,6 +3,7 @@ import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
 import { getVacationActionCenterData, getVacationReportData } from "@/lib/vacation/service";
 import {
@@ -976,7 +977,7 @@ async function buildPlanDeepLinkItem(
   const db = getSupabaseAdmin();
   const { data, error } = await db
     .from("employee_plan_headers")
-    .select("id,employee_name,employee_hr_id,employee_job_title,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,manager_decision_by_hr_id,ceo_decision_by_hr_id,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order)")
+    .select("id,employee_name,employee_hr_id,employee_job_title,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,manager_decision_by_hr_id,ceo_decision_by_hr_id,employee_plan_items(activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,attendees,start_time,end_time,notes,sort_order)")
     .eq("id", id)
     .maybeSingle();
   if (error || !data) return null;
@@ -1001,7 +1002,14 @@ async function buildPlanDeepLinkItem(
     notes: item.notes ? String(item.notes) : null,
     objective: item.objective ? String(item.objective) : null,
     region: null,
-    repName: item.double_visit_medical_rep_name ? String(item.double_visit_medical_rep_name) : null,
+    // A Marketing Double Visit keeps its partner in attendees, never in the Medical Rep columns.
+    repName: isMarketingDoubleVisit(String(item.activity_type ?? ""), String(item.activity_title ?? ""))
+      ? item.attendees
+        ? String(item.attendees)
+        : null
+      : item.double_visit_medical_rep_name
+        ? String(item.double_visit_medical_rep_name)
+        : null,
     timeLabel:
       item.start_time || item.end_time ? `${String(item.start_time ?? "")}${item.end_time ? `–${String(item.end_time)}` : ""}` : null,
     visitDetails: [],

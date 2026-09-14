@@ -52,6 +52,12 @@ import { cairoDate } from "@/lib/format/cairo-datetime";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
+import {
+  findMarketingDoubleVisitPartner,
+  isMarketingDoubleVisit,
+  MARKETING_DOUBLE_VISIT_TITLE,
+  type MarketingDoubleVisitPartner,
+} from "@/lib/weekly-planning/marketing-double-visit";
 import { placeSourcedPlanRow, planDayMode } from "@/lib/weekly-planning/plan-slot-merge";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
@@ -122,7 +128,7 @@ type AreaSource = {
   lockedRegion: string | null;
 };
 type DayMode = "full" | "split";
-type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
+type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching" | typeof MARKETING_DOUBLE_VISIT_TITLE;
 
 type DayGroup = {
   activityDate: string;
@@ -251,9 +257,21 @@ const planningActivityOptions: Array<{ label: string; value: PlanningActivityVal
   // "Coaching" entry below (Coaching still persists as activity_type="Other").
   ...employeePlanActivityTypes
     .filter((type) => !(["Excuse", "Vacation", "National Vacation", "Other"] as readonly string[]).includes(type))
-    .map((type) => ({ label: activityLabel(type), value: type })),
+    .flatMap((type) => [
+      { label: activityLabel(type), value: type },
+      // Sits beside Double Visit; planningActivityOptionsFor hides it from everyone but PMs and GPMs.
+      ...(type === "Double Visit" ? [{ label: MARKETING_DOUBLE_VISIT_TITLE, value: MARKETING_DOUBLE_VISIT_TITLE }] : []),
+    ]),
   { label: "Coaching", value: "Coaching" },
 ];
+
+// Marketing Double Visit is offered to Product Managers and Group Product Managers only. A row that
+// already holds one keeps it in the list, so its select never renders blank for a reviewer.
+function planningActivityOptionsFor(includeMarketingDoubleVisit: boolean) {
+  return includeMarketingDoubleVisit
+    ? planningActivityOptions
+    : planningActivityOptions.filter((option) => option.value !== MARKETING_DOUBLE_VISIT_TITLE);
+}
 
 // A plan the employee is still actively editing — the only statuses into which we
 // re-overlay cross-domain sync (approved leave, HR holidays, submitted weekly
@@ -262,12 +280,14 @@ const planningActivityOptions: Array<{ label: string; value: PlanningActivityVal
 const planSyncEditableStatuses = new Set<string>(["draft", "manager_returned", "ceo_returned"]);
 
 function activitySelectValue(row: Pick<DraftItem, "activityTitle" | "activityType">): PlanningActivityValue {
+  if (isMarketingDoubleVisit(row.activityType, row.activityTitle)) return MARKETING_DOUBLE_VISIT_TITLE;
   return isCoachingActivity(row.activityType, row.activityTitle) ? "Coaching" : row.activityType;
 }
 
 function activityValue(value: string): { activityTitle: string; activityType: EmployeePlanItemInput["activityType"] } {
   if (value === "Single Visit") return { activityTitle: "Single Visit", activityType: "Field" };
   if (value === "Coaching") return { activityTitle: "Coaching", activityType: "Other" };
+  if (value === MARKETING_DOUBLE_VISIT_TITLE) return { activityTitle: MARKETING_DOUBLE_VISIT_TITLE, activityType: "Other" };
   const activityType = (employeePlanActivityTypes as readonly string[]).includes(value)
     ? (value as EmployeePlanItemInput["activityType"])
     : "Other";
@@ -291,6 +311,8 @@ function activityAccent(
   // medicalRepStatus) — violet-400 keeps it a recognisable sibling of Double
   // Visit (violet-500) without reusing that exact shade.
   if (isCoachingActivity(value, activityTitle)) return { bar: "bg-violet-400", dot: "bg-violet-400" };
+  // Also stored as "Other"; the deepest violet keeps it in the Double Visit family.
+  if (isMarketingDoubleVisit(value, activityTitle)) return { bar: "bg-violet-700", dot: "bg-violet-700" };
   switch (value) {
     case "Field":
       return { bar: "bg-orange-500", dot: "bg-orange-500" };
@@ -343,7 +365,7 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
 ];
 
 // Self-explanatory key for the activity colour accents + AM/PM pills.
-function PlanActivityLegend() {
+function PlanActivityLegend({ showMarketingDoubleVisit = false }: { showMarketingDoubleVisit?: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2">
       <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
@@ -360,6 +382,12 @@ function PlanActivityLegend() {
         <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", "Coaching").dot}`} aria-hidden="true" />
         Coaching
       </span>
+      {showMarketingDoubleVisit ? (
+        <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600">
+          <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", MARKETING_DOUBLE_VISIT_TITLE).dot}`} aria-hidden="true" />
+          {MARKETING_DOUBLE_VISIT_TITLE}
+        </span>
+      ) : null}
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("am")}`}>AM</span>
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("pm")}`}>PM</span>
@@ -478,14 +506,19 @@ function activityRule(value: EmployeePlanItemInput["activityType"], activityTitl
   const isDoubleVisit = value === "Double Visit";
   const isTraining = value === "Training";
   const isCoaching = isCoachingActivity(value, activityTitle);
-  const showGeography = isSingleVisit || isDoubleVisit || isCoaching || (!isTraining && !noGeographyActivities.has(value));
+  // Region → Area → partner, like Coaching's cascade — but the partner is a marketing colleague
+  // picked from a list, never an auto-assigned Medical Rep.
+  const isMarketingVisit = !isCoaching && isMarketingDoubleVisit(value, activityTitle);
+  const showGeography = isSingleVisit || isDoubleVisit || isCoaching || isMarketingVisit || (!isTraining && !noGeographyActivities.has(value));
   return {
     autoRep: isDoubleVisit || isCoaching,
-    label: isCoaching ? "Coaching" : activityLabel(value),
-    requiresArea: isSingleVisit || isDoubleVisit || isCoaching,
-    requiresRegion: isSingleVisit || isDoubleVisit || isCoaching,
+    label: isCoaching ? "Coaching" : isMarketingVisit ? MARKETING_DOUBLE_VISIT_TITLE : activityLabel(value),
+    requiresArea: isSingleVisit || isDoubleVisit || isCoaching || isMarketingVisit,
+    requiresPartner: isMarketingVisit,
+    requiresRegion: isSingleVisit || isDoubleVisit || isCoaching || isMarketingVisit,
     requiresRep: isDoubleVisit || isCoaching,
     showArea: showGeography,
+    showPartner: isMarketingVisit,
     showRegion: showGeography,
     showRep: isDoubleVisit || isCoaching,
     showTrainingFormat: isTraining,
@@ -812,7 +845,11 @@ function rowPayload(rows: DraftItem[], medicalRepOptions: MedicalRepOption[]): E
   return result;
 }
 
-function validateDraftRow(row: DraftItem, medicalRepOptions: MedicalRepOption[] = []) {
+function validateDraftRow(
+  row: DraftItem,
+  medicalRepOptions: MedicalRepOption[] = [],
+  marketingPartners: readonly MarketingDoubleVisitPartner[] = [],
+) {
   const issues: string[] = [];
   const rule = activityRule(row.activityType, row.activityTitle);
   const label = `${formatDate(row.activityDate)} ${slotLabel(row)}`;
@@ -821,6 +858,9 @@ function validateDraftRow(row: DraftItem, medicalRepOptions: MedicalRepOption[] 
   }
   if (rule.requiresArea && !String(row.area ?? "").trim()) {
     issues.push(`${label}: ${rule.label} needs an area.`);
+  }
+  if (rule.requiresPartner && !findMarketingDoubleVisitPartner(marketingPartners, row.attendees)) {
+    issues.push(`${label}: ${rule.label} needs who you are visiting with.`);
   }
   if (rule.requiresRep && needsLineSelection(medicalRepOptions) && !String(row.lineFilter ?? "").trim()) {
     issues.push(`${label}: ${rule.label} needs a line selected first.`);
@@ -893,10 +933,44 @@ function autoRepForArea(options: MedicalRepOption[], area: string, line?: string
   return eligibleRepsForArea(options, area, line)[0] ?? null;
 }
 
-// Single source of truth for the three states a Double Visit / Coaching row's
-// Medical Rep field can be in — shared by the desktop table cell, the mobile
-// card, and RowEditSheet's own field so all three read the same status the
-// same way instead of three hand-maintained copies.
+// The third step of the Marketing Double Visit cascade. It only appears once an area is picked, and
+// lists the partners the server resolved — active Product Managers, Group Product Managers and the
+// Marketing Manager, never the plan owner. The stored value is the partner's name.
+function MarketingPartnerSelect({
+  area,
+  className,
+  disabled,
+  onChange,
+  partners,
+  value,
+}: {
+  area: string | null | undefined;
+  className: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  partners: readonly MarketingDoubleVisitPartner[];
+  value: string | null | undefined;
+}) {
+  if (!String(area ?? "").trim()) return <DisabledFieldText>Select area first</DisabledFieldText>;
+  const selected = findMarketingDoubleVisitPartner(partners, value);
+  return (
+    <SearchableSelect
+      className={className}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      value={selected?.fullName ?? value ?? ""}
+    >
+      <option value="">Select partner</option>
+      {value && !selected ? <option value={value}>{value}</option> : null}
+      {partners.map((partner) => (
+        <option key={partner.hrId} value={partner.fullName}>
+          {partner.jobTitle ? `${partner.fullName} · ${partner.jobTitle}` : partner.fullName}
+        </option>
+      ))}
+    </SearchableSelect>
+  );
+}
+
 function medicalRepStatus(params: {
   activityLabel: string;
   area: string;
@@ -1220,8 +1294,11 @@ export function PlansWorkspace({
     // Locked rows come from a trusted source (approved leave, HR national holiday,
     // or an authoritative submitted weekly plan) and are read-only, so they can
     // never be "fixed" here — validating them would raise unfixable blockers.
-    () => rows.filter((row) => !row.locked).flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions)),
-    [rows, workspace.medicalRepOptions],
+    () =>
+      rows
+        .filter((row) => !row.locked)
+        .flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions, workspace.marketingDoubleVisitPartners)),
+    [rows, workspace.marketingDoubleVisitPartners, workspace.medicalRepOptions],
   );
   // Client mirror of the server workday guard: every required working slot must
   // be filled before submit. A "full" day needs a full entry OR both AM + PM;
@@ -1499,6 +1576,7 @@ export function PlansWorkspace({
             activityTitle: nextActivity.activityTitle,
             activityType: nextActivity.activityType,
             area,
+            attendees: rule.showPartner ? row.attendees ?? "" : "",
             doubleVisitMedicalRepHrId: rule.requiresRep ? autoRep?.hrId ?? "" : "",
             doubleVisitMedicalRepName: rule.requiresRep ? autoRep?.fullName ?? "" : "",
             locationText,
@@ -1509,6 +1587,8 @@ export function PlansWorkspace({
           return {
             ...row,
             area: "",
+            // A new region restarts the whole cascade, the partner included.
+            attendees: rule.showPartner ? "" : row.attendees,
             doubleVisitMedicalRepHrId: "",
             doubleVisitMedicalRepName: "",
             locationText: rule.showTrainingFormat ? trainingFormatValue(value) : canonicalRegion(value),
@@ -1914,7 +1994,7 @@ export function PlansWorkspace({
           ))}
         </div>
       ) : null}
-      <PlanActivityLegend />
+      <PlanActivityLegend showMarketingDoubleVisit={workspace.canPlanMarketingDoubleVisit} />
     </div>
   ) : null;
 
@@ -2233,6 +2313,8 @@ export function PlansWorkspace({
               canEdit={canEdit && !sheetRow.locked}
               locked={Boolean(sheetRow.locked)}
               lockedLabel={sheetRow.sourceLabel}
+              canPlanMarketingDoubleVisit={workspace.canPlanMarketingDoubleVisit}
+              marketingPartners={workspace.marketingDoubleVisitPartners}
               medicalRepOptions={workspace.medicalRepOptions}
               onClose={() => setSheetKey(null)}
               onDayMode={(mode) => setDayMode(sheetRow.activityDate, mode)}
@@ -2487,13 +2569,17 @@ export function PlansWorkspace({
                     <th className="w-[15%] px-3 py-3">Activity</th>
                     <th className="w-[18%] px-3 py-3">Region</th>
                     <th className="w-[18%] px-3 py-3">Area</th>
-                    <th className="w-[23%] px-3 py-3">Medical Rep</th>
+                    <th className="w-[23%] px-3 py-3">
+                      {workspace.canPlanMarketingDoubleVisit ? "Medical Rep / Partner" : "Medical Rep"}
+                    </th>
                     <th className="w-[72px] px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {dayGroups.map((group, groupIndex) => {
-                    const groupWarnings = group.rows.flatMap((row) => validateDraftRow(row, workspace.medicalRepOptions));
+                    const groupWarnings = group.rows.flatMap((row) =>
+                      validateDraftRow(row, workspace.medicalRepOptions, workspace.marketingDoubleVisitPartners),
+                    );
                     const groupConflictWarnings = Array.from(
                       new Set(
                         group.rows
@@ -2594,7 +2680,9 @@ export function PlansWorkspace({
                                   onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
                                   value={activitySelectValue(row)}
                                 >
-                                  {planningActivityOptions.map((option) => (
+                                  {planningActivityOptionsFor(
+                                    workspace.canPlanMarketingDoubleVisit || isMarketingDoubleVisit(row.activityType, row.activityTitle),
+                                  ).map((option) => (
                                     <option key={option.value} value={option.value}>
                                       {option.label}
                                     </option>
@@ -2681,7 +2769,16 @@ export function PlansWorkspace({
                                 )}
                               </td>
                               <td className="px-3 py-3">
-                                {rule.showRep ? (
+                                {rule.showPartner ? (
+                                  <MarketingPartnerSelect
+                                    area={row.area}
+                                    className={tableSelectClass}
+                                    disabled={!canEdit || locked}
+                                    onChange={(value) => updateRow(row.key, "attendees", value)}
+                                    partners={workspace.marketingDoubleVisitPartners}
+                                    value={row.attendees}
+                                  />
+                                ) : rule.showRep ? (
                                   (() => {
                                     const repStatus = medicalRepStatus({
                                       activityLabel: rule.label,
@@ -3059,8 +3156,20 @@ function MobileDayCard({
         </div>
       </div>
 
-      {rule.requiresRep || dayNote || conflictWarning ? (
+      {rule.requiresRep || rule.showPartner || dayNote || conflictWarning ? (
         <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+          {rule.showPartner ? (
+            row.attendees ? (
+              <p className="text-xs font-semibold text-violet-700">
+                {rule.label} - {row.attendees}
+              </p>
+            ) : (
+              <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
+                <TriangleAlert className="h-3.5 w-3.5" />
+                {row.area ? "Choose who you are visiting with" : "Select area first"}
+              </p>
+            )
+          ) : null}
           {rule.requiresRep
             ? (() => {
                 const repStatus = medicalRepStatus({
@@ -3108,6 +3217,8 @@ function RowEditSheet({
   dayNote,
   locked = false,
   lockedLabel,
+  canPlanMarketingDoubleVisit,
+  marketingPartners,
   medicalRepOptions,
   onClose,
   onDayMode,
@@ -3125,6 +3236,8 @@ function RowEditSheet({
   locked?: boolean;
   lockedLabel?: string;
   areaSource: AreaSource;
+  canPlanMarketingDoubleVisit: boolean;
+  marketingPartners: readonly MarketingDoubleVisitPartner[];
   medicalRepOptions: MedicalRepOption[];
   onClose: () => void;
   onDayMode: (mode: DayMode) => void;
@@ -3140,7 +3253,7 @@ function RowEditSheet({
   const currentRegionOptions = regionOptions(areaSource, row.locationText);
   const lineOptions = lineOptionsFromReps(medicalRepOptions);
   const showLine = needsLineSelection(medicalRepOptions) && rule.showRep;
-  const rowWarnings = validateDraftRow(row, medicalRepOptions);
+  const rowWarnings = validateDraftRow(row, medicalRepOptions, marketingPartners);
   const sheetRef = useDialogA11y({ open: true, onClose });
 
   return (
@@ -3204,7 +3317,9 @@ function RowEditSheet({
               onChange={(e) => onUpdate("activityType", e.target.value)}
               value={activitySelectValue(row)}
             >
-              {planningActivityOptions.map((option) => (
+              {planningActivityOptionsFor(
+                canPlanMarketingDoubleVisit || isMarketingDoubleVisit(row.activityType, row.activityTitle),
+              ).map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -3291,6 +3406,19 @@ function RowEditSheet({
                   </option>
                 ))}
               </SearchableSelect>
+            </Field>
+          ) : null}
+
+          {rule.showPartner ? (
+            <Field label="Visiting with">
+              <MarketingPartnerSelect
+                area={row.area}
+                className={mobileField}
+                disabled={!canEdit}
+                onChange={(value) => onUpdate("attendees", value)}
+                partners={marketingPartners}
+                value={row.attendees}
+              />
             </Field>
           ) : null}
 
