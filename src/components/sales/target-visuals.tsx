@@ -3,6 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
+import { adminHeroGridOverlayClassName } from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -270,7 +271,12 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section className={cn("flex flex-col border border-border bg-card shadow-sm", className)}>
+    <section
+      className={cn(
+        "flex flex-col border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]",
+        className,
+      )}
+    >
       {/*
         The header WRAPS, and the actions block is not `shrink-0`. Both halves of that are
         load-bearing at 375px. `shrink-0` guarantees the actions keep their max-content width,
@@ -324,13 +330,18 @@ export function CommandBand({
   footer?: React.ReactNode;
 }) {
   return (
-    <section className="relative overflow-hidden border border-slate-800 bg-slate-900">
+    // Premium-polish golden rule (2026-09-08): the band carries real depth — a contact shadow under
+    // a wide ambient one, and the admin hero's grid texture. The two glows are SQUARE: they were
+    // `rounded-full`, and the employee portal renders this band with nothing zeroing a radius, so
+    // the square-edge golden rule was broken there by two blurred circles nobody could see.
+    <section className="relative overflow-hidden border border-slate-800 bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.25),0_24px_60px_rgba(15,23,42,0.32)]">
+      <div aria-hidden className={adminHeroGridOverlayClassName} />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/90 to-orange-500/0"
       />
-      <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-orange-500/10 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 bg-orange-500/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 bg-sky-500/10 blur-3xl" />
 
       <div className="relative flex flex-col gap-6 px-5 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">

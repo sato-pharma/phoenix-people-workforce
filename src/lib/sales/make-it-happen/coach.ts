@@ -7,9 +7,18 @@
 // ever labelled as such, and the call stays server-side.
 
 import { createOpenAiResponseText, hasOpenAiApiKey, OPENAI_NANO_MODEL } from "@/lib/ai/openai-client";
+import { HONESTY_SENTENCE } from "@/lib/sales/make-it-happen/engine";
+
+/** The owner's own sentence for an out-of-reach target (2026-09-13). Declared in engine.ts. */
+export { HONESTY_SENTENCE };
 
 export type CoachFacts = {
   periodLabel: string;
+  /**
+   * The goal the user chose, e.g. "90%" — set only when it is not 100%, so the default wording is
+   * unchanged. When set, "short" says short of THAT goal, not of the whole target.
+   */
+  goalLabel?: string | null;
   /** null when no target is set for the period. */
   projectedAchievementLabel: string | null;
   shortValueLabel: string | null;
@@ -40,7 +49,7 @@ export function templateCoachMessage(facts: CoachFacts): string {
   if (facts.reachable === false) {
     return (
       `Realistically, your best for ${facts.periodLabel} is ${facts.projectedAchievementLabel} of target, ` +
-      `${facts.shortValueLabel ?? ""} short. ${HONESTY_SENTENCE}.` +
+      `${facts.shortValueLabel ?? ""} short${facts.goalLabel ? ` of your ${facts.goalLabel} goal` : ""}. ${HONESTY_SENTENCE}.` +
       (picks ? ` Focus on ${picks}.` : "") +
       early
     );
@@ -61,9 +70,6 @@ export function templateCoachMessage(facts: CoachFacts): string {
 function figuresIn(text: string): string[] {
   return (text.match(/\d[\d,.]*%?/g) ?? []).map((figure) => figure.replace(/[.,]+$/, ""));
 }
-
-/** The owner's own sentence for an out-of-reach target (2026-09-13). It is never paraphrased. */
-export const HONESTY_SENTENCE = "Phoenix is here to support you, not to show you dream numbers";
 
 /**
  * The clause that says what the percentage MEANS. A model rewrites it into something else even
