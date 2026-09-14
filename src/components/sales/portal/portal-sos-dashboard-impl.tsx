@@ -7,6 +7,7 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   LabelList,
   Pie,
@@ -19,21 +20,36 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
+  BarChart3,
   Boxes,
   CalendarRange,
   Coins,
   Download,
   Gauge,
+  Globe,
   Layers,
   MapPin,
   Package,
+  PieChart as PieChartIcon,
   RefreshCw,
   RotateCcw,
+  SlidersHorizontal,
   Sparkles,
+  Table2,
   TrendingUp,
   Truck,
+  type LucideIcon,
 } from "lucide-react";
 
+import {
+  CHART_TOOLTIP_CLASS,
+  ProportionBar,
+  SectionCard,
+  SURFACE_CLASS,
+  TABLE_HEAD_CLASS,
+  TABLE_ROW_CLASS,
+  chipClass,
+} from "@/components/sales/target-visuals";
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import type { DistributorUploadStatus } from "@/lib/sales/monthly-distributor-import";
 import type { PortalSosComparison, PortalSosScopeView } from "@/lib/sales/portal-sos-dashboard";
@@ -44,6 +60,11 @@ import type {
   SosOption,
 } from "@/lib/sales/sos-dashboard";
 
+// The look is the shared light sales language (target-visuals.tsx): white cards, thin slate
+// borders, orange accents, calm dark numbers, square edges, no gradients. classNames are plain
+// strings, never cn(): tailwind-merge treats the custom `text-phx-*` sizes as colours and silently
+// drops one of the pair.
+
 type Props = {
   initialData: SosDashboardData;
   scope: PortalSosScopeView;
@@ -53,6 +74,10 @@ type Props = {
 
 // Categorical palette — orange-led, premium and high-contrast on white.
 const CHART_COLORS = ["#F97316", "#0EA5E9", "#22C55E", "#8B5CF6", "#F59E0B", "#EF4444", "#14B8A6", "#6366F1"];
+
+/** Chart chrome on the light surface. */
+const GRID_STROKE = "#E2E8F0";
+const TICK_FILL = "#64748B";
 
 // ── Formatting ──────────────────────────────────────────────────────────────
 function formatEgp(value: number): string {
@@ -283,14 +308,11 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
           {/* Filters */}
           <Section
             title="Filters"
+            icon={SlidersHorizontal}
             overflowVisible
             action={
               activeFilterCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
-                >
+                <button type="button" onClick={resetFilters} className={`inline-flex items-center gap-1.5 ${chipClass(false)}`}>
                   <RotateCcw className="h-3 w-3" />
                   Reset {activeFilterCount}
                 </button>
@@ -325,47 +347,47 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
 
           {/* Charts (click a bar to filter by it) */}
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Section title="Value trend · last 6 months" className="lg:col-span-2">
+            <Section title="Value trend · last 6 months" icon={TrendingUp} className="lg:col-span-2">
               <div className="h-60 w-full">
                 <TrendChart trend={data.trend} />
               </div>
             </Section>
-            <Section title="Channel mix">
+            <Section title="Channel mix" icon={PieChartIcon}>
               <div className="h-60 w-full">
                 <DonutChart slices={data.channelMix} total={summary.totalValue} />
               </div>
             </Section>
-            <Section title="Top products">
+            <Section title="Top products" icon={Package}>
               <div className="h-60 w-full">
-                <RankedBars rows={data.byProduct} gradientId="barProducts" from="#F97316" labelColor="#C2410C" selected={selection.products} onSelect={(code) => toggleFilter("products", code)} />
+                <RankedBars rows={data.byProduct} from="#F97316" labelColor="#C2410C" selected={selection.products} onSelect={(code) => toggleFilter("products", code)} />
               </div>
             </Section>
             {scope.isSingleRegion ? (
               // Single-region viewer (DSM): one region vs itself is meaningless, so this slot becomes
               // a vertical "By area" chart of the areas inside his region.
-              <Section title="By area">
+              <Section title="By area" icon={MapPin}>
                 <div className="h-60 w-full">
-                  <ColumnBars rows={data.byArea} gradientId="barAreasCol" from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
+                  <ColumnBars rows={data.byArea} from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
                 </div>
               </Section>
             ) : (
-              <Section title="By region">
+              <Section title="By region" icon={Globe}>
                 <div className="h-60 w-full">
-                  <RankedBars rows={data.byRegion} gradientId="barRegions" from="#0EA5E9" labelColor="#0369A1" selected={selection.regions} onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined} />
+                  <RankedBars rows={data.byRegion} from="#0EA5E9" labelColor="#0369A1" selected={selection.regions} onSelect={vis.region ? (code) => toggleFilter("regions", code) : undefined} />
                 </div>
               </Section>
             )}
-            <Section title="By distributor">
+            <Section title="By distributor" icon={Truck}>
               <div className="h-60 w-full">
-                <RankedBars rows={data.byDistributor} gradientId="barDistributors" from="#8B5CF6" labelColor="#6D28D9" selected={selection.distributors} onSelect={(code) => toggleFilter("distributors", code)} />
+                <RankedBars rows={data.byDistributor} from="#8B5CF6" labelColor="#6D28D9" selected={selection.distributors} onSelect={(code) => toggleFilter("distributors", code)} />
               </div>
             </Section>
             {scope.isSingleRegion ? null : (
               // Multi-region viewer (RM/NSM/PM/GPM/MM): keep "By region" above and add a full-width
               // horizontal "By area" — many areas read best wide, with the full list in the table below.
-              <Section title="By area" className="lg:col-span-3">
+              <Section title="By area" icon={MapPin} className="lg:col-span-3">
                 <div className="h-60 w-full">
-                  <RankedBars rows={data.byArea} gradientId="barAreas" from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
+                  <RankedBars rows={data.byArea} from="#14B8A6" labelColor="#0F766E" selected={selection.areas} onSelect={(code) => toggleFilter("areas", code)} />
                 </div>
               </Section>
             )}
@@ -406,21 +428,18 @@ function ScopeBar({
 }) {
   const stamp = formatStamp(uploadStatus?.lastUploadedAt ?? null);
   return (
-    <div className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
-        <div className="min-w-0">
-          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
-          <p className="whitespace-nowrap text-sm font-black text-slate-900">{scopeSummary}</p>
-          {stamp ? <p className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">Data as of {stamp}</p> : null}
-        </div>
+    <div className={`flex flex-col gap-3 border-t-[3px] border-t-orange-500 px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${SURFACE_CLASS}`}>
+      <div className="min-w-0">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Your scope</p>
+        <p className="break-words text-sm font-black text-slate-900">{scopeSummary}</p>
+        {stamp ? <p className="text-phx-2xs font-semibold text-slate-500">Data as of {stamp}</p> : null}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+          className={`inline-flex items-center gap-1.5 disabled:opacity-50 ${chipClass(false)}`}
           title="Sync now — pull the latest uploaded sales"
         >
           <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
@@ -428,7 +447,7 @@ function ScopeBar({
         </button>
         {uploadStatus && uploadStatus.expectedCount > 0 ? (
           <span
-            className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
+            className={`hidden items-center gap-1.5 whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
               uploadStatus.awaitingCount > 0
                 ? "border-amber-200 bg-amber-50 text-amber-700"
                 : "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -442,12 +461,12 @@ function ScopeBar({
         ) : null}
         {loading ? (
           <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
+            <span className="h-1.5 w-1.5 animate-pulse bg-orange-500" />
             Updating
           </span>
         ) : null}
-        <label className="flex items-center gap-2 rounded-sm border border-slate-200 bg-slate-50 px-3 py-1.5">
-          <CalendarRange className="h-3.5 w-3.5 text-slate-400" />
+        <label className="flex items-center gap-2 border border-slate-200 bg-white px-3 py-1.5 transition-colors hover:border-orange-300">
+          <CalendarRange className="h-3.5 w-3.5 text-orange-500" />
           <select
             value={period ?? ""}
             onChange={(event) => onPeriodChange(event.target.value)}
@@ -465,15 +484,17 @@ function ScopeBar({
   );
 }
 
-// ── Premium section shell (slate-900 header strip + orange tick) ────────────────────
+// ── Section shell — the shared light SectionCard, with the card body padded ────────────
 function Section({
   title,
+  icon,
   action,
   className,
   overflowVisible,
   children,
 }: {
   title: string;
+  icon: LucideIcon;
   action?: ReactNode;
   className?: string;
   /** Let absolutely-positioned children (filter dropdowns) escape the card instead of being clipped. */
@@ -481,20 +502,14 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 ${
-        overflowVisible ? "relative z-30 overflow-visible" : "overflow-hidden"
-      } ${className ?? ""}`}
+    <SectionCard
+      title={title}
+      icon={icon}
+      actions={action}
+      className={`${overflowVisible ? "relative z-30 overflow-visible" : "overflow-hidden"} ${className ?? ""}`}
     >
-      <div className="flex items-center justify-between gap-3 rounded-t-sm border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
-        </div>
-        {action ?? <span className="h-1.5 w-10 bg-orange-500/80" />}
-      </div>
       <div className="p-4">{children}</div>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -515,18 +530,18 @@ function StatTile({
   delta?: number | null;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-      <span className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5" style={{ backgroundColor: accent }} />
-      <div className="p-3.5 sm:p-4">
-        <div className="flex items-center justify-between">
-          <span className="flex h-7 w-7 items-center justify-center rounded-sm" style={{ backgroundColor: `${accent}1A`, color: accent }}>
+    <div className={`relative transition-colors hover:border-orange-300 ${SURFACE_CLASS}`}>
+      <span aria-hidden className="absolute inset-x-0 top-0 h-[3px]" style={{ backgroundColor: accent }} />
+      <div className="p-3.5 pt-4 sm:p-4 sm:pt-5">
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <span className="flex h-7 w-7 items-center justify-center" style={{ backgroundColor: `${accent}14`, color: accent }}>
             <Icon className="h-3.5 w-3.5" />
           </span>
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
-        <p className="mt-2.5 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
-        {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
+        <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
+        {sub ? <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{sub}</p> : null}
       </div>
     </div>
   );
@@ -537,8 +552,8 @@ function DeltaPill({ delta }: { delta: number }) {
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${
-        up ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ring-1 ring-inset ${
+        up ? "bg-emerald-50 text-emerald-600 ring-emerald-100" : "bg-red-50 text-red-600 ring-red-100"
       }`}
     >
       <Icon className="h-3 w-3" />
@@ -556,14 +571,14 @@ function InsightsStrip({
   comparison: PortalSosComparison | null;
 }) {
   const toneClass: Record<string, string> = {
-    neutral: "border-slate-200 bg-slate-50 text-slate-700",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    warning: "border-amber-200 bg-amber-50 text-amber-800",
-    danger: "border-rose-200 bg-rose-50 text-rose-800",
+    neutral: "border-slate-200 border-l-slate-400 bg-white text-slate-700",
+    success: "border-emerald-100 border-l-emerald-500 bg-emerald-50/50 text-emerald-800",
+    warning: "border-amber-100 border-l-amber-500 bg-amber-50/50 text-amber-800",
+    danger: "border-red-100 border-l-red-500 bg-red-50/50 text-red-800",
   };
   const hasMovers = comparison && (comparison.gainers.length > 0 || comparison.decliners.length > 0);
   return (
-    <Section title="Insights" action={<Sparkles className="h-3.5 w-3.5 text-orange-400" />}>
+    <Section title="Insights" icon={Sparkles}>
       {hasMovers ? (
         <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <MoverList title="Top gainers" tone="up" movers={comparison!.gainers} />
@@ -572,8 +587,7 @@ function InsightsStrip({
       ) : null}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {insights.slice(0, 6).map((insight, index) => (
-          <div key={index} className={`flex items-start gap-2 rounded-sm border px-3 py-2 ${toneClass[insight.tone] ?? toneClass.neutral}`}>
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60" />
+          <div key={index} className={`border border-l-[3px] px-3 py-2 ${toneClass[insight.tone] ?? toneClass.neutral}`}>
             <p className="text-xs font-semibold leading-relaxed">{insight.text}</p>
           </div>
         ))}
@@ -585,17 +599,17 @@ function InsightsStrip({
 function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"; movers: PortalSosComparison["gainers"] }) {
   if (movers.length === 0) return null;
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-3">
-      <p className="mb-2 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
-        {tone === "up" ? <ArrowUpRight className="h-3 w-3 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 text-rose-600" />}
+    <div className="border border-slate-200 bg-white p-3">
+      <p className="mb-2 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
+        {tone === "up" ? <ArrowUpRight className="h-3 w-3 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 text-red-600" />}
         {title} · vs last month
       </p>
-      <div className="space-y-1.5">
+      <div className="divide-y divide-slate-100">
         {movers.map((mover) => (
-          <div key={mover.code} className="flex items-center justify-between gap-3">
-            <span className="whitespace-nowrap text-xs font-bold text-slate-800">{mover.label}</span>
-            <span className="flex shrink-0 items-center gap-2">
-              <span className="whitespace-nowrap text-phx-xs tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
+          <div key={mover.code} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+            <span className="min-w-0 break-words text-xs font-bold text-slate-800">{mover.label}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-phx-xs tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
               <DeltaPill delta={mover.deltaPct} />
             </span>
           </div>
@@ -610,10 +624,10 @@ function PremiumTooltip({ active, payload, label, valueOnly }: { active?: boolea
   if (!active || !payload || payload.length === 0) return null;
   const title = label ?? payload[0]?.payload?.label ?? payload[0]?.name ?? "";
   return (
-    <div className="rounded-sm border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
-      {title ? <p className="mb-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
+    <div className={CHART_TOOLTIP_CLASS}>
+      {title ? <p className="mb-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-500">{title}</p> : null}
       {payload.map((entry, index) => (
-        <p key={index} className="whitespace-nowrap text-xs font-black tabular-nums text-white">
+        <p key={index} className="text-xs font-black tabular-nums text-slate-900">
           {valueOnly ? "" : `${entry.name}: `}
           {formatEgpFull(Number(entry.value ?? 0))}
         </p>
@@ -628,16 +642,11 @@ function TrendChart({ trend }: { trend: SosDashboardData["trend"] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={points} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-        <defs>
-          <linearGradient id="sosTrend" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F97316" stopOpacity={0.32} />
-            <stop offset="100%" stopColor="#F97316" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} />
-        <YAxis tickFormatter={(value) => formatEgp(Number(value)).replace("EGP ", "")} tick={{ fontSize: 11, fill: "#94A3B8" }} axisLine={false} tickLine={false} width={46} />
-        <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ stroke: "#F97316", strokeOpacity: 0.2 }} />
-        <Area type="monotone" dataKey="value" stroke="#F97316" strokeWidth={2.5} fill="url(#sosTrend)" dot={{ r: 3, fill: "#F97316", strokeWidth: 0 }} activeDot={{ r: 5 }} />
+        <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: TICK_FILL }} axisLine={{ stroke: GRID_STROKE }} tickLine={false} />
+        <YAxis tickFormatter={(value) => formatEgp(Number(value)).replace("EGP ", "")} tick={{ fontSize: 11, fill: TICK_FILL }} axisLine={false} tickLine={false} width={46} />
+        <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ stroke: "#F97316", strokeOpacity: 0.3 }} />
+        <Area type="monotone" dataKey="value" stroke="#F97316" strokeWidth={2.5} fill="#F97316" fillOpacity={0.08} dot={{ r: 3, fill: "#F97316", strokeWidth: 0 }} activeDot={{ r: 5, fill: "#F97316", stroke: "#FFFFFF", strokeWidth: 2 }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -649,7 +658,7 @@ function DonutChart({ slices, total }: { slices: SosDashboardData["channelMix"];
     <div className="relative h-full w-full">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={slices} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="86%" paddingAngle={3} stroke="none">
+          <Pie data={slices} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="86%" paddingAngle={3} stroke="#FFFFFF" strokeWidth={2}>
             {slices.map((slice, index) => (
               <Cell key={slice.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />
             ))}
@@ -658,7 +667,7 @@ function DonutChart({ slices, total }: { slices: SosDashboardData["channelMix"];
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Total</p>
+        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Total</p>
         <p className="text-base font-black tabular-nums text-slate-900">{formatEgp(total)}</p>
       </div>
     </div>
@@ -667,14 +676,12 @@ function DonutChart({ slices, total }: { slices: SosDashboardData["channelMix"];
 
 function RankedBars({
   rows,
-  gradientId,
   from,
   labelColor,
   selected,
   onSelect,
 }: {
   rows: SosGroupRow[];
-  gradientId: string;
   from: string;
   labelColor: string;
   selected?: string[];
@@ -687,21 +694,14 @@ function RankedBars({
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={top} layout="vertical" margin={{ top: 2, right: 56, bottom: 2, left: 4 }} barCategoryGap="22%">
-        <defs>
-          {/* Excel-style data-bar fade: solid hue on the left → transparent on the right. */}
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={from} stopOpacity={1} />
-            <stop offset="60%" stopColor={from} stopOpacity={0.55} />
-            <stop offset="100%" stopColor={from} stopOpacity={0.08} />
-          </linearGradient>
-        </defs>
+        <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" hide />
-        <YAxis type="category" dataKey="label" width={104} tick={{ fontSize: 10, fill: "#475569", fontWeight: 600 }} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="label" width={104} tick={{ fontSize: 10, fill: TICK_FILL, fontWeight: 600 }} axisLine={false} tickLine={false} />
         <Tooltip content={<PremiumTooltip valueOnly />} cursor={{ fill: `${from}12` }} />
         <Bar
           dataKey="value"
           radius={[0, 0, 0, 0]}
-          fill={`url(#${gradientId})`}
+          fill={from}
           isAnimationActive
           cursor={clickable ? "pointer" : undefined}
           onClick={
@@ -714,8 +714,9 @@ function RankedBars({
           {top.map((entry) => (
             <Cell
               key={entry.code}
-              fill={`url(#${gradientId})`}
-              stroke={selectedSet.has(entry.code) ? from : undefined}
+              fill={from}
+              fillOpacity={selectedSet.size > 0 && !selectedSet.has(entry.code) ? 0.45 : 0.9}
+              stroke={selectedSet.has(entry.code) ? "#0F172A" : undefined}
               strokeWidth={selectedSet.has(entry.code) ? 2 : 0}
             />
           ))}
@@ -732,18 +733,16 @@ function RankedBars({
 }
 
 // Vertical column variant — used for the DSM "By area" chart (few areas within one region read
-// better as upright columns than horizontal bars). Same premium gradient + click-to-filter as
-// RankedBars. Bars fade top→base; value labels sit above each column.
+// better as upright columns than horizontal bars). Same flat fill + click-to-filter as RankedBars;
+// value labels sit above each column.
 function ColumnBars({
   rows,
-  gradientId,
   from,
   labelColor,
   selected,
   onSelect,
 }: {
   rows: SosGroupRow[];
-  gradientId: string;
   from: string;
   labelColor: string;
   selected?: string[];
@@ -756,17 +755,11 @@ function ColumnBars({
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={top} margin={{ top: 18, right: 8, bottom: 4, left: 0 }} barCategoryGap="22%">
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={from} stopOpacity={1} />
-            <stop offset="62%" stopColor={from} stopOpacity={0.55} />
-            <stop offset="100%" stopColor={from} stopOpacity={0.1} />
-          </linearGradient>
-        </defs>
+        <CartesianGrid stroke={GRID_STROKE} strokeDasharray="3 3" vertical={false} />
         <XAxis
           dataKey="label"
-          tick={{ fontSize: 10, fill: "#475569", fontWeight: 600 }}
-          axisLine={false}
+          tick={{ fontSize: 10, fill: TICK_FILL, fontWeight: 600 }}
+          axisLine={{ stroke: GRID_STROKE }}
           tickLine={false}
           interval={0}
           angle={-20}
@@ -778,7 +771,7 @@ function ColumnBars({
         <Bar
           dataKey="value"
           radius={[0, 0, 0, 0]}
-          fill={`url(#${gradientId})`}
+          fill={from}
           isAnimationActive
           cursor={clickable ? "pointer" : undefined}
           onClick={
@@ -791,8 +784,9 @@ function ColumnBars({
           {top.map((entry) => (
             <Cell
               key={entry.code}
-              fill={`url(#${gradientId})`}
-              stroke={selectedSet.has(entry.code) ? from : undefined}
+              fill={from}
+              fillOpacity={selectedSet.size > 0 && !selectedSet.has(entry.code) ? 0.45 : 0.9}
+              stroke={selectedSet.has(entry.code) ? "#0F172A" : undefined}
               strokeWidth={selectedSet.has(entry.code) ? 2 : 0}
             />
           ))}
@@ -871,78 +865,72 @@ function DetailSection({
   ];
 
   return (
-    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-sm border border-slate-700">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => onViewChange(tab.key)}
-                className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
-                  view === tab.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+    <SectionCard
+      title="Breakdown"
+      icon={Table2}
+      actions={
+        <div className="flex flex-wrap items-center gap-1.5">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              aria-pressed={view === tab.key}
+              onClick={() => onViewChange(tab.key)}
+              className={chipClass(view === tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
           <a
             href={`/api/employee-portals/source-of-sales/export?${exportQuery}`}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+            className="ml-1 inline-flex items-center gap-1.5 border border-orange-300 bg-white px-3 py-1 text-xs font-bold text-orange-700 transition-colors hover:border-orange-500 hover:bg-orange-50"
           >
             <Download className="h-3 w-3" />
             Export workbook
           </a>
         </div>
-      </div>
-
+      }
+    >
       {rows.length === 0 ? (
         <div className="p-8 text-center text-sm font-semibold text-slate-400">No rows for this selection.</div>
       ) : (
         <>
-          {/* Desktop table */}
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
+          {/* Desktop table — fixed layout with a colgroup: it fits its card, it never scrolls sideways. */}
+          <div className="hidden md:block">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                <col style={{ width: showDelta ? "32%" : "38%" }} />
+                <col style={{ width: "28%" }} />
+                <col style={{ width: showDelta ? "14%" : "18%" }} />
+                <col style={{ width: showDelta ? "12%" : "16%" }} />
+                {showDelta ? <col style={{ width: "14%" }} /> : null}
+              </colgroup>
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
-                  <th className="px-4 py-2.5 font-black">{viewLabel(view)}</th>
-                  <th className="px-4 py-2.5 text-right font-black">Value</th>
-                  <th className="px-4 py-2.5 text-right font-black">Units</th>
-                  <th className="px-4 py-2.5 text-right font-black">Share</th>
-                  {showDelta ? <th className="px-4 py-2.5 text-right font-black">Δ vs last</th> : null}
+                <tr className={TABLE_HEAD_CLASS}>
+                  <th className="px-4 py-2.5">{viewLabel(view)}</th>
+                  <th className="px-4 py-2.5 text-right">Value</th>
+                  <th className="px-4 py-2.5 text-right">Units</th>
+                  <th className="px-4 py-2.5 text-right">Share</th>
+                  {showDelta ? <th className="px-4 py-2.5 text-right">Δ vs last</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.code} className="border-b border-slate-100 transition hover:bg-orange-50/40">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-bold text-slate-900">
-                      {row.label}
-                      {row.extra ? <span className="ml-2 text-phx-xs font-semibold text-slate-400">{row.extra}</span> : null}
+                  <tr key={row.code} className={`${TABLE_ROW_CLASS} align-top`}>
+                    <td className="px-4 py-3">
+                      <p className="break-words font-bold text-slate-900">{row.label}</p>
+                      {row.extra ? <p className="break-words text-phx-xs font-semibold text-slate-500">{row.extra}</p> : null}
                     </td>
-                    <td className="px-4 py-2">
-                      <div className="relative ml-auto flex h-7 w-48 max-w-full items-center justify-end overflow-hidden rounded-sm">
-                        <span
-                          className="absolute inset-y-0 left-0 rounded-sm"
-                          style={{
-                            width: `${Math.max((row.value / maxValue) * 100, 1.5)}%`,
-                            background: "linear-gradient(90deg, #EA580C 0%, rgba(249,115,22,0.45) 62%, rgba(249,115,22,0.06) 100%)",
-                          }}
-                        />
-                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-phx-md font-black tabular-nums text-slate-900">
-                          {formatEgpFull(row.value)}
-                        </span>
-                      </div>
+                    <td className="px-4 py-3">
+                      <p className="break-words text-right text-phx-md font-black tabular-nums text-slate-900">{formatEgpFull(row.value)}</p>
+                      <span className="mt-1.5 block">
+                        <ProportionBar fraction={Math.max(row.value / maxValue, 0.015)} color="#F97316" />
+                      </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-slate-600">{formatNumber(row.units)}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{formatPct(row.share)}</td>
+                    <td className="break-words px-4 py-3 text-right tabular-nums text-slate-600">{formatNumber(row.units)}</td>
+                    <td className="break-words px-4 py-3 text-right font-semibold tabular-nums text-slate-600">{formatPct(row.share)}</td>
                     {showDelta ? (
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                      <td className="px-4 py-3 text-right">
                         {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-phx-xs text-slate-300">—</span>}
                       </td>
                     ) : null}
@@ -955,34 +943,31 @@ function DetailSection({
           {/* Mobile cards */}
           <div className="space-y-2 p-3 md:hidden">
             {rows.map((row) => (
-              <div key={row.code} className="flex overflow-hidden rounded-sm border border-slate-200 bg-white">
-                <span className="w-[3px] shrink-0 bg-orange-500" />
-                <div className="min-w-0 flex-1 p-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="whitespace-nowrap text-sm font-black text-slate-900">{row.label}</p>
-                    {showDelta && row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : null}
-                  </div>
-                  {row.extra ? <p className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">{row.extra}</p> : null}
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <CardStat label="Value" value={formatEgp(row.value)} />
-                    <CardStat label="Units" value={formatNumber(row.units)} />
-                    <CardStat label="Share" value={formatPct(row.share)} />
-                  </div>
+              <div key={row.code} className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="min-w-0 break-words text-sm font-black text-slate-900">{row.label}</p>
+                  {showDelta && row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : null}
+                </div>
+                {row.extra ? <p className="break-words text-phx-xs font-semibold text-slate-500">{row.extra}</p> : null}
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  <CardStat label="Value" value={formatEgp(row.value)} />
+                  <CardStat label="Units" value={formatNumber(row.units)} />
+                  <CardStat label="Share" value={formatPct(row.share)} />
                 </div>
               </div>
             ))}
           </div>
         </>
       )}
-    </div>
+    </SectionCard>
   );
 }
 
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
+    <div className="min-w-0 border border-slate-100 bg-slate-50 px-2 py-1.5">
+      <p className="text-phx-3xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="break-words text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
@@ -1008,9 +993,9 @@ function EmptyState({ isProductManager, hasPeriod }: { isProductManager: boolean
       ? "No products are assigned to you yet — ask an admin to set your product scope, or no sales were recorded for this selection."
       : "No sales were recorded for this period and selection.";
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-slate-200 bg-white p-12 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <span className="flex h-12 w-12 items-center justify-center rounded-sm bg-orange-50 text-orange-500 ring-1 ring-orange-100">
-        <TrendingUp className="h-5 w-5" />
+    <div className="flex flex-col items-center justify-center gap-3 border border-dashed border-slate-200 bg-white p-12 text-center">
+      <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-500 ring-1 ring-inset ring-orange-100">
+        <BarChart3 className="h-5 w-5" />
       </span>
       <p className="max-w-md text-sm font-semibold text-slate-600">{message}</p>
     </div>

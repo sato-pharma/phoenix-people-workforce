@@ -6,7 +6,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Download, Layers, Upload } fr
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SectionCard, formatEgpFull, formatPeriod } from "@/components/sales/target-visuals";
+import { LABEL_CLASS, SURFACE_CLASS, SectionCard, formatEgpFull, formatPeriod } from "@/components/sales/target-visuals";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,11 +173,13 @@ function fieldValue(value: number | null, decimals: number): string {
 // history re-rounds every corner — the depth is the half worth having and the only half taken
 // here. Every surface below is measured at `border-radius: 0px`.
 //
-// The visual language is the sibling one (CommandBand on Sales vs Target): slate-900 ground, a
-// hairline orange rule along the top, an orange kicker in wide tracking, white numerals. What is
-// NOT borrowed is its height — the owner threw out the 580px hero on 2026-09-08, so this carries
-// the same identity in a single line.
-const CARD_DEPTH = "shadow-[0_1px_2px_rgba(15,23,42,0.06),0_10px_30px_-18px_rgba(15,23,42,0.45)]";
+// The visual language is the sibling one (the page header on Sales vs Target, 2026-09-14 light
+// look): a white surface, an orange rule along the top, an orange kicker in wide tracking, calm
+// slate-900 numerals. What is NOT borrowed is its height — the owner threw out the 580px hero on
+// 2026-09-08, so this carries the same identity in a single line.
+//
+// An OPEN region lifts with the same soft two-layer shadow the shared white card carries.
+const CARD_DEPTH = "shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.05)]";
 
 /** A labelled native select. Never shrunk — the owner's fits-the-screen rule forbids it. */
 function Picker({
@@ -185,31 +187,17 @@ function Picker({
   value,
   options,
   onChange,
-  tone = "light",
 }: {
   label: string;
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
   onChange: (value: string) => void;
-  tone?: "light" | "dark";
 }) {
   return (
     <label className="flex min-w-0 items-center gap-1.5">
-      <span
-        className={cn(
-          "text-phx-2xs font-black uppercase tracking-[0.18em]",
-          tone === "dark" ? "text-slate-500" : "text-muted-foreground",
-        )}
-      >
-        {label}
-      </span>
+      <span className={LABEL_CLASS}>{label}</span>
       <select
-        className={cn(
-          "h-8 max-w-full border px-2 text-phx-xs font-bold transition-colors focus:outline-none focus:ring-1 focus:ring-orange-400",
-          tone === "dark"
-            ? "border-slate-700 bg-slate-800 text-white hover:border-slate-600"
-            : "border-input bg-background text-foreground hover:border-slate-400",
-        )}
+        className="h-8 max-w-full border border-slate-200 bg-white px-2 text-phx-xs font-bold text-slate-900 transition-colors hover:border-orange-300 focus-visible:border-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -223,11 +211,15 @@ function Picker({
   );
 }
 
+/** A quiet white action (a download link, a toggle) that turns orange on hover and focus. */
+const OUTLINE_ACTION_CLASS =
+  "inline-flex h-8 items-center border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
+
 /** Completeness, as a hairline. Square by construction — no rounded cap anywhere. */
 function CompletionBar({ done, of }: { done: number; of: number }) {
   const fraction = of > 0 ? Math.max(0, Math.min(1, done / of)) : 0;
   return (
-    <span className="block h-1 w-full bg-slate-200" aria-hidden>
+    <span className="block h-1.5 w-full bg-slate-100" aria-hidden>
       <span
         className={cn("block h-full transition-[width] duration-300", fraction === 1 ? "bg-emerald-500" : "bg-orange-500")}
         style={{ width: `${fraction * 100}%` }}
@@ -663,33 +655,28 @@ export function TargetsAuthoring(props: {
     + `&populated=${populated ? "true" : "false"}`;
 
   return (
-    <div className="space-y-3 p-3 md:p-4">
+    <div className="space-y-4 p-3 md:p-4">
       {/* ── Command strip. One line, no hero: line, month, and the two figures that describe the
-             month being authored. Wraps rather than scrolls (fits-the-screen golden rule). ── */}
-      <section className={cn("relative border border-slate-800 bg-slate-900", CARD_DEPTH)}>
-        {/* The sibling module's signature: a hairline of orange along the top edge. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-orange-500/0 via-orange-400/90 to-orange-500/0"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 px-4 py-3">
+             month being authored. Wraps rather than scrolls (fits-the-screen golden rule).
+             SURFACE_CLASS goes FIRST: its `border` would otherwise erase the orange top rule
+             when the class list is merged. ── */}
+      <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3.5 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <span className="min-w-0">
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.28em] text-orange-400">
+              <span className="block text-phx-2xs font-black uppercase tracking-[0.24em] text-orange-600">
                 Sales Operations
               </span>
-              <h1 className="block text-base font-black leading-none tracking-tight text-white">Targets</h1>
+              <h1 className="block text-xl font-black leading-tight tracking-tight text-slate-900">Targets</h1>
             </span>
             <Picker
               label="Line"
-              tone="dark"
               value={props.selectedLine}
               options={props.lines.map((line) => ({ value: line.code, label: line.label }))}
               onChange={(value) => navigate(value, props.selectedPeriod)}
             />
             <Picker
               label="Month"
-              tone="dark"
               value={props.selectedPeriod}
               options={props.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
               onChange={(value) => navigate(props.selectedLine, value)}
@@ -697,19 +684,19 @@ export function TargetsAuthoring(props: {
           </div>
           <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
             <span className="min-w-0">
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Target</span>
-              <span className="block whitespace-nowrap text-lg font-black leading-tight tabular-nums text-white">
+              <span className={`block ${LABEL_CLASS}`}>Target</span>
+              <span className="block whitespace-nowrap text-xl font-black leading-tight tabular-nums text-sky-600">
                 {formatEgpFull(totals.value)}
               </span>
             </span>
             <span className="min-w-0">
-              <span className="block text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Set</span>
-              <span className="block whitespace-nowrap text-lg font-black leading-tight tabular-nums text-white">
+              <span className={`block ${LABEL_CLASS}`}>Set</span>
+              <span className="block whitespace-nowrap text-xl font-black leading-tight tabular-nums text-slate-900">
                 {totals.set.toLocaleString("en-US")}
-                <span className="text-sm text-slate-500"> / {totals.cells.toLocaleString("en-US")}</span>
+                <span className="text-sm text-slate-400"> / {totals.cells.toLocaleString("en-US")}</span>
               </span>
             </span>
-            <span className="w-28 shrink-0 pb-1.5">
+            <span className="w-28 shrink-0 pb-2">
               <CompletionBar done={totals.set} of={totals.cells} />
             </span>
           </div>
@@ -717,39 +704,36 @@ export function TargetsAuthoring(props: {
       </section>
 
       {props.error ? (
-        <div className="flex items-start gap-3 border border-red-300 bg-red-50 px-4 py-2.5">
+        <div className="flex items-start gap-3 border border-l-[3px] border-red-200 border-l-red-500 bg-red-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
           <p className="min-w-0 text-xs font-semibold leading-5 text-red-800">{props.error}</p>
         </div>
       ) : null}
 
       {message ? (
-        <div className="border border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold text-foreground">{message}</div>
+        <div className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3 text-xs font-semibold text-slate-800">{message}</div>
       ) : null}
 
       {/* ── Templates. Empty or populated, for a month, a quarter or a semester. ── */}
       {canEdit ? (
-        <SectionCard title="Template" subtitle={`${lineLabel} · fill it in Excel and upload it back`} icon={Download} className={CARD_DEPTH}>
-          <div className="flex flex-wrap items-center gap-2 p-3">
+        <SectionCard title="Template" subtitle={`${lineLabel} · fill it in Excel and upload it back`} icon={Download}>
+          <div className="flex flex-wrap items-center gap-2 p-4">
             <Picker
               label="Covering"
               value={scope}
               options={TEMPLATE_SCOPES.map((entry) => ({ value: entry.value, label: entry.label }))}
               onChange={(value) => setScope(value as TemplateScope)}
             />
-            <a
-              className="inline-flex h-8 items-center border border-input px-3 text-phx-xs font-bold hover:bg-accent"
-              href={templateHref(false)}
-            >
+            <a className={OUTLINE_ACTION_CLASS} href={templateHref(false)}>
               Download empty
             </a>
             <a
-              className="inline-flex h-8 items-center border border-foreground bg-foreground px-3 text-phx-xs font-bold text-background hover:opacity-90"
+              className="inline-flex h-8 items-center border border-orange-500 bg-orange-500 px-3 text-phx-xs font-bold text-white shadow-[0_2px_8px_rgba(249,115,22,0.25)] transition-colors hover:border-orange-600 hover:bg-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500"
               href={templateHref(true)}
             >
               Download with current targets
             </a>
-            <p className="min-w-0 text-phx-xs leading-5 text-muted-foreground">
+            <p className="min-w-0 text-phx-xs leading-5 text-slate-500">
               Both lay out one row per area and product for every month in range, with dropdowns. The second is the
               same sheet with the numbers already in it.
             </p>
@@ -759,12 +743,12 @@ export function TargetsAuthoring(props: {
 
       {/* ── Upload ── */}
       {canEdit ? (
-        <SectionCard title="Upload" subtitle="Checked before anything is written" icon={Upload} className={CARD_DEPTH}>
-          <div className="flex flex-wrap items-center gap-2 p-3">
+        <SectionCard title="Upload" subtitle="Checked before anything is written" icon={Upload}>
+          <div className="flex flex-wrap items-center gap-2 p-4">
             <input
               type="file"
               accept=".xlsx"
-              className="h-8 max-w-full text-phx-xs"
+              className="h-8 max-w-full text-phx-xs text-slate-600 file:mr-2 file:h-8 file:border file:border-slate-200 file:bg-white file:px-3 file:text-phx-xs file:font-bold file:text-slate-700 hover:file:border-orange-300 hover:file:bg-orange-50"
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null);
                 setPreview(null);
@@ -782,8 +766,8 @@ export function TargetsAuthoring(props: {
             </Button>
           </div>
           {preview ? (
-            <div className="border-t border-border px-3 py-2.5 text-xs">
-              <p className="font-bold text-foreground">
+            <div className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-xs">
+              <p className="font-bold text-slate-900">
                 {preview.validRows.toLocaleString("en-US")} of {preview.totalRows.toLocaleString("en-US")} row(s) are valid.
               </p>
 
@@ -791,7 +775,7 @@ export function TargetsAuthoring(props: {
                   confirmed again by the server, because an upload aimed at the wrong month
                   replaces targets that nothing keeps a previous value for. */}
               {preview.periods.length > 0 ? (
-                <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2">
+                <div className="mt-2 border border-l-[3px] border-amber-200 border-l-amber-500 bg-amber-50 px-3 py-2">
                   <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-900">
                     This file writes {preview.periods.length} month{preview.periods.length === 1 ? "" : "s"}
                   </p>
@@ -828,7 +812,6 @@ export function TargetsAuthoring(props: {
         title={`${lineLabel} · ${formatPeriod(props.selectedPeriod)}`}
         subtitle={`${regions.length.toLocaleString("en-US")} region${regions.length === 1 ? "" : "s"} · press one to open its areas`}
         icon={Layers}
-        className={CARD_DEPTH}
         actions={
           canEdit ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -845,16 +828,16 @@ export function TargetsAuthoring(props: {
               </Button>
             </div>
           ) : (
-            <span className="border border-input px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               View only
             </span>
           )
         }
       >
         {/* Filters + sort. */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
           <Input
-            className="h-8 w-full max-w-[14rem] text-phx-xs"
+            className="h-8 w-full max-w-[14rem] border-slate-200 bg-white text-phx-xs text-slate-900"
             placeholder="Search area or product"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -888,7 +871,7 @@ export function TargetsAuthoring(props: {
           />
           <button
             type="button"
-            className="inline-flex h-8 items-center border border-input px-3 text-phx-xs font-bold hover:bg-accent"
+            className={OUTLINE_ACTION_CLASS}
             onClick={() =>
               setOpenRegions(allOpen ? {} : Object.fromEntries(regions.map((region) => [region.name, true])))
             }
@@ -899,35 +882,38 @@ export function TargetsAuthoring(props: {
 
         {regions.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm font-bold text-foreground">Nothing matches these filters.</p>
-            <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
+            <p className="text-sm font-bold text-slate-900">Nothing matches these filters.</p>
+            <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
               Clear the search or pick another product.
             </p>
           </div>
         ) : (
-          <div className="space-y-2 p-3">
+          <div className="space-y-2.5 p-3 sm:p-4">
             {regions.map((region) => {
               const open = openRegions[region.name] === true;
               return (
-                <div className={cn("border border-border bg-background transition-shadow", open && CARD_DEPTH)} key={region.name}>
+                <div
+                  className={cn("border bg-white transition-shadow", open ? "border-orange-200" : "border-slate-200", open && CARD_DEPTH)}
+                  key={region.name}
+                >
                   {/* The region BUTTON. Full width, so it is a target on a phone too. */}
                   <button
                     type="button"
                     aria-expanded={open}
                     className={cn(
-                      "flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1 border-l-2 px-3 py-3 text-left transition-colors hover:bg-accent",
-                      open ? "border-l-orange-500 bg-muted/40" : "border-l-transparent",
+                      "flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-l-[3px] px-4 py-3.5 text-left transition-colors hover:bg-orange-50/40 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-orange-500",
+                      open ? "border-l-orange-500 bg-orange-50/40" : "border-l-transparent",
                     )}
                     onClick={() => setOpenRegions((current) => ({ ...current, [region.name]: !open }))}
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       {open ? (
-                        <ChevronDown className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-orange-600" aria-hidden />
                       ) : (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
                       )}
-                      <span className="break-words text-sm font-black tracking-tight text-foreground">{region.name}</span>
-                      <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-muted-foreground">
+                      <span className="break-words text-sm font-black tracking-tight text-slate-900">{region.name}</span>
+                      <span className={LABEL_CLASS}>
                         {region.areas.length} area{region.areas.length === 1 ? "" : "s"}
                       </span>
                     </span>
@@ -935,34 +921,34 @@ export function TargetsAuthoring(props: {
                       <span className="w-24 shrink-0">
                         <CompletionBar done={region.set} of={region.cells} />
                       </span>
-                      <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-muted-foreground">
+                      <span className={LABEL_CLASS}>
                         {region.set} of {region.cells} set
                       </span>
-                      <span className="whitespace-nowrap text-base font-black tabular-nums text-foreground">
+                      <span className="whitespace-nowrap text-base font-black tabular-nums text-slate-900">
                         {formatEgpFull(region.value)}
                       </span>
                     </span>
                   </button>
-                  {open ? <div className="border-b border-border" /> : null}
+                  {open ? <div className="border-b border-slate-100" /> : null}
 
                   {open ? (
-                    <div className="space-y-2 p-2">
+                    <div className="space-y-2.5 p-3">
                       {region.areas.map((area) => (
-                        <div className="border border-border" key={area.areaCode}>
-                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 bg-muted/20 px-3 py-2">
-                            <p className="break-words text-xs font-black text-foreground">
+                        <div className="border border-slate-200 bg-white" key={area.areaCode}>
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="break-words text-xs font-black text-slate-900">
                               {area.areaName}
                               {area.areaState === "vacant_will_hire" ? (
-                                <span className="ml-2 border border-input px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                                <span className="ml-2 border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-800">
                                   vacant
                                 </span>
                               ) : null}
                             </p>
-                            <p className="text-phx-xs font-black tabular-nums text-muted-foreground">
+                            <p className="text-phx-xs font-black tabular-nums text-slate-700">
                               {formatEgpFull(area.value)}
                             </p>
                           </div>
-                          <ul className="divide-y divide-border">
+                          <ul className="divide-y divide-slate-100">
                             {area.rows.map((row) => {
                               const key = keyOf(row);
                               const dirty = edits[key] !== undefined || unitEdits[key] !== undefined;
@@ -971,16 +957,16 @@ export function TargetsAuthoring(props: {
                               return (
                                 <li
                                   className={cn(
-                                    "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2",
-                                    dirty && "bg-amber-50/60",
+                                    "flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5 transition-colors",
+                                    dirty ? "bg-amber-50/60" : "hover:bg-orange-50/40",
                                   )}
                                   key={key}
                                 >
                                   <span className="min-w-0 flex-1 basis-[10rem]">
-                                    <span className="block break-words text-xs font-semibold text-foreground">
+                                    <span className="block break-words text-xs font-semibold text-slate-900">
                                       {row.productName || row.productCode}
                                     </span>
-                                    <span className="block text-phx-2xs text-muted-foreground">
+                                    <span className="block text-phx-2xs tabular-nums text-slate-500">
                                       {row.unitPrice == null
                                         ? "no price"
                                         : `@ ${row.unitPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EGP`}
@@ -989,7 +975,7 @@ export function TargetsAuthoring(props: {
                                   {canEdit ? (
                                     <span className="flex flex-wrap items-center gap-2">
                                       <label className="flex items-center gap-1.5">
-                                        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                                        <span className={LABEL_CLASS}>
                                           Units
                                         </span>
                                         <Input
@@ -1006,7 +992,7 @@ export function TargetsAuthoring(props: {
                                         />
                                       </label>
                                       <label className="flex items-center gap-1.5">
-                                        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+                                        <span className={LABEL_CLASS}>
                                           Value
                                         </span>
                                         <Input
@@ -1023,8 +1009,8 @@ export function TargetsAuthoring(props: {
                                     </span>
                                   ) : (
                                     <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs tabular-nums">
-                                      <span className="text-muted-foreground">{fmtUnits(row.targetUnits)} units</span>
-                                      <span className="font-bold text-foreground">
+                                      <span className="text-slate-500">{fmtUnits(row.targetUnits)} units</span>
+                                      <span className="font-bold text-slate-900">
                                         {row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}
                                       </span>
                                     </span>

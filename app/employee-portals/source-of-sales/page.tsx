@@ -104,20 +104,22 @@ export default async function PortalSourceOfSalesPage({
   // dashboard resolves him at region level, which would show him his sibling reps' areas.
   const showDistributorDashboard = isPortalSosRole(access.role);
   const filters = parseFilters(await searchParams);
+  const description = showDistributorDashboard
+    ? "Which pharmacies stopped, dropped or started buying in your published closings, how this month is pacing, and the distributor sell-in behind it."
+    : "Which pharmacies in your area stopped, dropped or started buying in your published closings, and how this month is pacing.";
 
   return (
     <EmployeePortalPageShell
       badge="Sales Operations"
-      description={
-        showDistributorDashboard
-          ? "Which pharmacies stopped, dropped or started buying in your published closings, how this month is pacing, and the distributor sell-in behind it."
-          : "Which pharmacies in your area stopped, dropped or started buying in your published closings, and how this month is pacing."
-      }
+      description={description}
       errorBoundaryTitle="Source of Sales unavailable"
+      // The pharmacy action lists open with the shared light command band (as Sales vs Target,
+      // Targets and Make It Happen do); the shell's dark banner would repeat it.
+      hero={<></>}
       title="Source of Sales"
     >
       <div className="space-y-6">
-        <PortalSosPharmacyActions />
+        <PortalSosPharmacyActions subtitle={description} />
         {showDistributorDashboard ? (
           <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={2} />}>
             <PortalSosContent access={access} filters={filters} />

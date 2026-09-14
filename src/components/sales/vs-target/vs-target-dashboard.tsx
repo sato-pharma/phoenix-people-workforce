@@ -34,14 +34,22 @@ import type { BrickNode, VsTargetNode, VsTargetTotals } from "@/lib/sales/vs-tar
 import type { VsTargetDashboardData } from "@/lib/sales/vs-target-page";
 import {
   ACTUAL_COLOR,
-  AchievementCell,
+  AchievementMeter,
   AchievementRing,
+  BandChoice,
+  BandStat,
+  CHART_TOOLTIP_CLASS,
   GrowthPill,
+  LABEL_CLASS,
   ProportionBar,
+  SURFACE_CLASS,
   SectionCard,
+  TABLE_HEAD_CLASS,
+  TABLE_ROW_CLASS,
   TARGET_COLOR,
   achievementHex,
   achievementTone,
+  chipClass,
   formatEgp,
   formatEgpFull,
   formatNumber,
@@ -62,20 +70,16 @@ function ChartTooltipContent({
 }) {
   if (!active || !payload || payload.length === 0) return null;
   return (
-    <div className="border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
-      {label != null ? (
-        <p className="mb-1 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-          {label}
-        </p>
-      ) : null}
+    <div className={CHART_TOOLTIP_CLASS}>
+      {label != null ? <p className={cn("mb-1 whitespace-nowrap", LABEL_CLASS)}>{label}</p> : null}
       <div className="space-y-1">
         {payload.map((entry, index) => (
           <div key={`${entry.name ?? index}`} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0" style={{ backgroundColor: entry.color }} aria-hidden />
-              <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-300">{entry.name}</span>
+              <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-600">{entry.name}</span>
             </span>
-            <span className="whitespace-nowrap text-phx-xs font-black tabular-nums text-white">
+            <span className="whitespace-nowrap text-phx-xs font-black tabular-nums text-slate-900">
               {formatEgpFull(Number(entry.value ?? 0))}
             </span>
           </div>
@@ -97,6 +101,9 @@ const LEVEL_META: Record<LevelKey, { label: string; column: string; icon: typeof
   managers: { label: "District Managers", column: "District Manager", icon: Users },
   products: { label: "Products", column: "Product", icon: Package },
 };
+
+/** A mobile card's figure row: label and value side by side, wrapping rather than cutting. */
+const CARD_FACT_CLASS = "flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5";
 
 function HierarchyTable({
   nodes,
@@ -121,7 +128,7 @@ function HierarchyTable({
 
   if (nodes.length === 0) {
     return (
-      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+      <div className="px-4 py-10 text-center text-sm text-slate-500">
         No sales or targets at this level in your scope this month.
       </div>
     );
@@ -129,66 +136,74 @@ function HierarchyTable({
 
   return (
     <>
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-sm">
+      {/* Desktop. `table-fixed` with a colgroup and NO min-width floor — the page fits its screen.
+          It fits by MERGING, never by shrinking type: the share bar rides under the Sales figure
+          instead of owning a column, so seven columns became six. Below `lg` the shell's sidebar
+          leaves too little width for six money columns, so a tablet gets the cards instead. */}
+      <div className="hidden lg:block">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col style={{ width: "25%" }} />
+            <col style={{ width: "17%" }} />
+            <col style={{ width: "17%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "14%" }} />
+          </colgroup>
           <thead className="sticky top-0 z-10">
-            <tr className="bg-slate-900 text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
-              <th className="whitespace-nowrap px-4 py-2.5 font-black">{columnLabel}</th>
-              <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">Sales</th>
-              <th className="whitespace-nowrap px-4 py-2.5 font-black">Share</th>
-              <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">Target</th>
-              <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">Achievement</th>
-              <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">vs {priorLabel}</th>
-              <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">No target</th>
+            <tr className={TABLE_HEAD_CLASS}>
+              <th className="px-4 py-2.5">{columnLabel}</th>
+              <th className="px-4 py-2.5 text-right">Sales</th>
+              <th className="px-4 py-2.5 text-right">Target</th>
+              <th className="px-4 py-2.5 text-right">Achievement</th>
+              <th className="px-4 py-2.5 text-right">vs {priorLabel}</th>
+              <th className="px-4 py-2.5 text-right">No target</th>
             </tr>
           </thead>
           <tbody>
-            {nodes.map((node, index) => {
+            {nodes.map((node) => {
               const isOpen = drillKey === node.key;
               return (
                 <Fragment key={node.key}>
                   <tr
-                    className={cn(
-                      "border-b border-border/60 transition-colors",
-                      index % 2 === 1 ? "bg-muted/20" : undefined,
-                      onDrill ? "cursor-pointer hover:bg-orange-50" : "hover:bg-muted/40",
-                      isOpen ? "bg-orange-50" : undefined,
-                    )}
+                    className={cn(TABLE_ROW_CLASS, onDrill ? "cursor-pointer" : undefined, isOpen ? "bg-orange-50" : undefined)}
                     onClick={onDrill ? () => onDrill(node) : undefined}
                   >
-                    <td className="whitespace-nowrap px-4 py-2.5 font-bold text-foreground">
-                      <span className="flex items-center gap-1.5">
+                    <td className="px-4 py-3 align-top font-bold text-slate-900">
+                      <span className="flex items-start gap-1.5">
                         {onDrill ? (
                           <ChevronDown
                             className={cn(
-                              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-                              isOpen ? "" : "-rotate-90",
+                              "mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform",
+                              isOpen ? "text-orange-600" : "-rotate-90 text-slate-400",
                             )}
                           />
                         ) : null}
-                        {node.name}
+                        <span className="min-w-0 break-words">{node.name}</span>
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right font-semibold tabular-nums">
-                      {formatEgpFull(node.current.actualValue)}
+                    <td className="px-4 py-3 text-right align-top">
+                      <span className="block font-bold tabular-nums text-slate-900">
+                        {formatEgpFull(node.current.actualValue)}
+                      </span>
+                      <span className="mt-1.5 block">
+                        <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
+                      </span>
                     </td>
-                    <td className="w-28 px-4 py-2.5">
-                      <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-muted-foreground">
+                    <td className="px-4 py-3 text-right align-top tabular-nums text-slate-600">
                       {node.current.targetValue === 0 ? (
                         <span className="italic text-slate-400">No target set</span>
                       ) : (
                         formatEgpFull(node.current.targetValue)
                       )}
                     </td>
-                    <td className="px-4 py-2.5">
-                      <AchievementCell value={node.current.achievementValue} />
+                    <td className="px-4 py-3 align-top">
+                      <AchievementMeter value={node.current.achievementValue} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                    <td className="px-4 py-3 text-right align-top">
                       {hasPrior ? <GrowthPill value={node.growth} /> : <span className="text-xs text-slate-400">—</span>}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
+                    <td className="px-4 py-3 text-right align-top tabular-nums">
                       {node.current.uncoveredActualValue === 0 ? (
                         <span className="text-slate-300">—</span>
                       ) : (
@@ -199,8 +214,8 @@ function HierarchyTable({
                     </td>
                   </tr>
                   {isOpen ? (
-                    <tr className="border-b border-border bg-slate-50">
-                      <td className="px-4 py-3" colSpan={7}>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <td className="px-4 py-4" colSpan={6}>
                         <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
                       </td>
                     </tr>
@@ -212,14 +227,14 @@ function HierarchyTable({
         </table>
       </div>
 
-      {/* Mobile: cards, never a table. */}
-      <div className="space-y-2 p-3 md:hidden">
+      {/* Phone and tablet: cards, never a table. */}
+      <div className="space-y-2 p-3 lg:hidden">
         {nodes.map((node) => (
-          <div key={node.key} className="flex overflow-hidden border border-border bg-background">
+          <div key={node.key} className="flex border border-slate-200 bg-white">
             <span className="w-1 shrink-0" style={{ backgroundColor: achievementHex(node.current.achievementValue) }} aria-hidden />
             <div className="min-w-0 flex-1 p-3">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="min-w-0 overflow-x-auto whitespace-nowrap text-sm font-bold text-foreground">{node.name}</p>
+                <p className="min-w-0 break-words text-sm font-bold text-slate-900">{node.name}</p>
                 <span className={cn("shrink-0 text-sm font-black tabular-nums", achievementTone(node.current.achievementValue))}>
                   {formatPct(node.current.achievementValue)}
                 </span>
@@ -227,26 +242,26 @@ function HierarchyTable({
               <div className="mt-2">
                 <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
               </div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Sales</dt>
-                  <dd className="whitespace-nowrap font-semibold tabular-nums">{formatEgp(node.current.actualValue)}</dd>
+              <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                <div className={CARD_FACT_CLASS}>
+                  <dt className="text-slate-500">Sales</dt>
+                  <dd className="whitespace-nowrap font-bold tabular-nums text-slate-900">{formatEgp(node.current.actualValue)}</dd>
                 </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Target</dt>
-                  <dd className="whitespace-nowrap font-semibold tabular-nums">
+                <div className={CARD_FACT_CLASS}>
+                  <dt className="text-slate-500">Target</dt>
+                  <dd className="whitespace-nowrap font-semibold tabular-nums text-slate-700">
                     {node.current.targetValue === 0 ? "None" : formatEgp(node.current.targetValue)}
                   </dd>
                 </div>
                 {hasPrior ? (
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">vs {priorLabel}</dt>
+                  <div className={CARD_FACT_CLASS}>
+                    <dt className="text-slate-500">vs {priorLabel}</dt>
                     <dd><GrowthPill value={node.growth} /></dd>
                   </div>
                 ) : null}
                 {node.current.uncoveredActualValue !== 0 ? (
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">No target</dt>
+                  <div className={CARD_FACT_CLASS}>
+                    <dt className="text-slate-500">No target</dt>
                     <dd className="whitespace-nowrap font-semibold tabular-nums text-amber-600">
                       {formatEgp(node.current.uncoveredActualValue)}
                     </dd>
@@ -264,46 +279,53 @@ function HierarchyTable({
 function BrickPanel({ bricks, loading }: { bricks: BrickNode[] | null; loading: boolean }) {
   if (loading) {
     return (
-      <p className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading bricks…
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" /> Loading bricks…
       </p>
     );
   }
-  if (!bricks) return <p className="text-xs text-muted-foreground">Bricks could not be loaded for this row.</p>;
-  if (bricks.length === 0) return <p className="text-xs text-muted-foreground">No brick-level sales recorded here this month.</p>;
+  if (!bricks) return <p className="text-xs text-slate-500">Bricks could not be loaded for this row.</p>;
+  if (bricks.length === 0) return <p className="text-xs text-slate-500">No brick-level sales recorded here this month.</p>;
 
   const total = bricks.reduce((sum, brick) => sum + brick.salesValue, 0);
   const max = Math.max(...bricks.map((brick) => Math.abs(brick.salesValue)), 1);
   return (
     <div>
-      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+      <p className={cn("mb-2", LABEL_CLASS)}>
         Bricks — {bricks.length.toLocaleString("en-US")} in this area, {formatEgpFull(total)}
       </p>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs">
+      <div className="border border-slate-200 bg-white">
+        <table className="w-full table-fixed text-left text-xs">
+          <colgroup>
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "18%" }} />
+          </colgroup>
           <thead>
-            <tr className="border-b border-border text-phx-2xs uppercase tracking-[0.12em] text-muted-foreground">
-              <th className="whitespace-nowrap py-1.5 pr-4 font-black">Brick</th>
-              <th className="w-32 py-1.5 pr-4 font-black">Share</th>
-              <th className="whitespace-nowrap py-1.5 pr-4 text-right font-black">Source of Sales</th>
-              <th className="whitespace-nowrap py-1.5 pr-4 text-right font-black">Direct Orders</th>
-              <th className="whitespace-nowrap py-1.5 text-right font-black">Total</th>
+            <tr className={TABLE_HEAD_CLASS}>
+              <th className="px-3 py-2">Brick</th>
+              <th className="px-3 py-2">Share</th>
+              <th className="px-3 py-2 text-right">Source of Sales</th>
+              <th className="px-3 py-2 text-right">Direct Orders</th>
+              <th className="px-3 py-2 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
             {bricks.map((brick) => (
-              <tr key={brick.key} className="border-b border-border/40 last:border-0">
-                <td className={cn("whitespace-nowrap py-1.5 pr-4", brick.isUnassigned ? "italic text-muted-foreground" : "font-medium")}>
+              <tr key={brick.key} className={TABLE_ROW_CLASS}>
+                <td className={cn("break-words px-3 py-2", brick.isUnassigned ? "italic text-slate-400" : "font-semibold text-slate-800")}>
                   {brick.name}
                 </td>
-                <td className="py-1.5 pr-4">
+                <td className="px-3 py-2">
                   <ProportionBar fraction={Math.abs(brick.salesValue) / max} color={ACTUAL_COLOR} />
                 </td>
-                <td className="whitespace-nowrap py-1.5 pr-4 text-right tabular-nums">{formatEgpFull(brick.indirectValue)}</td>
-                <td className="whitespace-nowrap py-1.5 pr-4 text-right tabular-nums">
+                <td className="px-3 py-2 text-right tabular-nums text-slate-700">{formatEgpFull(brick.indirectValue)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-slate-700">
                   {brick.directValue === 0 ? <span className="text-slate-300">—</span> : formatEgpFull(brick.directValue)}
                 </td>
-                <td className="whitespace-nowrap py-1.5 text-right font-bold tabular-nums">{formatEgpFull(brick.salesValue)}</td>
+                <td className="px-3 py-2 text-right font-black tabular-nums text-slate-900">{formatEgpFull(brick.salesValue)}</td>
               </tr>
             ))}
           </tbody>
@@ -324,27 +346,27 @@ function LeaderList({
   emptyLabel: string;
 }) {
   if (nodes.length === 0) {
-    return <p className="px-4 py-6 text-center text-xs text-muted-foreground">{emptyLabel}</p>;
+    return <p className="px-4 py-6 text-center text-xs text-slate-500">{emptyLabel}</p>;
   }
   return (
-    <ol className="divide-y divide-border">
+    <ol className="divide-y divide-slate-100">
       {nodes.map((node, index) => (
-        <li key={node.key} className="flex items-center gap-3 px-4 py-2.5">
+        <li key={node.key} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40">
           <span
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-black text-white",
-              tone === "top" ? "bg-emerald-500" : "bg-red-500",
+              "flex h-7 w-7 shrink-0 items-center justify-center text-phx-xs font-black ring-1 ring-inset",
+              tone === "top" ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-red-50 text-red-700 ring-red-200",
             )}
           >
             {index + 1}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="overflow-x-auto whitespace-nowrap text-phx-md font-bold text-foreground">{node.name}</p>
-            <p className="whitespace-nowrap text-phx-xs text-muted-foreground">
+            <p className="break-words text-phx-md font-bold text-slate-900">{node.name}</p>
+            <p className="text-phx-xs tabular-nums text-slate-500">
               {formatEgpFull(node.current.actualValue)} of {formatEgpFull(node.current.targetValue)}
             </p>
           </div>
-          <span className={cn("shrink-0 whitespace-nowrap text-sm font-black tabular-nums", achievementTone(node.current.achievementValue))}>
+          <span className={cn("shrink-0 whitespace-nowrap text-base font-black tabular-nums", achievementTone(node.current.achievementValue))}>
             {formatPct(node.current.achievementValue)}
           </span>
         </li>
@@ -424,76 +446,64 @@ export function VsTargetDashboard({
   const maxProduct = Math.max(...topProducts.map((product) => Math.abs(product.current.actualValue)), 1);
 
   return (
-    <div className="space-y-3">
-      {/* ── Command band: the headline lives INSIDE the hero, not in separate flat tiles ── */}
-      <section className="relative overflow-hidden border border-slate-800 bg-slate-900">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/90 to-orange-500/0"
-        />
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 rounded-full bg-orange-500/10 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl" />
-
-        <div className="relative flex flex-col gap-6 px-5 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-4">
+      {/* ── Page header: light, an orange rule on top, the headline INSIDE it ──
+          Rendered inline rather than through the shared CommandBand because the period/scope
+          line has to stay a literal <p> here (tests/section-card-header-fits-a-phone.test.ts).
+          SURFACE_CLASS goes FIRST: its `border` would otherwise erase the orange top rule when
+          the class list is merged. */}
+      <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
+        <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-phx-xs font-black uppercase tracking-[0.28em] text-orange-400">{kicker}</p>
-            <h1 className="mt-1 text-3xl font-black leading-none tracking-tight text-white sm:text-[2.3rem]">
+            <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
+            <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">
               Sales vs Target
             </h1>
-            {/* The band is `overflow-hidden`, so nowrap here did not spill — it CUT, losing
-                "Direct Orders" off the right edge at 375px (61px, measured 2026-09-05). */}
-            <p className="mt-2 text-sm text-slate-400">
+            {/* No nowrap: at 375px a nowrap line CUT "Direct Orders" off the right edge
+                (61px, measured 2026-09-05). It wraps instead. */}
+            <p className="mt-1.5 text-sm text-slate-500">
               {formatPeriod(data.period)} · {data.scopeLabel} · Source of Sales + Direct Orders
             </p>
 
             {data.salesLoaded ? (
-              <div className="mt-5 flex flex-wrap items-end gap-x-9 gap-y-4">
-                <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Total sales</p>
-                  <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-white">
-                    <CountUpNumber value={data.totals.actualValue} format={formatEgp} />
-                  </p>
-                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
-                    {data.priorPeriod ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <GrowthPill dark value={data.growth} /> vs {priorLabel}
+              <div className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4">
+                <BandStat
+                  label="Total sales"
+                  value={<CountUpNumber value={data.totals.actualValue} format={formatEgp} />}
+                  note={
+                    data.priorPeriod ? (
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <GrowthPill value={data.growth} /> vs {priorLabel}
                       </span>
                     ) : (
                       "First month — no prior period"
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Target</p>
-                  <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-sky-300">
-                    <CountUpNumber value={data.totals.targetValue} format={formatEgp} />
-                  </p>
-                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
-                    {data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines
-                  </p>
-                </div>
-                <div>
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Units sold</p>
-                  <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-white">
-                    <CountUpNumber value={data.totals.actualUnits} format={formatNumber} />
-                  </p>
-                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
-                    {data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
-                  </p>
-                </div>
+                    )
+                  }
+                />
+                <BandStat
+                  label="Target"
+                  tone="sky"
+                  value={<CountUpNumber value={data.totals.targetValue} format={formatEgp} />}
+                  note={`${data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines`}
+                />
+                <BandStat
+                  label="Units sold"
+                  value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
+                  note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
+                />
               </div>
             ) : null}
           </div>
 
           {data.salesLoaded ? (
             <div className="flex shrink-0 items-center gap-6">
-              <AchievementRing dark value={data.totals.achievementValue} size={150} stroke={13} label="Achievement" />
-              <div className="hidden sm:block">
-                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Measured</p>
-                <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-white">
+              <AchievementRing value={data.totals.achievementValue} size={150} stroke={13} label="Achievement" />
+              <div className="hidden border-l border-slate-100 pl-6 sm:block">
+                <p className={LABEL_CLASS}>Measured</p>
+                <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">
                   {formatPct(data.coverage)}
                 </p>
-                <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-400">
+                <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-500">
                   of sales has a target to be measured against
                 </p>
               </div>
@@ -501,35 +511,23 @@ export function VsTargetDashboard({
           ) : null}
         </div>
 
-        {/* Month selector, inside the band so the page starts with content, not chrome. */}
-        <div className="relative flex flex-wrap items-center gap-1.5 border-t border-slate-800 px-5 py-2.5 sm:px-8">
-          <span className="mr-1 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
-            Month
-          </span>
-          {data.periods.map((period) => (
-            <button
-              key={period}
-              type="button"
-              onClick={() => router.push(`${basePath}?period=${encodeURIComponent(period)}`)}
-              className={cn(
-                "whitespace-nowrap border px-3 py-1 text-xs font-bold transition-colors",
-                period === data.period
-                  ? "border-orange-500 bg-orange-500 text-white"
-                  : "border-slate-700 bg-slate-800/60 text-slate-300 hover:border-orange-400 hover:text-white",
-              )}
-            >
-              {formatPeriod(period)}
-            </button>
-          ))}
+        {/* Month selector, on the header's bottom rail so the page starts with content, not chrome. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-5 py-2.5 sm:px-7">
+          <BandChoice
+            label="Month"
+            options={data.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
+            selected={data.period}
+            onSelect={(period) => router.push(`${basePath}?period=${encodeURIComponent(period)}`)}
+          />
         </div>
       </section>
 
       {!data.salesLoaded ? (
-        <div className="border border-border bg-card px-4 py-12 text-center">
-          <p className="text-sm font-bold text-foreground">
+        <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
+          <p className="text-sm font-bold text-slate-900">
             Monthly Closing for {formatPeriod(data.period)} has not been published yet.
           </p>
-          <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
+          <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
             This is not a zero. Sales for this month are not final until reconciled and published, so there is
             nothing to measure against target yet.
             {data.pendingDirectValue !== 0
@@ -539,12 +537,12 @@ export function VsTargetDashboard({
               ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the closing is published.`
               : ""}
           </p>
-          <p className="mt-3 text-xs text-muted-foreground">Pick an earlier month above to see published results.</p>
+          <p className="mt-3 text-xs text-slate-500">Pick an earlier month above to see published results.</p>
         </div>
       ) : data.isEmptyScope ? (
-        <div className="border border-border bg-card px-4 py-12 text-center">
-          <p className="text-sm font-bold text-foreground">No sales in your scope for {formatPeriod(data.period)}.</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+        <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>
+          <p className="text-sm font-bold text-slate-900">No sales in your scope for {formatPeriod(data.period)}.</p>
+          <p className="mt-1 text-xs text-slate-500">
             This is not a zero — no sales rows were attributed to your territory for this month.
           </p>
         </div>
@@ -554,14 +552,16 @@ export function VsTargetDashboard({
           {missingTargetValue !== 0 || data.byDesignUntargetedValue !== 0 ? (
             <div
               className={cn(
-                "flex items-start gap-3 border px-4 py-2.5",
-                missingTargetValue !== 0 ? "border-amber-300 bg-amber-50" : "border-border bg-muted/40",
+                "flex items-start gap-3 border border-l-[3px] px-4 py-3",
+                missingTargetValue !== 0
+                  ? "border-amber-200 border-l-amber-500 bg-amber-50"
+                  : "border-slate-200 border-l-slate-400 bg-white",
               )}
             >
               <AlertTriangle
-                className={cn("mt-0.5 h-4 w-4 shrink-0", missingTargetValue !== 0 ? "text-amber-600" : "text-muted-foreground")}
+                className={cn("mt-0.5 h-4 w-4 shrink-0", missingTargetValue !== 0 ? "text-amber-600" : "text-slate-400")}
               />
-              <div className={cn("min-w-0 text-xs leading-5", missingTargetValue !== 0 ? "text-amber-900" : "text-muted-foreground")}>
+              <div className={cn("min-w-0 text-xs leading-5", missingTargetValue !== 0 ? "text-amber-900" : "text-slate-600")}>
                 {missingTargetValue !== 0 ? (
                   <p className="font-bold">
                     {formatEgpFull(missingTargetValue)} sits in {data.uncovered.length.toLocaleString("en-US")}{" "}
@@ -581,28 +581,27 @@ export function VsTargetDashboard({
 
           {/* ── Team gauges: the single densest read on the page ── */}
           {data.teams.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {data.teams.map((team) => (
-                <div key={team.key} className="flex items-center gap-4 border border-border bg-card p-4 shadow-sm">
+                <div key={team.key} className={cn(SURFACE_CLASS, "flex items-center gap-4 p-5")}>
                   <AchievementRing value={team.current.achievementValue} size={104} stroke={9} />
                   <div className="min-w-0 flex-1">
-                    <p className="overflow-x-auto whitespace-nowrap text-base font-black tracking-tight text-foreground">
-                      {team.name}
-                    </p>
-                    <dl className="mt-2 space-y-1 text-xs">
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Sales</dt>
-                        <dd className="whitespace-nowrap font-black tabular-nums">{formatEgpFull(team.current.actualValue)}</dd>
+                    <p className={LABEL_CLASS}>Team</p>
+                    <p className="break-words text-base font-black tracking-tight text-slate-900">{team.name}</p>
+                    <dl className="mt-2.5 space-y-1.5 border-t border-slate-100 pt-2.5 text-xs">
+                      <div className={CARD_FACT_CLASS}>
+                        <dt className="text-slate-500">Sales</dt>
+                        <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">{formatEgpFull(team.current.actualValue)}</dd>
                       </div>
-                      <div className="flex justify-between gap-3">
-                        <dt className="text-muted-foreground">Target</dt>
-                        <dd className="whitespace-nowrap font-semibold tabular-nums text-muted-foreground">
+                      <div className={CARD_FACT_CLASS}>
+                        <dt className="text-slate-500">Target</dt>
+                        <dd className="whitespace-nowrap font-semibold tabular-nums text-sky-600">
                           {team.current.targetValue === 0 ? "No target set" : formatEgpFull(team.current.targetValue)}
                         </dd>
                       </div>
                       {team.current.uncoveredActualValue !== 0 ? (
-                        <div className="flex justify-between gap-3">
-                          <dt className="text-muted-foreground">No target</dt>
+                        <div className={CARD_FACT_CLASS}>
+                          <dt className="text-slate-500">No target</dt>
                           <dd className="whitespace-nowrap font-semibold tabular-nums text-amber-600">
                             {formatEgpFull(team.current.uncoveredActualValue)}
                           </dd>
@@ -616,18 +615,21 @@ export function VsTargetDashboard({
           ) : null}
 
           {/* ── Analysis row: product mix + channel + leaderboards ── */}
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
             <SectionCard
               title="Top products"
               subtitle={`${data.products.length.toLocaleString("en-US")} products sold this month`}
               icon={Package}
               className="xl:col-span-2"
             >
-              <ul className="divide-y divide-border">
+              <ul className="divide-y divide-slate-100">
                 {topProducts.map((product) => (
-                  <li key={product.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-2">
-                    <p className="overflow-x-auto whitespace-nowrap text-phx-md font-bold text-foreground">{product.name}</p>
-                    <span className="whitespace-nowrap text-phx-md font-black tabular-nums">
+                  <li
+                    key={product.key}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-orange-50/40"
+                  >
+                    <p className="min-w-0 break-words text-phx-md font-bold text-slate-900">{product.name}</p>
+                    <span className="whitespace-nowrap text-phx-md font-black tabular-nums text-slate-900">
                       {formatEgpFull(product.current.actualValue)}
                     </span>
                     <ProportionBar fraction={Math.abs(product.current.actualValue) / maxProduct} color={ACTUAL_COLOR} />
@@ -643,35 +645,35 @@ export function VsTargetDashboard({
               {data.channels && channelTotal !== 0 ? (
                 /* Top-aligned, not centred: this card sits beside a tall product list, and
                    centring its short content leaves a dead band across the top of the card. */
-                <div className="flex flex-col gap-4 p-4">
+                <div className="flex flex-col gap-5 p-5">
                   {[
                     { name: "Source of Sales", value: data.channels.indirect, color: ACTUAL_COLOR },
                     { name: "Direct Orders", value: data.channels.direct, color: "#8B5CF6" },
                   ].map((entry) => (
                     <div key={entry.name}>
-                      <div className="flex items-baseline justify-between gap-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="h-2.5 w-2.5 shrink-0" style={{ backgroundColor: entry.color }} aria-hidden />
-                          <span className="whitespace-nowrap text-xs font-bold text-foreground">{entry.name}</span>
+                          <span className="text-xs font-bold text-slate-700">{entry.name}</span>
                         </span>
-                        <span className="whitespace-nowrap text-sm font-black tabular-nums">{formatEgpFull(entry.value)}</span>
+                        <span className="whitespace-nowrap text-base font-black tabular-nums text-slate-900">{formatEgpFull(entry.value)}</span>
                       </div>
-                      <div className="mt-1.5">
+                      <div className="mt-2">
                         <ProportionBar fraction={Math.abs(entry.value) / Math.abs(channelTotal)} color={entry.color} />
                       </div>
-                      <p className="mt-1 whitespace-nowrap text-phx-xs text-muted-foreground">
+                      <p className="mt-1 text-phx-xs text-slate-500">
                         {((entry.value / channelTotal) * 100).toFixed(1)}% of total sales
                       </p>
                     </div>
                   ))}
                   {data.areaUnattributedValue !== 0 ? (
-                    <p className="border-t border-border pt-3 text-phx-xs leading-4 text-muted-foreground">
+                    <p className="border-t border-slate-100 pt-3 text-phx-xs leading-4 text-slate-500">
                       {formatEgpFull(data.areaUnattributedValue)} of Direct Orders could not be placed in a single area, so
                       it counts at team and region level only.
                     </p>
                   ) : null}
                   {data.unplacedValue !== 0 ? (
-                    <p className="border-t border-border pt-3 text-phx-xs leading-4 text-muted-foreground">
+                    <p className="border-t border-slate-100 pt-3 text-phx-xs leading-4 text-slate-500">
                       A further {formatEgpFull(data.unplacedValue)} could not be placed in any area or region. It is real
                       invoiced sales and is counted in the total above — the same figure Monthly Closing reports — but it
                       reaches no region, area or rep, and no target measures it.
@@ -679,7 +681,7 @@ export function VsTargetDashboard({
                   ) : null}
                 </div>
               ) : (
-                <p className="px-4 py-10 text-center text-xs text-muted-foreground">
+                <p className="px-4 py-10 text-center text-xs text-slate-500">
                   Channel split unavailable for this month.
                 </p>
               )}
@@ -688,7 +690,7 @@ export function VsTargetDashboard({
 
           {/* Leaderboards — only where there is something to rank. */}
           {data.leaders.top.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <SectionCard title={`Top ${data.leaders.level}s`} subtitle="By achievement against target" icon={Trophy}>
                 <LeaderList nodes={data.leaders.top} tone="top" emptyLabel="Nothing measurable yet." />
               </SectionCard>
@@ -706,7 +708,7 @@ export function VsTargetDashboard({
               empty grid reads as a broken chart, which is exactly how the first build looked. */}
           {data.trendIsMeaningful ? (
             <SectionCard title="Sales vs Target trend" subtitle="From July 2026, when the dashboard starts" icon={TrendingUp}>
-              <div className="h-72 w-full p-3">
+              <div className="h-72 w-full p-4">
                 <ResponsiveContainer height="100%" width="100%">
                   <ComposedChart data={trendData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" vertical={false} />
@@ -718,13 +720,13 @@ export function VsTargetDashboard({
                       axisLine={false}
                       width={80}
                     />
-                    <Tooltip content={<ChartTooltipContent />} cursor={{ fill: "rgba(148,163,184,0.12)" }} />
+                    <Tooltip content={<ChartTooltipContent />} cursor={{ fill: "rgba(249,115,22,0.06)" }} />
                     <Bar dataKey="actualValue" fill={ACTUAL_COLOR} name="Sales" maxBarSize={56}>
                       {trendData.map((point) => (
                         <Cell key={point.period} fill={ACTUAL_COLOR} />
                       ))}
                     </Bar>
-                    <Line dataKey="targetValue" stroke={TARGET_COLOR} strokeWidth={2.5} dot={{ r: 3 }} name="Target" type="monotone" />
+                    <Line dataKey="targetValue" stroke={TARGET_COLOR} strokeWidth={2.5} dot={{ r: 3, fill: "#FFFFFF", strokeWidth: 2 }} name="Target" type="monotone" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -742,16 +744,12 @@ export function VsTargetDashboard({
                   <button
                     key={key}
                     type="button"
+                    aria-pressed={key === level}
                     onClick={() => {
                       setLevel(key);
                       setDrillKey(null);
                     }}
-                    className={cn(
-                      "whitespace-nowrap border px-2.5 py-1 text-phx-xs font-bold transition-colors",
-                      key === level
-                        ? "border-orange-500 bg-orange-500 text-white"
-                        : "border-border bg-background text-muted-foreground hover:border-orange-400 hover:text-foreground",
-                    )}
+                    className={cn("whitespace-nowrap", chipClass(key === level))}
                   >
                     {LEVEL_META[key].label}
                   </button>
@@ -773,7 +771,7 @@ export function VsTargetDashboard({
             level !== "teams" &&
             level !== "regions" &&
             level !== "products" ? (
-              <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+              <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-xs leading-5 text-slate-500">
                 This level totals {formatEgpFull(nodesForLevel[level].reduce((sum, node) => sum + node.current.actualValue, 0))}.
                 {data.areaUnattributedValue !== 0
                   ? ` A further ${formatEgpFull(data.areaUnattributedValue)} of Direct Orders could not be placed in a single area, so it counts at team and region level only.`
@@ -792,23 +790,29 @@ export function VsTargetDashboard({
               subtitle={`${data.uncovered.length} areas · ${formatEgpFull(missingTargetValue)} unmeasured`}
               icon={AlertTriangle}
             >
-              <div className="hidden max-h-80 overflow-auto md:block">
-                <table className="w-full text-left text-sm">
+              <div className="hidden max-h-80 overflow-y-auto md:block">
+                <table className="w-full table-fixed text-left text-sm">
+                  <colgroup>
+                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "24%" }} />
+                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "24%" }} />
+                  </colgroup>
                   <thead className="sticky top-0 z-10">
-                    <tr className="bg-slate-900 text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
-                      <th className="whitespace-nowrap px-4 py-2.5 font-black">Team</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-black">Region</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 font-black">Area</th>
-                      <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">Unmeasured sales</th>
+                    <tr className={TABLE_HEAD_CLASS}>
+                      <th className="px-4 py-2.5">Team</th>
+                      <th className="px-4 py-2.5">Region</th>
+                      <th className="px-4 py-2.5">Area</th>
+                      <th className="px-4 py-2.5 text-right">Unmeasured sales</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.uncovered.map((entry, index) => (
-                      <tr key={entry.key} className={cn("border-b border-border/60 last:border-0", index % 2 === 1 ? "bg-muted/20" : undefined)}>
-                        <td className="whitespace-nowrap px-4 py-2 font-bold">{entry.teamName}</td>
-                        <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">{entry.regionName}</td>
-                        <td className="whitespace-nowrap px-4 py-2">{entry.areaName}</td>
-                        <td className="whitespace-nowrap px-4 py-2 text-right font-black tabular-nums text-amber-600">
+                    {data.uncovered.map((entry) => (
+                      <tr key={entry.key} className={TABLE_ROW_CLASS}>
+                        <td className="break-words px-4 py-2.5 font-bold text-slate-900">{entry.teamName}</td>
+                        <td className="break-words px-4 py-2.5 text-slate-500">{entry.regionName}</td>
+                        <td className="break-words px-4 py-2.5 text-slate-700">{entry.areaName}</td>
+                        <td className="px-4 py-2.5 text-right font-black tabular-nums text-amber-600">
                           {formatEgpFull(entry.actualValue)}
                         </td>
                       </tr>
@@ -818,16 +822,16 @@ export function VsTargetDashboard({
               </div>
               <div className="space-y-2 p-3 md:hidden">
                 {data.uncovered.map((entry) => (
-                  <div key={entry.key} className="flex overflow-hidden border border-border bg-background">
+                  <div key={entry.key} className="flex border border-slate-200 bg-white">
                     <span className="w-1 shrink-0 bg-amber-500" aria-hidden />
                     <div className="min-w-0 flex-1 p-3">
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="overflow-x-auto whitespace-nowrap text-sm font-bold">{entry.areaName}</p>
+                        <p className="min-w-0 break-words text-sm font-bold text-slate-900">{entry.areaName}</p>
                         <span className="shrink-0 whitespace-nowrap text-sm font-black tabular-nums text-amber-600">
                           {formatEgp(entry.actualValue)}
                         </span>
                       </div>
-                      <p className="mt-1 overflow-x-auto whitespace-nowrap text-xs text-muted-foreground">
+                      <p className="mt-1 break-words text-xs text-slate-500">
                         {entry.teamName} · {entry.regionName}
                       </p>
                     </div>

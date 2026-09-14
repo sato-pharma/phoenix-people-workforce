@@ -23,10 +23,14 @@ import {
   BandChoice,
   BandStat,
   CommandBand,
+  LABEL_CLASS,
   ProportionBar,
   SectionCard,
+  TABLE_HEAD_CLASS,
+  TABLE_ROW_CLASS,
   achievementHex,
   achievementTone,
+  chipClass,
   formatEgp,
   formatEgpFull,
   formatPct,
@@ -134,6 +138,10 @@ const divisionHint = (actual: number, target: number): string =>
 
 const keyOf = (row: TargetGridRow): string => `${row.areaCode}|${row.productCode}`;
 
+/** A quiet white action (a download link, a toggle) that turns orange on hover and focus. */
+const OUTLINE_ACTION_CLASS =
+  "inline-flex h-8 items-center gap-1.5 border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
+
 type CustomerLine = { customerName: string; units: number; value: number };
 type DistGroup = { distributorName: string; units: number; value: number; customers: CustomerLine[] };
 type BrickGroup = { brickName: string; units: number; value: number; distributors: DistGroup[] };
@@ -182,9 +190,9 @@ function groupSource(rows: BreakdownLine[]): BrickGroup[] {
 function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; selectedPeriod: string }) {
   const groups = useMemo(() => groupSource(detail.rows), [detail.rows]);
 
-  if (detail.loading) return <div className="text-xs text-muted-foreground">Loading source…</div>;
+  if (detail.loading) return <div className="text-xs text-slate-500">Loading source…</div>;
   if (detail.error) return <div className="text-xs font-semibold text-red-600">{detail.error}</div>;
-  if (detail.rows.length === 0) return <div className="text-xs text-muted-foreground">No source rows.</div>;
+  if (detail.rows.length === 0) return <div className="text-xs text-slate-500">No source rows.</div>;
 
   const maxBrick = Math.max(...groups.map((brick) => Math.abs(brick.value)), 1);
   const maxTrend = Math.max(...detail.trend.map((point) => Math.abs(point.value)), 1);
@@ -192,8 +200,8 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
   return (
     <div className="space-y-3">
       {detail.trend.length > 1 ? (
-        <div className="border border-border bg-background p-3">
-          <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="border border-slate-200 bg-white p-3">
+          <p className={`mb-2 ${LABEL_CLASS}`}>
             Month over month — this area &amp; product
           </p>
           {/* A row of mini columns rather than a line of text figures: the SHAPE of the trend is
@@ -204,14 +212,14 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
               return (
                 <div key={point.period} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                   <span
-                    className={cn("w-full", isCurrent ? "bg-orange-500" : "bg-slate-300")}
+                    className={cn("w-full", isCurrent ? "bg-orange-500" : "bg-slate-200")}
                     style={{ height: `${Math.max(2, (Math.abs(point.value) / maxTrend) * 44)}px` }}
                     aria-hidden
                   />
                   <span
                     className={cn(
                       "text-phx-3xs tabular-nums",
-                      isCurrent ? "font-black text-foreground" : "text-muted-foreground",
+                      isCurrent ? "font-black text-orange-600" : "text-slate-500",
                     )}
                   >
                     {point.period.slice(2)}
@@ -223,16 +231,19 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
         </div>
       ) : null}
       <div>
-        <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+        <p className={`mb-2 ${LABEL_CLASS}`}>
           Source of {formatEgpFull(detail.totalValue)} · {fmtUnits(detail.totalUnits)} units — brick → distributor → customer
         </p>
         <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
           {groups.map((brick) => (
-            <div key={brick.brickName} className="overflow-hidden border border-border bg-background">
-              <div className="bg-slate-900 px-3 py-1.5">
-                <div className="flex items-baseline justify-between gap-x-3">
-                  <span className="min-w-0 text-phx-xs font-black text-white">{brick.brickName}</span>
-                  <span className="shrink-0 whitespace-nowrap text-phx-xs font-black tabular-nums text-orange-400">
+            <div key={brick.brickName} className="border border-slate-200 bg-white">
+              {/* The brick header: an orange left rule on a quiet slate ground. No wrapper
+                  overflow-hidden and no nowrap, so the figures wrap under the name on a phone
+                  instead of being cut at the card's edge. */}
+              <div className="border-b border-slate-200 border-l-[3px] border-l-orange-500 bg-slate-50 px-3 py-2">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <span className="min-w-0 break-words text-phx-xs font-black text-slate-900">{brick.brickName}</span>
+                  <span className="text-phx-xs font-black tabular-nums text-orange-600">
                     {fmtUnits(brick.units)} units · {formatEgpFull(brick.value)}
                   </span>
                 </div>
@@ -241,21 +252,21 @@ function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; s
                 </div>
               </div>
               {brick.distributors.map((dist, di) => (
-                <div key={`${dist.distributorName}-${di}`} className="border-t border-border">
-                  <div className="flex items-baseline justify-between gap-x-2 bg-muted/40 px-3 py-1 text-phx-xs font-bold">
-                    <span className="min-w-0">{dist.distributorName}</span>
-                    <span className="shrink-0 whitespace-nowrap tabular-nums">
+                <div key={`${dist.distributorName}-${di}`} className="border-t border-slate-100 first:border-t-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-800">
+                    <span className="min-w-0 break-words">{dist.distributorName}</span>
+                    <span className="tabular-nums text-slate-900">
                       {fmtUnits(dist.units)} · {formatEgpFull(dist.value)}
                     </span>
                   </div>
                   {dist.customers.map((cust, ci) => (
                     <div
                       key={`${cust.customerName}-${ci}`}
-                      className="flex items-baseline gap-x-3 border-t border-border/40 py-1 pl-6 pr-3 text-phx-xs"
+                      className="flex items-baseline gap-x-3 border-t border-slate-100 py-1 pl-6 pr-3 text-phx-xs transition-colors hover:bg-orange-50/40"
                     >
-                      <span className="min-w-0 flex-1 text-muted-foreground">{cust.customerName}</span>
-                      <span className="w-16 shrink-0 text-right tabular-nums">{fmtUnits(cust.units)}</span>
-                      <span className="w-24 shrink-0 text-right font-semibold tabular-nums">{formatEgp(cust.value)}</span>
+                      <span className="min-w-0 flex-1 break-words text-slate-500">{cust.customerName}</span>
+                      <span className="w-16 shrink-0 text-right tabular-nums text-slate-600">{fmtUnits(cust.units)}</span>
+                      <span className="w-24 shrink-0 text-right font-semibold tabular-nums text-slate-900">{formatEgp(cust.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -284,15 +295,15 @@ function RollupList({
   emptyLabel: string;
 }) {
   if (entries.length === 0) {
-    return <p className="px-4 py-8 text-center text-xs text-muted-foreground">{emptyLabel}</p>;
+    return <p className="px-4 py-8 text-center text-xs text-slate-500">{emptyLabel}</p>;
   }
   const max = Math.max(...entries.map((entry) => Math.abs(entry.actualValue)), 1);
   return (
-    <ol className="max-h-72 divide-y divide-border overflow-y-auto">
+    <ol className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
       {entries.map((entry, index) => (
         <li
           key={entry.name}
-          className="grid grid-cols-[1.5rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-2.5"
+          className="grid grid-cols-[1.5rem_minmax(0,1fr)_5.5rem] items-center gap-x-3 gap-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
           title={divisionHint(entry.actualValue, entry.targetValue)}
         >
           <span
@@ -301,8 +312,8 @@ function RollupList({
           >
             {index + 1}
           </span>
-          <p className="min-w-0 text-phx-md font-bold text-foreground">{entry.name}</p>
-          <span className="whitespace-nowrap text-right text-phx-md font-black tabular-nums">
+          <p className="min-w-0 break-words text-phx-md font-bold text-slate-900">{entry.name}</p>
+          <span className="whitespace-nowrap text-right text-phx-md font-black tabular-nums text-slate-900">
             {formatEgp(entry.actualValue)}
           </span>
           <span aria-hidden />
@@ -514,7 +525,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   );
 
   return (
-    <div className="space-y-3 p-3 sm:p-4">
+    <div className="space-y-4 p-3 sm:p-4">
       <CommandBand
         kicker={canEdit ? "Sales Operations · Authoring" : "Sales Operations · View only"}
         title="Targets"
@@ -545,13 +556,13 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             </>
           ) : undefined
         }
-        ring={total ? <AchievementRing dark value={total.achievementValue} size={150} stroke={13} label="Achievement" /> : undefined}
+        ring={total ? <AchievementRing value={total.achievementValue} size={150} stroke={13} label="Achievement" /> : undefined}
         aside={
           total ? (
-            <div>
-              <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Measured</p>
-              <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-white">{formatPct(measured)}</p>
-              <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-400">
+            <div className="border-l border-slate-100 pl-6">
+              <p className={LABEL_CLASS}>Measured</p>
+              <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">{formatPct(measured)}</p>
+              <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-500">
                 of this line&apos;s sales sits on a product with a target of its own
               </p>
             </div>
@@ -565,7 +576,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               selected={props.selectedLine}
               onSelect={(value) => navigate(value, props.selectedPeriod)}
             />
-            <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-700 sm:block" />
+            <span aria-hidden className="mx-2 hidden h-4 w-px bg-slate-200 sm:block" />
             <BandChoice
               label="Month"
               options={props.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
@@ -577,20 +588,20 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       />
 
       {props.error ? (
-        <div className="flex items-start gap-3 border border-red-300 bg-red-50 px-4 py-2.5">
+        <div className="flex items-start gap-3 border border-l-[3px] border-red-200 border-l-red-500 bg-red-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
           <p className="min-w-0 text-xs font-semibold leading-5 text-red-800">{props.error}</p>
         </div>
       ) : null}
 
       {message ? (
-        <div className="border border-border bg-muted/40 px-4 py-2.5 text-xs font-semibold text-foreground">{message}</div>
+        <div className="border border-l-[3px] border-slate-200 border-l-orange-500 bg-white px-4 py-3 text-xs font-semibold text-slate-800">{message}</div>
       ) : null}
 
       {/* Ungraded sales banner — the same explanation Sales vs Target gives, in the same words, so
           the two screens cannot be read as disagreeing about what achievement measures. */}
       {total && notGraded !== 0 ? (
-        <div className="flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-2.5">
+        <div className="flex items-start gap-3 border border-l-[3px] border-amber-200 border-l-amber-500 bg-amber-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div className="min-w-0 text-xs leading-5 text-amber-900">
             {/* One template literal, not `{expr} text`: a JSX text chunk that carries an HTML
@@ -610,7 +621,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       ) : null}
 
       {/* ── Rollups: the same figures the old flat cards printed as bare text, now with a shape ── */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SectionCard
           title="By region"
           subtitle={`${rankedRegions.length.toLocaleString("en-US")} region${rankedRegions.length === 1 ? "" : "s"} · ranked by sales`}
@@ -638,7 +649,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               {/* Line-WIDE audit export (no area parameter, so there is nothing to scope) — stays
                   with the authoring roles. */}
               <a
-                className="inline-flex h-8 items-center border border-input px-3 text-phx-xs font-bold hover:bg-accent"
+                className={OUTLINE_ACTION_CLASS}
                 href={`/api/sales/targets/breakdown/export?line=${encodeURIComponent(props.selectedLine)}&period=${encodeURIComponent(props.selectedPeriod)}`}
               >
                 Export audit
@@ -648,7 +659,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </Button>
             </div>
           ) : (
-            <span className="border border-input px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               View only
             </span>
           )
@@ -656,10 +667,10 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       >
         {props.rows.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm font-bold text-foreground">
+            <p className="text-sm font-bold text-slate-900">
               Nothing loaded for {lineLabel} in {formatPeriod(props.selectedPeriod)}.
             </p>
-            <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
+            <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-slate-500">
               {canEdit
                 ? "No targets and no sales yet for this line and month. Download the template, fill it and upload it — or pick a month whose distributor sales have been loaded."
                 : "No targets or sales for your territory in this line and month."}
@@ -675,40 +686,40 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               {props.rows.map((row) => {
                 const view = viewRow(row);
                 return (
-                  <div className="flex overflow-hidden border border-border bg-background" key={view.key}>
+                  <div className="flex border border-slate-200 bg-white" key={view.key}>
                     <span className="w-1 shrink-0" style={{ backgroundColor: achievementHex(view.liveAch) }} aria-hidden />
                     <div className="min-w-0 flex-1 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-black text-foreground">
+                          <p className="break-words text-sm font-black text-slate-900">
                             {row.areaName || "—"}
                             {row.areaState === "vacant_will_hire" ? <Badge className="ml-1.5 align-middle">vacant</Badge> : null}
                           </p>
-                          <p className="text-phx-xs text-muted-foreground">
+                          <p className="break-words text-phx-xs text-slate-500">
                             {row.productName || "—"} · {row.regionName ?? "—"}
                           </p>
-                          <p className="text-phx-xs text-muted-foreground">Rep: {row.repName ?? "vacant"}</p>
+                          <p className="break-words text-phx-xs text-slate-500">Rep: {row.repName ?? "vacant"}</p>
                         </div>
                         <div className="w-24 shrink-0">
                           <AchievementMeter value={view.liveAch} />
                         </div>
                       </div>
 
-                      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-phx-xs">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <dt className="text-muted-foreground">Actual</dt>
-                          <dd className="whitespace-nowrap font-black tabular-nums">{formatEgp(row.actualValue)}</dd>
+                      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-slate-100 pt-2.5 text-phx-xs">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                          <dt className="text-slate-500">Actual</dt>
+                          <dd className="whitespace-nowrap font-black tabular-nums text-slate-900">{formatEgp(row.actualValue)}</dd>
                         </div>
-                        <div className="flex items-baseline justify-between gap-2">
-                          <dt className="text-muted-foreground">Unit price</dt>
-                          <dd className="whitespace-nowrap tabular-nums text-muted-foreground">{fmtPrice(row.unitPrice)}</dd>
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                          <dt className="text-slate-500">Unit price</dt>
+                          <dd className="whitespace-nowrap tabular-nums text-slate-600">{fmtPrice(row.unitPrice)}</dd>
                         </div>
                       </dl>
 
                       {canEdit ? (
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           <label className="block">
-                            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Target units</span>
+                            <span className={LABEL_CLASS}>Target units</span>
                             <Input
                               type="number"
                               inputMode="decimal"
@@ -719,7 +730,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                             />
                           </label>
                           <label className="block">
-                            <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Target value</span>
+                            <span className={LABEL_CLASS}>Target value</span>
                             <Input
                               type="number"
                               inputMode="decimal"
@@ -732,15 +743,15 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                         </div>
                       ) : (
                         <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-phx-xs">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <dt className="text-muted-foreground">Target units</dt>
-                            <dd className="whitespace-nowrap tabular-nums">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                            <dt className="text-slate-500">Target units</dt>
+                            <dd className="whitespace-nowrap tabular-nums text-slate-700">
                               {row.targetUnits == null ? "—" : fmtUnits(row.targetUnits)}
                             </dd>
                           </div>
-                          <div className="flex items-baseline justify-between gap-2">
-                            <dt className="text-muted-foreground">Target value</dt>
-                            <dd className="whitespace-nowrap font-black tabular-nums">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                            <dt className="text-slate-500">Target value</dt>
+                            <dd className="whitespace-nowrap font-black tabular-nums text-sky-600">
                               {row.targetValue == null ? "—" : formatEgp(row.targetValue)}
                             </dd>
                           </div>
@@ -750,7 +761,8 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                       {view.canDrill ? (
                         <button
                           type="button"
-                          className="mt-2.5 inline-flex items-center gap-1.5 border border-input px-2.5 py-1 text-phx-xs font-bold text-muted-foreground hover:bg-accent"
+                          aria-expanded={Boolean(view.detail)}
+                          className={cn("mt-2.5 inline-flex items-center gap-1.5", chipClass(Boolean(view.detail)))}
                           onClick={() => toggleBreakdown(row)}
                         >
                           <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", view.detail ? "" : "-rotate-90")} />
@@ -758,7 +770,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                         </button>
                       ) : null}
                       {view.detail ? (
-                        <div className="mt-2 bg-muted/30 p-2">
+                        <div className="mt-2 border border-slate-100 bg-slate-50 p-2">
                           <SourceBreakdown detail={view.detail} selectedPeriod={props.selectedPeriod} />
                         </div>
                       ) : null}
@@ -785,57 +797,57 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   <col style={{ width: "11%" }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10">
-                  <tr className="bg-slate-900 text-left text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
+                  <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
                     <th className="px-2 py-2.5" />
-                    <th className="px-3 py-2.5 font-black">Area</th>
-                    <th className="px-3 py-2.5 font-black">Product</th>
-                    <th className="px-3 py-2.5 text-right font-black">Actual</th>
-                    <th className="px-3 py-2.5 text-right font-black">Target units</th>
-                    <th className="px-3 py-2.5 text-right font-black">Target value</th>
-                    <th className="px-3 py-2.5 text-right font-black">Achievement</th>
+                    <th className="px-3 py-2.5">Area</th>
+                    <th className="px-3 py-2.5">Product</th>
+                    <th className="px-3 py-2.5 text-right">Actual</th>
+                    <th className="px-3 py-2.5 text-right">Target units</th>
+                    <th className="px-3 py-2.5 text-right">Target value</th>
+                    <th className="px-3 py-2.5 text-right">Achievement</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {props.rows.map((row, index) => {
+                  {props.rows.map((row) => {
                     const { canDrill, detail, editValue, key, liveAch, unitValue } = viewRow(row);
                     return (
                       <Fragment key={key}>
-                        <tr
-                          className={cn(
-                            "border-b border-border/60 transition-colors",
-                            index % 2 === 1 ? "bg-muted/20" : undefined,
-                            detail ? "bg-orange-50" : "hover:bg-muted/40",
-                          )}
-                        >
-                          <td className="px-2 py-2.5 align-top">
+                        <tr className={cn(TABLE_ROW_CLASS, detail ? "bg-orange-50" : undefined)}>
+                          <td className="px-2 py-3 align-top">
                             {canDrill ? (
                               <button
                                 type="button"
                                 aria-label={detail ? "Hide source" : "Show source"}
-                                className="flex h-5 w-5 items-center justify-center text-muted-foreground hover:bg-accent"
+                                aria-expanded={Boolean(detail)}
+                                className={cn(
+                                  "flex h-6 w-6 items-center justify-center border transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
+                                  detail
+                                    ? "border-orange-300 bg-white text-orange-600"
+                                    : "border-transparent text-slate-400 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600",
+                                )}
                                 onClick={() => toggleBreakdown(row)}
                               >
                                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", detail ? "" : "-rotate-90")} />
                               </button>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2.5 align-top">
-                            <p className="font-bold text-foreground">
+                          <td className="px-3 py-3 align-top">
+                            <p className="break-words font-bold text-slate-900">
                               {row.areaName || "—"}
                               {row.areaState === "vacant_will_hire" ? <Badge className="ml-1.5 align-middle">vacant</Badge> : null}
                             </p>
-                            <p className="text-phx-xs text-muted-foreground">{row.regionName ?? "—"}</p>
+                            <p className="break-words text-phx-xs text-slate-500">{row.regionName ?? "—"}</p>
                           </td>
-                          <td className="px-3 py-2.5 align-top">
-                            <p className="font-medium text-foreground">{row.productName || "—"}</p>
-                            <p className="text-phx-xs text-muted-foreground">
+                          <td className="px-3 py-3 align-top">
+                            <p className="break-words font-medium text-slate-800">{row.productName || "—"}</p>
+                            <p className="break-words text-phx-xs text-slate-500">
                               {row.repName ?? <span className="italic">vacant</span>}
                             </p>
                           </td>
-                          <td className="px-3 py-2.5 text-right align-top font-semibold tabular-nums">
+                          <td className="px-3 py-3 text-right align-top font-bold tabular-nums text-slate-900">
                             {formatEgpFull(row.actualValue)}
                           </td>
-                          <td className="px-3 py-2.5 text-right align-top">
+                          <td className="px-3 py-3 text-right align-top">
                             {canEdit ? (
                               <Input
                                 type="number"
@@ -846,11 +858,11 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                                 onChange={(event) => onUnitsChange(row, event.target.value)}
                               />
                             ) : (
-                              <span className="tabular-nums">{row.targetUnits == null ? "—" : fmtUnits(row.targetUnits)}</span>
+                              <span className="tabular-nums text-slate-700">{row.targetUnits == null ? "—" : fmtUnits(row.targetUnits)}</span>
                             )}
-                            <p className="mt-1 text-phx-xs tabular-nums text-muted-foreground">@ {fmtPrice(row.unitPrice)}</p>
+                            <p className="mt-1 text-phx-xs tabular-nums text-slate-500">@ {fmtPrice(row.unitPrice)}</p>
                           </td>
-                          <td className="px-3 py-2.5 text-right align-top">
+                          <td className="px-3 py-3 text-right align-top">
                             {canEdit ? (
                               <Input
                                 type="number"
@@ -861,18 +873,18 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                                 onChange={(event) => onValueChange(key, event.target.value)}
                               />
                             ) : (
-                              <span className="font-semibold tabular-nums">
+                              <span className="font-semibold tabular-nums text-sky-600">
                                 {row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}
                               </span>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 align-top">
+                          <td className="px-3 py-3 align-top">
                             <AchievementMeter value={liveAch} />
                           </td>
                         </tr>
                         {detail ? (
-                          <tr className="border-b border-border bg-slate-50">
-                            <td className="px-3 py-3" colSpan={7}>
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            <td className="px-4 py-4" colSpan={7}>
                               <SourceBreakdown detail={detail} selectedPeriod={props.selectedPeriod} />
                             </td>
                           </tr>
@@ -895,14 +907,14 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           icon={Upload}
           actions={
             <a
-              className="inline-flex h-8 items-center border border-input px-3 text-phx-xs font-bold hover:bg-accent"
+              className={OUTLINE_ACTION_CLASS}
               href={`/api/sales/targets/template?line=${encodeURIComponent(props.selectedLine)}`}
             >
               Download template
             </a>
           }
         >
-          <div className="space-y-3 p-4">
+          <div className="space-y-3 p-5">
             <div className="flex flex-wrap items-center gap-3">
               <Input
                 type="file"
@@ -918,13 +930,13 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </Button>
             </div>
             {preview ? (
-              <div className="border border-border bg-muted/20 p-3">
+              <div className="border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
                   <span>
                     <span className="text-xl font-black tabular-nums text-emerald-600">
                       {preview.validRows.toLocaleString("en-US")}
                     </span>{" "}
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-xs text-slate-500">
                       valid of {preview.totalRows.toLocaleString("en-US")}
                     </span>
                   </span>
@@ -933,7 +945,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                       <span className="text-xl font-black tabular-nums text-red-600">
                         {preview.errors.length.toLocaleString("en-US")}
                       </span>{" "}
-                      <span className="text-xs text-muted-foreground">rejected</span>
+                      <span className="text-xs text-slate-500">rejected</span>
                     </span>
                   ) : null}
                 </div>
@@ -944,7 +956,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   />
                 </div>
                 {preview.errors.length > 0 ? (
-                  <ul className="mt-2.5 max-h-40 space-y-1 overflow-y-auto text-phx-xs text-muted-foreground">
+                  <ul className="mt-2.5 max-h-40 space-y-1 overflow-y-auto text-phx-xs text-slate-600">
                     {preview.errors.slice(0, 50).map((issue, index) => (
                       <li key={`${issue.rowNumber}-${index}`}>Row {issue.rowNumber}: {issue.message}</li>
                     ))}
@@ -968,7 +980,8 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           actions={
             <button
               type="button"
-              className="inline-flex h-8 items-center gap-1.5 border border-input px-3 text-phx-xs font-bold hover:bg-accent"
+              aria-expanded={showFiles}
+              className={OUTLINE_ACTION_CLASS}
               onClick={() => setShowFiles((value) => !value)}
             >
               <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showFiles ? "" : "-rotate-90")} />
@@ -977,7 +990,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           }
         >
           {!showFiles ? null : props.sourceFiles.length === 0 ? (
-            <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+            <p className="px-4 py-8 text-center text-xs text-slate-500">
               No validated distributor files for {formatPeriod(props.selectedPeriod)}.
             </p>
           ) : (
@@ -987,26 +1000,26 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   value nobody may see truncated. Authoring-only, but it is still opened on a phone. */}
               <div className="max-h-80 space-y-2 overflow-y-auto p-3 md:hidden">
                 {props.sourceFiles.map((sourceFile, index) => (
-                  <div className="flex overflow-hidden border border-border bg-background" key={`${sourceFile.fileName}-${index}`}>
+                  <div className="flex border border-slate-200 bg-white" key={`${sourceFile.fileName}-${index}`}>
                     <span className="w-1 shrink-0 bg-sky-500" aria-hidden />
                     <div className="min-w-0 flex-1 p-3">
-                      <p className="text-sm font-black">{sourceFile.distributorName}</p>
-                      <p className="break-all text-phx-xs text-muted-foreground" dir="auto">{sourceFile.fileName}</p>
-                      <p className="mt-0.5 text-phx-xs text-muted-foreground">
+                      <p className="break-words text-sm font-black text-slate-900">{sourceFile.distributorName}</p>
+                      <p className="break-all text-phx-xs text-slate-500" dir="auto">{sourceFile.fileName}</p>
+                      <p className="mt-0.5 text-phx-xs text-slate-500">
                         {sourceFile.uploadedBy || "—"} · {sourceFile.uploadedAt ? sourceFile.uploadedAt.slice(0, 10) : "—"}
                       </p>
-                      <dl className="mt-1.5 grid grid-cols-3 gap-x-3 text-phx-xs">
+                      <dl className="mt-2 grid grid-cols-3 gap-x-3 border-t border-slate-100 pt-2 text-phx-xs">
                         <div>
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Rows</dt>
-                          <dd className="tabular-nums">{fmtUnits(sourceFile.importableRows)}</dd>
+                          <dt className={LABEL_CLASS}>Rows</dt>
+                          <dd className="tabular-nums text-slate-700">{fmtUnits(sourceFile.importableRows)}</dd>
                         </div>
                         <div>
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Units</dt>
-                          <dd className="tabular-nums">{fmtUnits(sourceFile.totalQty)}</dd>
+                          <dt className={LABEL_CLASS}>Units</dt>
+                          <dd className="tabular-nums text-slate-700">{fmtUnits(sourceFile.totalQty)}</dd>
                         </div>
                         <div>
-                          <dt className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Value</dt>
-                          <dd className="font-black tabular-nums">{formatEgp(sourceFile.totalValue)}</dd>
+                          <dt className={LABEL_CLASS}>Value</dt>
+                          <dd className="font-black tabular-nums text-slate-900">{formatEgp(sourceFile.totalValue)}</dd>
                         </div>
                       </dl>
                     </div>
@@ -1025,29 +1038,26 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                     <col style={{ width: "10%" }} />
                   </colgroup>
                   <thead className="sticky top-0 z-10">
-                    <tr className="bg-slate-900 text-left text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
-                      <th className="px-3 py-2.5 font-black">Distributor</th>
-                      <th className="px-3 py-2.5 font-black">File</th>
-                      <th className="px-3 py-2.5 font-black">Uploaded by</th>
-                      <th className="px-3 py-2.5 font-black">When</th>
-                      <th className="px-3 py-2.5 text-right font-black">Rows</th>
-                      <th className="px-3 py-2.5 text-right font-black">Units</th>
-                      <th className="px-3 py-2.5 text-right font-black">Value</th>
+                    <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
+                      <th className="px-3 py-2.5">Distributor</th>
+                      <th className="px-3 py-2.5">File</th>
+                      <th className="px-3 py-2.5">Uploaded by</th>
+                      <th className="px-3 py-2.5">When</th>
+                      <th className="px-3 py-2.5 text-right">Rows</th>
+                      <th className="px-3 py-2.5 text-right">Units</th>
+                      <th className="px-3 py-2.5 text-right">Value</th>
                     </tr>
                   </thead>
                   <tbody>
                     {props.sourceFiles.map((sourceFile, index) => (
-                      <tr
-                        key={`${sourceFile.fileName}-${index}`}
-                        className={cn("border-b border-border/60", index % 2 === 1 ? "bg-muted/20" : undefined)}
-                      >
-                        <td className="px-3 py-2 font-bold">{sourceFile.distributorName}</td>
-                        <td className="break-all px-3 py-2 text-muted-foreground" dir="auto">{sourceFile.fileName}</td>
-                        <td className="px-3 py-2">{sourceFile.uploadedBy || "—"}</td>
-                        <td className="px-3 py-2 tabular-nums">{sourceFile.uploadedAt ? sourceFile.uploadedAt.slice(0, 10) : "—"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtUnits(sourceFile.importableRows)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtUnits(sourceFile.totalQty)}</td>
-                        <td className="px-3 py-2 text-right font-black tabular-nums">{formatEgp(sourceFile.totalValue)}</td>
+                      <tr key={`${sourceFile.fileName}-${index}`} className={TABLE_ROW_CLASS}>
+                        <td className="break-words px-3 py-2.5 font-bold text-slate-900">{sourceFile.distributorName}</td>
+                        <td className="break-all px-3 py-2.5 text-slate-500" dir="auto">{sourceFile.fileName}</td>
+                        <td className="break-words px-3 py-2.5 text-slate-700">{sourceFile.uploadedBy || "—"}</td>
+                        <td className="px-3 py-2.5 tabular-nums text-slate-700">{sourceFile.uploadedAt ? sourceFile.uploadedAt.slice(0, 10) : "—"}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{fmtUnits(sourceFile.importableRows)}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{fmtUnits(sourceFile.totalQty)}</td>
+                        <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-900">{formatEgp(sourceFile.totalValue)}</td>
                       </tr>
                     ))}
                   </tbody>
