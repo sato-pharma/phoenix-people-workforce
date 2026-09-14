@@ -38,7 +38,7 @@ import {
   nativeVisitManagerSinglePartnerRefusal,
   nativeVisitOnBehalfDays,
   nativeVisitPartnerRefusal,
-  nativeVisitPilotForLine,
+  nativeVisitPilotForRep,
   nativeVisitPlannedContactIds,
   nativeVisitPlanRefusal,
   nativeVisitShiftRefusal,
@@ -58,7 +58,7 @@ import {
   isUniqueViolation,
   loadDirectory,
   loadEntryGate,
-  loadPilots,
+  loadPilotRoster,
   loadRepContacts,
   loadTeamContacts,
   managementChain,
@@ -287,7 +287,7 @@ async function notifyRepOfOnBehalfVisit(input: {
   const what = [nativeDayLabel(input.visitDate), input.shift, input.typeLabel, input.doctor].filter(Boolean).join(" · ");
   try {
     await createSystemNotification({
-      actionUrl: "/employee-portals/visits/log",
+      actionUrl: "/employee-portals/phoenix-crm?tab=visits",
       ...(input.enteredByHrId ? { actorId: input.enteredByHrId } : {}),
       category: "general",
       channels: ["in_app"],
@@ -315,15 +315,15 @@ export async function getNativeVisitFormOptions(
   onBehalf?: { repHrId: unknown },
 ): Promise<NativeVisitFormOptions> {
   await assertPermission(access, "crm_visit_entry", onBehalf ? "update" : "create");
-  const [directory, pilots, managerSingle] = await Promise.all([
+  const [directory, roster, managerSingle] = await Promise.all([
     loadDirectory(),
-    loadPilots(),
+    loadPilotRoster(),
     onBehalf ? Promise.resolve(false) : isManagerSingleEntry(access),
   ]);
   const rep = onBehalf
     ? await requireRepForOnBehalfEntry(access, directory, onBehalf.repHrId)
     : requireActiveSelf(access, directory);
-  const gate = await loadEntryGate(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep, roster);
   const { pilot } = gate;
   const cairoToday = cairoTodayIso();
   const entryDays = nativeVisitEntryDays(cairoToday);
@@ -372,11 +372,11 @@ export async function getNativeVisitEntryAvailability(access: AccessContext): Pr
     let canLog = false;
     let pilotOnly = true;
     if (mayCreate) {
-      const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+      const [directory, roster] = await Promise.all([loadDirectory(), loadPilotRoster()]);
       const key = canonicalHrIdKey(access.hrId);
       const rep = key ? directory.byKey.get(key) : undefined;
       if (rep && isActiveDirectoryEmployee(rep)) {
-        const gate = await loadEntryGate(rep.lineName, pilots);
+        const gate = await loadEntryGate(rep, roster);
         const cairoToday = cairoTodayIso();
         // Offered once a pilot row or a cutover date exists; the form says when it opens.
         canLog = isNativeEntryOffered(gate, cairoToday);
@@ -416,9 +416,9 @@ export async function createNativeVisit(
   await assertPermission(access, "crm_visit_entry", onBehalf ? "update" : "create");
   const enteredOnBehalf = onBehalf != null;
   const supabase = getSupabaseAdmin();
-  const [directory, pilots, managerSingle] = await Promise.all([
+  const [directory, roster, managerSingle] = await Promise.all([
     loadDirectory(),
-    loadPilots(),
+    loadPilotRoster(),
     enteredOnBehalf ? Promise.resolve(false) : isManagerSingleEntry(access),
   ]);
   const rep = onBehalf
@@ -432,13 +432,13 @@ export async function createNativeVisit(
   if (!parsed.ok) throw validationError(parsed.error);
   const draft = parsed.value;
 
-  const gate = await loadEntryGate(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep, roster);
   const { pilot } = gate;
   if (!isNativeEntryDay(gate, draft.visitDate)) {
     throw forbiddenError(
       gate.cutoverDate
         ? `Forbidden: visits are entered in Phoenix from ${nativeDayLabel(gate.cutoverDate)}. Enter an earlier day in iReports360.`
-        : "Forbidden: visit entry in Phoenix is open only to the pilot line, on the pilot days.",
+        : "Forbidden: visit entry in Phoenix is open only to the pilot reps, from the day each joined the pilot.",
     );
   }
 
@@ -723,14 +723,34 @@ export async function listAllNativeVisits(
   input: { from?: unknown; to?: unknown; repHrId?: unknown },
 ): Promise<NativeVisitAdminView> {
   await assertPermission(access, "crm_visit_entry", "update");
+  return buildNativeVisitListView(access, input, "all");
+}
+
+/**
+ * Phoenix CRM, a manager's side (the owner, 2026-09-14): the saved visits of their own pilot reps, and no
+ * one else's — scope runs downward only. Read only: a visit naming them is answered on their confirmations.
+ */
+export async function listPilotTeamNativeVisits(
+  access: AccessContext,
+  input: { from?: unknown; to?: unknown; repHrId?: unknown },
+): Promise<NativeVisitAdminView> {
+  await assertPermission(access, "crm_visit_entry", "approve");
+  return buildNativeVisitListView(access, input, "team");
+}
+
+async function buildNativeVisitListView(
+  access: AccessContext,
+  input: { from?: unknown; to?: unknown; repHrId?: unknown },
+  audience: "all" | "team",
+): Promise<NativeVisitAdminView> {
   const to = isoDayOr(input.to, cairoTodayIso());
   const from = isoDayOr(input.from, addDaysIso(to, -HISTORY_DAYS));
   if (from > to) throw validationError("The first day must be on or before the last day.");
   if (from < addDaysIso(to, -ADMIN_RANGE_DAYS)) throw validationError(`Choose at most ${ADMIN_RANGE_DAYS} days at a time.`);
 
-  const [directory, pilots, cutover, scope] = await Promise.all([
+  const [directory, roster, cutover, scope] = await Promise.all([
     loadDirectory(),
-    loadPilots(),
+    loadPilotRoster(),
     getCrmCutoverSetting(),
     getDoctorCoverageScope(access),
   ]);
@@ -740,12 +760,14 @@ export async function listAllNativeVisits(
         isActiveDirectoryEmployee(row) &&
         isNativeVisitRepTitle(row.jobTitle) &&
         isAgentInScope(scope, row.hrId) &&
-        (cutover.cutoverDate != null || nativeVisitPilotForLine(row.lineName, pilots) != null),
+        canonicalHrIdKey(row.hrId) !== canonicalHrIdKey(access.hrId) &&
+        (cutover.cutoverDate != null || nativeVisitPilotForRep(row, roster) != null),
     )
     .map(repOption)
     .sort((left, right) => left.name.localeCompare(right.name));
 
   const repHrId = String(input.repHrId ?? "").trim();
+  const teamKeys = new Set(reps.map((rep) => canonicalHrIdKey(rep.hrId)));
   let query = getSupabaseAdmin()
     .from(CRM_NATIVE_VISITS_TABLE)
     .select(
@@ -754,6 +776,11 @@ export async function listAllNativeVisits(
     .gte("visit_date", from)
     .lte("visit_date", to);
   if (canonicalHrIdKey(repHrId)) query = query.in("hr_id", hrIdLookupKeys(repHrId));
+  else if (audience === "team") {
+    // A manager reads their own pilot reps only; with none there is nothing to read.
+    if (reps.length === 0) return { from, to, reps, rows: [], truncated: false };
+    query = query.in("hr_id", Array.from(new Set(reps.flatMap((rep) => hrIdLookupKeys(rep.hrId)))));
+  }
   const { data, error } = await query
     .order("visit_date", { ascending: false })
     .order("server_received_at", { ascending: false })
@@ -763,7 +790,11 @@ export async function listAllNativeVisits(
     throw error;
   }
   // Scope runs downward only, here as everywhere.
-  const matched = ((data ?? []) as Array<Record<string, unknown>>).filter((row) => isAgentInScope(scope, String(row.hr_id)));
+  const matched = ((data ?? []) as Array<Record<string, unknown>>).filter(
+    (row) =>
+      isAgentInScope(scope, String(row.hr_id)) &&
+      (audience === "all" || teamKeys.has(canonicalHrIdKey(String(row.hr_id)))),
+  );
   const rows = matched.slice(0, ADMIN_LIST_LIMIT);
   const [partners, onBehalfActors] = await Promise.all([
     loadPartnersByVisit(rows.map((row) => String(row.id))),

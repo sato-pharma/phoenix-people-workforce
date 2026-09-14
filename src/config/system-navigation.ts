@@ -4027,13 +4027,13 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
-    // The owner, 2026-09-14: the Super Admin enters a visit for a rep — any open day, any doctor on the
-    // rep's list, no location, marked as entered by him, the rep told in-app — and reads every rep's
-    // saved visits. The enforcing gate is crm_visit_entry `update` inside the service.
-    href: "/admin/visit-entry",
+    // Phoenix CRM (the owner, 2026-09-14): its own space — Visits, Planning, KPIs and the pilot roster.
+    // The Super Admin enters visits for reps, reads every pilot rep and picks who is in the pilot. The
+    // enforcing gates are crm_visit_entry checks inside the Phoenix CRM service.
+    href: "/admin/phoenix-crm",
     icon: ClipboardList,
-    label: "Visits for Reps",
-    description: "Enter a visit for a rep on any open day, saved with no location and marked as entered by you, and see every rep's saved visits.",
+    label: "Phoenix CRM",
+    description: "Visits, weekly plans and KPIs of the pilot reps, entry for a rep, and the reps in the pilot.",
     permissions: [{ resource: "crm_visit_entry", action: "update" }],
     roles: ["Super Admin"],
   },
@@ -4593,7 +4593,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/kpis",
           "/admin/plan-verification",
           "/admin/doctor-list-changes",
-          "/admin/visit-entry",
+          "/admin/phoenix-crm",
         ],
       },
       {

@@ -310,7 +310,15 @@ export function runCrmNativeVisitsTests() {
   const planService = read("src/lib/crm/native-visits/plans-service.ts");
   assert.equal((planService.match(/await refuseManagerPlanner\(access\);/g) ?? []).length, 2, "a district manager opens and saves no weekly plan");
   assert.match(planService, /if \(mayCreate && !mayApprove\) \{/, "My Visits offers a district manager no weekly plan");
-  assert.match(read("app/employee-portals/visits/plan/page.tsx"), /canAccess\(access, "crm_visit_entry", "approve"\)/, "the weekly plan page turns a district manager away");
+  // Phoenix CRM (the owner, 2026-09-14): a viewer holding approve takes the manager's seat, and only the
+  // rep's seat is shown the weekly planner.
+  const phoenixCrmService = read("src/lib/crm/native-visits/phoenix-crm.ts");
+  assert.ok(
+    phoenixCrmService.indexOf("if (mayApprove) {") > 0 &&
+      phoenixCrmService.indexOf("if (mayApprove) {") < phoenixCrmService.indexOf('{ seat: "rep", waiting: 0 }'),
+    "a district manager is seated as a manager before they could be seated as a rep",
+  );
+  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /if \(seat === "rep"\) return <NativePlanWorkspace \/>;/, "the weekly planner opens only in the rep's seat");
   assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
     "the Super Admin is nobody's rep and confirms no visit — his entry for a rep is update, below");
   assert.deepEqual(grants("Employee"), [], "an ordinary employee has no visit entry");
@@ -374,11 +382,16 @@ export function runCrmNativeVisitsTests() {
     "the save checks the origin before it saves",
   );
   assert.match(read("app/api/crm/native-visits/all/route.ts"), /await assertPermission\(access, "crm_visit_entry", "update"\);/);
-  for (const page of ["app/(admin)/admin/visit-entry/page.tsx", "app/employee-portals/visits/for-reps/page.tsx"]) {
-    assert.match(read(page), /if \(!\(await canAccess\(access, "crm_visit_entry", "update"\)\)\) \{?\s*redirect\(/, `${page} turns away anyone without update`);
+  // Entry for a rep now lives in Phoenix CRM's Visits tab, in the Super Admin's seat only.
+  assert.match(phoenixCrmService, /if \(mayUpdate\) return \{ seat: "admin", waiting: 0 \};/, "only update seats the Super Admin");
+  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /if \(seat === "admin"\) return <NativeVisitForRepWorkspace \/>;/);
+  for (const page of ["app/(admin)/admin/phoenix-crm/page.tsx", "app/employee-portals/phoenix-crm/page.tsx"]) {
+    assert.match(read(page), /const \{ seat \} = await getPhoenixCrmAccess\(access\);\s*if \(!seat\) \{?\s*redirect\(/, `${page} turns away anyone with no seat`);
   }
-  assert.match(read("src/config/system-navigation.ts"), /href: "\/admin\/visit-entry"/);
-  assert.match(read("app/employee-portals/visits/page.tsx"), /entersForReps \? \(\s*<Link[^>]*href="\/employee-portals\/visits\/for-reps"/);
+  assert.match(read("app/(admin)/admin/visit-entry/page.tsx"), /redirect\("\/admin\/phoenix-crm"\)/, "Visits for Reps lands on Phoenix CRM, whose default tab is Visits");
+  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /\?\? "visits";/, "Visits stays the default tab the old Visits for Reps address relies on");
+  assert.match(read("app/employee-portals/visits/for-reps/page.tsx"), /redirect\("\/employee-portals\/phoenix-crm\?tab=visits"\)/);
+  assert.match(read("src/config/system-navigation.ts"), /href: "\/admin\/phoenix-crm"/);
 
   // ── 10. The service and the routes ───────────────────────────────────────────────────────────
   const service = read("src/lib/crm/native-visits/service.ts");
@@ -414,8 +427,10 @@ export function runCrmNativeVisitsTests() {
     "only src/lib/crm/native-visits/ may name the native visit tables until cutover — a native row read by a report double-counts the iReports360 feed",
   );
 
-  // ── 12. Reachability: the pages are linked from My Visits ─────────────────────────────────────
+  // ── 12. Reachability: Phoenix CRM is linked from My Visits, and the old pages land in it ──────
   const myVisits = read("app/employee-portals/visits/page.tsx");
-  assert.match(myVisits, /href="\/employee-portals\/visits\/log"/);
-  assert.match(myVisits, /href="\/employee-portals\/visits\/confirmations"/);
+  assert.match(myVisits, /phoenixCrm\.seat \? \(\s*<Link[^>]*href="\/employee-portals\/phoenix-crm"/);
+  for (const page of ["log", "confirmations"]) {
+    assert.match(read(`app/employee-portals/visits/${page}/page.tsx`), /redirect\("\/employee-portals\/phoenix-crm\?tab=visits"\)/);
+  }
 }

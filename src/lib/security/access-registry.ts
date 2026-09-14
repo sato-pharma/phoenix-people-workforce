@@ -621,6 +621,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/all", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  // Phoenix CRM's pilot roster (the owner, 2026-09-14): the Super Admin picks the pilot reps. `update` is
+  // narrowed again inside the service to an active medical rep inside the caller's scope.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/phoenix-crm/pilot-reps", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/phoenix-crm/pilot-reps", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   // A partner confirmation. `approve` is narrowed again inside the service: only the partner NAMED on
   // the visit may answer, and only for a rep inside his downward scope.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),
