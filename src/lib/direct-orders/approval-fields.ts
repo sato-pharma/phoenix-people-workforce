@@ -1,4 +1,5 @@
 import { codeNameLabel } from "@/lib/direct-orders/geo-names";
+import { describeReturnedDirectOrderWait } from "@/lib/direct-orders/status-labels";
 import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
 import type {
   DirectOrderApprovalDetail,
@@ -547,6 +548,19 @@ export type DirectOrderApprovalNarrativeStep = DirectOrderStepState & {
   decidedByName: string | null;
   state: "done" | "current" | "waiting" | "rejected";
   sentence: string;
+  /**
+   * What the progress bar prints under this rung: the rung's own label, except the open rung of a
+   * RETURNED order, which reads "Returned — waiting for <requester>" (owner, 2026-09-14).
+   */
+  trackerLabel: string;
+};
+
+/** The request-level facts a rung cannot know from its own row. */
+export type DirectOrderApprovalNarrativeContext = {
+  requestStatus?: string | null;
+  requesterName?: string | null;
+  /** Who sent it back — the return is an EVENT, so the step row never records it. */
+  returnedByName?: string | null;
 };
 
 /**
@@ -555,10 +569,16 @@ export type DirectOrderApprovalNarrativeStep = DirectOrderStepState & {
  * fields). Only the FIRST not-yet-decided step reads "current"; the raw data has no such
  * distinction on its own (every undecided rung is stored as `status: "pending"`), so that's tracked
  * here rather than re-derived by each renderer.
+ *
+ * A RETURN leaves the returning rung `pending` too, so without the request's status that rung read
+ * "Waiting on SFE Manager now" while the order sat with its requester — and the approver it named
+ * went looking for an Approve button a returned order never has.
  */
 export function buildDirectOrderApprovalNarrative(
   steps: Array<DirectOrderStepState & { approverName: string | null; decidedByName: string | null }>,
+  context: DirectOrderApprovalNarrativeContext = {},
 ): DirectOrderApprovalNarrativeStep[] {
+  const returned = context.requestStatus === "returned";
   let currentAssigned = false;
   return steps.map((step) => {
     const who = step.approverName ?? step.label;
@@ -566,19 +586,29 @@ export function buildDirectOrderApprovalNarrative(
       return {
         ...step,
         state: "rejected",
+        trackerLabel: step.label,
         sentence: step.decisionComment
           ? `${step.decidedByName ?? who} rejected this request: "${step.decisionComment}"`
           : `${step.decidedByName ?? who} rejected this request.`,
       };
     }
     if (step.status === "approved") {
-      return { ...step, state: "done", sentence: `${step.decidedByName ?? who} approved this rung.` };
+      return { ...step, state: "done", trackerLabel: step.label, sentence: `${step.decidedByName ?? who} approved this rung.` };
     }
     if (!currentAssigned) {
       currentAssigned = true;
-      return { ...step, state: "current", sentence: `Waiting on ${who} now.` };
+      if (returned) {
+        const requester = context.requesterName?.trim() || "the person who raised it";
+        return {
+          ...step,
+          state: "current",
+          trackerLabel: describeReturnedDirectOrderWait(context.requesterName),
+          sentence: `${context.returnedByName?.trim() || who} returned this order — waiting for ${requester} to correct and resubmit.`,
+        };
+      }
+      return { ...step, state: "current", trackerLabel: step.label, sentence: `Waiting on ${who} now.` };
     }
-    return { ...step, state: "waiting", sentence: `Will move to ${who} next.` };
+    return { ...step, state: "waiting", trackerLabel: step.label, sentence: `Will move to ${who} next.` };
   });
 }
 

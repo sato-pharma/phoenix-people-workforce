@@ -145,8 +145,13 @@ import path from "node:path";
  * `max-w-[260px]` on a <td> is not a real constraint — the column simply took 500px. It is the
  * COLUMN SQUEEZE that cuts, so a truncation site has to be measured at a width where the columns
  * actually compete, or the reading says the defect is not there.
+ *
+ * 203 -> 202 on 2026-09-14: the direct-order ApprovalTracker's step label
+ * (direct-order-detail-primitives.tsx). A returned order's open rung now reads "Returned — waiting
+ * for <requester>", which a four-segment bar on a phone cut mid-name. `truncate` -> `break-words`,
+ * the same trade as the batch-file columns above.
  */
-const BASELINE = 203;
+const BASELINE = 202;
 
 const ROOTS = ["app", "src"];
 

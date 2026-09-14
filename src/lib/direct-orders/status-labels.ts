@@ -221,6 +221,23 @@ export function describeDirectOrderOwner(input: {
 }
 
 /**
+ * What a RETURNED order's open rung says, everywhere that rung is named: the order window's
+ * progress bar and the orders report's "Awaiting" column.
+ *
+ * A return leaves the returning rung `pending` on purpose, so a resubmission resumes exactly there
+ * (reviseDirectOrder). Read on its own, that rung told every surface the order was waiting on the
+ * SFE Manager — who then found no Approve button, because a returned order has none (owner,
+ * 2026-09-14). The order is waiting on the person who raised it, so it says so.
+ *
+ * First two words of the name only: it sits under one segment of a four-rung bar.
+ */
+export function describeReturnedDirectOrderWait(requesterName: string | null | undefined): string {
+  const words = String(requesterName ?? "").trim().split(/\s+/).filter(Boolean);
+  const who = words.length > 0 ? words.slice(0, 2).join(" ") : "the person who raised it";
+  return `Returned — waiting for ${who}`;
+}
+
+/**
  * The stage a `stopped` order got as far as, for the stepper.
  *
  * Without this the progression on a rejected order would show every stage grey

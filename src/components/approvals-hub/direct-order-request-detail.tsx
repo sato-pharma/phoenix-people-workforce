@@ -199,7 +199,11 @@ export function DirectOrderRequestDetail({
     shownInvoice.slots.used >= shownInvoice.slots.limit;
   const statusBanner = resolveDirectOrderStatusBanner(detail);
   const pricingBreakdown = computeDirectOrderPricingBreakdown(request);
-  const narrativeSteps = buildDirectOrderApprovalNarrative(steps);
+  const narrativeSteps = buildDirectOrderApprovalNarrative(steps, {
+    requestStatus: request.status,
+    requesterName: detail.requesterName,
+    returnedByName: returnComment?.byName ?? null,
+  });
   // Products × months. Built from the ALREADY-scoped retail rows — confidentiality and line
   // filtering happen server-side, so this only reshapes what this viewer may see.
   const salesMatrix = buildDirectOrderSalesMatrix(retailHistory);
@@ -360,7 +364,7 @@ export function DirectOrderRequestDetail({
         {/* Where it stands, as a bar rather than the words "pending approval". */}
         <div className="mt-4">
           <ApprovalTracker
-            steps={narrativeSteps.map((step) => ({ order: step.order, label: step.label, state: step.state }))}
+            steps={narrativeSteps.map((step) => ({ order: step.order, label: step.trackerLabel, state: step.state }))}
             emptyNote={
               narrativeSteps.length === 0
                 ? request.status === "held" || request.status === "expired"
