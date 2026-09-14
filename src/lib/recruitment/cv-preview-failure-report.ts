@@ -16,6 +16,7 @@
 
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import type { ReportClientErrorInput } from "@/lib/error-monitor/report-client-error";
+import { isUuid } from "@/lib/http/uuid";
 import type { CvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 /**
@@ -53,17 +54,22 @@ export type CvPreviewFailureInput = {
 const FILE_NAME_PLACEHOLDER = "[cv file]";
 const ID_PLACEHOLDER = "[id]";
 
-// A UUID, or any run of 6+ digits (an HR id, a phone number, a numeric record id) as a whole path
-// segment. The route names the SCREEN; which candidate was on it is exactly what must not travel.
-const UUID_SEGMENT = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$|[?#])/gi;
-const NUMERIC_SEGMENT = /\/\d{6,}(?=\/|$|[?#])/g;
+// A whole path segment that is a uuid (the shared isUuid — tests/malformed-uuid-id-guards.test.ts
+// refuses a private copy of the regex) or a run of 6+ digits (an HR id, a phone number, a numeric
+// record id). The route names the SCREEN; which candidate was on it is exactly what must not travel.
+function isIdentifierSegment(segment: string): boolean {
+  return isUuid(segment) || /^\d{6,}$/.test(segment);
+}
 
 function stripIdentifiersFromRoute(route: string | null | undefined): string | null {
   if (!route) return null;
   // Path only: a query string on this screen can name a candidate or a file, and none of it is
   // needed to find the failing screen.
   const path = route.split(/[?#]/, 1)[0] ?? "";
-  return path.replace(UUID_SEGMENT, `/${ID_PLACEHOLDER}`).replace(NUMERIC_SEGMENT, `/${ID_PLACEHOLDER}`);
+  return path
+    .split("/")
+    .map((segment) => (isIdentifierSegment(segment) ? ID_PLACEHOLDER : segment))
+    .join("/");
 }
 
 function scrubFileName(text: string, fileName: string | null | undefined): string {
