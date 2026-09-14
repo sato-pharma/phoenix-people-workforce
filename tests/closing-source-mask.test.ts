@@ -165,10 +165,30 @@ export function runClosingSourceMaskTests() {
     .sort();
   assert.deepEqual(
     revealers,
-    ["app/api/sales/monthly-closing/export/route.ts"],
-    "ONLY the export route reveals, and only because it computes the split from these rows before "
-    + "writing them. Every other caller either runs as `system` (revealed by scope) or renders, and "
-    + "a render must never reveal. A new name in this list is a new place El Qema can be seen.",
+    ["app/api/sales/monthly-closing/export/route.ts", "src/lib/sales/monthly-closing-consolidated-export.ts"],
+    "ONLY the export route and the consolidated export beside it reveal, and only because each "
+    + "computes the split from these rows before writing them. Every other caller either runs as "
+    + "`system` (revealed by scope) or renders, and a render must never reveal. A new name in this "
+    + "list is a new place El Qema can be seen.",
+  );
+
+  // The consolidated export (several months of one line, Super Admin and CEO only — owner,
+  // 2026-09-14) re-runs the export route's per-month pipeline, so it reveals for the same reason and
+  // must drop the rows on the same way out.
+  const consolidatedExport = sources.find(
+    (entry) => entry.file === "src/lib/sales/monthly-closing-consolidated-export.ts",
+  );
+  assert.ok(consolidatedExport, "the consolidated export module is still where it was");
+  const consolidatedBuild = consolidatedExport.body.indexOf("buildMonthlyClosingWorkbook(");
+  assert.ok(consolidatedBuild > 0, "buildMonthlyClosingWorkbook( is still called from the consolidated export");
+  assert.ok(
+    consolidatedExport.body.slice(0, consolidatedBuild).includes("withoutMaskedSourceRows("),
+    "the consolidated workbook is built without dropping the rows first — it would name El Qema",
+  );
+  assert.ok(
+    consolidatedExport.body.includes("storeSplitMaskedClients:"),
+    "the consolidated export passes the masked client codes, or its Store Split sheets name El Qema's "
+    + "customers even though its Data sheet does not",
   );
 
   // The export route reveals, so it MUST mask again on the way into every workbook. Both builders

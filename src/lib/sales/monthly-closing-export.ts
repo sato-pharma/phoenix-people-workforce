@@ -30,6 +30,12 @@ import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
 import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import {
+  foldStoreSplitByArea,
+  foldStoreSplitByCustomer,
+  foldStoreSplitDetail,
+  type StoreSplitMonth,
+} from "@/lib/sales/closing-store-split-months";
+import {
   detailStoreSplitByCustomer,
   isStoreCitySplitActive,
   summariseStoreSplitByArea,
@@ -3272,6 +3278,25 @@ export async function buildMonthlyClosingWorkbook(
      * honest, a column of zeroes would claim no area took Office units.
      */
     office?: MonthlyClosingMatrix | null;
+    /**
+     * OFF BY DEFAULT. Present only on the CONSOLIDATED export — several months of one line added
+     * together, Super Admin and CEO only (owner, 2026-09-14). Absent, this workbook is exactly the
+     * single-month file it has always been.
+     *
+     * The store split belongs to ONE month: every warehouse band is judged on that month's own total.
+     * Pooling several months' rows into one call would re-judge the bands on the combined total — 150
+     * packs in each of two months would cross 200 and split, which the closing never did. So the two
+     * Store Split sheets are computed per month from `months` and then added (owner: "split each
+     * month, then add"). See closing-store-split-months.ts.
+     *
+     * It also leaves out the July 2026 Direct Orders sheet, which is one month's hand-mapped list and
+     * would read as the whole span's. `filtered` says whether the reader narrowed the screen, because
+     * a consolidated file always carries a note on `filterNote` whether or not it was filtered.
+     */
+    consolidatedMonths?: {
+      filtered: boolean;
+      months: readonly StoreSplitMonth<ClosingDetailRow>[];
+    } | null;
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -3343,22 +3368,26 @@ export async function buildMonthlyClosingWorkbook(
   }
   // One-off: July 2026's hand-mapped direct orders. The period guard is what keeps this from
   // ever appearing in another month — August onwards the module supplies the area itself.
-  if (matrix.period === JULY_2026_DIRECT_PERIOD) {
+  if (matrix.period === JULY_2026_DIRECT_PERIOD && !options?.consolidatedMonths) {
     writeJulyDirectSheet(workbook, matrix);
   }
   // Right after the matrix and its targets: why a rep's number differs from the raw area total.
   // Built from the SAME detail rows the Data sheet shows, so the two can never disagree.
   if (details) {
     const splitSourceRows = options?.storeSplitRows ?? details.rows;
+    // Several months: each split on its own and then added — see the option's own comment.
+    const consolidated = options?.consolidatedMonths;
     writeStoreSplitSheet(
       workbook,
       matrix.line,
       matrix.period,
-      summariseStoreSplitByArea(
-        options?.storeSplitRows ?? details.rows,
-        matrix.period,
-        options?.storeSplitRegions,
-      ),
+      consolidated
+        ? foldStoreSplitByArea(consolidated.months)
+        : summariseStoreSplitByArea(
+          options?.storeSplitRows ?? details.rows,
+          matrix.period,
+          options?.storeSplitRegions,
+        ),
       options?.storeSplitScopeAreaCodes ?? [],
     );
     // Straight after it: which shop caused each moved number, on which product — the detail the
@@ -3368,11 +3397,15 @@ export async function buildMonthlyClosingWorkbook(
       matrix.line,
       matrix.period,
       maskSplitEntries(
-        summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        consolidated
+          ? foldStoreSplitByCustomer(consolidated.months)
+          : summariseStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
         options?.storeSplitMaskedClients,
       ),
       maskSplitEntries(
-        detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
+        consolidated
+          ? foldStoreSplitDetail(consolidated.months)
+          : detailStoreSplitByCustomer(splitSourceRows, matrix.period, options?.storeSplitRegions),
         options?.storeSplitMaskedClients,
       ),
     );
@@ -3457,7 +3490,7 @@ export async function buildMonthlyClosingWorkbook(
       headline,
       { ...details, rows: visible },
       "Data",
-      Boolean(options?.filterNote),
+      options?.consolidatedMonths ? options.consolidatedMonths.filtered : Boolean(options?.filterNote),
       options?.storeSplitApplied,
       directInMatrix,
     );

@@ -48,6 +48,9 @@ export function regionScopeLabel(regionNames: Iterable<string | null | undefined
  * covering the same month, line and region cannot be confused with each other:
  *   "details" — the row-level workbook the scoped sales roles get.
  *   "premium" — the reader's ten-sheet workbook behind the closing screen's SECOND export button.
+ *   "consolidated" / "premium-consolidated" — the same two workbooks with several months added
+ *   together. `period` is then the span as words ("Jul 2026 to Sep 2026"), which monthLabel passes
+ *   through unchanged, so the file reads jul-2026-to-sep-2026 and can never pass for a single month.
  */
 export function closingFileName(parts: {
   /**
@@ -59,7 +62,7 @@ export function closingFileName(parts: {
    * extension has to follow what was actually built.
    */
   extension?: "xlsm" | "xlsx";
-  kind?: "details" | "premium";
+  kind?: "details" | "premium" | "consolidated" | "premium-consolidated";
   line: string | null | undefined;
   period: string | null | undefined;
   region: string;
