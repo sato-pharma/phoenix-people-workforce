@@ -35,6 +35,10 @@ export default async function ResignationsPage() {
   }
 
   return (
-    <ResignationsWorkspace initialData={initialData} initialError={initialError} />
+    <ResignationsWorkspace
+      canExportHistory={await canAccess(access, "resignations", "export")}
+      initialData={initialData}
+      initialError={initialError}
+    />
   );
 }

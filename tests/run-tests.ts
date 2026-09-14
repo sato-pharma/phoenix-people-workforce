@@ -722,6 +722,7 @@ import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
 import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
+import { runResignationsHistoryExportTests } from "./resignations-history-export.test.ts";
 import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
 import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identity-release.test.ts";
 import { runProbationLegacyFeedbackRetiredTests } from "./probation-legacy-feedback-retired.test.ts";
@@ -3125,6 +3126,7 @@ await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
+await runTest("resignations full-history export (every record regardless of tab or filter, names not ids, Cairo times, gated on resignations:export)", runResignationsHistoryExportTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation CRM identity release (a leaver releases crm_id for their successor but KEEPS crm_username so their own trailing visits stay attributable)", runResignationCrmIdentityReleaseTests);
 await runTest("legacy probation feedback stays retired (its files, its identifiers, the dead cron tick — and the live per-DV-Day path that replaced it is still wired)", runProbationLegacyFeedbackRetiredTests);

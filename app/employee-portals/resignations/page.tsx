@@ -55,6 +55,7 @@ export default async function EmployeePortalResignationsPage() {
       title="Resignations"
     >
       <ResignationsWorkspace
+        canExportHistory={await canAccess(access, "resignations", "export")}
         initialData={initialData}
         initialError={initialError}
         surface="portal"

@@ -1105,6 +1105,10 @@ export const accessRegistry = [
   // never caused one to be written.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/reports/organogram/contact-numbers", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
+  // The full-history workbook: every leaver the viewer can see, with salary and settlement figures.
+  // Its own entry so the inventory says export, not the blanket's read, and declares the audit row
+  // the handler writes before it hands the file over.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/resignations/export", permission: { resource: "resignations", action: "export" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),
   // Turbify mailbox revocation register (Phase 6). Split GET from POST because the audit answer
   // differs: the read writes nothing, while every mutation writes a REQUIRED audit row.
