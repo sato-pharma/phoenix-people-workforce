@@ -959,6 +959,7 @@ function MarketingPartnerSelect({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
       value={selected?.fullName ?? value ?? ""}
+      wrapValue
     >
       <option value="">Select partner</option>
       {value && !selected ? <option value={value}>{value}</option> : null}
@@ -2689,6 +2690,7 @@ export function PlansWorkspace({
                                   disabled={!canEdit || locked}
                                   onChange={(e) => updateRow(row.key, "activityType", e.target.value)}
                                   value={activitySelectValue(row)}
+                                  wrapValue
                                 >
                                   {planningActivityOptionsFor(
                                     workspace.canPlanMarketingDoubleVisit || isMarketingDoubleVisit(row.activityType, row.activityTitle),
@@ -2701,19 +2703,25 @@ export function PlansWorkspace({
                               </td>
                               <td className="px-3 py-3">
                                 {showLineSelect ? (
-                                  <SearchableSelect
-                                    className={`${tableSelectClass} mb-1.5`}
-                                    disabled={!canEdit}
-                                    onChange={(e) => updateRowLine(row.key, e.target.value)}
-                                    value={row.lineFilter ?? ""}
-                                  >
-                                    <option value="">Select line</option>
-                                    {lineOptions.map((line) => (
-                                      <option key={line} value={line}>
-                                        {line}
-                                      </option>
-                                    ))}
-                                  </SearchableSelect>
+                                  // The margin sits on a wrapper, not in the className: a wrapping field
+                                  // paints its box and its value as two items in one grid cell, and a
+                                  // margin on both would take 6px off the field's own minimum height.
+                                  <div className="mb-1.5">
+                                    <SearchableSelect
+                                      className={tableSelectClass}
+                                      disabled={!canEdit}
+                                      onChange={(e) => updateRowLine(row.key, e.target.value)}
+                                      value={row.lineFilter ?? ""}
+                                      wrapValue
+                                    >
+                                      <option value="">Select line</option>
+                                      {lineOptions.map((line) => (
+                                        <option key={line} value={line}>
+                                          {line}
+                                        </option>
+                                      ))}
+                                    </SearchableSelect>
+                                  </div>
                                 ) : null}
                                 {rule.showTrainingFormat ? (
                                   <SearchableSelect
@@ -2721,6 +2729,7 @@ export function PlansWorkspace({
                                     disabled={!canEdit}
                                     onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
                                     value={trainingFormatValue(row.locationText)}
+                                    wrapValue
                                   >
                                     <option value="">Optional format</option>
                                     {trainingFormatOptions.map((format) => (
@@ -2740,6 +2749,7 @@ export function PlansWorkspace({
                                       disabled={!canEdit}
                                       onChange={(e) => updateRow(row.key, "locationText", e.target.value)}
                                       value={canonicalRegion(row.locationText) || row.locationText || ""}
+                                      wrapValue
                                     >
                                       <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
                                       {currentRegionOptions.map((region) => (
@@ -2759,6 +2769,7 @@ export function PlansWorkspace({
                                       disabled={!canEdit || !canonicalRegion(row.locationText)}
                                       onChange={(e) => updateRow(row.key, "area", e.target.value)}
                                       value={row.area ?? ""}
+                                      wrapValue
                                     >
                                       <option value="">
                                         {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}
@@ -3330,6 +3341,7 @@ function RowEditSheet({
               disabled={!canEdit}
               onChange={(e) => onUpdate("activityType", e.target.value)}
               value={activitySelectValue(row)}
+              wrapValue
             >
               {planningActivityOptionsFor(
                 canPlanMarketingDoubleVisit || isMarketingDoubleVisit(row.activityType, row.activityTitle),
@@ -3348,6 +3360,7 @@ function RowEditSheet({
                 disabled={!canEdit}
                 onChange={(e) => onUpdateLine(e.target.value)}
                 value={row.lineFilter ?? ""}
+                wrapValue
               >
                 <option value="">Select line</option>
                 {lineOptions.map((line) => (
@@ -3366,6 +3379,7 @@ function RowEditSheet({
                 disabled={!canEdit}
                 onChange={(e) => onUpdate("locationText", e.target.value)}
                 value={trainingFormatValue(row.locationText)}
+                wrapValue
               >
                 <option value="">Optional format</option>
                 {trainingFormatOptions.map((format) => (
@@ -3387,6 +3401,7 @@ function RowEditSheet({
                   disabled={!canEdit}
                   onChange={(e) => onUpdate("locationText", e.target.value)}
                   value={canonicalRegion(row.locationText) || row.locationText || ""}
+                  wrapValue
                 >
                   <option value="">{rule.requiresRegion ? "Select region" : "Optional region"}</option>
                   {currentRegionOptions.map((region) => (
@@ -3406,6 +3421,7 @@ function RowEditSheet({
                 disabled={!canEdit || !canonicalRegion(row.locationText)}
                 onChange={(e) => onUpdate("area", e.target.value)}
                 value={row.area ?? ""}
+                wrapValue
               >
                 <option value="">
                   {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}

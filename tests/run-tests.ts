@@ -349,6 +349,7 @@ import { runWeeklyPlanRegionAreasTests } from "./weekly-plan-region-areas.test.t
 import { runMarketingDoubleVisitTests } from "./marketing-double-visit.test.ts";
 import { runPlanSlotMergeTests } from "./plan-slot-merge.test.ts";
 import { runSearchableSelectHiddenTriggerTests } from "./searchable-select-hidden-trigger.test.ts";
+import { runPlanTableValuesWrapTests } from "./plan-table-values-wrap.test.ts";
 import { runPlanAdherenceTests } from "./plan-adherence.test.ts";
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
@@ -2474,6 +2475,7 @@ await runTest("weekly plan region canonicalisation and area options", runWeeklyP
 await runTest("marketing double visit: PM/GPM only, partner list never includes the submitter", runMarketingDoubleVisitTests);
 await runTest("plan prefill displaces every slot it overlaps (AM / PM switch on a split weekly day)", runPlanSlotMergeTests);
 await runTest("a searchable dropdown closes when its field scrolls out of sight", runSearchableSelectHiddenTriggerTests);
+await runTest("the weekly plan table wraps a dropdown's chosen value instead of clipping it", runPlanTableValuesWrapTests);
 await runTest(
   "plan adherence score (a week with nothing verifiable in it scores null, never 0)",
   runPlanAdherenceTests,

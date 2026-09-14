@@ -24,7 +24,26 @@ type SearchableSelectProps = Omit<React.ComponentPropsWithoutRef<"select">, "chi
   onBlur?: React.FocusEventHandler<HTMLInputElement | HTMLSelectElement>;
   onFocus?: React.FocusEventHandler<HTMLInputElement | HTMLSelectElement>;
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement | HTMLSelectElement>;
+  /**
+   * Show the chosen value as WRAPPING text while the field is closed, so a narrow field (a table
+   * column) reads the whole value on as many lines as it needs instead of clipping it on one.
+   * Opt-in: a one-line input is still the right look in filter bars and forms.
+   */
+  wrapValue?: boolean;
 };
+
+// The caller's fixed height (`h-10`, `h-[42px]`) becomes the wrapping field's MINIMUM height, so a
+// one-line value keeps exactly the height it had and only a longer value grows the field.
+function minHeightFromClassName(className: string): string | undefined {
+  let minHeight: string | undefined;
+  for (const token of className.split(/\s+/)) {
+    const scale = token.match(/^h-(\d+(?:\.\d+)?)$/);
+    if (scale) minHeight = `${Number(scale[1]) * 0.25}rem`;
+    const arbitrary = token.match(/^h-\[([^\]]+)\]$/);
+    if (arbitrary) minHeight = arbitrary[1];
+  }
+  return minHeight;
+}
 
 type ParsedOption = {
   value: string;
@@ -120,9 +139,12 @@ export function SearchableSelect({
   maxResults = 100,
   noResultsText = "No results",
   placeholder,
+  wrapValue = false,
   "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
   ...rest
 }: SearchableSelectProps) {
+  const valueId = React.useId();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
@@ -326,23 +348,47 @@ export function SearchableSelect({
   // padding gets it — and it only means that screen keeps the old behaviour, never that it breaks.
   const baseInputClassName = "h-9 w-full rounded-[6px] border border-phx-line bg-white px-3 pr-9 text-sm font-medium text-phx-ink outline-none transition disabled:opacity-50";
 
+  // wrapValue: an <input> can only ever paint one line, so a value wider than its field was clipped
+  // — measured on the Weekly Plan table, 2026-09-14, where "Marketing Double Visit" read as
+  // "Marketing Doubl" and a partner's name and title showed 136 of 361px. While the field is closed
+  // the input paints only the box (empty value, no placeholder) and a sibling in the same grid cell
+  // paints the value with `whitespace-normal break-words`; the cell grows to fit it and the input
+  // stretches with it, so the box, its border and its focus ring stay the input's own. While open
+  // the sibling turns `invisible` but keeps its height, so typing a search never makes the row jump.
+  //
+  // The sibling is a disabled-able <button> for one reason: the caller's `disabled:` text colour and
+  // opacity then apply to the painted value exactly as they did to the input's own text. It is
+  // `pointer-events-none`, so every click reaches the input (and the hit-test in triggerIsOnScreen
+  // still lands inside the wrapper), `tabIndex={-1}` and `aria-hidden`; the input names it through
+  // aria-describedby so a screen reader still hears the chosen value. `pr-9` is re-applied after the
+  // caller's classes on both, because the magnifier sits over the text whatever `px-*` was passed.
+  const wrapClosed = wrapValue && !open;
+  const fieldClassName = cn(baseInputClassName, className);
+  const valueMinHeight = wrapValue ? minHeightFromClassName(fieldClassName) : undefined;
+  const describedBy = [ariaDescribedBy, wrapValue ? valueId : undefined].filter(Boolean).join(" ") || undefined;
+
   return (
-    <div className="relative" ref={wrapperRef}>
+    <div className={wrapValue ? "relative grid grid-cols-[minmax(0,1fr)]" : "relative"} ref={wrapperRef}>
       <input
         {...(rest as React.InputHTMLAttributes<HTMLInputElement>)}
         ref={inputRef}
         role="combobox"
         aria-autocomplete="list"
         aria-controls={`${id ?? "searchable-select"}-options`}
+        aria-describedby={describedBy}
         aria-expanded={open}
         aria-label={ariaLabel ?? placeholder ?? name ?? "Select an option"}
         autoComplete="off"
-        className={cn(baseInputClassName, className)}
+        className={
+          wrapValue
+            ? cn(fieldClassName, "col-start-1 row-start-1 h-auto self-stretch pr-9", wrapClosed && "caret-transparent")
+            : fieldClassName
+        }
         disabled={disabled}
         id={id}
         name={name}
-        placeholder={placeholder ?? (disabled ? undefined : (selectedLabel || "").toString())}
-        value={open ? query : selectedLabel || ""}
+        placeholder={wrapClosed ? undefined : placeholder ?? (disabled ? undefined : (selectedLabel || "").toString())}
+        value={open ? query : wrapValue ? "" : selectedLabel || ""}
         onBlur={(event) => {
           closeDropdown();
           onBlur?.(event);
@@ -360,6 +406,23 @@ export function SearchableSelect({
         onKeyDown={handleInputKeyDown}
         type="text"
       />
+      {wrapValue ? (
+        <button
+          aria-hidden="true"
+          className={cn(
+            fieldClassName,
+            "pointer-events-none relative col-start-1 row-start-1 h-auto whitespace-normal break-words border-transparent bg-transparent py-2 pr-9 text-left shadow-none hover:bg-transparent disabled:bg-transparent",
+            open && "invisible",
+          )}
+          disabled={disabled}
+          id={valueId}
+          style={valueMinHeight ? { minHeight: valueMinHeight } : undefined}
+          tabIndex={-1}
+          type="button"
+        >
+          {selectedLabel || placeholder || "\u00a0"}
+        </button>
+      ) : null}
       <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-phx-ink-faint">
         <Search className="h-4 w-4" />
       </span>
