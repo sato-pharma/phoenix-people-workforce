@@ -16,6 +16,12 @@ type Props = {
   onApply: (payload: InvoiceApplyPayload) => void;
   /** Rendered under the customer block — lets each form say how IT will use the pharmacy. */
   customerHint?: string;
+  /**
+   * Handed the photo the moment it is taken or chosen, so the form can send it WITH the order
+   * (owner, 2026-09-14: the SFE Manager must see the invoice that was used). Optional — reading the
+   * invoice works the same without it.
+   */
+  onInvoicePhoto?: (file: File) => void;
 };
 
 const box = "border border-phx-line bg-white";
@@ -37,7 +43,7 @@ const box = "border border-phx-line bg-white";
  * accepted once; a reader that filled the form in silently would repeat that at speed and with
  * more conviction than any typo.
  */
-export function InvoiceCapture({ onApply, customerHint }: Props) {
+export function InvoiceCapture({ onApply, customerHint, onInvoicePhoto }: Props) {
   // TWO inputs, not one whose `capture` attribute is toggled before the click. An input carrying
   // `capture` opens the camera on most phones and never offers the gallery, so a single input can
   // only ever be one of the two things. Setting the attribute and then calling click() in the same
@@ -78,6 +84,9 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
   }
 
   async function read(file: File, source: "camera" | "upload") {
+    // Handed over first, before the reading can fail: a photo the reader cannot parse is still the
+    // invoice the rep used, and the approvers still need to see it.
+    onInvoicePhoto?.(file);
     setBusy(true);
     setError(null);
     setResult(null);

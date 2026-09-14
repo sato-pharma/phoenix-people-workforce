@@ -40,6 +40,14 @@ import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import { isDirectOrderInvoiceContentType } from "@/lib/direct-orders/invoice-evidence";
+import {
+  loadDirectOrderRequestInvoice,
+  parseDirectOrderRequestInvoice,
+  recordDirectOrderInvoiceValidationAtSfeRung,
+  saveSubmittedDirectOrderInvoice,
+} from "@/lib/direct-orders/order-invoice";
+import { canAttachDirectOrderInvoice } from "@/lib/direct-orders/order-invoice-rules";
 import { daysWaitingSince, pickLatestReturnPerRequest } from "@/lib/direct-orders/returned-ageing";
 import {
   canonicalPharmacyMap,
@@ -495,6 +503,9 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     reversedByRequestId: row.reversed_by_request_id ? String(row.reversed_by_request_id) : null,
     createdAt: String(row.created_at ?? ""),
     decidedAt: row.decided_at ? String(row.decided_at) : null,
+    invoiceStoragePath: row.invoice_storage_path ? String(row.invoice_storage_path) : null,
+    invoiceContentType: isDirectOrderInvoiceContentType(row.invoice_content_type) ? row.invoice_content_type : null,
+    invoiceUploadedAt: row.invoice_uploaded_at ? String(row.invoice_uploaded_at) : null,
   };
 }
 
@@ -3589,6 +3600,12 @@ export type SubmitDirectOrderInput = {
    */
   marketingRequestId?: string | null;
   /**
+   * The distributor invoice the requester read on the form, as a data URL (owner, 2026-09-14). OPTIONAL:
+   * it is kept with the order so the SFE Manager sees the invoice that was used, and for a new pharmacy
+   * it counts as its invoice validation. Never required to raise an order.
+   */
+  invoiceDataUrl?: string | null;
+  /**
    * EXTRA lines beyond the one described by the fields above, for a family basket.
    *
    * Additive on purpose. Every existing caller — the submit API route, the tests, anything holding
@@ -3862,7 +3879,7 @@ async function resolveDirectOrderPricing(input: {
 export async function submitDirectOrder(
   access: AccessContext,
   input: SubmitDirectOrderInput,
-): Promise<DirectOrderRequest> {
+): Promise<DirectOrderRequest & { invoiceNote?: string | null }> {
   await assertPermission(access, "direct_orders", "create");
   // Super Admin may submit (system admin / on-behalf) — matches the workflow-registry
   // submit action's allowedRoles and the page's canSubmit gate.
@@ -3875,6 +3892,12 @@ export async function submitDirectOrder(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(collectionDate)) {
     badRequest("A valid money-collection date (YYYY-MM-DD) is required.");
   }
+  // The invoice read on the form — parsed BEFORE anything is written, so a bad file is refused with
+  // nothing half-saved. Saved after the order exists, below.
+  const orderInvoice = parseDirectOrderRequestInvoice(
+    input.invoiceDataUrl,
+    "Remove the invoice photo or read the invoice again.",
+  );
 
   const supabase = getSupabaseAdmin();
   const caps = await loadDirectOrderCaps();
@@ -4057,6 +4080,17 @@ export async function submitDirectOrder(
     },
   });
 
+  // The order is written; its invoice can no longer fail it. saveSubmittedDirectOrderInvoice never
+  // throws — a failure is recorded on the order and said to the rep, who attaches it again.
+  const invoiceNote = orderInvoice
+    ? await saveSubmittedDirectOrderInvoice(access, {
+        requestId: request.id,
+        requestStatus: request.status,
+        pharmacyId: request.pharmacyId,
+        invoice: orderInvoice,
+      })
+    : null;
+
   const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
   const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
 
@@ -4075,7 +4109,7 @@ export async function submitDirectOrder(
       requestId: request.id,
       subjectHrId: actorHrId,
     });
-    return request;
+    return { ...request, invoiceNote };
   }
 
   const firstStep = chain[0];
@@ -4102,7 +4136,7 @@ export async function submitDirectOrder(
   });
 
   pingDirectOrderSheet("order_submitted");
-  return request;
+  return { ...request, invoiceNote };
 }
 
 // ── Correct & resubmit a returned order ──────────────────────────────────────
@@ -4495,9 +4529,23 @@ export async function decideDirectOrder(
   // error for an approval that actually succeeded, and would reasonably click again. So failures
   // are recorded — event + log — and the caller still gets its result. The Held Desk keeps
   // showing anything that stayed held, so nothing is lost silently.
+  // Read BEFORE the confirmation below changes it: whether this approval confirmed a NEW pharmacy on the
+  // order's invoice is a fact about the pharmacy as the SFE Manager found it (owner, 2026-09-14). Only
+  // read when the order carries an invoice at all; a failed read just counts no slot.
+  const pharmacyBeforeApproval =
+    input.decision === "approve" && request.invoiceStoragePath && isPharmacyConfirmingStep(activeStep)
+      ? await loadPharmaciesByIds([request.pharmacyId])
+          .then((byId) => byId.get(request.pharmacyId) ?? null)
+          .catch(() => null)
+      : null;
   if (input.decision === "approve" && isPharmacyConfirmingStep(activeStep)) {
     try {
       await markDirectOrderPharmacyVerified(access, { pharmacyId: request.pharmacyId });
+      // Owner, 2026-09-14: that approval counts as the pharmacy's invoice validation — 1 of the rep's 5.
+      // Swallows its own failures; the approval stands whatever happens here.
+      if (pharmacyBeforeApproval) {
+        await recordDirectOrderInvoiceValidationAtSfeRung(access, { request, pharmacyBeforeApproval });
+      }
     } catch (confirmError) {
       logError("Pharmacy confirmation after an approved decision failed; the approval stands", {
         labels: { event: "direct_order_pharmacy_confirm_failed", requestId: request.id },
@@ -5817,6 +5865,21 @@ export async function getDirectOrderApprovalDetail(
     rawEvidence && !canViewDirectOrderEvidenceAiNote(access.hrId, request)
       ? { ...rawEvidence, evidenceCheck: null }
       : rawEvidence;
+  // The invoice the rep used (owner, 2026-09-14). "Expected" is a NEW pharmacy with a distributor
+  // account — exactly what the SFE Manager confirms on this order — so a missing invoice is said out
+  // loud there instead of reading as nothing to see.
+  const invoiceExpected = pharmacy?.verificationStatus === "pending_review" && venueRequiresDistributorCode(pharmacy.venueType);
+  const orderInvoice = await loadDirectOrderRequestInvoice(request, { countRequesterSlots: invoiceExpected });
+  // Mirrors attachDirectOrderInvoice's own guard — if these disagree, the control appears for someone
+  // the server refuses.
+  const canAttachInvoice =
+    invoiceExpected &&
+    canAttachDirectOrderInvoice({
+      viewerHrKey: canonicalHrIdKey(access.hrId),
+      requesterHrKey: canonicalHrIdKey(request.requesterHrId),
+      status: request.status,
+      activeStepConfirmsPharmacy: active ? isPharmacyConfirmingStep(active) : false,
+    });
 
   // The approver's reason for sending it back. Loaded ONLY for a returned order, and read from the
   // events table rather than the approval step: the decision RPC writes `decision_comment` only
@@ -5962,6 +6025,9 @@ export async function getDirectOrderApprovalDetail(
         }
       : null,
     pharmacyEvidence,
+    orderInvoice,
+    invoiceExpected,
+    canAttachInvoice,
     possibleDistributorMatches,
     autoLinkRefusal,
     geographyCheck,

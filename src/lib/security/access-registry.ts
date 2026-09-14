@@ -575,6 +575,10 @@ export const accessRegistry = [
   // that the caller OWNS the order and that it is actually in `returned`. Same request id, same
   // approval chain: see reviseDirectOrder.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/revise", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // Attach the distributor invoice to an order already sent (owner, 2026-09-14). `create` admits every
+  // requester role; the real gate is attachDirectOrderInvoice — the order's OWN requester, and only
+  // while it is held or still waiting on the SFE Manager.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/invoice", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   // Re-address a stuck approval rung. `update` is the widest permission this entry can name, and it
   // is NOT the real gate: repairDirectOrderApprovalRung is Super Admin only, asserts the workflow
   // registry transition, and refuses any rung whose approver still resolves in the directory. That

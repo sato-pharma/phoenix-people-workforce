@@ -811,6 +811,18 @@ export async function getDirectOrderInvoiceValidationSlots(access: AccessContext
 }
 
 /**
+ * Someone ELSE's slot count — the requester's, read while an approver looks at their order or while
+ * the SFE Manager's approval decides whether it counts as one. The same computation as the rep's own
+ * counter, so the approver and the rep can never read two different numbers.
+ */
+export async function getDirectOrderInvoiceSlotCountForRequester(requesterHrId: string): Promise<DirectOrderInvoiceSlotCount> {
+  const key = canonicalHrIdKey(requesterHrId);
+  if (!key) return { used: 0, limit: DIRECT_ORDER_INVOICE_SLOT_LIMIT };
+  const slots = await loadOpenInvoiceSlots(getSupabaseAdmin(), [requesterHrId]);
+  return { used: (slots.get(key) ?? []).length, limit: DIRECT_ORDER_INVOICE_SLOT_LIMIT };
+}
+
+/**
  * Was this pharmacy confirmed by an invoice claim — optionally, one filed by this requester?
  * `head: true`: the question is whether one exists, never the rows.
  */

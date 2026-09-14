@@ -154,7 +154,11 @@ export function ValidationDesk({ rows }: Props) {
               </div>
             </header>
 
-            <div className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+            {/* An invoice row gets half the card, not a 320px column: the invoice IS the evidence, and
+                the reviewer must read its lines (owner, 2026-09-14). */}
+            <div
+              className={`grid grid-cols-1 gap-4 px-4 py-3 ${isInvoiceRoute ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]"}`}
+            >
               <div>
                 {isInvoiceRoute ? (
                   <div className="space-y-2">
@@ -162,6 +166,7 @@ export function ValidationDesk({ rows }: Props) {
                       contentType={row.invoiceContentType}
                       label={row.claimedPharmacyName}
                       url={row.invoiceUrl}
+                      prominent
                     />
                     <p className="border border-sky-200 bg-sky-50 px-2 py-1.5 text-phx-sm font-semibold text-sky-900">
                       Validated on the distributor invoice alone — no location and no photo were asked for.

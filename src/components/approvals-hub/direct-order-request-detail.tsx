@@ -32,6 +32,7 @@ import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
+import { AttachDirectOrderInvoice } from "@/components/direct-orders/attach-direct-order-invoice";
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 
@@ -166,7 +167,36 @@ export function DirectOrderRequestDetail({
     hiddenConfidentialCount,
     retailMatchedPairs,
     geographyCheck,
+    orderInvoice = null,
+    invoiceExpected = false,
+    canAttachInvoice = false,
   } = detail;
+  // The invoice the order was raised on (owner, 2026-09-14: "it must clearly show the invoice pic
+  // used"). The order's own copy first; an order raised before invoices were kept falls back to the
+  // invoice its pharmacy's validation claim carries, so the SFE Manager sees whichever exists.
+  const shownInvoice = orderInvoice
+    ? {
+        url: orderInvoice.url,
+        contentType: orderInvoice.contentType as string | null,
+        uploadedAt: orderInvoice.uploadedAt,
+        slots: orderInvoice.requesterSlots,
+      }
+    : pharmacyEvidence?.validationRoute === "invoice"
+      ? {
+          url: pharmacyEvidence.invoiceUrl,
+          contentType: pharmacyEvidence.invoiceContentType as string | null,
+          uploadedAt: pharmacyEvidence.invoiceUploadedAt,
+          slots: pharmacyEvidence.requesterInvoiceSlots,
+        }
+      : null;
+  // Only when nothing else already holds a slot for this pharmacy — a claim on the desk is inside the
+  // count, so "full" would be misread as "this one will not count".
+  const invoiceSlotsFull =
+    Boolean(orderInvoice) &&
+    invoiceExpected &&
+    pharmacyEvidence?.validationRoute !== "invoice" &&
+    shownInvoice?.slots != null &&
+    shownInvoice.slots.used >= shownInvoice.slots.limit;
   const statusBanner = resolveDirectOrderStatusBanner(detail);
   const pricingBreakdown = computeDirectOrderPricingBreakdown(request);
   const narrativeSteps = buildDirectOrderApprovalNarrative(steps);
@@ -265,6 +295,43 @@ export function DirectOrderRequestDetail({
           </div>
         ) : null}
       </section>
+
+      {/* Straight under the header, full width: for a new pharmacy this invoice IS what the SFE
+          Manager decides on, so it is the first thing on the order, not a thumbnail further down. */}
+      {shownInvoice || invoiceExpected ? (
+        <PanelSection title="Invoice used for this order">
+          {shownInvoice ? (
+            <div className="space-y-3">
+              <DirectOrderInvoiceEvidence
+                contentType={shownInvoice.contentType}
+                label={detail.pharmacy?.pharmacyName ?? "this pharmacy"}
+                prominent
+                url={shownInvoice.url}
+              />
+              <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Field label="Attached" value={cairoStamp(shownInvoice.uploadedAt) ?? "—"} />
+                {shownInvoice.slots ? (
+                  <Field label="Requester" value={directOrderInvoiceSlotLabel(shownInvoice.slots)} />
+                ) : null}
+              </dl>
+              {invoiceSlotsFull ? (
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+                  The requester already has {shownInvoice.slots?.used} of {shownInvoice.slots?.limit} pharmacies
+                  validated by invoice, so approving will not count this one as an invoice validation. Flagged for
+                  your attention, not blocked.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
+              {canAttachInvoice
+                ? "No invoice is attached to this order yet. Attach the distributor invoice you used, so the SFE Manager can check the pharmacy on it."
+                : "No invoice is attached to this order yet. This is a new pharmacy — the requester can attach the distributor invoice they used while the order waits for the SFE Manager."}
+            </p>
+          )}
+          {canAttachInvoice ? <AttachDirectOrderInvoice hasInvoice={Boolean(orderInvoice)} requestId={request.id} /> : null}
+        </PanelSection>
+      ) : null}
 
       <PanelSection title="Order details">
         {/* The four facts a decision actually turns on, first and biggest. */}
