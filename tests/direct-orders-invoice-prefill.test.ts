@@ -237,6 +237,14 @@ export function runDirectOrderInvoicePrefillTests() {
       /onApply=\{\(payload\) => \{[\s\S]{0,400}?setProductCode\(payload\.productCode\)/,
       `${label} must actually apply what was read, not just render the control`,
     );
+    // The pharmacy on the invoice must travel with the line. It was shown and then dropped, so a
+    // rep who then typed the pharmacy by hand saved it with NO distributor code — Weaam's
+    // محمد حسن عنيبس, whose invoice had matched PharmaOverseas 1533756 four times (2026-09-14).
+    assert.match(
+      form,
+      /onApply=\{\(payload\) => \{(?:(?!onInvoicePhoto)[\s\S]){0,2500}?applySuggestedPharmacy\(\{[\s\S]{0,300}?distributorCode: customer\.distributorCode,[\s\S]{0,100}?customerCode: customer\.customerCode/,
+      `THE INVOICE'S PHARMACY IS DROPPED ON ${label}: using a line must also pick the matched distributor customer, or the pharmacy is registered by hand with no code and its orders are held`,
+    );
   }
 
   // ── The route is declared, or the access-registry gate fails CI ──────────────────────────
