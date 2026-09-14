@@ -4123,8 +4123,9 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     label: "Pharmacy Validation",
     description: "Decide claims for pharmacies the distributor sheets do not know — match, approve on probation, or reject.",
     permissions: [{ resource: "direct_orders", action: "read" }],
-    // System Admin only: the service refuses anyone else, so a wider link would only lead to a 403.
-    roles: ["Super Admin"],
+    // Super Admin decides every claim; SFE Manager decides distributor-invoice claims (owner,
+    // 2026-09-14) and the service narrows their desk to those. Anyone else would only reach a 403.
+    roles: ["Super Admin", "SFE Manager"],
   },
   {
     href: "/admin/direct-orders/held",

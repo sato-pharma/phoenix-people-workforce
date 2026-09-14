@@ -31,6 +31,8 @@ import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-dec
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
+import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -410,7 +412,15 @@ export function DirectOrderRequestDetail({
         <PanelSection title="Pharmacy evidence">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
             <div>
-              {pharmacyEvidence.photoUrl ? (
+              {/* An invoice claim carries the distributor invoice INSTEAD of a photo and a pin (owner,
+                  2026-09-14) — shown to every viewer who can open this order, like the licence. */}
+              {pharmacyEvidence.validationRoute === "invoice" ? (
+                <DirectOrderInvoiceEvidence
+                  contentType={pharmacyEvidence.invoiceContentType}
+                  label={pharmacyEvidence.claimedPharmacyName ?? "this pharmacy"}
+                  url={pharmacyEvidence.invoiceUrl}
+                />
+              ) : pharmacyEvidence.photoUrl ? (
                 <ZoomablePhoto
                   alt="Storefront evidence"
                   caption="Storefront evidence"
@@ -425,7 +435,9 @@ export function DirectOrderRequestDetail({
               {/* ADVISORY ONLY (spec D4) — sits beside the evidence, never near the decision
                   buttons below. Absent for the requester's own view (owner rule, 2026-08-08):
                   service.ts strips evidenceCheck to null before it reaches here for that viewer. */}
-              <EvidenceReading check={pharmacyEvidence.evidenceCheck} claimedName={pharmacyEvidence.claimedPharmacyName} />
+              {pharmacyEvidence.validationRoute === "invoice" ? null : (
+                <EvidenceReading check={pharmacyEvidence.evidenceCheck} claimedName={pharmacyEvidence.claimedPharmacyName} />
+              )}
               {pharmacyEvidence.capturedLatitude != null ? (
                 <a
                   className="mt-1 block text-phx-xs font-bold text-orange-600 underline"
@@ -451,14 +463,26 @@ export function DirectOrderRequestDetail({
                 label="Why not in the master database"
                 value={<span dir="auto">{pharmacyEvidence.claimedReason ?? "—"}</span>}
               />
-              <Field
-                label="Distance from their area"
-                value={
-                  pharmacyEvidence.areaDistanceKm == null
-                    ? "distance unknown"
-                    : `${pharmacyEvidence.areaDistanceKm} km${pharmacyEvidence.gpsInsideRequesterArea ? "" : " — outside their area"}`
-                }
-              />
+              {pharmacyEvidence.validationRoute === "invoice" ? (
+                <>
+                  <Field label="Validated by" value="Distributor invoice — no location or photo asked for" />
+                  {pharmacyEvidence.requesterInvoiceSlots ? (
+                    <Field
+                      label="Requester"
+                      value={directOrderInvoiceSlotLabel(pharmacyEvidence.requesterInvoiceSlots)}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <Field
+                  label="Distance from their area"
+                  value={
+                    pharmacyEvidence.areaDistanceKm == null
+                      ? "distance unknown"
+                      : `${pharmacyEvidence.areaDistanceKm} km${pharmacyEvidence.gpsInsideRequesterArea ? "" : " — outside their area"}`
+                  }
+                />
+              )}
               <Field label="Submitted" value={cairoStamp(pharmacyEvidence.requestedAt) ?? "—"} />
               {/* Only rendered when a licence exists to have a verdict about. "Not checked yet" is
                   said out loud rather than left blank — an empty row here would read as a pass. */}

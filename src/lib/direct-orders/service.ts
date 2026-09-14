@@ -1521,6 +1521,40 @@ export async function acknowledgeDirectOrderPharmacy(
 }
 
 /**
+ * Confirm a pharmacy from its just-decided INVOICE validation (owner, 2026-09-14).
+ *
+ * The SFE Manager decides invoice validations, but the standalone acknowledge above is a System
+ * Admin's action and must stay one. This is the narrow door: it admits the confirming write ONLY for a
+ * pharmacy whose invoice-route claim is already approved or matched, so it cannot be used to confirm
+ * an arbitrary pharmacy — which is why `markDirectOrderPharmacyVerified` itself stays private.
+ */
+export async function confirmDirectOrderPharmacyFromInvoiceValidation(
+  access: AccessContext,
+  input: { pharmacyId: string; validationId: string },
+): Promise<void> {
+  if (!(access.scope === "system" || access.role === "Super Admin" || access.role === "SFE Manager")) {
+    throw new Error("Forbidden: only a System Admin or an SFE Manager can confirm a pharmacy from an invoice.");
+  }
+  const { data: validation, error } = await getSupabaseAdmin()
+    .from("direct_order_pharmacy_validations")
+    .select("pharmacy_id, validation_route, status")
+    .eq("id", input.validationId)
+    .maybeSingle();
+  if (error) throw error;
+  const claim = validation as { pharmacy_id?: string; validation_route?: string; status?: string } | null;
+  if (
+    !claim ||
+    String(claim.pharmacy_id ?? "") !== input.pharmacyId ||
+    claim.validation_route !== "invoice" ||
+    !["approved_new", "matched_existing"].includes(String(claim.status ?? ""))
+  ) {
+    throw new Error("Forbidden: this pharmacy has no decided invoice validation to confirm it from.");
+  }
+  await markDirectOrderPharmacyVerified(access, { pharmacyId: input.pharmacyId });
+  pingDirectOrderSheet("pharmacy_verified");
+}
+
+/**
  * Mark a pharmacy REJECTED — examined and found not to be real.
  *
  * A separate, deliberate act, and specifically NOT a consequence of rejecting a validation.

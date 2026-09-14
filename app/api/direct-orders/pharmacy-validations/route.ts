@@ -48,6 +48,8 @@ export async function POST(request: Request) {
       claimedReason: String(body.claimedReason ?? ""),
       photoDataUrl: String(body.photoDataUrl ?? ""),
       licenseDataUrl: body.licenseDataUrl ? String(body.licenseDataUrl) : null,
+      validationRoute: body.validationRoute === "invoice" ? "invoice" : "field",
+      invoiceDataUrl: body.invoiceDataUrl ? String(body.invoiceDataUrl) : null,
       capturedLatitude: body.capturedLatitude == null ? null : Number(body.capturedLatitude),
       capturedLongitude: body.capturedLongitude == null ? null : Number(body.capturedLongitude),
       capturedAccuracyMeters: body.capturedAccuracyMeters == null ? null : Number(body.capturedAccuracyMeters),

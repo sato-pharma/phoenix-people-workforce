@@ -10,6 +10,8 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
+import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
+import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -76,7 +78,9 @@ export function ValidationDesk({ rows }: Props) {
         decision === "match"
           ? `Matched to the existing customer. The ${decided.toLowerCase()} is trusted and its held orders are moving.`
           : decision === "approve"
-            ? `Approved as new. The ${decided.toLowerCase()} is on 90-day probation and its held orders are moving.`
+            ? row.upgradesInvoiceValidation
+              ? "Confirmed in the field. The requester's invoice slot is free again."
+              : `Approved as new. The ${decided.toLowerCase()} is on 90-day probation and its held orders are moving.`
             : "Rejected. The order stays held.",
       );
       setOpenId(null);
@@ -110,6 +114,8 @@ export function ValidationDesk({ rows }: Props) {
         // which the server refuses because the code would belong to somebody else's business.
         const isDistributorVenue = venueRequiresDistributorCode(row.venueType);
         const venueLabel = venueTypeLabel(row.venueType);
+        // Filed on a distributor invoice alone (owner, 2026-09-14): no pin, no photo, no licence.
+        const isInvoiceRoute = row.validationRoute === "invoice";
         // An unknown distance must read as unknown — never as "inside".
         const proximity =
           row.areaDistanceKm == null
@@ -130,11 +136,40 @@ export function ValidationDesk({ rows }: Props) {
                   {row.requestedByName} · {cairo(row.requestedAt)}
                 </p>
               </div>
-              <span className={`px-2 py-0.5 text-phx-xs font-black ${proximity.tone}`}>{proximity.label}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {isInvoiceRoute ? (
+                  // No pin was asked for, so there is no distance to show — "distance unknown" here
+                  // would read as a failed check.
+                  <span className="bg-sky-100 px-2 py-0.5 text-phx-xs font-black text-sky-800">Distributor invoice</span>
+                ) : (
+                  <>
+                    {row.upgradesInvoiceValidation ? (
+                      <span className="bg-violet-100 px-2 py-0.5 text-phx-xs font-black text-violet-800">
+                        Field check of an invoice pharmacy
+                      </span>
+                    ) : null}
+                    <span className={`px-2 py-0.5 text-phx-xs font-black ${proximity.tone}`}>{proximity.label}</span>
+                  </>
+                )}
+              </div>
             </header>
 
             <div className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
               <div>
+                {isInvoiceRoute ? (
+                  <div className="space-y-2">
+                    <DirectOrderInvoiceEvidence
+                      contentType={row.invoiceContentType}
+                      label={row.claimedPharmacyName}
+                      url={row.invoiceUrl}
+                    />
+                    <p className="border border-sky-200 bg-sky-50 px-2 py-1.5 text-phx-sm font-semibold text-sky-900">
+                      Validated on the distributor invoice alone — no location and no photo were asked for.
+                      Check that the invoice names this pharmacy and was issued by a real distributor.
+                    </p>
+                  </div>
+                ) : (
+                <>
                 {row.photoUrl ? (
                   <ZoomablePhoto
                     alt="Storefront evidence"
@@ -221,6 +256,8 @@ export function ValidationDesk({ rows }: Props) {
                     </>
                   )}
                 </div>
+                </>
+                )}
               </div>
 
               <div className="space-y-2 text-phx-sm">
@@ -228,7 +265,22 @@ export function ValidationDesk({ rows }: Props) {
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Address: </span><span dir="auto">{row.claimedAddress ?? "—"}</span></p>
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Doctor: </span><span dir="auto">{row.claimedDoctorName ?? "—"}</span></p>
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Their area: </span>{row.requesterAreaCode ?? "—"}</p>
-                <p><span className="font-black uppercase tracking-wider text-slate-400">Photo taken: </span>{cairo(row.capturedAt)}</p>
+                {isInvoiceRoute ? (
+                  <>
+                    <p><span className="font-black uppercase tracking-wider text-slate-400">Invoice attached: </span>{cairo(row.invoiceUploadedAt)}</p>
+                    {row.requesterInvoiceSlots ? (
+                      <p><span className="font-black uppercase tracking-wider text-slate-400">Requester: </span>{directOrderInvoiceSlotLabel(row.requesterInvoiceSlots)}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p><span className="font-black uppercase tracking-wider text-slate-400">Photo taken: </span>{cairo(row.capturedAt)}</p>
+                )}
+                {row.upgradesInvoiceValidation ? (
+                  <p className="border border-violet-200 bg-violet-50 px-2 py-1.5 font-semibold text-violet-900">
+                    This pharmacy was already confirmed on a distributor invoice. Approving this live photo
+                    confirms it in the field and frees the requester&apos;s invoice slot.
+                  </p>
+                ) : null}
 
                 {isOpen ? (
                   <div className="space-y-2 border-t border-[#eef1f3] pt-2">
@@ -323,7 +375,13 @@ export function ValidationDesk({ rows }: Props) {
                         </button>
                       ) : null}
                       <button type="button" disabled={busy === row.id} onClick={() => decide(row, "approve")} className="bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-slate-800 disabled:bg-slate-300">
-                        {isDistributorVenue ? "Approve as new (90-day probation)" : `Approve this ${venueLabel.toLowerCase()} (90-day probation)`}
+                        {row.upgradesInvoiceValidation
+                          ? "Confirm in the field"
+                          : isInvoiceRoute
+                            ? "Approve on the invoice (90-day probation)"
+                            : isDistributorVenue
+                              ? "Approve as new (90-day probation)"
+                              : `Approve this ${venueLabel.toLowerCase()} (90-day probation)`}
                       </button>
                       <button type="button" disabled={busy === row.id} onClick={() => decide(row, "reject")} className="border border-rose-300 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-rose-700 hover:bg-rose-50 disabled:opacity-50">
                         Reject

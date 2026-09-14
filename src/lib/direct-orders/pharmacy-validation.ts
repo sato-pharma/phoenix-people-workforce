@@ -2,7 +2,21 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
-import { acknowledgeDirectOrderPharmacy } from "@/lib/direct-orders/service";
+import {
+  acknowledgeDirectOrderPharmacy,
+  confirmDirectOrderPharmacyFromInvoiceValidation,
+} from "@/lib/direct-orders/service";
+import {
+  DIRECT_ORDER_INVOICE_BUCKET,
+  DIRECT_ORDER_INVOICE_SLOT_LIMIT,
+  directOrderInvoiceSlotsFullMessage,
+  normalizeDirectOrderValidationRoute,
+  parseDirectOrderInvoiceDataUrl,
+  type DirectOrderInvoiceContentType,
+  type DirectOrderInvoiceSlotCount,
+  type DirectOrderValidationRoute,
+  type ParsedDirectOrderInvoiceFile,
+} from "@/lib/direct-orders/invoice-evidence";
 import {
   checkDirectOrderStorefrontEvidence,
   type DirectOrderEvidenceCheck,
@@ -130,6 +144,26 @@ export type DirectOrderValidationRow = {
    * such. It is advisory only: nothing in the decide path consults it, and a test asserts that.
    */
   evidenceCheck: DirectOrderEvidenceCheck | null;
+  /**
+   * `field` = a live photo and a pin; `invoice` = a distributor invoice alone (owner, 2026-09-14).
+   * Every row filed before the invoice route existed is `field`.
+   */
+  validationRoute: DirectOrderValidationRoute;
+  /** Short-lived signed URL for the distributor invoice; only on an invoice claim. */
+  invoiceUrl: string | null;
+  invoiceContentType: DirectOrderInvoiceContentType | null;
+  invoiceUploadedAt: string | null;
+  /**
+   * How many of the requester's invoice slots are in use right now, for an invoice claim — the
+   * "2 of 5 pharmacies validated by invoice" the rep sees, shown to the reviewer as well. Null on a
+   * field claim.
+   */
+  requesterInvoiceSlots: DirectOrderInvoiceSlotCount | null;
+  /**
+   * A field claim on a pharmacy that was already confirmed by invoice: the rep went back with a
+   * live photo and location. Approving it frees one of their invoice slots.
+   */
+  upgradesInvoiceValidation: boolean;
 };
 
 /**
@@ -146,9 +180,19 @@ export function canDecideDirectOrderPharmacyValidations(access: AccessContext): 
   return access.scope === "system" || access.role === "Super Admin";
 }
 
+/**
+ * Who may open the desk at all: everyone above, plus the SFE Manager — who sees and decides INVOICE
+ * claims only (owner, 2026-09-14: the reviewer of an invoice validation is "both"). A live-photo
+ * claim is still decided by a System Admin alone; `decideDirectOrderPharmacyValidation` enforces
+ * that per row and `listDirectOrderPharmacyValidations` filters the SFE Manager's queue to match.
+ */
+export function canDecideDirectOrderInvoiceValidations(access: AccessContext): boolean {
+  return canDecideDirectOrderPharmacyValidations(access) || access.role === "SFE Manager";
+}
+
 function assertValidationDeskAccess(access: AccessContext): void {
-  if (!canDecideDirectOrderPharmacyValidations(access)) {
-    throw forbiddenError("Forbidden: only a System Admin can decide pharmacy validations.");
+  if (!canDecideDirectOrderInvoiceValidations(access)) {
+    throw forbiddenError("Forbidden: only a System Admin or an SFE Manager can decide pharmacy validations.");
   }
 }
 
@@ -244,6 +288,14 @@ export async function requestDirectOrderPharmacyValidation(
      * `src/lib/venues/pharmacy-license.ts` for the full reasoning.
      */
     licenseDataUrl?: string | null;
+    /**
+     * `invoice` files the claim on a distributor invoice ALONE — no pin and no storefront photo —
+     * limited to {@link DIRECT_ORDER_INVOICE_SLOT_LIMIT} open pharmacies per rep. Anything else is the
+     * field route, which is what every caller sent before this existed.
+     */
+    validationRoute?: DirectOrderValidationRoute | null;
+    /** The distributor invoice as a data URL (JPEG, PNG or PDF). Required on the invoice route. */
+    invoiceDataUrl?: string | null;
     capturedLatitude?: number | null;
     capturedLongitude?: number | null;
     capturedAccuracyMeters?: number | null;
@@ -261,6 +313,9 @@ export async function requestDirectOrderPharmacyValidation(
   // The reason is mandatory on purpose: "why is this not in the master database" is the question
   // the admin has to answer, and making the rep answer it first is most of the review.
   if (!reason) badRequest("Say why this pharmacy is not in the master database.");
+
+  const validationRoute = normalizeDirectOrderValidationRoute(input.validationRoute);
+  const isInvoiceRoute = validationRoute === "invoice";
 
   // LEG 1 OF THE VENUE RULE — a location is a must (owner, 2026-08-26). See
   // `src/lib/venues/venue-validation-rule.ts` for all three legs.
@@ -282,7 +337,10 @@ export async function requestDirectOrderPharmacyValidation(
     typeof input.capturedLongitude === "number" && Number.isFinite(input.capturedLongitude)
       ? input.capturedLongitude
       : null;
-  if (capturedLatitude === null || capturedLongitude === null) {
+  //
+  // THE INVOICE ROUTE IS THE ONE EXCEPTION (owner, 2026-09-14): a distributor invoice validates a
+  // pharmacy on its own, and the price is the five-pharmacy limit enforced below — not a pin.
+  if (!isInvoiceRoute && (capturedLatitude === null || capturedLongitude === null)) {
     badRequest(VENUE_LOCATION_REQUIRED_MESSAGE);
   }
 
@@ -325,6 +383,12 @@ export async function requestDirectOrderPharmacyValidation(
     }
   }
 
+  // An invoice validates the pharmacy behind a HELD order — that is where the rep meets the problem,
+  // and it is the order the decision revives. With no order there is nothing for the invoice to move.
+  if (isInvoiceRoute && !linkedRequestId) {
+    badRequest("Attach the invoice from the held order it belongs to — open that order and validate its pharmacy there.");
+  }
+
   // The registry gate (audit F2). Until now this action was DECLARED in the registry and invoked by
   // nothing: the entire door out of the held lane sat outside the module's governance layer, which
   // therefore claimed a coverage it did not have.
@@ -347,7 +411,19 @@ export async function requestDirectOrderPharmacyValidation(
     status: linkedRequestStatus ?? "held",
   });
 
-  const { bytes } = parseDirectOrderEvidencePhotoDataUrl(input.photoDataUrl);
+  // The invoice route carries no storefront photo, so there is nothing to parse; every other claim
+  // still must be a live JPEG.
+  const bytes = isInvoiceRoute ? null : parseDirectOrderEvidencePhotoDataUrl(input.photoDataUrl).bytes;
+
+  // Parsed before the row exists, for the same reason as the photo and the licence below.
+  let invoice: ParsedDirectOrderInvoiceFile | null = null;
+  if (isInvoiceRoute) {
+    try {
+      invoice = parseDirectOrderInvoiceDataUrl(input.invoiceDataUrl);
+    } catch (invoiceError) {
+      badRequest(invoiceError instanceof Error ? invoiceError.message : "The distributor invoice file is not valid.");
+    }
+  }
 
   // Parsed BEFORE the row is inserted, on the same reasoning as the storefront photo: a licence
   // that is too large or is a file type nobody can open must fail while the rep is still looking
@@ -369,6 +445,56 @@ export async function requestDirectOrderPharmacyValidation(
     .eq("id", pharmacyId)
     .maybeSingle();
   if (!pharmacy) throw notFoundError("Venue not found.");
+
+  if (isInvoiceRoute) {
+    const invoiceVenueType = normalizeVenueType((pharmacy as { venue_type?: string | null }).venue_type);
+    // A distributor invoice is a distributor vouching for its customer. A venue with no distributor
+    // account has no such invoice to produce, so the route is not open to it.
+    if (!venueRequiresDistributorCode(invoiceVenueType)) {
+      badRequest(
+        `A ${venueTypeLabel(invoiceVenueType).toLowerCase()} has no distributor account, so it cannot be validated by a distributor invoice. Validate it with a live photo and location.`,
+      );
+    }
+    if (String((pharmacy as { verification_status?: string | null }).verification_status ?? "") === "verified") {
+      badRequest("This pharmacy is already confirmed — it needs no invoice.");
+    }
+    // THE LIMIT (owner, 2026-09-14): no sixth pharmacy on an invoice alone until a slot opens.
+    const slots = await getDirectOrderInvoiceValidationSlots(access);
+    if (slots.used >= slots.limit) badRequest(directOrderInvoiceSlotsFullMessage(slots));
+  } else if (!linkedRequestId) {
+    // A live photo with no order behind it exists for ONE purpose: validating in the field a pharmacy
+    // the rep already confirmed by invoice, which frees that slot. It must be THEIR invoice claim —
+    // otherwise any rep could file evidence against any pharmacy, which is what the ownership check
+    // on the linked order stops everywhere else.
+    const ownInvoiceClaim = await pharmacyHasConfirmedInvoiceValidation(supabase, pharmacyId, access.hrId ?? "");
+    if (!ownInvoiceClaim) {
+      throw forbiddenError(
+        "Forbidden: a live photo without an order is only for a pharmacy you validated by invoice. Open your held order to validate this pharmacy.",
+      );
+    }
+  }
+
+  // ONE OPEN CLAIM PER PHARMACY on the two new paths. The UI hides the button while one is pending,
+  // but a double tap or a second tab would otherwise file the same invoice — or the same field check —
+  // twice, and the reviewer would decide the same thing twice.
+  if (isInvoiceRoute || !linkedRequestId) {
+    const ownKeys = hrIdLookupKeys(access.hrId ?? "").filter(Boolean);
+    const { count: openClaims, error: openClaimsError } = await supabase
+      .from("direct_order_pharmacy_validations")
+      .select("id", { count: "exact", head: true })
+      .eq("pharmacy_id", pharmacyId)
+      .eq("validation_route", validationRoute)
+      .eq("status", "pending")
+      .in("requested_by_hr_id", ownKeys.length > 0 ? ownKeys : [""]);
+    if (openClaimsError) throw openClaimsError;
+    if ((openClaims ?? 0) > 0) {
+      badRequest(
+        isInvoiceRoute
+          ? "You already sent an invoice for this pharmacy. It is waiting for review."
+          : "You already sent a live photo of this pharmacy. It is waiting for review.",
+      );
+    }
+  }
 
   const areaCode = (pharmacy as { area_code?: string | null }).area_code ?? null;
   // Resolved SERVER-SIDE from the stored geography — never taken from the browser, which is the
@@ -405,6 +531,7 @@ export async function requestDirectOrderPharmacyValidation(
       requester_area_code: areaCode,
       gps_inside_requester_area: proximity.inside,
       storage_bucket: DIRECT_ORDER_EVIDENCE_BUCKET,
+      validation_route: validationRoute,
       status: "pending",
     })
     .select("id")
@@ -420,16 +547,41 @@ export async function requestDirectOrderPharmacyValidation(
 
   // Upload AFTER the row exists, so the path is keyed on an id that is already durable — the same
   // ordering marketing uses, and the reason its evidence rows can never point at a missing object.
-  const path = `${pharmacyId}/${validationId}.jpg`;
-  const { error: uploadError } = await supabase.storage
-    .from(DIRECT_ORDER_EVIDENCE_BUCKET)
-    .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
-  if (uploadError) {
-    // Never leave a validation claiming evidence it does not have.
-    await supabase.from("direct_order_pharmacy_validations").delete().eq("id", validationId);
-    throw uploadError;
+  let path: string | null = null;
+  if (bytes) {
+    path = `${pharmacyId}/${validationId}.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from(DIRECT_ORDER_EVIDENCE_BUCKET)
+      .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
+    if (uploadError) {
+      // Never leave a validation claiming evidence it does not have.
+      await supabase.from("direct_order_pharmacy_validations").delete().eq("id", validationId);
+      throw uploadError;
+    }
+    await supabase.from("direct_order_pharmacy_validations").update({ storage_path: path }).eq("id", validationId);
   }
-  await supabase.from("direct_order_pharmacy_validations").update({ storage_path: path }).eq("id", validationId);
+
+  // The distributor invoice, on the invoice route. Its own bucket, and a failed upload unwinds the
+  // filing for the same reason the storefront photo does: an invoice claim with no invoice on file
+  // would reach the reviewer as a claim resting on nothing.
+  if (invoice) {
+    const invoicePath = `${pharmacyId}/${validationId}-invoice.${invoice.extension}`;
+    const { error: invoiceUploadError } = await supabase.storage
+      .from(DIRECT_ORDER_INVOICE_BUCKET)
+      .upload(invoicePath, invoice.bytes, { contentType: invoice.contentType, upsert: true });
+    if (invoiceUploadError) {
+      await supabase.from("direct_order_pharmacy_validations").delete().eq("id", validationId);
+      throw invoiceUploadError;
+    }
+    await supabase
+      .from("direct_order_pharmacy_validations")
+      .update({
+        invoice_content_type: invoice.contentType,
+        invoice_storage_path: invoicePath,
+        invoice_uploaded_at: new Date().toISOString(),
+      })
+      .eq("id", validationId);
+  }
 
   // The licence, when one was attached. Same id-keyed path shape, `-license` suffixed so the two
   // objects for one claim can never collide — but a DIFFERENT bucket. `direct-order-evidence` is
@@ -447,7 +599,7 @@ export async function requestDirectOrderPharmacyValidation(
       .from(PHARMACY_LICENSE_BUCKET)
       .upload(licensePath, license.bytes, { contentType: license.contentType, upsert: true });
     if (licenseUploadError) {
-      await supabase.storage.from(DIRECT_ORDER_EVIDENCE_BUCKET).remove([path]).catch(() => undefined);
+      if (path) await supabase.storage.from(DIRECT_ORDER_EVIDENCE_BUCKET).remove([path]).catch(() => undefined);
       await supabase.from("direct_order_pharmacy_validations").delete().eq("id", validationId);
       throw licenseUploadError;
     }
@@ -475,23 +627,26 @@ export async function requestDirectOrderPharmacyValidation(
   // The venue type decides WHICH question the photo is read against. Without it every photo was
   // judged "is this a pharmacy", so a clinic filed (correctly) as a nursery came back a red
   // "does not look like a pharmacy" on evidence that was never wrong.
-  try {
-    const evidenceCheck = await checkDirectOrderStorefrontEvidence({
-      bytes,
-      claimedPharmacyName: claimedName,
-      venueType: normalizeVenueType((pharmacy as { venue_type?: string | null }).venue_type),
-    });
-    if (evidenceCheck) {
-      await supabase
-        .from("direct_order_pharmacy_validations")
-        .update({ evidence_check: evidenceCheck })
-        .eq("id", validationId);
+  // No storefront photo on the invoice route, so nothing to read.
+  if (bytes) {
+    try {
+      const evidenceCheck = await checkDirectOrderStorefrontEvidence({
+        bytes,
+        claimedPharmacyName: claimedName,
+        venueType: normalizeVenueType((pharmacy as { venue_type?: string | null }).venue_type),
+      });
+      if (evidenceCheck) {
+        await supabase
+          .from("direct_order_pharmacy_validations")
+          .update({ evidence_check: evidenceCheck })
+          .eq("id", validationId);
+      }
+    } catch (error) {
+      logError("Storefront evidence check failed; the validation was filed without it", {
+        labels: { event: "direct_order_evidence_check_failed", validationId },
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
     }
-  } catch (error) {
-    logError("Storefront evidence check failed; the validation was filed without it", {
-      labels: { event: "direct_order_evidence_check_failed", validationId },
-      error: error instanceof Error ? error : new Error(String(error)),
-    });
   }
 
   await writeRequiredAuditLog({
@@ -504,11 +659,181 @@ export async function requestDirectOrderPharmacyValidation(
       areaCode,
       distanceKm: proximity.distanceKm,
       licenseAttached: Boolean(license),
+      validationRoute,
+      invoiceAttached: Boolean(invoice),
     },
-    summary: `Pharmacy validation requested by ${access.hrId ?? "unknown"} for ${claimedName}${license ? ", with a pharmacy licence attached" : ""}.`,
+    summary: `Pharmacy validation requested by ${access.hrId ?? "unknown"} for ${claimedName}${isInvoiceRoute ? " on a distributor invoice" : ""}${license ? ", with a pharmacy licence attached" : ""}.`,
   });
 
   return { validationId };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invoice slots (owner, 2026-09-14).
+//
+// A rep may hold at most DIRECT_ORDER_INVOICE_SLOT_LIMIT pharmacies on an invoice alone. A slot is
+// IN USE while the invoice claim is pending or was approved/matched, and it FREES when:
+//   - the claim is rejected (the slot comes back — owner's answer), or
+//   - the pharmacy is later confirmed by a live-photo validation (the rep went back in the field), or
+//   - the pharmacy itself was ruled false.
+// None of that is a shape a CHECK constraint can hold, so it is computed here, in one place, and
+// used by the refusal, the rep's counter and the reviewer's counter alike.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INVOICE_SLOT_STATUSES: DirectOrderValidationStatus[] = ["pending", "approved_new", "matched_existing"];
+const CONFIRMED_VALIDATION_STATUSES: DirectOrderValidationStatus[] = ["approved_new", "matched_existing"];
+
+export type DirectOrderInvoiceSlotPharmacy = {
+  validationId: string;
+  pharmacyId: string;
+  pharmacyName: string;
+  phoenixPharmacyCode: string;
+  venueType: VenueType;
+  /** `pending` = the invoice is still with the reviewer; approved/matched = confirmed on it. */
+  status: DirectOrderValidationStatus;
+  requestedAt: string;
+  /** A live-photo validation of this pharmacy is waiting for a decision; approving it frees the slot. */
+  fieldValidationPending: boolean;
+};
+
+export type DirectOrderInvoiceSlots = DirectOrderInvoiceSlotCount & {
+  pharmacies: DirectOrderInvoiceSlotPharmacy[];
+};
+
+/**
+ * Every open invoice slot of the given requesters, keyed by canonical HR id.
+ *
+ * Both spellings of each HR id are looked up, because `requested_by_hr_id` holds canonical ids from
+ * 2026-09-05 and the lower-cased comparison key before that. Chunked at 50 because a long PostgREST
+ * `.in()` comes back empty with no error — which here would read as "no slots used" and let a rep
+ * past the limit.
+ */
+async function loadOpenInvoiceSlots(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  requesterHrIds: string[],
+): Promise<Map<string, DirectOrderInvoiceSlotPharmacy[]>> {
+  const slotsByRequester = new Map<string, DirectOrderInvoiceSlotPharmacy[]>();
+  const lookupKeys = Array.from(new Set(requesterHrIds.flatMap((hr) => hrIdLookupKeys(hr)).filter(Boolean)));
+  if (lookupKeys.length === 0) return slotsByRequester;
+
+  const invoiceRows: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < lookupKeys.length; i += 50) {
+    const { data, error } = await supabase
+      .from("direct_order_pharmacy_validations")
+      .select("id, pharmacy_id, requested_by_hr_id, status, requested_at")
+      .eq("validation_route", "invoice")
+      .in("status", INVOICE_SLOT_STATUSES)
+      .in("requested_by_hr_id", lookupKeys.slice(i, i + 50))
+      .order("requested_at", { ascending: false });
+    if (error) throw error;
+    invoiceRows.push(...((data ?? []) as Array<Record<string, unknown>>));
+  }
+  if (invoiceRows.length === 0) return slotsByRequester;
+
+  const pharmacyIds = Array.from(new Set(invoiceRows.map((r) => String(r.pharmacy_id))));
+  const confirmedInField = new Set<string>();
+  const pendingInField = new Set<string>();
+  const pharmacyById = new Map<
+    string,
+    { pharmacy_name: string | null; phoenix_pharmacy_code: string | null; venue_type: string | null; verification_status: string | null }
+  >();
+  for (let i = 0; i < pharmacyIds.length; i += 50) {
+    const chunk = pharmacyIds.slice(i, i + 50);
+    const [fieldResult, pharmacyResult] = await Promise.all([
+      supabase
+        .from("direct_order_pharmacy_validations")
+        .select("pharmacy_id, status")
+        .eq("validation_route", "field")
+        .in("status", ["pending", ...CONFIRMED_VALIDATION_STATUSES])
+        .in("pharmacy_id", chunk),
+      supabase
+        .from("direct_order_pharmacies")
+        .select("id, pharmacy_name, phoenix_pharmacy_code, venue_type, verification_status")
+        .in("id", chunk),
+    ]);
+    if (fieldResult.error) throw fieldResult.error;
+    if (pharmacyResult.error) throw pharmacyResult.error;
+    for (const field of (fieldResult.data ?? []) as Array<{ pharmacy_id: string; status: string }>) {
+      if (field.status === "pending") pendingInField.add(String(field.pharmacy_id));
+      else confirmedInField.add(String(field.pharmacy_id));
+    }
+    for (const pharmacy of (pharmacyResult.data ?? []) as Array<{
+      id: string;
+      pharmacy_name: string | null;
+      phoenix_pharmacy_code: string | null;
+      venue_type: string | null;
+      verification_status: string | null;
+    }>) {
+      pharmacyById.set(String(pharmacy.id), pharmacy);
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const row of invoiceRows) {
+    const pharmacyId = String(row.pharmacy_id);
+    const requester = canonicalHrIdKey(String(row.requested_by_hr_id ?? ""));
+    if (!requester) continue;
+    // Validated in the field since: the slot is free.
+    if (confirmedInField.has(pharmacyId)) continue;
+    const pharmacy = pharmacyById.get(pharmacyId);
+    // Ruled false, or gone: nothing left standing on this invoice.
+    if (!pharmacy || pharmacy.verification_status === "rejected") continue;
+    const key = `${requester}:${pharmacyId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const list = slotsByRequester.get(requester) ?? [];
+    list.push({
+      validationId: String(row.id),
+      pharmacyId,
+      pharmacyName: pharmacy.pharmacy_name ?? "(pharmacy missing)",
+      phoenixPharmacyCode: pharmacy.phoenix_pharmacy_code ?? "—",
+      venueType: normalizeVenueType(pharmacy.venue_type),
+      status: String(row.status ?? "pending") as DirectOrderValidationStatus,
+      requestedAt: String(row.requested_at ?? ""),
+      fieldValidationPending: pendingInField.has(pharmacyId),
+    });
+    slotsByRequester.set(requester, list);
+  }
+  return slotsByRequester;
+}
+
+/**
+ * The viewer's OWN invoice slots — "2 of 5 pharmacies validated by invoice" and which pharmacies
+ * they are. Reads only the caller's own claims, so it needs no desk gate.
+ */
+export async function getDirectOrderInvoiceValidationSlots(access: AccessContext): Promise<DirectOrderInvoiceSlots> {
+  const hrId = access.hrId ?? "";
+  const key = canonicalHrIdKey(hrId);
+  if (!key) return { used: 0, limit: DIRECT_ORDER_INVOICE_SLOT_LIMIT, pharmacies: [] };
+  const slots = await loadOpenInvoiceSlots(getSupabaseAdmin(), [hrId]);
+  const pharmacies = slots.get(key) ?? [];
+  return { used: pharmacies.length, limit: DIRECT_ORDER_INVOICE_SLOT_LIMIT, pharmacies };
+}
+
+/**
+ * Was this pharmacy confirmed by an invoice claim — optionally, one filed by this requester?
+ * `head: true`: the question is whether one exists, never the rows.
+ */
+async function pharmacyHasConfirmedInvoiceValidation(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  pharmacyId: string,
+  requesterHrId?: string,
+): Promise<boolean> {
+  let query = supabase
+    .from("direct_order_pharmacy_validations")
+    .select("id", { count: "exact", head: true })
+    .eq("pharmacy_id", pharmacyId)
+    .eq("validation_route", "invoice")
+    .in("status", CONFIRMED_VALIDATION_STATUSES);
+  if (requesterHrId !== undefined) {
+    const keys = hrIdLookupKeys(requesterHrId).filter(Boolean);
+    // No HR id is nobody's claim — never an unfiltered "anyone's".
+    if (keys.length === 0) return false;
+    query = query.in("requested_by_hr_id", keys);
+  }
+  const { count, error } = await query;
+  if (error) throw error;
+  return (count ?? 0) > 0;
 }
 
 export type PharmacySuggestion = {
@@ -578,6 +903,11 @@ async function mapValidationRow(
    * and this resolves it itself.
    */
   hasDistributorCode?: boolean,
+  /**
+   * The desk resolves both of these for every row in a few queries; the single-row caller passes
+   * nothing and they are resolved here.
+   */
+  context?: { invoiceSlotsUsed?: number; upgradesInvoiceValidation?: boolean },
 ): Promise<DirectOrderValidationRow> {
   const bucket = String(row.storage_bucket ?? DIRECT_ORDER_EVIDENCE_BUCKET);
   const storagePath = row.storage_path ? String(row.storage_path) : null;
@@ -599,6 +929,27 @@ async function mapValidationRow(
       .createSignedUrl(licensePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
     licenseUrl = signedLicense?.signedUrl ?? null;
   }
+  // The distributor invoice lives in its own bucket, one fixed name — same reasoning as the licence.
+  const validationRoute = normalizeDirectOrderValidationRoute(row.validation_route);
+  const invoicePath = row.invoice_storage_path ? String(row.invoice_storage_path) : null;
+  let invoiceUrl: string | null = null;
+  if (invoicePath) {
+    const { data: signedInvoice } = await supabase.storage
+      .from(DIRECT_ORDER_INVOICE_BUCKET)
+      .createSignedUrl(invoicePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
+    invoiceUrl = signedInvoice?.signedUrl ?? null;
+  }
+  let invoiceSlotsUsed = context?.invoiceSlotsUsed;
+  if (validationRoute === "invoice" && invoiceSlotsUsed === undefined) {
+    const requester = String(row.requested_by_hr_id ?? "");
+    const slots = await loadOpenInvoiceSlots(supabase, [requester]);
+    invoiceSlotsUsed = (slots.get(canonicalHrIdKey(requester) ?? "") ?? []).length;
+  }
+  let upgradesInvoiceValidation = context?.upgradesInvoiceValidation;
+  if (validationRoute === "field" && upgradesInvoiceValidation === undefined) {
+    upgradesInvoiceValidation = await pharmacyHasConfirmedInvoiceValidation(supabase, String(row.pharmacy_id));
+  }
+
   // Resolved here only for the single-row caller. `head: true` sends no rows — this asks whether
   // ANY code exists, and the answer is a boolean either way.
   let codeKnown = hasDistributorCode;
@@ -652,6 +1003,17 @@ async function mapValidationRow(
     licenseNameMatchesSign:
       row.license_name_matches_sign == null ? null : Boolean(row.license_name_matches_sign),
     hasDistributorCode: codeKnown,
+    validationRoute,
+    invoiceUrl,
+    invoiceContentType: row.invoice_content_type
+      ? (String(row.invoice_content_type) as DirectOrderInvoiceContentType)
+      : null,
+    invoiceUploadedAt: row.invoice_uploaded_at ? String(row.invoice_uploaded_at) : null,
+    requesterInvoiceSlots:
+      validationRoute === "invoice"
+        ? { used: invoiceSlotsUsed ?? 0, limit: DIRECT_ORDER_INVOICE_SLOT_LIMIT }
+        : null,
+    upgradesInvoiceValidation: validationRoute === "field" && Boolean(upgradesInvoiceValidation),
     // Read straight through: the column is null whenever there is no answer, and null must stay
     // null all the way to the screen rather than becoming a default that reads like a pass.
     evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
@@ -676,12 +1038,16 @@ async function mapValidationRow(
  * follow: a badge you cannot clear is how people learn to ignore badges.
  */
 export async function countDirectOrderPendingValidations(access: AccessContext): Promise<number> {
-  if (!canDecideDirectOrderPharmacyValidations(access)) return 0;
+  const decidesEveryClaim = canDecideDirectOrderPharmacyValidations(access);
+  if (!decidesEveryClaim && !canDecideDirectOrderInvoiceValidations(access)) return 0;
   const supabase = getSupabaseAdmin();
-  const { count, error } = await supabase
+  let query = supabase
     .from("direct_order_pharmacy_validations")
     .select("id", { count: "exact", head: true })
     .eq("status", "pending");
+  // The SFE Manager's badge counts the claims they can clear: invoice claims only.
+  if (!decidesEveryClaim) query = query.eq("validation_route", "invoice");
+  const { count, error } = await query;
   if (error) throw error;
   return count ?? 0;
 }
@@ -698,6 +1064,8 @@ export async function listDirectOrderPharmacyValidations(
     .select("*")
     .order("requested_at", { ascending: true });
   if (options?.status) query = query.eq("status", options.status);
+  // An SFE Manager's desk holds the claims they may decide — invoice claims — and nothing else.
+  if (!canDecideDirectOrderPharmacyValidations(access)) query = query.eq("validation_route", "invoice");
   const { data, error } = await query;
   if (error) throw error;
 
@@ -752,6 +1120,36 @@ export async function listDirectOrderPharmacyValidations(
     }
   }
 
+  // Each invoice claim's requester counter, and which field claims revisit an invoice pharmacy — for
+  // the whole desk in a handful of queries rather than per row.
+  const invoiceRequesters = rows
+    .filter((r) => normalizeDirectOrderValidationRoute(r.validation_route) === "invoice")
+    .map((r) => String(r.requested_by_hr_id ?? ""));
+  const slotsByRequester =
+    invoiceRequesters.length > 0
+      ? await loadOpenInvoiceSlots(supabase, invoiceRequesters)
+      : new Map<string, DirectOrderInvoiceSlotPharmacy[]>();
+  const fieldPharmacyIds = Array.from(
+    new Set(
+      rows
+        .filter((r) => normalizeDirectOrderValidationRoute(r.validation_route) === "field")
+        .map((r) => String(r.pharmacy_id)),
+    ),
+  );
+  const confirmedByInvoice = new Set<string>();
+  for (let i = 0; i < fieldPharmacyIds.length; i += 50) {
+    const { data: invoiceClaims, error: invoiceClaimsError } = await supabase
+      .from("direct_order_pharmacy_validations")
+      .select("pharmacy_id")
+      .eq("validation_route", "invoice")
+      .in("status", CONFIRMED_VALIDATION_STATUSES)
+      .in("pharmacy_id", fieldPharmacyIds.slice(i, i + 50));
+    if (invoiceClaimsError) throw invoiceClaimsError;
+    for (const claim of (invoiceClaims ?? []) as Array<{ pharmacy_id: string }>) {
+      confirmedByInvoice.add(String(claim.pharmacy_id));
+    }
+  }
+
   const out: DirectOrderValidationRow[] = [];
   for (const row of rows) {
     const pharmacy = pharmacyById.get(String(row.pharmacy_id));
@@ -763,6 +1161,10 @@ export async function listDirectOrderPharmacyValidations(
         pharmacy,
         nameByHr.get(hr.toUpperCase()) ?? hr,
         pharmaciesWithCode.has(String(row.pharmacy_id)),
+        {
+          invoiceSlotsUsed: (slotsByRequester.get(canonicalHrIdKey(hr) ?? "") ?? []).length,
+          upgradesInvoiceValidation: confirmedByInvoice.has(String(row.pharmacy_id)),
+        },
       ),
     );
   }
@@ -917,6 +1319,17 @@ export async function decideDirectOrderPharmacyValidation(
     badRequest("This validation has already been decided.");
   }
 
+  // The SFE Manager decides INVOICE claims only (owner, 2026-09-14). A live-photo claim — including
+  // one that revisits an invoice pharmacy — stays with a System Admin, as it always was.
+  const validationRoute = normalizeDirectOrderValidationRoute((row as { validation_route?: string }).validation_route);
+  const isInvoiceRoute = validationRoute === "invoice";
+  const decidesEveryClaim = canDecideDirectOrderPharmacyValidations(access);
+  if (!isInvoiceRoute && !decidesEveryClaim) {
+    throw forbiddenError(
+      "Forbidden: an SFE Manager decides invoice validations only. A validation with a live photo and location is decided by a System Admin.",
+    );
+  }
+
   // The registry gate (audit F2). `assertValidationDeskAccess` above already restricts this to a
   // System Admin and the registry lists exactly "Super Admin", so this adds no new refusal today.
   // It is here because the registry is the module's declared governance layer, and a door out of
@@ -1029,8 +1442,16 @@ export async function decideDirectOrderPharmacyValidation(
     );
   }
 
+  // A field claim on a pharmacy already confirmed by invoice is the rep going back with a live photo.
+  // The invoice already answered WHO the pharmacy is, so leg 3 is not asked again, and the approval
+  // must not restart a probation clock (or demote a matched pharmacy) that the invoice decision set.
+  const invoiceIdentityOnFile =
+    !isInvoiceRoute && (await pharmacyHasConfirmedInvoiceValidation(supabase, pharmacyId));
+
   if (input.decision === "approve") {
-    const gap = venueIdentityGapMessage({
+    // THE INVOICE ROUTE: a distributor invoice validates the pharmacy on its own (owner, 2026-09-14),
+    // so neither the code-or-licence leg nor the location-and-photo legs are asked of it.
+    const gap = isInvoiceRoute || invoiceIdentityOnFile ? null : venueIdentityGapMessage({
       codesInOurDatabase: await countVenueCodesInMasterDatabase(supabase, pharmacyId),
       hasLicenseOnFile: licenseOnFile,
       venueType,
@@ -1111,11 +1532,14 @@ export async function decideDirectOrderPharmacyValidation(
       })
       .eq("id", input.validationId);
   } else {
-    // approve → genuinely new, admitted on PROBATION.
-    await supabase
-      .from("direct_order_pharmacies")
-      .update({ trust_state: "provisional", probation_started_at: now })
-      .eq("id", pharmacyId);
+    // approve → genuinely new, admitted on PROBATION. Not again for a field revisit of an invoice
+    // pharmacy: its trust state was set when the invoice was decided.
+    if (!invoiceIdentityOnFile) {
+      await supabase
+        .from("direct_order_pharmacies")
+        .update({ trust_state: "provisional", probation_started_at: now })
+        .eq("id", pharmacyId);
+    }
     await supabase
       .from("direct_order_pharmacy_validations")
       .update({
@@ -1132,7 +1556,15 @@ export async function decideDirectOrderPharmacyValidation(
   // Both approve and match confirm the identity, which is what releases the held orders. Reusing
   // acknowledgeDirectOrderPharmacy keeps ONE code path for "the pharmacy is confirmed": it marks
   // it verified, audits it, and revives every order parked on it.
-  await acknowledgeDirectOrderPharmacy(access, { pharmacyId });
+  //
+  // An SFE Manager cannot use the standalone acknowledge action — it is a System Admin's registry
+  // action — so their invoice decision confirms through a wrapper that only admits a pharmacy whose
+  // INVOICE claim has just been decided. Same private write underneath, same revival of held orders.
+  if (decidesEveryClaim) {
+    await acknowledgeDirectOrderPharmacy(access, { pharmacyId });
+  } else {
+    await confirmDirectOrderPharmacyFromInvoiceValidation(access, { pharmacyId, validationId: input.validationId });
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -1143,8 +1575,9 @@ export async function decideDirectOrderPharmacyValidation(
       status: input.decision === "match" ? "matched_existing" : "approved_new",
       pharmacyId,
       licenseNameMatchesSign: licenseVerdict,
+      validationRoute,
     },
-    summary: `Pharmacy validation ${input.decision === "match" ? "matched to an existing customer" : "approved as new (provisional)"} by ${access.hrId ?? "unknown"}${
+    summary: `Pharmacy validation${isInvoiceRoute ? " on a distributor invoice" : ""} ${input.decision === "match" ? "matched to an existing customer" : invoiceIdentityOnFile ? "approved with a live photo and location" : "approved as new (provisional)"} by ${access.hrId ?? "unknown"}${
       licenseVerdict === true
         ? ", licence name confirmed against the shop sign"
         : licenseVerdict === false

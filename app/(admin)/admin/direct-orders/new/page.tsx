@@ -3,7 +3,9 @@ import { ReceiptText } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DirectOrderSubmitForm } from "@/components/direct-orders/direct-order-submit-form";
+import { InvoiceValidatedPharmacies } from "@/components/direct-orders/invoice-validated-pharmacies";
 import { loadDirectOrderCaps } from "@/lib/direct-orders/caps";
+import { getDirectOrderInvoiceValidationSlots } from "@/lib/direct-orders/pharmacy-validation";
 import {
   listDirectOrderAreaAndBrickOptions,
   listDirectOrderDistributorOptions,
@@ -23,13 +25,14 @@ export default async function AdminDirectOrdersPage() {
   await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders/new");
   const canSubmit = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
-  const [products, areaBrickOptions, distributors, pharmacies, myRequests, capsData] = await Promise.all([
+  const [products, areaBrickOptions, distributors, pharmacies, myRequests, capsData, invoiceSlots] = await Promise.all([
     listDirectOrderProductOptions(access),
     listDirectOrderAreaAndBrickOptions(access),
     listDirectOrderDistributorOptions(),
     listMyDirectOrderPharmacies(access),
     listMyDirectOrders(access),
     loadDirectOrderCaps(),
+    canSubmit ? getDirectOrderInvoiceValidationSlots(access) : Promise.resolve(null),
   ]);
   const caps = {
     globalBonusCapPct: capsData.globalBonusCapPct,
@@ -45,7 +48,11 @@ export default async function AdminDirectOrdersPage() {
         icon={<ReceiptText className="h-3.5 w-3.5" />}
       />
       {canSubmit ? (
-        <DirectOrderSubmitForm products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} basePath="/admin/direct-orders" />
+        <>
+          <DirectOrderSubmitForm products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} basePath="/admin/direct-orders" />
+          {/* "2 of 5 pharmacies validated by invoice", and the way to free a slot (owner, 2026-09-14). */}
+          {invoiceSlots && invoiceSlots.used > 0 ? <InvoiceValidatedPharmacies slots={invoiceSlots} /> : null}
+        </>
       ) : (
         <p className="border border-phx-line bg-white px-4 py-6 text-sm text-slate-500">
           Your role cannot submit direct orders. Approvers review them under Approvals Hub › D.Orders Approval.
