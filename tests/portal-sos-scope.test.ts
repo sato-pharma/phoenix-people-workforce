@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
+  PORTAL_SOS_ACTION_ROLES,
   PORTAL_SOS_ROLES,
   computePortalSosVisibility,
+  isPortalSosActionsRole,
   isPortalSosRole,
 } from "../src/lib/sales/portal-sos-dashboard.ts";
 
@@ -31,7 +33,37 @@ export function runPortalSosScopeTests() {
   for (const role of ["Medical Rep", "SFE Manager", "CEO", "Super Admin", "Employee", "Manager"] as const) {
     assert.equal(isPortalSosRole(role), false, `${role} must NOT access portal SoS`);
   }
-  assert.equal(PORTAL_SOS_ROLES.length, 6, "exactly six roles get the portal SoS tab");
+  assert.equal(PORTAL_SOS_ROLES.length, 6, "exactly six roles get the portal SoS distributor dashboard");
+
+  // ── Pharmacy action lists: the six plus the Medical Rep (owner, 2026-09-14) ──
+  for (const role of [...PORTAL_SOS_ROLES, "Medical Rep"] as const) {
+    assert.equal(isPortalSosActionsRole(role), true, `${role} must see the pharmacy action lists`);
+  }
+  for (const role of ["SFE Manager", "CEO", "Super Admin", "Employee", "Manager"] as const) {
+    assert.equal(isPortalSosActionsRole(role), false, `${role} must NOT reach the portal pharmacy action lists`);
+  }
+  assert.equal(PORTAL_SOS_ACTION_ROLES.length, 7, "exactly seven roles get the pharmacy action lists");
+
+  // The rep is admitted to the ACTION LISTS only. The page must still gate the distributor dashboard on
+  // isPortalSosRole (region-level scope would show a rep his sibling areas), and the lists must narrow
+  // him to his own area after the load and never reveal El Qema.
+  const page = readSource("../app/employee-portals/source-of-sales/page.tsx");
+  assert.ok(page.includes("isPortalSosActionsRole(access.role)"), "the page admits the action roles");
+  assert.ok(
+    page.includes("const showDistributorDashboard = isPortalSosRole(access.role);"),
+    "the distributor dashboard stays behind the six-role gate",
+  );
+  const actionsRoute = readSource("../app/api/employee-portals/source-of-sales/actions/route.ts");
+  assert.ok(actionsRoute.includes("isPortalSosActionsRole(access.role)"), "the actions API gates by role");
+  assert.ok(actionsRoute.includes('assertPermission(access, "sales", "read")'), "the actions API asserts sales:read");
+  const actionsLoader = readSource("../src/lib/sales/sos-pharmacy-actions-loader.ts");
+  assert.ok(
+    actionsLoader.includes('access.role === "Medical Rep"') && actionsLoader.includes("resolveTerritoryRootScope(access)"),
+    "a rep is narrowed to the areas the Territory Drilldown resolves for him",
+  );
+  assert.ok(actionsLoader.includes("narrowClosingDetailsToAreas(details, areaCodes)"), "area narrowing runs after the load");
+  assert.ok(actionsLoader.includes("listPublishedPeriodsForLine"), "published closings only");
+  assert.ok(!actionsLoader.includes("revealSource: true"), "the action lists never reveal El Qema");
 
   // ── Filter visibility per scope shape ─────────────────────────────────────────
   const line = (...names: string[]) => new Set(names.map((n) => n.toLowerCase()));

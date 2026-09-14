@@ -65,6 +65,26 @@ export function isPortalSosRole(role: PhoenixRole): boolean {
 }
 
 /**
+ * Roles that see the PHARMACY ACTION LISTS at the top of the page (sos-pharmacy-actions.ts): every
+ * portal SoS role plus the Medical Rep — owner, 2026-09-14, "Add Medical Reps".
+ *
+ * 🔴 A REP IS DELIBERATELY NOT A PORTAL SOS ROLE. The distributor dashboard underneath resolves a rep
+ * at REGION level (his sales scope is SELF, which the engine reads as his region), so admitting him
+ * to PORTAL_SOS_ROLES would show him every sibling rep's area. The action lists narrow him to his own
+ * area, which is why he gets them and only them.
+ */
+export const PORTAL_SOS_ACTION_ROLES = [
+  ...PORTAL_SOS_ROLES,
+  "Medical Rep",
+] as const satisfies readonly PhoenixRole[];
+
+const PORTAL_SOS_ACTION_ROLE_SET = new Set<PhoenixRole>(PORTAL_SOS_ACTION_ROLES);
+
+export function isPortalSosActionsRole(role: PhoenixRole): boolean {
+  return PORTAL_SOS_ACTION_ROLE_SET.has(role);
+}
+
+/**
  * Pure filter-visibility rule (no DB) — exported for unit testing.
  *   line:   hidden when bound to a single line; shown for multi-line (MM) or company.
  *   region: hidden ONLY when locked to exactly one region (DSM); shown otherwise.

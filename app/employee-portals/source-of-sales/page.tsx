@@ -7,11 +7,13 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { DashboardSkeleton } from "@/components/employee-portal/skeleton-templates";
 import { PortalSosDashboard } from "@/components/sales/portal/portal-sos-dashboard";
+import { PortalSosPharmacyActions } from "@/components/sales/portal/portal-sos-pharmacy-actions";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
   getPortalSosDashboard,
+  isPortalSosActionsRole,
   isPortalSosRole,
   toPortalSosScopeView,
   type PortalSosComparison,
@@ -93,23 +95,35 @@ export default async function PortalSourceOfSalesPage({
 }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
-  if (!isPortalSosRole(access.role)) {
+  if (!isPortalSosActionsRole(access.role)) {
     redirect(resolveLandingPathForRole(access.role));
   }
   await assertPermission(access, "sales", "read");
 
+  // A Medical Rep gets the pharmacy action lists for his own area and nothing else: the distributor
+  // dashboard resolves him at region level, which would show him his sibling reps' areas.
+  const showDistributorDashboard = isPortalSosRole(access.role);
   const filters = parseFilters(await searchParams);
 
   return (
     <EmployeePortalPageShell
       badge="Sales Operations"
-      description="Distributor sell-in across your scope — value, units, channel mix, regions, areas, products and distributors."
+      description={
+        showDistributorDashboard
+          ? "Which pharmacies stopped, dropped or started buying in your published closings, how this month is pacing, and the distributor sell-in behind it."
+          : "Which pharmacies in your area stopped, dropped or started buying in your published closings, and how this month is pacing."
+      }
       errorBoundaryTitle="Source of Sales unavailable"
       title="Source of Sales"
     >
-      <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={2} />}>
-        <PortalSosContent access={access} filters={filters} />
-      </Suspense>
+      <div className="space-y-6">
+        <PortalSosPharmacyActions />
+        {showDistributorDashboard ? (
+          <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={2} />}>
+            <PortalSosContent access={access} filters={filters} />
+          </Suspense>
+        ) : null}
+      </div>
     </EmployeePortalPageShell>
   );
 }
