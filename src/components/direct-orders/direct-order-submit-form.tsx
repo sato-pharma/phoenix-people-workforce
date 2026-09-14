@@ -669,7 +669,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               medical rep can reach, which this module already shipped once with the validation
               capture. It only ever proposes: nothing below moves until a line is accepted. */}
           <InvoiceCapture
-            customerHint="Choose this venue below to use it."
+            customerHint="Using a line also picks this pharmacy below."
             onApply={(payload) => {
               setProductCode(payload.productCode);
               setQty(payload.qty);
@@ -678,6 +678,27 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               if (payload.bonus) {
                 setDealType("bonus");
                 setBonus(payload.bonus);
+              }
+              // The pharmacy the invoice names, when the master database confirmed it (owner,
+              // 2026-09-14). This used to be shown and then dropped: Weaam's invoice matched
+              // PharmaOverseas 1533756 four times, she registered the pharmacy by hand, and it was
+              // saved with no code at all. Routing it through the ordinary pick means the server
+              // re-reads the customer map by the pair and reuses a Phoenix pharmacy already holding
+              // it; "Change" still lets the rep pick another.
+              const customer = payload.customer;
+              if (customer?.distributorCode && customer.customerCode) {
+                applySuggestedPharmacy({
+                  source: "directory",
+                  pharmacyName: customer.customerName ?? customer.customerCode,
+                  distributorCode: customer.distributorCode,
+                  customerCode: customer.customerCode,
+                  phoenixPharmacyCode: null,
+                  areaCode: customer.areaCode,
+                  areaName: customer.areaName,
+                  regionCode: null,
+                  regionName: "",
+                  pharmacyAddress: null,
+                });
               }
             }}
             onInvoicePhoto={(file) => {
