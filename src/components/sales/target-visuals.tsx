@@ -3,27 +3,19 @@
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
-import { adminHeroGridOverlayClassName } from "@/components/admin/admin-design-tokens";
 import { cn } from "@/lib/utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The shared visual language of the TARGET modules.
+// The shared visual language of the SALES PERFORMANCE modules.
 //
-// Two surfaces measure sales against target — `VsTargetDashboard` (Sales vs Target) and
-// `TargetsWorkspace` (Targets) — and each of them renders in BOTH shells: the admin shell
-// at /sales/vs-target and /sales/targets, the employee portal at /employee-portals/
-// sales-vs-target and /employee-portals/targets. Four screens, one subject.
+// Sales vs Target, Targets, Make It Happen and Source of Sales each render in BOTH shells
+// (admin and employee portal). The primitives below are the one place their look is decided,
+// so the four screens read as one product — `tests/target-visuals-shared.test.ts` fails if a
+// target module re-declares its own copy.
 //
-// Until 2026-09-04 the primitives below were private to vs-target-dashboard.tsx and the
-// Targets workspace had no visual encoding at all: its region and DM rollups were a list of
-// bare percentages in a `max-h-40` scroll box, and its achievement column was a coloured
-// number. The same figure was therefore drawn two entirely different ways depending on
-// which of the two screens you happened to open, and the owner's standing rule is to match
-// the design identity of the sibling pages in a module rather than invent a one-off look.
-//
-// So they live here, and both modules import them. A ring drawn on Sales vs Target and a
-// ring drawn on Targets are now the same ring, by construction rather than by discipline —
-// `tests/target-visuals-shared.test.ts` fails if either module re-declares its own copy.
+// THE LOOK (owner, 2026-09-14): light, clean Phoenix orange. White surfaces, thin slate borders,
+// orange for accents and the selected state, calm dark numbers. No dark bands, no glows, no
+// gradients, and — the square-edge golden rule — no rounded corners anywhere.
 //
 // The rules encoded here that are NOT free to change:
 //   • A null achievement is NEUTRAL, never red. An area with no target loaded has not
@@ -38,6 +30,32 @@ import { cn } from "@/lib/utils";
 export const ACTUAL_COLOR = "#F97316";
 /** Target. The sky blue that carries the line/threshold in the same charts. */
 export const TARGET_COLOR = "#38BDF8";
+
+// ── Surface tokens — use these instead of re-inventing a card ────────────────
+
+/** A white card: thin border, a soft two-layer shadow, square edges. */
+export const SURFACE_CLASS =
+  "border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_24px_rgba(15,23,42,0.05)]";
+/** Table header row. */
+export const TABLE_HEAD_CLASS =
+  "border-b border-slate-200 bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
+/** Table body row. */
+export const TABLE_ROW_CLASS = "border-b border-slate-100 transition-colors last:border-0 hover:bg-orange-50/40";
+/** Chart tooltip box. */
+export const CHART_TOOLTIP_CLASS =
+  "border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow-[0_8px_24px_rgba(15,23,42,0.10)]";
+/** Small uppercase label above a figure. */
+export const LABEL_CLASS = "text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
+
+/** A selectable chip or tab: solid orange when selected, quiet white otherwise. */
+export function chipClass(selected: boolean): string {
+  return cn(
+    "border px-3 py-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500",
+    selected
+      ? "border-orange-500 bg-orange-500 text-white shadow-[0_2px_8px_rgba(249,115,22,0.25)]"
+      : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
+  );
+}
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -105,19 +123,22 @@ export function growthTone(value: number | null): string {
 
 // ── Primitives ───────────────────────────────────────────────────────────────
 
-export function GrowthPill({ value, dark = false }: { value: number | null; dark?: boolean }) {
+export function GrowthPill({ value }: { value: number | null }) {
   const Icon = value == null ? Minus : value > 0 ? ArrowUpRight : value < 0 ? ArrowDownRight : Minus;
-  const tone = dark
-    ? value == null
-      ? "text-slate-400"
+  const surface =
+    value == null || value === 0
+      ? "bg-slate-50 ring-slate-200"
       : value > 0
-        ? "text-emerald-400"
-        : value < 0
-          ? "text-red-400"
-          : "text-slate-400"
-    : growthTone(value);
+        ? "bg-emerald-50 ring-emerald-100"
+        : "bg-red-50 ring-red-100";
   return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold", tone)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-xs font-bold ring-1 ring-inset",
+        surface,
+        growthTone(value),
+      )}
+    >
       <Icon className="h-3.5 w-3.5 shrink-0" />
       {formatSignedPct(value)}
     </span>
@@ -136,13 +157,11 @@ export function AchievementRing({
   size = 132,
   stroke = 11,
   label,
-  dark = false,
 }: {
   value: number | null;
   size?: number;
   stroke?: number;
   label?: string;
-  dark?: boolean;
 }) {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -153,14 +172,7 @@ export function AchievementRing({
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke={dark ? "rgba(148,163,184,0.22)" : "#E2E8F0"}
-          strokeWidth={stroke}
-        />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#F1F5F9" strokeWidth={stroke} />
         {value != null ? (
           <circle
             cx={size / 2}
@@ -175,18 +187,12 @@ export function AchievementRing({
         ) : null}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span
-          className={cn("whitespace-nowrap font-black tabular-nums", dark ? "" : achievementTone(value))}
-          style={{ fontSize: size / 4.6, color: dark ? color : undefined }}
-        >
+        <span className={cn("whitespace-nowrap font-black tabular-nums", achievementTone(value))} style={{ fontSize: size / 4.6 }}>
           {formatPct(value)}
         </span>
         {label ? (
           <span
-            className={cn(
-              "mt-0.5 whitespace-nowrap font-bold uppercase tracking-[0.14em]",
-              dark ? "text-slate-400" : "text-muted-foreground",
-            )}
+            className="mt-0.5 whitespace-nowrap font-bold uppercase tracking-[0.14em] text-slate-500"
             style={{ fontSize: Math.max(8, size / 15) }}
           >
             {label}
@@ -200,7 +206,7 @@ export function AchievementRing({
 /** Horizontal proportion bar used in the ranked lists and product mix. */
 export function ProportionBar({ fraction, color }: { fraction: number; color: string }) {
   return (
-    <span className="block h-1.5 w-full overflow-hidden bg-slate-200" aria-hidden>
+    <span className="block h-1.5 w-full overflow-hidden bg-slate-100" aria-hidden>
       <span
         className="block h-full"
         style={{ width: `${Math.max(0, Math.min(1, fraction)) * 100}%`, backgroundColor: color }}
@@ -213,7 +219,7 @@ export function ProportionBar({ fraction, color }: { fraction: number; color: st
 export function AchievementCell({ value }: { value: number | null }) {
   return (
     <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-      <span className="h-1.5 w-20 shrink-0 overflow-hidden bg-slate-200" aria-hidden>
+      <span className="h-1.5 w-20 shrink-0 overflow-hidden bg-slate-100" aria-hidden>
         <span
           className="block h-full"
           style={{
@@ -242,7 +248,7 @@ export function AchievementMeter({ value, align = "right" }: { value: number | n
       <p className={cn("whitespace-nowrap font-black tabular-nums", achievementTone(value), align === "right" ? "text-right" : "text-left")}>
         {formatPct(value)}
       </p>
-      <span className="mt-1 block h-1.5 w-full overflow-hidden bg-slate-200" aria-hidden>
+      <span className="mt-1 block h-1.5 w-full overflow-hidden bg-slate-100" aria-hidden>
         <span
           className="block h-full"
           style={{
@@ -271,12 +277,7 @@ export function SectionCard({
   className?: string;
 }) {
   return (
-    <section
-      className={cn(
-        "flex flex-col border border-border bg-card shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]",
-        className,
-      )}
-    >
+    <section className={cn("flex flex-col", SURFACE_CLASS, className)}>
       {/*
         The header WRAPS, and the actions block is not `shrink-0`. Both halves of that are
         load-bearing at 375px. `shrink-0` guarantees the actions keep their max-content width,
@@ -287,14 +288,16 @@ export function SectionCard({
         cut. Wrapping is the permitted answer under the fits-the-screen golden rule; nothing
         here shrinks type. Measured 2026-09-05.
       */}
-      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-muted/30 px-4 py-2.5">
+      <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-100 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <Icon className="h-4 w-4 shrink-0 text-orange-500" />
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
           <div className="min-w-0">
             {/* No `whitespace-nowrap`: this sits in a `min-w-0` box, so nowrap could only ever
                 clip a long title instead of wrapping it. */}
-            <h2 className="text-phx-md font-black tracking-tight text-foreground">{title}</h2>
-            {subtitle ? <p className="text-phx-xs text-muted-foreground">{subtitle}</p> : null}
+            <h2 className="text-phx-md font-black tracking-tight text-slate-900">{title}</h2>
+            {subtitle ? <p className="text-phx-xs text-slate-500">{subtitle}</p> : null}
           </div>
         </div>
         {actions ? <div className="max-w-full">{actions}</div> : null}
@@ -305,12 +308,12 @@ export function SectionCard({
 }
 
 /**
- * The dark command band both target modules open with.
+ * The page header every sales performance module opens with.
  *
- * The headline lives INSIDE the hero rather than in a row of separate flat tiles below it,
- * so the page starts with the answer instead of with chrome. `stats` are the big numbers,
- * `ring` is the achievement dial on the right, and `footer` is the period/line selector
- * strip that sits on the band's bottom edge.
+ * Light: a white surface with an orange top rule. The headline lives INSIDE the header rather
+ * than in a row of separate flat tiles below it, so the page starts with the answer instead of
+ * with chrome. `stats` are the big numbers, `ring` is the achievement dial on the right, and
+ * `footer` is the period/line selector strip on the header's bottom edge.
  */
 export function CommandBand({
   kicker,
@@ -323,32 +326,22 @@ export function CommandBand({
 }: {
   kicker: string;
   title: string;
-  subtitle: string;
+  subtitle: React.ReactNode;
   stats?: React.ReactNode;
   ring?: React.ReactNode;
   aside?: React.ReactNode;
   footer?: React.ReactNode;
 }) {
   return (
-    // Premium-polish golden rule (2026-09-08): the band carries real depth — a contact shadow under
-    // a wide ambient one, and the admin hero's grid texture. The two glows are SQUARE: they were
-    // `rounded-full`, and the employee portal renders this band with nothing zeroing a radius, so
-    // the square-edge golden rule was broken there by two blurred circles nobody could see.
-    <section className="relative overflow-hidden border border-slate-800 bg-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.25),0_24px_60px_rgba(15,23,42,0.32)]">
-      <div aria-hidden className={adminHeroGridOverlayClassName} />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-500/0 via-orange-400/90 to-orange-500/0"
-      />
-      <div aria-hidden className="pointer-events-none absolute -right-24 -top-28 h-80 w-80 bg-orange-500/10 blur-3xl" />
-      <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 bg-sky-500/10 blur-3xl" />
-
-      <div className="relative flex flex-col gap-6 px-5 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
+    // SURFACE_CLASS first: tailwind-merge lets the LATER class win, so the orange top rule must
+    // come after the surface's all-sides `border border-slate-200` or it is silently dropped.
+    <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
+      <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <p className="text-phx-xs font-black uppercase tracking-[0.28em] text-orange-400">{kicker}</p>
-          <h1 className="mt-1 text-3xl font-black leading-none tracking-tight text-white sm:text-[2.3rem]">{title}</h1>
-          <p className="mt-2 text-sm text-slate-400">{subtitle}</p>
-          {stats ? <div className="mt-5 flex flex-wrap items-end gap-x-9 gap-y-4">{stats}</div> : null}
+          <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
+          <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">{title}</h1>
+          <p className="mt-1.5 text-sm text-slate-500">{subtitle}</p>
+          {stats ? <div className="mt-5 flex flex-wrap items-end gap-x-10 gap-y-4">{stats}</div> : null}
         </div>
         {ring || aside ? (
           <div className="flex shrink-0 items-center gap-6">
@@ -358,13 +351,13 @@ export function CommandBand({
         ) : null}
       </div>
       {footer ? (
-        <div className="relative flex flex-wrap items-center gap-1.5 border-t border-slate-800 px-5 py-2.5 sm:px-8">{footer}</div>
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 bg-slate-50/70 px-5 py-2.5 sm:px-7">{footer}</div>
       ) : null}
     </section>
   );
 }
 
-/** One big number in the command band. */
+/** One big number in the page header. */
 export function BandStat({
   label,
   value,
@@ -374,25 +367,26 @@ export function BandStat({
   label: string;
   value: React.ReactNode;
   note?: React.ReactNode;
+  /** "white" is the default ink (kept as the name so existing callers need no change). */
   tone?: "white" | "sky" | "amber";
 }) {
   return (
     <div>
-      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className={LABEL_CLASS}>{label}</p>
       <p
         className={cn(
           "mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums",
-          tone === "sky" ? "text-sky-300" : tone === "amber" ? "text-amber-300" : "text-white",
+          tone === "sky" ? "text-sky-600" : tone === "amber" ? "text-amber-600" : "text-slate-900",
         )}
       >
         {value}
       </p>
-      {note ? <p className="mt-1 text-phx-xs text-slate-400">{note}</p> : null}
+      {note ? <p className="mt-1 text-phx-xs text-slate-500">{note}</p> : null}
     </div>
   );
 }
 
-/** The selector chips that sit on the command band's bottom rail. */
+/** The selector chips that sit on the header's bottom rail. */
 export function BandChoice({
   label,
   options,
@@ -413,13 +407,9 @@ export function BandChoice({
         <button
           key={option.value}
           type="button"
+          aria-pressed={option.value === selected}
           onClick={() => onSelect(option.value)}
-          className={cn(
-            "whitespace-nowrap border px-3 py-1 text-xs font-bold transition-colors",
-            option.value === selected
-              ? "border-orange-500 bg-orange-500 text-white"
-              : "border-slate-700 bg-slate-800/60 text-slate-300 hover:border-orange-400 hover:text-white",
-          )}
+          className={cn("whitespace-nowrap", chipClass(option.value === selected))}
         >
           {option.label}
         </button>

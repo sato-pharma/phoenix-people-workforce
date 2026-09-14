@@ -35,10 +35,15 @@ import {
   BandChoice,
   BandStat,
   CommandBand,
+  LABEL_CLASS,
   ProportionBar,
+  SURFACE_CLASS,
   SectionCard,
+  TABLE_HEAD_CLASS,
+  TABLE_ROW_CLASS,
   achievementHex,
   achievementTone,
+  chipClass,
   formatEgpFull,
   formatNumber,
   formatPct,
@@ -86,19 +91,34 @@ import { cn } from "@/lib/utils";
 //
 // Owner rule 2026-08-04: nothing on this screen says AI. Phoenix builds the plan.
 //
-// Premium-polish golden rule (owner, 2026-09-08): depth is the default — two-layer shadows,
-// gradients, glows. The square-edge golden rule still binds, and the employee portal zeroes no
-// radius, so nothing here carries a `rounded` class.
+// THE LOOK (owner, 2026-09-14): light, clean Phoenix orange — the same surfaces, table heads and
+// chips as Sales vs Target and Targets, taken from `target-visuals.tsx`. White cards, thin slate
+// borders, orange accents and selected state, calm dark numbers. No dark bands, no glows, no
+// gradients. The square-edge golden rule binds, so nothing here carries a `rounded` class.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Coach = { message: string; reachable: boolean | null };
 type TeamSort = "name" | "low" | "high";
 type TeamBucket = "all" | "ahead" | "close" | "behind" | "none";
 
-/** A card sitting on the page: a hairline contact shadow under a wide ambient one. */
-const PANEL_DEPTH = "shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]";
+/** Keyboard focus: a square orange outline, the same one the shared chips draw. */
+const FOCUS_RING =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-orange-500";
 
-const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/60 focus-visible:ring-offset-1";
+/** A white text box or select: slate hairline, orange focus ring, square. */
+const FIELD =
+  "border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 transition-colors hover:border-slate-300 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+
+/** The one primary action shape: solid orange, no gradient. */
+const PRIMARY_BUTTON =
+  "border border-orange-500 bg-orange-500 text-white shadow-[0_2px_8px_rgba(249,115,22,0.25)] transition-colors hover:border-orange-600 hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none";
+
+/** A quiet secondary action: white with a slate hairline, orange on hover. */
+const SECONDARY_BUTTON =
+  "border border-slate-200 bg-white text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-60";
+
+/** The pale strip a card's controls sit on, under its header. */
+const CONTROL_STRIP = "border-b border-slate-100 bg-slate-50/70";
 
 /** What the realistic plan is built from — each line is a rule the engine actually enforces. */
 const PACE_RULES = [
@@ -130,16 +150,12 @@ const TEAM_SORTS: ReadonlyArray<{ value: TeamSort; label: string }> = [
 ];
 
 const SCENARIO_STYLE: Record<PlanScenario["key"], { frame: string; kicker: string }> = {
-  pace: { frame: "border-slate-300 shadow-[inset_0_3px_0_#64748B,0_1px_2px_rgba(15,23,42,0.05),0_10px_24px_rgba(15,23,42,0.06)]", kicker: "text-slate-600" },
-  realistic: { frame: "border-orange-300 shadow-[inset_0_3px_0_#F97316,0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(249,115,22,0.12)]", kicker: "text-orange-700" },
-  stretch: { frame: "border-amber-300 shadow-[inset_0_3px_0_#F59E0B,0_1px_2px_rgba(15,23,42,0.05),0_10px_24px_rgba(245,158,11,0.10)]", kicker: "text-amber-700" },
+  pace: { frame: "border-t-slate-400", kicker: "text-slate-500" },
+  realistic: { frame: "border-t-orange-500", kicker: "text-orange-600" },
+  stretch: { frame: "border-t-amber-500", kicker: "text-amber-600" },
 };
 
-const CHIP = "inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold transition";
-const CHIP_ON = "border-slate-900 bg-slate-900 text-white shadow-[0_6px_16px_rgba(15,23,42,0.2)]";
-const CHIP_OFF = "border-slate-200 bg-white text-slate-700 hover:border-orange-400";
-const SELECT =
-  "h-8 w-full appearance-none rounded-none border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
+const SELECT = cn(FIELD, "h-8 w-full appearance-none px-2 text-xs font-bold text-slate-700");
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
@@ -426,10 +442,10 @@ export function MakeItHappenPlanner({
 
   const coachTone =
     coach?.reachable === false
-      ? { icon: CircleAlert, frame: "border-amber-300 shadow-[inset_4px_0_0_#F59E0B]", kicker: "text-amber-700", iconTone: "text-amber-500" }
+      ? { icon: CircleAlert, frame: "border-l-amber-500 bg-amber-50/40", kicker: "text-amber-700", iconTone: "text-amber-500" }
       : coach?.reachable === true
-        ? { icon: CheckCircle2, frame: "border-emerald-300 shadow-[inset_4px_0_0_#10B981]", kicker: "text-emerald-700", iconTone: "text-emerald-500" }
-        : { icon: Target, frame: "border-sky-300 shadow-[inset_4px_0_0_#0EA5E9]", kicker: "text-sky-700", iconTone: "text-sky-500" };
+        ? { icon: CheckCircle2, frame: "border-l-emerald-500 bg-emerald-50/40", kicker: "text-emerald-700", iconTone: "text-emerald-500" }
+        : { icon: Target, frame: "border-l-sky-500 bg-sky-50/40", kicker: "text-sky-700", iconTone: "text-sky-500" };
   const CoachIcon = coachTone.icon;
 
   return (
@@ -461,7 +477,7 @@ export function MakeItHappenPlanner({
             ) : null}
           </>
         }
-        ring={<AchievementRing value={overallPct} label="Forecast" dark />}
+        ring={<AchievementRing value={overallPct} label="Forecast" />}
         footer={
           <>
             <BandChoice
@@ -470,7 +486,7 @@ export function MakeItHappenPlanner({
               selected={data.periodKind}
               onSelect={(kind) => router.push(href({ kind }))}
             />
-            <span aria-hidden className="mx-1 hidden h-4 w-px bg-slate-700 sm:inline-block" />
+            <span aria-hidden className="mx-1 hidden h-4 w-px bg-slate-200 sm:inline-block" />
             <BandChoice
               label="Period"
               options={data.offered[data.periodKind]}
@@ -482,16 +498,15 @@ export function MakeItHappenPlanner({
       />
 
       {data.viewingRep ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 border border-sky-200 bg-[linear-gradient(90deg,#F0F9FF_0%,#FFFFFF_100%)] px-4 py-3 text-sm shadow-[inset_4px_0_0_#0EA5E9,0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_rgba(15,23,42,0.055)]">
-          <p className="flex min-w-0 items-center gap-2 font-bold text-sky-900">
-            <Users className="h-4 w-4 shrink-0 text-sky-600" />
+        <div className={cn(SURFACE_CLASS, "flex flex-wrap items-center justify-between gap-2 border-l-[3px] border-l-sky-500 px-4 py-3 text-sm")}>
+          <p className="flex min-w-0 items-center gap-2 font-bold text-slate-900">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-sky-50 text-sky-600 ring-1 ring-inset ring-sky-100">
+              <Users className="h-3.5 w-3.5" />
+            </span>
             <span className="min-w-0 break-words">You are looking at {data.viewingRep.name}&apos;s own plan.</span>
           </p>
           <Link
-            className={cn(
-              "inline-flex items-center gap-1.5 border border-sky-300 bg-white px-3 py-1.5 text-xs font-bold text-sky-800 shadow-[0_4px_12px_rgba(14,165,233,0.12)] transition hover:border-sky-500",
-              FOCUS_RING,
-            )}
+            className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
             href={href({ period: data.periodKey })}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -501,25 +516,24 @@ export function MakeItHappenPlanner({
       ) : null}
 
       {data.isEmptyScope ? (
-        <section className={cn("flex flex-col items-center border border-border bg-card px-5 py-10 text-center", PANEL_DEPTH)}>
-          <span className="flex h-12 w-12 items-center justify-center border border-orange-200 bg-orange-50 text-orange-600 shadow-[0_8px_20px_rgba(249,115,22,0.18)]">
+        <section className={cn(SURFACE_CLASS, "flex flex-col items-center px-5 py-10 text-center")}>
+          <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
             <Target className="h-6 w-6" />
           </span>
-          <p className="mt-4 text-sm font-bold text-foreground">There are no sales or targets to plan for {data.periodLabel} in your scope.</p>
-          <p className="mt-1 text-phx-xs text-muted-foreground">Pick another period above, or check back once a target is loaded.</p>
+          <p className="mt-4 text-sm font-bold text-slate-900">There are no sales or targets to plan for {data.periodLabel} in your scope.</p>
+          <p className="mt-1 text-phx-xs text-slate-500">Pick another period above, or check back once a target is loaded.</p>
         </section>
       ) : (
         <>
-          <section className="relative overflow-hidden border border-orange-200 bg-[linear-gradient(135deg,#FFF7ED_0%,#FFFFFF_55%,#FFFBF5_100%)] px-4 py-4 shadow-[inset_4px_0_0_#F97316,0_1px_2px_rgba(15,23,42,0.05),0_14px_32px_rgba(249,115,22,0.10)] sm:px-6">
-            <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 bg-orange-400/15 blur-[80px]" />
-            <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <section className={cn(SURFACE_CLASS, "border-l-[3px] border-l-orange-500 px-4 py-4 sm:px-6")}>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-black text-slate-900">
                   {openForForecast
                     ? "Type the units you expect to sell for each product, or let Phoenix build the plan from your own sales."
                     : "Every month of this period is closed, so there is nothing left to forecast."}
                 </p>
-                <p className="mt-0.5 text-phx-xs text-slate-600">
+                <p className="mt-0.5 text-phx-xs text-slate-500">
                   Value and achievement calculate as you type. Phoenix only plans what each product&apos;s own month-by-month
                   pace supports.
                 </p>
@@ -528,7 +542,7 @@ export function MakeItHappenPlanner({
                     {PACE_RULES.map((rule) => (
                       <li
                         key={rule}
-                        className="inline-flex items-center gap-1.5 border border-orange-200 bg-white/85 px-2 py-1 text-[11px] font-bold text-slate-700 shadow-[0_2px_6px_rgba(249,115,22,0.08)]"
+                        className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50/70 px-2 py-1 text-[11px] font-bold text-slate-700"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-orange-500" />
                         {rule}
@@ -538,7 +552,7 @@ export function MakeItHappenPlanner({
                 ) : null}
                 {openForForecast && hasTarget ? (
                   <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">Your goal</span>
+                    <span className={LABEL_CLASS}>Your goal</span>
                     <div aria-label="Choose your achievement goal" className="flex flex-wrap gap-1" role="group">
                       {GOAL_PRESETS.map((preset) => {
                         const selected = goalPct === preset;
@@ -546,13 +560,7 @@ export function MakeItHappenPlanner({
                           <button
                             key={preset}
                             aria-pressed={selected}
-                            className={cn(
-                              "h-8 border px-2.5 text-xs font-black tabular-nums transition",
-                              selected
-                                ? "border-orange-600 bg-orange-500 text-white shadow-[0_6px_16px_rgba(249,115,22,0.3)]"
-                                : "border-orange-200 bg-white text-slate-700 hover:border-orange-400",
-                              FOCUS_RING,
-                            )}
+                            className={cn(chipClass(selected), "h-8 px-2.5 font-black tabular-nums")}
                             onClick={() => setGoalInput(String(preset))}
                             type="button"
                           >
@@ -561,15 +569,16 @@ export function MakeItHappenPlanner({
                         );
                       })}
                     </div>
-                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-600">
+                    <label className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
                       or type
                       <span className="relative block w-20">
                         <input
                           aria-invalid={goalPct == null}
                           aria-label="Achievement goal, percent of target"
                           className={cn(
-                            "h-8 w-full border bg-white pl-2 pr-6 text-right text-sm font-black tabular-nums shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20",
-                            goalPct == null ? "border-red-500 text-red-700" : "border-slate-300 text-slate-900",
+                            FIELD,
+                            "h-8 w-full pl-2 pr-6 text-right text-sm font-black tabular-nums",
+                            goalPct == null && "border-red-500 text-red-700 hover:border-red-500",
                           )}
                           inputMode="numeric"
                           maxLength={3}
@@ -592,10 +601,7 @@ export function MakeItHappenPlanner({
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  className={cn(
-                    "inline-flex items-center justify-center gap-2 border border-orange-600 bg-[linear-gradient(180deg,#FB923C_0%,#F97316_55%,#EA580C_100%)] px-5 py-3 text-sm font-black text-white shadow-[0_10px_24px_rgba(249,115,22,0.35)] transition hover:shadow-[0_14px_32px_rgba(249,115,22,0.45)] hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none",
-                    FOCUS_RING,
-                  )}
+                  className={cn("inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-black", PRIMARY_BUTTON, FOCUS_RING)}
                   aria-busy={busy === "suggest"}
                   disabled={!openForForecast || busy !== null}
                   onClick={makeItHappen}
@@ -609,10 +615,7 @@ export function MakeItHappenPlanner({
                   {busy === "suggest" ? "Phoenix is building your plan" : "Press here and Phoenix will Make It Happen"}
                 </button>
                 <button
-                  className={cn(
-                    "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-3 text-xs font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.06)] transition hover:border-slate-500 disabled:opacity-60",
-                    FOCUS_RING,
-                  )}
+                  className={cn("inline-flex items-center gap-1.5 px-3 py-3 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
                   disabled={busy !== null || Object.keys(units).length === 0}
                   onClick={clearForecast}
                   type="button"
@@ -624,10 +627,7 @@ export function MakeItHappenPlanner({
             </div>
             {coach?.message ? (
               <div
-                className={cn(
-                  "relative mt-4 flex gap-3 border bg-white px-4 py-3 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_20px_rgba(15,23,42,0.06)]",
-                  coachTone.frame,
-                )}
+                className={cn("mt-4 flex gap-3 border border-slate-200 border-l-[3px] px-4 py-3", coachTone.frame)}
                 role="status"
               >
                 <CoachIcon className={cn("mt-0.5 h-5 w-5 shrink-0", coachTone.iconTone)} />
@@ -638,8 +638,8 @@ export function MakeItHappenPlanner({
               </div>
             ) : null}
             {openForForecast && scenarios.length > 0 ? (
-              <div className="relative mt-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600">
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <p className={LABEL_CLASS}>
                   {hasTarget ? `Three ways to plan for ${goalPct}% of target` : "Your plan at your own pace"}
                 </p>
                 <div className={cn("mt-2 grid gap-3", hasTarget && "md:grid-cols-3")}>
@@ -647,13 +647,20 @@ export function MakeItHappenPlanner({
                     const style = SCENARIO_STYLE[scenario.key];
                     const inUse = scenarioInUse(scenario);
                     return (
-                      <article key={scenario.key} className={cn("flex min-w-0 flex-col border bg-white px-3.5 py-3", style.frame)}>
+                      <article
+                        key={scenario.key}
+                        className={cn(
+                          "flex min-w-0 flex-col border border-slate-200 border-t-[3px] bg-white px-3.5 py-3 transition-colors hover:border-x-orange-200 hover:border-b-orange-200",
+                          style.frame,
+                          inUse && "bg-orange-50/40",
+                        )}
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", style.kicker)}>
                             Scenario {scenario.number}
                           </p>
                           {inUse ? (
-                            <span className="border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
+                            <span className="border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
                               In your forecast
                             </span>
                           ) : null}
@@ -663,15 +670,13 @@ export function MakeItHappenPlanner({
                         <div className="mt-1">
                           <AchievementMeter value={scenario.achievement} />
                         </div>
-                        <p className="mt-2 flex-1 break-words text-phx-xs leading-5 text-slate-600">
+                        <p className="mt-2 flex-1 break-words text-phx-xs leading-5 text-slate-500">
                           {scenarioSummary(scenario, goalPct ?? DEFAULT_GOAL_PCT, formatEgpFull)}
                         </p>
                         <button
                           className={cn(
-                            "mt-3 inline-flex items-center justify-center gap-1.5 border px-3 py-2 text-xs font-black transition disabled:opacity-60",
-                            scenario.key === "realistic"
-                              ? "border-orange-600 bg-orange-500 text-white shadow-[0_6px_16px_rgba(249,115,22,0.3)] hover:bg-orange-600"
-                              : "border-slate-300 bg-white text-slate-800 hover:border-orange-400",
+                            "mt-3 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-black",
+                            scenario.key === "realistic" ? PRIMARY_BUTTON : SECONDARY_BUTTON,
                             FOCUS_RING,
                           )}
                           disabled={busy !== null}
@@ -688,7 +693,7 @@ export function MakeItHappenPlanner({
             ) : null}
             {error ? (
               <p
-                className="relative mt-3 flex items-start gap-2 border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 shadow-[inset_4px_0_0_#EF4444]"
+                className="mt-3 flex items-start gap-2 border border-red-200 border-l-[3px] border-l-red-500 bg-red-50/40 px-3 py-2 text-sm font-semibold text-red-700"
                 role="alert"
               >
                 <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -697,7 +702,7 @@ export function MakeItHappenPlanner({
             ) : null}
             {notice ? (
               <p
-                className="relative mt-3 flex items-start gap-2 border border-sky-200 bg-white px-3 py-2 text-sm font-semibold text-sky-900 shadow-[inset_4px_0_0_#0EA5E9]"
+                className="mt-3 flex items-start gap-2 border border-sky-200 border-l-[3px] border-l-sky-500 bg-sky-50/40 px-3 py-2 text-sm font-semibold text-slate-800"
                 role="status"
               >
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
@@ -718,13 +723,10 @@ export function MakeItHappenPlanner({
           />
 
           {shownRows === 0 ? (
-            <section className={cn("flex flex-col items-center gap-3 border border-border bg-card px-5 py-8 text-center", PANEL_DEPTH)}>
-              <p className="text-sm font-bold text-foreground">No product matches these filters.</p>
+            <section className={cn(SURFACE_CLASS, "flex flex-col items-center gap-3 px-5 py-8 text-center")}>
+              <p className="text-sm font-bold text-slate-900">No product matches these filters.</p>
               <button
-                className={cn(
-                  "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.06)] transition hover:border-orange-400",
-                  FOCUS_RING,
-                )}
+                className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
                 onClick={() => setFilters(NO_PLANNER_FILTERS)}
                 type="button"
               >
@@ -762,12 +764,12 @@ export function MakeItHappenPlanner({
               title="Saved plans"
             >
               {data.canSave ? (
-                <div className="flex flex-wrap items-end gap-2 border-b border-border bg-[#FBFCFD] px-4 py-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]">
+                <div className={cn("flex flex-wrap items-end gap-2 px-4 py-3", CONTROL_STRIP)}>
                   <label className="min-w-0 flex-1 basis-56">
-                    <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">Plan name</span>
+                    <span className={LABEL_CLASS}>Plan name</span>
                     <input
                       ref={planNameRef}
-                      className="mt-1 h-10 w-full border border-slate-300 bg-white px-3 text-sm shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                      className={cn(FIELD, "mt-1 h-10 w-full px-3 text-sm")}
                       enterKeyHint="done"
                       maxLength={80}
                       onChange={(event) => setPlanName(event.target.value)}
@@ -782,10 +784,7 @@ export function MakeItHappenPlanner({
                     />
                   </label>
                   <button
-                    className={cn(
-                      "inline-flex h-10 items-center gap-1.5 border border-orange-600 bg-[linear-gradient(180deg,#FB923C_0%,#F97316_55%,#EA580C_100%)] px-4 text-sm font-bold text-white shadow-[0_8px_20px_rgba(249,115,22,0.3)] transition hover:brightness-105 disabled:opacity-60 disabled:shadow-none",
-                      FOCUS_RING,
-                    )}
+                    className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", PRIMARY_BUTTON, FOCUS_RING)}
                     aria-busy={busy === "save"}
                     disabled={busy !== null}
                     onClick={() => savePlan(false)}
@@ -796,10 +795,7 @@ export function MakeItHappenPlanner({
                   </button>
                   {activePlanId ? (
                     <button
-                      className={cn(
-                        "inline-flex h-10 items-center gap-1.5 border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.06)] transition hover:border-slate-500 disabled:opacity-60",
-                        FOCUS_RING,
-                      )}
+                      className={cn("inline-flex h-10 items-center gap-1.5 px-4 text-sm font-bold", SECONDARY_BUTTON, FOCUS_RING)}
                       disabled={busy !== null}
                       onClick={() => savePlan(true)}
                       type="button"
@@ -810,38 +806,39 @@ export function MakeItHappenPlanner({
                 </div>
               ) : null}
               {!data.plansAvailable ? (
-                <p className="px-4 py-4 text-sm text-muted-foreground">
+                <p className="px-4 py-4 text-sm text-slate-500">
                   Saving plans is not switched on yet. Your forecast still calculates; it just cannot be kept for now.
                 </p>
               ) : data.plans.length === 0 ? (
                 <div className="flex items-center gap-3 px-4 py-5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-400">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200">
                     <BookmarkCheck className="h-4 w-4" />
                   </span>
-                  <p className="text-sm text-muted-foreground">No plans saved for this period yet.</p>
+                  <p className="text-sm text-slate-500">No plans saved for this period yet.</p>
                 </div>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul>
                   {data.plans.map((plan) => {
                     const active = activePlanId === plan.id;
                     return (
                       <li
                         key={plan.id}
                         className={cn(
-                          "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors",
-                          active ? "bg-orange-50/60 shadow-[inset_4px_0_0_#F97316]" : "hover:bg-slate-50/80",
+                          "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3",
+                          TABLE_ROW_CLASS,
+                          active && "bg-orange-50/60 shadow-[inset_3px_0_0_#F97316]",
                         )}
                       >
                         <div className="min-w-0 flex-1 basis-56">
-                          <p className="flex flex-wrap items-center gap-2 break-words text-sm font-bold text-foreground">
+                          <p className="flex flex-wrap items-center gap-2 break-words text-sm font-bold text-slate-900">
                             <span className="min-w-0 break-words">{plan.name}</span>
                             {active ? (
-                              <span className="border border-orange-300 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-orange-700">
+                              <span className="border border-orange-200 bg-white px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-orange-700">
                                 Open now
                               </span>
                             ) : null}
                           </p>
-                          <p className="text-phx-xs text-muted-foreground">
+                          <p className="text-phx-xs text-slate-500">
                             Saved {plan.updatedAtLabel} · {formatEgpFull(plan.forecastValue)} forecast
                           </p>
                         </div>
@@ -849,10 +846,7 @@ export function MakeItHappenPlanner({
                           <AchievementMeter value={plan.forecastAchievement} />
                         </div>
                         <button
-                          className={cn(
-                            "border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.06)] transition hover:border-orange-400",
-                            FOCUS_RING,
-                          )}
+                          className={cn("px-3 py-1.5 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
                           onClick={() => openPlan(plan)}
                           type="button"
                         >
@@ -867,17 +861,17 @@ export function MakeItHappenPlanner({
           </div>
 
           {openForForecast && hasUnits ? (
-            <div className="sticky bottom-0 z-20 border border-slate-800 bg-slate-900/95 px-4 py-3 text-white shadow-[0_-12px_32px_rgba(15,23,42,0.28)] backdrop-blur sm:px-6">
+            <div className="sticky bottom-0 z-20 border border-slate-200 border-t-[3px] border-t-orange-500 bg-white px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] sm:px-6">
               <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Your forecast</p>
-                    <p className="text-lg font-black tabular-nums text-amber-300">{formatEgpFull(forecastTotal)}</p>
+                    <p className={LABEL_CLASS}>Your forecast</p>
+                    <p className="text-lg font-black tabular-nums text-amber-600">{formatEgpFull(forecastTotal)}</p>
                   </div>
                   <div className="w-36">
-                    <p className="flex items-baseline justify-between gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    <p className="flex items-baseline justify-between gap-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
                       Achievement
-                      <span className="text-sm tabular-nums tracking-normal" style={{ color: achievementHex(overallPct) }}>
+                      <span className={cn("text-sm tabular-nums tracking-normal", achievementTone(overallPct))}>
                         {formatPct(overallPct)}
                       </span>
                     </p>
@@ -886,12 +880,12 @@ export function MakeItHappenPlanner({
                     </span>
                   </div>
                   {data.canSave && isDirty ? (
-                    <span className="inline-flex items-center gap-1.5 border border-amber-400/50 bg-amber-400/15 px-2 py-1 text-[11px] font-bold text-amber-200">
+                    <span className="inline-flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">
                       <CircleAlert className="h-3.5 w-3.5 shrink-0" />
                       Not saved yet
                     </span>
                   ) : data.canSave && activePlanId ? (
-                    <span className="inline-flex items-center gap-1.5 border border-emerald-400/50 bg-emerald-400/15 px-2 py-1 text-[11px] font-bold text-emerald-200">
+                    <span className="inline-flex items-center gap-1.5 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                       Saved
                     </span>
@@ -900,10 +894,7 @@ export function MakeItHappenPlanner({
                 <div className="flex flex-wrap items-center gap-2">
                   {data.canSave ? (
                     <button
-                      className={cn(
-                        "inline-flex items-center gap-1.5 border border-orange-500 bg-orange-500 px-4 py-2 text-sm font-black text-white shadow-[0_8px_20px_rgba(249,115,22,0.35)] transition hover:bg-orange-600",
-                        FOCUS_RING,
-                      )}
+                      className={cn("inline-flex items-center gap-1.5 px-4 py-2 text-sm font-black", PRIMARY_BUTTON, FOCUS_RING)}
                       onClick={jumpToSave}
                       type="button"
                     >
@@ -912,10 +903,7 @@ export function MakeItHappenPlanner({
                     </button>
                   ) : null}
                   <button
-                    className={cn(
-                      "inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 transition hover:bg-white/15 disabled:opacity-60",
-                      FOCUS_RING,
-                    )}
+                    className={cn("inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold", SECONDARY_BUTTON, FOCUS_RING)}
                     disabled={busy !== null}
                     onClick={clearForecast}
                     type="button"
@@ -935,7 +923,7 @@ export function MakeItHappenPlanner({
 
 /** Target − sold so far − forecast. Red while there is still value to find; green once it is covered. */
 function GapToTarget({ gap, units }: { gap: number | null; units: number | null }) {
-  if (gap == null) return <p className="text-phx-xs text-muted-foreground">No target</p>;
+  if (gap == null) return <p className="text-phx-xs text-slate-500">No target</p>;
   if (gap <= 0) {
     return (
       <>
@@ -947,7 +935,7 @@ function GapToTarget({ gap, units }: { gap: number | null; units: number | null 
   return (
     <>
       <p className="break-words font-bold text-red-700">{formatEgpFull(gap)}</p>
-      <p className="text-phx-xs text-muted-foreground">
+      <p className="text-phx-xs text-slate-500">
         {units != null && units > 0 ? `${formatNumber(units)} units to go` : "still to go"}
       </p>
     </>
@@ -994,7 +982,7 @@ function FilterBar({
   ) =>
     options.length > 1 ? (
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground sm:w-16">{label}</span>
+        <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500 sm:w-16">{label}</span>
         <div aria-label={`Filter by ${label.toLowerCase()}`} className="flex min-w-0 flex-1 flex-wrap gap-1.5" role="group">
           {options.map((option) => {
             const selected = filters[key].includes(option.value);
@@ -1002,7 +990,7 @@ function FilterBar({
               <button
                 key={option.value}
                 aria-pressed={selected}
-                className={cn(CHIP, selected ? CHIP_ON : CHIP_OFF, FOCUS_RING)}
+                className={cn(chipClass(selected), "inline-flex items-center gap-1.5 px-2.5")}
                 onClick={() => set({ [key]: toggle(filters[key], option.value) })}
                 type="button"
               >
@@ -1042,33 +1030,31 @@ function FilterBar({
     return (
       <button
         aria-busy={busy === format}
-        className={cn(
-          "inline-flex h-8 items-center gap-1.5 border px-3 text-xs font-black transition disabled:opacity-60",
-          format === "xlsx"
-            ? "border-emerald-700 bg-[linear-gradient(180deg,#10B981_0%,#059669_100%)] text-white shadow-[0_6px_16px_rgba(5,150,105,0.25)] hover:brightness-105"
-            : "border-slate-900 bg-[linear-gradient(180deg,#334155_0%,#0F172A_100%)] text-white shadow-[0_6px_16px_rgba(15,23,42,0.25)] hover:brightness-110",
-          FOCUS_RING,
-        )}
+        className={cn(SECONDARY_BUTTON, "inline-flex h-8 items-center gap-1.5 px-3 text-xs font-black", FOCUS_RING)}
         disabled={busy !== null}
         onClick={() => onExport(format)}
         type="button"
       >
-        {busy === format ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
+        {busy === format ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Icon className={cn("h-3.5 w-3.5", format === "xlsx" ? "text-emerald-600" : "text-red-600")} />
+        )}
         {format === "xlsx" ? "Export Excel" : "Export PDF"}
       </button>
     );
   };
 
   return (
-    <section className={cn("border border-border bg-card", PANEL_DEPTH)}>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+    <section className={SURFACE_CLASS}>
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
         <div className="flex min-w-0 flex-1 basis-64 items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-600">
-            <SlidersHorizontal className="h-4 w-4" />
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-100">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
           </span>
           <div className="min-w-0">
-            <h2 className="text-sm font-black text-foreground">Filter and export</h2>
-            <p className="break-words text-phx-xs text-muted-foreground">
+            <h2 className="text-phx-md font-black tracking-tight text-slate-900">Filter and export</h2>
+            <p className="break-words text-phx-xs text-slate-500">
               Showing {formatNumber(shownRows)} of {formatNumber(totalRows)} products. The totals above always cover the whole plan;
               a file holds exactly what you see here.
             </p>
@@ -1077,10 +1063,7 @@ function FilterBar({
         <div className="flex flex-wrap items-center gap-2">
           {active ? (
             <button
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-orange-400",
-                FOCUS_RING,
-              )}
+              className={cn(SECONDARY_BUTTON, "inline-flex h-8 items-center gap-1.5 px-3 text-xs font-bold", FOCUS_RING)}
               onClick={() => onFilters({ ...NO_PLANNER_FILTERS, sort: filters.sort })}
               type="button"
             >
@@ -1092,13 +1075,13 @@ function FilterBar({
           {exportButton("pdf")}
         </div>
       </header>
-      <div className="space-y-2.5 bg-[#FBFCFD] px-4 py-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)]">
+      <div className="space-y-2.5 bg-slate-50/70 px-4 py-3">
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <label className="relative block min-w-0">
             <span className="sr-only">Find a product or family</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-8 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              className={cn(FIELD, "h-8 w-full pl-8 pr-2 text-sm")}
               maxLength={80}
               onChange={(event) => set({ search: event.target.value })}
               placeholder="Find a product or family"
@@ -1117,10 +1100,10 @@ function FilterBar({
         {exportStatus ? (
           <p
             className={cn(
-              "flex items-start gap-2 border bg-white px-3 py-2 text-sm font-semibold",
+              "flex items-start gap-2 border border-l-[3px] px-3 py-2 text-sm font-semibold",
               exportStatus.ok
-                ? "border-emerald-200 text-emerald-800 shadow-[inset_4px_0_0_#10B981]"
-                : "border-red-200 text-red-700 shadow-[inset_4px_0_0_#EF4444]",
+                ? "border-emerald-200 border-l-emerald-500 bg-emerald-50/40 text-emerald-800"
+                : "border-red-200 border-l-red-500 bg-red-50/40 text-red-700",
             )}
             role={exportStatus.ok ? "status" : "alert"}
           >
@@ -1158,7 +1141,7 @@ function HistoryBars({ history }: { history: ConcentrationPlanRow["history"] }) 
       {history.map((point) => (
         <span
           key={point.period}
-          className="block w-2 bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)]"
+          className="block w-2 bg-orange-400"
           style={{ height: `${Math.max(12, (Math.max(0, point.units) / peak) * 100)}%` }}
           title={`${point.label} ${formatNumber(point.units)}`}
         />
@@ -1236,8 +1219,9 @@ function LineSection({
     <input
       aria-label={label}
       className={cn(
-        "h-9 w-full border bg-white px-2 text-right text-sm font-bold tabular-nums shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 disabled:bg-muted disabled:text-muted-foreground",
-        invalid(row.productCode) ? "border-red-500 text-red-700" : "border-slate-300",
+        FIELD,
+        "h-9 w-full px-2 text-right text-sm font-bold tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400",
+        invalid(row.productCode) && "border-red-500 text-red-700 hover:border-red-500",
       )}
       disabled={!open}
       enterKeyHint="next"
@@ -1260,12 +1244,12 @@ function LineSection({
   return (
     <SectionCard
       actions={
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>
-            Target <b className="text-foreground">{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</b>
+            Target <b className="tabular-nums text-slate-900">{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</b>
           </span>
           <span>
-            Forecast <b className="text-foreground">{formatEgpFull(forecastValue)}</b>
+            Forecast <b className="tabular-nums text-orange-600">{formatEgpFull(forecastValue)}</b>
           </span>
           <span className="flex items-center gap-2">
             <span className="block w-20">
@@ -1290,7 +1274,7 @@ function LineSection({
             <col className="w-[14%]" />
             <col className="w-[13%]" />
           </colgroup>
-          <thead className="bg-slate-900 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-200">
+          <thead className={TABLE_HEAD_CLASS}>
             <tr>
               <th className="px-3 py-2 text-left">Product</th>
               <th className="px-3 py-2 text-right">Target</th>
@@ -1301,17 +1285,14 @@ function LineSection({
               <th className="px-3 py-2 text-right">Gap to target</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody>
             {rows.map(({ row, figures }) => {
               const planned = figures.typedUnits > 0;
               return (
-                <tr
-                  key={row.productCode}
-                  className={cn("align-top transition-colors", planned ? "bg-orange-50/50" : "hover:bg-slate-50/80")}
-                >
+                <tr key={row.productCode} className={cn(TABLE_ROW_CLASS, "align-top", planned && "bg-orange-50/50")}>
                   <td className={cn("px-3 py-2.5", planned && "shadow-[inset_3px_0_0_#F97316]")}>
-                    <p className="break-words font-bold text-foreground">{row.name}</p>
-                    <p className="break-words text-phx-xs text-muted-foreground">
+                    <p className="break-words font-bold text-slate-900">{row.name}</p>
+                    <p className="break-words text-phx-xs text-slate-500">
                       {row.family ? `${row.family} · ` : ""}
                       {formatEgpFull(row.price)} a unit
                     </p>
@@ -1320,18 +1301,18 @@ function LineSection({
                       <HistoryBars history={row.history} />
                     </div>
                     {detailText(row) ? (
-                      <p className="mt-1 break-words text-phx-2xs tabular-nums text-muted-foreground">{detailText(row)}</p>
+                      <p className="mt-1 break-words text-phx-2xs tabular-nums text-slate-500">{detailText(row)}</p>
                     ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     <p className="break-words font-bold">{row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}</p>
-                    <p className="text-phx-xs text-muted-foreground">
+                    <p className="text-phx-xs text-slate-500">
                       {row.targetUnits == null ? "No target" : `${formatNumber(row.targetUnits)} units`}
                     </p>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     <p className="break-words font-bold">{formatEgpFull(row.gradedValue)}</p>
-                    <p className="text-phx-xs text-muted-foreground">{formatNumber(row.gradedUnits)} units</p>
+                    <p className="text-phx-xs text-slate-500">{formatNumber(row.gradedUnits)} units</p>
                   </td>
                   <td className="px-3 py-2.5">
                     {unitsInput(row, `Forecast units for ${row.name}`)}
@@ -1344,10 +1325,10 @@ function LineSection({
                     />
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
-                    <p className={cn("break-words font-bold", planned ? "text-orange-700" : "text-foreground")}>
+                    <p className={cn("break-words font-bold", planned ? "text-orange-700" : "text-slate-900")}>
                       {formatEgpFull(figures.value)}
                     </p>
-                    <p className="text-phx-xs text-muted-foreground">
+                    <p className="text-phx-xs text-slate-500">
                       Units <span className={achievementTone(figures.unitsAchievement)}>{formatPct(figures.unitsAchievement)}</span>
                     </p>
                   </td>
@@ -1361,12 +1342,12 @@ function LineSection({
               );
             })}
           </tbody>
-          <tfoot className="border-t-2 border-slate-900 bg-[linear-gradient(180deg,#F8FAFC_0%,#F1F5F9_100%)] font-black tabular-nums">
+          <tfoot className="border-t-2 border-slate-200 bg-slate-50 font-black tabular-nums text-slate-900">
             <tr>
               <td className="px-3 py-3">{line.lineName} total</td>
               <td className="px-3 py-3 text-right">{line.targetValue == null ? "—" : formatEgpFull(line.targetValue)}</td>
               <td className="px-3 py-3 text-right">{formatEgpFull(line.gradedValue)}</td>
-              <td className="px-3 py-3 text-right text-phx-xs font-bold text-muted-foreground">By value</td>
+              <td className="px-3 py-3 text-right text-phx-xs font-bold text-slate-500">By value</td>
               <td className="px-3 py-3 text-right">{formatEgpFull(forecastValue)}</td>
               <td className="px-3 py-3">
                 <AchievementMeter value={linePct} />
@@ -1379,18 +1360,21 @@ function LineSection({
         </table>
       </div>
 
-      <div className="divide-y divide-border xl:hidden">
+      <div className="divide-y divide-slate-100 xl:hidden">
         {rows.map(({ row, figures }) => {
           const planned = figures.typedUnits > 0;
           return (
             <div
               key={row.productCode}
-              className={cn("space-y-2.5 px-4 py-3", planned && "bg-orange-50/50 shadow-[inset_3px_0_0_#F97316]")}
+              className={cn(
+                "space-y-2.5 px-4 py-3 transition-colors hover:bg-orange-50/40",
+                planned && "bg-orange-50/50 shadow-[inset_3px_0_0_#F97316]",
+              )}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="break-words font-bold text-foreground">{row.name}</p>
-                  <p className="break-words text-phx-xs text-muted-foreground">
+                  <p className="break-words font-bold text-slate-900">{row.name}</p>
+                  <p className="break-words text-phx-xs text-slate-500">
                     {row.family ? `${row.family} · ` : ""}
                     {formatEgpFull(row.price)} a unit
                   </p>
@@ -1405,19 +1389,19 @@ function LineSection({
               </div>
               <dl className="grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-muted-foreground">Target</dt>
+                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Target</dt>
                   <dd className="font-bold tabular-nums">{row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}</dd>
-                  <dd className="text-muted-foreground">
+                  <dd className="text-slate-500">
                     {row.targetUnits == null ? "No target" : `${formatNumber(row.targetUnits)} units`}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-muted-foreground">Sold so far</dt>
+                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Sold so far</dt>
                   <dd className="font-bold tabular-nums">{formatEgpFull(row.gradedValue)}</dd>
-                  <dd className="text-muted-foreground">{formatNumber(row.gradedUnits)} units</dd>
+                  <dd className="text-slate-500">{formatNumber(row.gradedUnits)} units</dd>
                 </div>
-                <div className="col-span-2 border-t border-dashed border-border pt-2">
-                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-muted-foreground">Gap to target</dt>
+                <div className="col-span-2 border-t border-dashed border-slate-200 pt-2">
+                  <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Gap to target</dt>
                   <dd className="tabular-nums">
                     <GapToTarget gap={figures.gapValue} units={figures.gapUnits} />
                   </dd>
@@ -1425,7 +1409,7 @@ function LineSection({
               </dl>
               <div className="grid grid-cols-2 items-start gap-2">
                 <label className="block">
-                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-muted-foreground">Forecast units</span>
+                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Forecast units</span>
                   {unitsInput(row, `Forecast units for ${row.name}`)}
                   <UnitsHint
                     invalid={invalid(row.productCode)}
@@ -1436,25 +1420,25 @@ function LineSection({
                   />
                 </label>
                 <div className="text-right text-xs">
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-muted-foreground">Forecast value</p>
-                  <p className={cn("text-sm font-black tabular-nums", planned ? "text-orange-700" : "text-foreground")}>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Forecast value</p>
+                  <p className={cn("text-sm font-black tabular-nums", planned ? "text-orange-700" : "text-slate-900")}>
                     {formatEgpFull(figures.value)}
                   </p>
-                  <p className="text-muted-foreground">
+                  <p className="text-slate-500">
                     Units <span className={achievementTone(figures.unitsAchievement)}>{formatPct(figures.unitsAchievement)}</span>
                   </p>
                 </div>
               </div>
               {detailText(row) ? (
-                <p className="break-words text-phx-2xs tabular-nums text-muted-foreground">{detailText(row)}</p>
+                <p className="break-words text-phx-2xs tabular-nums text-slate-500">{detailText(row)}</p>
               ) : null}
             </div>
           );
         })}
-        <div className="flex items-center justify-between gap-3 border-t-2 border-slate-900 bg-[linear-gradient(180deg,#F8FAFC_0%,#F1F5F9_100%)] px-4 py-3 text-sm font-black tabular-nums">
+        <div className="flex items-center justify-between gap-3 border-t-2 border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black tabular-nums text-slate-900">
           <span className="min-w-0 break-words">
             {line.lineName} forecast {formatEgpFull(forecastValue)}
-            <span className="block text-phx-xs font-bold text-muted-foreground">
+            <span className="block text-phx-xs font-bold text-slate-500">
               {lineGap == null ? "No target" : lineGap > 0 ? `${formatEgpFull(lineGap)} still to target` : "Target covered"}
             </span>
           </span>
@@ -1508,7 +1492,7 @@ function TeamSection({
       subtitle="At current pace is where each person lands if their own trend simply continues. On track is 100% or more, close is 80 to 99%. Open anyone to see and plan their products."
       title="Your team"
     >
-      <div className="flex flex-col gap-3 border-b border-border bg-[#FBFCFD] px-4 py-3 shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] xl:flex-row xl:items-center xl:justify-between">
+      <div className={cn(CONTROL_STRIP, "flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between")}>
         <div aria-label="Filter the team by pace" className="flex flex-wrap gap-1.5" role="group">
           {TEAM_BUCKETS.map((option) => {
             const selected = bucket === option.value;
@@ -1516,17 +1500,11 @@ function TeamSection({
               <button
                 key={option.value}
                 aria-pressed={selected}
-                className={cn(
-                  "inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold transition",
-                  selected
-                    ? "border-slate-900 bg-slate-900 text-white shadow-[0_6px_16px_rgba(15,23,42,0.2)]"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-orange-400",
-                  FOCUS_RING,
-                )}
+                className={cn(chipClass(selected), "inline-flex items-center gap-1.5 px-2.5")}
                 onClick={() => setBucket(option.value)}
                 type="button"
               >
-                <span aria-hidden className={cn("h-2 w-2 shrink-0", option.swatch)} />
+                <span aria-hidden className={cn("h-2 w-2 shrink-0", option.swatch, selected && "ring-1 ring-white")} />
                 {option.label}
                 <span className="tabular-nums opacity-70">{counts[option.value]}</span>
               </button>
@@ -1538,7 +1516,7 @@ function TeamSection({
             <span className="sr-only">Find a person</span>
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-8 w-full border border-slate-300 bg-white pl-8 pr-2 text-sm shadow-[inset_0_1px_2px_rgba(15,23,42,0.05)] focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              className={cn(FIELD, "h-8 w-full pl-8 pr-2 text-sm")}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Find a person"
               type="search"
@@ -1550,13 +1528,7 @@ function TeamSection({
               <button
                 key={option.value}
                 aria-pressed={sort === option.value}
-                className={cn(
-                  "h-8 border px-2.5 text-xs font-bold transition",
-                  sort === option.value
-                    ? "border-orange-500 bg-orange-500 text-white shadow-[0_6px_16px_rgba(249,115,22,0.25)]"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-orange-400",
-                  FOCUS_RING,
-                )}
+                className={cn(chipClass(sort === option.value), "h-8 px-2.5")}
                 onClick={() => setSort(option.value)}
                 type="button"
               >
@@ -1568,7 +1540,7 @@ function TeamSection({
       </div>
 
       {visible.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nobody in your team matches that filter.</p>
+        <p className="px-4 py-6 text-center text-sm text-slate-500">Nobody in your team matches that filter.</p>
       ) : (
         <>
           <div className="hidden lg:block">
@@ -1580,7 +1552,7 @@ function TeamSection({
                 <col className="w-[18%]" />
                 <col className="w-[18%]" />
               </colgroup>
-              <thead className="bg-slate-900 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-200">
+              <thead className={TABLE_HEAD_CLASS}>
                 <tr>
                   <th className="px-3 py-2 text-left">Person</th>
                   <th className="px-3 py-2 text-right">Target</th>
@@ -1589,30 +1561,27 @@ function TeamSection({
                   <th className="px-3 py-2 text-right">Saved plans</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {visible.map((rep) => (
-                  <tr key={rep.key} className="transition-colors hover:bg-slate-50/80">
+                  <tr key={rep.key} className={TABLE_ROW_CLASS}>
                     <td className="px-3 py-2.5">
                       <Link
-                        className={cn("break-words font-bold text-foreground transition-colors hover:text-orange-600", FOCUS_RING)}
+                        className={cn("break-words font-bold text-slate-900 transition-colors hover:text-orange-600", FOCUS_RING)}
                         href={repHref(rep.key)}
                       >
                         {rep.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">
+                    <td className="px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">
                       {rep.targetValue == null ? "—" : formatEgpFull(rep.targetValue)}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{formatEgpFull(rep.gradedValue)}</td>
+                    <td className="px-3 py-2.5 text-right font-bold tabular-nums text-slate-900">{formatEgpFull(rep.gradedValue)}</td>
                     <td className="px-3 py-2.5">
                       <AchievementMeter value={rep.expectedAchievement} />
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <Link
-                        className={cn(
-                          "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-3 py-1 text-xs font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.06)] transition hover:border-orange-400",
-                          FOCUS_RING,
-                        )}
+                        className={cn(SECONDARY_BUTTON, "inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold", FOCUS_RING)}
                         href={repHref(rep.key)}
                       >
                         {rep.savedPlans.length === 0 ? "Open" : `Open · ${rep.savedPlans.length} saved`}
@@ -1623,17 +1592,17 @@ function TeamSection({
               </tbody>
             </table>
           </div>
-          <ul className="divide-y divide-border lg:hidden">
+          <ul className="divide-y divide-slate-100 lg:hidden">
             {visible.map((rep) => (
               <li key={rep.key}>
-                <Link className={cn("block space-y-1.5 px-4 py-3 transition-colors hover:bg-slate-50/80", FOCUS_RING)} href={repHref(rep.key)}>
+                <Link className={cn("block space-y-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40", FOCUS_RING)} href={repHref(rep.key)}>
                   <span className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 break-words font-bold text-foreground">{rep.name}</span>
+                    <span className="min-w-0 break-words font-bold text-slate-900">{rep.name}</span>
                     <span className="w-24 shrink-0">
                       <AchievementMeter value={rep.expectedAchievement} />
                     </span>
                   </span>
-                  <span className="block text-xs text-muted-foreground">
+                  <span className="block text-xs text-slate-500">
                     Target {rep.targetValue == null ? "—" : formatEgpFull(rep.targetValue)} · sold {formatEgpFull(rep.gradedValue)} ·{" "}
                     {rep.savedPlans.length} saved plan{rep.savedPlans.length === 1 ? "" : "s"}
                   </span>
