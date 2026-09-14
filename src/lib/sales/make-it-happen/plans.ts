@@ -20,6 +20,15 @@ import {
 } from "@/lib/sales/make-it-happen/engine";
 import { phoenixCoachMessage } from "@/lib/sales/make-it-happen/coach";
 import { insertPlan, updateOwnPlan } from "@/lib/sales/make-it-happen/plan-store";
+import {
+  DEFAULT_GOAL_PCT,
+  buildPlanScenarios,
+  goalGapValue,
+  mixItemsFor,
+  openRows,
+  parseGoalPct,
+  type PlanScenario,
+} from "@/lib/sales/make-it-happen/scenarios";
 import { canUseMakeItHappen } from "@/lib/sales/make-it-happen/scope";
 import { buildMakeItHappenWorkspace } from "@/lib/sales/make-it-happen/workspace";
 
@@ -40,7 +49,41 @@ function bodyObject(body: unknown): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
-async function workspaceFor(ctx: AccessContext, body: Record<string, unknown>, rep: string | null) {
+export function requestBody(body: unknown): Record<string, unknown> {
+  return bodyObject(body);
+}
+
+export function requestedRep(body: Record<string, unknown>): string | null {
+  return typeof body.rep === "string" && body.rep.trim() ? body.rep.trim() : null;
+}
+
+/** The chosen goal, or a 400 in words when the box holds something that is not a goal. */
+export function requestedGoalPct(body: Record<string, unknown>): number {
+  const goal = parseGoalPct(body.goalPct);
+  if (goal == null) throw new MakeItHappenError(400, "Choose an achievement goal between 1% and 300%.");
+  return goal;
+}
+
+/**
+ * Typed units checked against what is really open in the caller's own workspace — the same refusal
+ * the save path gives, so an export can never carry a product the screen could not have planned.
+ */
+export function validatedUnits(workspace: MakeItHappenWorkspace, raw: unknown): Record<string, number> {
+  if (raw == null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new MakeItHappenError(400, "The plan has no units.");
+  const open = openConcentrations(workspace);
+  const units: Record<string, number> = {};
+  for (const [code, value] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = parseForecastUnits(value);
+    if (parsed == null) throw new MakeItHappenError(400, "Units must be whole numbers of zero or more.");
+    if (parsed === 0) continue;
+    if (!open.has(code)) throw new MakeItHappenError(400, "One of the products is not open in your plan for this period.");
+    units[code] = parsed;
+  }
+  return units;
+}
+
+export async function workspaceFor(ctx: AccessContext, body: Record<string, unknown>, rep: string | null) {
   if (!canUseMakeItHappen(ctx.role)) {
     throw new MakeItHappenError(403, "Make It Happen is not available for your role.");
   }
@@ -128,32 +171,32 @@ export type MakeItHappenSuggestion = {
   projectedAchievement: number | null;
   shortValue: number;
   message: string;
+  /** The goal the plan was built for, as a whole percentage of target. */
+  goalPct: number;
+  /** Scenario 1 steady pace, 2 realistic plan (the units above), 3 stretch to the goal. */
+  scenarios: PlanScenario[];
 };
 
 const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown): Promise<MakeItHappenSuggestion> {
   const body = bodyObject(rawBody);
-  const rep = typeof body.rep === "string" && body.rep.trim() ? body.rep.trim() : null;
+  const rep = requestedRep(body);
+  const goalPct = requestedGoalPct(body);
   const workspace = await workspaceFor(ctx, body, rep);
   const open = openConcentrations(workspace);
   if (open.size === 0) {
     throw new MakeItHappenError(400, "This period is already closed, so there is nothing left to plan.");
   }
 
-  const items: MixItem[] = [...open.values()].map(({ row }) => ({
-    key: row.productCode,
-    price: row.price,
-    expectedUnits: row.trend.expectedUnits,
-    realisticMaxUnits: row.trend.realisticMaxUnits,
-    unitsStillToTarget: row.targetUnits != null ? row.targetUnits - row.gradedUnits : null,
-  }));
+  const items: MixItem[] = mixItemsFor(openRows(workspace.lines));
 
   const target = workspace.totals.targetValue;
-  const gap = target != null ? Math.max(0, target - workspace.totals.gradedValue) : null;
+  const gap = goalGapValue(workspace.totals, goalPct);
   const expectedValue = items.reduce((sum, item) => sum + item.expectedUnits * item.price, 0);
   const mix = buildRealisticMix(items, gap);
   const projectedAchievement = achievementOf(workspace.totals.gradedValue, mix.plannedValue, target);
+  const scenarios = buildPlanScenarios(workspace, goalPct);
 
   const picks = Object.entries(mix.units)
     .filter(([, units]) => units > 0)
@@ -164,6 +207,7 @@ export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown)
 
   const message = await phoenixCoachMessage({
     periodLabel: workspace.periodLabel,
+    goalLabel: goalPct === DEFAULT_GOAL_PCT ? null : `${goalPct}%`,
     projectedAchievementLabel: projectedAchievement == null ? null : `${(projectedAchievement * 100).toFixed(1)}%`,
     shortValueLabel: mix.shortValue > 0 ? `EGP ${numberFormat.format(Math.round(mix.shortValue))}` : null,
     reachable: mix.reachable,
@@ -178,5 +222,7 @@ export async function suggestRealisticPlan(ctx: AccessContext, rawBody: unknown)
     projectedAchievement,
     shortValue: mix.shortValue,
     message,
+    goalPct,
+    scenarios,
   };
 }

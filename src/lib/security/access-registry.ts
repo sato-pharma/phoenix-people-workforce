@@ -1373,6 +1373,11 @@ export const accessRegistry = [
   // it is the same disclosure shape as the territory-management reads above and is audited like
   // them. Read-only and GET-only — it recomputes nothing and persists nothing.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/truth-check", permission: { resource: "sales", action: "read" } }),
+  // Make It Happen forecast download (XLSX or PDF). Its own entry because it is an export and must be
+  // audited: the file carries target, sales and forecast value for the caller's plan scope. It needs
+  // only sales:read because it holds nothing the planner screen does not already show that caller —
+  // the route rebuilds the workspace in the caller's own scope before writing a byte.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/make-it-happen/export", permission: { resource: "sales", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/sales/**", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/report-it/list", permission: { resource: "report_it", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/report-it/submit", permission: { resource: "report_it", action: "create" }, guard: "domain-helper", csrfExemptReason: "JSON-only employee ADR submission; all authenticated roles can submit their own reports." }),

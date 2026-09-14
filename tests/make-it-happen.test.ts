@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import ExcelJS from "exceljs";
+
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { HONESTY_SENTENCE, isFaithfulRewrite, templateCoachMessage } from "@/lib/sales/make-it-happen/coach";
 import {
@@ -12,7 +14,29 @@ import {
   periodLabel,
   periodMonths,
   readTrend,
+  type ConcentrationPlanRow,
+  type LinePlanGroup,
+  type MakeItHappenWorkspace,
 } from "@/lib/sales/make-it-happen/engine";
+import {
+  buildForecastExportModel,
+  buildForecastPdfHtml,
+  buildForecastWorkbook,
+  forecastExportFilename,
+} from "@/lib/sales/make-it-happen/export-document";
+import {
+  NO_PLANNER_FILTERS,
+  buildPlanScenarios,
+  buildStretchMix,
+  describePlannerFilters,
+  filterPlanLines,
+  goalGapValue,
+  parseGoalPct,
+  parsePlannerFilters,
+  rowFigures,
+  scenarioSummary,
+  type PlannerFilters,
+} from "@/lib/sales/make-it-happen/scenarios";
 import {
   applyMakeItHappenBound,
   canUseMakeItHappen,
@@ -127,6 +151,170 @@ export async function runMakeItHappenTests() {
   const noTarget = buildRealisticMix(items, null);
   assert.equal(noTarget.reachable, null);
   assert.deepEqual(noTarget.units, { A: 10, B: 1 });
+
+  // ── The goal you choose ──
+  assert.equal(parseGoalPct(undefined), 100, "no goal sent means the whole target");
+  assert.equal(parseGoalPct("90"), 90);
+  assert.equal(parseGoalPct(120), 120);
+  for (const bad of ["", "0", "301", "90.5", "-10", "ninety"]) {
+    assert.equal(parseGoalPct(bad), null, `"${bad}" is refused, never guessed at`);
+  }
+  assert.equal(goalGapValue({ targetValue: 1000, gradedValue: 300 }, 90), 600, "a 90% goal asks for 90% of target, less sales so far");
+  assert.equal(goalGapValue({ targetValue: 1000, gradedValue: 950 }, 90), 0, "a goal already passed asks for nothing more");
+  assert.equal(goalGapValue({ targetValue: null, gradedValue: 300 }, 90), null, "no target, no goal");
+
+  // ── The stretch: realistic first, then only the missing value, spread where the business already is ──
+  const stretch = buildStretchMix(items, 1000);
+  assert.deepEqual(stretch.units, { A: 29, B: 8 });
+  assert.deepEqual(stretch.aboveRealistic, { A: 9, B: 3 }, "the stretch names exactly the units above each product's pace");
+  assert.equal(stretch.aboveRealisticValue, 390);
+  assert.equal(stretch.reachable, true);
+  const noStretch = buildStretchMix(items, 250);
+  assert.deepEqual(noStretch.units, reachable.units, "when the realistic plan already reaches the goal, the stretch adds nothing");
+  assert.equal(noStretch.aboveRealisticValue, 0);
+
+  // ── Scenarios 1, 2 and 3 over a real-shaped workspace ──
+  const planRow = (overrides: Partial<ConcentrationPlanRow>): ConcentrationPlanRow => ({
+    productCode: "X",
+    name: "Product",
+    family: "",
+    price: 10,
+    targetUnits: null,
+    targetValue: null,
+    actualUnits: 0,
+    actualValue: 0,
+    gradedUnits: 0,
+    gradedValue: 0,
+    history: [],
+    trend: { kind: "none", historyMonths: 0, spikesIgnored: 0, expectedUnits: 0, realisticMaxUnits: 0 },
+    ...overrides,
+  });
+  const alpha = planRow({
+    productCode: "A", name: "Alpha", family: "Fam1", price: 10, targetUnits: 100, targetValue: 1000,
+    actualUnits: 30, actualValue: 300, gradedUnits: 30, gradedValue: 300,
+    trend: { kind: "growing", historyMonths: 4, spikesIgnored: 0, expectedUnits: 10, realisticMaxUnits: 20 },
+  });
+  const beta = planRow({
+    productCode: "B", name: "Beta", family: "Fam2", price: 100, targetUnits: 10, targetValue: 1000,
+    actualUnits: 2, actualValue: 200, gradedUnits: 2, gradedValue: 200,
+    trend: { kind: "flat", historyMonths: 4, spikesIgnored: 0, expectedUnits: 1, realisticMaxUnits: 5 },
+  });
+  const gamma = planRow({ productCode: "C", name: "Gamma", family: "Fam1", price: 50 });
+  const cnsLine: LinePlanGroup = {
+    lineCode: "CNS", lineName: "CNS", remainingMonths: 2, closedMonthLabels: ["Jul"], forecastMonthLabels: ["Aug", "Sep"],
+    targetValue: 2000, gradedValue: 500, actualValue: 500, rows: [alpha, beta],
+  };
+  const pediaLine: LinePlanGroup = {
+    lineCode: "PD", lineName: "Pedia", remainingMonths: 0, closedMonthLabels: ["Jul", "Aug", "Sep"], forecastMonthLabels: [],
+    targetValue: null, gradedValue: 0, actualValue: 0, rows: [gamma],
+  };
+  const workspace: MakeItHappenWorkspace = {
+    periodKind: "quarter", periodKey: "2026-Q3", periodLabel: "Q3 2026 · July to September",
+    offered: { month: [], quarter: [], semester: [] }, scopeLabel: "Your line", isEmptyScope: false, viewingRep: null,
+    canSave: true, plansAvailable: true, lines: [cnsLine, pediaLine],
+    totals: { targetValue: 2000, gradedValue: 500, actualValue: 500 }, reps: [], plans: [],
+  };
+
+  const [pace, realistic, stretched] = buildPlanScenarios(workspace, 100);
+  assert.deepEqual([pace.number, realistic.number, stretched.number], [1, 2, 3]);
+  assert.deepEqual(pace.units, { A: 10, B: 1 }, "Scenario 1 keeps every product at its own pace");
+  assert.equal(pace.value, 200);
+  assert.equal(pace.shortOfGoal, 1300);
+  assert.deepEqual(realistic.units, { A: 20, B: 5 }, "Scenario 2 never plans above a product's realistic max");
+  assert.equal(realistic.reachesGoal, false);
+  assert.equal(realistic.shortOfGoal, 800);
+  assert.equal("C" in realistic.units, false, "a closed line is never planned");
+  assert.deepEqual(stretched.units, { A: 43, B: 11 });
+  assert.equal(stretched.value, 1530);
+  assert.equal(stretched.reachesGoal, true, "Scenario 3 reaches the goal");
+  assert.deepEqual(stretched.aboveRealistic, { A: 23, B: 6 }, "and says exactly how much of it sits above the pace");
+  const money = (value: number) => `EGP ${value}`;
+  assert.ok(scenarioSummary(realistic, 100, money).includes(HONESTY_SENTENCE), "an out-of-reach realistic plan says the owner's sentence");
+  assert.match(scenarioSummary(stretched, 100, money), /above what the products' own pace supports/, "a stretch is never presented as realistic");
+  const easyGoal = buildPlanScenarios(workspace, 30);
+  assert.equal(easyGoal[1].reachesGoal, true, "a lower goal the pace already covers is reachable");
+  assert.deepEqual(easyGoal[1].units, { A: 10, B: 1 }, "and nothing is raised to reach it");
+  assert.match(scenarioSummary(easyGoal[2], 30, money), /No stretch needed/);
+  for (const scenario of [...buildPlanScenarios(workspace, 100), ...easyGoal]) {
+    assert.doesNotMatch(scenarioSummary(scenario, 100, money), /\bAI\b|artificial|model/i);
+  }
+
+  // ── Gap to target, per product ──
+  const alphaFigures = rowFigures(alpha, true, 20);
+  assert.equal(alphaFigures.gapValue, 500, "target − sold so far − forecast, in value");
+  assert.equal(alphaFigures.gapUnits, 50, "and in that product's own units");
+  assert.equal(alphaFigures.status, "behind");
+  const closedFigures = rowFigures(gamma, false, 5);
+  assert.equal(closedFigures.typedUnits, 0, "a closed line forecasts nothing");
+  assert.equal(closedFigures.gapValue, null, "no target has no gap, never a zero gap");
+  assert.equal(rowFigures(beta, true, 8).gapValue, 0);
+
+  // ── Filters: the same function narrows the screen and the file ──
+  const filtersWith = (overrides: Partial<PlannerFilters>): PlannerFilters => ({ ...NO_PLANNER_FILTERS, ...overrides });
+  const names = (filters: PlannerFilters, units: Record<string, number> = {}) =>
+    filterPlanLines(workspace.lines, filters, units).flatMap((line) => line.rows.map((entry) => entry.row.name));
+  assert.deepEqual(names(NO_PLANNER_FILTERS), ["Alpha", "Beta", "Gamma"]);
+  assert.deepEqual(names(filtersWith({ families: ["Fam1"] })), ["Alpha", "Gamma"]);
+  assert.deepEqual(names(filtersWith({ lines: ["PD"] })), ["Gamma"]);
+  assert.deepEqual(names(filtersWith({ trends: ["growing"] })), ["Alpha"]);
+  assert.deepEqual(names(filtersWith({ statuses: ["none"] })), ["Gamma"]);
+  assert.deepEqual(names(filtersWith({ planned: "planned" }), { B: 3 }), ["Beta"]);
+  assert.deepEqual(names(filtersWith({ planned: "unplanned" }), { B: 3 }), ["Alpha", "Gamma"]);
+  assert.deepEqual(names(filtersWith({ gap: "met" }), { B: 8 }), ["Beta"]);
+  assert.deepEqual(names(filtersWith({ gap: "short" }), { B: 8 }), ["Alpha"], "no target is neither short nor met");
+  assert.deepEqual(names(filtersWith({ search: "bet" })), ["Beta"]);
+  assert.deepEqual(names(filtersWith({ sort: "gap" })), ["Beta", "Alpha", "Gamma"], "biggest gap to target first");
+  assert.deepEqual(names(filtersWith({ trends: ["rising"] })), [], "an unrecognised trend narrows to nothing, never widens");
+  assert.deepEqual(names(filtersWith({ planned: "maybe" })), [], "an unrecognised planned choice narrows to nothing");
+  assert.deepEqual(parsePlannerFilters("garbage"), NO_PLANNER_FILTERS);
+  assert.deepEqual(parsePlannerFilters({ trends: ["rising", 5] }).trends, ["rising"], "an unknown string is kept so it can match nothing");
+  assert.equal(describePlannerFilters(NO_PLANNER_FILTERS, new Map()), null);
+  assert.equal(describePlannerFilters(filtersWith({ sort: "gap" }), new Map()), null, "sorting alone is not a filter");
+  const stamp = describePlannerFilters(filtersWith({ families: ["Fam1"], lines: ["ZZ"] }), new Map([["CNS", "CNS"]])) ?? "";
+  assert.match(stamp, /Family: Fam1/);
+  assert.match(stamp, /Unrecognised line/, "a forged line code is named as unrecognised, never printed as a code");
+
+  // ── Exports: same filter, same figures, stamped ──
+  const model = buildForecastExportModel({
+    workspace,
+    units: { A: 20, B: 3 },
+    goalPct: 100,
+    filters: filtersWith({ families: ["Fam2"] }),
+    now: new Date("2026-09-14T10:00:00Z"),
+  });
+  assert.deepEqual(model.lines.map((line) => line.rows.map((entry) => entry.row.name)), [["Beta"]], "the file holds exactly the filtered rows");
+  assert.equal(model.lines[0].forecastValue, 500, "a line total still covers the whole line");
+  assert.equal(model.totals.forecastValue, 500);
+  assert.equal(model.totals.gapValue, 1000);
+  assert.match(model.filterNote ?? "", /Family: Fam2/, "a filtered file says so");
+  assert.equal(model.generatedAtLabel.includes("13:00"), true, "stamped in Cairo time, not UTC");
+  assert.equal(forecastExportFilename(model, "xlsx"), "make-it-happen-q3-2026-july-to-september-your-line.xlsx");
+
+  const html = buildForecastPdfHtml(model);
+  const htmlBody = html.slice(html.indexOf("</style>"));
+  assert.ok(htmlBody.includes("Family: Fam2"), "the PDF carries the filter stamp");
+  assert.ok(htmlBody.includes("Beta") && !htmlBody.includes("Alpha"), "the PDF shows only the filtered products");
+  assert.ok(htmlBody.includes("Gap to target"));
+  assert.ok(htmlBody.includes(HONESTY_SENTENCE), "an out-of-reach plan carries the owner's sentence on paper too");
+  assert.doesNotMatch(html, /border-radius:\s*[1-9]/, "square edges on paper");
+  assert.doesNotMatch(html, /text-overflow/, "wrapping, never an ellipsis");
+  assert.doesNotMatch(htmlBody, /\bAI\b|artificial/i);
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load((await buildForecastWorkbook(model)) as unknown as ArrayBuffer);
+  assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Cover", "Forecast", "Scenarios"]);
+  const forecastSheet = workbook.getWorksheet("Forecast");
+  assert.ok(forecastSheet);
+  const texts: string[] = [];
+  forecastSheet.eachRow((excelRow) => excelRow.eachCell((cell) => texts.push(String(cell.value ?? ""))));
+  assert.ok(texts.some((text) => text.includes("Family: Fam2")), "the workbook carries the filter stamp");
+  assert.ok(texts.includes("Beta") && !texts.includes("Alpha"), "the workbook shows only the filtered products");
+  assert.ok(texts.includes("Gap to target (value)"));
+  let totalRowUnits: unknown = "unfound";
+  forecastSheet.eachRow((excelRow) => {
+    if (String(excelRow.getCell(1).value ?? "").startsWith("CNS total")) totalRowUnits = excelRow.getCell(9).value;
+  });
+  assert.ok(totalRowUnits === "" || totalRowUnits == null, "a total row never adds units across products");
 
   // ── Honest wording, and nothing says AI ──
   const base = { periodLabel: "Q3 2026", earlyHistory: false, onTrack: false, picks: [{ name: "Tebofortine", unitsLabel: "20" }] };

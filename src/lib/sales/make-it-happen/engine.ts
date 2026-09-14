@@ -38,6 +38,12 @@ export const SPIKE_MULTIPLE = 2.5;
 export const FLAT_BAND = 0.05;
 /** A forecast larger than this is a typing slip, not a plan. */
 export const MAX_FORECAST_UNITS = 10_000_000;
+/**
+ * The owner's own sentence for an out-of-reach target (2026-09-13). It is never paraphrased.
+ * Declared here, not in coach.ts, because the scenarios the planner builds in the browser say it too
+ * and coach.ts reaches a server-only client.
+ */
+export const HONESTY_SENTENCE = "Phoenix is here to support you, not to show you dream numbers";
 
 export type PeriodKind = "month" | "quarter" | "semester";
 
