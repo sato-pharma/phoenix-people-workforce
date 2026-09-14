@@ -1273,6 +1273,7 @@ import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runClosingQuarterGapTests } from "./closing-quarter-gap.test.ts";
+import { runClosingConsolidatedExportTests } from "./closing-consolidated-export.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketAwarenessApprovalInboxNavBadgeTests } from "./market-awareness-approval-inbox-nav-badge.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
@@ -3891,6 +3892,11 @@ await runTest(
 await runTest(
   "the premium workbook's Gap to Quarter Target tab (the target spans all three months of the calendar quarter INCLUDING the one with no closing yet, sales stop at the month on the cover, an area row carries value only because units are never added across products, a missing target stays blank rather than becoming a zero gap at 0%, each month's targets fold by that month's own area-merge rules, and the emitted tab is registered, coloured, listed under its own contents band and formatted as a percentage where it says Achievement)",
   runClosingQuarterGapTests,
+);
+
+await runTest(
+  "a consolidated closing adds several months of one line, splits each month on its own before adding, relabels both workbooks for the span, and is offered to the Super Admin and the CEO only",
+  runClosingConsolidatedExportTests,
 );
 
 await runTest(

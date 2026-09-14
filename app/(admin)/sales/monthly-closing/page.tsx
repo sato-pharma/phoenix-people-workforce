@@ -4,6 +4,7 @@ import { MonthlyClosingWorkspace } from "@/components/sales/monthly-closing-work
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { canExportConsolidatedClosing } from "@/lib/sales/closing-consolidated";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
@@ -73,6 +74,9 @@ export default async function MonthlyClosingPage({
 
   return (
     <MonthlyClosingWorkspace
+      // Several months added together into one download: Super Admin and the CEO only (owner,
+      // 2026-09-14). The two consolidated routes refuse everyone else on their own.
+      canExportConsolidated={canExportConsolidatedClosing(access.role)}
       canPublish={isSystemAdministratorViewer}
       initialCoverage={initialCoverage}
       initialError={initialError}

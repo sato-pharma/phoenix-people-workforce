@@ -30,6 +30,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 type Props = {
+  /**
+   * Super Admin and the CEO (owner, 2026-09-14). With several months on screen, the three export
+   * buttons become the CONSOLIDATED downloads — the months added together — instead of greying out.
+   * The routes ask the same question server-side; this only decides what is offered.
+   */
+  canExportConsolidated?: boolean;
   canPublish?: boolean;
   initialCoverage?: MonthlySourceCoverage | null;
   initialError: string | null;
@@ -50,7 +56,7 @@ type ClosingResponse = {
   success: boolean;
 };
 
-export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = null, initialError, initialMatrix, initialOffice = null }: Props) {
+export function MonthlyClosingWorkspace({ canExportConsolidated = false, canPublish = false, initialCoverage = null, initialError, initialMatrix, initialOffice = null }: Props) {
   const [matrix, setMatrix] = useState<MonthlyClosingMatrix | null>(initialMatrix);
   const [office, setOffice] = useState<MonthlyClosingMatrix | null>(initialOffice);
   const [coverage, setCoverage] = useState<MonthlySourceCoverage | null>(initialCoverage);
@@ -58,6 +64,9 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingPremium, setIsExportingPremium] = useState(false);
   const [isExportingPremiumXlsx, setIsExportingPremiumXlsx] = useState(false);
+  const [isExportingConsolidated, setIsExportingConsolidated] = useState(false);
+  const [isExportingConsolidatedPremium, setIsExportingConsolidatedPremium] = useState(false);
+  const [isExportingConsolidatedPremiumXlsx, setIsExportingConsolidatedPremiumXlsx] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
   const [published, setPublished] = useState<boolean | null>(null);
@@ -373,6 +382,47 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     });
   }
 
+  /**
+   * CONSOLIDATED downloads — the months on screen added together into one file. Owner, 2026-09-14:
+   * Super Admin and the CEO only, in both the closing's own workbook and the premium one. Each goes
+   * through `runExport`, so the on-screen filter travels with it exactly as it does for one month;
+   * `periods` is the extra the consolidated routes read, and the months are worked out one by one on
+   * the server before they are added.
+   */
+  async function handleConsolidatedExport() {
+    await runExport({
+      body: { periods: selectedPeriods },
+      fallbackName: "phoenix-monthly-closing-consolidated.xlsx",
+      setBusy: setIsExportingConsolidated,
+      url: "/api/sales/monthly-closing/consolidated-export",
+    });
+  }
+
+  async function handleConsolidatedPremiumExport() {
+    await runExport({
+      body: { periods: selectedPeriods },
+      fallbackName: "phoenix-monthly-closing-premium-consolidated.xlsm",
+      setBusy: setIsExportingConsolidatedPremium,
+      url: "/api/sales/monthly-closing/consolidated-premium-export",
+    });
+  }
+
+  async function handleConsolidatedPremiumXlsxExport() {
+    await runExport({
+      body: { macros: false, periods: selectedPeriods },
+      fallbackName: "phoenix-monthly-closing-premium-consolidated.xlsx",
+      setBusy: setIsExportingConsolidatedPremiumXlsx,
+      url: "/api/sales/monthly-closing/consolidated-premium-export",
+    });
+  }
+
+  // With several months on screen the single-month buttons cannot act, so for the two roles allowed
+  // a consolidated file they give way to the consolidated ones. Everyone else keeps the greyed-out
+  // buttons and their explanation, unchanged.
+  const showConsolidatedExports = isMultiPeriod && canExportConsolidated;
+  const isExportingAnyConsolidated =
+    isExportingConsolidated || isExportingConsolidatedPremium || isExportingConsolidatedPremiumXlsx;
+
   if (initialError && !matrix) {
     return (
       <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
@@ -602,6 +652,47 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                         break into two lines from 768 up, for no gain. At 375 everything stacks, as it already
                         did. Measured with the real filter markup: an early harness used `w-44` selects in place
                         of the real content-sized `<details>` and manufactured an overflow that does not exist. */}
+                    {showConsolidatedExports ? (
+                      <>
+                        <button
+                          className={cn(
+                            "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
+                          )}
+                          disabled={isExportingAnyConsolidated || filteredMatrix.columns.length === 0}
+                          onClick={() => void handleConsolidatedExport()}
+                          title={`One closing workbook for ${periodSpan}, the months added together. Each month is worked out on its own, store split included, and only then added.`}
+                          type="button"
+                        >
+                          {isExportingConsolidated ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          Consolidated XLSX
+                        </button>
+                        <button
+                          className={cn(
+                            "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                          )}
+                          disabled={isExportingAnyConsolidated || filteredMatrix.columns.length === 0}
+                          onClick={() => void handleConsolidatedPremiumExport()}
+                          title={`The premium workbook for ${periodSpan}, the months added together. There is no prior-month comparison: a span of months has no single month before it.`}
+                          type="button"
+                        >
+                          {isExportingConsolidatedPremium ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          Consolidated Premium XLSM
+                        </button>
+                        <button
+                          className={cn(
+                            "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-white px-4 text-sm font-bold text-[#0B0B0B] transition hover:border-phx-accent hover:bg-phx-accent hover:text-white disabled:opacity-50",
+                          )}
+                          disabled={isExportingAnyConsolidated || filteredMatrix.columns.length === 0}
+                          onClick={() => void handleConsolidatedPremiumXlsxExport()}
+                          title={`The same consolidated premium workbook for ${periodSpan}, without macros — the one to send.`}
+                          type="button"
+                        >
+                          {isExportingConsolidatedPremiumXlsx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                          Consolidated Premium XLSX
+                        </button>
+                      </>
+                    ) : (
+                    <>
                     <button
                       className={cn(
                         "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
@@ -650,6 +741,8 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                       {isExportingPremiumXlsx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                       Export Premium XLSX
                     </button>
+                    </>
+                    )}
                   </div>
                 </div>
                 {/* Owner decision (2026-08-08): this screen must match the exported workbook, so
