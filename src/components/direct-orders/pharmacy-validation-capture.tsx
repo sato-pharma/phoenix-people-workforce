@@ -23,6 +23,8 @@ import {
   type VenueType,
 } from "@/lib/venues/venue-type";
 import { VENUE_LOCATION_REQUIRED_MESSAGE } from "@/lib/venues/venue-validation-rule";
+import { PharmacyInvoiceValidationCapture } from "@/components/direct-orders/pharmacy-invoice-validation-capture";
+import type { DirectOrderInvoiceSlotCount } from "@/lib/direct-orders/invoice-evidence";
 
 type Props = {
   pharmacyId: string;
@@ -38,6 +40,16 @@ type Props = {
    */
   distributorCodeCount?: number;
   venueType?: VenueType;
+  /**
+   * The rep's own invoice slots. Given only on a held order, where the distributor-invoice route is
+   * offered beside the live photo (owner, 2026-09-14). Absent = the route is not offered.
+   */
+  invoiceSlots?: DirectOrderInvoiceSlotCount | null;
+  /**
+   * `upgrade` = confirming in the field a pharmacy the rep already validated by invoice, with no
+   * order behind it. It frees one invoice slot once approved.
+   */
+  mode?: "held" | "upgrade";
   onDone?: () => void;
 };
 
@@ -59,6 +71,8 @@ const EMPTY: Capture = {
   address: null,
   location: null,
 };
+
+const UPGRADE_REASON = "Confirming in the field a pharmacy I validated by distributor invoice.";
 
 type Suggestion = {
   distributorCode: string;
@@ -92,9 +106,12 @@ export function PharmacyValidationCapture({
   requestId,
   distributorCodeCount = 0,
   venueType = DEFAULT_VENUE_TYPE,
+  invoiceSlots = null,
+  mode = "held",
   onDone,
 }: Props) {
   const router = useRouter();
+  const isUpgrade = mode === "upgrade";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const licenseCameraRef = useRef<HTMLInputElement | null>(null);
@@ -106,7 +123,8 @@ export function PharmacyValidationCapture({
   const [name, setName] = useState(pharmacyName);
   const [address, setAddress] = useState("");
   const [doctor, setDoctor] = useState("");
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(isUpgrade ? UPGRADE_REASON : "");
+  const [route, setRoute] = useState<"field" | "invoice">("field");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +139,12 @@ export function PharmacyValidationCapture({
   // A venue with no distributor account has no pharmacy trade licence to produce, so the panel is
   // not shown at all rather than shown and marked optional. The desk refuses it nothing; asking
   // for a document that does not exist is what this whole change is undoing.
-  const licenseApplies = venueRequiresDistributorCode(venueType);
+  // In upgrade mode the invoice already answered who the pharmacy is, so the licence is not asked.
+  const licenseApplies = venueRequiresDistributorCode(venueType) && !isUpgrade;
+  // A distributor invoice is a distributor vouching for its customer: offered for a pharmacy on a
+  // held order only, and never to a venue with no distributor account.
+  const invoiceRouteOffered =
+    !isUpgrade && Boolean(requestId) && invoiceSlots != null && venueRequiresDistributorCode(venueType);
   const licenseFillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
   const licenseNote = pharmacyLicensePrompt({
     distributorCodeCount,
@@ -147,7 +170,9 @@ export function PharmacyValidationCapture({
     const timer = setTimeout(
       async () => {
         if (cancelled) return;
-        if (term.length < 3) {
+        // Not while confirming an invoice pharmacy: it is already a known pharmacy, and "did you
+        // mean…" about itself would only confuse the rep.
+        if (term.length < 3 || isUpgrade) {
           setSuggestions([]);
           return;
         }
@@ -165,7 +190,7 @@ export function PharmacyValidationCapture({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [name]);
+  }, [name, isUpgrade]);
 
   async function startCamera() {
     setError(null);
@@ -327,6 +352,17 @@ export function PharmacyValidationCapture({
     if (licenseFileRef.current) licenseFileRef.current.value = "";
   }
 
+  function chooseRoute(next: "field" | "invoice") {
+    // Leaving the live capture releases the camera rather than leaving it running behind a form.
+    if (next === "invoice") {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      setCameraReady(false);
+    }
+    setError(null);
+    setMessage(null);
+    setRoute(next);
+  }
+
   async function submit() {
     setError(null);
     if (!photo) return setError("Take the storefront photo.");
@@ -358,7 +394,11 @@ export function PharmacyValidationCapture({
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the validation.");
-      setMessage("Sent for validation. Your order stays on hold until it is reviewed.");
+      setMessage(
+        isUpgrade
+          ? "Sent for review. One of your invoice slots frees once it is approved."
+          : "Sent for validation. Your order stays on hold until it is reviewed.",
+      );
       setPhoto(null);
       clearLicense();
       onDone?.();
@@ -376,12 +416,54 @@ export function PharmacyValidationCapture({
   return (
     <section className="border border-phx-line bg-white">
       <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Validate this {venueWord}</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
+          {isUpgrade ? `Confirm this ${venueWord} in the field` : `Validate this ${venueWord}`}
+        </h3>
       </header>
+      {invoiceRouteOffered && invoiceSlots ? (
+        <div className="flex flex-wrap border-b border-phx-line">
+          {([
+            { key: "field", label: "Live photo and location" },
+            { key: "invoice", label: `Distributor invoice (${invoiceSlots.used} of ${invoiceSlots.limit} used)` },
+          ] as const).map((choice) => (
+            <button
+              key={choice.key}
+              type="button"
+              onClick={() => chooseRoute(choice.key)}
+              className={`flex-1 basis-48 border-b-2 px-4 py-2 text-left text-phx-sm font-black ${
+                route === choice.key
+                  ? "border-orange-500 bg-orange-50 text-orange-700"
+                  : "border-transparent text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {choice.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {route === "invoice" && invoiceRouteOffered && invoiceSlots && requestId ? (
+        <PharmacyInvoiceValidationCapture
+          pharmacyId={pharmacyId}
+          pharmacyName={pharmacyName}
+          requestId={requestId}
+          slots={invoiceSlots}
+          onDone={onDone}
+        />
+      ) : (
       <div className="space-y-3 px-4 py-4">
         <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
-          This {venueWord} is not in the master database. To move your order, capture your location
-          and a live photo of the {venueWord} sign. A System Admin reviews it.
+          {isUpgrade ? (
+            <>
+              You validated this {venueWord} with a distributor invoice. Capture your location and a
+              live photo of the {venueWord} sign to confirm it in the field. A System Admin reviews
+              it, and one of your invoice slots frees once it is approved.
+            </>
+          ) : (
+            <>
+              This {venueWord} is not in the master database. To move your order, capture your location
+              and a live photo of the {venueWord} sign. A System Admin reviews it.
+            </>
+          )}
         </p>
 
         <div>
@@ -552,6 +634,7 @@ export function PharmacyValidationCapture({
           {busy ? "Sending…" : "Send for validation"}
         </button>
       </div>
+      )}
     </section>
   );
 }

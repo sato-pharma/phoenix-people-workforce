@@ -8,7 +8,7 @@ import {
   type DirectOrderWorkspaceSummary,
 } from "@/lib/direct-orders/needs-action";
 import {
-  canDecideDirectOrderPharmacyValidations,
+  canDecideDirectOrderInvoiceValidations,
   listDirectOrderPharmacyValidations,
 } from "@/lib/direct-orders/pharmacy-validation";
 import {
@@ -170,7 +170,7 @@ export function resolveDirectOrderReturnHref(
 export function resolveDirectOrderWorkspaceTabs(access: AccessContext): DirectOrderWorkspaceTabKey[] {
   const scope = resolveDirectOrderReportScope(access);
   const canAssignFinanceMonth = canSetDirectOrderSalesMonth(access);
-  const canDecideCustomerValidations = canDecideDirectOrderPharmacyValidations(access);
+  const canDecideCustomerValidations = canDecideDirectOrderInvoiceValidations(access);
   // "own" scope means the report would return exactly what listMyDirectOrders already returned, so
   // the wider views have nothing to add.
   const canSeeAllOrders = scope !== "own";
@@ -278,7 +278,7 @@ export async function loadDirectOrderWorkspaceView(
 ): Promise<DirectOrderWorkspaceView> {
   const scope = resolveDirectOrderReportScope(access);
   const canAssignFinanceMonth = canSetDirectOrderSalesMonth(access);
-  const canDecideCustomerValidations = canDecideDirectOrderPharmacyValidations(access);
+  const canDecideCustomerValidations = canDecideDirectOrderInvoiceValidations(access);
   const canCreate = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
   // "own" scope means the report would return exactly what listMyDirectOrders already
   // returned, so the All Orders tab has nothing to add and is not offered. This is the

@@ -7,6 +7,7 @@ import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
+import { getDirectOrderInvoiceValidationSlots } from "@/lib/direct-orders/pharmacy-validation";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
@@ -44,6 +45,8 @@ export default async function PortalMyDirectOrderDetailPage({
   // redirects them here — so the capture living only on that twin meant no rep could ever open it.
   // Same predicate on both pages so they cannot diverge again.
   const showValidation = canCaptureDirectOrderValidation(access.hrId, detail);
+  // Same as the admin twin: the counter beside the distributor-invoice route, read only when offered.
+  const invoiceSlots = showValidation && detail?.pharmacy ? await getDirectOrderInvoiceValidationSlots(access) : null;
 
   // The way OUT of the held lane for an order that should never have been raised (audit F3). Mounted
   // on this page as well as the admin twin for exactly the reason the capture had to be: a rep only
@@ -78,6 +81,7 @@ export default async function PortalMyDirectOrderDetailPage({
             requestId={detail.request.id}
             distributorCodeCount={detail.pharmacy.distributorCodes.length}
             venueType={detail.pharmacy.venueType}
+            invoiceSlots={invoiceSlots ? { used: invoiceSlots.used, limit: invoiceSlots.limit } : null}
           />
         ) : null}
         {showCancel && detail ? (
