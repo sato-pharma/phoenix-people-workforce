@@ -1647,6 +1647,7 @@ import { runDataBackupWorkbookTests } from "./data-backup-workbook.test.ts";
 import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-gate.test.ts";
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
+import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
@@ -5512,6 +5513,11 @@ await runTest(
 await runTest(
   "the CV viewer serves pdf.js's legacy build, library and worker both carrying the Promise.withResolvers polyfill, so a CV opens on older phone browsers",
   runPdfjsLegacyBrowserAssetsTests,
+);
+
+await runTest(
+  "a CV that fails to open is reported to the error monitor with its kind, never its file name or candidate, and designed notices stay out",
+  runCvPreviewFailureReportTests,
 );
 
 await runTest(
