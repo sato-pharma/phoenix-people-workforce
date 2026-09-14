@@ -64,10 +64,13 @@
  * PHOENIX_DEV_BUNDLER=turbopack|webpack overrides the automatic choice.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { explainDevServerExit } from "./dev-server-exit-reason.mjs";
 
 const override = process.env.PHOENIX_DEV_BUNDLER?.trim().toLowerCase();
 const isWindows = process.platform === "win32";
@@ -253,13 +256,51 @@ console.log(
     (haveBin ? "" : "  (next not found in node_modules - falling back to PATH)"),
 );
 
-const result = haveBin
-  ? spawnSync(process.execPath, [nextBin, ...args], {
+// SAY WHY IT STOPPED — added 2026-09-14, after the dev server died twice in one afternoon and this
+// launcher exited without a word each time. The words live in dev-server-exit-reason.mjs.
+//
+// Free RAM is sampled WHILE the server runs, never after it dies: a dead server's gigabytes go back
+// to Windows the instant it exits, so a reading taken then always looks healthy — which is exactly
+// the wrong answer when running out of RAM is what killed it. The launcher is async (spawn, not
+// spawnSync) only so this sampler can tick.
+const ramSamples = [];
+const sampleFreeRam = () => {
+  const now = Date.now();
+  ramSamples.push({ at: now, freeMb: Math.round(os.freemem() / 1048576) });
+  while (ramSamples.length > 1 && now - ramSamples[0].at > 60_000) ramSamples.shift();
+};
+sampleFreeRam();
+const ramSampler = setInterval(sampleFreeRam, 5_000);
+ramSampler.unref();
+
+// Ctrl+C reaches Next directly (it shares this console). The launcher only waits for Next to finish
+// shutting down, then leaves with Next's own exit code.
+process.on("SIGINT", () => {});
+process.on("SIGTERM", () => {});
+
+const child = haveBin
+  ? spawn(process.execPath, [nextBin, ...args], {
       stdio: "inherit",
     })
-  : spawnSync("next", args, {
+  : spawn("next", args, {
       stdio: "inherit",
       shell: true,
     });
 
-process.exit(result.status ?? 1);
+child.on("error", (err) => {
+  console.error(`[dev-server] could not start Next: ${err.message}`);
+  process.exit(1);
+});
+
+child.on("exit", (status, signal) => {
+  clearInterval(ramSampler);
+  const lines = explainDevServerExit({
+    status,
+    signal,
+    lowestFreeMb: ramSamples.length ? Math.min(...ramSamples.map((s) => s.freeMb)) : null,
+    totalMb: Math.round(os.totalmem() / 1048576),
+    stoppedAt: new Date(),
+  });
+  if (lines) console.error(lines.join("\n"));
+  process.exit(status ?? 1);
+});
