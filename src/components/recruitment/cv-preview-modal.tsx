@@ -257,7 +257,9 @@ export function CvDocumentView({
           // URL sidesteps the bundler entirely — the same trick pdfjs-dist itself uses for its
           // Node worker (see pdf-dommatrix-polyfill.ts) and OneSignal uses for its SW. Both
           // files are committed under public/pdfjs/, copied from this exact pinned pdfjs-dist
-          // version's build/ output by `pnpm run sync:pdfjs-assets` (re-run on a version bump),
+          // version's LEGACY build output by `pnpm run sync:pdfjs-assets` (re-run on a version
+          // bump) — never the modern build, which fails on older phone browsers with
+          // "Promise.withResolvers is not a function" (tests/pdfjs-legacy-browser-assets.test.ts),
           // and must be same-origin to satisfy this app's CSP (`script-src 'self'` /
           // `worker-src 'self' blob:`, next.config.ts).
           // The type-only import gives the API types without emitting any bundled dependency.
