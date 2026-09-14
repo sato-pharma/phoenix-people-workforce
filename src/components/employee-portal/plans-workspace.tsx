@@ -2561,18 +2561,28 @@ export function PlansWorkspace({
               </div>
             </div>
 
-            <div className="overflow-x-auto bg-white">
-              <table className="w-full min-w-[1040px] table-fixed border-collapse" data-portal-desktop-table>
+            {/* Fits the screen with no horizontal scroll (AGENTS.md §4): Date and Actions hold fixed
+                widths, the three field columns share what is left, and Region and Area stack in one
+                cell. Never bring back a min-width over an overflow-x-auto wrapper. */}
+            <div className="bg-white">
+              <table className="w-full table-fixed border-collapse" data-portal-desktop-table>
+                <colgroup>
+                  <col className="w-[12rem]" />
+                  <col />
+                  <col />
+                  <col />
+                  {/* 5.5rem: the tracked uppercase "Actions" header is ~66px and overflows a 72px cell. */}
+                  <col className="w-[5.5rem]" />
+                </colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
-                    <th className="w-[18%] px-4 py-3">Date</th>
-                    <th className="w-[15%] px-3 py-3">Activity</th>
-                    <th className="w-[18%] px-3 py-3">Region</th>
-                    <th className="w-[18%] px-3 py-3">Area</th>
-                    <th className="w-[23%] px-3 py-3">
+                    <th className="px-4 py-3">Date</th>
+                    <th className="px-3 py-3">Activity</th>
+                    <th className="px-3 py-3">Region / Area</th>
+                    <th className="px-3 py-3">
                       {workspace.canPlanMarketingDoubleVisit ? "Medical Rep / Partner" : "Medical Rep"}
                     </th>
-                    <th className="w-[72px] px-4 py-3 text-right">Actions</th>
+                    <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -2612,7 +2622,7 @@ export function PlansWorkspace({
                               {slotIndex === 0 ? (
                                 <td className="px-4 py-3 align-top" rowSpan={group.rows.length}>
                                   <time
-                                    className="flex items-center gap-3"
+                                    className="flex flex-wrap items-center gap-x-3 gap-y-2"
                                     dateTime={group.activityDate}
                                     title={group.activityDate}
                                   >
@@ -2742,31 +2752,35 @@ export function PlansWorkspace({
                                 ) : (
                                   <DisabledFieldText>Not needed</DisabledFieldText>
                                 )}
-                              </td>
-                              <td className="px-3 py-3">
                                 {rule.showArea ? (
-                                  <SearchableSelect
-                                    className={tableSelectClass}
-                                    disabled={!canEdit || !canonicalRegion(row.locationText)}
-                                    onChange={(e) => updateRow(row.key, "area", e.target.value)}
-                                    value={row.area ?? ""}
-                                  >
-                                    <option value="">
-                                      {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}
-                                    </option>
-                                    {row.area &&
-                                    !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
-                                      <option value={row.area}>{row.area}</option>
-                                    ) : null}
-                                    {availableAreas.map((area) => (
-                                      <option key={area} value={area}>
-                                        {area}
+                                  <div className="mt-1.5">
+                                    <SearchableSelect
+                                      className={tableSelectClass}
+                                      disabled={!canEdit || !canonicalRegion(row.locationText)}
+                                      onChange={(e) => updateRow(row.key, "area", e.target.value)}
+                                      value={row.area ?? ""}
+                                    >
+                                      <option value="">
+                                        {canonicalRegion(row.locationText) ? (rule.requiresArea ? "Select area" : "Optional area") : "Choose region first"}
                                       </option>
-                                    ))}
-                                  </SearchableSelect>
-                                ) : (
-                                  <DisabledFieldText>Not needed</DisabledFieldText>
-                                )}
+                                      {row.area &&
+                                      !availableAreas.some((area) => area.toLowerCase() === (row.area ?? "").toLowerCase()) ? (
+                                        <option value={row.area}>{row.area}</option>
+                                      ) : null}
+                                      {availableAreas.map((area) => (
+                                        <option key={area} value={area}>
+                                          {area}
+                                        </option>
+                                      ))}
+                                    </SearchableSelect>
+                                  </div>
+                                ) : rule.showRegion || rule.showTrainingFormat ? (
+                                  // Region/format above is a real field, so say the area half is not needed.
+                                  // When the region half already reads "Not needed", one box says it for both.
+                                  <div className="mt-1.5">
+                                    <DisabledFieldText>Area not needed</DisabledFieldText>
+                                  </div>
+                                ) : null}
                               </td>
                               <td className="px-3 py-3">
                                 {rule.showPartner ? (
@@ -2794,7 +2808,7 @@ export function PlansWorkspace({
                                   <DisabledFieldText>Not required</DisabledFieldText>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-3 py-3 text-right">
                                 {locked ? (
                                   <div
                                     aria-label="Locked — read-only"
@@ -2819,7 +2833,7 @@ export function PlansWorkspace({
                           );
                         })}
                         <tr className={`${rowTone} border-t border-orange-100/80`}>
-                          <td className="px-4 pb-4 pt-0" colSpan={6}>
+                          <td className="px-4 pb-4 pt-0" colSpan={5}>
                             <div className="border border-orange-100 bg-orange-50/45 px-3 py-2">
                               <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                                 <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-orange-600">
@@ -2859,7 +2873,7 @@ export function PlansWorkspace({
                         </tr>
                         {hasReturnNotes ? (
                           <tr className="bg-amber-50/80">
-                            <td className="px-4 py-2" colSpan={6}>
+                            <td className="px-4 py-2" colSpan={5}>
                               <div className="space-y-1 border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-900">
                                 {group.rows.flatMap((row) => row.returnNotes ?? []).map((note) => (
                                   <p key={note.id}>
@@ -3522,8 +3536,10 @@ function DisabledFieldText({
     violet: "text-violet-700 font-semibold",
   }[tone];
   return (
-    <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100">
-      <span className={`whitespace-nowrap text-xs ${textClass}`}>{children}</span>
+    // min-h, not h, and wrapping text: in a fitted table cell a long status ("Double Visit - <rep
+    // name>") must wrap onto a second line, never run out of the cell and force a horizontal scroll.
+    <div className="flex min-h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 py-1 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100">
+      <span className={`min-w-0 break-words text-xs ${textClass}`}>{children}</span>
     </div>
   );
 }
