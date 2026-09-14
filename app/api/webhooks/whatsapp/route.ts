@@ -17,8 +17,9 @@ import { handleTextOnlyMessage } from "@/lib/recruitment/inbound/whatsapp-text-o
 import {
   isWhatsAppImportSender,
   parseWhatsAppImportSenders,
-  parseWhatsAppWebhookPayload,
+  parseWhatsAppWebhookDelivery,
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
+import { recordUnattributedWhatsAppMessage } from "@/lib/recruitment/inbound/whatsapp-unattributed-sender";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
 import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
 import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
@@ -87,9 +88,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Invalid WhatsApp webhook JSON." }, { status: 400 });
   }
 
-  const messages = parseWhatsAppWebhookPayload(payload);
+  // `unattributed` holds the nodes with no message id or no sender at all. They are recorded after the
+  // loop below — never silently dropped, which is how a username sender's videos vanished on 14 Sep.
+  const delivery = parseWhatsAppWebhookDelivery(payload);
+  const messages = delivery.messages;
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
-  const outcomes: Array<{ wamid: string; outcome: string }> = [];
+  const outcomes: Array<{ wamid: string | null; outcome: string }> = [];
   let classifyPromptsSent = 0;
   // Bounded exactly like classifyPromptsSent, and for the same reason: each reply is a Graph round
   // trip inside a request whose job is to ack fast.
@@ -105,7 +109,9 @@ export async function POST(request: Request) {
       // A tap on one of our own interactive menus. Handled before anything else: it carries no text
       // and no document, so it would otherwise fall through to "ignored" and the applicant's answer
       // would be dropped silently. Never throws — a failed answer must not fail the delivery.
-      if (message.interactiveReplyId && !message.historical) {
+      // Needs a phone number: the menus were sent to one. A tap from a username sender with no phone
+      // falls through to the no-phone record below.
+      if (message.interactiveReplyId && message.from && !message.historical) {
         const replyOutcome = await handleClassifyReply({
           phoneNumberId: message.deliveredToPhoneNumberId,
           rowId: message.interactiveReplyId,
@@ -160,12 +166,63 @@ export async function POST(request: Request) {
             historical: message.historical,
             sentAt: message.sentAt,
             submissionIds,
+            // A username sender may have no phone number: the BSUID keys the id instead, and the
+            // portal matches that sender by the id they typed.
+            userId: message.userId,
+            username: message.username,
             waId: message.from,
             wamid: message.wamid,
           });
           outcomes.push({ outcome: `submission_id_${captured.outcome}`, wamid: message.wamid });
           continue;
         }
+      }
+
+      // A VIDEO. Captured into its own holding table and then dropped from this pipeline entirely —
+      // no queue row, no candidate, no notification. Its one reply, the owner's thank-you, is sent by
+      // the inbound-intake cron once the sender has finished (whatsapp-videos/thanks) — never from here.
+      //
+      // 🔴 IT MUST BE HANDLED BEFORE THE BUFFER, THE NO-PHONE RECORD AND THE TEXT-ONLY BRANCH BELOW,
+      // and the ordering is the whole point of this block rather than a style preference. A video
+      // carries no `document`, so without this it falls into handleTextOnlyMessage, where the guard
+      // table splits it two ways and both are wrong: a REPLAYED video hits the `historical` rung and is
+      // discarded with no record at all, and a LIVE video hits `new_contact` — so the sender is
+      // answered "please send your CV as a file" and Talent Acquisition is notified. The senders are
+      // the company's own interns sending their closing videos, so that second path means messaging
+      // twenty-nine of them to ask for a job application they never made. A username sender with no
+      // phone is captured here too, under the BSUID.
+      //
+      // Best-effort like everything else here: a capture failure is logged and reported in the
+      // outcome, never raised, because a non-200 makes Meta retry the whole payload.
+      if (message.video) {
+        const captured = await captureInboundVideo({
+          caption: message.video.caption,
+          contactName: message.contactName,
+          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
+          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
+          fileName: message.video.filename,
+          historical: message.historical,
+          mediaId: message.video.mediaId,
+          mimeType: message.video.mimeType,
+          sentAt: message.sentAt,
+          userId: message.userId,
+          username: message.username,
+          waId: message.from,
+          wamid: message.wamid,
+        });
+        outcomes.push({ outcome: `video_${captured.outcome}`, wamid: message.wamid });
+        continue;
+      }
+
+      // A SENDER WITH NO PHONE NUMBER (a WhatsApp username, and Meta did not share the phone). Its
+      // videos and typed submission id were kept above. Everything else — a CV, a greeting, a tap —
+      // is RECORDED as one intake event and goes no further: every path below keys a person on a
+      // phone number, and several of them answer the sender, which on this line is never done except
+      // for the owner's thank-you. Never throws.
+      if (!message.from) {
+        const recorded = await recordUnattributedWhatsAppMessage({ kind: "no_phone", message });
+        outcomes.push({ outcome: `no_phone_${recorded.outcome}`, wamid: message.wamid });
+        continue;
       }
 
       // A typed answer to an escape row — any of the three questions since 2026-08-28. Checked
@@ -232,39 +289,6 @@ export async function POST(request: Request) {
             labels: { event: "whatsapp_message_buffer_failed", wamid: message.wamid },
           });
         });
-      }
-
-      // A VIDEO. Captured into its own holding table and then dropped from this pipeline entirely —
-      // no queue row, no candidate, no notification. Its one reply, the owner's thank-you, is sent by
-      // the inbound-intake cron once the sender has finished (whatsapp-videos/thanks) — never from here.
-      //
-      // 🔴 IT MUST BE HANDLED BEFORE THE TEXT-ONLY BRANCH BELOW, and the ordering is the whole
-      // point of this block rather than a style preference. A video carries no `document`, so
-      // without this it falls into handleTextOnlyMessage, where the guard table splits it two ways
-      // and both are wrong: a REPLAYED video hits the `historical` rung and is discarded with no
-      // record at all, and a LIVE video hits `new_contact` — so the sender is answered "please send
-      // your CV as a file" and Talent Acquisition is notified. The senders are the company's own
-      // interns sending their closing videos, so that second path means messaging twenty-nine of
-      // them to ask for a job application they never made.
-      //
-      // Best-effort like everything else here: a capture failure is logged and reported in the
-      // outcome, never raised, because a non-200 makes Meta retry the whole payload.
-      if (message.video) {
-        const captured = await captureInboundVideo({
-          caption: message.video.caption,
-          contactName: message.contactName,
-          deliveredToDisplayNumber: message.deliveredToDisplayNumber,
-          deliveredToPhoneNumberId: message.deliveredToPhoneNumberId,
-          fileName: message.video.filename,
-          historical: message.historical,
-          mediaId: message.video.mediaId,
-          mimeType: message.video.mimeType,
-          sentAt: message.sentAt,
-          waId: message.from,
-          wamid: message.wamid,
-        });
-        outcomes.push({ outcome: `video_${captured.outcome}`, wamid: message.wamid });
-        continue;
       }
 
       // A message with no document. Until 2026-08-29 this line simply dropped it: buffered above,
@@ -356,6 +380,14 @@ export async function POST(request: Request) {
       });
       outcomes.push({ outcome: "error", wamid: message.wamid });
     }
+  }
+
+  // Nodes with no message id, or with neither a phone number nor a BSUID. Nothing can be done with
+  // them, and nothing is sent — but each leaves an intake event, so a delivery can never again be
+  // acknowledged with no trace of what it held. Never throws.
+  for (const node of delivery.unattributed) {
+    const recorded = await recordUnattributedWhatsAppMessage({ kind: "unattributed", node });
+    outcomes.push({ outcome: `unattributed_${node.reason}_${recorded.outcome}`, wamid: node.wamid });
   }
 
   return NextResponse.json({ ok: true, outcomes });

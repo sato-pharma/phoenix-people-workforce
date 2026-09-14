@@ -64,9 +64,12 @@ export async function thankDueFtpVideoSenders(now: Date = new Date()): Promise<T
     const since = new Date(now.getTime() - FTP_VIDEO_THANKS_WINDOW_MS).toISOString();
     const columns = "wa_id, wamid, received_at, delivered_to_phone_number_id";
 
+    // Rows with no phone number are skipped: a sender who uses a WhatsApp username is addressed by a
+    // business-scoped user id, which Meta takes in a `recipient` field rather than `to`. Until the
+    // owner decides otherwise, the thank-you goes only where it always went — a phone number.
     const [videos, ids, batches, days, sends] = await Promise.all([
-      supabase.from("whatsapp_inbound_video").select(columns).eq("historical", false).gt("received_at", since).limit(5000).returns<MessageRow[]>(),
-      supabase.from("whatsapp_inbound_submission_id").select(columns).eq("historical", false).gt("received_at", since).limit(5000).returns<MessageRow[]>(),
+      supabase.from("whatsapp_inbound_video").select(columns).eq("historical", false).not("wa_id", "is", null).gt("received_at", since).limit(5000).returns<MessageRow[]>(),
+      supabase.from("whatsapp_inbound_submission_id").select(columns).eq("historical", false).not("wa_id", "is", null).gt("received_at", since).limit(5000).returns<MessageRow[]>(),
       supabase.from("whatsapp_ftp_video_thanks_batch").select("wa_id, created_at").gt("created_at", since).returns<{ wa_id: string; created_at: string }[]>(),
       supabase.from("whatsapp_ftp_video_thanks").select("wa_id, created_at").gt("created_at", since).returns<{ wa_id: string; created_at: string }[]>(),
       supabase

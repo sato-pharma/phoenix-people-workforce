@@ -11,10 +11,19 @@ export const HANDOFF_DOWNLOAD_TTL_SECONDS = 15 * 60;
  *  larger page would only hand out links that expire before their turn comes. */
 export const MAX_HANDOFF_BATCH = 50;
 
-/** One video, safe in the bucket and not yet claimed, as the portal receives it. */
+/**
+ * One video, safe in the bucket and not yet claimed, as the portal receives it.
+ *
+ * `waId` is null for a sender who uses a WhatsApp username and whose phone number Meta did not send;
+ * `userId` (the business-scoped user id) is then the only identity, and the submission id that sender
+ * typed is what says who they are. At least one of the two is always present — the table refuses a
+ * row with neither.
+ */
 export type HandoffVideo = {
   wamid: string;
-  waId: string;
+  waId: string | null;
+  userId: string | null;
+  username: string | null;
   contactName: string | null;
   fileName: string | null;
   caption: string | null;
@@ -46,9 +55,13 @@ export function parseHandoffWamids(body: unknown): string[] | null {
   return [...new Set(clean)];
 }
 
-/** The submission ids one WhatsApp number has sent, as the portal receives them. */
+/**
+ * The submission ids one WhatsApp sender has sent, as the portal receives them. Keyed like a video:
+ * the phone number when Meta sent one, the business-scoped user id always when Meta sent one.
+ */
 export type HandoffSenderId = {
-  waId: string;
+  waId: string | null;
+  userId: string | null;
   submissionIds: string[];
   sentAt: string | null;
 };
