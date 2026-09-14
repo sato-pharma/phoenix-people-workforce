@@ -5876,9 +5876,11 @@ export async function getDirectOrderApprovalDetail(
   const invoiceExpected = pharmacy?.verificationStatus === "pending_review" && venueRequiresDistributorCode(pharmacy.venueType);
   const orderInvoice = await loadDirectOrderRequestInvoice(request, { countRequesterSlots: invoiceExpected });
   // Mirrors attachDirectOrderInvoice's own guard — if these disagree, the control appears for someone
-  // the server refuses.
+  // the server refuses, or (as happened) is withheld from someone the server accepts. NOT gated on
+  // invoiceExpected (owner, 2026-09-14): Samaa's order stood on a pharmacy verified days earlier, so
+  // her order had no invoice box at all and the invoice she used could never reach her approvers. The
+  // server already saves such an invoice "for your approvers" without taking a validation slot.
   const canAttachInvoice =
-    invoiceExpected &&
     canAttachDirectOrderInvoice({
       viewerHrKey: canonicalHrIdKey(access.hrId),
       requesterHrKey: canonicalHrIdKey(request.requesterHrId),

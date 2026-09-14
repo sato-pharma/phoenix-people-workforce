@@ -302,7 +302,7 @@ export function DirectOrderRequestDetail({
 
       {/* Straight under the header, full width: for a new pharmacy this invoice IS what the SFE
           Manager decides on, so it is the first thing on the order, not a thumbnail further down. */}
-      {shownInvoice || invoiceExpected ? (
+      {shownInvoice || invoiceExpected || canAttachInvoice ? (
         <PanelSection title="Invoice used for this order">
           {shownInvoice ? (
             <div className="space-y-3">
@@ -329,7 +329,9 @@ export function DirectOrderRequestDetail({
           ) : (
             <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
               {canAttachInvoice
-                ? "No invoice is attached to this order yet. Attach the distributor invoice you used, so the SFE Manager can check the pharmacy on it."
+                ? invoiceExpected
+                  ? "No invoice is attached to this order yet. Attach the distributor invoice you used, so the SFE Manager can check the pharmacy on it."
+                  : "No invoice is attached to this order yet. Attach the distributor invoice you used, so your approvers see it with the order."
                 : "No invoice is attached to this order yet. This is a new pharmacy — the requester can attach the distributor invoice they used while the order waits for the SFE Manager."}
             </p>
           )}

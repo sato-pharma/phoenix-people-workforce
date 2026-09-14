@@ -145,6 +145,11 @@ function serviceWiring() {
   assert.match(detail, /loadDirectOrderRequestInvoice\(request/);
   assert.match(detail, /canAttachDirectOrderInvoice\(\{/);
   assert.match(detail, /orderInvoice,\s*invoiceExpected,\s*canAttachInvoice,/);
+  // A pharmacy already verified still carries the invoice the rep used (owner, 2026-09-14: Samaa's
+  // order on صيدلية الإنسانية had no invoice box at all). The server's attach guard never looked at
+  // the pharmacy's review status, so the screen must not either.
+  assert.match(detail, /const canAttachInvoice =\s*canAttachDirectOrderInvoice\(\{/, "THE ATTACH BUTTON IS WITHHELD ON A VERIFIED PHARMACY'S ORDER: canAttachInvoice must mirror the server guard, not the new-pharmacy flag");
+  assert.match(read(DETAIL), /shownInvoice \|\| invoiceExpected \|\| canAttachInvoice \?/, "THE INVOICE BOX IS HIDDEN FROM A REQUESTER WHO CAN ATTACH: without it the button has nowhere to render");
   assert.match(service, /invoiceStoragePath: row\.invoice_storage_path/);
 }
 
