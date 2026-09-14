@@ -186,6 +186,7 @@
     "Weekly Mapping": 98,
     "Weekly Product Access": 133,
     "Weekly Sales Upload": 120,
+    "Weekly Stock": 77,
     "WhatsApp Replies": 105,
     "WhatsApp Templates": 123,
     "Workflow Control": 103,
@@ -255,7 +256,8 @@
     "Vacation Report": 90,
     "Vacation Request": 97,
     "Weekly / Monthly Plans": 135,
-    "Weekly Sales": 73
+    "Weekly Sales": 73,
+    "Weekly Stock": 76
   },
   "bottom-bar": {
     "360": 18,
@@ -311,6 +313,7 @@
     "Sales": 24,
     "Scores": 31,
     "SoS": 18,
+    "Stock": 26,
     "Submit exp": 34,
     "Support": 39,
     "TM coach": 27,

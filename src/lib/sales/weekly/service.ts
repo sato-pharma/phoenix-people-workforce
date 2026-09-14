@@ -798,6 +798,12 @@ export async function loadWeeklyDashboard(filters?: {
   excludeUnmapped?: boolean;
   /** Export only: also return the row-level fact grain (factRows) for the BI workbook's Data sheet. */
   includeFactRows?: boolean;
+  /**
+   * Weekly Stock only: also return `stockRows` — every scoped row across the fetched weeks, de-cumulated
+   * but NOT narrowed to the selected week and NOT latest-stock-adjusted, because the stock builder picks
+   * each distributor's own snapshot and sales window itself.
+   */
+  includeStockRows?: boolean;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -1480,6 +1486,26 @@ export async function loadWeeklyDashboard(filters?: {
           salesValue: Number(row.salesValue.toFixed(2)),
           salesUnits: Number(row.netQty.toFixed(2)),
           stockUnits: Number(row.stockQty.toFixed(2)),
+        }))
+      : undefined,
+    stockRows: filters?.includeStockRows
+      ? scopedRows.map((row) => ({
+          distributorCode: row.distributorCode,
+          distributorName: row.distributorName,
+          regionCode: row.regionCode,
+          regionName: row.regionName,
+          areaCode: row.areaCode,
+          branchCode: row.branchCode,
+          branchName: row.branchName,
+          productCode: row.productCode,
+          productName: row.productName,
+          line: row.officialLine,
+          cycleMonth: row.cycleMonth,
+          weekNumber: row.weekNumber,
+          weekStart: row.weekStart,
+          netUnits: row.netQty,
+          stockUnits: row.stockQty,
+          factoryPrice: priceMap.get(normalizeCode(row.productCode)) ?? null,
         }))
       : undefined,
   };

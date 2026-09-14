@@ -520,6 +520,11 @@ export type WeeklyDashboard = {
    * Only present when `includeFactRows` is requested; undefined for normal dashboard loads.
    */
   factRows?: WeeklyFactExportRow[];
+  /**
+   * Weekly Stock only (stock-dashboard.ts): every scoped, de-cumulated row across the fetched weeks,
+   * with the live master price. Only present when `includeStockRows` is requested.
+   */
+  stockRows?: import("./stock-dashboard").WeeklyStockSourceRow[];
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

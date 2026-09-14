@@ -1328,6 +1328,13 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/batches", permission: { resource: "weekly_sales", action: "import" } }),
   sessionApi({ methods: ["DELETE"], pattern: "/api/sales/weekly/batches", permission: { resource: "weekly_sales", action: "import" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/dashboard", permission: { resource: "weekly_sales", action: "read" } }),
+  // Weekly Stock — admin-shell feed and export, plus the employee-portal pair (sales:read plus a role gate,
+  // like portal Weekly Sales). Scope is resolved from the session (resolveWeeklyAccessScope), so query
+  // params only narrow what the caller may already see.
+  sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/stock", permission: { resource: "weekly_sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/stock/export", permission: { resource: "weekly_sales", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-stock", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-stock/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/source-of-sales", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/actions", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/territory-drilldown", permission: { resource: "sales", action: "read" } }),
@@ -1450,6 +1457,7 @@ export const accessRegistry = [
   { ...sessionApi({ methods: readOnly, pattern: "/payroll/**", permission: { resource: "payroll", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/assignments", permission: { resource: "weekly_sales", action: "update" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/dashboard", permission: { resource: "weekly_sales", action: "read" } }), surface: "page" },
+  { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/stock", permission: { resource: "weekly_sales", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/mapping", permission: { resource: "weekly_sales", action: "update" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/branch-mapping", permission: { resource: "weekly_sales", action: "update" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/sales/weekly/product-mapping", permission: { resource: "weekly_sales", action: "update" } }), surface: "page" },

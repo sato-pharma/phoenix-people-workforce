@@ -56,6 +56,7 @@ import {
   Waypoints,
   BookUser,
   TrendingUp,
+  Package,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -237,6 +238,7 @@ function buildEmployeePortalSections({
   showRoiIntelligenceTab = false,
   showSourceOfSalesTab = false,
   showWeeklyTab = false,
+  showWeeklyStockTab = false,
   showMonthlyClosingTab = false,
   showSalesAnalyticsTab = false,
   showSalesVsTargetTab = false,
@@ -319,6 +321,7 @@ function buildEmployeePortalSections({
         ...(showMakeItHappenTab ? [{ href: "/employee-portals/make-it-happen", label: "Make It Happen", icon: Sparkles }] : []),
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
+        ...(showWeeklyStockTab ? [{ href: "/employee-portals/weekly-stock", label: "Weekly Stock", icon: Package }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),

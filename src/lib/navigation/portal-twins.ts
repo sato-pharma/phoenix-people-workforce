@@ -175,6 +175,7 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/sales/upload", to: SOS },
   { from: "/sales/vs-target", to: "/employee-portals/sales-vs-target" },
   { from: "/sales/weekly/distributor-editor", to: SOS },
+  { from: "/sales/weekly/stock", to: "/employee-portals/weekly-stock" },
 ];
 
 /** Exported for the drift test, which re-derives this whole set from the pages. */
