@@ -103,6 +103,10 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     // shape of rows already queued, for a field only the video inbox needs.
     sentAt: null,
     text: null,
+    // The webhook enqueues a CV only from a sender with a phone number; a username sender's CV is
+    // recorded there instead. Neither identity beyond the phone is carried on the queue payload.
+    userId: null,
+    username: null,
     // A queued row is a CV by construction: a video is captured in the webhook and never enqueued,
     // so this can only be null. Stated rather than left to inference, so that a video somehow
     // reaching this function would be a visible contradiction rather than a silent CV.

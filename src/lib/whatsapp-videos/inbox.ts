@@ -52,9 +52,16 @@ export const MAX_INBOUND_VIDEO_BYTES = 104_857_600;
  */
 export const MAX_FETCH_ATTEMPTS = 5;
 
+/**
+ * `waId` is the sender's phone number, or null for a sender who uses a WhatsApp username and whose
+ * phone Meta did not share; `userId` (the business-scoped user id) then identifies them. The table
+ * refuses a row with neither.
+ */
 export type InboundVideoCapture = {
   wamid: string;
-  waId: string;
+  waId: string | null;
+  userId: string | null;
+  username: string | null;
   contactName: string | null;
   mediaId: string;
   mimeType: string;
@@ -90,6 +97,8 @@ export async function captureInboundVideo(input: InboundVideoCapture): Promise<{
       media_id: input.mediaId,
       mime_type: input.mimeType,
       sent_at: input.sentAt,
+      user_id: input.userId,
+      username: input.username,
       wa_id: input.waId,
       wamid: input.wamid,
     });
@@ -122,9 +131,12 @@ export async function captureInboundVideo(input: InboundVideoCapture): Promise<{
   }
 }
 
+/** Keyed like a video: a phone number, a business-scoped user id, or both. */
 export type InboundSubmissionIdCapture = {
   wamid: string;
-  waId: string;
+  waId: string | null;
+  userId: string | null;
+  username: string | null;
   contactName: string | null;
   submissionIds: string[];
   sentAt: string | null;
@@ -150,6 +162,8 @@ export async function captureInboundSubmissionId(input: InboundSubmissionIdCaptu
       historical: input.historical,
       sent_at: input.sentAt,
       submission_ids: input.submissionIds,
+      user_id: input.userId,
+      username: input.username,
       wa_id: input.waId,
       wamid: input.wamid,
     });

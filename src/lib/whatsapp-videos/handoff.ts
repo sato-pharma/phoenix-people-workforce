@@ -17,7 +17,9 @@ import { WHATSAPP_VIDEOS_BUCKET } from "./inbox";
 
 type UnclaimedRow = {
   wamid: string;
-  wa_id: string;
+  wa_id: string | null;
+  user_id: string | null;
+  username: string | null;
   contact_name: string | null;
   file_name: string | null;
   caption: string | null;
@@ -33,7 +35,7 @@ export async function listUnclaimedVideos(limit = MAX_HANDOFF_BATCH): Promise<Ha
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("whatsapp_inbound_video")
-    .select("wamid, wa_id, contact_name, file_name, caption, sent_at, byte_size, mime_type, historical, storage_path")
+    .select("wamid, wa_id, user_id, username, contact_name, file_name, caption, sent_at, byte_size, mime_type, historical, storage_path")
     .not("storage_path", "is", null)
     .is("handed_off_at", null)
     .order("sent_at", { ascending: true, nullsFirst: false })
@@ -72,6 +74,8 @@ export async function listUnclaimedVideos(limit = MAX_HANDOFF_BATCH): Promise<Ha
       historical: row.historical,
       mimeType: row.mime_type,
       sentAt: row.sent_at,
+      userId: row.user_id,
+      username: row.username,
       waId: row.wa_id,
       wamid: row.wamid,
     });
@@ -100,7 +104,9 @@ export async function markVideosHandedOff(wamids: readonly string[]): Promise<nu
 }
 
 type SenderIdRow = {
-  wa_id: string;
+  wamid: string;
+  wa_id: string | null;
+  user_id: string | null;
   submission_ids: string[] | null;
   sent_at: string | null;
 };
@@ -108,24 +114,49 @@ type SenderIdRow = {
 /**
  * The submission ids these senders have typed, oldest first.
  *
+ * A sender is matched by phone number OR business-scoped user id, so an id typed by a username sender
+ * with no phone still reaches the portal beside that sender's videos. Two reads, merged on wamid: a
+ * row found by both keys is listed once.
+ *
  * Throws when they cannot be read. The route turns that into `senderIdsAvailable: false` rather than
  * an empty list, because an empty list means "nobody sent one" and the portal acts on that.
  */
-export async function listSubmissionIdsForSenders(waIds: readonly string[]): Promise<HandoffSenderId[]> {
-  const senders = [...new Set(waIds.filter(Boolean))];
-  if (senders.length === 0) return [];
+export async function listSubmissionIdsForSenders(
+  senders: readonly { waId: string | null; userId: string | null }[],
+): Promise<HandoffSenderId[]> {
+  const waIds = [...new Set(senders.map((sender) => sender.waId).filter((value): value is string => Boolean(value)))];
+  const userIds = [...new Set(senders.map((sender) => sender.userId).filter((value): value is string => Boolean(value)))];
+  if (waIds.length === 0 && userIds.length === 0) return [];
+
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("whatsapp_inbound_submission_id")
-    .select("wa_id, submission_ids, sent_at")
-    .in("wa_id", senders)
-    .order("sent_at", { ascending: true, nullsFirst: false })
-    .limit(500)
-    .returns<SenderIdRow[]>();
+  const columns = "wamid, wa_id, user_id, submission_ids, sent_at";
+  const read = (column: "wa_id" | "user_id", values: string[]) =>
+    values.length === 0
+      ? Promise.resolve({ data: [] as SenderIdRow[], error: null })
+      : supabase
+          .from("whatsapp_inbound_submission_id")
+          .select(columns)
+          .in(column, values)
+          .order("sent_at", { ascending: true, nullsFirst: false })
+          .limit(500)
+          .returns<SenderIdRow[]>();
+  const [byPhone, byUser] = await Promise.all([read("wa_id", waIds), read("user_id", userIds)]);
+  const error = byPhone.error ?? byUser.error;
   if (error) throw new Error(`could not list submission ids: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    sentAt: row.sent_at,
-    submissionIds: row.submission_ids ?? [],
-    waId: row.wa_id,
-  }));
+
+  const rows = new Map<string, SenderIdRow>();
+  for (const row of [...(byPhone.data ?? []), ...(byUser.data ?? [])]) rows.set(row.wamid, row);
+  return [...rows.values()]
+    .sort((left, right) => {
+      if (left.sent_at === right.sent_at) return 0;
+      if (left.sent_at === null) return 1;
+      if (right.sent_at === null) return -1;
+      return left.sent_at < right.sent_at ? -1 : 1;
+    })
+    .map((row) => ({
+      sentAt: row.sent_at,
+      submissionIds: row.submission_ids ?? [],
+      userId: row.user_id,
+      waId: row.wa_id,
+    }));
 }

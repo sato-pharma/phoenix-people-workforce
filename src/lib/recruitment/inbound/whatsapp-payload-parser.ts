@@ -1,7 +1,16 @@
 // Recruitment / ATS — pure WhatsApp Cloud API webhook payload parsing (no I/O). Flattens BOTH of
 // Meta's envelopes — the live entry[].changes[].value.messages[] structure and the coexistence
 // entry[].changes[].value.history[].threads[].messages[] backfill — and matches each message to
-// its sender's self-reported profile name via the sibling contacts[] array (matched by wa_id).
+// its sender's self-reported profile name via the sibling contacts[] array (matched by wa_id, or by
+// user_id for a sender who has adopted a WhatsApp username).
+//
+// 🔴 A SENDER IS NOT ALWAYS A PHONE NUMBER. A user who adopts a WhatsApp username is identified by a
+// business-scoped user id (BSUID, "EG.1349…") — `from_user_id` on the message, `user_id` on the
+// contact — and Meta OMITS `from` and `wa_id` unless the business exchanged messages with that phone
+// in the last 30 days or holds it as a contact. Until 2026-09-15 a message with no `from` was dropped
+// here before anything was written: a Future Talents intern's closing videos and submission id left
+// no trace in production. A message now needs a message id and EITHER identity; one with neither is
+// handed back in `unattributed` (parseWhatsAppWebhookDelivery) so the webhook records it.
 //
 // A CV arrives as a `type: "document"` message OR a `type: "image"` message — applicants very
 // commonly PHOTOGRAPH their CV rather than attach a file, and the downstream vision path reads
@@ -53,7 +62,16 @@ export type ParsedWhatsAppVideo = {
 
 export type ParsedWhatsAppMessage = {
   wamid: string;
-  from: string; // digits-only, Meta convention (e.g. "201001234567")
+  /**
+   * The sender's phone number, digits-only, Meta convention (e.g. "201001234567"). NULL for a sender
+   * who uses a WhatsApp username when Meta did not share the phone — `userId` is then the only
+   * identity. Every path that answers a sender or keys a person on a phone needs this set.
+   */
+  from: string | null;
+  /** The business-scoped user id (BSUID), whenever Meta sends one — with or without a phone. */
+  userId: string | null;
+  /** The sender's WhatsApp username, as they set it. A hint for a human, never an identity. */
+  username: string | null;
   contactName: string | null;
   messageType: string;
   document: ParsedWhatsAppDocument | null;
@@ -105,21 +123,72 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+/**
+ * A message node that could not become a ParsedWhatsAppMessage, handed back so it is RECORDED rather
+ * than dropped: `no_sender` has neither a phone number nor a BSUID, `no_message_id` has no wamid to
+ * be idempotent on.
+ */
+export type UnattributedWhatsAppNode = {
+  wamid: string | null;
+  reason: "no_sender" | "no_message_id";
+  messageType: string;
+  /** Whether it carried a document, image or video — decides which intake outcome records it. */
+  hasMedia: boolean;
+  from: string | null;
+  userId: string | null;
+  username: string | null;
+  contactName: string | null;
+  sentAt: string | null;
+  historical: boolean;
+  deliveredToPhoneNumberId: string | null;
+  deliveredToDisplayNumber: string | null;
+};
+
+export type ParsedWhatsAppDelivery = {
+  messages: ParsedWhatsAppMessage[];
+  unattributed: UnattributedWhatsAppNode[];
+};
+
+type WhatsAppContact = {
+  name: string | null;
+  username: string | null;
+  waId: string | null;
+  userId: string | null;
+};
+
 type MessageContext = {
-  contactNameByWaId: Map<string, string>;
+  /** Keyed `wa:<phone>` and `user:<bsuid>`, so either identity on a message finds its contact. */
+  contacts: Map<string, WhatsAppContact>;
   deliveredToDisplayNumber: string | null;
   deliveredToPhoneNumberId: string | null;
   historical: boolean;
 };
 
-// One Meta message node -> a ParsedWhatsAppMessage, or null when it carries no usable identity.
-// Shared by the live `messages` array and the coexistence `history` backfill: the two envelopes
-// differ, the message node inside them does not.
-function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMessage | null {
+type ParsedNode =
+  | { kind: "message"; message: ParsedWhatsAppMessage }
+  | { kind: "unattributed"; node: UnattributedWhatsAppNode };
+
+// One Meta message node -> a ParsedWhatsAppMessage, or an unattributed node when it has no message id
+// or no sender at all, or null when it is not a message node. Shared by the live `messages` array and
+// the coexistence `history` backfill: the two envelopes differ, the message node inside them does not.
+function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedNode | null {
   const message = asRecord(raw);
-  const wamid = asString(message?.id);
-  const from = asString(message?.from);
-  if (!wamid || !from) return null;
+  // Not an object at all: nothing to record, not even a type.
+  if (!message) return null;
+  const wamid = asString(message.id);
+
+  // Either identity finds the contact; the contact fills whichever one the message left out. Meta's
+  // documented key on the message is `from_user_id`; `user_id` is read too, because the contact uses
+  // that spelling and a payload that copies it must not be dropped over a key name.
+  const messageFrom = asString(message.from);
+  const messageUserId = asString(message.from_user_id) ?? asString(message.user_id);
+  const contact =
+    (messageFrom ? ctx.contacts.get(`wa:${messageFrom}`) : undefined) ??
+    (messageUserId ? ctx.contacts.get(`user:${messageUserId}`) : undefined);
+  const from = messageFrom ?? contact?.waId ?? null;
+  const userId = messageUserId ?? contact?.userId ?? null;
+  const username = contact?.username ?? null;
+  const contactName = contact?.name ?? null;
 
   const messageType = asString(message?.type) ?? "unknown";
   // A document OR an image (photographed CV) both carry a CV. The image node has the same
@@ -159,6 +228,26 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
       ? new Date(timestampSeconds * 1000).toISOString()
       : null;
 
+  if (!wamid || (!from && !userId)) {
+    return {
+      kind: "unattributed",
+      node: {
+        contactName,
+        deliveredToDisplayNumber: ctx.deliveredToDisplayNumber,
+        deliveredToPhoneNumberId: ctx.deliveredToPhoneNumberId,
+        from,
+        hasMedia: Boolean(media),
+        historical: ctx.historical,
+        messageType,
+        reason: wamid ? "no_sender" : "no_message_id",
+        sentAt,
+        userId,
+        username,
+        wamid,
+      },
+    };
+  }
+
   // An interactive reply carries the id of the row the sender tapped, nested one level under the
   // reply kind. Both kinds are read: a list_reply for the menus this app sends today, a
   // button_reply so a future three-option prompt needs no parser change.
@@ -168,24 +257,36 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
     : null;
 
   return {
-    contactName: ctx.contactNameByWaId.get(from) ?? null,
-    deliveredToDisplayNumber: ctx.deliveredToDisplayNumber,
-    deliveredToPhoneNumberId: ctx.deliveredToPhoneNumberId,
-    document,
-    forwarded: asRecord(message?.context)?.forwarded === true,
-    from,
-    historical: ctx.historical,
-    interactiveReplyId,
-    messageType,
-    sentAt,
-    text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
-    video,
-    wamid,
+    kind: "message",
+    message: {
+      contactName,
+      deliveredToDisplayNumber: ctx.deliveredToDisplayNumber,
+      deliveredToPhoneNumberId: ctx.deliveredToPhoneNumberId,
+      document,
+      forwarded: asRecord(message?.context)?.forwarded === true,
+      from,
+      historical: ctx.historical,
+      interactiveReplyId,
+      messageType,
+      sentAt,
+      text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
+      userId,
+      username,
+      video,
+      wamid,
+    },
   };
 }
 
+/** The attributable messages only. A node naming nobody is left out — use parseWhatsAppWebhookDelivery to record it. */
 export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMessage[] {
+  return parseWhatsAppWebhookDelivery(payload).messages;
+}
+
+/** Every message node in a delivery: the attributable ones, and the ones that must be recorded instead. */
+export function parseWhatsAppWebhookDelivery(payload: unknown): ParsedWhatsAppDelivery {
   const messages: ParsedWhatsAppMessage[] = [];
+  const unattributed: UnattributedWhatsAppNode[] = [];
   const root = asRecord(payload);
   const entries = Array.isArray(root?.entry) ? root!.entry : [];
 
@@ -201,21 +302,31 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
       const deliveredToPhoneNumberId = asString(metadata?.phone_number_id);
       const deliveredToDisplayNumber = asString(metadata?.display_phone_number);
 
-      const contactNameByWaId = new Map<string, string>();
+      // A username sender's contact has `user_id` and no `wa_id`; one who also shares a phone has both.
+      // The handle is `profile.username` in Meta's documented shape, and a top-level `username` is read
+      // as well rather than losing it over where it was nested.
+      const contactsByKey = new Map<string, WhatsAppContact>();
       const contacts = Array.isArray(value.contacts) ? value.contacts : [];
       for (const contact of contacts) {
         const contactRecord = asRecord(contact);
-        const waId = asString(contactRecord?.wa_id);
-        const name = asString(asRecord(contactRecord?.profile)?.name);
-        if (waId && name) contactNameByWaId.set(waId, name);
+        const profile = asRecord(contactRecord?.profile);
+        const entry: WhatsAppContact = {
+          name: asString(profile?.name),
+          userId: asString(contactRecord?.user_id),
+          username: asString(profile?.username) ?? asString(contactRecord?.username),
+          waId: asString(contactRecord?.wa_id),
+        };
+        if (entry.waId) contactsByKey.set(`wa:${entry.waId}`, entry);
+        if (entry.userId) contactsByKey.set(`user:${entry.userId}`, entry);
       }
 
-      const base = { contactNameByWaId, deliveredToDisplayNumber, deliveredToPhoneNumberId };
+      const base = { contacts: contactsByKey, deliveredToDisplayNumber, deliveredToPhoneNumberId };
 
       const rawMessages = Array.isArray(value.messages) ? value.messages : [];
       for (const raw of rawMessages) {
         const parsed = parseMessageNode(raw, { ...base, historical: false });
-        if (parsed) messages.push(parsed);
+        if (parsed?.kind === "message") messages.push(parsed.message);
+        else if (parsed) unattributed.push(parsed.node);
       }
 
       // Coexistence history sync. Once the HR handset is linked, Meta replays that phone's past
@@ -235,15 +346,17 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
             // A thread replays BOTH directions. The business's own outgoing messages carry the
             // receiving number as `from`; turning those into candidates would file the company as
             // an applicant to itself, once per past conversation.
-            if (isSameWhatsAppNumber(parsed.from, deliveredToDisplayNumber)) continue;
-            messages.push(parsed);
+            const sender = parsed.kind === "message" ? parsed.message.from : parsed.node.from;
+            if (isSameWhatsAppNumber(sender, deliveredToDisplayNumber)) continue;
+            if (parsed.kind === "message") messages.push(parsed.message);
+            else unattributed.push(parsed.node);
           }
         }
       }
     }
   }
 
-  return messages;
+  return { messages, unattributed };
 }
 
 /** Splits the configured comma-separated import-sender list (env var) into entries. */
@@ -269,7 +382,9 @@ function isSameWhatsAppNumber(a: string | null, b: string | null): boolean {
  * Whether this message came from an account configured as a bulk CV import source (an old
  * WhatsApp being migrated in), rather than from an applicant messaging the business directly.
  */
-export function isWhatsAppImportSender(from: string, importSenders?: readonly string[]): boolean {
+export function isWhatsAppImportSender(from: string | null, importSenders?: readonly string[]): boolean {
+  // A sender with no phone number is never a configured import source — those are listed by number.
+  if (!from) return false;
   const sender = phoneTail(from);
   if (!sender) return false;
   return (importSenders ?? []).some((entry) => phoneTail(entry) === sender);
@@ -289,11 +404,17 @@ export function buildWhatsAppIntakeInput(
   attachment: InboundCvAttachment | null,
   options?: { importSenders?: readonly string[] },
 ): Omit<InboundCvIntakeInput, "channel"> {
-  const phone = `+${message.from}`;
+  // The webhook never enqueues a CV from a sender with no phone number — it records it instead
+  // (whatsapp-unattributed-sender). This still copes with one, so no path can print "+null" as a
+  // phone or a name: the BSUID identifies the sender, and no phone is invented.
+  const phone = message.from ? `+${message.from}` : null;
+  const senderIdentifier = phone ?? message.userId ?? `whatsapp:${message.wamid}`;
   const isImport = isWhatsAppImportSender(message.from, options?.importSenders);
   const rawMetadata: Record<string, unknown> = {
     messageType: message.messageType,
-    wa_id: message.from,
+    ...(message.from ? { wa_id: message.from } : {}),
+    ...(message.userId ? { userId: message.userId } : {}),
+    ...(message.username ? { username: message.username } : {}),
     ...(message.forwarded ? { forwarded: true } : {}),
     ...(isImport ? { bulkImport: true } : {}),
     // Marks a coexistence backfill so it is never mistaken for a fresh application. Read by the
@@ -323,17 +444,18 @@ export function buildWhatsAppIntakeInput(
       providerMessageId: message.wamid,
       rawMetadata,
       senderDisplayName: message.contactName,
-      senderIdentifier: phone,
+      senderIdentifier,
     };
   }
 
+  const fallbackLabel = phone ?? (message.username ? `@${message.username}` : senderIdentifier);
   return {
     attachment,
-    candidate: { email: null, fullName: message.contactName || `WhatsApp Applicant (${phone})`, notes: null, phone },
+    candidate: { email: null, fullName: message.contactName || `WhatsApp Applicant (${fallbackLabel})`, notes: null, phone },
     identitySource: "sender",
     providerMessageId: message.wamid,
     rawMetadata,
     senderDisplayName: message.contactName,
-    senderIdentifier: phone,
+    senderIdentifier,
   };
 }

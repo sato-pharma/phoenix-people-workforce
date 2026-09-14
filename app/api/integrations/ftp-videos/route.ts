@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     let senderIds: HandoffSenderId[] = [];
     let senderIdsAvailable = true;
     try {
-      senderIds = await listSubmissionIdsForSenders(videos.map((video) => video.waId));
+      senderIds = await listSubmissionIdsForSenders(videos);
     } catch (error) {
       senderIdsAvailable = false;
       logError("Could not list submission ids for the portal", {
