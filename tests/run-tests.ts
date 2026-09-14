@@ -1654,6 +1654,7 @@ import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowr
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
+import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5570,6 +5571,11 @@ await runTest(
 await runTest(
   "business cards: the owner's design is byte-locked, every card is trim + 3 mm bleed with its OutputIntent, the text is embedded Montserrat (no pixels added), and separate PDFs stream as a valid ZIP",
   runBusinessCardsTests,
+);
+
+await runTest(
+  "dev launcher says why the dev server stopped: the exit code in plain words, the time in Cairo, and the lowest free RAM while it ran — silent only for a clean stop or Ctrl+C",
+  runDevServerExitReasonTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
