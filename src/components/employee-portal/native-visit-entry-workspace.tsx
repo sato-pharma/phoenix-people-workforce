@@ -835,7 +835,7 @@ export function NativeVisitEntryWorkspace() {
                   ) : undefined
                 }
                 key={row.id}
-                meta={`${dayLabel(row.visitDate)} · ${row.shift} · ${row.typeLabel}`}
+                meta={`${dayLabel(row.visitDate)} · ${row.shift} · ${row.typeLabel}${row.enteredOnBehalf ? " · Entered by Super Admin" : ""}`}
                 status={
                   <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-600">
                     {row.deletedAt ? "Deleted" : gpsLabel(row.gpsStatus)}

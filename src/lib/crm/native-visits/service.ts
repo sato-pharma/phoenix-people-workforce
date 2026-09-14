@@ -7,12 +7,16 @@
  * anywhere else double-counts. tests/crm-native-visits.test.ts fails if another file references the
  * table constants.
  *
- * WHO. The rep is always the session's own person, looked up in the employee directory — never a
- * field of the request. A partner decides only a row naming HIM, and only for a rep beneath him
- * (scope runs downward only). Nothing here decides anything on anyone's behalf.
+ * WHO. The rep is the session's own person, looked up in the employee directory — never a field of the
+ * request. The one exception is the Super Admin's entry FOR a rep (crm_visit_entry `update`, the owner,
+ * 2026-09-14): he names an active medical rep in his scope, the visit is saved with no location, its
+ * created event records him as the actor, and the rep is told in-app. A partner decides only a row
+ * naming HIM, and only for a rep beneath him (scope runs downward only). Nothing here confirms a visit
+ * on anyone's behalf.
  *
  * WHEN. Only today or yesterday (Cairo), and only on an open day: before the CRM cutover a pilot day of
- * the rep's own line; from the cutover date on, every day, for every rep of every line at once.
+ * the rep's own line; from the cutover date on, every day, for every rep of every line at once. The
+ * Super Admin's entry takes any open day up to today.
  */
 
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
@@ -25,13 +29,16 @@ import {
   NATIVE_VISIT_TYPES,
   isNativeEntryDay,
   isNativeEntryOffered,
+  isNativeVisitRepTitle,
   isOnOrAfterNativeCutover,
   nativeDayLabel,
   nativePartnerDecisionRefusal,
   nativeVisitDeleteRefusal,
   nativeVisitEntryDays,
   nativeVisitManagerSinglePartnerRefusal,
+  nativeVisitOnBehalfDays,
   nativeVisitPartnerRefusal,
+  nativeVisitPilotForLine,
   nativeVisitPlannedContactIds,
   nativeVisitPlanRefusal,
   nativeVisitShiftRefusal,
@@ -66,11 +73,14 @@ import {
   CRM_NATIVE_VISITS_TABLE,
 } from "@/lib/crm/native-visits/tables";
 import type {
+  NativeVisitAdminRow,
+  NativeVisitAdminView,
   NativeVisitConfirmationRow,
   NativeVisitContactOption,
   NativeVisitEntryAvailability,
   NativeVisitFormOptions,
   NativeVisitPartnerView,
+  NativeVisitRepOption,
   NativeVisitRow,
   NativeVisitSaveResult,
 } from "@/lib/crm/native-visits/types";
@@ -78,10 +88,15 @@ import { vacationDayWorkRefusalForRep } from "@/lib/crm/native-visits/vacation-d
 import { isActiveDirectoryEmployee, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** How far back "my visits" and "my confirmations" look. The pilot is one week. */
 const HISTORY_DAYS = 14;
+/** The widest span of days the Super Admin's all-reps list reads at once, and the most rows it shows. */
+const ADMIN_RANGE_DAYS = 62;
+const ADMIN_LIST_LIMIT = 1000;
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 // ── Loading ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -202,25 +217,128 @@ async function recordEvent(visitId: string, event: string, actorHrId: string | n
   if (error) throw error;
 }
 
+function repOption(row: EmployeeDirectoryRow): NativeVisitRepOption {
+  return {
+    hrId: row.hrId,
+    name: employeeName(row),
+    detail: [row.jobTitle, row.lineName, row.areaName].filter(Boolean).join(" · "),
+  };
+}
+
+/**
+ * The rep the Super Admin names for his entry: an active medical rep inside his scope. The only place
+ * a rep comes from the request, and only behind crm_visit_entry `update`.
+ */
+async function requireRepForOnBehalfEntry(
+  access: AccessContext,
+  directory: Directory,
+  repHrId: unknown,
+): Promise<EmployeeDirectoryRow> {
+  const key = canonicalHrIdKey(String(repHrId ?? "").trim());
+  const row = key ? directory.byKey.get(key) : undefined;
+  if (!row || !isActiveDirectoryEmployee(row) || !isNativeVisitRepTitle(row.jobTitle)) {
+    throw validationError("Choose an active medical rep.");
+  }
+  if (key === canonicalHrIdKey(access.hrId)) throw forbiddenError("Forbidden: a visit is entered here for a rep, never for yourself.");
+  const scope = await getDoctorCoverageScope(access);
+  if (!isAgentInScope(scope, row.hrId)) throw forbiddenError("Forbidden: that rep is outside your scope.");
+  return row;
+}
+
+/**
+ * For each visit, the person who entered it FOR the rep, when someone did: the created event's actor
+ * differs from the rep, or the event says so. Absent for a visit the rep entered himself.
+ */
+async function loadOnBehalfActors(rows: ReadonlyArray<Record<string, unknown>>): Promise<Map<string, string>> {
+  const repByVisit = new Map(rows.map((row) => [String(row.id), canonicalHrIdKey(String(row.hr_id))]));
+  const out = new Map<string, string>();
+  for (const ids of chunk(Array.from(repByVisit.keys()))) {
+    const { data, error } = await getSupabaseAdmin()
+      .from(CRM_NATIVE_VISIT_EVENTS_TABLE)
+      .select("visit_id,actor_hr_id,detail")
+      .eq("event", "created")
+      .in("visit_id", ids);
+    if (error) {
+      if (isMissingTable(error)) return out;
+      throw error;
+    }
+    for (const event of (data ?? []) as Array<Record<string, unknown>>) {
+      const visitId = String(event.visit_id);
+      const actor = event.actor_hr_id ? String(event.actor_hr_id) : "";
+      const detail = (event.detail ?? {}) as Record<string, unknown>;
+      const actorIsSomeoneElse = actor !== "" && canonicalHrIdKey(actor) !== repByVisit.get(visitId);
+      if (detail.enteredOnBehalf === true || actorIsSomeoneElse) out.set(visitId, actor);
+    }
+  }
+  return out;
+}
+
+/** Tells the rep in-app that the Super Admin entered a visit for him. Never email. Never throws. */
+async function notifyRepOfOnBehalfVisit(input: {
+  visitId: string;
+  rep: EmployeeDirectoryRow;
+  enteredBy: string;
+  enteredByHrId: string | null;
+  visitDate: string;
+  shift: NativeVisitShift;
+  typeLabel: string;
+  doctor: string | null;
+}): Promise<void> {
+  const what = [nativeDayLabel(input.visitDate), input.shift, input.typeLabel, input.doctor].filter(Boolean).join(" · ");
+  try {
+    await createSystemNotification({
+      actionUrl: "/employee-portals/visits/log",
+      ...(input.enteredByHrId ? { actorId: input.enteredByHrId } : {}),
+      category: "general",
+      channels: ["in_app"],
+      eventType: "native_visit_entered_for_rep",
+      metadata: {
+        idempotencyKey: `crm_native_visit_entered_for_rep:${input.visitId}`,
+        visitId: input.visitId,
+      },
+      message: `${input.enteredBy} (Super Admin) entered a visit for you: ${what}. It is saved with no location and marked as entered by the Super Admin.`,
+      module: "crm",
+      priority: "normal",
+      recipientHrId: input.rep.hrId,
+      ...(input.enteredByHrId ? { subjectHrId: input.enteredByHrId } : {}),
+      title: "A visit was entered for you",
+    });
+  } catch {
+    // The visit is saved; a notice that could not be sent must not undo it.
+  }
+}
+
 // ── Form options ────────────────────────────────────────────────────────────────────────────────
 
-export async function getNativeVisitFormOptions(access: AccessContext): Promise<NativeVisitFormOptions> {
-  await assertPermission(access, "crm_visit_entry", "create");
-  const [directory, pilots, managerSingle] = await Promise.all([loadDirectory(), loadPilots(), isManagerSingleEntry(access)]);
-  const rep = requireActiveSelf(access, directory);
+export async function getNativeVisitFormOptions(
+  access: AccessContext,
+  onBehalf?: { repHrId: unknown },
+): Promise<NativeVisitFormOptions> {
+  await assertPermission(access, "crm_visit_entry", onBehalf ? "update" : "create");
+  const [directory, pilots, managerSingle] = await Promise.all([
+    loadDirectory(),
+    loadPilots(),
+    onBehalf ? Promise.resolve(false) : isManagerSingleEntry(access),
+  ]);
+  const rep = onBehalf
+    ? await requireRepForOnBehalfEntry(access, directory, onBehalf.repHrId)
+    : requireActiveSelf(access, directory);
   const gate = await loadEntryGate(rep.lineName, pilots);
   const { pilot } = gate;
   const cairoToday = cairoTodayIso();
   const entryDays = nativeVisitEntryDays(cairoToday);
-  const openDays = [entryDays.today, entryDays.yesterday].filter((day) => isNativeEntryDay(gate, day));
-  const offered = isNativeEntryOffered(gate, cairoToday);
+  const openDays = onBehalf
+    ? nativeVisitOnBehalfDays(gate, cairoToday)
+    : [entryDays.today, entryDays.yesterday].filter((day) => isNativeEntryDay(gate, day));
+  const offered = onBehalf ? openDays.length > 0 : isNativeEntryOffered(gate, cairoToday);
 
   let contacts: NativeVisitContactOption[] = [];
   let plannedContactIdsByDay: Record<string, number[]> | null = null;
   if (offered) {
     [contacts, plannedContactIdsByDay] = await Promise.all([
       loadEntryContacts(managerSingle, rep, directory),
-      managerSingle ? Promise.resolve(null) : loadPlannedContactIdsByDay(rep.hrId, openDays, gate.cutoverDate),
+      // The Super Admin's entry takes any doctor on the rep's list, planned or not.
+      managerSingle || onBehalf ? Promise.resolve(null) : loadPlannedContactIdsByDay(rep.hrId, openDays, gate.cutoverDate),
     ]);
   }
 
@@ -235,7 +353,8 @@ export async function getNativeVisitFormOptions(access: AccessContext): Promise<
     // A manager's single visit names nobody accompanying him.
     partners: offered && !managerSingle ? managementChain(rep, directory) : [],
     vacationDayRuleInForce: gate.cutoverDate != null,
-    entryAs: managerSingle ? "manager" : "rep",
+    entryAs: onBehalf ? "on_behalf" : managerSingle ? "manager" : "rep",
+    rep: onBehalf ? repOption(rep) : null,
     plannedContactIdsByDay,
   };
 }
@@ -284,13 +403,32 @@ export async function getNativeVisitEntryAvailability(access: AccessContext): Pr
 
 // ── Create ──────────────────────────────────────────────────────────────────────────────────────
 
-export async function createNativeVisit(access: AccessContext, raw: unknown): Promise<NativeVisitSaveResult> {
-  await assertPermission(access, "crm_visit_entry", "create");
+/**
+ * `onBehalf`: the Super Admin enters the visit for the named rep (crm_visit_entry `update`, the owner,
+ * 2026-09-14). Any open day up to today, any doctor on the rep's list with no plan rule, no location,
+ * the created event names him, and the rep is told in-app.
+ */
+export async function createNativeVisit(
+  access: AccessContext,
+  raw: unknown,
+  onBehalf?: { repHrId: unknown },
+): Promise<NativeVisitSaveResult> {
+  await assertPermission(access, "crm_visit_entry", onBehalf ? "update" : "create");
+  const enteredOnBehalf = onBehalf != null;
   const supabase = getSupabaseAdmin();
-  const [directory, pilots, managerSingle] = await Promise.all([loadDirectory(), loadPilots(), isManagerSingleEntry(access)]);
-  const rep = requireActiveSelf(access, directory);
+  const [directory, pilots, managerSingle] = await Promise.all([
+    loadDirectory(),
+    loadPilots(),
+    enteredOnBehalf ? Promise.resolve(false) : isManagerSingleEntry(access),
+  ]);
+  const rep = onBehalf
+    ? await requireRepForOnBehalfEntry(access, directory, onBehalf.repHrId)
+    : requireActiveSelf(access, directory);
+  // The refusals speak to the rep on his own form, and about the rep on the Super Admin's.
+  const you = enteredOnBehalf ? "The rep" : "You";
+  const your = enteredOnBehalf ? "the rep's" : "your";
 
-  const parsed = parseNativeVisitDraft(raw, { cairoToday: cairoTodayIso(), now: new Date() });
+  const parsed = parseNativeVisitDraft(raw, { cairoToday: cairoTodayIso(), now: new Date(), enteredOnBehalf });
   if (!parsed.ok) throw validationError(parsed.error);
   const draft = parsed.value;
 
@@ -330,7 +468,7 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   if (draft.contactCrmId != null) {
     const contacts = await loadEntryContacts(managerSingle, rep, directory);
     contact = contacts.find((option) => option.contactCrmId === draft.contactCrmId) ?? null;
-    const shiftRefusal = nativeVisitShiftRefusal(draft, contact?.lists ?? []);
+    const shiftRefusal = nativeVisitShiftRefusal(draft, contact?.lists ?? [], your);
     if (shiftRefusal) throw validationError(shiftRefusal);
   }
 
@@ -345,10 +483,10 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   if (sameShiftError) throw sameShiftError;
   const sameShiftTypes = ((sameShift ?? []) as Array<Record<string, unknown>>).map((row) => String(row.visit_type));
   if (sameShiftTypes.includes("annual_vacation")) {
-    throw conflictError(`You recorded annual vacation for ${draft.shift} on this day. Delete it first to enter work.`);
+    throw conflictError(`${you} recorded annual vacation for ${draft.shift} on this day. Delete it first to enter work.`);
   }
   if (draft.visitType === "annual_vacation" && sameShiftTypes.length > 0) {
-    throw conflictError(`You already entered work for ${draft.shift} on this day. Delete it first to record annual vacation.`);
+    throw conflictError(`${you} already entered work for ${draft.shift} on this day. Delete it first to record annual vacation.`);
   }
 
   // Partners: only people in the rep's own management chain, so the person confirming always has
@@ -356,7 +494,9 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
   const chain = managementChain(rep, directory);
   const partners = draft.partnerHrIds.map((partnerHrId) => {
     const option = chain.find((candidate) => canonicalHrIdKey(candidate.hrId) === canonicalHrIdKey(partnerHrId));
-    if (!option) throw validationError("A person recorded as accompanying you must be one of your managers.");
+    if (!option) {
+      throw validationError(`A person recorded as accompanying ${enteredOnBehalf ? "the rep" : "you"} must be one of ${your} managers.`);
+    }
     return option;
   });
 
@@ -374,13 +514,15 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
 
   // The plan link: a doctor visit keeps the rep's own planned item for that doctor and day, if any.
   // Only a doctor visit keeps a plan, as in the vendor plan-vs-actual (code 0 only).
-  const [seatId, partnerRoles, planItem, cutover] = await Promise.all([
+  const [seatId, partnerRoles, planItem, cutover, repAppRole] = await Promise.all([
     loadSeatId(rep.hrId),
     Promise.all(partners.map((partner) => loadAppRole(partner.hrId))),
     type.key === "regular" && draft.contactCrmId != null && !managerSingle
       ? findPlanItem(rep.hrId, draft.contactCrmId, draft.visitDate)
       : Promise.resolve(null),
     type.key === "regular" ? getCrmCutoverSetting() : Promise.resolve(null),
+    // The row carries the REP's role, never the Super Admin's who typed it in.
+    enteredOnBehalf ? loadAppRole(rep.hrId) : Promise.resolve(access.role),
   ]);
 
   // The owner, 2026-09-13: from the CRM cutover a doctor visit is a doctor on the rep's list AND
@@ -391,6 +533,8 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
     visitTypeKey: type.key,
     planItem,
     managerSingleVisit: managerSingle,
+    // The Super Admin's entry takes any doctor on the rep's list (the owner, 2026-09-14).
+    enteredOnBehalf,
   });
   if (planRefusal) throw forbiddenError(`Forbidden: ${planRefusal}`);
   const planItemId = planItem?.id ?? null;
@@ -401,7 +545,8 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
       client_submission_id: draft.clientSubmissionId,
       hr_id: rep.hrId,
       job_title: rep.jobTitle,
-      app_role: access.role,
+      // A rep with no app account yet is still a medical rep: that title is what made him eligible.
+      app_role: repAppRole ?? "Medical Rep",
       line_name: rep.lineName ?? pilot?.lineName ?? "",
       area_name: rep.areaName,
       region_name: rep.regionName,
@@ -431,7 +576,7 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
     .single();
   if (insertError) {
     if (isUniqueViolation(insertError)) {
-      throw conflictError("You have already recorded a visit to this doctor on that day.");
+      throw conflictError(`${you} already recorded a visit to this doctor on that day.`);
     }
     throw insertError;
   }
@@ -458,12 +603,26 @@ export async function createNativeVisit(access: AccessContext, raw: unknown): Pr
       partners: partners.length,
       planItemId,
       visitType: type.key,
+      ...(enteredOnBehalf ? { enteredOnBehalf: true } : {}),
     });
   } catch (error) {
     // Nothing references the visit yet, so undo it rather than leave a visit missing its partners.
     await supabase.from(CRM_NATIVE_VISIT_PARTNERS_TABLE).delete().eq("visit_id", visitId);
     await supabase.from(CRM_NATIVE_VISITS_TABLE).delete().eq("id", visitId);
     throw error;
+  }
+
+  if (enteredOnBehalf) {
+    await notifyRepOfOnBehalfVisit({
+      visitId,
+      rep,
+      enteredBy: employeeName(directory.byKey.get(canonicalHrIdKey(access.hrId) ?? "")),
+      enteredByHrId: access.hrId,
+      visitDate: draft.visitDate,
+      shift: draft.shift,
+      typeLabel: type.label,
+      doctor: contact?.name ?? draft.prospectName,
+    });
   }
 
   return { visitId, duplicate: false, gpsStatus: draft.gpsStatus };
@@ -506,7 +665,10 @@ export async function listMyNativeVisits(access: AccessContext): Promise<NativeV
     throw error;
   }
   const rows = (data ?? []) as Array<Record<string, unknown>>;
-  const partners = await loadPartnersByVisit(rows.map((row) => String(row.id)));
+  const [partners, onBehalfActors] = await Promise.all([
+    loadPartnersByVisit(rows.map((row) => String(row.id))),
+    loadOnBehalfActors(rows),
+  ]);
 
   return rows.map((row) => {
     const visitDate = String(row.visit_date);
@@ -542,8 +704,107 @@ export async function listMyNativeVisits(access: AccessContext): Promise<NativeV
           status: partner.status as NativePartnerStatus,
         }),
       ),
+      enteredOnBehalf: onBehalfActors.has(String(row.id)),
     };
   });
+}
+
+function isoDayOr(value: unknown, fallback: string): string {
+  const day = String(value ?? "").trim();
+  return ISO_DAY.test(day) ? day : fallback;
+}
+
+/**
+ * The Super Admin's page (the owner, 2026-09-14): every rep's saved visits over a span of days, and the
+ * reps he may enter a visit for. Reads the native tables only — nothing here reaches a report.
+ */
+export async function listAllNativeVisits(
+  access: AccessContext,
+  input: { from?: unknown; to?: unknown; repHrId?: unknown },
+): Promise<NativeVisitAdminView> {
+  await assertPermission(access, "crm_visit_entry", "update");
+  const to = isoDayOr(input.to, cairoTodayIso());
+  const from = isoDayOr(input.from, addDaysIso(to, -HISTORY_DAYS));
+  if (from > to) throw validationError("The first day must be on or before the last day.");
+  if (from < addDaysIso(to, -ADMIN_RANGE_DAYS)) throw validationError(`Choose at most ${ADMIN_RANGE_DAYS} days at a time.`);
+
+  const [directory, pilots, cutover, scope] = await Promise.all([
+    loadDirectory(),
+    loadPilots(),
+    getCrmCutoverSetting(),
+    getDoctorCoverageScope(access),
+  ]);
+  const reps = directory.rows
+    .filter(
+      (row) =>
+        isActiveDirectoryEmployee(row) &&
+        isNativeVisitRepTitle(row.jobTitle) &&
+        isAgentInScope(scope, row.hrId) &&
+        (cutover.cutoverDate != null || nativeVisitPilotForLine(row.lineName, pilots) != null),
+    )
+    .map(repOption)
+    .sort((left, right) => left.name.localeCompare(right.name));
+
+  const repHrId = String(input.repHrId ?? "").trim();
+  let query = getSupabaseAdmin()
+    .from(CRM_NATIVE_VISITS_TABLE)
+    .select(
+      "id,hr_id,job_title,line_name,area_name,visit_date,shift,visit_type,contact_name,prospect_name,gps_status,comment,server_received_at,deleted_at,delete_reason",
+    )
+    .gte("visit_date", from)
+    .lte("visit_date", to);
+  if (canonicalHrIdKey(repHrId)) query = query.in("hr_id", hrIdLookupKeys(repHrId));
+  const { data, error } = await query
+    .order("visit_date", { ascending: false })
+    .order("server_received_at", { ascending: false })
+    .limit(ADMIN_LIST_LIMIT + 1);
+  if (error) {
+    if (isMissingTable(error)) return { from, to, reps, rows: [], truncated: false };
+    throw error;
+  }
+  // Scope runs downward only, here as everywhere.
+  const matched = ((data ?? []) as Array<Record<string, unknown>>).filter((row) => isAgentInScope(scope, String(row.hr_id)));
+  const rows = matched.slice(0, ADMIN_LIST_LIMIT);
+  const [partners, onBehalfActors] = await Promise.all([
+    loadPartnersByVisit(rows.map((row) => String(row.id))),
+    loadOnBehalfActors(rows),
+  ]);
+
+  return {
+    from,
+    to,
+    reps,
+    truncated: matched.length > ADMIN_LIST_LIMIT,
+    rows: rows.map((row): NativeVisitAdminRow => {
+      const actor = onBehalfActors.get(String(row.id));
+      return {
+        id: String(row.id),
+        repName: employeeName(directory.byKey.get(canonicalHrIdKey(String(row.hr_id)) ?? "")),
+        // As the rep stood on the day of the visit, not as he stands today.
+        repDetail: [row.job_title, row.line_name, row.area_name].filter(Boolean).map(String).join(" · "),
+        visitDate: String(row.visit_date),
+        shift: row.shift as NativeVisitShift,
+        typeLabel: nativeVisitTypeLabel(String(row.visit_type)),
+        contactName: row.contact_name ? String(row.contact_name) : null,
+        prospectName: row.prospect_name ? String(row.prospect_name) : null,
+        gpsStatus: row.gps_status as NativeVisitGpsStatus,
+        comment: row.comment ? String(row.comment) : null,
+        serverReceivedAt: String(row.server_received_at),
+        deletedAt: row.deleted_at ? String(row.deleted_at) : null,
+        deleteReason: row.delete_reason ? String(row.delete_reason) : null,
+        partners: (partners.get(String(row.id)) ?? []).map(
+          (partner): NativeVisitPartnerView => ({
+            name: String(partner.partner_name ?? "Unknown employee"),
+            jobTitle: partner.partner_job_title ? String(partner.partner_job_title) : null,
+            isDirectManager: partner.is_direct_manager === true,
+            status: partner.status as NativePartnerStatus,
+          }),
+        ),
+        enteredBy:
+          actor === undefined ? null : employeeName(actor ? directory.byKey.get(canonicalHrIdKey(actor) ?? "") : undefined),
+      };
+    }),
+  };
 }
 
 export async function deleteMyNativeVisit(

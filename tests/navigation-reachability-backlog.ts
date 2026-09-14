@@ -275,6 +275,8 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // ── Native rep plans, the same pilot (CRM phase 4), recorded 2026-09-13 ─────────────────────────
   { route: "/employee-portals/visits/plan", roles: ["Medical Rep"], kind: "linked-from-a-component", reason: "Native rep plan pilot. Reached from the button on My Visits, shown only to a rep on the pilot line while a pilot week is still ahead. No sidebar row until cutover — every other rep would be offered a planner that tells them it is closed.", recorded: "2026-09-13" },
   { route: "/employee-portals/visits/plan-reviews", roles: ["District Manager", "National Sales Manager", "Regional Manager"], kind: "linked-from-a-component", reason: "Native rep plan pilot. Reached from the button on My Visits, shown only to a manager a rep has sent a pilot plan to. No sidebar row until cutover — outside the pilot the screen is always empty.", recorded: "2026-09-13" },
+  // ── Visits entered for a rep, the same pilot, recorded 2026-09-14 ───────────────────────────────
+  { route: "/employee-portals/visits/for-reps", roles: ["Super Admin"], kind: "linked-from-a-component", reason: "Native visit pilot, Super Admin side. Its admin twin has a CRM hub row; in the portal it is reached from the Visits for reps button on My Visits, shown only to whoever may enter a visit for a rep. No portal rail row until cutover — outside the pilot the form has no open day.", recorded: "2026-09-14" },
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

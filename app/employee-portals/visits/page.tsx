@@ -107,13 +107,16 @@ export default async function MyVisitsPage() {
   // rep has named on a visit or sent a plan to. Neither throws, so the viewer's own visits always render.
   // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
   // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
-  const [nativeEntry, nativePlans, vacationDays, doctorList] = await Promise.all([
+  // The Super Admin enters visits for reps and reads every rep's saved visits (the owner, 2026-09-14).
+  const [nativeEntry, nativePlans, vacationDays, doctorList, entersForReps] = await Promise.all([
     getNativeVisitEntryAvailability(access),
     getNativePlanAvailability(access),
     getVacationDayRequestAvailability(access),
     getContactListAvailability(access),
+    canAccess(access, "crm_visit_entry", "update"),
   ]);
   const showNativeLinks =
+    entersForReps ||
     nativeEntry.canLog ||
     nativeEntry.canConfirm ||
     nativePlans.canPlan ||
@@ -133,6 +136,11 @@ export default async function MyVisitsPage() {
     >
       {showNativeLinks ? (
         <div className="mb-4 flex flex-wrap gap-2">
+          {entersForReps ? (
+            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/for-reps">
+              Visits for reps
+            </Link>
+          ) : null}
           {nativeEntry.canLog ? (
             <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/log">
               {nativeEntry.pilotOnly ? "Log a visit (pilot)" : "Log a visit"}

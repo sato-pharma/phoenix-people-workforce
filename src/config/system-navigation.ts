@@ -4027,6 +4027,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
+    // The owner, 2026-09-14: the Super Admin enters a visit for a rep — any open day, any doctor on the
+    // rep's list, no location, marked as entered by him, the rep told in-app — and reads every rep's
+    // saved visits. The enforcing gate is crm_visit_entry `update` inside the service.
+    href: "/admin/visit-entry",
+    icon: ClipboardList,
+    label: "Visits for Reps",
+    description: "Enter a visit for a rep on any open day, saved with no location and marked as entered by you, and see every rep's saved visits.",
+    permissions: [{ resource: "crm_visit_entry", action: "update" }],
+    roles: ["Super Admin"],
+  },
+  {
     // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
     // 2026-09-03 — first to the Regional and District Managers who supervise the reps it scores,
     // then to the marketing, field-support and national sales seats — and of the nine roles now
@@ -4582,6 +4593,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/kpis",
           "/admin/plan-verification",
           "/admin/doctor-list-changes",
+          "/admin/visit-entry",
         ],
       },
       {

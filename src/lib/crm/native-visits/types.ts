@@ -48,9 +48,12 @@ export type NativeVisitFormOptions = {
   vacationDayRuleInForce?: boolean;
   /**
    * "manager": a district manager's rare single visit without his rep — his reps' doctors, nobody
-   * accompanying, no plan rule. "rep": everyone else.
+   * accompanying, no plan rule. "on_behalf": the Super Admin enters it for the chosen rep — any open
+   * day up to today, any doctor on the rep's list, no location. "rep": everyone else.
    */
-  entryAs: "rep" | "manager";
+  entryAs: "rep" | "manager" | "on_behalf";
+  /** The rep the Super Admin is entering for; null on a rep's or a manager's own form. */
+  rep?: NativeVisitRepOption | null;
   /**
    * Per open day on or after the cutover date, the doctors planned that day in a verified week plan —
    * the only doctors a regular visit saves for. Null while the plan rule reaches none of the open days.
@@ -81,6 +84,45 @@ export type NativeVisitRow = {
   deleteReason: string | null;
   canDelete: boolean;
   partners: NativeVisitPartnerView[];
+  /** The Super Admin entered this visit for the rep. */
+  enteredOnBehalf: boolean;
+};
+
+export type NativeVisitRepOption = {
+  hrId: string;
+  name: string;
+  /** Job title, line and area, for telling two reps of the same name apart. */
+  detail: string;
+};
+
+/** One saved visit, as the Super Admin's all-reps list shows it. */
+export type NativeVisitAdminRow = {
+  id: string;
+  repName: string;
+  repDetail: string;
+  visitDate: string;
+  shift: NativeVisitShift;
+  typeLabel: string;
+  contactName: string | null;
+  prospectName: string | null;
+  gpsStatus: NativeVisitGpsStatus;
+  comment: string | null;
+  serverReceivedAt: string;
+  deletedAt: string | null;
+  deleteReason: string | null;
+  partners: NativeVisitPartnerView[];
+  /** Who entered it for the rep, by name; null when the rep entered it himself. */
+  enteredBy: string | null;
+};
+
+export type NativeVisitAdminView = {
+  from: string;
+  to: string;
+  /** The reps the Super Admin may enter for: active medical reps on a line with a pilot or a cutover date. */
+  reps: NativeVisitRepOption[];
+  rows: NativeVisitAdminRow[];
+  /** More visits matched than the list shows; narrow the days or choose a rep. */
+  truncated: boolean;
 };
 
 export type NativeVisitConfirmationRow = {

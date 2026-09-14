@@ -102,6 +102,8 @@ const TWIN_RULES: readonly TwinRule[] = [
   // Doctor lists (CRM phase 7): the SFE Manager and administrator edit on the admin page; reps ask and
   // managers answer on the portal page.
   { from: "/admin/doctor-list-changes", to: "/employee-portals/visits/doctor-list" },
+  // The Super Admin's visit entry for reps and every rep's saved visits (the owner, 2026-09-14).
+  { from: "/admin/visit-entry", to: "/employee-portals/visits/for-reps" },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },

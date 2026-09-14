@@ -14,9 +14,11 @@ import {
   isNativeEntryDay,
   isNativeEntryOffered,
   isNativeVisitPilotDay,
+  isNativeVisitRepTitle,
   isWithinNativeVisitEntryWindow,
   nativePartnerDecisionRefusal,
   nativeVisitDeleteRefusal,
+  nativeVisitOnBehalfDays,
   nativeVisitPartnerRefusal,
   nativeVisitPilotForLine,
   nativeVisitShiftRefusal,
@@ -38,7 +40,9 @@ import {
 //   · AM/PM IS THE CONTACT'S LIST (owner decision 2), and a doctor off the rep's list is refused.
 //   · THE PILOT IS A ROW: its line and its dates, both ends inclusive.
 //   · ONLY THE NAMED PARTNER DECIDES, only once, only for a rep beneath him; nothing auto-confirms.
-//   · THE REP IS THE SESSION — no route or rule reads a rep id from the request body.
+//   · THE REP IS THE SESSION — no route or rule reads a rep id from the request body. The one exception
+//     is the Super Admin's entry FOR a rep (update): an active medical rep in his scope, no location,
+//     marked as his, the rep told in-app only.
 //   · NOTHING ELSE READS THE NATIVE TABLES before cutover, or a visit double-counts against the
 //     iReports360 feed the pilot line keeps entering.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,8 +312,73 @@ export function runCrmNativeVisitsTests() {
   assert.match(planService, /if \(mayCreate && !mayApprove\) \{/, "My Visits offers a district manager no weekly plan");
   assert.match(read("app/employee-portals/visits/plan/page.tsx"), /canAccess\(access, "crm_visit_entry", "approve"\)/, "the weekly plan page turns a district manager away");
   assert.ok(!grants("Super Admin").includes("create") && !grants("Super Admin").includes("approve"),
-    "the Super Admin neither enters nor confirms a visit on anyone's behalf");
+    "the Super Admin is nobody's rep and confirms no visit — his entry for a rep is update, below");
   assert.deepEqual(grants("Employee"), [], "an ordinary employee has no visit entry");
+
+  // ── 9c. The Super Admin enters a visit FOR a rep (the owner, 2026-09-14) ──────────────────────
+  assert.deepEqual(grants("Super Admin"), ["read", "update"], "the Super Admin reads every rep's visits and enters one for a rep");
+  const onBehalfContext = { cairoToday: "2026-09-20", enteredOnBehalf: true, now: new Date("2026-09-20T08:00:00.000Z") };
+  const onBehalfBody = (visitDate: string) =>
+    draftBody({ accuracyMeters: 12, deviceRecordedAt: "2026-09-20T08:00:00.000Z", gpsAddress: "Cairo", latitude: 30.05, longitude: 31.24, visitDate });
+  const lastWeek = parseNativeVisitDraft(onBehalfBody("2026-09-13"), onBehalfContext);
+  assert.ok(lastWeek.ok, "his entry takes a day before yesterday — whether that day is open is the gate's question");
+  assert.ok(
+    lastWeek.ok && lastWeek.value.gpsStatus === "missing" && lastWeek.value.latitude === null && lastWeek.value.gpsAddress === null,
+    "his entry never carries a location, whatever the body sends, so it never reads as a check-in",
+  );
+  assert.equal(parseNativeVisitDraft(onBehalfBody("2026-09-21"), onBehalfContext).ok, false, "never a day still to come");
+  assert.equal(
+    parseNativeVisitDraft(onBehalfBody("2026-09-13"), { ...onBehalfContext, enteredOnBehalf: false }).ok,
+    false,
+    "a rep's own form keeps today or yesterday",
+  );
+  assert.equal(
+    nativeVisitPlanRefusal({ ruleActive: true, visitTypeKey: "regular", planItem: null, enteredOnBehalf: true }),
+    null,
+    "his entry takes any doctor on the rep's list, planned or not",
+  );
+  assert.deepEqual(
+    nativeVisitOnBehalfDays(pilotGate, "2026-09-22"),
+    ["2026-09-22", "2026-09-21", "2026-09-20", "2026-09-19"],
+    "any open pilot day up to today, newest first",
+  );
+  assert.deepEqual(nativeVisitOnBehalfDays(pilotGate, "2026-09-13"), [], "before the pilot there is no open day to enter");
+  assert.ok(isNativeVisitRepTitle("Medical Representative") && !isNativeVisitRepTitle("District Sales Manager"), "only a rep has visits entered for him");
+  assert.equal(nativeVisitShiftRefusal({ contactCrmId: 5, shift: "AM" }, [], "the rep's"), "That doctor is not on the rep's AM or PM list.");
+
+  const onBehalfService = read("src/lib/crm/native-visits/service.ts");
+  const requireRep = onBehalfService.slice(
+    onBehalfService.indexOf("async function requireRepForOnBehalfEntry"),
+    onBehalfService.indexOf("async function loadOnBehalfActors"),
+  );
+  assert.match(requireRep, /isNativeVisitRepTitle\(row\.jobTitle\)/, "the rep named must be an active medical rep");
+  assert.match(requireRep, /if \(!isAgentInScope\(scope, row\.hrId\)\) throw forbiddenError\(/, "and inside the caller's scope");
+  assert.match(
+    onBehalfService,
+    /await assertPermission\(access, "crm_visit_entry", onBehalf \? "update" : "create"\);\s*const enteredOnBehalf = onBehalf != null;/,
+    "entering for a rep needs update; a rep's own entry needs create",
+  );
+  assert.match(onBehalfService, /\.\.\.\(enteredOnBehalf \? \{ enteredOnBehalf: true \} : \{\}\)/, "the created event marks the entry as his");
+  assert.match(onBehalfService, /enteredOnBehalf \? loadAppRole\(rep\.hrId\) : Promise\.resolve\(access\.role\)/, "the row carries the rep's role, never the Super Admin's");
+  const notify = onBehalfService.slice(
+    onBehalfService.indexOf("async function notifyRepOfOnBehalfVisit"),
+    onBehalfService.indexOf("// ── Form options"),
+  );
+  assert.match(notify, /channels: \["in_app"\]/, "the rep is told in-app");
+  assert.doesNotMatch(notify, /"email"|email:/, "and never by email");
+  const onBehalfRoute = read("app/api/crm/native-visits/on-behalf/route.ts");
+  assert.equal((onBehalfRoute.match(/await assertPermission\(access, "crm_visit_entry", "update"\);/g) ?? []).length, 2, "both on-behalf methods check update");
+  assert.ok(
+    onBehalfRoute.indexOf("assertSameOriginMutation(request)") > 0 &&
+      onBehalfRoute.indexOf("assertSameOriginMutation(request)") < onBehalfRoute.indexOf("createNativeVisit("),
+    "the save checks the origin before it saves",
+  );
+  assert.match(read("app/api/crm/native-visits/all/route.ts"), /await assertPermission\(access, "crm_visit_entry", "update"\);/);
+  for (const page of ["app/(admin)/admin/visit-entry/page.tsx", "app/employee-portals/visits/for-reps/page.tsx"]) {
+    assert.match(read(page), /if \(!\(await canAccess\(access, "crm_visit_entry", "update"\)\)\) \{?\s*redirect\(/, `${page} turns away anyone without update`);
+  }
+  assert.match(read("src/config/system-navigation.ts"), /href: "\/admin\/visit-entry"/);
+  assert.match(read("app/employee-portals/visits/page.tsx"), /entersForReps \? \(\s*<Link[^>]*href="\/employee-portals\/visits\/for-reps"/);
 
   // ── 10. The service and the routes ───────────────────────────────────────────────────────────
   const service = read("src/lib/crm/native-visits/service.ts");
