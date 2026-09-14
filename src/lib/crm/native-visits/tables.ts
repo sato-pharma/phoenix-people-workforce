@@ -8,6 +8,10 @@
  */
 
 export const CRM_NATIVE_VISIT_PILOTS_TABLE = "crm_native_visit_pilots";
+
+// Phoenix CRM (the owner, 2026-09-14): the reps the Super Admin picks for the pilot, from any line.
+export const CRM_NATIVE_PILOT_REPS_TABLE = "crm_native_pilot_reps";
+export const CRM_NATIVE_PILOT_REP_EVENTS_TABLE = "crm_native_pilot_rep_events";
 export const CRM_NATIVE_VISITS_TABLE = "crm_native_visits";
 export const CRM_NATIVE_VISIT_PARTNERS_TABLE = "crm_native_visit_partners";
 export const CRM_NATIVE_VISIT_EVENTS_TABLE = "crm_native_visit_events";

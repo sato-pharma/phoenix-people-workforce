@@ -8,8 +8,7 @@ import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/aut
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getContactListAvailability } from "@/lib/crm/contact-lists/service";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
-import { getNativePlanAvailability } from "@/lib/crm/native-visits/plans-service";
-import { getNativeVisitEntryAvailability } from "@/lib/crm/native-visits/service";
+import { getPhoenixCrmAccess } from "@/lib/crm/native-visits/phoenix-crm";
 import { getVacationDayRequestAvailability } from "@/lib/crm/native-visits/vacation-days";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
@@ -108,21 +107,14 @@ export default async function MyVisitsPage() {
   // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
   // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
   // The Super Admin enters visits for reps and reads every rep's saved visits (the owner, 2026-09-14).
-  const [nativeEntry, nativePlans, vacationDays, doctorList, entersForReps] = await Promise.all([
-    getNativeVisitEntryAvailability(access),
-    getNativePlanAvailability(access),
+  // Phoenix CRM (the owner, 2026-09-14) now holds visit entry, weekly plans, confirmations, plan reviews
+  // and entry for reps in its own space: one button, for the Super Admin, the pilot reps and their managers.
+  const [phoenixCrm, vacationDays, doctorList] = await Promise.all([
+    getPhoenixCrmAccess(access),
     getVacationDayRequestAvailability(access),
     getContactListAvailability(access),
-    canAccess(access, "crm_visit_entry", "update"),
   ]);
-  const showNativeLinks =
-    entersForReps ||
-    nativeEntry.canLog ||
-    nativeEntry.canConfirm ||
-    nativePlans.canPlan ||
-    nativePlans.canReview ||
-    vacationDays.show ||
-    doctorList.show;
+  const showNativeLinks = phoenixCrm.seat != null || vacationDays.show || doctorList.show;
 
   return (
     <EmployeePortalPageShell
@@ -136,29 +128,9 @@ export default async function MyVisitsPage() {
     >
       {showNativeLinks ? (
         <div className="mb-4 flex flex-wrap gap-2">
-          {entersForReps ? (
-            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/for-reps">
-              Visits for reps
-            </Link>
-          ) : null}
-          {nativeEntry.canLog ? (
-            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/visits/log">
-              {nativeEntry.pilotOnly ? "Log a visit (pilot)" : "Log a visit"}
-            </Link>
-          ) : null}
-          {nativePlans.canPlan ? (
-            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan">
-              {nativePlans.pilotOnly ? "My weekly plan (pilot)" : "My weekly plan"}
-            </Link>
-          ) : null}
-          {nativeEntry.canConfirm ? (
-            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/confirmations">
-              {`Visits to confirm (${nativeEntry.pendingConfirmations})`}
-            </Link>
-          ) : null}
-          {nativePlans.canReview ? (
-            <Link className={buttonVariants({ variant: "outline" })} href="/employee-portals/visits/plan-reviews">
-              {nativePlans.pendingReviews > 0 ? `Plans to verify (${nativePlans.pendingReviews})` : "Plan reviews"}
+          {phoenixCrm.seat ? (
+            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/phoenix-crm">
+              {phoenixCrm.waiting > 0 ? `Phoenix CRM (${phoenixCrm.waiting} waiting)` : "Phoenix CRM"}
             </Link>
           ) : null}
           {vacationDays.show ? (

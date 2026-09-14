@@ -64,7 +64,7 @@ import {
   isUniqueViolation,
   loadDirectory,
   loadEntryGate,
-  loadPilots,
+  loadPilotRoster,
   loadRepContacts,
   managementChain,
   requireActiveSelf,
@@ -339,9 +339,9 @@ async function refuseManagerPlanner(access: AccessContext): Promise<void> {
 export async function getMyNativePlanner(access: AccessContext): Promise<NativePlannerView> {
   await assertPermission(access, "crm_visit_entry", "create");
   await refuseManagerPlanner(access);
-  const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+  const [directory, roster] = await Promise.all([loadDirectory(), loadPilotRoster()]);
   const rep = requireActiveSelf(access, directory);
-  const gate = await loadEntryGate(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep, roster);
   const { pilot } = gate;
   const cairoToday = cairoTodayIso();
   const manager = managementChain(rep, directory)[0] ?? null;
@@ -476,16 +476,16 @@ export async function saveMyNativePlan(
   const weekStart = String(input.weekStart ?? "").trim();
   const revision = Number(input.revision ?? 0);
 
-  const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+  const [directory, roster] = await Promise.all([loadDirectory(), loadPilotRoster()]);
   const rep = requireActiveSelf(access, directory);
-  const gate = await loadEntryGate(rep.lineName, pilots);
+  const gate = await loadEntryGate(rep, roster);
   const { pilot } = gate;
   const cairoToday = cairoTodayIso();
   if (!isNativePlanWeekStart(weekStart) || !nativePlanOpenWeeks(gate, cairoToday).includes(weekStart)) {
     throw forbiddenError(
       gate.cutoverDate
         ? "Forbidden: that week has no day left that can be planned in Phoenix."
-        : "Forbidden: planning in Phoenix is open only to the pilot line, for weeks with pilot days still ahead.",
+        : "Forbidden: planning in Phoenix is open only to the pilot reps, for weeks with pilot days still ahead.",
     );
   }
   const editableDays = nativePlanEditableDays(gate, weekStart, cairoToday);
@@ -731,11 +731,11 @@ export async function getNativePlanAvailability(access: AccessContext): Promise<
     let pilotOnly = true;
     // A district manager holds create only for his rare single visits: he files no weekly plan.
     if (mayCreate && !mayApprove) {
-      const [directory, pilots] = await Promise.all([loadDirectory(), loadPilots()]);
+      const [directory, roster] = await Promise.all([loadDirectory(), loadPilotRoster()]);
       const key = canonicalHrIdKey(access.hrId);
       const rep = key ? directory.byKey.get(key) : undefined;
       if (rep && isActiveDirectoryEmployee(rep)) {
-        const gate = await loadEntryGate(rep.lineName, pilots);
+        const gate = await loadEntryGate(rep, roster);
         canPlan = nativePlanOpenWeeks(gate, cairoToday).length > 0;
         // Once a cutover date is set, planning here is for everyone, not a pilot.
         pilotOnly = gate.cutoverDate == null;

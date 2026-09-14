@@ -354,8 +354,11 @@ export function runCrmNativePlansTests() {
     "only src/lib/crm/native-visits/ may name the native plan tables until cutover — the pilot line still plans in iReports360",
   );
 
-  // ── 14. Reachability: the pages are linked from My Visits ───────────────────────────────────
-  const myVisits = read("app/employee-portals/visits/page.tsx");
-  assert.match(myVisits, /href="\/employee-portals\/visits\/plan"/);
-  assert.match(myVisits, /href="\/employee-portals\/visits\/plan-reviews"/);
+  // ── 14. Reachability: planning lives in Phoenix CRM, and the old pages land in it ─────────────
+  const space = read("src/components/employee-portal/phoenix-crm-space.tsx");
+  assert.match(space, /<NativePlanWorkspace \/>/);
+  assert.match(space, /<NativePlanReviewsWorkspace \/>/);
+  for (const page of ["plan", "plan-reviews"]) {
+    assert.match(read(`app/employee-portals/visits/${page}/page.tsx`), /redirect\("\/employee-portals\/phoenix-crm\?tab=planning"\)/);
+  }
 }

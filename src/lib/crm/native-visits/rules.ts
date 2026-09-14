@@ -119,6 +119,30 @@ export function nativeVisitPilotForLine(
   return pilots.find((pilot) => pilot.isActive && nativeVisitLineKey(pilot.lineName) === key) ?? null;
 }
 
+/** A rep the owner placed on the Phoenix CRM pilot roster, and the first day they enter from. */
+export type NativePilotRosterEntry = {
+  hrId: string;
+  startsOn: string;
+};
+
+/** The roster has no end date: a rep stays in the pilot until the owner removes them. */
+export const NATIVE_PILOT_ROSTER_OPEN_END = "9999-12-31";
+
+/**
+ * Phoenix CRM's pilot for ONE rep (the owner, 2026-09-14: "Reps you pick", from any line, no end until
+ * the owner says): open when the rep is on the roster, null otherwise. A whole line no longer opens it.
+ */
+export function nativeVisitPilotForRep(
+  rep: { hrId: string | null | undefined; lineName: string | null | undefined },
+  roster: readonly NativePilotRosterEntry[],
+): NativeVisitPilot | null {
+  const key = canonicalHrIdKey(rep.hrId);
+  if (!key) return null;
+  const entry = roster.find((row) => canonicalHrIdKey(row.hrId) === key);
+  if (!entry || !ISO_DAY_PATTERN.test(entry.startsOn)) return null;
+  return { lineName: String(rep.lineName ?? ""), startsOn: entry.startsOn, endsOn: NATIVE_PILOT_ROSTER_OPEN_END, isActive: true };
+}
+
 /** True when `visitDate` falls inside the pilot, both ends inclusive. */
 export function isNativeVisitPilotDay(pilot: NativeVisitPilot | null, visitDate: string): boolean {
   if (!pilot || !pilot.isActive || !ISO_DAY_PATTERN.test(visitDate)) return false;
