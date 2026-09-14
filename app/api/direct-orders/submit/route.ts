@@ -24,6 +24,8 @@ export async function POST(request: Request) {
       collectionDate?: string | null;
       /** The campaign the requester says this order came from. Validated in the domain service. */
       marketingRequestId?: string | null;
+      /** The distributor invoice read on the form, kept with the order. Parsed in the domain service. */
+      invoiceDataUrl?: unknown;
       /**
        * EXTRA lines for a family basket. Passed through UNVALIDATED on purpose: every rule about
        * what may share a request — same family, an allow-listed family, no product twice, the
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
       bonusOverrideReason: body.bonusOverrideReason ?? null,
       collectionDate: body.collectionDate ?? null,
       marketingRequestId: body.marketingRequestId ?? null,
+      invoiceDataUrl: typeof body.invoiceDataUrl === "string" ? body.invoiceDataUrl : null,
       items: (body.items ?? []).map((item) => ({
         productCode: String(item.productCode ?? "").trim(),
         qty: Number(item.qty ?? 0),

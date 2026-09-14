@@ -3,6 +3,7 @@ import type { VenueType } from "@/lib/venues/venue-type";
 import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
+import type { DirectOrderInvoiceContentType, DirectOrderInvoiceSlotCount } from "@/lib/direct-orders/invoice-evidence";
 // Type-only, and hold-decision.ts imports type-only from here — a types-only cycle is erased at
 // compile time and has no runtime edge, which is why this does not need a third module.
 import type { DirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
@@ -462,6 +463,24 @@ export type DirectOrderRequest = {
   reversedByRequestId: string | null;
   createdAt: string;
   decidedAt: string | null;
+  /**
+   * The distributor invoice the requester used for this order (owner, 2026-09-14). Optional so every
+   * hand-built request (tests, fixtures) stays valid; null when the order carries none — most do not.
+   * A storage path, never a link: readers sign it through loadDirectOrderRequestInvoice.
+   */
+  invoiceStoragePath?: string | null;
+  invoiceContentType?: DirectOrderInvoiceContentType | null;
+  invoiceUploadedAt?: string | null;
+};
+
+/** The order's invoice as an approver sees it. */
+export type DirectOrderRequestInvoice = {
+  /** Short-lived signed link. Null when it could not be signed — said out loud, never left blank. */
+  url: string | null;
+  contentType: DirectOrderInvoiceContentType;
+  uploadedAt: string | null;
+  /** The requester's invoice slots — only while the pharmacy is still waiting to be confirmed. */
+  requesterSlots: DirectOrderInvoiceSlotCount | null;
 };
 
 export const DIRECT_ORDER_WORKFLOW_MODULE_KEY = "direct_orders" as const;
@@ -825,6 +844,16 @@ export type DirectOrderApprovalDetail = {
    * (owner rule, 2026-08-08): they see their own photo, not the adjudicator-facing AI reading.
    */
   pharmacyEvidence: DirectOrderValidationRow | null;
+  /**
+   * The distributor invoice saved with THIS order (owner, 2026-09-14: the SFE Manager must clearly see
+   * the invoice that was used). Null when the order carries none. Optional so hand-built details stay
+   * valid.
+   */
+  orderInvoice?: DirectOrderRequestInvoice | null;
+  /** The pharmacy is new and has a distributor account, so an invoice is what the SFE Manager decides on. */
+  invoiceExpected?: boolean;
+  /** This viewer may attach or replace the invoice — the requester, while it can still inform a decision. */
+  canAttachInvoice?: boolean;
   /**
    * Only populated when the pharmacy has NO distributor code on file: candidates where the
    * pharmacy's own stored NAME happens to be a real distributor customer code (the "829575 \

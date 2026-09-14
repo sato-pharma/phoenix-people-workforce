@@ -15,6 +15,7 @@ import { CrmContactPicker } from "@/components/direct-orders/crm-contact-picker"
 import type { VenueContactOption } from "@/lib/direct-orders/venue-contact-options";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
+import { prepareDirectOrderInvoiceFile, type PreparedDirectOrderInvoice } from "@/components/direct-orders/invoice-file";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
 
 import {
@@ -344,6 +345,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
    * list. The id was right there in the response.
    */
   const [ok, setOk] = useState<{ message: string; orderId: string | null } | null>(null);
+  // The invoice photo read above, sent WITH the order so the approvers see the invoice that was used
+  // (owner, 2026-09-14). The rep can drop it; nothing requires one.
+  const [invoicePhoto, setInvoicePhoto] = useState<PreparedDirectOrderInvoice | null>(null);
+  const [invoicePhotoError, setInvoicePhotoError] = useState<string | null>(null);
 
   const product = useMemo(() => products.find((p) => p.productCode === productCode) ?? null, [products, productCode]);
 
@@ -601,6 +606,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           bonusOverrideReason: overCap ? overrideReason.trim() || null : null,
           collectionDate,
           marketingRequestId: selectedCampaignId || null,
+          invoiceDataUrl: invoicePhoto?.dataUrl ?? null,
           // Only the lines still shown. Every rule about what may share a request is re-checked
           // server-side; this is the convenience, never the gate.
           items: activeExtras.map(([code, line]) => ({
@@ -615,13 +621,16 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       const data = (await res.json().catch(() => ({}))) as {
         success?: boolean;
         message?: string;
-        result?: { id?: string };
+        result?: { id?: string; invoiceNote?: string | null };
       };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the direct order.");
+      const invoiceNote = typeof data.result?.invoiceNote === "string" ? ` ${data.result.invoiceNote}` : "";
       setOk({
-        message: overCap
-          ? "Direct order submitted — flagged as over cap for your approvers, and on its way to the first of them."
-          : "Direct order submitted — it is now with your first approver.",
+        message: `${
+          overCap
+            ? "Direct order submitted — flagged as over cap for your approvers, and on its way to the first of them."
+            : "Direct order submitted — it is now with your first approver."
+        }${invoiceNote}`,
         // Optional on purpose: a submit that succeeded but whose response shape surprises us still
         // shows the confirmation. Losing the link is a smaller failure than claiming the order did
         // not go through when it did.
@@ -634,6 +643,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       setDiscount("");
       setOverrideReason("");
       setCollectionDate("");
+      setInvoicePhoto(null);
+      setInvoicePhotoError(null);
       router.refresh();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Something went wrong.");
@@ -669,7 +680,34 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 setBonus(payload.bonus);
               }
             }}
+            onInvoicePhoto={(file) => {
+              setInvoicePhotoError(null);
+              prepareDirectOrderInvoiceFile(file)
+                .then(setInvoicePhoto)
+                .catch((prepareError: unknown) => {
+                  setInvoicePhoto(null);
+                  setInvoicePhotoError(
+                    prepareError instanceof Error ? prepareError.message : "That invoice photo could not be kept with the order.",
+                  );
+                });
+            }}
           />
+          {invoicePhoto ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+              <p className="text-phx-sm font-semibold text-emerald-900">
+                This invoice is sent with the order, so your approvers see the invoice you used.
+              </p>
+              <button
+                type="button"
+                onClick={() => setInvoicePhoto(null)}
+                className="text-phx-xs font-bold text-orange-600"
+              >
+                Don&apos;t attach it
+              </button>
+            </div>
+          ) : invoicePhotoError ? (
+            <p className="text-phx-sm font-semibold text-rose-700">{invoicePhotoError}</p>
+          ) : null}
           <div>
             <label className={labelClass()}>Product</label>
             <select className={inputClass()} value={productCode} onChange={(e) => setProductCode(e.target.value)}>
