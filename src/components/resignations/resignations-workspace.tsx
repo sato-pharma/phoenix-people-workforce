@@ -50,6 +50,7 @@ import {
   selectOverdueResignations,
   type ResignationTabId,
 } from "@/lib/resignations/view-model";
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { downloadXlsxExport } from "@/lib/export/download-xlsx-client";
 import type {
   CreateResignationInput,
@@ -345,22 +346,41 @@ export function ResignationsWorkspace({
     }
   }
 
+  /**
+   * Busy while the rows upload, so a slow connection cannot stack one export per click (12 failed
+   * together on 2026-09-14), and caught, so a failure says so instead of doing nothing. A caught error
+   * never reaches the global unhandledrejection net, so it is reported to the error monitor here.
+   */
   async function exportCurrentTab() {
-    if (tab === "candidates") {
+    if (busy === "export-tab") return;
+    setBusy("export-tab");
+    setError(null);
+    const rows =
+      tab === "candidates"
+        ? buildPayrollCandidateExportRows(candidateRows)
+        : buildResignationExportRows(tab === "action" ? open : history);
+    try {
+      if (tab === "candidates") {
+        await downloadXlsxExport({
+          columns: payrollCandidateExportColumns,
+          rows,
+          sheetName: "Payroll Candidates",
+          title: "Resignations — Payroll Candidates",
+        });
+        return;
+      }
       await downloadXlsxExport({
-        columns: payrollCandidateExportColumns,
-        rows: buildPayrollCandidateExportRows(candidateRows),
-        sheetName: "Payroll Candidates",
-        title: "Resignations — Payroll Candidates",
+        columns: resignationExportColumns,
+        rows,
+        sheetName: tab === "action" ? "Needs Action" : "History",
+        title: `Resignations — ${tab === "action" ? "Needs Action" : "History"}`,
       });
-      return;
+    } catch (caught) {
+      setError("Unable to export this tab. Check your connection and try again.");
+      reportClientError({ context: `feature=resignations-tab-export tab=${tab} rows=${rows.length}`, error: caught });
+    } finally {
+      setBusy(null);
     }
-    await downloadXlsxExport({
-      columns: resignationExportColumns,
-      rows: buildResignationExportRows(tab === "action" ? open : history),
-      sheetName: tab === "action" ? "Needs Action" : "History",
-      title: `Resignations — ${tab === "action" ? "Needs Action" : "History"}`,
-    });
   }
 
   /**
@@ -450,8 +470,8 @@ export function ResignationsWorkspace({
       <RgPanel
         action={
           <span className="inline-flex flex-wrap justify-end gap-1">
-            <RgButton kind="onDark" onClick={() => void exportCurrentTab()}>
-              Export
+            <RgButton disabled={busy === "export-tab"} kind="onDark" onClick={() => void exportCurrentTab()}>
+              {busy === "export-tab" ? "Exporting…" : "Export"}
             </RgButton>
             {canExportHistory ? (
               <RgButton

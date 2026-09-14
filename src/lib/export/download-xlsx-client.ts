@@ -19,7 +19,9 @@ export async function downloadXlsxExport(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!response.ok) throw new Error("Export failed");
+  // The status travels in the message: a bare "Export failed" left 12 production rows on
+  // 2026-09-14 with no way to tell a rejected request from a server fault.
+  if (!response.ok) throw new Error(`Export failed (HTTP ${response.status})`);
 
   const blob = await response.blob();
   const disposition = response.headers.get("Content-Disposition") ?? "";
