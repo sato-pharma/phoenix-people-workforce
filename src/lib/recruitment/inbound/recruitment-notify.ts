@@ -374,6 +374,8 @@ export async function notifyInboundWhatsAppUnreadableCv(input: {
   cause: "not_recognised" | "too_large";
   wamid: string;
   asked: boolean;
+  /** A WhatsApp username sender who shared no phone number: never answered, by owner decision. */
+  noPhoneNumber?: boolean;
 }): Promise<void> {
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
@@ -382,7 +384,9 @@ export async function notifyInboundWhatsAppUnreadableCv(input: {
   const named = String(input.filename ?? "").trim();
   const trailer = input.asked
     ? "Phoenix has asked them to resend it as a PDF or Word file."
-    : "Phoenix did NOT reply — the automatic reply is switched off.";
+    : input.noPhoneNumber
+      ? "Phoenix did NOT reply — they use a WhatsApp username and shared no phone number, and such a sender is never messaged."
+      : "Phoenix did NOT reply — the automatic reply is switched off.";
 
   await createSystemNotificationForRecipients(
     {

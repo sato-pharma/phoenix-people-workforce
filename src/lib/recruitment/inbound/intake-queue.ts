@@ -19,7 +19,12 @@ export type InboundQueueStatus = "queued" | "processing" | "done" | "dead";
 export type WhatsAppQueuePayload = {
   kind: "whatsapp";
   wamid: string;
-  from: string;
+  // Null for a WhatsApp username sender who shared no phone number, whose CV is processed with its
+  // identity read from the CV (owner decision, 15 Sep 2026). userId and username are optional because
+  // rows enqueued by an older build carry neither key.
+  from: string | null;
+  userId?: string | null;
+  username?: string | null;
   messageType: string;
   mediaId: string;
   mimeType: string;
