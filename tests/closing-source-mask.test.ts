@@ -4,11 +4,15 @@ import { join, resolve } from "node:path";
 
 import {
   canRevealClosingSource,
+  maskComparisonLeaves,
   maskedClosingClientCodes,
   MASKED_SOURCE_DISTRIBUTORS,
+  MASKED_SOURCE_LABEL,
+  maskSourceCoverage,
   withoutMaskedSourceRows,
 } from "@/lib/sales/closing-source-mask";
 import { MAIN_STORES_LABEL, wholeUnitShares } from "@/lib/sales/closing-main-stores";
+import { assembleComparison } from "@/lib/sales/monthly-closing-comparison";
 
 /**
  * 🔒 EL QEMA LEAVES NO TRACE IN ANY CLOSING DETAIL — owner, 2026-09-09.
@@ -260,5 +264,119 @@ export function runClosingSourceMaskTests() {
     loader.body.indexOf("applyCreditedAreaView(withoutMaskedSourceRows"),
     -1,
     "and the two are never nested the other way round",
+  );
+
+  // ── 🔒 THE DISTRIBUTOR SHEETS: KEEP THE MONEY, DROP THE NAME — owner, 2026-09-14 ─────────────
+  //
+  // Distributor Comparison, Rankings & Mix, Gaps & White-Space, Summary & Insights and the hidden
+  // Calc sheet are assembled from comparison LEAVES, not detail rows. A CEO's Pedia August download
+  // named El Qema on all of them while its Data sheet was clean. Asked, he chose to keep El Qema's
+  // money on those sheets under `—` rather than remove it — a different answer from the detail
+  // rows above, for a different surface.
+  const leafInput = {
+    brickRows: [
+      { areaCode: "CA2", brickId: "B1", distributorCode: "QM", regionCode: "CA", units: 700, value: 70000 },
+      { areaCode: "CA2", brickId: "B1", distributorCode: "IS", regionCode: "CA", units: 120, value: 12000 },
+    ],
+    customerRows: [
+      { areaCode: "CA2", brickId: "B1", clientCode: "3743", clientName: "الفرسان بنها جملة", distributorCode: "QM", regionCode: "CA", units: 400, value: 40000 },
+      { areaCode: "CA2", brickId: "B1", clientCode: "3745", clientName: "الفرسان طنطا", distributorCode: "QM", regionCode: "CA", units: 300, value: 30000 },
+      { areaCode: "CA2", brickId: "B1", clientCode: "9001", clientName: "ابن سينا", distributorCode: "IS", regionCode: "CA", units: 120, value: 12000 },
+    ],
+    distProductRows: [
+      { areaCode: "CA2", distributorCode: "QM", productCode: "LA001", productName: "Lacto Advanced 1", regionCode: "CA", units: 700, value: 70000 },
+      { areaCode: "CA2", distributorCode: "IS", productCode: "LA001", productName: "Lacto Advanced 1", regionCode: "CA", units: 120, value: 12000 },
+    ],
+    line: "Pedia",
+    maps: {
+      areaName: new Map([["CA2", "Nasr City"]]),
+      areaRegion: new Map([["CA2", "CA"]]),
+      distributorName: new Map([["QM", "El Qema"], ["IS", "Ibn Sina"]]),
+      regionName: new Map([["CA", "Cairo"]]),
+    },
+    masterAreas: [{ areaCode: "CA2", areaName: "Nasr City", regionCode: "CA" }],
+    masterBricks: [{ areaCode: "CA2", brickId: "B1", brickName: "Brick 1", regionCode: "CA" }],
+    period: "2026-08",
+  };
+  // Everything a reader could recognise El Qema by: its code, its name, its customers' codes and names.
+  const traces = (value: unknown) => {
+    const text = JSON.stringify(value);
+    return [/\bQM\b/, /El Qema/, /\b3743\b/, /\b3745\b/, /الفرسان/].filter((pattern) => pattern.test(text)).map(String);
+  };
+  const truth = assembleComparison(leafInput);
+  assert.ok(traces(truth).length > 0, "control: the unmasked comparison does name El Qema, or this proves nothing");
+
+  const maskedComparison = assembleComparison(maskComparisonLeaves(leafInput, viewer));
+  assert.deepEqual(
+    traces(maskedComparison),
+    [],
+    "El Qema survives somewhere in the comparison a non-Super-Admin downloads — the insight sentence, "
+    + "the mix, a grid column, a customer ranking or a Calc block",
+  );
+  // THE MONEY STAYS — the half of his answer that separates it from the detail rule.
+  assert.equal(maskedComparison.national.value, truth.national.value, "the national value is untouched");
+  assert.equal(maskedComparison.national.units, truth.national.units, "and so are the units");
+  const unnamed = maskedComparison.byDistributor.find((entry) => entry.distributorCode === MASKED_SOURCE_LABEL);
+  const realQema = truth.byDistributor.find((entry) => entry.distributorCode === "QM");
+  assert.ok(unnamed && realQema, "El Qema's money is on the sheet under `—`, not removed");
+  assert.equal(unnamed.value, realQema.value, "at its full value");
+  assert.equal(unnamed.valueShare, realQema.valueShare, "and its true share, so every share still adds to 100%");
+  assert.equal(unnamed.distributorName, MASKED_SOURCE_LABEL, "named `—` and nothing else — never another distributor");
+  assert.ok(
+    maskedComparison.insights[0]?.text.startsWith(`${MASKED_SOURCE_LABEL} leads the line with`),
+    "the Summary sentence keeps the fact and loses the name",
+  );
+  assert.equal(
+    maskedComparison.rankings.customers.find((entry) => entry.label === MASKED_SOURCE_LABEL)?.value,
+    70000,
+    "El Qema's customers fold into ONE unnamed customer carrying their whole value",
+  );
+  assert.ok(
+    maskedComparison.data.distProduct.every((entry) => entry.distributorCode.trim() !== ""),
+    "no Calc row carries an EMPTY distributor: the sheets are SUMIFS, and an empty criterion matches every blank cell",
+  );
+  // Another distributor is left exactly as it was.
+  const ibnSina = maskedComparison.byDistributor.find((entry) => entry.distributorCode === "IS");
+  assert.equal(ibnSina?.distributorName, "Ibn Sina", "Ibn Sina keeps its name");
+  assert.equal(ibnSina?.value, 12000, "and its value");
+  assert.equal(
+    maskComparisonLeaves(leafInput, superAdmin),
+    leafInput,
+    "Super Admin gets the SAME leaves back — he keeps the truth",
+  );
+
+  // Source Coverage sheet and the closing screen's missing-files banner: same decision.
+  const coverage = {
+    directRegions: [{ key: "CA", name: "Cairo", prevValue: 5, curValue: 0 }],
+    missingSources: [{ key: "QM", name: "El Qema", prevValue: 70000, curValue: 0 }],
+    sources: [
+      { key: "QM", name: "El Qema", prevValue: 70000, curValue: 0 },
+      { key: "IS", name: "Ibn Sina", prevValue: 12000, curValue: 12500 },
+    ],
+  };
+  const maskedCoverage = maskSourceCoverage(coverage, viewer);
+  assert.deepEqual(traces(maskedCoverage), [], "the coverage a non-Super-Admin sees names El Qema");
+  assert.equal(maskedCoverage.missingSources[0]?.prevValue, 70000, "a missing source keeps its size — the banner still warns");
+  assert.equal(maskedCoverage.sources[1]?.name, "Ibn Sina", "and every other source keeps its name");
+  assert.equal(maskSourceCoverage(coverage, superAdmin), coverage, "Super Admin gets the same object back");
+
+  // WHERE it sits. The viewer is a REQUIRED parameter on all three loaders, so a new caller fails the
+  // typecheck; these pins catch the loader dropping the mask while still accepting the viewer.
+  const comparisonModule = sources.find((entry) => entry.file === "src/lib/sales/monthly-closing-comparison.ts");
+  assert.ok(comparisonModule, "the comparison module is still where it was");
+  assert.equal(
+    comparisonModule.body.split("maskComparisonLeaves(").length - 1,
+    2,
+    "BOTH comparison loaders — aggregate and from-rows — mask their leaves before assembling",
+  );
+  assert.ok(
+    !/viewer\?:/.test(comparisonModule.body),
+    "the comparison loaders' viewer is optional again — a caller that omits it leaks El Qema",
+  );
+  const coverageModule = sources.find((entry) => entry.file === "src/lib/sales/source-coverage.ts");
+  assert.ok(coverageModule, "the source coverage module is still where it was");
+  assert.ok(
+    coverageModule.body.includes("return maskSourceCoverage("),
+    "the coverage loader returns its answer through the mask",
   );
 }

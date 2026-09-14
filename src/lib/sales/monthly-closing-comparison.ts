@@ -1,5 +1,6 @@
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
+import { maskComparisonLeaves, type SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 // Distributor comparison + insights for the Monthly Closing report. The on-screen matrix
@@ -713,7 +714,10 @@ async function loadComparisonMasters(): Promise<ComparisonMasters> {
 export async function loadMonthlyClosingComparison(
   line: string | null,
   period: string | null,
-  scope?: ComparisonScope,
+  scope: ComparisonScope | undefined,
+  // REQUIRED, not optional: every sheet this feeds names distributors, and El Qema's name must not
+  // reach anyone but Super Admin (owner, 2026-09-14). See maskComparisonLeaves.
+  viewer: SourceMaskViewer,
 ): Promise<MonthlyClosingComparison> {
   if (!line || !period) return emptyComparison(line, period);
 
@@ -758,8 +762,10 @@ export async function loadMonthlyClosingComparison(
 
   // The region NAME map is scoped separately because productGaps treats its keys as "every region
   // that exists" — left whole, a Delta-only export names every other region as a gap.
+  // 🔒 Masked AFTER the scope (a distributor filter matches the real code) and BEFORE the assembly
+  // (the insight sentences and the Calc blocks are written inside it).
   return assembleComparison({
-    ...scoped,
+    ...maskComparisonLeaves(scoped, viewer),
     maps: {
       ...scoped.maps,
       regionName: scopeRegionNames(scoped.maps.regionName, scoped.masterAreas, scope),
@@ -878,16 +884,19 @@ export async function loadMonthlyClosingComparisonFromRows(
   line: string | null,
   period: string | null,
   rows: ComparisonSourceRow[],
-  scope?: ComparisonScope,
+  scope: ComparisonScope | undefined,
+  // REQUIRED for the same reason as the aggregate loader above.
+  viewer: SourceMaskViewer,
 ): Promise<MonthlyClosingComparison> {
   if (!line || !period) return emptyComparison(line, period);
   const masters = await loadComparisonMasters();
-  return assembleComparison(scopeComparisonInput({
+  // 🔒 Scope, then mask, then assemble — the same order as the aggregate loader, for the same reason.
+  return assembleComparison(maskComparisonLeaves(scopeComparisonInput({
     ...comparisonLeavesFromRows(rows),
     line,
     maps: masters.maps,
     masterAreas: masters.masterAreas,
     masterBricks: masters.masterBricks,
     period,
-  }, scope));
+  }, scope), viewer));
 }

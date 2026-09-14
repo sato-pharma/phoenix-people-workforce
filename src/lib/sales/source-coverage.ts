@@ -21,6 +21,7 @@
 // to bricks. This module answers whether the upload happened at all.
 
 import { normalizeLineKey } from "@/lib/sales/access-scope";
+import { maskSourceCoverage, type SourceMaskViewer } from "@/lib/sales/closing-source-mask";
 import { DIRECT_CHANNEL_CODE, canonicalDistributorKey } from "@/lib/sales/direct-channel";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -292,6 +293,9 @@ async function readCoverageRows(line: string, periods: string[]): Promise<Covera
 export async function loadMonthlySourceCoverage(
   line: string | null | undefined,
   period: string | null | undefined,
+  // REQUIRED: every source is listed by distributor name, and El Qema's must reach nobody but Super
+  // Admin (owner, 2026-09-14). The entry keeps its figures; only the name is relabelled.
+  viewer: SourceMaskViewer,
 ): Promise<MonthlySourceCoverage | null> {
   const selectedLine = String(line ?? "").trim();
   const selectedPeriod = String(period ?? "").trim();
@@ -379,7 +383,8 @@ export async function loadMonthlySourceCoverage(
     ? []
     : directRegions.filter((entry) => entry.status === "missing");
 
-  return {
+  // 🔒 Masked on the way out, after missingPrevValue has summed the real entries.
+  return maskSourceCoverage({
     line: selectedLine,
     period: selectedPeriod,
     prevPeriod,
@@ -394,5 +399,5 @@ export async function loadMonthlySourceCoverage(
       missingSources.reduce((sum, entry) => sum + entry.prevValue, 0).toFixed(2),
     ),
     latestUploadAt,
-  };
+  }, viewer);
 }

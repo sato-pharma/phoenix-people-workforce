@@ -145,7 +145,7 @@ export async function loadClosingExportPayload(
       period: matrix.period,
       unpaged: true,
     }).catch(() => null),
-    loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null),
+    loadMonthlySourceCoverage(matrix.line, matrix.period, selection.access).catch(() => null),
   ]);
 
   // Checked against what it RETURNED — see the header note. A prior matrix for the wrong month is

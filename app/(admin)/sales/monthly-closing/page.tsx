@@ -67,7 +67,7 @@ export default async function MonthlyClosingPage({
     initialMatrix = parts.combined;
     initialOffice = parts.office;
     // Completeness ride-along; a coverage failure hides the banner, never the closing.
-    initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period).catch(() => null);
+    initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period, access).catch(() => null);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
