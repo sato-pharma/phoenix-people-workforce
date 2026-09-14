@@ -5,6 +5,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import {
   getVacationActionCenterData,
   getVacationReportData,
@@ -1629,7 +1630,10 @@ function mapPlanItemsToCalendar(raw: unknown): WeeklyPlanCalendarItem[] {
       notes: item.notes ? String(item.notes) : null,
       objective: item.objective ? String(item.objective) : null,
       region: item.location_text ? String(item.location_text) : null,
-      repName: item.double_visit_medical_rep_name ? String(item.double_visit_medical_rep_name) : null,
+      // A Marketing Double Visit's partner is a marketing colleague held in `attendees`, not a Medical Rep.
+      repName: isMarketingDoubleVisit(activityType, title)
+        ? (item.attendees ? String(item.attendees) : null)
+        : item.double_visit_medical_rep_name ? String(item.double_visit_medical_rep_name) : null,
       timeLabel: planTimeLabel(item.start_time, item.end_time),
       visitDetails,
     };
@@ -1686,7 +1690,7 @@ function computePlanComposition(raw: unknown, planKind: EmployeePlanKind, startI
     if (item.activity_date) days.add(String(item.activity_date));
     if (planItemIsCoaching(type, title)) comp.coaching += 1;
     else if (type === "Field") comp.field += 1;
-    else if (type === "Double Visit") comp.doubleVisit += 1;
+    else if (type === "Double Visit" || isMarketingDoubleVisit(type, title)) comp.doubleVisit += 1;
     else if (type === "Training") comp.training += 1;
     else if (type === "Meeting" || type === "Event") comp.meeting += 1;
     else if (type === "Office" || type === "Admin" || type === "Remote") comp.admin += 1;
@@ -1848,7 +1852,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
     .select(
-      "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,final_approved_at,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment,ceo_decision_at,ceo_decision_by_hr_id,ceo_decision_comment,employee_plan_hr_acknowledgements(acknowledged_at,comment,hr_id),employee_plan_items(id,activity_date,activity_type,activity_title,area,location_text,objective,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
+      "id,employee_hr_id,employee_name,employee_job_title,manager_hr_id,manager_name,period_key,period_start_date,period_end_date,plan_kind,status,submitted_at,final_approved_at,manager_decision_at,manager_decision_by_hr_id,manager_decision_comment,ceo_decision_at,ceo_decision_by_hr_id,ceo_decision_comment,employee_plan_hr_acknowledgements(acknowledged_at,comment,hr_id),employee_plan_items(id,activity_date,activity_type,activity_title,area,location_text,objective,attendees,double_visit_medical_rep_name,start_time,end_time,notes,sort_order,employee_plan_visit_details(id,plan_id,item_id,doctor_name,speciality,address,objective,sort_order))",
     )
     .eq("id", id)
     .maybeSingle();

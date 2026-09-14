@@ -346,6 +346,7 @@ import { runWeeklyPlanVisibilityTests } from "./weekly-plan-visibility.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
 import { runWeeklyPlanManagerGapTests } from "./weekly-plan-manager-gap.test.ts";
 import { runWeeklyPlanRegionAreasTests } from "./weekly-plan-region-areas.test.ts";
+import { runMarketingDoubleVisitTests } from "./marketing-double-visit.test.ts";
 import { runPlanSlotMergeTests } from "./plan-slot-merge.test.ts";
 import { runSearchableSelectHiddenTriggerTests } from "./searchable-select-hidden-trigger.test.ts";
 import { runPlanAdherenceTests } from "./plan-adherence.test.ts";
@@ -2465,6 +2466,7 @@ await runTest("weekly plan visibility (manager-chain + company-wide roles)", run
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("weekly plan manager gap listing (stuck-approval detection)", runWeeklyPlanManagerGapTests);
 await runTest("weekly plan region canonicalisation and area options", runWeeklyPlanRegionAreasTests);
+await runTest("marketing double visit: PM/GPM only, partner list never includes the submitter", runMarketingDoubleVisitTests);
 await runTest("plan prefill displaces every slot it overlaps (AM / PM switch on a split weekly day)", runPlanSlotMergeTests);
 await runTest("a searchable dropdown closes when its field scrolls out of sight", runSearchableSelectHiddenTriggerTests);
 await runTest(
