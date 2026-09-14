@@ -812,9 +812,11 @@ const defaultPermissionMatrix: PermissionMap = {
     market_awareness: allActions,
     admin: allActions,
     attendance: allActions,
-    // Reads the native-visit pilot. No create/delete/approve: he is nobody's rep and nobody's
-    // accompanying manager, and a confirmation is the named partner's own click.
-    crm_visit_entry: ["read"],
+    // Reads the native-visit pilot. `update` (the owner, 2026-09-14): he enters a visit FOR a chosen
+    // rep, with no location and marked as entered by him, and reads every rep's saved visits. No
+    // create/delete/approve: he is nobody's rep and nobody's accompanying manager, and a confirmation
+    // is the named partner's own click.
+    crm_visit_entry: ["read", "update"],
     // Changes any rep's doctor list directly. No `approve`: a rep's request is his manager's click.
     crm_contact_lists: ["read", "update"],
     // `update` added 2026-08-09 for the Doctor Coverage visit-norms editor

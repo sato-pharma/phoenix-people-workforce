@@ -615,6 +615,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/form-options", permission: { resource: "crm_visit_entry", action: "create" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/delete", permission: { resource: "crm_visit_entry", action: "delete" }, guard: "assert-permission", csrfRequired: true }),
+  // The Super Admin enters a visit FOR a rep and reads every rep's saved visits (the owner, 2026-09-14).
+  // The only visit routes that take a rep from the request: `update` is narrowed again inside the
+  // service to an active medical rep inside the caller's scope.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/native-visits/on-behalf", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/all", permission: { resource: "crm_visit_entry", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   // A partner confirmation. `approve` is narrowed again inside the service: only the partner NAMED on
   // the visit may answer, and only for a rep inside his downward scope.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/native-visits/confirmations", permission: { resource: "crm_visit_entry", action: "approve" }, guard: "assert-permission", csrfRequired: false }),

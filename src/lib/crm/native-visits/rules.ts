@@ -182,6 +182,27 @@ export function isWithinNativeVisitEntryWindow(visitDate: string, cairoToday: st
   return visitDate === today || visitDate === yesterday;
 }
 
+/** How far back the Super Admin's entry for a rep looks for open days. */
+export const NATIVE_VISIT_ON_BEHALF_LOOKBACK_DAYS = 120;
+
+/** The job titles the Super Admin may enter a visit for: the reps who hold the doctor lists. */
+export function isNativeVisitRepTitle(jobTitle: string | null | undefined): boolean {
+  return /medical rep|representative/i.test(jobTitle ?? "");
+}
+
+/**
+ * The days the Super Admin may enter a visit for a rep (the owner, 2026-09-14: "Any open day"): every
+ * open day of the rep's line up to today, newest first, never a day still to come.
+ */
+export function nativeVisitOnBehalfDays(gate: NativeEntryGate, cairoToday: string): string[] {
+  const days: string[] = [];
+  for (let back = 0; back <= NATIVE_VISIT_ON_BEHALF_LOOKBACK_DAYS; back += 1) {
+    const day = addDaysIso(cairoToday, -back);
+    if (isNativeEntryDay(gate, day)) days.push(day);
+  }
+  return days;
+}
+
 // ── GPS ─────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -235,11 +256,16 @@ function finiteOrNull(value: unknown): number | null {
 
 /**
  * Shape and self-consistency of one submission. Deliberately says nothing about WHO sends it — the
- * rep comes from the session, never from the body, and the body has no field that could name one.
+ * rep comes from the session (or, for the Super Admin's entry, from the route's own rep field), never
+ * from this body, and the body has no field that could name one.
+ *
+ * `enteredOnBehalf`: the Super Admin enters it for a rep (the owner, 2026-09-14). Any day up to today
+ * — whether that day is open is the gate's question — and never a location: he was not standing at
+ * the doctor, so the visit is saved with none and never reads as a check-in.
  */
 export function parseNativeVisitDraft(
   raw: unknown,
-  context: { cairoToday: string; now: Date },
+  context: { cairoToday: string; now: Date; enteredOnBehalf?: boolean },
 ): NativeVisitRuleResult<NativeVisitDraft> {
   const body = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
@@ -252,7 +278,10 @@ export function parseNativeVisitDraft(
   if (!type) return { ok: false, error: "Choose what kind of visit or day this is." };
 
   const visitDate = String(body.visitDate ?? "").trim();
-  if (!isWithinNativeVisitEntryWindow(visitDate, context.cairoToday)) {
+  if (context.enteredOnBehalf) {
+    if (!ISO_DAY_PATTERN.test(visitDate)) return { ok: false, error: "Choose the day of the visit." };
+    if (visitDate > context.cairoToday) return { ok: false, error: "A visit cannot be entered for a day still to come." };
+  } else if (!isWithinNativeVisitEntryWindow(visitDate, context.cairoToday)) {
     return { ok: false, error: "A visit can only be entered on the same day or the next day." };
   }
 
@@ -278,8 +307,8 @@ export function parseNativeVisitDraft(
     return { ok: false, error: `${type.label} is not a visit to a doctor, so it takes no doctor.` };
   }
 
-  let latitude = finiteOrNull(body.latitude);
-  let longitude = finiteOrNull(body.longitude);
+  let latitude = context.enteredOnBehalf ? null : finiteOrNull(body.latitude);
+  let longitude = context.enteredOnBehalf ? null : finiteOrNull(body.longitude);
   if (latitude == null || longitude == null) {
     latitude = null;
     longitude = null;
@@ -343,12 +372,13 @@ export function parseNativeVisitDraft(
 export function nativeVisitShiftRefusal(
   draft: Pick<NativeVisitDraft, "contactCrmId" | "shift">,
   listTypes: readonly string[],
+  listOwner = "your",
 ): string | null {
   if (draft.contactCrmId == null) return null;
   const lists = listTypes.filter((list): list is NativeVisitShift => list === "AM" || list === "PM");
-  if (lists.length === 0) return "That doctor is not on your AM or PM list.";
+  if (lists.length === 0) return `That doctor is not on ${listOwner} AM or PM list.`;
   if (!lists.includes(draft.shift)) {
-    return `That doctor is on your ${lists.join(" and ")} list, so this is a ${lists.join(" or ")} visit.`;
+    return `That doctor is on ${listOwner} ${lists.join(" and ")} list, so this is a ${lists.join(" or ")} visit.`;
   }
   return null;
 }
@@ -374,8 +404,10 @@ export function nativeVisitPlanRefusal(input: {
   planItem: { planStatus: string } | null;
   /** A district manager's single visit without his rep. He files no week plan, so the rule does not reach it. */
   managerSingleVisit?: boolean;
+  /** The Super Admin enters it for a rep: any doctor on the rep's list (the owner, 2026-09-14: "No, any list doctor"). */
+  enteredOnBehalf?: boolean;
 }): string | null {
-  if (!input.ruleActive || input.visitTypeKey !== "regular" || input.managerSingleVisit) return null;
+  if (!input.ruleActive || input.visitTypeKey !== "regular" || input.managerSingleVisit || input.enteredOnBehalf) return null;
   if (!input.planItem) return NATIVE_VISIT_NOT_PLANNED_MESSAGE;
   if (input.planItem.planStatus !== "verified") return NATIVE_VISIT_PLAN_NOT_VERIFIED_MESSAGE;
   return null;
