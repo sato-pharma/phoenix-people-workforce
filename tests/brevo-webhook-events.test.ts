@@ -64,7 +64,28 @@ export function runBrevoWebhookEventsTests() {
   assert.notEqual(naiveRow.occurred_at, "2026-07-13T21:35:58.000Z", "naive local date must not be recorded as UTC");
 
   // --- Dedup id -------------------------------------------------------------------
-  assert.equal(brevoProviderEventId({ id: 42, event: "opened" }), "brevo:42", "explicit id preferred");
+  // 🔴 Brevo's `id` is the WEBHOOK's id, identical on every event it sends, so it must never be the
+  // key: keying on it upserted every Brevo event onto ONE row, and production held exactly one, ever.
+  const webhookId = 2080303;
+  const openA = { id: webhookId, event: "opened", email: "a@satopharma.com", "message-id": "<m>", ts_epoch: 1785411455288 };
+  assert.notEqual(brevoProviderEventId(openA), `brevo:${webhookId}`, "the webhook id is never the event key");
+  assert.notEqual(
+    brevoProviderEventId(openA),
+    brevoProviderEventId({ ...openA, event: "delivered" }),
+    "two events from the same webhook → two ids",
+  );
+  assert.notEqual(
+    brevoProviderEventId(openA),
+    brevoProviderEventId({ ...openA, email: "b@satopharma.com" }),
+    "same message, same instant, another recipient of the batch → another id",
+  );
+  assert.equal(
+    brevoProviderEventId(openA),
+    brevoProviderEventId({ ...openA, email: "A@SatoPharma.com" }),
+    "recipient casing does not split a retry",
+  );
+  assert.equal(statusFor("proxy_open"), "opened");
+  assert.equal(statusFor("unique_proxy_open"), "opened");
   const p = { event: "click", "message-id": "<m>", date: "2026-07-13T10:00:00Z", link: "https://a" };
   assert.equal(brevoProviderEventId(p), brevoProviderEventId({ ...p }), "same payload → same id (retry-safe)");
   assert.notEqual(brevoProviderEventId(p), brevoProviderEventId({ ...p, link: "https://b" }), "different clicked link → different id");

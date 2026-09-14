@@ -89,6 +89,8 @@ function brevoStatus(event: string): BrevoDeliveryStatus {
     case "opened":
     case "unique_opened":
     case "loadedbyproxy":
+    case "proxy_open":
+    case "unique_proxy_open":
       return "opened";
     case "click":
       return "clicked";
@@ -126,18 +128,22 @@ function occurredAt(payload: BrevoWebhookPayload) {
 }
 
 /**
- * Stable per-event id for idempotent recording. Uses Brevo's own `id` when present, else a hash
- * of the fields that uniquely identify the event (message id + event + timestamp + clicked link),
- * so a Brevo retry of the same event dedupes while two distinct opens/clicks are kept separate.
+ * Stable per-event id for idempotent recording: a hash of the fields that identify ONE event —
+ * message id, event, recipient, timestamp and clicked link — so a Brevo retry of the same event
+ * dedupes while two distinct opens/clicks, or the same event for two recipients, are kept apart.
+ *
+ * 🔴 NEVER key on the payload's `id`. It is the id of the WEBHOOK, not of the event: every event
+ * Brevo sends carries the same number (2080303 on production), so keying on it upserted every open,
+ * click and bounce onto ONE row — production held exactly one Brevo event, ever. The recipient is
+ * in the hash because a batch fans out to many people who are delivered in the same second.
  */
 export function brevoProviderEventId(payload: BrevoWebhookPayload): string {
-  const explicit = firstText(payload.id);
-  if (explicit) return `brevo:${explicit}`;
   const messageId = firstText(payload["message-id"], payload.messageId) ?? "";
   const event = firstText(payload.event) ?? "";
-  const stamp = firstText(payload.date, payload.ts_event, payload.ts) ?? "";
+  const recipient = (firstText(payload.email, payload["recipient"]) ?? "").toLowerCase();
+  const stamp = firstText(payload.ts_epoch, payload.ts_event, payload.ts, payload.date) ?? "";
   const link = firstText(payload.link, payload.URL, payload.url) ?? "";
-  const digest = crypto.createHash("sha256").update(`${messageId}|${event}|${stamp}|${link}`).digest("hex");
+  const digest = crypto.createHash("sha256").update(`${messageId}|${event}|${recipient}|${stamp}|${link}`).digest("hex");
   return `brevo:${digest}`;
 }
 
