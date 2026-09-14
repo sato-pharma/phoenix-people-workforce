@@ -1121,6 +1121,23 @@ rows and the answer is masked by client code.
 deliberate act somebody has to justify rather than a habit. Proved red by flipping the loader's
 default.
 
+### The standard workbook's distributor sheets keep the money under `—` — owner, 2026-09-14
+
+The Data sheet was clean, but the sheets built from the closing COMPARISON were not. A CEO's Pedia
+August 2026 download — built from production data and read cell by cell — named El Qema on
+Distributor Comparison (20 cells), Rankings & Mix (7), Summary & Insights (3, including "El Qema
+leads the line with 69.9% of value (EGP 2,367,360)"), Gaps & White-Space (2), Source Coverage (1) and
+the hidden-not-protected Calc sheet (84 rows starting `QM`). The comparison and coverage loaders took
+no viewer at all, so nothing could have masked them.
+
+He was asked: remove El Qema from those sheets completely (their totals fall short of the Closing
+Matrix by its value), or keep its money under a blank distributor (totals and shares stay exact, an
+unnamed distributor holds most of Pedia). **He chose keep the money, no name.** El Qema's leaves are
+relabelled `—` — distributor code, customer code and customer name — after the scope and before the
+assembly, so every insight, mix label and Calc row is written with `—`. Both comparison loaders and
+`loadMonthlySourceCoverage` now REQUIRE a viewer, so a new caller cannot forget. This is a different
+answer from the detail rule's removal, for a different surface; neither is a precedent for the other.
+
 ### Still open
 
 The Source of Sales dashboard's distributor breakdown and the import batches list were not covered by

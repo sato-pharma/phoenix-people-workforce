@@ -247,9 +247,10 @@ export async function buildConsolidatedClosingWorkbook(input: {
   );
 
   // From rows, over the whole span: the aggregate comparison RPC reads one month at a time.
+  // `input.access`: the rows carry the real source, and the comparison masks El Qema for this reader.
   const comparison = await loadMonthlyClosingComparisonFromRows(matrix.line, matrix.period, details.rows, {
     areaCodes: scopedAreaCodes,
-  });
+  }, input.access);
 
   const filterParts = consolidatedFilterParts(input.filter, details.options);
   const anySplitApplied = months.some((month) => isStoreCitySplitActive(month.period));

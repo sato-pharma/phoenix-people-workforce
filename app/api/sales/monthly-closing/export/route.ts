@@ -298,7 +298,8 @@ export async function POST(request: Request) {
       // rows, which cannot begin until those rows exist.
       const aggregateComparisonPromise = comparisonFromRows
         ? null
-        : loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes });
+        // `access`: the comparison names distributors, so it masks El Qema for this reader itself.
+        : loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes }, access);
       // An in-flight promise whose rejection is never awaited is an UNHANDLED rejection, which can
       // take the process down. If the details read below throws first we leave this scope without
       // ever awaiting this one, so park a no-op handler now. The real `await` still surfaces the
@@ -306,7 +307,7 @@ export async function POST(request: Request) {
       aggregateComparisonPromise?.catch(() => {});
       // Completeness sheet data, started alongside the heavy reads. Degrades to null (the sheet
       // is omitted) rather than ever costing the workbook.
-      const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null);
+      const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period, access).catch(() => null);
 
       // Channel Comparison — the ONLY sheet that reaches outside the exported month, so it is the
       // only one the route has to fetch extra data for. It covers the whole line across every
@@ -385,6 +386,8 @@ export async function POST(request: Request) {
           // Masters still narrow to the filtered place so white-space denominators stay honest;
           // the leaves are already exactly the filtered rows.
           { areaCodes: scopedAreaCodes },
+          // These rows were read with the real source, so the loader masks them for this reader.
+          access,
         );
 
       // Under a row-level filter the aggregate matrix cannot express the slice — rebuild its
@@ -641,7 +644,8 @@ export async function POST(request: Request) {
           scopedMatrix,
           // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
-          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows),
+          // `access`: these rows carry the real source, and the comparison masks it for this reader.
+          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, undefined, access),
           shownDetails,
           // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
           scopedPortal?.office ?? null,

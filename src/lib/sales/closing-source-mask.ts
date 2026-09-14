@@ -211,3 +211,90 @@ export function maskCodeKeyedDistributorMap<V>(
   }
   return touched ? kept : map;
 }
+
+/** Who is reading. Every loader that can put a distributor's identity on a page takes one. */
+export type SourceMaskViewer = Pick<AccessContext, "role" | "scope">;
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// The standard closing workbook's DISTRIBUTOR sheets — owner, 2026-09-14
+//
+// 🔒 KEEP THE MONEY, DROP THE NAME. Distributor Comparison, Rankings & Mix, Gaps & White-Space,
+// Summary & Insights and the hidden Calc sheet under them are all built from the comparison's leaf
+// rows, and those leaves reached every reader with El Qema's code on them. Measured on production
+// data the same day, a CEO's Pedia August download read "El Qema leads the line with 69.9% of value
+// (EGP 2,367,360)", and the Calc sheet — hidden, not protected — listed 84 rows starting `QM`. The
+// Data sheet beside them was already clean, so the rule was broken one sheet over.
+//
+// Asked how it should disappear, he chose between removing El Qema from those sheets completely
+// (their totals then fall short of the Closing Matrix by El Qema's value) and keeping its money
+// under a blank distributor (totals and shares stay exact, but a reader sees an unnamed
+// distributor holding most of Pedia). He chose KEEP THE MONEY, NO NAME.
+//
+// 🔴 THIS IS NOT THE DETAIL RULE, AND NEITHER IS A PRECEDENT FOR THE OTHER. A detail row is
+// REMOVED (2026-09-10); a distributor breakdown keeps its money under `—`. Each was his own answer
+// for its own surface — do not "align" one with the other.
+//
+// The label is `—` and NOT the empty string the portal dashboard uses: these sheets are live SUMIFS
+// and COUNTIFS over Calc, and an empty criterion matches every BLANK cell in the range, including
+// the padding row an empty block keeps. `—` matches El Qema's rows and nothing else.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The three leaf shapes a closing comparison is assembled from, structurally. */
+type ComparisonLeaves = {
+  brickRows: readonly { distributorCode: string }[];
+  customerRows: readonly { clientCode: string; clientName: string; distributorCode: string }[];
+  distProductRows: readonly { distributorCode: string }[];
+};
+
+/**
+ * Relabel every masked distributor's comparison leaves as `—`, unless this viewer may reveal.
+ *
+ * Units and value are untouched, so every total, share, ranking and gap the comparison derives is
+ * the same number it was. The customer's code and name go too — a customer of El Qema's is how a
+ * reader would recognise whose book it is — which folds that distributor's customers into ONE `—`
+ * customer carrying their combined value. That is the owner's choice working as intended, not a
+ * lost row: the money is all there, and nothing on it says whose.
+ *
+ * 🔴 RUN IT AFTER `scopeComparisonInput` AND BEFORE `assembleComparison`. After the scope, because
+ * a distributor filter compares against the REAL code; before the assembly, because the insight
+ * sentences, the mix labels and the Calc blocks are all written inside it and cannot be relabelled
+ * afterwards without re-deriving them.
+ */
+export function maskComparisonLeaves<T extends ComparisonLeaves>(leaves: T, viewer: SourceMaskViewer): T {
+  if (canRevealClosingSource(viewer)) return leaves;
+  const relabel = <R extends { distributorCode: string }>(row: R): R =>
+    isMaskedCode(row.distributorCode) ? { ...row, distributorCode: MASKED_SOURCE_LABEL } : row;
+  return {
+    ...leaves,
+    brickRows: leaves.brickRows.map(relabel),
+    customerRows: leaves.customerRows.map((row) =>
+      isMaskedCode(row.distributorCode)
+        ? { ...row, clientCode: MASKED_SOURCE_LABEL, clientName: MASKED_SOURCE_LABEL, distributorCode: MASKED_SOURCE_LABEL }
+        : row,
+    ),
+    distProductRows: leaves.distProductRows.map(relabel),
+  } as T;
+}
+
+/** The distributor-keyed half of a month's source coverage, structurally. */
+type SourceCoverageLike = {
+  missingSources: readonly { key: string; name: string }[];
+  sources: readonly { key: string; name: string }[];
+};
+
+/**
+ * Relabel a masked distributor on the Source Coverage sheet and the closing screen's missing-files
+ * banner, unless this viewer may reveal. Same owner decision as the comparison above: the row keeps
+ * its units, value and status, so "is this month complete?" still reads true — only the name goes.
+ * The Direct-channel regions carry no distributor and are left alone.
+ */
+export function maskSourceCoverage<T extends SourceCoverageLike>(coverage: T, viewer: SourceMaskViewer): T {
+  if (canRevealClosingSource(viewer)) return coverage;
+  const relabel = <R extends { key: string; name: string }>(entry: R): R =>
+    isMaskedCode(entry.key) ? { ...entry, key: MASKED_SOURCE_LABEL, name: MASKED_SOURCE_LABEL } : entry;
+  return {
+    ...coverage,
+    missingSources: coverage.missingSources.map(relabel),
+    sources: coverage.sources.map(relabel),
+  } as T;
+}

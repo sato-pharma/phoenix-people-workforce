@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     const coverage =
       (data.periods?.length ?? 0) > 1
         ? null
-        : await loadMonthlySourceCoverage(data.line, data.period).catch(() => null);
+        : await loadMonthlySourceCoverage(data.line, data.period, access).catch(() => null);
 
     // `office` is the same grid holding only the Office channel's allocated units, so the workspace
     // can show "of which Office" beside every figure. Null (never an empty grid) when it could not
