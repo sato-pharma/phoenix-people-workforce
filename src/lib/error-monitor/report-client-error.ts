@@ -14,6 +14,10 @@ export type ReportClientErrorInput = {
   // React error boundaries provide errorInfo.componentStack (which component tree threw).
   // window.onerror/unhandledrejection cannot, so this is optional.
   componentStack?: string | null;
+  // Caller-supplied `key=value` pairs naming WHAT was being done when a caught error fired (the CV
+  // viewer's `cvKind=pdf stage=render`). Appended after the browser-state context, which it never
+  // replaces. A caller's own catch is invisible to window.onerror, so this is how it says so.
+  context?: string | null;
 };
 
 type NetworkInformationLike = {
@@ -106,7 +110,7 @@ function collectClientContext(): string | null {
   }
 }
 
-export function reportClientError({ error, route, digest, componentStack }: ReportClientErrorInput): void {
+export function reportClientError({ error, route, digest, componentStack, context }: ReportClientErrorInput): void {
   try {
     // NOT `String(error)`. The browser throws plenty that is not an Error — a rejected fetch
     // body, a Supabase PostgrestError read client-side, any `throw { code, message }` — and all
@@ -117,8 +121,10 @@ export function reportClientError({ error, route, digest, componentStack }: Repo
     const stack = error instanceof Error ? (error.stack ?? null) : null;
     const resolvedRoute = route ?? (typeof window !== "undefined" ? window.location.pathname : null);
 
+    const clientContext = [collectClientContext(), context?.trim() || null].filter(Boolean).join(" ") || null;
+
     const payload = JSON.stringify({
-      clientContext: collectClientContext(),
+      clientContext,
       componentStack: componentStack ?? null,
       digest: digest ?? null,
       message,

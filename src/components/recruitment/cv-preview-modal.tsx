@@ -6,7 +6,9 @@ import { createPortal } from "react-dom";
 import { Minus, Plus, X } from "lucide-react";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { reportClientError } from "@/lib/error-monitor/report-client-error";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { buildCvPreviewFailureReport, CvPreviewNotice, type CvPreviewStage } from "@/lib/recruitment/cv-preview-failure-report";
 import { hasPhoneLike, maskPhoneLike } from "@/lib/recruitment/cv-phone-redaction";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -218,18 +220,24 @@ export function CvDocumentView({
     if (kind !== "docx" && kind !== "pdf" && kind !== "image") return;
     let active = true;
     let objectUrl: string | null = null;
+    // Where the load had got to when it failed, for the error monitor only — see the catch below.
+    let stage: CvPreviewStage = "fetch";
+    let httpStatus: number | null = null;
     void (async () => {
       try {
         const res = await fetch(bytesUrl);
+        httpStatus = res.status;
         if (!res.ok) throw new Error("Could not load the document.");
+        stage = "decode";
         const bytes = base64ToBytes(await res.text());
+        stage = "render";
 
         if (kind === "image") {
           // A PHOTOGRAPHED CV CANNOT BE REDACTED, so where redaction is required it is not shown.
           // There is no text to find in a photograph, and every other number on this screen is
           // hidden — leaving this one window open would just teach a manager where to look.
           if (redactPhones) {
-            throw new Error(
+            throw new CvPreviewNotice(
               "This CV is a photograph, so the phone number printed on it cannot be covered. "
                 + "Press \"I will call\" to take this candidate, and it opens.",
             );
@@ -349,7 +357,7 @@ export function CvDocumentView({
           // caller: a recruiter is told to download it, and a manager — who may not — is told to ask
           // for a readable copy. Baking one of those two into the thrown message gave the manager an
           // instruction pointing at a button his screen does not have.
-          throw new Error("This is an older Word (.doc) format that can't be previewed here.");
+          throw new CvPreviewNotice("This is an older Word (.doc) format that can't be previewed here.");
         }
         // docx-preview relies on browser-only APIs, so it's dynamically imported here rather than
         // at module scope (this component is "use client", but the import still must not run during
@@ -379,6 +387,22 @@ export function CvDocumentView({
           }
         }
       } catch (caught) {
+        // TELL THE ERROR MONITOR, not only the reader. A caught error never reaches the global
+        // window.onerror net, so before this every manager on 2026-09-14 saw "Promise.withResolvers
+        // is not a function" on every PDF CV while app_error_events recorded nothing at all. Kind,
+        // stage and status go with it; the file name and the candidate do not — a CV is personal
+        // data (src/lib/recruitment/cv-preview-failure-report.ts). A designed notice (a photograph a
+        // manager may not see, a legacy .doc) returns null there and is never reported. Reported
+        // even after unmount: the failure was real whether or not the reader waited for it.
+        const report = buildCvPreviewFailureReport({
+          caught,
+          fileName,
+          httpStatus,
+          kind,
+          route: typeof window !== "undefined" ? window.location.pathname : null,
+          stage,
+        });
+        if (report) reportClientError(report);
         if (active) {
           setError(caught instanceof Error ? caught.message : "This document couldn't be previewed.");
         }
@@ -392,8 +416,9 @@ export function CvDocumentView({
     };
     // redactPhones is a dependency because it changes what gets PAINTED, not just what is read: a
     // manager who reserves the CV while the preview is open must see the page redrawn with the
-    // number, and one who releases it must see it painted out again, without a reload.
-  }, [kind, bytesUrl, mimeType, redactPhones]);
+    // number, and one who releases it must see it painted out again, without a reload. fileName is
+    // read only to scrub it out of a failure report; it changes together with bytesUrl.
+  }, [kind, bytesUrl, fileName, mimeType, redactPhones]);
 
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
