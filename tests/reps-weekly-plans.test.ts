@@ -450,7 +450,7 @@ export async function runRepsWeeklyPlansTests() {
         `${page.what} must still build the contact tab from the Reps List scope — one scope for both tabs would either widen who may sign a plan or narrow who may read a list`,
       );
       assert.ok(
-        /const tab = canSeePlans \? resolveRepsListTab\(params\?\.tab\) : "contacts"/.test(source),
+        /const tab = resolveRepsListTab\(params\?\.tab, canSeePlans\)/.test(source),
         `${page.what} must resolve the tab THROUGH the gate, so a hand-typed ?tab=plans from a seat without it lands on the contact list rather than on a refusal`,
       );
     }
@@ -472,13 +472,17 @@ export async function runRepsWeeklyPlansTests() {
   }
 
   // ---------------------------------------------------------------------------------------------
-  // 9. The tab strip disappears for a viewer with only one tab
+  // 9. The plans tab appears only for a viewer who may verify
   // ---------------------------------------------------------------------------------------------
   {
     const tabs = readFileSync("src/components/crm/reps-list-tabs.tsx", "utf8");
     assert.ok(
-      tabs.includes("if (!canSeePlans) return null;"),
-      "a viewer who may not verify plans sees NO tab strip — a tab that answers 'not available to your role' when pressed is worse than no tab",
+      tabs.includes('if (canSeePlans) tabs.push({ key: "plans", label: "Reps weekly plans" });'),
+      "a viewer who may not verify plans is offered NO plans tab — a tab that answers 'not available to your role' when pressed is worse than no tab",
+    );
+    assert.ok(
+      tabs.includes('if (value === "plans" && canSeePlans) return "plans";'),
+      "and a hand-typed ?tab=plans resolves through the same gate",
     );
     assert.ok(
       tabs.includes('query.set("tab", "plans")') && tabs.includes('query.set("week", input.week)'),

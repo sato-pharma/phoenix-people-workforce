@@ -24,12 +24,14 @@ import { redirect } from "next/navigation";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { RepsListBoardView } from "@/components/crm/reps-list-board";
 import { RepsListTabs, resolveRepsListTab } from "@/components/crm/reps-list-tabs";
+import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas";
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
+import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -49,6 +51,7 @@ type PageProps = {
     rep?: string;
     status?: string;
     tab?: string;
+    vacancy?: string;
     week?: string;
   }>;
 };
@@ -73,10 +76,52 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const cascade = { area: params?.area, line: params?.line, region: params?.region, rep: params?.rep };
 
-  // The plans tab's own gate, strictly narrower than the one above. Checked BEFORE the tab is
-  // resolved, so a hand-typed `?tab=plans` from a seat without it lands on the contact list.
+  // The plans tab's own gate, strictly narrower than the one above. Passed INTO the tab resolver,
+  // so a hand-typed `?tab=plans` from a seat without it lands on the contact list.
   const canSeePlans = canAccessPlanVerification(access) && (await canAccess(access, "crm_plans", "read"));
-  const tab = canSeePlans ? resolveRepsListTab(params?.tab) : "contacts";
+  const tab = resolveRepsListTab(params?.tab, canSeePlans);
+
+  // TAB THREE — VACANT AREAS (2026-09-14): the doctors of the areas with nobody in the seat, read
+  // under the Reps List scope because they are the same lists the contact tab reads.
+  if (tab === "vacant") {
+    let vacantBoard: Awaited<ReturnType<typeof getVacantAreasBoard>> | null = null;
+    try {
+      const scope = await getDoctorListScope(access);
+      vacantBoard = await getVacantAreasBoard({
+        params: { ...cascade, month: params?.month, vacancy: params?.vacancy },
+        scope,
+      });
+    } catch (error) {
+      logPortalFailure({ hrId: access.hrId, module: "reps-list", role: access.role, route: ROUTE }, error);
+      vacantBoard = null;
+    }
+
+    if (!vacantBoard) {
+      return (
+        <EmployeePortalEmptyState
+          message="Vacant Areas could not load. The organogram or the CRM mirror is unavailable right now — this is a load failure, not a company with no vacant areas."
+          title="Reps List Unavailable"
+        />
+      );
+    }
+
+    return (
+      <EmployeePortalPageShell
+        badge="CRM"
+        description="Pick a vacant area to read the contact list its last rep left behind, grouped by the brick each contact sits in."
+        title="Reps List"
+      >
+        <RepsListTabs
+          active="vacant"
+          basePath={BASE_PATH}
+          canSeePlans={canSeePlans}
+          selection={vacantBoard.selection}
+          week={params?.week ?? null}
+        />
+        <RepsListVacantAreasView basePath={BASE_PATH} board={vacantBoard} />
+      </EmployeePortalPageShell>
+    );
+  }
 
   if (tab === "plans") {
     // Hiding the button is UX. POST /api/crm/plan-verification/verify re-runs this check and
