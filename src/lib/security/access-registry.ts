@@ -1099,6 +1099,20 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/recruitment/whatsapp-templates/*", permission: { resource: "admin", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/recruitment/whatsapp-templates/send", permission: [{ resource: "recruitment", action: "update" }, { resource: "employees", action: "read" }], csrfRequired: true }),
+  // The WhatsApp Inbox — both company numbers, SUPER ADMIN ONLY (owner, 2026-09-15). Every route
+  // passes `recruitment:update` and then refuses any role but Super Admin (`inboxForbidden`), so the
+  // permission below is the floor, not the gate. Sends, links and saves write a required audit row;
+  // marking a chat read does not, since opening a chat is not a decision.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/whatsapp-inbox/conversations", permission: { resource: "recruitment", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/whatsapp-inbox/conversations", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/whatsapp-inbox/conversations/*", permission: { resource: "recruitment", action: "update" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/whatsapp-inbox/conversations/*/read", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/whatsapp-inbox/conversations/*/messages", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/whatsapp-inbox/conversations/*/link", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/whatsapp-inbox/media/*", permission: { resource: "recruitment", action: "update" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/whatsapp-inbox/messages/*/save-to-candidate", permission: { resource: "recruitment", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/whatsapp-inbox/templates", permission: { resource: "recruitment", action: "update" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/whatsapp-inbox/people", permission: { resource: "recruitment", action: "update" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
   // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
   // permission is identical — this entry exists to DECLARE the audit. It is the one organogram

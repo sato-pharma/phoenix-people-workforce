@@ -285,6 +285,7 @@ import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexi
 import { runWhatsAppInboundVideoTests } from "./whatsapp-inbound-video.test.ts";
 import { runFtpVideoHandoffTests } from "./ftp-video-handoff.test.ts";
 import { runWhatsAppUsernameSenderTests } from "./whatsapp-username-sender.test.ts";
+import { runWhatsAppInboxTests } from "./whatsapp-inbox.test.ts";
 import { runWhatsAppReplyAnswersTheQuestionTests } from "./whatsapp-reply-answers-the-question.test.ts";
 import { runWhatsAppOutboundLogTests } from "./whatsapp-outbound-log.test.ts";
 import { runWhatsAppRepliesPanelTests } from "./whatsapp-replies-panel.test.ts";
@@ -2381,6 +2382,7 @@ await runTest(
 await runTest("whatsapp inbound video (kept, and never a candidate)", runWhatsAppInboundVideoTests);
 await runTest("ftp video handoff (a claim is exact, and the door is on its own token)", runFtpVideoHandoffTests);
 await runTest("whatsapp username sender (a BSUID with no phone is kept, never dropped)", runWhatsAppUsernameSenderTests);
+await runTest("whatsapp inbox (both numbers, both directions, Super Admin only)", runWhatsAppInboxTests);
 await runTest("recruitment whatsapp intake health (Meta API probe + silence gate)", runRecruitmentWhatsAppHealthTests);
 await runTest(
   "recruitment whatsapp webhook routing (deterministic delivery check)",

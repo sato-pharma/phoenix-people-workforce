@@ -26,6 +26,7 @@ import {
 } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 import { recordUnattributedWhatsAppMessage } from "@/lib/recruitment/inbound/whatsapp-unattributed-sender";
 import { verifyWhatsAppWebhookHandshake, verifyWhatsAppWebhookSignature } from "@/lib/recruitment/inbound/whatsapp-webhook-events";
+import { recordInboxDelivery } from "@/lib/whatsapp-inbox/record";
 import { extractFtpSubmissionIds } from "@/lib/whatsapp-videos/handoff-contract";
 import { captureInboundSubmissionId, captureInboundVideo } from "@/lib/whatsapp-videos/inbox";
 
@@ -120,6 +121,19 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ message: "Invalid WhatsApp webhook JSON." }, { status: 400 });
   }
+
+  // THE WHATSAPP INBOX KEEPS ITS OWN COPY, FIRST. Every message on both numbers — from the person,
+  // echoed from the handset, replayed from the phone's history — plus the delivery ticks on what we
+  // sent. It runs before the recruitment pipeline below so a slow CV intake can never cost the inbox a
+  // message, and it never throws: the inbox is a record, and a record failing must not make Meta
+  // redeliver (or disable) the webhook the recruitment line depends on.
+  const inbox = await recordInboxDelivery(payload).catch((inboxError: unknown) => {
+    logError("WhatsApp Inbox failed to record a webhook delivery", {
+      error: inboxError,
+      labels: { event: "whatsapp_inbox_record_threw", webhook: "whatsapp" },
+    });
+    return null;
+  });
 
   // `unattributed` holds the nodes with no message id or no sender at all. They are recorded after the
   // loop below — never silently dropped, which is how a username sender's videos vanished on 14 Sep.
@@ -433,5 +447,5 @@ export async function POST(request: Request) {
     outcomes.push({ outcome: `unattributed_${node.reason}_${recorded.outcome}`, wamid: node.wamid });
   }
 
-  return NextResponse.json({ ok: true, outcomes });
+  return NextResponse.json({ inbox, ok: true, outcomes });
 }

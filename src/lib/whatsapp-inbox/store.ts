@@ -1,0 +1,691 @@
+// The WhatsApp Inbox — reading conversations, linking them to people, and keeping attachments.
+//
+// SUPER ADMIN ONLY, and that is enforced by every route in front of this module, not here: these
+// functions use the service-role client and trust their caller. Nothing in this file may be imported
+// by a page or route that has not already checked `canUseWhatsAppInbox`.
+
+import crypto from "node:crypto";
+
+import type { AccessContext } from "@/lib/auth/permissions";
+import { hrIdForStorage } from "@/lib/hr-id";
+import { logError, logInfo } from "@/lib/observability/log";
+import { normalizePhone } from "@/lib/recruitment/candidate-matching";
+import { uploadCandidateFile } from "@/lib/recruitment/files";
+import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
+import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
+import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
+import { WHATSAPP_INBOX_CONVERSATIONS_TABLE, WHATSAPP_INBOX_MESSAGES_TABLE } from "@/lib/whatsapp-inbox/record";
+
+export const WHATSAPP_INBOX_MEDIA_BUCKET = "whatsapp-inbox-media";
+
+/** The largest attachment copied into Phoenix automatically, and served through the inbox. */
+export const INBOX_MEDIA_CACHE_MAX_BYTES = 25 * 1024 * 1024;
+export const INBOX_MEDIA_MAX_FETCH_ATTEMPTS = 5;
+
+export class WhatsAppInboxNotFoundError extends Error {
+  constructor(message = "That conversation no longer exists.") {
+    super(message);
+    this.name = "WhatsAppInboxNotFoundError";
+  }
+}
+
+export class WhatsAppInboxInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WhatsAppInboxInputError";
+  }
+}
+
+// ── Shapes that cross to the browser ─────────────────────────────────────────────────────────────
+
+export type InboxConversationSummary = {
+  id: string;
+  lineLabel: string;
+  phoneNumberId: string;
+  contactName: string | null;
+  contactPhone: string | null;
+  contactUsername: string | null;
+  lastMessageAt: string | null;
+  lastInboundAt: string | null;
+  lastMessagePreview: string | null;
+  lastDirection: "inbound" | "outbound" | null;
+  unreadCount: number;
+  replyWindowOpen: boolean;
+  candidate: { id: string; name: string } | null;
+  employee: { hrId: string; name: string } | null;
+};
+
+export type InboxMessageView = {
+  id: string;
+  wamid: string | null;
+  direction: "inbound" | "outbound";
+  origin: "contact" | "phoenix" | "handset";
+  messageType: string;
+  body: string | null;
+  hasMedia: boolean;
+  mediaReady: boolean;
+  mediaProblem: string | null;
+  mediaMimeType: string | null;
+  mediaFileName: string | null;
+  mediaByteSize: number | null;
+  templateName: string | null;
+  replyToWamid: string | null;
+  historical: boolean;
+  sentAt: string;
+  status: string;
+  failureDetail: string | null;
+  sentByName: string | null;
+  automated: boolean;
+  savedToCandidate: { id: string; name: string } | null;
+};
+
+export type InboxThread = {
+  conversation: InboxConversationSummary;
+  messages: InboxMessageView[];
+  replyWindowClosesAt: string | null;
+  canSend: boolean;
+  cannotSendReason: string | null;
+};
+
+type ConversationRow = {
+  id: string;
+  phone_number_id: string;
+  contact_key: string;
+  contact_wa_id: string | null;
+  contact_user_id: string | null;
+  contact_name: string | null;
+  contact_username: string | null;
+  last_message_at: string | null;
+  last_inbound_at: string | null;
+  last_message_preview: string | null;
+  last_direction: "inbound" | "outbound" | null;
+  unread_count: number;
+  candidate_id: string | null;
+  employee_hr_id: string | null;
+};
+
+type MessageRow = {
+  id: string;
+  conversation_id: string;
+  wamid: string | null;
+  direction: "inbound" | "outbound";
+  origin: "contact" | "phoenix" | "handset";
+  phone_number_id: string;
+  message_type: string;
+  body: string | null;
+  media_id: string | null;
+  media_mime_type: string | null;
+  media_file_name: string | null;
+  media_storage_path: string | null;
+  media_byte_size: number | null;
+  media_fetch_attempts: number;
+  media_fetch_error: string | null;
+  template_name: string | null;
+  reply_to_wamid: string | null;
+  historical: boolean;
+  sent_at: string;
+  status: string;
+  failure_detail: string | null;
+  event: string | null;
+  sent_by_hr_id: string | null;
+  saved_to_candidate_id: string | null;
+};
+
+const CONVERSATION_COLUMNS =
+  "id, phone_number_id, contact_key, contact_wa_id, contact_user_id, contact_name, contact_username, last_message_at, last_inbound_at, last_message_preview, last_direction, unread_count, candidate_id, employee_hr_id";
+
+const MESSAGE_COLUMNS =
+  "id, conversation_id, wamid, direction, origin, phone_number_id, message_type, body, media_id, media_mime_type, media_file_name, media_storage_path, media_byte_size, media_fetch_attempts, media_fetch_error, template_name, reply_to_wamid, historical, sent_at, status, failure_detail, event, sent_by_hr_id, saved_to_candidate_id";
+
+export function isReplyWindowOpen(lastInboundAt: string | null, now = Date.now()): boolean {
+  if (!lastInboundAt) return false;
+  const at = Date.parse(lastInboundAt);
+  return Number.isFinite(at) && now - at < REPLY_WINDOW_MS;
+}
+
+/** `+20 10 1234 5678`-ish, for reading. Meta's digits are kept as they are when the shape is unknown. */
+export function formatWhatsAppPhone(waId: string | null): string | null {
+  if (!waId) return null;
+  const digits = waId.replace(/\D+/g, "");
+  if (/^20\d{10}$/.test(digits)) return `+20 ${digits.slice(2, 4)} ${digits.slice(4, 8)} ${digits.slice(8)}`;
+  return digits ? `+${digits}` : null;
+}
+
+async function namesFor(candidateIds: string[], hrIds: string[]) {
+  const supabase = getSupabaseAdmin();
+  const candidates = new Map<string, string>();
+  const employees = new Map<string, string>();
+  const uniqueCandidates = Array.from(new Set(candidateIds.filter(Boolean)));
+  const uniqueHrIds = Array.from(new Set(hrIds.filter(Boolean)));
+  for (let index = 0; index < uniqueCandidates.length; index += 50) {
+    const { data } = await supabase
+      .from("ats_candidates")
+      .select("id, full_name")
+      .in("id", uniqueCandidates.slice(index, index + 50));
+    for (const row of (data ?? []) as Array<{ id: string; full_name: string | null }>) {
+      candidates.set(row.id, row.full_name?.trim() || "Unnamed candidate");
+    }
+  }
+  for (let index = 0; index < uniqueHrIds.length; index += 50) {
+    const { data } = await supabase
+      .from("employees")
+      .select("hr_id, full_name")
+      .in("hr_id", uniqueHrIds.slice(index, index + 50));
+    for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null }>) {
+      employees.set(row.hr_id, row.full_name?.trim() || "Unnamed employee");
+    }
+  }
+  return { candidates, employees };
+}
+
+function summarize(
+  row: ConversationRow,
+  names: { candidates: Map<string, string>; employees: Map<string, string> },
+  now: number,
+): InboxConversationSummary {
+  return {
+    candidate: row.candidate_id ? { id: row.candidate_id, name: names.candidates.get(row.candidate_id) ?? "Candidate" } : null,
+    contactName: row.contact_name,
+    contactPhone: formatWhatsAppPhone(row.contact_wa_id),
+    contactUsername: row.contact_username,
+    employee: row.employee_hr_id ? { hrId: row.employee_hr_id, name: names.employees.get(row.employee_hr_id) ?? "Employee" } : null,
+    id: row.id,
+    lastDirection: row.last_direction,
+    lastInboundAt: row.last_inbound_at,
+    lastMessageAt: row.last_message_at,
+    lastMessagePreview: row.last_message_preview,
+    lineLabel: whatsAppInboxLineLabel(row.phone_number_id),
+    phoneNumberId: row.phone_number_id,
+    replyWindowOpen: isReplyWindowOpen(row.last_inbound_at, now),
+    unreadCount: row.unread_count,
+  };
+}
+
+/** PostgREST `or()` treats commas and brackets as syntax; a search term must not carry them. */
+export function sanitizeInboxSearch(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/[,()*%\\:"']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
+export async function listInboxConversations(input: {
+  phoneNumberId?: string | null;
+  search?: string | null;
+  unreadOnly?: boolean;
+  limit?: number;
+}): Promise<{ conversations: InboxConversationSummary[]; totalUnread: number }> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .select(CONVERSATION_COLUMNS)
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .limit(Math.max(1, Math.min(300, input.limit ?? 150)));
+  if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
+  if (input.unreadOnly) query = query.gt("unread_count", 0);
+  const search = sanitizeInboxSearch(input.search);
+  if (search) {
+    const digits = search.replace(/\D+/g, "");
+    const clauses = [`contact_name.ilike.*${search}*`, `contact_username.ilike.*${search}*`];
+    if (digits.length >= 4) clauses.push(`contact_wa_id.ilike.*${digits.replace(/^0+/, "")}*`);
+    query = query.or(clauses.join(","));
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = (data ?? []) as ConversationRow[];
+
+  let unreadQuery = supabase.from(WHATSAPP_INBOX_CONVERSATIONS_TABLE).select("unread_count").gt("unread_count", 0).limit(1000);
+  if (input.phoneNumberId) unreadQuery = unreadQuery.eq("phone_number_id", input.phoneNumberId);
+  const { data: unreadRows } = await unreadQuery;
+  const totalUnread = ((unreadRows ?? []) as Array<{ unread_count: number }>).reduce((sum, row) => sum + row.unread_count, 0);
+
+  const names = await namesFor(
+    rows.map((row) => row.candidate_id ?? ""),
+    rows.map((row) => row.employee_hr_id ?? ""),
+  );
+  const now = Date.now();
+  return { conversations: rows.map((row) => summarize(row, names, now)), totalUnread };
+}
+
+async function loadConversationRow(conversationId: string): Promise<ConversationRow> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .select(CONVERSATION_COLUMNS)
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new WhatsAppInboxNotFoundError();
+  return data as ConversationRow;
+}
+
+/** Why this conversation cannot be written to from Phoenix at all, or null when it can. */
+export function cannotSendReason(row: Pick<ConversationRow, "contact_wa_id" | "phone_number_id">): string | null {
+  if (!row.contact_wa_id) {
+    return "This person uses a WhatsApp username and did not share a phone number, so WhatsApp does not let Phoenix message them.";
+  }
+  if (!findWhatsAppInboxLine(row.phone_number_id)) {
+    return "This chat is on a WhatsApp number Phoenix does not send from.";
+  }
+  return null;
+}
+
+export async function loadInboxThread(conversationId: string, options?: { limit?: number }): Promise<InboxThread> {
+  const row = await loadConversationRow(conversationId);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+    .select(MESSAGE_COLUMNS)
+    .eq("conversation_id", conversationId)
+    .order("sent_at", { ascending: false })
+    .limit(Math.max(1, Math.min(500, options?.limit ?? 300)));
+  if (error) throw error;
+  const messages = ((data ?? []) as MessageRow[]).reverse();
+
+  const senderIds = Array.from(new Set(messages.map((m) => m.sent_by_hr_id).filter((id): id is string => Boolean(id))));
+  const names = await namesFor(
+    [row.candidate_id ?? "", ...messages.map((m) => m.saved_to_candidate_id ?? "")],
+    [row.employee_hr_id ?? "", ...senderIds],
+  );
+  const now = Date.now();
+  const conversation = summarize(row, names, now);
+  const lastInbound = row.last_inbound_at ? Date.parse(row.last_inbound_at) : NaN;
+  const reason = cannotSendReason(row);
+
+  return {
+    canSend: reason === null,
+    cannotSendReason: reason,
+    conversation,
+    messages: messages.map((message) => ({
+      automated: message.origin === "phoenix" && !message.sent_by_hr_id,
+      body: message.body,
+      direction: message.direction,
+      failureDetail: message.failure_detail,
+      hasMedia: Boolean(message.media_id || message.media_storage_path),
+      historical: message.historical,
+      id: message.id,
+      mediaByteSize: message.media_byte_size,
+      mediaFileName: message.media_file_name,
+      mediaMimeType: message.media_mime_type,
+      mediaProblem:
+        !message.media_storage_path && message.media_fetch_attempts >= INBOX_MEDIA_MAX_FETCH_ATTEMPTS
+          ? "This attachment could not be copied from WhatsApp."
+          : null,
+      mediaReady: Boolean(message.media_storage_path),
+      messageType: message.message_type,
+      origin: message.origin,
+      replyToWamid: message.reply_to_wamid,
+      savedToCandidate: message.saved_to_candidate_id
+        ? { id: message.saved_to_candidate_id, name: names.candidates.get(message.saved_to_candidate_id) ?? "Candidate" }
+        : null,
+      sentAt: message.sent_at,
+      sentByName: message.sent_by_hr_id ? (names.employees.get(message.sent_by_hr_id) ?? null) : null,
+      status: message.status,
+      templateName: message.template_name,
+      wamid: message.wamid,
+    })),
+    replyWindowClosesAt: Number.isFinite(lastInbound) ? new Date(lastInbound + REPLY_WINDOW_MS).toISOString() : null,
+  };
+}
+
+export async function loadInboxConversationForSend(conversationId: string) {
+  const row = await loadConversationRow(conversationId);
+  return {
+    contactWaId: row.contact_wa_id,
+    id: row.id,
+    lastInboundAt: row.last_inbound_at,
+    line: findWhatsAppInboxLine(row.phone_number_id),
+    phoneNumberId: row.phone_number_id,
+    problem: cannotSendReason(row),
+  };
+}
+
+export async function markInboxConversationRead(conversationId: string): Promise<{ previousUnread: number }> {
+  const row = await loadConversationRow(conversationId);
+  if (row.unread_count === 0) return { previousUnread: 0 };
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .update({ unread_count: 0, updated_at: new Date().toISOString() })
+    .eq("id", conversationId);
+  if (error) throw error;
+  return { previousUnread: row.unread_count };
+}
+
+// ── Linking a chat to a person ───────────────────────────────────────────────────────────────────
+
+export type InboxPersonOption =
+  | { kind: "candidate"; id: string; name: string; detail: string | null; phoneMatch: boolean }
+  | { kind: "employee"; id: string; name: string; detail: string | null; phoneMatch: boolean };
+
+function phoneTail(value: string | null | undefined): string | null {
+  const normalized = normalizePhone(value);
+  return normalized && normalized.length >= 9 ? normalized.slice(-9) : null;
+}
+
+/**
+ * People this chat might belong to: candidates and employees whose phone matches, then name matches
+ * for `search`. Only ever SUGGESTS — a shared phone is not the same person, so a human links.
+ */
+export async function findInboxPeople(input: { conversationId?: string | null; search?: string | null }): Promise<InboxPersonOption[]> {
+  const supabase = getSupabaseAdmin();
+  const options: InboxPersonOption[] = [];
+  const seen = new Set<string>();
+  const add = (option: InboxPersonOption) => {
+    const key = `${option.kind}:${option.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    options.push(option);
+  };
+
+  if (input.conversationId) {
+    const row = await loadConversationRow(input.conversationId);
+    const waId = normalizePhone(row.contact_wa_id);
+    const tail = phoneTail(row.contact_wa_id);
+    if (waId && tail) {
+      const { data: candidates } = await supabase
+        .from("ats_candidates")
+        .select("id, full_name, phone, email")
+        .or(`phone_norm.eq.${waId},phone.ilike.*${tail},whatsapp.ilike.*${tail}`)
+        .limit(10);
+      for (const candidate of (candidates ?? []) as Array<{ id: string; full_name: string | null; phone: string | null; email: string | null }>) {
+        add({ detail: candidate.email ?? candidate.phone, id: candidate.id, kind: "candidate", name: candidate.full_name?.trim() || "Unnamed candidate", phoneMatch: true });
+      }
+      const { data: employees } = await supabase
+        .from("employees")
+        .select("hr_id, full_name, job_title, mobile_number")
+        .ilike("mobile_number", `%${tail}`)
+        .limit(10);
+      for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null; mobile_number: string | null }>) {
+        if (phoneTail(employee.mobile_number) !== tail) continue;
+        add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: employee.full_name?.trim() || "Unnamed employee", phoneMatch: true });
+      }
+    }
+  }
+
+  const search = sanitizeInboxSearch(input.search);
+  if (search.length >= 2) {
+    const digits = search.replace(/\D+/g, "");
+    const candidateClauses = [`full_name.ilike.*${search}*`, `email.ilike.*${search}*`];
+    if (digits.length >= 6) candidateClauses.push(`phone.ilike.*${digits.replace(/^0+/, "")}*`);
+    const { data: candidates } = await supabase
+      .from("ats_candidates")
+      .select("id, full_name, phone, email")
+      .or(candidateClauses.join(","))
+      .order("created_at", { ascending: false })
+      .limit(10);
+    for (const candidate of (candidates ?? []) as Array<{ id: string; full_name: string | null; phone: string | null; email: string | null }>) {
+      add({ detail: candidate.email ?? candidate.phone, id: candidate.id, kind: "candidate", name: candidate.full_name?.trim() || "Unnamed candidate", phoneMatch: false });
+    }
+    const employeeClauses = [`full_name.ilike.*${search}*`, `name_ar.ilike.*${search}*`, `hr_id.ilike.${search}`];
+    if (digits.length >= 6) employeeClauses.push(`mobile_number.ilike.*${digits.replace(/^0+/, "")}*`);
+    const { data: employees } = await supabase
+      .from("employees")
+      .select("hr_id, full_name, job_title")
+      .or(employeeClauses.join(","))
+      .limit(10);
+    for (const employee of (employees ?? []) as Array<{ hr_id: string; full_name: string | null; job_title: string | null }>) {
+      add({ detail: employee.job_title, id: employee.hr_id, kind: "employee", name: employee.full_name?.trim() || "Unnamed employee", phoneMatch: false });
+    }
+  }
+
+  return options;
+}
+
+export async function linkInboxConversation(input: {
+  conversationId: string;
+  candidateId: string | null;
+  employeeHrId: string | null;
+  access: AccessContext;
+}): Promise<{ before: { candidateId: string | null; employeeHrId: string | null }; after: { candidateId: string | null; employeeHrId: string | null } }> {
+  const row = await loadConversationRow(input.conversationId);
+  const supabase = getSupabaseAdmin();
+
+  if (input.candidateId) {
+    const { data } = await supabase.from("ats_candidates").select("id").eq("id", input.candidateId).maybeSingle();
+    if (!data) throw new WhatsAppInboxInputError("That candidate no longer exists.");
+  }
+  let employeeHrId: string | null = null;
+  if (input.employeeHrId) {
+    const { data } = await supabase.from("employees").select("hr_id").eq("hr_id", input.employeeHrId).maybeSingle();
+    if (!data) throw new WhatsAppInboxInputError("That employee was not found.");
+    employeeHrId = (data as { hr_id: string }).hr_id;
+  }
+
+  const linked = Boolean(input.candidateId || employeeHrId);
+  const { error } = await supabase
+    .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
+    .update({
+      candidate_id: input.candidateId,
+      employee_hr_id: employeeHrId,
+      linked_at: linked ? new Date().toISOString() : null,
+      linked_by_hr_id: linked ? (hrIdForStorage(input.access.hrId) ?? input.access.loginId ?? null) : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.conversationId);
+  if (error) throw error;
+
+  return {
+    after: { candidateId: input.candidateId, employeeHrId },
+    before: { candidateId: row.candidate_id, employeeHrId: row.employee_hr_id },
+  };
+}
+
+// ── Attachments ──────────────────────────────────────────────────────────────────────────────────
+
+const EXTENSIONS: Record<string, string> = {
+  "application/pdf": "pdf",
+  "audio/aac": "aac",
+  "audio/amr": "amr",
+  "audio/mp4": "m4a",
+  "audio/mpeg": "mp3",
+  "audio/ogg": "ogg",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "video/3gpp": "3gp",
+  "video/mp4": "mp4",
+};
+
+/** A name a person can save, for an attachment that arrived without one. */
+export function inboxAttachmentFileName(input: { fileName: string | null; mimeType: string | null; messageType: string; sentAt: string }): string {
+  if (input.fileName?.trim()) return input.fileName.trim();
+  const mime = (input.mimeType ?? "").split(";")[0]!.trim().toLowerCase();
+  const extension = EXTENSIONS[mime] ?? mime.split("/")[1]?.replace(/[^a-z0-9]+/g, "") ?? "bin";
+  const words = { audio: "voice-note", document: "file", image: "photo", sticker: "sticker", video: "video" } as Record<string, string>;
+  const stamp = input.sentAt.slice(0, 10);
+  return `whatsapp-${words[input.messageType] ?? "attachment"}-${stamp}.${extension || "bin"}`;
+}
+
+function storagePathFor(messageId: string, fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "attachment";
+  const digest = crypto.createHash("sha256").update(messageId).digest("hex").slice(0, 24);
+  return `messages/${digest}/${safe}`;
+}
+
+export function inboxOutboundStoragePath(fileName: string): string {
+  return storagePathFor(crypto.randomUUID(), fileName);
+}
+
+async function loadMessageRow(messageId: string): Promise<MessageRow> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from(WHATSAPP_INBOX_MESSAGES_TABLE).select(MESSAGE_COLUMNS).eq("id", messageId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new WhatsAppInboxNotFoundError("That message no longer exists.");
+  return data as MessageRow;
+}
+
+export type InboxAttachment = { bytes: Buffer; mimeType: string; fileName: string };
+
+async function copyFromMeta(row: MessageRow): Promise<InboxAttachment> {
+  if (!row.media_id) throw new WhatsAppInboxNotFoundError("This message has no attachment.");
+  const { bytes, mimeType } = await downloadWhatsAppMedia(row.media_id, { maxBytes: INBOX_MEDIA_CACHE_MAX_BYTES });
+  const resolvedMime = row.media_mime_type || mimeType || "application/octet-stream";
+  const fileName = inboxAttachmentFileName({ fileName: row.media_file_name, messageType: row.message_type, mimeType: resolvedMime, sentAt: row.sent_at });
+  const path = storagePathFor(row.id, fileName);
+  const supabase = getSupabaseAdmin();
+  const { error: uploadError } = await supabase.storage
+    .from(WHATSAPP_INBOX_MEDIA_BUCKET)
+    .upload(path, bytes, { cacheControl: "31536000", contentType: resolvedMime, upsert: true });
+  if (uploadError) throw new Error(`storage upload failed: ${uploadError.message}`);
+  const { error: updateError } = await supabase
+    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+    .update({
+      media_byte_size: bytes.length,
+      media_fetch_attempts: row.media_fetch_attempts + 1,
+      media_fetch_error: null,
+      media_fetched_at: new Date().toISOString(),
+      media_mime_type: resolvedMime,
+      media_storage_path: path,
+    })
+    .eq("id", row.id);
+  if (updateError) throw new Error(`row update failed: ${updateError.message}`);
+  return { bytes, fileName, mimeType: resolvedMime };
+}
+
+/**
+ * The bytes of one message's attachment. From Phoenix's own copy when there is one; else from the
+ * video holding area (the same video may already be there); else straight from WhatsApp, keeping a
+ * copy on the way through.
+ */
+export async function getInboxAttachment(messageId: string): Promise<InboxAttachment> {
+  const row = await loadMessageRow(messageId);
+  const supabase = getSupabaseAdmin();
+  const fallbackMime = row.media_mime_type || "application/octet-stream";
+  const fileName = inboxAttachmentFileName({ fileName: row.media_file_name, messageType: row.message_type, mimeType: fallbackMime, sentAt: row.sent_at });
+
+  if (row.media_storage_path) {
+    const { data, error } = await supabase.storage.from(WHATSAPP_INBOX_MEDIA_BUCKET).download(row.media_storage_path);
+    if (!error && data) return { bytes: Buffer.from(await data.arrayBuffer()), fileName, mimeType: fallbackMime };
+  }
+
+  if (row.wamid && row.direction === "inbound") {
+    const { data: video } = await supabase
+      .from("whatsapp_inbound_video")
+      .select("storage_path, mime_type")
+      .eq("wamid", row.wamid)
+      .not("storage_path", "is", null)
+      .maybeSingle();
+    const videoRow = video as { storage_path: string; mime_type: string } | null;
+    if (videoRow?.storage_path) {
+      const { data, error } = await supabase.storage.from(WHATSAPP_VIDEOS_BUCKET).download(videoRow.storage_path);
+      if (!error && data) return { bytes: Buffer.from(await data.arrayBuffer()), fileName, mimeType: videoRow.mime_type || fallbackMime };
+    }
+  }
+
+  if (!row.media_id) throw new WhatsAppInboxNotFoundError("This attachment is no longer available.");
+  try {
+    return await copyFromMeta(row);
+  } catch (error) {
+    if (error instanceof WhatsAppMediaTooLargeError) {
+      throw new WhatsAppInboxInputError("This attachment is over 25 MB. Open it on the phone instead.");
+    }
+    throw new WhatsAppInboxNotFoundError("WhatsApp no longer holds this attachment, and Phoenix had not kept a copy.");
+  }
+}
+
+export type InboxMediaCacheResult = { considered: number; copied: number; failed: number };
+
+/**
+ * Copies attachments out of WhatsApp while their media ids still work. Runs on the inbound-intake
+ * cron tick. Sequential and small on purpose — each file is held in memory on a shared container.
+ */
+export async function cacheInboxMedia(maxItems = 10): Promise<InboxMediaCacheResult> {
+  const result: InboxMediaCacheResult = { considered: 0, copied: 0, failed: 0 };
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+    .select(MESSAGE_COLUMNS)
+    .not("media_id", "is", null)
+    .is("media_storage_path", null)
+    .lt("media_fetch_attempts", INBOX_MEDIA_MAX_FETCH_ATTEMPTS)
+    .order("received_at", { ascending: true })
+    .limit(Math.max(1, Math.min(25, Math.floor(maxItems))));
+  if (error) {
+    if (error.code !== "PGRST205" && error.code !== "42P01") {
+      logError("Could not list WhatsApp inbox attachments to copy", { error, labels: { event: "whatsapp_inbox_media_list_failed" } });
+    }
+    return result;
+  }
+
+  for (const row of (data ?? []) as MessageRow[]) {
+    result.considered += 1;
+    try {
+      await copyFromMeta(row);
+      result.copied += 1;
+    } catch (copyError) {
+      result.failed += 1;
+      // Too large never gets smaller: spend the whole retry budget at once.
+      const attempts = copyError instanceof WhatsAppMediaTooLargeError ? INBOX_MEDIA_MAX_FETCH_ATTEMPTS : row.media_fetch_attempts + 1;
+      const message = copyError instanceof Error ? copyError.message : String(copyError);
+      await supabase
+        .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+        .update({ media_fetch_attempts: attempts, media_fetch_error: message.slice(0, 500) })
+        .eq("id", row.id)
+        .then(undefined, () => undefined);
+    }
+  }
+
+  if (result.considered > 0) {
+    logInfo("WhatsApp inbox attachment copy pass finished", {
+      labels: { copied: result.copied, event: "whatsapp_inbox_media_pass", failed: result.failed },
+    });
+  }
+  return result;
+}
+
+export async function saveInboxAttachmentToCandidate(input: {
+  access: AccessContext;
+  messageId: string;
+  candidateId: string;
+  kind: "cv" | "other";
+}): Promise<{ fileId: string; fileName: string; candidateName: string; previousCandidateId: string | null }> {
+  const row = await loadMessageRow(input.messageId);
+  if (!row.media_id && !row.media_storage_path) throw new WhatsAppInboxInputError("This message has no attachment to save.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: candidate } = await supabase.from("ats_candidates").select("id, full_name").eq("id", input.candidateId).maybeSingle();
+  if (!candidate) throw new WhatsAppInboxInputError("That candidate no longer exists.");
+
+  const attachment = await getInboxAttachment(input.messageId);
+  const uploaded = await uploadCandidateFile(input.access, {
+    bytes: attachment.bytes,
+    candidateId: input.candidateId,
+    fileName: attachment.fileName,
+    kind: input.kind,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.bytes.length,
+  });
+
+  const { error } = await supabase
+    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+    .update({
+      saved_at: new Date().toISOString(),
+      saved_by_hr_id: hrIdForStorage(input.access.hrId) ?? input.access.loginId ?? null,
+      saved_file_id: uploaded.id,
+      saved_to_candidate_id: input.candidateId,
+    })
+    .eq("id", input.messageId);
+  if (error) throw error;
+
+  return {
+    candidateName: (candidate as { full_name: string | null }).full_name?.trim() || "Unnamed candidate",
+    fileId: uploaded.id,
+    fileName: attachment.fileName,
+    previousCandidateId: row.saved_to_candidate_id,
+  };
+}
+
+/** Keeps a file Phoenix is about to send, so the sent message can be opened later like any other. */
+export async function storeInboxOutboundFile(input: { bytes: Buffer; mimeType: string; fileName: string }): Promise<string> {
+  const path = inboxOutboundStoragePath(input.fileName);
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.storage
+    .from(WHATSAPP_INBOX_MEDIA_BUCKET)
+    .upload(path, input.bytes, { cacheControl: "31536000", contentType: input.mimeType, upsert: false });
+  if (error) throw new Error(`Phoenix could not keep a copy of the file: ${error.message}`);
+  return path;
+}
