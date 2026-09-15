@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --container-pad: 1rem;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-white text-body font-sans antialiased;
+  }
+  h1, h2, h3 {
+    @apply font-display text-ink;
+  }
+  /* RTL: Arabic font + correct direction */
+  [dir='rtl'] body {
+    @apply font-ar;
+  }
+  ::selection {
+    background: #0879b8;
+    color: #fff;
+  }
+  :focus-visible {
+    outline: 2px solid #0879b8;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-container px-4 sm:px-6 lg:px-8;
+  }
+  /* The micro label: the one voice every label, eyebrow and index on the site speaks in. */
+  .micro {
+    @apply text-[10.5px] font-bold uppercase tracking-[0.2em];
+  }
+  .eyebrow {
+    @apply micro text-primary;
+  }
+  /* The engraved grid the navy bands carry — hairlines, never a gradient wash. */
+  .ink-grid {
+    background-image: linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .paper-grid {
+    background-image: linear-gradient(rgba(17, 24, 32, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(17, 24, 32, 0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .section {
+    @apply py-16 sm:py-20 lg:py-24;
+  }
+  .bg-cover-fixed {
+    @apply bg-cover bg-center bg-no-repeat;
+  }
+  /* Seamless molecular tile for product-card placeholders */
+  .bg-tile {
+    background-image: url('/images/pattern.webp');
+    background-repeat: repeat;
+    background-size: 180px 104px;
+  }
+  /* A field: square, one hairline, and the brand blue when it has focus. */
+  .field {
+    @apply block h-12 w-full border border-line bg-white px-4 text-[15px] text-ink placeholder:text-muted transition-colors duration-200 hover:border-muted focus:border-primary focus:outline-none focus:ring-0 disabled:bg-canvas disabled:text-muted;
+  }
+  textarea.field {
+    @apply h-auto py-3 leading-relaxed;
+  }
+  .field-label {
+    @apply micro mb-2 block text-ink;
+  }
+}
+
+/* Retina hero: serve 2x master on high-DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .bg-hero { background-image: url('/images/hero-bg@2x.webp'); }
+}
+
+/* RTL: mirrored hero artwork (focal art left, headline space right) */
+[dir='rtl'] .bg-hero { background-image: url('/images/hero-ar-bg.webp'); }
+
+/* Letterspacing pulls Arabic's joined letters apart, and 10.5px Arabic is too
+   small to read: the micro voice in Arabic is a little larger and untracked. */
+[dir='rtl'] .micro {
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+/* Arabic is set in Cairo whatever family a Latin heading asks for. */
+[dir='rtl'] .font-sans,
+[dir='rtl'] .font-display,
+[dir='rtl'] .font-title,
+[dir='rtl'] .font-eyebrow,
+[dir='rtl'] .font-nav {
+  font-family: var(--font-cairo), Tahoma, sans-serif;
+}
+
+/* ── The premium layer ─────────────────────────────────────────────────────── */
+
+/* A slow ribbon: two copies side by side, each sliding exactly its own width. */
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes marquee-reverse { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.marquee-track { animation: marquee 42s linear infinite; }
+
+/* A measuring rule, engraved: a short tick every 8px and a long one every 40px. */
+.tick-rule-y {
+  background-image: linear-gradient(to bottom, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: 6px 8px, 14px 40px;
+  background-repeat: repeat-y;
+}
+[dir='rtl'] .tick-rule-y { background-position: right top, right top; }
+.tick-rule-x {
+  background-image: linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to right, currentColor 1px, transparent 1px);
+  background-size: 8px 6px, 40px 14px;
+  background-repeat: repeat-x;
+  background-position: left bottom, left bottom;
+}
+
+/* Numerals drawn as a hairline outline: large, and still quiet. */
+.text-outline-ink { color: transparent; -webkit-text-stroke: 1px #d3dce1; transition: -webkit-text-stroke-color 0.5s; }
+.text-outline-on-ink { color: transparent; -webkit-text-stroke: 1px rgba(255, 255, 255, 0.13); transition: -webkit-text-stroke-color 0.5s; }
+.group:hover .text-outline-ink { -webkit-text-stroke-color: #0879b8; }
+.group:hover .text-outline-on-ink { -webkit-text-stroke-color: rgba(93, 183, 232, 0.6); }
+
+/* An underline that draws in from the start side on hover. */
+.link-draw {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 0.5s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s;
+}
+[dir='rtl'] .link-draw { background-position: 100% 100%; }
+.link-draw:hover, .group:hover .link-draw { background-size: 100% 1px; }
+
+/* The check drawing itself inside its seal. */
+@keyframes sharp-draw { to { stroke-dashoffset: 0; } }
+.sharp-draw path { stroke-dasharray: 44; stroke-dashoffset: 44; animation: sharp-draw 0.8s cubic-bezier(0.65, 0, 0.35, 1) 0.55s forwards; }
+
+/* A hairline that falls down its track, over and over: the hero's scroll cue. */
+@keyframes scroll-cue {
+  0% { transform: scaleY(0); transform-origin: top; }
+  45% { transform: scaleY(1); transform-origin: top; }
+  55% { transform: scaleY(1); transform-origin: bottom; }
+  100% { transform: scaleY(0); transform-origin: bottom; }
+}
+.scroll-cue { animation: scroll-cue 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+
+/*
+ * Entrances. Content is SHOWN at rest; each animation is laid over it only once script adds the -run class as the
+ * element scrolls in. `backwards` holds the start frame through any delay, then lets go of the element entirely.
+ * The variables do not inherit, so a rule inside a delayed section keeps its own timing.
+ */
+@property --rv-delay { syntax: '<time>'; inherits: false; initial-value: 0s; }
+@property --rv-dur { syntax: '<time>'; inherits: false; initial-value: 0.9s; }
+@property --rv-y { syntax: '<length>'; inherits: false; initial-value: 28px; }
+@property --mask-delay { syntax: '<time>'; inherits: false; initial-value: 0s; }
+@keyframes rv-rise { from { opacity: 0; transform: translateY(var(--rv-y)); } }
+@keyframes rv-word { from { transform: translateY(110%); } }
+@keyframes rv-draw { from { transform: scaleX(0); } }
+@keyframes rv-grow-y { from { transform: scaleY(0); } }
+@keyframes rv-drop { from { transform: translateY(-80px); } }
+.rv-rise-run { animation: rv-rise var(--rv-dur) cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay) backwards; }
+.rv-words-run .rv-word { animation: rv-word 0.9s cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay) backwards; }
+.rv-draw-run { animation: rv-draw 1.1s cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay) backwards; }
+.rv-grow-y-run { animation: rv-grow-y 1.3s cubic-bezier(0.16, 1, 0.3, 1) var(--rv-delay) backwards; }
+.rv-drop-run { animation: rv-drop 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+/* A photograph uncovered by a wipe while it settles from a slight enlargement. Shown at rest; the wipe only overlays it. */
+@keyframes mask-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes mask-in-rtl { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
+@keyframes mask-settle { from { transform: scale(1.16); } to { transform: none; } }
+.mask-reveal-run { animation: mask-in 1.25s cubic-bezier(0.16, 1, 0.3, 1) var(--mask-delay, 0s) both; }
+[dir='rtl'] .mask-reveal-run { animation-name: mask-in-rtl; }
+.mask-reveal-run > .mask-reveal-inner { animation: mask-settle 2s cubic-bezier(0.16, 1, 0.3, 1) var(--mask-delay, 0s) both; }
+
+@media print {
+  .sharp-draw path { stroke-dashoffset: 0 !important; animation: none !important; }
+  .marquee-track, .scroll-cue { animation: none !important; }
+  .mask-reveal-run, .mask-reveal-run > .mask-reveal-inner { animation: none !important; }
+  .rv-rise-run, .rv-words-run .rv-word, .rv-draw-run, .rv-grow-y-run, .rv-drop-run { animation: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  .marquee-track, .scroll-cue { animation: none !important; }
+  .sharp-draw path { stroke-dashoffset: 0 !important; animation: none !important; }
+  .mask-reveal-run, .mask-reveal-run > .mask-reveal-inner { animation: none !important; }
+  .rv-rise-run, .rv-words-run .rv-word, .rv-draw-run, .rv-grow-y-run, .rv-drop-run { animation: none !important; }
+}
