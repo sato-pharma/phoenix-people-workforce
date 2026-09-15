@@ -17,7 +17,7 @@
 // Pure calendar arithmetic — no timezone, no clock, no database — so it is
 // deterministic and testable.
 
-import { addDays, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
+import { addDays, resolveCycleWindow, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
 
 export type SettlementWeek = {
   /** 1..4 */
@@ -92,4 +92,25 @@ export function completedSettlementWeek(
 ): SettlementWeek | null {
   const closed = tileSettlementWeeks(cycle).filter((week) => week.endIso < todayIso);
   return closed.length ? closed[closed.length - 1]! : null;
+}
+
+/**
+ * The most recently CLOSED settlement week as of `todayIso`, and the cycle it belongs to — which is
+ * not always today's cycle.
+ *
+ * Week 4 ends on the cycle's last day (the 23rd). The first day it has closed is the 24th, and on
+ * the 24th today's cycle is already the NEXT one, whose first week has not closed yet. Asking only
+ * today's cycle therefore never built a week 4 at all: every cycle lost its last 9-10 days. Until
+ * the new cycle has a closed week of its own, the week due is the previous cycle's last one.
+ */
+export function latestClosedSettlementWeek(
+  todayIso: string,
+  anchorDay?: number,
+): { cycle: CycleWindow; week: SettlementWeek } | null {
+  const cycle = resolveCycleWindow(todayIso, anchorDay);
+  const current = completedSettlementWeek(todayIso, cycle);
+  if (current) return { cycle, week: current };
+  const previousCycle = resolveCycleWindow(addDays(cycle.startIso, -1), anchorDay);
+  const previous = completedSettlementWeek(todayIso, previousCycle);
+  return previous ? { cycle: previousCycle, week: previous } : null;
 }

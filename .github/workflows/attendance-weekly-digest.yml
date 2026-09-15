@@ -1,7 +1,8 @@
 name: Attendance Weekly Digest
 
-# Calls the weekly attendance digest's own cron route, which builds the digests for the
-# settlement week that has just CLOSED and opens them for answers.
+# Calls the weekly attendance review's own cron route, which builds the digests for the
+# settlement week that has just CLOSED (waiting for the Super Admin's release), settles days
+# left unanswered past their deadline to salary, and applies settled answers to payroll.
 #
 # WHY A GITHUB ACTIONS CRON AND NOT cron-job.org. cron-job.org is this repo's production
 # scheduler and remains the right home for it, but `api.cron-job.org` (195.201.26.157) is
@@ -21,9 +22,10 @@ name: Attendance Weekly Digest
 # week punctual rather than waiting on one fixed day. It also means a missed or delayed run
 # — GitHub does not guarantee schedule punctuality — costs nothing at all.
 #
-# IT SENDS NOTHING. The digest module notifies nobody by construction (owner, 2026-09-08);
-# the channel columns are not switched off, they are absent from the schema. This workflow
-# cannot cause a message to reach an employee.
+# IT SENDS NOTHING. Employees are told about a week only when the Super Admin releases it
+# from the admin review page (owner, 2026-09-15) — never from this job. What this job CAN do
+# is settle a released day that went unanswered past its 2-working-day deadline to salary,
+# which is the owner's rule for silence, not a message.
 on:
   schedule:
     # 03:23 UTC = 06:23 Cairo. Offset off the shared :00/:15/:30/:45 firing minute like
@@ -86,7 +88,8 @@ jobs:
             else
               "week \(.generated.week.index // "?") (\(.generated.week.startIso // "?") .. \(.generated.week.endIso // "?")): " +
               "\(.generated.digestsCreated // 0) digest(s), \(.generated.linesCreated // 0) line(s), " +
-              "\(.generated.skippedExisting // 0) already present, dryRun=\(.dryRun)"
+              "\(.generated.skippedExisting // 0) already present, " +
+              "\(.deadline.daysSettledToSalary // 0) overdue day(s) settled to salary, dryRun=\(.dryRun)"
             end
           ' response.json)
           echo "::notice::${summary}"

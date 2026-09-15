@@ -1637,6 +1637,8 @@ import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-
 import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
+import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
+import { runAttendanceDigestEmailBlockTests } from "./attendance-digest-email-block.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
@@ -5363,6 +5365,11 @@ await runTest(
   "weekly attendance digest (four settlement weeks with no gap, a closed week only, and a cancelled day never becoming a chargeable line)",
   runAttendanceWeeklyDigestTests,
 );
+await runTest(
+  "weekly attendance review release flow (nothing reaches an employee before release, a trial week never releases, 2 working days then salary, and a balance-paid day is never also deducted from pay)",
+  runAttendanceDigestRulesTests,
+);
+await runTest("weekly attendance release notice is in-app + Telegram only, never email", runAttendanceDigestEmailBlockTests);
 
 await runTest(
   "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",

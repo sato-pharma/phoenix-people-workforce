@@ -9,14 +9,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The caller's OWN digests, and only their own — `listMyDigests` scopes by the
- * session's hrId and there is deliberately no employeeHrId parameter to widen it.
+ * The caller's OWN released weeks, and only their own — `listMyDigests` scopes by the
+ * session's hrId and there is deliberately no employeeHrId parameter to widen it. A week
+ * still waiting for the Super Admin's release is never returned.
  */
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "attendance", "read");
-    // TEMPORARY LOCKDOWN — owner 2026-09-08. Fails closed on a lookup error.
     if (!(await canOpenDigestPortal(access).catch(() => false))) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }

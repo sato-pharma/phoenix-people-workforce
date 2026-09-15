@@ -19,6 +19,13 @@ export type AuditEntityType =
   | "attendance_digest_confirm"
   | "attendance_digest_dispute"
   | "attendance_digest_dispute_review"
+  // Added 2026-09-15 with the release step: the Super Admin taking a day out before anyone sees
+  // it, releasing a week to its employees, the employee's salary-or-balance choice, and the daily
+  // job settling an unanswered day to salary once its deadline passed.
+  | "attendance_digest_line_removed"
+  | "attendance_digest_release"
+  | "attendance_digest_answer"
+  | "attendance_digest_auto_salary"
   | "attendance_weekly_digest_run"
   | "attendance_holiday_override"
   | "attendance_settlement"

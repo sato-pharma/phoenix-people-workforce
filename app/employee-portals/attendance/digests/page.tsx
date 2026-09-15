@@ -15,10 +15,9 @@ export default async function EmployeeWeeklyDigestPage() {
     redirect("/employee-portals");
   }
 
-  // TEMPORARY LOCKDOWN — owner 2026-09-08, pending his rules on telling people the
-  // page exists. FAILS CLOSED: a lookup that throws means "not verifiably allowed",
-  // never "let them in", which is the only safe direction for a page showing somebody
-  // their own pay deductions.
+  // Self-scoped: any employee with an HR ID sees their OWN released weeks only. FAILS
+  // CLOSED on a lookup error, the only safe direction for a page showing somebody their
+  // own pay deductions.
   if (!(await canOpenDigestPortal(access).catch(() => false))) {
     redirect("/employee-portals");
   }
@@ -37,13 +36,13 @@ export default async function EmployeeWeeklyDigestPage() {
     showAmounts = settings.showEstimatedAmount;
   } catch (error) {
     // Say the page is broken rather than rendering an empty week, which reads as
-    // "you have nothing to answer" and quietly runs the response window down.
-    initialError = error instanceof Error ? error.message : "Weekly attendance digests failed to load.";
+    // "you have nothing to answer" while the 2-working-day deadline runs down.
+    initialError = error instanceof Error ? error.message : "Weekly attendance failed to load.";
   }
 
   return (
     <EmployeePortalPageShell
-      description="Confirm or dispute each attendance day flagged for you this week."
+      description="For each flagged day, choose whether it is deducted from your salary or your annual balance, then dispute it if it is wrong."
       title="Weekly Attendance"
     >
       <WeeklyDigestPortal initialDigests={initialDigests} initialError={initialError} showAmounts={showAmounts} />

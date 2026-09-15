@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { applyDigestAnswersForMonth } from "@/lib/attendance/digest-bridge.ts";
-import { generateDigestsForCompletedWeek, getDigestSettings } from "@/lib/attendance/digest-service.ts";
+import { generateDigestsForCompletedWeek, getDigestSettings, settleOverdueAnswers } from "@/lib/attendance/digest-service.ts";
 import { previousMonthKey } from "@/lib/attendance/digest-weeks.ts";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
@@ -13,18 +13,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * The weekly digest's scheduled work, in two steps.
+ * The weekly attendance review's scheduled work, in three steps.
  *
- *   1. GENERATE — build the digests for the settlement week that has just CLOSED,
- *      open for answers immediately.
- *   2. APPLY — take the answers employees have already given and put them on the
- *      month-end deduction candidates, once those candidates exist.
+ *   1. GENERATE — build the digests for the settlement week that has just CLOSED, as
+ *      `awaiting_release`. This step SENDS NOTHING: a week reaches its employees only when
+ *      the Super Admin releases it from the admin review page (owner, 2026-09-15).
+ *   2. DEADLINE — settle every day still unanswered after its answer deadline (2 working
+ *      days from release) to salary. Owner decision 2026-09-15.
+ *   3. APPLY — take the settled answers and put them on the month-end deduction
+ *      candidates, once those candidates exist.
  *
- * There is nothing to send and nothing to sweep. The module notifies nobody (owner,
- * 2026-09-08), and with no notice there is no response window to expire — so the two
- * steps this route used to carry, `send` and `auto-confirm`, are gone rather than
- * disabled. An unanswered day writes no settlement, never reaches step 2, and travels
- * to the month-end Deductions queue as Pending.
+ * Step 2 runs BEFORE step 3 so a day settled to salary this morning reaches its candidate
+ * in the same run rather than a day later.
  *
  * WHY STEP 2 LIVES HERE. Without it the module records answers that reach nothing:
  * an employee could confirm a day and the confirmation would sit in the settlement
@@ -70,13 +70,28 @@ export async function GET(request: Request) {
 
     // Generation has already committed by this point, so a failure below must not be
     // reported as though the whole run failed — but it must not be swallowed either.
-    // Both results are returned, and the status goes 500 so a broken bridge is loud
-    // rather than a quiet "applied: 0" that reads exactly like "nothing to apply".
+    // Every result is returned, and the status goes 500 so a broken step is loud
+    // rather than a quiet zero that reads exactly like "nothing to do".
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;
     const applied: Awaited<ReturnType<typeof applyDigestAnswersForMonth>>[] = [];
+    let deadline: Awaited<ReturnType<typeof settleOverdueAnswers>> | null = null;
+    let deadlineError: string | null = null;
+    try {
+      deadline = await settleOverdueAnswers({ todayIso, actor: "system:attendance-weekly-digest-cron" });
+    } catch (error) {
+      deadlineError = clientSafeErrorMessage(error, "Settling overdue answers failed.");
+      logError("Weekly attendance deadline sweep failed", {
+        labels: { event: "cron_partial", job: "attendance-weekly-digest" },
+        error,
+      });
+    }
+
     let bridgeError: string | null = null;
     try {
-      for (const key of [previousMonthKey(monthKey), monthKey]) {
+      // Three months, not two: a dispute on a day late in one month can be decided well into the
+      // month after next, and its answer must still reach a deduction that is not locked yet.
+      const previous = previousMonthKey(monthKey);
+      for (const key of [previousMonthKey(previous), previous, monthKey]) {
         applied.push(await applyDigestAnswersForMonth(key));
       }
     } catch (error) {
@@ -87,9 +102,20 @@ export async function GET(request: Request) {
       });
     }
 
+    // Also loud: a day the sweep could not settle, and a day paid from annual balance that payroll
+    // had already approved (taken twice). Each is retried or needs a person, and a 200 would hide it.
+    const deadlineFailures = deadline?.failures ?? 0;
+    const balanceAlerts = applied.flatMap((result) => result.alerts);
+    const failed = Boolean(bridgeError || deadlineError || deadlineFailures > 0 || balanceAlerts.length > 0);
+    if (deadlineFailures > 0 || balanceAlerts.length > 0) {
+      logError("Weekly attendance run needs attention", {
+        labels: { event: "cron_partial", job: "attendance-weekly-digest", deadlineFailures: String(deadlineFailures), balanceAlerts: String(balanceAlerts.length) },
+      });
+    }
     return NextResponse.json(
-      { success: !bridgeError, dryRun: settings.dryRun, todayIso, generated, applied, bridgeError, notified: 0 },
-      { status: bridgeError ? 500 : 200 },
+      // `notified: 0` stays literal: this job never notifies — the release does.
+      { success: !failed, dryRun: settings.dryRun, todayIso, generated, deadline, deadlineError, applied, bridgeError, notified: 0 },
+      { status: failed ? 500 : 200 },
     );
   } catch (error) {
     logError("Weekly attendance digest cron failed", {

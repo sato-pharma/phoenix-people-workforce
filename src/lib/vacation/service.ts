@@ -2391,6 +2391,12 @@ export async function balanceSettledDaysInPeriod(input: {
    * somebody's leave entitlement.
    */
   excludeSettlementRunId?: string | null;
+  /**
+   * Throw instead of reading a failed lookup as 0. Only a caller that SPENDS balance on the answer
+   * passes this (the weekly attendance review's "pay from annual balance"): a zero there lets the
+   * same days be spent twice. Everything else keeps the fail-open read so a page still renders.
+   */
+  failClosed?: boolean;
 },
   /** Injected only by the test — production always uses the admin client. */
   client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
@@ -2421,6 +2427,7 @@ export async function balanceSettledDaysInPeriod(input: {
     );
   } catch (error) {
     logError("Balance-settled days lookup failed", { labels: { event: "vacation_balance_settled_days_lookup_failed", employeeHrId: input.employeeHrId }, error });
+    if (input.failClosed) throw error;
     return 0;
   }
 }
@@ -2487,6 +2494,8 @@ async function approvedPaidDaysInPeriod(input: {
   excludeRequestId?: string;
   /** Passed straight to balanceSettledDaysInPeriod — see the note there. */
   excludeSettlementRunId?: string | null;
+  /** Passed straight to balanceSettledDaysInPeriod's `failClosed`. */
+  failClosedLedgerRead?: boolean;
   periodEnd: string | null;
   periodStart: string | null;
   vacationType: VacationType;
@@ -2526,16 +2535,52 @@ async function approvedPaidDaysInPeriod(input: {
   const settledDays = await balanceSettledDaysInPeriod({
     employeeHrId: input.employeeHrId,
     excludeSettlementRunId: input.excludeSettlementRunId,
+    failClosed: input.failClosedLedgerRead,
     periodEnd: input.periodEnd,
     periodStart: input.periodStart,
   });
-  return requestDays + settledDays;
+  const attendanceDays = await attendanceChargedDaysInPeriod({
+    employeeHrId: input.employeeHrId,
+    periodEnd: input.periodEnd,
+    periodStart: input.periodStart,
+  });
+  return requestDays + settledDays + attendanceDays;
+}
+
+/**
+ * Annual leave days an employee chose to spend on attendance deductions (weekly attendance
+ * review, owner decision 2026-09-15). Same pool as annual and emergency requests.
+ *
+ * Unlike balanceSettledDaysInPeriod this does NOT swallow a read failure into 0: a balance that
+ * silently forgets days already spent lets the same days be spent twice. Only a table that does
+ * not exist yet (the migration not applied) reads as 0, because then no charge can exist either.
+ */
+export async function attendanceChargedDaysInPeriod(
+  input: { employeeHrId: string; periodStart: string; periodEnd: string },
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<number> {
+  const hrId = input.employeeHrId.trim();
+  if (!hrId) return 0;
+  const { data, error } = await client
+    .from("attendance_annual_balance_charges")
+    .select("days")
+    .ilike("employee_hr_id", hrId.replace(/[\\%_]/g, (char) => `\\${char}`))
+    .gte("work_date", input.periodStart)
+    .lt("work_date", input.periodEnd);
+  if (error) {
+    const code = String((error as { code?: unknown }).code ?? "");
+    const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+    if (code === "PGRST205" || code === "42P01" || message.includes("could not find the table")) return 0;
+    throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
+  }
+  return (data ?? []).reduce((sum, row) => sum + numberValue((row as { days?: unknown }).days), 0);
 }
 
 async function getDeferredDebtFromPreviousPeriods(input: {
   employeeHrId: string;
   hireDate: string;
   currentPeriodStart: string;
+  failClosedLedgerRead?: boolean;
 }): Promise<number> {
   if (compareDateOnly(input.currentPeriodStart, input.hireDate) <= 0) return 0;
 
@@ -2550,6 +2595,7 @@ async function getDeferredDebtFromPreviousPeriods(input: {
 
     const usedPaidDays = await approvedPaidDaysInPeriod({
       employeeHrId: input.employeeHrId,
+      failClosedLedgerRead: input.failClosedLedgerRead,
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
       vacationType: "annual",
@@ -2584,12 +2630,17 @@ export async function calculatePaymentForRequest(input: {
    * and sees every live settlement, which is what a balance check should normally do.
    */
   excludeSettlementRunId?: string | null;
+  /**
+   * Refuse (throw) when the payroll balance ledger cannot be read, in this period or any earlier
+   * one the carried debt walks, instead of counting it as 0. See balanceSettledDaysInPeriod.
+   */
+  failClosedLedgerRead?: boolean;
   hireDate: string | null;
   startDate: string;
   vacationType: VacationType;
 }) {
   if (input.vacationType === "compensatory") {
-    return calculateVacationPayment({
+    const payment = calculateVacationPayment({
       approvedPaidDaysInPeriod: 0,
       durationDays: input.durationDays,
       employeeHrId: input.employeeHrId,
@@ -2597,6 +2648,7 @@ export async function calculatePaymentForRequest(input: {
       startDate: input.startDate,
       vacationType: input.vacationType,
     });
+    return { ...payment, carriedOverDebtDays: 0 };
   }
 
   const period = getVacationBalancePeriod({
@@ -2608,6 +2660,7 @@ export async function calculatePaymentForRequest(input: {
     employeeHrId: input.employeeHrId,
     excludeRequestId: input.excludeRequestId,
     excludeSettlementRunId: input.excludeSettlementRunId,
+    failClosedLedgerRead: input.failClosedLedgerRead,
     periodEnd: period?.periodEnd ?? null,
     periodStart: period?.periodStart ?? null,
     vacationType: input.vacationType,
@@ -2617,12 +2670,13 @@ export async function calculatePaymentForRequest(input: {
   if ((input.vacationType === "annual" || input.vacationType === "emergency") && period?.periodStart && input.hireDate) {
     carriedOverDebtDays = await getDeferredDebtFromPreviousPeriods({
       employeeHrId: input.employeeHrId,
+      failClosedLedgerRead: input.failClosedLedgerRead,
       hireDate: input.hireDate,
       currentPeriodStart: period.periodStart,
     });
   }
 
-  return calculateVacationPayment({
+  const payment = calculateVacationPayment({
     approvedPaidDaysInPeriod: usedPaidDays + carriedOverDebtDays,
     durationDays: input.durationDays,
     employeeHrId: input.employeeHrId,
@@ -2630,6 +2684,9 @@ export async function calculatePaymentForRequest(input: {
     startDate: input.startDate,
     vacationType: input.vacationType,
   });
+  // `usedPaidDays` on the payment includes the debt. Returned apart so a caller comparing it with
+  // this period's own ledgers can take the debt back out — otherwise debt masks a missing day.
+  return { ...payment, carriedOverDebtDays };
 }
 
 export function sanitizeStorageSegment(value: string | null | undefined, fallback: string) {

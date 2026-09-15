@@ -1835,70 +1835,177 @@ call site of the three decorative layers.
 **No test pins flatness**, then or now — `tests/admin-shell-palette-scope.test.ts` pins the *corners*,
 which is why the square-edge half survived the reversal untouched and must keep surviving it.
 
-## 🔒 The weekly attendance digest is silent, passive and private — owner ruling, 2026-09-08
+## 🔒 The weekly attendance review: released by the owner, answered by the employee — owner ruling, 2026-09-15
 
-Asked directly, after being shown what each option cost, and answered in one line:
+**This replaces the 2026-09-08 ruling** ("no one is notified, silence means nothing, only me sees
+it"). A session reading git history will find that silent build, and before it a 48-hour
+auto-confirm and a three-channel notifier: **all of those are superseded decisions, not unfinished
+ones.** Do not restore any of them.
 
-> "no one is notified, silence means nothing, only me sees it"
+He set the new rules on 2026-09-15, first in his own words and then by choosing from options:
 
-Three rules, and all three were built the OTHER way earlier the same day and removed on his
-instruction. A session reading git history will find a 48-hour auto-confirm, a three-channel
-notifier and a portal nav row: **those are reversed decisions, not unfinished ones.**
+> "before pumping notications to employees i must approve this to happen and when the notification
+> goes … it asks deduct from saley or from avbalanvce if available"
 
-### 1. It notifies nobody, in any channel
+### 1. Nothing reaches an employee until he releases the week
 
-Not the employee, not a reviewer, not the owner. `src/lib/attendance/digest-notify.ts` is
-**deleted** and the `channel_in_app` / `channel_telegram` / `channel_email` columns are **absent
-from `attendance_digest_settings`** — dropped by
-`20260908163000_weekly_digest_silent_and_unpriced_days.sql`.
+The daily job (`app/api/cron/attendance-weekly-digest`) builds each closed week as
+**`awaiting_release`** and **sends nothing**. The week then waits on the admin page
+**Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
+employee's flagged days by name. There he can **remove a single day** (a reason is required, and
+it is only possible before release) and then **release the week**.
 
-That shape is deliberate: a switched-off sender is one edit away from sending, while restoring
-this one takes a migration *and* a module. Verified 2026-09-08: **0 channel columns, and 0
-`attendance%digest%` notification events since the original module died on 2026-07-22.**
+**A removed day is never charged, and that needs a record.** Removal
+(`phx_attendance_remove_digest_line`) writes a `removed` settlement, and the month-end bridge turns
+it into **Do Not Take Action** on that day's fingerprint deduction. Without the record, the
+deduction would stay Pending and payroll could still take it. The removal locks the week, and
+release reloads the days after it claims the week, so a removal and a release can never interleave.
 
-The earlier build had all three channels ON at his own instruction that morning. It was live for
-two minutes and sent nothing, only because no scheduler existed yet.
+**Release refuses when the public holiday calendar cannot be read.** Otherwise a holiday would count
+as a working day inside the answer window, and the deadline would come a day early. Nothing is
+released in that case. The deadline is counted on the employee's own attendance policy's weekly
+days off (`resolveActiveAttendancePolicy`), not a company-wide default.
 
-### 2. Silence settles nothing
+**A week mixing trial and real employees** releases the real ones only. The page says how many trial
+employees are skipped.
 
-There is no auto-confirm. `auto_confirm_hours` is gone from the settings table and
-`auto_confirmed` is **not a permitted value** of `attendance_digest_lines.action` or
-`attendance_settlements.action` — the check constraints refuse it.
+Only the Release click notifies anyone, and only `releaseWeek` in
+`src/lib/attendance/digest-service.ts` sets `released_at`. The employee page and API return released
+weeks only (`listMyDigests` filters `released_at is not null`). The review page, its list API and
+the dispute inbox are gated by `canReviewDisputes` (Super Admin or the reviewer list), failing
+closed. **Removing a day and releasing a week are the Super Admin's alone** (`canManageWeeklyReview`),
+checked in both routes (403) and again inside `removeDigestLine` and `releaseWeek`. A named dispute
+reviewer sees the page read-only, with no Remove or Release button, and decides disputes. The
+reason: a removal waives a colleague's deduction with nobody else looking, and a release notifies
+every employee, and "i must approve this" names him. The employee page is self-scoped: any employee
+sees their **own** released weeks, and nobody else's.
 
-An unanswered day writes **no settlement**, never reaches `digest-bridge.ts`, and arrives in the
-month-end Deductions queue as **Pending**, exactly where it would have been if the module did not
-exist. The reasoning is not squeamishness: **a response window can only run against someone who
-was told it had started**, and rule 1 means nobody is told. Silence from a person who was never
-asked cannot be read as agreement.
+**A trial-run week (`dry_run = true`) can never be released.** The service refuses it, and so does
+the write itself (`.eq("dry_run", false)`). The migration
+`20260915210000_weekly_digest_release_and_balance_choice.sql` voids **every** trial-run digest
+that nobody answered, whatever its week. On production on 2026-09-15 that is exactly the 31 Aug–6
+Sep week (6 digests, none answered), and `dry_run` is already off there, so no new trial weeks are
+being built. The same migration moves every real week with a day still pending back to waiting for
+release: on production that is the 7–13 Sep week, 7 employees. A day already answered under the
+old rule keeps its answer. The one such day is 10 Sep on the owner's own digest, which he
+confirmed; it reaches payroll as **Approved for Payroll**.
 
-### 3. Only he may open it
+**Measured before the migration, production 2026-09-15, read-only:** no line is `disputed` (so the
+new "a dispute carries its chosen method" check cannot abort it), and no real `open` digest is
+without a pending day (so none is left `open` with no release stamp, which the release-shape check
+would refuse to settle later). Re-measure both if the migration is applied on a later day.
 
-`canOpenDigestPortal` (`src/lib/attendance/digest-service.ts`) admits Super Admin or a name in
-`dispute_reviewer_hr_ids` — currently `B-10` alone, which is the owner himself. It is asked by
-**four** surfaces, not one: the portal page, `GET /api/attendance/digests`, and both the confirm
-and dispute routes. Confirm is the one that matters most, because a confirmation is what turns a
-flagged day into an approved deduction.
+**Deploy order:** apply the migration to production immediately before merging. The new code reads
+`released_at`, `chosen_method` and the new functions, none of which exist until then. The old code
+was never run against the migrated schema, so do not let the daily job fire between the two steps (it runs at 06:23 Cairo, from GitHub Actions).
 
-Every one fails **closed**: a lookup that throws means *not verifiably allowed*, never *let them
-in*. `tests/attendance-weekly-digest.test.ts` asserts all four ask the gate and all four fail
-closed; removing it from the dispute route alone turns the suite red naming that file.
+### 2. The notice: in-app and Telegram, never email
 
-The portal nav row was removed separately (#3520) — but **hiding a nav row is UX only**, and the
-page answered by direct URL until the gate shipped (#3525).
+Module `attendance_digest` is blocked from email by
+`src/lib/notifications/attendance-digest-channel-guard.ts`, chained in `system.ts`. It has an
+explicit Telegram policy, because without one the unknown-module fail-safe would silently leave
+in-app as the only channel. The notice names the week, the number of days and the deadline. **It
+carries no amount**, because Telegram is a lock-screen channel. One notice per digest, ever
+(idempotency key `attendance_digest:<id>:released`).
 
-### What is NOT forbidden
+### 3. Per day, the employee chooses salary or annual balance, and then may dispute
 
-The module still generates a digest every week and still applies a confirmed day to its month-end
-candidate. What is forbidden is **telling anyone, timing them out, or showing it to them**.
+- **Salary**, or **annual balance only**: the same number of days, and offered only when the
+  balance covers the **whole** day (`balanceCoversDays`). A part-covered day is not offered, because
+  the rest would fall on salary without anyone choosing that. No other leave type is offered.
+- **Then** the page asks whether they want to dispute the day. No settles it on the chosen method.
+  Yes records a dispute, with a reason and the chosen method, for the reviewer.
+- A **rejected** dispute is charged to the method the employee chose. If that was annual balance and
+  balance can no longer be used, it falls back to salary, and the record says the real cause
+  (`disputeSalaryFallbackText`): not enough balance, the first six months, no hire date, or the
+  month-end review had **already decided** the day, in which case that decision stands. If the
+  balance merely **failed to read**, the ruling is refused with "try again", never settled to
+  salary for good on a transient error. An **upheld** dispute charges nothing.
 
-### Why this is not a hook in AGENTS.md
+A balance-paid day is written to the immutable ledger **`attendance_annual_balance_charges`**. Both
+balance readers count it: `approvedPaidDaysInPeriod` (JS) and `phx_apply_vacation_paid_approval`
+(SQL). The settle RPC takes the same per-employee advisory lock as leave approval and re-checks the
+balance under it. At month end the bridge closes that fingerprint candidate as **Do Not Take
+Action**, so the day is never taken from both leave and pay (pinned in
+`tests/attendance-digest-rules.test.ts`).
 
-Measured on 2026-09-08: `CLAUDE.md + AGENTS.md` stood at **125,587 bytes against a 125,600-byte
-ceiling — 3 bytes of headroom.** A 1,145-byte hook took it 1,142 bytes over and turned
-`the-whole-auto-loaded-footprint-is-budgeted` red. The rule lives here instead, which costs
-nothing per request, and it is enforced **mechanically** rather than by memory: a dropped column,
-two check constraints, a gate and a test. A session cannot rebuild any of the three without
-hitting a constraint or a red suite first.
+**Balance is refused once the day's month-end deduction has been decided or locked.** The bridge can
+close the deduction only while it is still Pending and unlocked. If someone has already approved it
+for payroll, or cleared it, or a publication has locked it, a balance charge would take the day
+twice or spend leave on a day payroll never charges. So the option is greyed out ("already decided
+in the month-end deductions review"), and the settle function refuses it under the lock (errcode
+`55000`). The other order is guarded too: `recordDecision` refuses **Approved for Payroll** for a
+fingerprint day that the weekly review has **paid from annual balance**, **removed before
+release**, **cleared by an upheld dispute**, or still has **under dispute**
+(`assertDayNotClearedInAttendanceReview`). The first three would charge a day the review said is
+not charged; the fourth would pre-empt the reviewer. Trial-run weeks are ignored, because they
+never reach payroll. A failed read refuses the approval. If a cleared day is still Approved for
+Payroll (a race, or a decision made before these guards shipped), the bridge raises an alert
+naming the cause every run and the daily job returns 500. The same happens when the bridge cannot
+close a cleared day. A day that only needed salary, and could not be applied, is a warning.
+
+**The balance check reads every source of spent days.** On its own, the vacation calculator reads
+the payroll Copilot's balance ledger fail-open (a failed read counts as zero). The review asks it
+to read **fail-closed** (`failClosedLedgerRead`), in this period and in every earlier one the
+carried-debt walk visits, and a failed read refuses balance. The service and the settle function
+also re-sum leave requests, balance charges and that ledger themselves, and refuse balance if the
+calculator saw less. **The calculator's used figure includes debt carried from earlier periods**,
+so the check takes that debt out before comparing. Left in, 3 days of debt would hide 3 days the
+calculator failed to see.
+
+**A reviewer never rules on their own day.** Deciding a dispute on your own HR ID is refused, and
+another reviewer or the Super Admin has to do it. The Super Admin is exempt, being
+the last approver. Nothing in a trial-run week can be settled or have its dispute decided, whoever
+calls, and the SQL enforces this too.
+
+### 4. Silence past the deadline means salary
+
+The deadline is **2 working days after the release day**
+(`attendance_digest_settings.answer_working_days`, default 2). It is counted on the employee's own
+weekly-off pattern and the holiday calendar, and the release day itself does not count. Each daily
+run first settles every day still unanswered after its deadline as **`auto_salary`**, then applies
+answers to payroll. This reverses 2026-09-08 rule 2 **on purpose**: that rule rested on "nobody is
+told", and now everybody is told, with the deadline in the notice.
+
+**The deadline runs only for someone who was actually told.** `notified_at` is stamped only when the
+notice reached in-app or Telegram (`releaseNoticeReached`), and the sweep skips every week without
+it (`deadlineApplies`). An employee whose notice failed still sees the week on their page and can
+answer, but their silence is **never** turned into a salary deduction. The release screen says how
+many could not be notified. A day the sweep fails to settle is reported, and the daily job returns
+500.
+
+**Answers are applied to payroll over three months: the current one and the two before it.** A
+deduction candidate exists only after its month closes, and a dispute on a late-month day can be
+decided well into the month after next. The bridge reads settlements page by page, so days skipped
+as already decided or not yet built can never fill a capped read and hide newer answers.
+
+### 5. Week 4 of every cycle is built
+
+A cycle runs from the 24th to the 23rd. Its last week closes on the 23rd, so on the 24th the
+calendar is already in the **next** cycle. The builder used to ask only today's cycle, found no
+closed week there, and never built week 4. `latestClosedSettlementWeek` falls back to the previous
+cycle, so week 4 is built on the 24th.
+
+### Known limitations (documented, not fixed)
+
+- **A balance-paid day later cancelled by evidence** (for example, an approved leave or a proven
+  fingerprint) keeps its balance charge. The ledger is immutable, and no refund path exists.
+- **`recordDecision` does not take the per-employee lock.** A payroll approval and a balance charge
+  landing within milliseconds of each other can both succeed. The bridge alert and the 500 catch it,
+  and a person then sets the deduction to Do Not Take Action.
+- **Carried vacation debt is not re-checked inside the SQL.** The service includes it, and the SQL
+  re-checks requests, charges and the Copilot ledger.
+- **The payroll Copilot's balance writes take no per-employee lock** (this predates the review). A
+  Copilot settlement landing in the same instant as a balance charge is not serialised against it.
+- **Page caps:** a release handles up to 1,000 digests, the review page lists up to 1,000, and the
+  dispute inbox up to 200. Today's weeks are a few dozen.
+- **A notice that failed is not re-sent.** The employee still sees the week and can answer, and the
+  deadline never runs for them, but nothing tells them again.
+
+### Still open
+
+Whether the employee is notified of a dispute **decision** was not settled on 2026-09-15. Today the
+reviewer's note is shown on the employee's page, and no notice is sent.
 
 ## The premium Monthly Closing wears its own executive look — owner decision, 2026-09-08
 

@@ -183,7 +183,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-reconcile", reason: "Scheduled wide iReports360 reconciliation sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/ireports360-visits-live-sync", reason: "Scheduled high-frequency morning iReports360 visits sync route guarded by cron controls." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
-  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/attendance-weekly-digest", reason: "Weekly attendance digest clock — generate a closed week, send drafts, auto-confirm elapsed windows; guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/attendance-weekly-digest", reason: "Weekly attendance review clock — build a closed week for the Super Admin's release (sends nothing), settle days unanswered past their deadline to salary, apply settled answers to payroll; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-cv-digest", reason: "6-hourly email digest to each hiring manager who received candidate pushes, with their manager CC chain; guarded by CRON_SECRET." }),
@@ -442,18 +442,21 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
 
-  // Weekly attendance digest (rebuilt 2026-09-08). The employee routes carry the
+  // Weekly attendance review (release flow 2026-09-15). The employee routes carry the
   // plain `attendance:read` grant because they are self-scoped INSIDE the service —
-  // listMyDigests takes no employee parameter, and confirm/dispute assert the
-  // digest's own owner — so the grant opens a door to your OWN week and nobody
-  // else's. The two dispute routes are guard: "domain-helper" instead: they show
-  // and decide other people's pay disputes, so canReviewDisputes gates them on
-  // Super Admin or the configured reviewer list ON TOP of the matrix grant. A
-  // matrix grant alone is what once let a Regional Manager export 69 employees'
-  // deduction amounts.
+  // listMyDigests takes no employee parameter, and answerDigestLine asserts the
+  // digest's own owner — so the grant opens a door to your OWN released week and
+  // nobody else's. The review, release, remove and dispute routes are guard:
+  // "domain-helper" instead: they show and decide other people's pay, so
+  // canReviewDisputes gates them on Super Admin or the configured reviewer list ON
+  // TOP of the matrix grant, and release and remove narrow further to the Super Admin
+  // alone (canManageWeeklyReview). A matrix grant alone is what once let a Regional Manager
+  // export 69 employees' deduction amounts.
   sessionApi({ methods: readOnly, pattern: "/api/attendance/digests", permission: { resource: "attendance", action: "read" } }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/confirm", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/dispute", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/answer", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/attendance/weekly-review", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/release", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/lines/:lineId/remove", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/disputes", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/disputes/:lineId/review", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 
