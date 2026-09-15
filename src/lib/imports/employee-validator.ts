@@ -6,7 +6,7 @@ import {
 } from "@/lib/imports/employee-column-map";
 import {
   buildPersonNameIndex,
-  findNicknameOwners,
+  nicknameCollisionIssues,
 } from "@/lib/imports/employee-name-collision";
 import type {
   DetectedEmployeeColumn,
@@ -790,21 +790,18 @@ export function validateEmployeeImportRows(
     // A nickname must never be a DIFFERENT employee's real name. This fails the WHOLE row rather
     // than just blanking the cell: a shifted column is a property of the file, and the same
     // 2026-08-05 run also carried manager_hr_id — importing "the rest" of a row already known to
-    // be shifted is exactly what flattened the organogram in that import.
+    // be shifted is exactly what flattened the organogram in that import. The nickname the employee
+    // already carries is the one exception — it renames nobody, so it only warns.
     if (record.rowType === "employee") {
-      const nicknameOwners = findNicknameOwners({
+      const nicknameIssues = nicknameCollisionIssues({
         hrId: record.hrId,
         index: personNameIndex,
         nickname: record.nickname,
+        rowNumber: record.rowNumber,
+        storedNicknameKeyByHrIdKey: options.existingState?.employeeNicknameKeyByCanonicalKey,
       });
-      if (nicknameOwners) {
-        validationErrors.push({
-          rowNumber: record.rowNumber,
-          field: "nickname",
-          code: "nickname_is_another_employees_name",
-          message: `Nickname "${record.nickname}" is ${nicknameOwners.join(", ")}'s real name, not ${record.hrId}'s. A nickname is the name every screen shows, so importing this would rename someone. This normally means a column in the file is shifted by a row — fix the file, or clear this nickname cell if the two people genuinely share a name.`,
-        });
-      }
+      validationErrors.push(...nicknameIssues.errors);
+      validationWarnings.push(...nicknameIssues.warnings);
     }
 
     const departmentError = resolveGlobalDepartment(record, options);

@@ -1,4 +1,5 @@
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import type { EmployeeImportIssue } from "@/lib/imports/employee-import-types";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // "Is this nickname actually somebody else's name?" — the pure half of the employee importer's
@@ -103,4 +104,70 @@ export function findNicknameOwners(params: {
   if (!holders || holders.has(ownHrIdKey)) return null;
 
   return Array.from(holders).map((key) => key.toUpperCase()).sort();
+}
+
+/**
+ * Record an employee's STORED nickname in a directory-side index: canonical HR_ID key ->
+ * personNameKey of the nickname. A blank nickname or HR_ID records nothing — an employee with no
+ * saved nickname cannot already be carrying the one a file brings.
+ */
+export function addStoredNickname(
+  index: Map<string, string>,
+  hrId: string | null | undefined,
+  nickname: string | null | undefined,
+): void {
+  const hrIdKey = canonicalHrIdKey(hrId ?? "");
+  const nicknameKey = personNameKey(nickname);
+  if (!hrIdKey || !nicknameKey) return;
+  index.set(hrIdKey, nicknameKey);
+}
+
+/**
+ * The nickname guard's verdict for one uploaded row, as import issues.
+ *
+ * A nickname that is somebody else's real name is an ERROR, and the validator refuses the whole
+ * row for it. The one exception is the nickname this employee ALREADY carries in the directory:
+ * importing it renames nobody. Refusing it anyway blocked that employee's row on every upload with
+ * an error the file could never clear — on 2026-09-15 a Pedia rep's saved nickname was also a
+ * colleague's full name. That case is a WARNING and the row imports.
+ *
+ * The exception trusts the directory, never the file: a nickname a shifted column would newly write
+ * is still refused, and a new hire has no saved nickname to match.
+ */
+export function nicknameCollisionIssues(params: {
+  hrId: string | null | undefined;
+  index: Map<string, Set<string>>;
+  nickname: string | null | undefined;
+  rowNumber: number;
+  storedNicknameKeyByHrIdKey?: Map<string, string>;
+}): { errors: EmployeeImportIssue[]; warnings: EmployeeImportIssue[] } {
+  const owners = findNicknameOwners(params);
+  if (!owners) return { errors: [], warnings: [] };
+
+  const storedNicknameKey = params.storedNicknameKeyByHrIdKey?.get(canonicalHrIdKey(params.hrId ?? "") ?? "");
+  if (storedNicknameKey && storedNicknameKey === personNameKey(params.nickname)) {
+    return {
+      errors: [],
+      warnings: [
+        {
+          rowNumber: params.rowNumber,
+          field: "nickname",
+          code: "nickname_shared_with_another_employee",
+          message: `Nickname "${params.nickname}" is also another employee's full name, so the two can look like the same person on screen. It is already this employee's saved nickname, so the import keeps it and renames nobody — give this employee a nickname of their own to tell them apart.`,
+        },
+      ],
+    };
+  }
+
+  return {
+    errors: [
+      {
+        rowNumber: params.rowNumber,
+        field: "nickname",
+        code: "nickname_is_another_employees_name",
+        message: `Nickname "${params.nickname}" is ${owners.join(", ")}'s real name, not ${params.hrId}'s. A nickname is the name every screen shows, so importing this would rename someone. This normally means a column in the file is shifted by a row — fix the file, or clear this nickname cell if the two people genuinely share a name.`,
+      },
+    ],
+    warnings: [],
+  };
 }

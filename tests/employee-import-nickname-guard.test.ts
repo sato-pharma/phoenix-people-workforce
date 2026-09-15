@@ -1,7 +1,10 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   addFullNameHolder,
+  addStoredNickname,
   buildPersonNameIndex,
   findNicknameOwners,
   personNameKey,
@@ -213,5 +216,99 @@ export function runEmployeeImportNicknameGuardTests() {
   assert.ok(
     issueCodesFor(impostor, 2).includes("nickname_is_another_employees_name"),
     "a name shared by two OTHER people is still not this employee's to wear",
+  );
+
+  // ── The nickname an employee ALREADY carries renames nobody (2026-09-15). ──────────────────
+  // A Pedia rep's saved nickname was also a colleague's full name, so the guard refused her row on
+  // every upload although the file changed nothing. The exception keys on the DIRECTORY's saved
+  // nickname for THIS HR_ID — nothing in the file alone can earn it.
+  const storedNicknames = new Map<string, string>();
+  addStoredNickname(storedNicknames, " pd-7001 ", "  Mona   ADEL ");
+  addStoredNickname(storedNicknames, "PD-7004", "   ");
+  addStoredNickname(storedNicknames, null, "Somebody Else");
+  assert.deepEqual(
+    Array.from(storedNicknames),
+    [["pd-7001", "mona adel"]],
+    "a saved nickname is keyed by canonical HR_ID and normalized like every other name here; a blank nickname or HR_ID records nothing",
+  );
+
+  const sharedNicknameState = {
+    ...existingState,
+    employeeHrIds: new Set(["PD-7001", "B-7002"]),
+    employeeHrIdByCanonicalKey: new Map([
+      ["pd-7001", { hrId: "PD-7001" }],
+      ["b-7002", { hrId: "B-7002" }],
+    ]),
+    // The colleague whose full name IS that nickname.
+    employeeHrIdsByFullNameKey: new Map([["mona adel", ["B-7002"]]]),
+  };
+  const monaRow = employeeRow({ HR_ID: "PD-7001", "Full Name": "Mona Adel Hassan Ali", Nickname: "MONA  adel" });
+
+  const keptNickname = validateEmployeeImportRows([monaRow], {
+    existingState: { ...sharedNicknameState, employeeNicknameKeyByCanonicalKey: storedNicknames },
+  });
+  const sharedNameWarnings = keptNickname.validationWarnings.filter(
+    (issue) => issue.rowNumber === 2 && issue.code === "nickname_shared_with_another_employee",
+  );
+
+  assert.deepEqual(
+    issueCodesFor(keptNickname, 2),
+    [],
+    "re-importing the nickname this employee already carries must not refuse the row — it renames nobody, and no fix to the file could ever clear that error",
+  );
+  assert.ok(
+    keptNickname.rowsToUpdate.some((record) => record.hrId === "PD-7001"),
+    "the row carrying its own saved nickname must import",
+  );
+  assert.equal(
+    sharedNameWarnings.length,
+    1,
+    "the shared name must still be reported, as a warning, so someone gives this employee a nickname of their own",
+  );
+  assert.ok(
+    !/PD-7001|B-7002/i.test(sharedNameWarnings[0].message),
+    "the warning is read by people, so it names no HR_IDs",
+  );
+
+  const changedNickname = validateEmployeeImportRows([monaRow], {
+    existingState: { ...sharedNicknameState, employeeNicknameKeyByCanonicalKey: new Map([["pd-7001", "mona"]]) },
+  });
+
+  assert.ok(
+    issueCodesFor(changedNickname, 2).includes("nickname_is_another_employees_name"),
+    "a nickname the file would NEWLY write is still refused — the exception covers only the one already saved",
+  );
+
+  const noSavedNickname = validateEmployeeImportRows([monaRow], {
+    existingState: {
+      ...sharedNicknameState,
+      // Somebody ELSE carries it as a nickname; this employee has none saved.
+      employeeNicknameKeyByCanonicalKey: new Map([["b-7003", "mona adel"]]),
+    },
+  });
+
+  assert.ok(
+    issueCodesFor(noSavedNickname, 2).includes("nickname_is_another_employees_name"),
+    "with no nickname saved for THIS employee — a new hire, or a nickname being added — the collision is still refused",
+  );
+
+  // ── The loader really hands the validator the saved nicknames. ─────────────────────────────
+  // Without them the exception above never applies and that row is refused on every upload again.
+  // The loader reads Supabase, which no unit test here can reach, so this half is pinned on source.
+  const loaderSource = readFileSync(
+    fileURLToPath(new URL("../src/lib/imports/employee-import-existing-state.ts", import.meta.url)),
+    "utf8",
+  );
+  const loaderStart = loaderSource.indexOf("export async function loadEmployeeImportExistingState(");
+  assert.notEqual(loaderStart, -1, "employee-import-existing-state.ts must still export loadEmployeeImportExistingState");
+  const loaderBody = loaderSource.slice(loaderStart);
+
+  assert.ok(
+    loaderBody.includes("loadStoredNicknames(supabase)"),
+    "loadEmployeeImportExistingState must load the saved nicknames — without them the exception above never applies",
+  );
+  assert.ok(
+    /\bemployeeNicknameKeyByCanonicalKey\b/.test(loaderBody.slice(loaderBody.indexOf("return {"))),
+    "loadEmployeeImportExistingState must return the saved nicknames as employeeNicknameKeyByCanonicalKey — that is the key the validator reads",
   );
 }

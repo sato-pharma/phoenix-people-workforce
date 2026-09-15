@@ -936,6 +936,7 @@ function addUploadRulesSheet(workbook: ExcelJS.Workbook) {
     { effect: "Normalizes", code: "gross_salary_formula_mismatch", rule: "Gross is recalculated from Base plus social insurance and tax", detail: "" },
     { effect: "Normalizes", code: "fuel_allowance_policy_mismatch", rule: "Fuel Allowance is set by payroll policy", detail: "The standard amount for the position wins over the typed one." },
     { effect: "Normalizes", code: "extra_cost_of_living_policy_mismatch", rule: "Extra Cost Of Living is set by position policy", detail: "" },
+    { effect: "Warns only", code: "nickname_shared_with_another_employee", rule: "A nickname the employee already carries is kept", detail: "Even when it is also someone else's real name: uploading it again renames nobody, so the row imports. Give the employee a nickname of their own to tell the two apart." },
     { effect: "Warns only", code: "—", rule: "A blank cell is skipped, never written", detail: "Clearing a cell does not erase the stored value. Type 0 to actually zero a number." },
   ];
 
