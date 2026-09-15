@@ -16,11 +16,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
-import type {
-  AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
-  RegistrationResponseJSON,
-} from "@simplewebauthn/server";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 
 import { systemIdentity } from "@/config/system-settings";
 import { allowedPhoenixOrigins, requestOriginCandidates } from "@/lib/security/origins";
@@ -332,7 +328,9 @@ export async function buildRegistrationOptions(input: {
     // person's device list.
     excludeCredentials: existing.map((row) => ({
       id: row.credential_id,
-      transports: (row.transports ?? undefined) as AuthenticatorTransportFuture[] | undefined,
+      // @simplewebauthn/server 14 types transports as plain string[], so the stored column passes
+      // straight through; 13's AuthenticatorTransportFuture no longer exists.
+      transports: row.transports ?? undefined,
     })),
     rpID: input.relyingParty.rpId,
     rpName: systemIdentity.appName,
@@ -459,7 +457,7 @@ export async function completeAuthentication(input: {
       counter: Number(stored.sign_count ?? 0),
       id: stored.credential_id,
       publicKey: new Uint8Array(Buffer.from(stored.public_key, "base64url")),
-      transports: (stored.transports ?? undefined) as AuthenticatorTransportFuture[] | undefined,
+      transports: stored.transports ?? undefined,
     },
     expectedChallenge,
     expectedOrigin: input.relyingParty.origin,
