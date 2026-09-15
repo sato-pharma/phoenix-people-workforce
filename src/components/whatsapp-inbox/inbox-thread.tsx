@@ -8,7 +8,7 @@
 // which, because "who told this applicant that?" is the question this screen gets asked.
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, FileText, Link2, Save, Unlink } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Download, FileText, History, Link2, Save, Unlink } from "lucide-react";
 
 import { Action, ActionLink, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
@@ -24,6 +24,13 @@ import {
   formatMessageTime,
   isNewCairoDay,
 } from "./inbox-format";
+import {
+  InboxAvatar,
+  inboxBubbleShadowClassName,
+  inboxPaperClassName,
+  LineChip,
+  lineToneFor,
+} from "./inbox-look";
 import { InboxPeoplePicker } from "./inbox-people-picker";
 
 type Panel = { kind: "none" } | { kind: "link" } | { kind: "save"; messageId: string };
@@ -33,7 +40,9 @@ function mediaUrl(messageId: string, download = false) {
 }
 
 function originLine(message: InboxMessageView): string | null {
-  if (message.direction === "inbound") return null;
+  // An applicant's tap on one of Phoenix's menus arrives as the option's title; saying so tells the
+  // reader why a one-word bubble answers the question above it.
+  if (message.direction === "inbound") return message.messageType === "interactive" ? "Chosen from the menu" : null;
   if (message.origin === "handset") return "Typed on the phone";
   if (message.sentByName) return `Sent by ${message.sentByName}`;
   if (message.automated) return "Sent automatically by Phoenix";
@@ -68,16 +77,29 @@ function MessageMedia({ message }: { message: InboxMessageView }) {
   }
   const size = formatByteSize(message.mediaByteSize);
   return (
-    <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-white px-2 py-1.5">
-      <FileText aria-hidden className="h-4 w-4 shrink-0 text-phx-ink-soft" />
-      <span className="min-w-0 flex-1 break-words text-[12px] font-semibold text-phx-ink" dir="auto">
+    <div className="flex flex-wrap items-center gap-2.5 border border-slate-200 bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] px-2.5 py-2 shadow-[inset_0_-1px_0_rgba(15,23,42,0.04)]">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(15,23,42,0.06)]">
+        <FileText aria-hidden className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1 break-words text-[12px] font-semibold text-slate-900" dir="auto">
         {message.mediaFileName ?? "File"}
-        {size ? <span className="ml-1.5 font-normal text-phx-ink-soft">{size}</span> : null}
+        {size ? <span className="block text-[11px] font-normal text-slate-500">{size}</span> : null}
       </span>
       <ActionLink href={mediaUrl(message.id)} rel="noreferrer" target="_blank" tone="ghost">
         Open
       </ActionLink>
     </div>
+  );
+}
+
+/** The delivery state as WhatsApp's own marks, with the word beside them so nobody has to decode ticks. */
+function DeliveryTick({ status, text }: { status: string; text: string }) {
+  const Icon = status === "accepted" ? Clock3 : status === "sent" ? Check : CheckCheck;
+  return (
+    <span className={cn("inline-flex items-center gap-1 font-semibold", status === "read" ? "text-orange-600" : "text-slate-500")}>
+      <Icon aria-hidden className="h-3.5 w-3.5" />
+      {text}
+    </span>
   );
 }
 
@@ -95,31 +117,58 @@ function MessageBubble({
   const status = outbound ? describeDeliveryStatus(message.status) : "";
   const origin = originLine(message);
 
+  const failed = message.status === "failed";
+
   return (
     <div className={cn("flex w-full", outbound ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "flex min-w-0 max-w-[85%] flex-col gap-1.5 border px-2.5 py-2 sm:max-w-[70%]",
-          outbound ? "border-phx-accent-line bg-phx-accent-soft" : "border-phx-line bg-white",
-          message.status === "failed" ? "border-phx-danger" : null,
+          "relative flex min-w-0 max-w-[85%] flex-col gap-1.5 border px-3 py-2 sm:max-w-[70%]",
+          inboxBubbleShadowClassName,
+          outbound
+            ? "border-orange-200/90 bg-[linear-gradient(180deg,#FFF6EE_0%,#FFEEDF_100%)]"
+            : "border-slate-200/90 bg-white",
+          failed ? "border-red-300 bg-[linear-gradient(180deg,#FFF5F5_0%,#FEECEC_100%)]" : null,
         )}
       >
+        {/* The side a bubble speaks from: a square notch-rule in its own colour on the top edge. */}
+        <span
+          aria-hidden
+          className={cn(
+            "absolute top-[-1px] h-[2px] w-6",
+            outbound ? "right-[-1px]" : "left-[-1px]",
+            failed ? "bg-red-400" : outbound ? "bg-orange-400" : "bg-slate-400",
+          )}
+        />
         <MessageMedia message={message} />
+        {message.templateName ? (
+          <span className="w-fit border border-orange-200 bg-white/70 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-[0.1em] text-orange-700">
+            Template
+          </span>
+        ) : null}
         {text
           ? text.split("\n").map((line, index) => (
-              <p className="min-h-[1em] whitespace-pre-wrap break-words text-[13px] leading-relaxed text-phx-ink" dir="auto" key={index}>
+              <p className="min-h-[1em] whitespace-pre-wrap break-words text-[13px] leading-relaxed text-slate-900" dir="auto" key={index}>
                 {line}
               </p>
             ))
           : null}
-        {message.status === "failed" ? (
-          <p className="text-[12px] leading-snug text-phx-danger">Not delivered{message.failureDetail ? `: ${message.failureDetail}` : "."}</p>
+        {failed ? (
+          <p className="flex items-start gap-1.5 text-[12px] font-semibold leading-snug text-red-700">
+            <AlertTriangle aria-hidden className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span className="break-words">Not delivered{message.failureDetail ? `: ${message.failureDetail}` : "."}</span>
+          </p>
         ) : null}
-        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-phx-ink-soft">
-          {message.historical ? <span>From the phone&apos;s history</span> : null}
-          {origin ? <span>{origin}</span> : null}
-          {status && message.status !== "failed" ? <span>{status}</span> : null}
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-[11px] text-slate-500">
+          {message.historical ? (
+            <span className="inline-flex items-center gap-1 text-slate-400">
+              <History aria-hidden className="h-3 w-3" />
+              From the phone&apos;s history
+            </span>
+          ) : null}
+          {origin ? <span className="font-medium">{origin}</span> : null}
           <span className="tabular-nums">{formatMessageTime(message.sentAt)}</span>
+          {status && !failed ? <DeliveryTick status={message.status} text={status} /> : null}
         </div>
         {message.hasMedia && !message.mediaProblem ? (
           <div className="flex flex-wrap items-center justify-end gap-1">
@@ -202,24 +251,29 @@ export function InboxThreadView({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 border-b border-phx-line bg-white px-3 py-2 sm:px-4">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="relative z-[1] shrink-0 border-b border-slate-200 bg-[linear-gradient(180deg,#FFFFFF_0%,#FCFBF9_100%)] px-3 py-2.5 shadow-[0_1px_0_rgba(15,23,42,0.03),0_6px_16px_rgba(15,23,42,0.05)] sm:px-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Action className="lg:hidden" onClick={onBack} title="Back to the chat list" tone="ghost">
             <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
             Chats
           </Action>
+          <InboxAvatar name={conversation.contactName} size="lg" tone={lineToneFor(conversation.lineLabel)} />
           <div className="min-w-0 flex-1">
-            <p className="break-words text-[15px] font-black leading-tight text-phx-ink" dir="auto">
+            <p className="break-words text-[16px] font-black leading-tight tracking-[-0.015em] text-slate-900" dir="auto">
               {title}
             </p>
-            <p className="break-words text-[11px] text-phx-ink-soft">
-              {[conversation.contactName ? conversation.contactPhone : null, conversation.contactUsername ? `@${conversation.contactUsername}` : null, `On the ${conversation.lineLabel}`]
-                .filter(Boolean)
-                .join(" · ")}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+              <LineChip label={conversation.lineLabel} />
+              {conversation.contactName && conversation.contactPhone ? (
+                <span className="tabular-nums" dir="ltr">
+                  {conversation.contactPhone}
+                </span>
+              ) : null}
+              {conversation.contactUsername ? <span dir="ltr">@{conversation.contactUsername}</span> : null}
             </p>
           </div>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {conversation.candidate ? (
             <ActionLink href={`/recruitment?candidate=${encodeURIComponent(conversation.candidate.id)}`} title="Open this candidate" tone="quiet">
               <Link2 aria-hidden className="h-3.5 w-3.5" />
@@ -227,7 +281,7 @@ export function InboxThreadView({
             </ActionLink>
           ) : null}
           {conversation.employee ? (
-            <span className="inline-flex items-center gap-1.5 border border-phx-line bg-white px-2 py-1.5 text-[12px] font-bold leading-none text-phx-ink-2">
+            <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-2 py-1.5 text-[12px] font-bold leading-none text-orange-800 shadow-[0_1px_2px_rgba(249,115,22,0.10)]">
               <Link2 aria-hidden className="h-3.5 w-3.5" />
               Employee: {conversation.employee.name}
             </span>
@@ -255,7 +309,7 @@ export function InboxThreadView({
       ) : null}
 
       {panel.kind === "link" ? (
-        <div className="shrink-0 border-b border-phx-line bg-phx-surface-2 p-2 sm:p-3">
+        <div className="shrink-0 border-b border-slate-200 bg-[#F8F7F4] p-2 shadow-[inset_0_2px_4px_rgba(15,23,42,0.05)] sm:p-3">
           <InboxPeoplePicker
             busy={busy}
             conversationId={conversation.id}
@@ -275,15 +329,23 @@ export function InboxThreadView({
         />
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-phx-paper px-3 py-3 sm:px-4">
-        {messages.length === 0 ? <p className="text-[12px] text-phx-ink-soft">No messages in this chat yet.</p> : null}
-        <div className="flex flex-col gap-2">
+      <div className={cn("min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5", inboxPaperClassName)}>
+        {messages.length === 0 ? (
+          <p className="mx-auto w-fit border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-500 shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+            No messages in this chat yet.
+          </p>
+        ) : null}
+        <div className="flex flex-col gap-2.5">
           {messages.map((message, index) => (
-            <div className="flex flex-col gap-2" key={message.id}>
+            <div className="flex flex-col gap-2.5" key={message.id}>
               {isNewCairoDay(messages[index - 1]?.sentAt ?? null, message.sentAt) ? (
-                <p className="py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-phx-ink-faint">
-                  {formatDayDivider(message.sentAt)}
-                </p>
+                <div className="flex items-center gap-3 py-1.5">
+                  <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,rgba(148,163,184,0)_0%,rgba(148,163,184,0.45)_100%)]" />
+                  <p className="border border-slate-200 bg-white px-2.5 py-1 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_4px_10px_rgba(15,23,42,0.05)]">
+                    {formatDayDivider(message.sentAt)}
+                  </p>
+                  <span aria-hidden className="h-px flex-1 bg-[linear-gradient(90deg,rgba(148,163,184,0.45)_0%,rgba(148,163,184,0)_100%)]" />
+                </div>
               ) : null}
               <MessageBubble busy={busy} message={message} onSave={(messageId) => setPanel({ kind: "save", messageId })} />
             </div>
@@ -318,8 +380,8 @@ function SaveToCandidatePanel({
 }) {
   const [kind, setKind] = useState<"cv" | "other">("cv");
   return (
-    <div className="shrink-0 border-b border-phx-line bg-phx-surface-2 p-2 sm:p-3">
-      <fieldset className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-phx-ink-2">
+    <div className="shrink-0 border-b border-slate-200 bg-[#F8F7F4] p-2 shadow-[inset_0_2px_4px_rgba(15,23,42,0.05)] sm:p-3">
+      <fieldset className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-700">
         <legend className="sr-only">Save the file as</legend>
         <label className="inline-flex items-center gap-1.5">
           <input checked={kind === "cv"} disabled={busy} name="save-kind" onChange={() => setKind("cv")} type="radio" />

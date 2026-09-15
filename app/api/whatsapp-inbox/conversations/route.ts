@@ -26,8 +26,13 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const line = str(url.searchParams.get("line"));
     if (line && !findWhatsAppInboxLine(line)) return recruitmentProblem("Unknown WhatsApp number.", 400);
+    const limit = Number(url.searchParams.get("limit"));
     const result = await listInboxConversations({
+      limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
       phoneNumberId: line,
+      area: url.searchParams.get("area"),
+      position: url.searchParams.get("position"),
+      region: url.searchParams.get("region"),
       search: url.searchParams.get("q"),
       unreadOnly: url.searchParams.get("unread") === "1",
     });

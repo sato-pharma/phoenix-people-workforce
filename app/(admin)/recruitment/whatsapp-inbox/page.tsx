@@ -61,6 +61,7 @@ export default async function WhatsAppInboxPage() {
   return (
     <WhatsAppInbox
       initialConversations={initial.conversations}
+      initialTotalCount={initial.totalCount}
       initialTotalUnread={initial.totalUnread}
       lines={lines}
     />

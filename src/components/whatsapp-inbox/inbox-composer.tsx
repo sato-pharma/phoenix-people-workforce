@@ -11,13 +11,14 @@
 // someone's phone is worse than a failure the sender can see and repeat.
 
 import { useRef, useState } from "react";
-import { FileText, Paperclip, X } from "lucide-react";
+import { Clock3, FileText, LayoutTemplate, Lock, Paperclip, SendHorizontal, X } from "lucide-react";
 
 import { Action, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { postJson } from "@/components/recruitment/recruitment-fetch";
 import { INBOX_UPLOAD_MAX_BYTES, mediaLimitProblem, outboundMediaTypeFor } from "@/lib/whatsapp-inbox/graph";
+import { cn } from "@/lib/utils";
 
-import { formatByteSize, formatWindowLeft } from "./inbox-format";
+import { formatByteSize, formatWindowLeft, isWindowClosingSoon } from "./inbox-format";
 import { InboxTemplateForm, type TemplateSendInput } from "./inbox-template-form";
 
 /** Meta's ceilings, repeated here only so the box refuses before the upload rather than after. */
@@ -25,6 +26,9 @@ const TEXT_MAX_LENGTH = 4096;
 const CAPTION_MAX_LENGTH = 1024;
 
 type Mode = "text" | "template";
+
+/** The send button's lift: the orange glow the admin shell's primary actions wear. Square, always. */
+const sendGlowClassName = "shadow-[0_1px_2px_rgba(194,65,12,0.30),0_6px_16px_rgba(249,115,22,0.26)]";
 
 async function postForm(url: string, form: FormData): Promise<Record<string, unknown>> {
   const res = await fetch(url, { body: form, method: "POST" });
@@ -67,6 +71,8 @@ export function InboxComposer({
   // hour must not claim the time it had when it was opened.
   const windowLeft = formatWindowLeft(windowClosesAt);
   const windowOpen = windowLeft !== null;
+  // Under two hours the chip turns amber: the reply is still allowed, but not for long.
+  const windowClosing = windowOpen && isWindowClosingSoon(windowClosesAt);
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -120,7 +126,7 @@ export function InboxComposer({
   const fileProblem = file ? outboundFileProblem(file) : null;
 
   return (
-    <div className="shrink-0 border-t border-phx-line bg-white px-3 py-2 sm:px-4">
+    <div className="relative z-[1] shrink-0 border-t border-slate-200 bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFAF8_100%)] px-3 py-2.5 shadow-[0_-1px_0_rgba(15,23,42,0.03),0_-8px_20px_rgba(15,23,42,0.05)] sm:px-4">
       {mode === "template" ? (
         <InboxTemplateForm
           busy={busy}
@@ -132,16 +138,27 @@ export function InboxComposer({
         />
       ) : windowOpen ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[11px] leading-snug text-phx-ink-soft">
-            {windowLeft} to reply in your own words. After that, WhatsApp only allows an approved template.
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-snug text-slate-500">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 border px-1.5 py-0.5 font-bold tabular-nums leading-none",
+                windowClosing ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800",
+              )}
+            >
+              <Clock3 aria-hidden className="h-3 w-3" />
+              {windowLeft}
+            </span>
+            <span>to reply in your own words. After that, WhatsApp only allows an approved template.</span>
           </p>
           {file ? (
-            <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-phx-surface-2 px-2 py-1.5 text-[12px]">
-              <FileText aria-hidden className="h-4 w-4 shrink-0 text-phx-ink-soft" />
-              <span className="min-w-0 flex-1 break-words font-semibold text-phx-ink" dir="auto">
+            <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] px-2 py-1.5 text-[12px] shadow-[0_1px_2px_rgba(15,23,42,0.05)]">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500">
+                <FileText aria-hidden className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 break-words font-semibold text-slate-900" dir="auto">
                 {file.name}
               </span>
-              <span className="text-phx-ink-soft">{formatByteSize(file.size)}</span>
+              <span className="text-slate-500">{formatByteSize(file.size)}</span>
               <Action disabled={busy} onClick={() => setFile(null)} title="Remove this file" tone="ghost">
                 <X aria-hidden className="h-3.5 w-3.5" />
                 Remove
@@ -150,7 +167,7 @@ export function InboxComposer({
           ) : null}
           {fileProblem ? <p className="text-[12px] leading-snug text-phx-danger">{fileProblem}</p> : null}
           <textarea
-            className="w-full resize-y border border-phx-line bg-white p-2 text-[13px] leading-relaxed text-phx-ink outline-none focus:border-phx-accent"
+            className="w-full resize-y border border-slate-200 bg-white px-3 py-2 text-[13px] leading-relaxed text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)] outline-none placeholder:text-slate-400 focus:border-orange-300 focus:shadow-[inset_0_1px_2px_rgba(15,23,42,0.06),0_0_0_3px_rgba(249,115,22,0.12)]"
             dir="auto"
             disabled={busy}
             maxLength={file ? CAPTION_MAX_LENGTH : TEXT_MAX_LENGTH}
@@ -167,11 +184,13 @@ export function InboxComposer({
           />
           <div className="flex flex-wrap items-center gap-1.5">
             {file ? (
-              <Action disabled={busy || Boolean(fileProblem)} onClick={() => void sendFile()} tone="primary">
+              <Action className={sendGlowClassName} disabled={busy || Boolean(fileProblem)} onClick={() => void sendFile()} tone="primary">
+                <SendHorizontal aria-hidden className="h-3.5 w-3.5" />
                 {busy ? "Sending…" : "Send file"}
               </Action>
             ) : (
-              <Action disabled={busy || text.trim().length === 0} onClick={() => void sendText()} tone="primary">
+              <Action className={sendGlowClassName} disabled={busy || text.trim().length === 0} onClick={() => void sendText()} tone="primary">
+                <SendHorizontal aria-hidden className="h-3.5 w-3.5" />
                 {busy ? "Sending…" : "Send"}
               </Action>
             )}
@@ -191,25 +210,34 @@ export function InboxComposer({
               Attach
             </Action>
             <Action disabled={busy} onClick={() => setMode("template")} tone="ghost">
+              <LayoutTemplate aria-hidden className="h-3.5 w-3.5" />
               Use a template
             </Action>
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
-          <p className="text-[12px] leading-snug text-phx-ink-soft">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-slate-500 shadow-[inset_0_1px_2px_rgba(15,23,42,0.06)]">
+            <Lock aria-hidden className="h-3.5 w-3.5" />
+          </span>
+          <p className="min-w-0 flex-1 basis-60 text-[12px] leading-snug text-slate-600">
             {windowClosesAt
               ? "It has been more than 24 hours since their last message, so WhatsApp only allows an approved template until they write again."
               : "They have not written to this number, so WhatsApp only allows an approved template until they do."}
           </p>
-          <div>
-            <Action disabled={busy} onClick={() => setMode("template")} tone="primary">
-              Send a template
-            </Action>
-          </div>
+          <Action className={sendGlowClassName} disabled={busy} onClick={() => setMode("template")} tone="primary">
+            <LayoutTemplate aria-hidden className="h-3.5 w-3.5" />
+            Send a template
+          </Action>
         </div>
       )}
-      {error ? <p className="mt-2 text-[12px] leading-snug text-phx-danger">{error}</p> : null}
+      {error ? (
+        <div className="mt-2">
+          <Band tone="warn">
+            <BandSays>{error}</BandSays>
+          </Band>
+        </div>
+      ) : null}
     </div>
   );
 }

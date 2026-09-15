@@ -66,6 +66,14 @@ export function formatWindowLeft(closesAtIso: string | null, now = Date.now()): 
   return hours > 0 ? `${hours} h ${rest} min left` : `${rest} min left`;
 }
 
+/** Whether an open reply window closes within two hours — still open, but worth a warning colour. */
+export function isWindowClosingSoon(closesAtIso: string | null, now = Date.now()): boolean {
+  const closes = parse(closesAtIso);
+  if (!closes) return false;
+  const left = closes.getTime() - now;
+  return left > 0 && left < 2 * 60 * 60 * 1000;
+}
+
 export function formatByteSize(bytes: number | null): string | null {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return null;
   if (bytes < 1024) return `${bytes} B`;

@@ -10,12 +10,22 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
-import { uploadCandidateFile } from "@/lib/recruitment/files";
+import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { candidateRoleFamilyLabels, candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { getFileForDownload, uploadCandidateFile } from "@/lib/recruitment/files";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
 import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
+import {
+  inboxAreaOptions,
+  isInboxRegionCode,
+  isInboxRoleFamily,
+  matchesInboxPlaceFilter,
+  parseInboxPlaceFilter,
+  type InboxPositionFact,
+} from "@/lib/whatsapp-inbox/position-filter";
 import { WHATSAPP_INBOX_CONVERSATIONS_TABLE, WHATSAPP_INBOX_MESSAGES_TABLE } from "@/lib/whatsapp-inbox/record";
 
 export const WHATSAPP_INBOX_MEDIA_BUCKET = "whatsapp-inbox-media";
@@ -55,6 +65,10 @@ export type InboxConversationSummary = {
   replyWindowOpen: boolean;
   candidate: { id: string; name: string } | null;
   employee: { hrId: string; name: string } | null;
+  /** The job(s) this person applied for and where, newest first; empty when nothing says. */
+  positions: Array<{ family: CandidateRoleFamily; label: string; regionLabel: string | null; areaName: string | null }>;
+  /** The newest file this person sent in the chat (their CV), so it opens from the list; null when none. */
+  cv: { messageId: string; fileName: string | null; count: number } | null;
 };
 
 export type InboxMessageView = {
@@ -131,13 +145,14 @@ type MessageRow = {
   event: string | null;
   sent_by_hr_id: string | null;
   saved_to_candidate_id: string | null;
+  saved_file_id: string | null;
 };
 
 const CONVERSATION_COLUMNS =
   "id, phone_number_id, contact_key, contact_wa_id, contact_user_id, contact_name, contact_username, last_message_at, last_inbound_at, last_message_preview, last_direction, unread_count, candidate_id, employee_hr_id";
 
 const MESSAGE_COLUMNS =
-  "id, conversation_id, wamid, direction, origin, phone_number_id, message_type, body, media_id, media_mime_type, media_file_name, media_storage_path, media_byte_size, media_fetch_attempts, media_fetch_error, template_name, reply_to_wamid, historical, sent_at, status, failure_detail, event, sent_by_hr_id, saved_to_candidate_id";
+  "id, conversation_id, wamid, direction, origin, phone_number_id, message_type, body, media_id, media_mime_type, media_file_name, media_storage_path, media_byte_size, media_fetch_attempts, media_fetch_error, template_name, reply_to_wamid, historical, sent_at, status, failure_detail, event, sent_by_hr_id, saved_to_candidate_id, saved_file_id";
 
 export function isReplyWindowOpen(lastInboundAt: string | null, now = Date.now()): boolean {
   if (!lastInboundAt) return false;
@@ -180,12 +195,153 @@ async function namesFor(candidateIds: string[], hrIds: string[]) {
   return { candidates, employees };
 }
 
+type Names = Awaited<ReturnType<typeof namesFor>>;
+
+/** One application with the region as it should be READ: the company region's name, or what the person typed. */
+type PositionRecord = InboxPositionFact & { regionLabel: string | null };
+
+function textOrNull(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim().replace(/\s+/g, " ");
+  return trimmed || null;
+}
+
+function positionRecord(family: CandidateRoleFamily, regionCode: string | null, regionOther: string | null, area: string | null): PositionRecord {
+  const code: CandidateRegionCode | null = isInboxRegionCode(regionCode) ? regionCode : null;
+  return {
+    areaName: textOrNull(area),
+    family,
+    regionCode: code,
+    regionLabel: code ? candidateRegionLabels[code] : textOrNull(regionOther),
+  };
+}
+
+/**
+ * Which job each chat's person applied for, and the region and area they chose for it.
+ *
+ * FIRST the applicant's own answers: the role, region and area they chose in the WhatsApp menu on
+ * THAT number, every application they made there, newest first (four people applied for two
+ * different roles). The three stay together per application, so a District Manager for Upper Egypt
+ * who is also a Medical Representative for Cairo is found under neither "District Manager · Cairo"
+ * nor "Medical Representative · Upper Egypt". ONLY when they never chose a role — a CV that arrived
+ * before the menu existed — the linked candidate's applied-for title, sorted into the same families
+ * the candidate pool filters on, with the region and area the candidate record prefers. The title is
+ * a fallback and not an addition because it is free text: "regarding this ad" sits in that column,
+ * and adding its "Other" beside a real menu answer would put the person in a filter they never chose.
+ */
+async function positionsFor(rows: ConversationRow[]): Promise<Map<string, PositionRecord[]>> {
+  const supabase = getSupabaseAdmin();
+  const byContact = new Map<string, PositionRecord[]>();
+  const waIds = Array.from(new Set(rows.map((row) => row.contact_wa_id).filter((id): id is string => Boolean(id))));
+  for (let index = 0; index < waIds.length; index += 100) {
+    const { data, error } = await supabase
+      .from("ats_whatsapp_classification_sessions")
+      .select("wa_id, phone_number_id, job_title_family, region_code, region_other_text, area_name, area_other_text, started_at")
+      .in("wa_id", waIds.slice(index, index + 100))
+      .not("job_title_family", "is", null)
+      .order("started_at", { ascending: false });
+    if (error) throw error;
+    for (const session of (data ?? []) as Array<{
+      wa_id: string;
+      phone_number_id: string | null;
+      job_title_family: string | null;
+      region_code: string | null;
+      region_other_text: string | null;
+      area_name: string | null;
+      area_other_text: string | null;
+    }>) {
+      if (!isInboxRoleFamily(session.job_title_family)) continue;
+      const record = positionRecord(
+        session.job_title_family,
+        session.region_code,
+        session.region_other_text,
+        session.area_name ?? session.area_other_text,
+      );
+      const key = `${session.phone_number_id ?? ""}|${session.wa_id}`;
+      const list = byContact.get(key) ?? [];
+      const same = (other: PositionRecord) =>
+        other.family === record.family && other.regionLabel === record.regionLabel && other.areaName === record.areaName;
+      if (!list.some(same)) list.push(record);
+      byContact.set(key, list);
+    }
+  }
+  const result = new Map<string, PositionRecord[]>();
+  const needTitle: ConversationRow[] = [];
+  for (const row of rows) {
+    const chosen = row.contact_wa_id ? byContact.get(`${row.phone_number_id}|${row.contact_wa_id}`) : undefined;
+    if (chosen?.length) result.set(row.id, chosen);
+    else if (row.candidate_id) needTitle.push(row);
+    else result.set(row.id, []);
+  }
+
+  type CandidatePlace = { applied_for_job_title: string | null; preferred_region_code: string | null; preferred_area_name: string | null };
+  const candidates = new Map<string, CandidatePlace>();
+  const candidateIds = Array.from(new Set(needTitle.map((row) => row.candidate_id as string)));
+  for (let index = 0; index < candidateIds.length; index += 50) {
+    const { data, error } = await supabase
+      .from("ats_candidates")
+      .select("id, applied_for_job_title, preferred_region_code, preferred_area_name")
+      .in("id", candidateIds.slice(index, index + 50));
+    if (error) throw error;
+    for (const candidate of (data ?? []) as Array<CandidatePlace & { id: string }>) {
+      candidates.set(candidate.id, candidate);
+    }
+  }
+  for (const row of needTitle) {
+    const candidate = candidates.get(row.candidate_id as string);
+    const family = candidateRoleFamilyOrNull(candidate?.applied_for_job_title);
+    result.set(
+      row.id,
+      family ? [positionRecord(family, candidate?.preferred_region_code ?? null, null, candidate?.preferred_area_name ?? null)] : [],
+    );
+  }
+  return result;
+}
+
+type CvSummary = NonNullable<InboxConversationSummary["cv"]>;
+
+/**
+ * The CV each chat can open from the list: the newest DOCUMENT the person sent. Applicants send their
+ * CV as a PDF or Word file, and a document is the one message type that is almost always a CV here —
+ * photos are mostly certificates, so they are left in the chat. `count` says when there are several.
+ */
+async function cvsFor(rows: ConversationRow[]): Promise<Map<string, CvSummary>> {
+  const supabase = getSupabaseAdmin();
+  const result = new Map<string, CvSummary>();
+  const ids = rows.map((row) => row.id);
+  for (let index = 0; index < ids.length; index += 50) {
+    const { data, error } = await supabase
+      .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+      .select("id, conversation_id, media_file_name, sent_at")
+      .in("conversation_id", ids.slice(index, index + 50))
+      .eq("direction", "inbound")
+      .eq("message_type", "document")
+      .order("sent_at", { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+    for (const message of (data ?? []) as Array<{ id: string; conversation_id: string; media_file_name: string | null }>) {
+      const existing = result.get(message.conversation_id);
+      if (existing) existing.count += 1;
+      else result.set(message.conversation_id, { count: 1, fileName: message.media_file_name, messageId: message.id });
+    }
+  }
+  return result;
+}
+
 function summarize(
   row: ConversationRow,
-  names: { candidates: Map<string, string>; employees: Map<string, string> },
+  names: Names,
   now: number,
+  positions: Map<string, PositionRecord[]>,
+  cvs: Map<string, CvSummary>,
 ): InboxConversationSummary {
   return {
+    cv: cvs.get(row.id) ?? null,
+    positions: (positions.get(row.id) ?? []).map((record) => ({
+      areaName: record.areaName,
+      family: record.family,
+      label: candidateRoleFamilyLabels[record.family],
+      regionLabel: record.regionLabel,
+    })),
     candidate: row.candidate_id ? { id: row.candidate_id, name: names.candidates.get(row.candidate_id) ?? "Candidate" } : null,
     contactName: row.contact_name,
     contactPhone: formatWhatsAppPhone(row.contact_wa_id),
@@ -212,18 +368,39 @@ export function sanitizeInboxSearch(value: string | null | undefined): string {
     .slice(0, 60);
 }
 
+export const INBOX_LIST_PAGE_SIZE = 150;
+const INBOX_LIST_MAX = 1500;
+
+/** How many chats one list request returns: a page by default, never more than the ceiling. */
+export function clampInboxListLimit(value: number | null | undefined): number {
+  const wanted = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : INBOX_LIST_PAGE_SIZE;
+  return Math.max(1, Math.min(INBOX_LIST_MAX, wanted));
+}
+
 export async function listInboxConversations(input: {
   phoneNumberId?: string | null;
   search?: string | null;
   unreadOnly?: boolean;
+  position?: string | null;
+  region?: string | null;
+  area?: string | null;
   limit?: number;
-}): Promise<{ conversations: InboxConversationSummary[]; totalUnread: number }> {
+}): Promise<{ conversations: InboxConversationSummary[]; totalCount: number; totalUnread: number; areaOptions: string[] }> {
   const supabase = getSupabaseAdmin();
+  const limit = clampInboxListLimit(input.limit);
+  // The position lives in the recruitment tables, not on the chat, so a position filter reads every
+  // chat the other filters allow (up to the list ceiling) and narrows them here; the page is cut
+  // after. Without one, the database cuts the page as before. Region and area ride on the position.
+  const place = parseInboxPlaceFilter(input);
+  const position = place.position;
+  // The list shows the newest chats first and grows on request. `totalCount` is every chat matching
+  // the filters, so the screen can say how many there are and offer the rest, rather than letting
+  // the page size pass for the whole inbox.
   let query = supabase
     .from(WHATSAPP_INBOX_CONVERSATIONS_TABLE)
-    .select(CONVERSATION_COLUMNS)
+    .select(CONVERSATION_COLUMNS, { count: "exact" })
     .order("last_message_at", { ascending: false, nullsFirst: false })
-    .limit(Math.max(1, Math.min(300, input.limit ?? 150)));
+    .limit(position ? INBOX_LIST_MAX : limit);
   if (input.phoneNumberId) query = query.eq("phone_number_id", input.phoneNumberId);
   if (input.unreadOnly) query = query.gt("unread_count", 0);
   const search = sanitizeInboxSearch(input.search);
@@ -233,21 +410,35 @@ export async function listInboxConversations(input: {
     if (digits.length >= 4) clauses.push(`contact_wa_id.ilike.*${digits.replace(/^0+/, "")}*`);
     query = query.or(clauses.join(","));
   }
-  const { data, error } = await query;
+  const { count, data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []) as ConversationRow[];
+  const matched = (data ?? []) as ConversationRow[];
 
   let unreadQuery = supabase.from(WHATSAPP_INBOX_CONVERSATIONS_TABLE).select("unread_count").gt("unread_count", 0).limit(1000);
   if (input.phoneNumberId) unreadQuery = unreadQuery.eq("phone_number_id", input.phoneNumberId);
   const { data: unreadRows } = await unreadQuery;
   const totalUnread = ((unreadRows ?? []) as Array<{ unread_count: number }>).reduce((sum, row) => sum + row.unread_count, 0);
 
-  const names = await namesFor(
-    rows.map((row) => row.candidate_id ?? ""),
-    rows.map((row) => row.employee_hr_id ?? ""),
-  );
+  const positions = await positionsFor(matched);
+  const narrowed = position ? matched.filter((row) => matchesInboxPlaceFilter(positions.get(row.id) ?? [], place)) : matched;
+  // The Area menu lists the areas people chose for this position and region, whatever area is picked now.
+  const areaOptions = inboxAreaOptions(positions.values(), place);
+  const rows = narrowed.slice(0, limit);
+
+  const [names, cvs] = await Promise.all([
+    namesFor(
+      rows.map((row) => row.candidate_id ?? ""),
+      rows.map((row) => row.employee_hr_id ?? ""),
+    ),
+    cvsFor(rows),
+  ]);
   const now = Date.now();
-  return { conversations: rows.map((row) => summarize(row, names, now)), totalUnread };
+  return {
+    areaOptions,
+    conversations: rows.map((row) => summarize(row, names, now, positions, cvs)),
+    totalCount: position ? narrowed.length : Math.max(count ?? 0, rows.length),
+    totalUnread,
+  };
 }
 
 async function loadConversationRow(conversationId: string): Promise<ConversationRow> {
@@ -291,7 +482,8 @@ export async function loadInboxThread(conversationId: string, options?: { limit?
     [row.employee_hr_id ?? "", ...senderIds],
   );
   const now = Date.now();
-  const conversation = summarize(row, names, now);
+  const [positions, cvs] = await Promise.all([positionsFor([row]), cvsFor([row])]);
+  const conversation = summarize(row, names, now, positions, cvs);
   const lastInbound = row.last_inbound_at ? Date.parse(row.last_inbound_at) : NaN;
   const reason = cannotSendReason(row);
 
@@ -304,14 +496,16 @@ export async function loadInboxThread(conversationId: string, options?: { limit?
       body: message.body,
       direction: message.direction,
       failureDetail: message.failure_detail,
-      hasMedia: Boolean(message.media_id || message.media_storage_path),
+      // A CV that reached a candidate's record before the inbox existed has no WhatsApp media id —
+      // only the candidate file it became. That file is the attachment.
+      hasMedia: Boolean(message.media_id || message.media_storage_path || message.saved_file_id),
       historical: message.historical,
       id: message.id,
       mediaByteSize: message.media_byte_size,
       mediaFileName: message.media_file_name,
       mediaMimeType: message.media_mime_type,
       mediaProblem:
-        !message.media_storage_path && message.media_fetch_attempts >= INBOX_MEDIA_MAX_FETCH_ATTEMPTS
+        !message.media_storage_path && !message.saved_file_id && message.media_fetch_attempts >= INBOX_MEDIA_MAX_FETCH_ATTEMPTS
           ? "This attachment could not be copied from WhatsApp."
           : null,
       mediaReady: Boolean(message.media_storage_path),
@@ -562,19 +756,15 @@ export async function getInboxAttachment(messageId: string): Promise<InboxAttach
     if (!error && data) return { bytes: Buffer.from(await data.arrayBuffer()), fileName, mimeType: fallbackMime };
   }
 
-  if (row.wamid && row.direction === "inbound") {
-    const { data: video } = await supabase
-      .from("whatsapp_inbound_video")
-      .select("storage_path, mime_type")
-      .eq("wamid", row.wamid)
-      .not("storage_path", "is", null)
-      .maybeSingle();
-    const videoRow = video as { storage_path: string; mime_type: string } | null;
-    if (videoRow?.storage_path) {
-      const { data, error } = await supabase.storage.from(WHATSAPP_VIDEOS_BUCKET).download(videoRow.storage_path);
-      if (!error && data) return { bytes: Buffer.from(await data.arrayBuffer()), fileName, mimeType: videoRow.mime_type || fallbackMime };
+  if (row.saved_file_id) {
+    const file = await getFileForDownload(row.saved_file_id).catch(() => null);
+    if (file?.kind === "binary") {
+      return { bytes: file.bytes, fileName: file.fileName || fileName, mimeType: file.mimeType || fallbackMime };
     }
   }
+
+  const held = await readFromVideoHoldingArea(row);
+  if (held) return { bytes: held.bytes, fileName, mimeType: held.mimeType || fallbackMime };
 
   if (!row.media_id) throw new WhatsAppInboxNotFoundError("This attachment is no longer available.");
   try {
@@ -585,6 +775,56 @@ export async function getInboxAttachment(messageId: string): Promise<InboxAttach
     }
     throw new WhatsAppInboxNotFoundError("WhatsApp no longer holds this attachment, and Phoenix had not kept a copy.");
   }
+}
+
+/** The same video, if the FTP video pipeline already copied it out of WhatsApp into its own bucket. */
+async function readFromVideoHoldingArea(row: MessageRow): Promise<{ bytes: Buffer; mimeType: string } | null> {
+  if (!row.wamid || row.direction !== "inbound") return null;
+  const supabase = getSupabaseAdmin();
+  const { data: video } = await supabase
+    .from("whatsapp_inbound_video")
+    .select("storage_path, mime_type")
+    .eq("wamid", row.wamid)
+    .not("storage_path", "is", null)
+    .maybeSingle();
+  const videoRow = video as { storage_path: string; mime_type: string } | null;
+  if (!videoRow?.storage_path) return null;
+  const { data, error } = await supabase.storage.from(WHATSAPP_VIDEOS_BUCKET).download(videoRow.storage_path);
+  if (error || !data) return null;
+  return { bytes: Buffer.from(await data.arrayBuffer()), mimeType: videoRow.mime_type };
+}
+
+/**
+ * Keeps the inbox's own copy of an attachment. From the video holding area when the file is already
+ * there — no WhatsApp download, and it still works after WhatsApp's media id has expired — else from
+ * WhatsApp.
+ */
+async function keepInboxCopy(row: MessageRow): Promise<void> {
+  const held = await readFromVideoHoldingArea(row);
+  if (!held) {
+    await copyFromMeta(row);
+    return;
+  }
+  const mimeType = row.media_mime_type || held.mimeType || "application/octet-stream";
+  const fileName = inboxAttachmentFileName({ fileName: row.media_file_name, messageType: row.message_type, mimeType, sentAt: row.sent_at });
+  const path = storagePathFor(row.id, fileName);
+  const supabase = getSupabaseAdmin();
+  const { error: uploadError } = await supabase.storage
+    .from(WHATSAPP_INBOX_MEDIA_BUCKET)
+    .upload(path, held.bytes, { cacheControl: "31536000", contentType: mimeType, upsert: true });
+  if (uploadError) throw new Error(`storage upload failed: ${uploadError.message}`);
+  const { error: updateError } = await supabase
+    .from(WHATSAPP_INBOX_MESSAGES_TABLE)
+    .update({
+      media_byte_size: held.bytes.length,
+      media_fetch_attempts: row.media_fetch_attempts + 1,
+      media_fetch_error: null,
+      media_fetched_at: new Date().toISOString(),
+      media_mime_type: mimeType,
+      media_storage_path: path,
+    })
+    .eq("id", row.id);
+  if (updateError) throw new Error(`row update failed: ${updateError.message}`);
 }
 
 export type InboxMediaCacheResult = { considered: number; copied: number; failed: number };
@@ -614,7 +854,7 @@ export async function cacheInboxMedia(maxItems = 10): Promise<InboxMediaCacheRes
   for (const row of (data ?? []) as MessageRow[]) {
     result.considered += 1;
     try {
-      await copyFromMeta(row);
+      await keepInboxCopy(row);
       result.copied += 1;
     } catch (copyError) {
       result.failed += 1;
@@ -644,7 +884,9 @@ export async function saveInboxAttachmentToCandidate(input: {
   kind: "cv" | "other";
 }): Promise<{ fileId: string; fileName: string; candidateName: string; previousCandidateId: string | null }> {
   const row = await loadMessageRow(input.messageId);
-  if (!row.media_id && !row.media_storage_path) throw new WhatsAppInboxInputError("This message has no attachment to save.");
+  if (!row.media_id && !row.media_storage_path && !row.saved_file_id) {
+    throw new WhatsAppInboxInputError("This message has no attachment to save.");
+  }
 
   const supabase = getSupabaseAdmin();
   const { data: candidate } = await supabase.from("ats_candidates").select("id, full_name").eq("id", input.candidateId).maybeSingle();
