@@ -923,6 +923,11 @@ export const adminNavigationSectionSeeds = [
       // Super Admin + HR Advisory, and a row offered to someone the page then redirects is exactly
       // what every-offered-link-opens.test.ts exists to catch. These two must be changed together.
       { href: "/recruitment/whatsapp-templates", icon: MessageCircle, label: "WhatsApp Templates", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin", "HR Advisory"] },
+      // WhatsApp Inbox — both company numbers, every chat, reply / send files / templates
+      // (app/(admin)/recruitment/whatsapp-inbox/page.tsx). SUPER ADMIN ONLY, owner 2026-09-15: the
+      // page gate is the role itself, so this row names that one role and nothing wider — an offered
+      // link that redirects is what every-offered-link-opens.test.ts exists to catch.
+      { href: "/recruitment/whatsapp-inbox", icon: MessageCircle, label: "WhatsApp Inbox", permissions: [{ resource: "recruitment", action: "update" }], roles: ["Super Admin"] },
     ],
     // ── Renamed 2026-09-05, and the reason is the promotion, not the rows ───────────────────
     // The promoted "Recruitment & Hiring" band (hub-recruitment-hiring) holds the module's eight rows

@@ -216,6 +216,11 @@ export type AuditEntityType =
   | "weekly_plan"
   | "weekly_sales_mapping"
   | "weekly_plan_day"
+  // The WhatsApp Inbox (Super Admin only): a message sent from Phoenix on a company number, a chat
+  // linked to a candidate or employee, and an attachment saved into a candidate's files. Each speaks
+  // for the company or moves a person's documents, so each is a required row.
+  | "whatsapp_inbox_conversation"
+  | "whatsapp_inbox_message"
   | "workflow_registry";
 
 export type AuditLogInput = {
