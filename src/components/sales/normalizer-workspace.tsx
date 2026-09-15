@@ -37,6 +37,29 @@ type Preview = {
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
 
+type CustomerSuggestionRow = { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } };
+
+// Customers go to the server in small groups. Each call runs the whole pipeline — the 50,000-row
+// customer map, the AI and a live geocode per new pharmacy — so ~300 customers in ONE request ran past
+// 40 seconds. On 2026-09-15 a hop between the browser and Railway cut that request at 41 s and answered
+// 502 while the server was still working (Railway logged "client closed"), so finished suggestions
+// never arrived. Small groups keep every call short, show progress, and also reach the customers past
+// the 300 each route reads from a single request.
+const CUSTOMER_REQUEST_SIZE = 20;
+
+function inGroups<T>(list: readonly T[], size: number): T[][] {
+  const groups: T[][] = [];
+  for (let i = 0; i < list.length; i += size) groups.push(list.slice(i, i + size));
+  return groups;
+}
+
+// A timed-out or cut request returns a non-JSON platform page, so the status is all there is to report.
+function failedStatusReason(status: number) {
+  return status === 502 || status === 504
+    ? `the connection was cut before the server answered (${status})`
+    : `the server answered ${status}`;
+}
+
 function requestErrorMessage(error: unknown, fallback: string) {
   if (error instanceof TypeError && error.message === "Failed to fetch") {
     return "Could not reach the server. Please check the connection and try again.";
@@ -173,42 +196,59 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     finally { setBusy(null); }
   }
 
+  // Customer suggestions carry a confidence and where they came from; both routes answer in this shape.
+  function applyCustomerSuggestions(rows: CustomerSuggestionRow[]) {
+    const newPicks: Record<string, string> = {};
+    const newConf: Record<string, number> = {};
+    const newOrigin: typeof aiOrigin = {};
+    for (const s of rows) {
+      newPicks[`c:${s.raw}`] = s.code;
+      if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
+      if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
+    }
+    if (Object.keys(newPicks).length) setPicks((p) => ({ ...p, ...newPicks }));
+    if (Object.keys(newConf).length) setAiConfidence((p) => ({ ...p, ...newConf }));
+    if (Object.keys(newOrigin).length) setAiOrigin((p) => ({ ...p, ...newOrigin }));
+  }
+
   async function aiSuggestAll() {
     if (!preview) return;
     setBusy("ai"); setError(null); setNotice(null);
     try {
-      let filled = 0; let failed = false;
+      let filled = 0;
+      const failures: string[] = [];
       for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"], ["customer", preview.unknownCustomers, "c"]] as const) {
         if (list.length === 0) continue;
-        const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
-        // Guard the parse: a timed-out / crashed function returns a non-JSON platform page, so a
-        // bare res.json() would throw "Unexpected token 'A' … is not valid JSON". Surface the real status instead.
-        const json = await res.json().catch(() => null) as { success?: boolean; data?: { suggestions?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[] }; error?: string } | null;
-        if (!res.ok || !json?.success || !json.data) {
-          failed = true;
-          setError(json?.error ?? `AI suggest failed for ${kind}${res.status === 504 ? " — the analyzer timed out; try fewer rows at once" : ` (${res.status})`}.`);
-          continue;
-        }
-        {
-          const sugg = json.data.suggestions ?? [];
-          if (sugg.length) {
-            setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
-            filled += sugg.length;
-            if (kind === "customer") {
-              const newConf: Record<string, number> = {};
-              const newOrigin: Record<string, { source: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }> = {};
-              sugg.forEach((s) => {
-                if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
-                if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
-              });
-              if (Object.keys(newConf).length) setAiConfidence((prev) => ({ ...prev, ...newConf }));
-              if (Object.keys(newOrigin).length) setAiOrigin((prev) => ({ ...prev, ...newOrigin }));
+        const groups = kind === "customer" ? inGroups(list, CUSTOMER_REQUEST_SIZE) : [list];
+        let failedRows = 0; let reason = "";
+        for (const [index, group] of groups.entries()) {
+          if (groups.length > 1) setNotice(`AI suggest — ${index * CUSTOMER_REQUEST_SIZE} of ${list.length} customers done…`);
+          // One group failing must not throw away the groups before or after it.
+          try {
+            const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: group.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
+            // Guard the parse: a timed-out / crashed function returns a non-JSON platform page, so a
+            // bare res.json() would throw "Unexpected token 'A' … is not valid JSON". Surface the real status instead.
+            const json = await res.json().catch(() => null) as { success?: boolean; data?: { suggestions?: CustomerSuggestionRow[] }; error?: string } | null;
+            if (!res.ok || !json?.success || !json.data) {
+              failedRows += group.length;
+              reason = json?.error ?? failedStatusReason(res.status);
+              continue;
             }
+            const sugg = json.data.suggestions ?? [];
+            if (sugg.length === 0) continue;
+            filled += sugg.length;
+            if (kind === "customer") applyCustomerSuggestions(sugg);
+            else setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
+          } catch (e) {
+            failedRows += group.length;
+            reason = requestErrorMessage(e, "the request failed");
           }
         }
+        if (failedRows) failures.push(`${failedRows} of ${list.length} ${kind} rows — ${reason.replace(/\.$/, "")}`);
       }
+      if (failures.length) setError(`AI suggest failed for ${failures.join("; ")}. Click AI suggest again to retry them.`);
       if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
-      else if (!failed) setNotice("AI found no confident matches — map them by hand.");
+      else setNotice(failures.length ? null : "AI found no confident matches — map them by hand.");
     } catch (e) { setError(e instanceof Error ? e.message : "AI suggest failed."); }
     finally { setBusy(null); }
   }
@@ -217,47 +257,53 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     if (!preview || preview.unknownCustomers.length === 0) return;
     setBusy("automap"); setError(null); setNotice(null);
     try {
-      const res = await fetch("/api/sales/normalizer/mappings/auto-map", {
-        body: JSON.stringify({
-          distributorCode,
-          unknowns: preview.unknownCustomers.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })),
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const json = await res.json().catch(() => null) as {
-        data?: {
-          applied?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
-          parked?: { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }[];
-          backfilled?: number;
-          minConfidence?: number;
-        };
-        error?: string;
-        success?: boolean;
-      } | null;
-      if (!res.ok || !json?.success || !json.data) { setError(json?.error ?? `Auto-map failed. (${res.status})`); return; }
-      const applied = json.data.applied ?? [];
-      const parked = json.data.parked ?? [];
-      const backfilled = Number(json.data.backfilled ?? 0);
-      // Parked suggestions pre-fill the dropdowns for manual review; applied ones are saved already.
-      const newPicks: Record<string, string> = {};
-      const newConf: Record<string, number> = {};
-      const newOrigin: typeof aiOrigin = {};
-      for (const s of [...applied, ...parked]) {
-        newPicks[`c:${s.raw}`] = s.code;
-        if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
-        if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
+      const customers = preview.unknownCustomers;
+      const groups = inGroups(customers, CUSTOMER_REQUEST_SIZE);
+      let applied = 0; let parked = 0; let backfilled = 0; let minConfidence: number | undefined;
+      let failedRows = 0; let reason = "";
+      for (const [index, group] of groups.entries()) {
+        if (groups.length > 1) setNotice(`Auto-map — ${index * CUSTOMER_REQUEST_SIZE} of ${customers.length} customers done, ${applied} applied so far…`);
+        // Each group is saved and audited on its own, so a failed group leaves every earlier one applied.
+        try {
+          const res = await fetch("/api/sales/normalizer/mappings/auto-map", {
+            body: JSON.stringify({
+              distributorCode,
+              unknowns: group.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })),
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          });
+          const json = await res.json().catch(() => null) as {
+            data?: { applied?: CustomerSuggestionRow[]; parked?: CustomerSuggestionRow[]; backfilled?: number; minConfidence?: number };
+            error?: string;
+            success?: boolean;
+          } | null;
+          if (!res.ok || !json?.success || !json.data) {
+            failedRows += group.length;
+            reason = json?.error ?? failedStatusReason(res.status);
+            continue;
+          }
+          // Parked suggestions pre-fill the dropdowns for manual review; applied ones are saved already.
+          applyCustomerSuggestions([...(json.data.applied ?? []), ...(json.data.parked ?? [])]);
+          applied += json.data.applied?.length ?? 0;
+          parked += json.data.parked?.length ?? 0;
+          backfilled += Number(json.data.backfilled ?? 0);
+          minConfidence = json.data.minConfidence ?? minConfidence;
+        } catch (e) {
+          failedRows += group.length;
+          reason = requestErrorMessage(e, "the request failed");
+        }
       }
-      if (Object.keys(newPicks).length) setPicks((p) => ({ ...p, ...newPicks }));
-      if (Object.keys(newConf).length) setAiConfidence((p) => ({ ...p, ...newConf }));
-      if (Object.keys(newOrigin).length) setAiOrigin((p) => ({ ...p, ...newOrigin }));
-      if (applied.length > 0) {
-        setNotice(`Auto-mapped ${applied.length} customer(s) (gate ≥${json.data.minConfidence ?? 95}%)${backfilled ? `, healed ${backfilled} historical row(s)` : ""}. ${parked.length} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
+      const healed = backfilled ? `, healed ${backfilled} historical row(s)` : "";
+      if (applied > 0) {
+        setNotice(`Auto-mapped ${applied} customer(s) (gate ≥${minConfidence ?? 95}%)${healed}. ${parked} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
         const p = await analyze(true, { quietFailure: true });
-        if (p) setNotice(`Auto-mapped ${applied.length} customer(s)${backfilled ? `, healed ${backfilled} historical row(s)` : ""}. ${p.unknownCustomers.length} customer(s) still need manual mapping.`);
+        if (p) setNotice(`Auto-mapped ${applied} customer(s)${healed}. ${p.unknownCustomers.length} customer(s) still need manual mapping.`);
       } else {
-        setNotice(`Nothing cleared the auto-map gate — ${parked.length} suggestion(s) pre-filled for manual review instead.`);
+        setNotice(failedRows === customers.length ? null : `Nothing cleared the auto-map gate — ${parked} suggestion(s) pre-filled for manual review instead.`);
       }
+      // Set after the coverage refresh, which clears the error line.
+      if (failedRows) setError(`Auto-map failed for ${failedRows} of ${customers.length} customers — ${reason.replace(/\.$/, "")}. Everything counted as applied is saved; click Auto-map again for the rest.`);
     } catch (e) { setError(requestErrorMessage(e, "Auto-map failed.")); }
     finally { setBusy(null); }
   }
