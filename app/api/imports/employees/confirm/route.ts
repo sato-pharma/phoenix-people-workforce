@@ -7,7 +7,9 @@ import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
+import { hrIdsForManagerLinks, managerLinksToWrite } from "@/lib/imports/employee-manager-links";
 import { splitInsertOnly } from "@/lib/imports/org-entity-write-guard";
+import { upsertByColumnSet } from "@/lib/imports/upsert-by-column-set";
 import type {
   EmployeeImportRecord,
   EmployeeImportValidationResult,
@@ -708,17 +710,16 @@ async function upsertEmployees(
         isExisting: existingHrIds.has(record.hrId as string),
       }),
     );
-    let { error } = await supabase.from("employees").upsert(
-      values,
-      { onConflict: "hr_id" },
+    // One request per column set. A single bulk request lists every column any row carries and
+    // writes NULL wherever a row left that cell blank — see upsert-by-column-set.ts.
+    let { error } = await upsertByColumnSet(values, (group) =>
+      supabase.from("employees").upsert(group, { onConflict: "hr_id" }),
     );
 
     if (error && isMissingOptionalEmployeeColumn(error)) {
-      const retry = await supabase.from("employees").upsert(
-        values.map(withoutOptionalEmployeeColumns),
-        { onConflict: "hr_id" },
-      );
-      error = retry.error;
+      ({ error } = await upsertByColumnSet(values.map(withoutOptionalEmployeeColumns), (group) =>
+        supabase.from("employees").upsert(group, { onConflict: "hr_id" }),
+      ));
     }
 
     if (error) {
@@ -726,24 +727,18 @@ async function upsertEmployees(
     }
   }
 
-  const availableEmployees = await existingEmployeeHrIds(supabase, hrIds);
+  // The lookup includes the managers the rows name: a manager who is not a row in this upload
+  // still exists, and checking only the file's own HR_IDs dropped every such link without a word.
+  const availableEmployees = await existingEmployeeHrIds(supabase, hrIdsForManagerLinks(employeeRecords));
 
-  for (const record of employeeRecords) {
-    if (!record.hrId || !record.managerHrId) {
-      continue;
-    }
-
-    if (!availableEmployees.has(record.managerHrId)) {
-      continue;
-    }
-
+  for (const link of managerLinksToWrite(employeeRecords, availableEmployees)) {
     const { error } = await supabase
       .from("employees")
       .update({
-        manager_hr_id: record.managerHrId,
+        manager_hr_id: link.managerHrId,
         updated_at: new Date().toISOString(),
       })
-      .eq("hr_id", record.hrId);
+      .eq("hr_id", link.hrId);
 
     if (error) {
       throw new Error(error.message);
@@ -815,17 +810,15 @@ async function upsertEmployeeCompensation(
   }
 
   const values = compensationRecords.map(compensationValues);
-  let { error } = await supabase.from("employee_compensation").upsert(
-    values,
-    { onConflict: "employee_hr_id" },
+  // One request per column set, as in upsertEmployees: a blank salary cell keeps the saved figure.
+  let { error } = await upsertByColumnSet(values, (group) =>
+    supabase.from("employee_compensation").upsert(group, { onConflict: "employee_hr_id" }),
   );
 
   if (error && isMissingPaymentModeColumn(error)) {
-    const retry = await supabase.from("employee_compensation").upsert(
-      values.map(withoutPaymentModeColumn),
-      { onConflict: "employee_hr_id" },
-    );
-    error = retry.error;
+    ({ error } = await upsertByColumnSet(values.map(withoutPaymentModeColumn), (group) =>
+      supabase.from("employee_compensation").upsert(group, { onConflict: "employee_hr_id" }),
+    ));
   }
 
   if (error) {

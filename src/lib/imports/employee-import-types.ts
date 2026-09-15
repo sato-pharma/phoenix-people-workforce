@@ -221,6 +221,12 @@ export type ExistingImportState = {
    * A name is NOT unique here (two people genuinely share one), so the value is a list.
    */
   employeeHrIdsByFullNameKey?: Map<string, string[]>;
+  /**
+   * Canonical HR_ID key -> that employee's STORED nickname, normalized with personNameKey. Backs the
+   * nickname guard's one exception: re-importing the nickname an employee already carries renames
+   * nobody, so it is reported as a warning instead of refusing the whole row.
+   */
+  employeeNicknameKeyByCanonicalKey?: Map<string, string>;
   managerHrIds?: Set<string>;
   terminalEmployeeHrIds?: Set<string>;
   protectedLifecycleHrIds?: Set<string>;

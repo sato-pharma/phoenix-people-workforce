@@ -1,7 +1,7 @@
 import { loadRegionCrosswalk } from "@/lib/employees/region-resolver";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isActiveImportEmployee } from "@/lib/imports/employee-lifecycle";
-import { addFullNameHolder } from "@/lib/imports/employee-name-collision";
+import { addFullNameHolder, addStoredNickname } from "@/lib/imports/employee-name-collision";
 import type {
   ExistingEmployeeOrgSeat,
   ExistingImportState,
@@ -353,6 +353,26 @@ async function loadTeamState(
   return { teamCodeToTeam, teamCodes, teamNameAreaToTeam, teamNameToTeams };
 }
 
+// Each employee's saved nickname, for the nickname guard's one exception (employee-name-collision.ts).
+// A failed read returns an empty map, which only keeps the guard strict — the safe direction.
+async function loadStoredNicknames(supabase: SupabaseClient) {
+  const storedNicknames = new Map<string, string>();
+  const { data, error } = await supabase
+    .from("employees")
+    .select("hr_id,nickname")
+    .not("nickname", "is", null);
+
+  if (error) {
+    return storedNicknames;
+  }
+
+  for (const row of (data ?? []) as Array<{ hr_id: string | null; nickname: string | null }>) {
+    addStoredNickname(storedNicknames, row.hr_id, row.nickname);
+  }
+
+  return storedNicknames;
+}
+
 export async function loadEmployeeImportExistingState(
   supabase: SupabaseClient = getSupabaseAdmin(),
 ): Promise<ExistingImportState> {
@@ -364,6 +384,7 @@ export async function loadEmployeeImportExistingState(
     positionState,
     activeDepartments,
     regionCrosswalk,
+    employeeNicknameKeyByCanonicalKey,
   ] = await Promise.all([
     loadCodeSet(supabase, "departments"),
     loadAreaState(supabase),
@@ -374,6 +395,7 @@ export async function loadEmployeeImportExistingState(
     // Degrade gracefully: if the au crosswalk views can't be read, skip region derivation rather
     // than failing the whole import (the validator keeps each row's free-text region_name).
     loadRegionCrosswalk(supabase).catch(() => undefined),
+    loadStoredNicknames(supabase),
   ]);
   const employees = await loadEmployeeState(supabase, {
     areaIdToCode: areaState.areaIdToCode,
@@ -384,6 +406,7 @@ export async function loadEmployeeImportExistingState(
 
   return {
     ...employees,
+    employeeNicknameKeyByCanonicalKey,
     areaCodes: areaState.areaCodes,
     areaCodeToId: areaState.areaCodeToId,
     departmentCodes,
