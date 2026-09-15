@@ -1055,6 +1055,7 @@ import { runDirectOrderWorkspaceVocabularyTests } from "./direct-orders-workspac
 import { runDirectOrderBadgeFastPathTests } from "./direct-orders-badge-fast-path.test.ts";
 import { runDirectOrderPageAccessTests } from "./direct-orders-page-access.test.ts";
 import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
+import { runShareLinkRotationAllowFilesTests } from "./share-link-rotation-allow-files.test.ts";
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
@@ -3561,6 +3562,7 @@ await runTest("direct orders workspace vocabulary (no database status reaches a 
 await runTest("direct orders badge fast path (cheap on a 30s poll, and shares the workspace's eligibility rule instead of copying it)", runDirectOrderBadgeFastPathTests);
 await runTest("direct orders page access (all 8 pages in both shells refuse through one shared gate, before any data loads)", runDirectOrderPageAccessTests);
 await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
+await runTest("share link rotation keeps the file grant (allow_files carried from the old link, never widened; CV lifecycle has no such column)", runShareLinkRotationAllowFilesTests);
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);

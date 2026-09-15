@@ -112,7 +112,10 @@ export async function rotateDirectOrderSheetToken(): Promise<SheetTokenRotationR
   const old = live[0];
 
   // 1. Mint the replacement, carrying the SAME frozen scope. A rotation must not widen or narrow
-  //    what the link can see — it is the same link with a new name.
+  //    what the link can see — it is the same link with a new name. allow_files rides along for
+  //    the same reason: the evidence photographs must stay exactly as reachable as before, no more.
+  //    Leaving it out does not fail — the column defaults to false — and that is how every rotation
+  //    from 2026-08-23 minted a link the live sheet could no longer open a single photo with.
   const newToken = await mintToken();
   const { error: insertError } = await supabase.from("direct_order_report_share_links").insert({
     token: newToken,
@@ -124,6 +127,7 @@ export async function rotateDirectOrderSheetToken(): Promise<SheetTokenRotationR
     filters: old.filters ?? null,
     passcode_hash: old.passcode_hash ?? null,
     expires_at: String(old.expires_at),
+    allow_files: old.allow_files ?? false,
   });
   if (insertError) throw insertError;
 
@@ -190,7 +194,12 @@ export async function rotateDirectOrderSheetToken(): Promise<SheetTokenRotationR
     entityType: "direct_order_request",
     entityId: `share-link:${preview(newToken)}`,
     oldValues: { token: preview(String(old.token)), revoked: true },
-    newValues: { token: preview(newToken), scope: String(old.scope ?? ""), confirmedBySheet: true },
+    newValues: {
+      token: preview(newToken),
+      scope: String(old.scope ?? ""),
+      allowFiles: Boolean(old.allow_files),
+      confirmedBySheet: true,
+    },
     summary:
       `Live sheet feed token rotated. The sheet confirmed the new token before the old one was ` +
       `revoked, so the bootstrap token committed in docs/direct-orders-live-sheet.gs no longer opens anything.`,
