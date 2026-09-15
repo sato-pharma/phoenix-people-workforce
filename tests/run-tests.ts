@@ -1669,6 +1669,7 @@ import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
+import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5615,6 +5616,11 @@ await runTest(
 await runTest(
   "dev launcher says why the dev server stopped: the exit code in plain words, the time in Cairo, and the lowest free RAM while it ran — silent only for a clean stop or Ctrl+C",
   runDevServerExitReasonTests,
+);
+
+await runTest(
+  "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
+  runAutorunGuardFalseArmingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
