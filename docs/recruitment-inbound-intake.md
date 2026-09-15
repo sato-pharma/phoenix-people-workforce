@@ -285,9 +285,18 @@ subscribed set today: `account_alerts`, `account_review_update`, `account_update
 and the flow's history sync is confirmed, the backlog **will** be delivered and this parser is what
 receives it — that path has still never run against real data.
 
-`smb_message_echoes` and `smb_app_state_sync` are deliberately **not** subscribed. Meta offers them
-alongside coexistence for echoing the owner's own outgoing messages and syncing app state; neither is
-parsed here and neither is needed to capture a CV. Do not subscribe them without a reason.
+**`smb_message_echoes` IS subscribed — since 2026-09-15 23:11 Cairo, at the owner's request.** It
+carries what someone types on the HR handset's own WhatsApp Business app, so those replies show in
+the WhatsApp Inbox: `src/lib/whatsapp-inbox/webhook-parse.ts` files each one as an outbound message
+with origin `handset`, under the person it was sent to. It was added with one
+`POST /v25.0/{app-id}/subscriptions` carrying all 12 fields (the 11 above plus this one) and read
+back live: every field still v25.0, the subscription active, the callback unchanged, and Meta's
+verification `GET` answered 200. **This parser never reads it** — it reads only `value.messages`
+and `value.history` — so an echo cannot create a candidate, start screening or send an auto-reply.
+Do not unsubscribe it on the strength of an older note that says echoes are off.
+
+`smb_app_state_sync` stays deliberately **not** subscribed: nothing here reads it and nothing needs
+it. Any later change to the subscription must `POST` every field, never the new one alone.
 
 > **The exclusion filter has a NULL trap, measured, not guessed.** `historyImport` is *absent* on a
 > live row, and PostgREST `raw_metadata->>historyImport=neq.true` evaluates to NULL — not true — for
