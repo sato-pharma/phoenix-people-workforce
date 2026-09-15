@@ -526,6 +526,7 @@ import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedenc
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
 import { runSosCustomerMapKeysetTests } from "./sos-customer-map-keyset.test.ts";
+import { runSosNormalizerSuggestSpeedTests } from "./sos-normalizer-suggest-speed.test.ts";
 import { runSosAmbiguousAliasTests } from "./sos-ambiguous-alias.test.ts";
 import { runSosNormalizerTests } from "./sos-normalizer.test.ts";
 import { runSalesRecognizeTests } from "./sales-recognize.test.ts";
@@ -2751,6 +2752,7 @@ await runTest("sos resolveBrick precedence (area must not beat customer brick)",
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
 await runTest("sos crosswalk pagination (keyset, never unordered offset)", runSosCrosswalkPaginationTests);
 await runTest("sos customer_map keyset guard (every .range() read is ORDER BY-stable)", runSosCustomerMapKeysetTests);
+await runTest("sos normalizer suggest speed (concurrent customer-map walks leave no gap; no crosswalk per group)", runSosNormalizerSuggestSpeedTests);
 await runTest("sos ambiguous alias (same name -> resolves to nothing)", runSosAmbiguousAliasTests);
 await runTest("sos normalizer", runSosNormalizerTests);
 await runTest("sales recognize (single recognizer)", runSalesRecognizeTests);
