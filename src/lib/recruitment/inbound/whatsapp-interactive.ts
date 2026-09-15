@@ -20,6 +20,7 @@ import type { ClassifyMenu } from "@/lib/recruitment/inbound/whatsapp-classify-m
 import { menuViolations } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import type { OutboundLogContext } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
 import { buildOutboundLogRow, recordOutboundMessage } from "@/lib/recruitment/inbound/whatsapp-outbound-log";
+import { recordInboxOutbound, type InboxSendDetail } from "@/lib/whatsapp-inbox/record";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const SEND_TIMEOUT_MS = 8_000;
@@ -81,6 +82,17 @@ async function postToGraph(
       toWaId: typeof payload.to === "string" ? payload.to : "",
     }),
   );
+
+  // The same send, filed into the WhatsApp Inbox thread for that person, so an automated menu and a
+  // human's reply both show where they were said. Never throws either.
+  const inboxDetail = context?.detail?.inbox;
+  await recordInboxOutbound({
+    event,
+    inbox: inboxDetail && typeof inboxDetail === "object" ? (inboxDetail as InboxSendDetail) : null,
+    payload,
+    phoneNumberId,
+    result,
+  });
 
   return result;
 }
@@ -215,6 +227,38 @@ export async function sendWhatsAppText(input: {
       type: "text",
     },
     input.event?.trim() || "whatsapp_classify_text_send",
+    input.logContext,
+  );
+}
+
+/**
+ * Sends an already-built Cloud API payload — a photo, a file, a template — from the WhatsApp Inbox.
+ *
+ * Exists so the inbox's sends go through `postToGraph` like every other message and are therefore
+ * audited by construction, rather than growing a second Graph client that could forget the log.
+ * The caller builds and validates the payload; `messaging_product` and `to` are set here so they
+ * cannot be left out.
+ */
+export async function sendWhatsAppPayload(input: {
+  toWaId: string;
+  phoneNumberId: string;
+  message: Record<string, unknown> & { type: string };
+  event: string;
+  logContext?: OutboundLogContext | null;
+}): Promise<WhatsAppSendResult> {
+  const credentials = resolveCredentials(input.phoneNumberId);
+  if (!credentials) return { detail: "no token or phone number id", ok: false, reason: "disabled" };
+
+  return postToGraph(
+    credentials.phoneNumberId,
+    credentials.token,
+    {
+      ...input.message,
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: input.toWaId,
+    },
+    input.event,
     input.logContext,
   );
 }

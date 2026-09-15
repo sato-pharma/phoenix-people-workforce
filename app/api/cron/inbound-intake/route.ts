@@ -5,6 +5,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
+import { cacheInboxMedia } from "@/lib/whatsapp-inbox/store";
 import { fetchPendingInboundVideos } from "@/lib/whatsapp-videos/inbox";
 import { thankDueFtpVideoSenders } from "@/lib/whatsapp-videos/thanks";
 
@@ -60,7 +61,18 @@ export async function GET(request: Request) {
       return null;
     });
 
-    return NextResponse.json({ success: true, ...result, thanks, videos });
+    // The WhatsApp Inbox's attachments: Meta keeps a media file for a limited time only, so each photo,
+    // file and voice note is copied into Phoenix's own storage soon after it arrives. Same terms as the
+    // two above — outside the switch, never fatal, bounded per tick.
+    const inboxMedia = await cacheInboxMedia().catch((inboxError) => {
+      logError("WhatsApp Inbox media copy failed", {
+        error: inboxError,
+        labels: { event: "whatsapp_inbox_media_cache_threw", job: "inbound-intake" },
+      });
+      return null;
+    });
+
+    return NextResponse.json({ success: true, ...result, inboxMedia, thanks, videos });
   } catch (error) {
     logError("Inbound intake worker failed", {
       error,
