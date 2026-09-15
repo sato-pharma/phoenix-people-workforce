@@ -180,7 +180,7 @@ async function sendTemplateTo(input: {
   toWaId: string;
   templateName: string;
   language: string;
-  values: Record<string, unknown> | null | undefined;
+  values?: Record<string, unknown> | null;
 }) {
   const template = await findTemplate(input.line, input.templateName, input.language);
   const values = cleanValues(input.values);

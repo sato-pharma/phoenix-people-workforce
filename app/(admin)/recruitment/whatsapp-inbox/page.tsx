@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { WhatsAppInbox } from "@/components/whatsapp-inbox/whatsapp-inbox";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { logError } from "@/lib/observability/log";
 import { whatsAppInboxLines } from "@/lib/whatsapp-inbox/lines";
 import { listInboxConversations } from "@/lib/whatsapp-inbox/store";
 
@@ -35,7 +36,20 @@ export default async function WhatsAppInboxPage() {
   } catch (error) {
     // An error state, never an empty list: "nobody has written" and "the inbox could not be read"
     // must not look the same.
-    const message = String((error as { message?: unknown })?.message ?? error);
+    // Plain words, not the database's own text. A table that is not there yet answers PGRST205
+    // through PostgREST (42P01 through SQL) — the state of any environment the migration has not
+    // reached.
+    const code = (error as { code?: unknown } | null)?.code;
+    const notInstalled = code === "PGRST205" || code === "42P01";
+    if (!notInstalled) {
+      logError("WhatsApp Inbox page could not list conversations", {
+        error,
+        labels: { event: "whatsapp_inbox_page_list_failed" },
+      });
+    }
+    const message = notInstalled
+      ? "The inbox's database tables are not installed here yet, so no chats can be shown."
+      : "The chats could not be read just now. Refresh the page to try again.";
     return (
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-[20px] font-black text-phx-ink">WhatsApp Inbox unavailable</h1>

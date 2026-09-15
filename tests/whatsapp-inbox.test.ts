@@ -267,7 +267,7 @@ function runTemplateTests() {
     "Interview invitation\n\nHello Mona, your interview is on Sunday.\n\nSato Pharma",
     "the title's blank 1 and the message's blank 1 are filled from their own values",
   );
-  const built = buildTemplateMessage(positional, values) as { template: { components: Array<{ type: string; parameters: Array<Record<string, string>> }> } };
+  const built = buildTemplateMessage(positional, values) as unknown as { template: { components: Array<{ type: string; parameters: Array<Record<string, string>> }> } };
   assert.deepEqual(built.template.components, [
     { parameters: [{ text: "Interview", type: "text" }], type: "header" },
     { parameters: [{ text: "Mona", type: "text" }, { text: "Sunday", type: "text" }], type: "body" },
@@ -282,7 +282,7 @@ function runTemplateTests() {
   });
   assert.equal(named!.bodyFields[0]!.name, "first_name");
   assert.equal(named!.bodyFields[0]!.example, "Mona");
-  const namedBuilt = buildTemplateMessage(named!, { "body:first_name": "Mona" }) as { template: { components: Array<{ parameters: Array<Record<string, string>> }> } };
+  const namedBuilt = buildTemplateMessage(named!, { "body:first_name": "Mona" }) as unknown as { template: { components: Array<{ parameters: Array<Record<string, string>> }> } };
   assert.equal(namedBuilt.template.components[0]!.parameters[0]!.parameter_name, "first_name", "a named template sends its parameter names");
 
   const imageHeader = mapInboxTemplate({ components: [{ format: "IMAGE", type: "HEADER" }, { text: "Hi", type: "BODY" }], language: "en", name: "with_photo" });
