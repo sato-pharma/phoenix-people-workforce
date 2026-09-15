@@ -315,6 +315,18 @@ using public.whatsapp_inbox_messages m
 where m.payload->>'backfill' = 'ats_whatsapp_classification_sessions'
   and m.payload->>'sourceId' = a.session_id::text and m.payload->>'question' = a.qkey;
 
+-- Once the inbox is live its webhook records the reply itself — a tap arrives as an `interactive`
+-- message with its real id. So a question the person answered AFTER that started already has its
+-- bubble: skip it when a live-recorded message from them sits between the question and Phoenix's next one.
+delete from inbox_answers a
+using public.whatsapp_inbox_messages m
+where not (m.payload ? 'backfill')
+  and m.direction = 'inbound'
+  and m.contact_wa_id = a.wa
+  and m.phone_number_id = a.line
+  and m.sent_at >= a.prompt_at
+  and m.sent_at <= coalesce(a.next_at, now());
+
 create temp table inbox_answers_inserted (conversation_id uuid) on commit drop;
 with inserted as (
   insert into public.whatsapp_inbox_messages (direction, origin, phone_number_id, contact_wa_id, message_type, body, payload, historical, sent_at, received_at, status, event)
