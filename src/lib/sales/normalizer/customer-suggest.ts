@@ -7,7 +7,7 @@ import { buildPropagationIndex, propagateSuggestions, type MappedCustomerRow, ty
 import { NO_KEY_CONFIDENCE, scoreCustomerBrick, type GeoSignals } from "@/lib/sales/normalizer/geo-validate";
 import { pharmacyGeoKey, resolvePharmacyGeo } from "@/lib/sales/normalizer/pharmacy-geocode";
 import { loadSalesReferenceData, type SalesBrickReference } from "@/lib/sales/monthly-distributor-import";
-import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { fetchAllRowsKeyset, keysetRanges } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // The full customer suggestion pipeline, shared by the suggest-only ai-suggest route and the
@@ -49,29 +49,88 @@ type CustomerMapDbRow = {
  *
  * It also treated a query error as end-of-data (`if (error || !data …) break`), which turned a
  * transient failure into a silently short map that looked complete.
+ *
+ * It is read by CUSTOMER_MAP_READERS keyset walks at once. One walk is 70 round trips of up to 1,000
+ * rows — about 4 seconds, of which the database spends ~6 ms a page — and AI suggest and Auto-map
+ * repeat the load for every group of 20 customers the workspace sends. The walks hand over at the ids
+ * a quarter, half and three quarters of the way through the map, not at even id steps, because the
+ * ids are bunched: on 2026-09-15 four rows in five sat in the lowest and highest eighths of the id
+ * span. Those cut points only balance the work. The ranges are contiguous and the last is open-ended
+ * (keysetRanges), so a stale count or a row written mid-read can slow one walk but never lose a row.
  */
 async function loadActiveCustomerMap(): Promise<CustomerMapDbRow[]> {
   const supabase = getSupabaseAdmin();
-  return fetchAllRowsKeyset<CustomerMapDbRow>(
-    () =>
-      supabase
+  const ranges = keysetRanges(await customerMapCuts());
+  const walks = await Promise.all(
+    ranges.map((range) =>
+      fetchAllRowsKeyset<CustomerMapDbRow>(
+        () => {
+          let query = supabase
+            .from("source_of_sales_customer_map")
+            .select("id,customer_name,address,brick_id,customer_code,distributor_code")
+            .eq("active", true)
+            .not("brick_id", "is", null);
+          if (range.from !== null) query = query.gte("id", range.from);
+          if (range.below !== null) query = query.lt("id", range.below);
+          return query;
+        },
+        { cursorColumn: "id", cursorOf: (row) => row.id },
+      ),
+    ),
+  );
+  // The ranges are in ascending id order, so the rows come back in the order one walk returned them.
+  return walks.flat();
+}
+
+// How many keyset walks read the customer map at once — see loadActiveCustomerMap.
+const CUSTOMER_MAP_READERS = 4;
+
+/**
+ * Where the concurrent walks hand over: the ids of the rows a quarter, half and three quarters of the
+ * way through the map. Each probe reads ONE row by position (~55 ms at the deepest), never a page, so
+ * it is not the offset walk the keyset pager replaced. A map too small to gain from splitting is read
+ * by one walk, and a probe that finds no row (rows deleted between the count and the probe) returns
+ * NaN, which keysetRanges drops.
+ */
+async function customerMapCuts(): Promise<number[]> {
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("source_of_sales_customer_map")
+    .select("id", { count: "exact", head: true })
+    .eq("active", true)
+    .not("brick_id", "is", null);
+  if (error) throw error;
+  const total = count ?? 0;
+  if (total < CUSTOMER_MAP_READERS * 1000) return [];
+  return Promise.all(
+    Array.from({ length: CUSTOMER_MAP_READERS - 1 }, async (_, index) => {
+      const position = Math.floor(((index + 1) * total) / CUSTOMER_MAP_READERS);
+      const { data, error: probeError } = await supabase
         .from("source_of_sales_customer_map")
-        .select("id,customer_name,address,brick_id,customer_code,distributor_code")
+        .select("id")
         .eq("active", true)
-        .not("brick_id", "is", null),
-    { cursorColumn: "id", cursorOf: (row) => row.id },
+        .not("brick_id", "is", null)
+        .order("id", { ascending: true })
+        .range(position, position);
+      if (probeError) throw probeError;
+      return Number(data?.[0]?.id);
+    }),
   );
 }
 
 export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ suggestions: CustomerSuggestion[]; bricks: Map<string, SalesBrickReference> }> {
-  const refs = await loadSalesReferenceData();
+  // Only the brick master is read from the reference data. The customer→brick crosswalk that
+  // loadSalesReferenceData() pages by default is a second pass over the whole customer map — 70
+  // offset pages, ~3.5 s — that nothing here reads, and it was paid again for every group of 20.
+  const [refs, customerMapRows] = await Promise.all([
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+    loadActiveCustomerMap(),
+  ]);
   const brickMap = new Map((refs.bricks ?? []).map((b) => [b.brickId, b]));
   const candidates = (refs.bricks ?? []).map((b) => ({
     code: b.brickId,
     label: [b.brickName, [b.areaName, b.regionName].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
   }));
-
-  const customerMapRows = await loadActiveCustomerMap();
 
   // 1. Deterministic propagation — resolved twins skip the AI entirely.
   let propagated: PropagatedSuggestion[] = [];

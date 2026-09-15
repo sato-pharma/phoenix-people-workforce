@@ -98,3 +98,26 @@ export async function fetchAllRowsKeyset<T = Record<string, unknown>>(
 
   return results;
 }
+
+/**
+ * Contiguous ranges for reading one keyset walk as several concurrent walks.
+ *
+ * `cuts` are the cursor values where one range stops and the next starts. The first range is open
+ * below, the last is open above, and each stops exactly where the next begins — so every row falls in
+ * exactly one range, including a row inserted past the last cut while the read runs. A row between
+ * two ranges is lost silently, the failure this file exists to prevent, so the cuts are cleaned here
+ * rather than trusted: a repeated cut would open an empty range, an out-of-order one would read rows
+ * twice, and a non-number cannot be a cursor. Concatenating the ranges' rows in order gives the single
+ * walk's ascending order.
+ */
+export function keysetRanges(cuts: readonly number[]): { below: number | null; from: number | null }[] {
+  const ordered = [...new Set(cuts.filter((cut) => Number.isFinite(cut)))].sort((a, b) => a - b);
+  const ranges: { below: number | null; from: number | null }[] = [];
+  let from: number | null = null;
+  for (const cut of ordered) {
+    ranges.push({ below: cut, from });
+    from = cut;
+  }
+  ranges.push({ below: null, from });
+  return ranges;
+}

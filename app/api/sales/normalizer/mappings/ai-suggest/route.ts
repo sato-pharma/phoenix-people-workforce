@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     }
 
     const supabase = getSupabaseAdmin();
-    const refs = await loadSalesReferenceData();
+    const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
 
     const candidates = kind === "product"
       ? refs.products.map((p) => ({ code: p.productCode, label: p.productName }))
