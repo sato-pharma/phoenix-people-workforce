@@ -25,7 +25,7 @@ import { Action, Band, BandSays } from "@/components/recruitment/workstation/wor
 import { getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateRegionCodes, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
-import { inboxPositionHasArea, inboxPositionHasRegion } from "@/lib/whatsapp-inbox/position-filter";
+import { inboxPlaceText, inboxPositionHasArea, inboxPositionHasRegion } from "@/lib/whatsapp-inbox/position-filter";
 import type { InboxConversationSummary, InboxThread } from "@/lib/whatsapp-inbox/store";
 import { cn } from "@/lib/utils";
 
@@ -451,7 +451,7 @@ export function WhatsAppInbox({
                         <span className={cn("flex min-h-[1.375rem] flex-wrap items-center gap-1.5", item.cv && "pr-[5.25rem]")}>
                           {filters.line === "" && lines.length > 1 ? <LineChip label={item.lineLabel} /> : null}
                           {item.positions.map((position) => {
-                            const place = placeText(position);
+                            const place = inboxPlaceText(position);
                             return (
                               <span className="contents" key={`${position.family}|${place}`}>
                                 <span className="inline-flex max-w-full items-center gap-1 border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold leading-tight text-slate-700 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
@@ -629,11 +629,6 @@ function FilterSelect({
       </select>
     </label>
   );
-}
-
-/** "Upper Egypt · Assuit 1": the place the person chose for the job, shown beside it. Empty when none. */
-function placeText(position: InboxConversationSummary["positions"][number]): string {
-  return [position.regionLabel, position.areaName].filter(Boolean).join(" · ");
 }
 
 function Segment({

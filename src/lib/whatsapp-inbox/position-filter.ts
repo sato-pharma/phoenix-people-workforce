@@ -8,7 +8,7 @@
 // Pure — no imports beyond the two vocabularies, which are pure too — because the list screen
 // decides which filters to show with the same rules the server filters with.
 
-import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 
 /** A chat's position filter value when nothing says which job the person applied for. */
@@ -53,7 +53,44 @@ export function inboxAreaKey(value: string | null | undefined): string {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export type InboxPlaceFilter = { position: InboxPositionFilter | null; region: CandidateRegionCode | null; area: string | null };
+/** One application with the region as it should be READ: the company region's name, or what the person typed. */
+export type InboxPositionRecord = InboxPositionFact & { regionLabel: string | null };
+
+function textOrNull(value: string | null | undefined): string | null {
+  const trimmed = String(value ?? "").trim().replace(/\s+/g, " ");
+  return trimmed || null;
+}
+
+/** An application as the list shows and filters it. A region code the company does not use is read as typed text. */
+export function inboxPositionRecord(
+  family: CandidateRoleFamily,
+  regionCode: string | null,
+  regionOther: string | null,
+  area: string | null,
+): InboxPositionRecord {
+  const code: CandidateRegionCode | null = isInboxRegionCode(regionCode) ? regionCode : null;
+  return {
+    areaName: textOrNull(area),
+    family,
+    regionCode: code,
+    regionLabel: code ? candidateRegionLabels[code] : textOrNull(regionOther),
+  };
+}
+
+/** Adds an application to a chat's list unless the same job, region and area is already there. */
+export function addInboxPositionRecord(list: InboxPositionRecord[], record: InboxPositionRecord): InboxPositionRecord[] {
+  const same = (other: InboxPositionRecord) =>
+    other.family === record.family && other.regionLabel === record.regionLabel && other.areaName === record.areaName;
+  if (!list.some(same)) list.push(record);
+  return list;
+}
+
+/** "Upper Egypt · Assuit 1": the place the person chose for the job, shown beside it. Empty when none. */
+export function inboxPlaceText(position: { regionLabel: string | null; areaName: string | null }): string {
+  return [position.regionLabel, position.areaName].filter(Boolean).join(" · ");
+}
+
+export type InboxPlaceFilter ={ position: InboxPositionFilter | null; region: CandidateRegionCode | null; area: string | null };
 
 /**
  * The three filters, each kept only where the one before it allows it — a region without a position
