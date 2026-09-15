@@ -905,7 +905,9 @@ HEAVY jobs.
 🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
 dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
 3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
-`mem-watchdog.ps1`'s floor and `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under
+`mem-watchdog.ps1`'s floor. `~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or
+`ci` under **5,000 MB** and lint or tests under **2,600 MB**; since 2026-09-12 it does NOT gate a dev
+server at all (`DEV_NEED_MB = 0` in `heavy-jobs-lib.mjs`), so the watchdog is that job's only floor; under
 **1,800 MB** the watchdog reaps IDLE dev servers, then all but the most recently active, and under
 **500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
 by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
