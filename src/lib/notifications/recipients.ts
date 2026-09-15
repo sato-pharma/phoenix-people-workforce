@@ -47,6 +47,10 @@ export const PERSONAL_BELL_CATEGORIES = [
   // direct_order_request above: leave it off and the District Manager's bell stays empty while the
   // delivery audit cheerfully reports "sent".
   "early_bird_recommendation",
+  // Emitted by notifyAttendanceWeekReleased (src/lib/attendance/digest-notify.ts). The in-app bell
+  // is one of only two channels the weekly attendance review has, so leaving it off would leave
+  // most employees — the ones with no Telegram linked — with no notice at all.
+  "attendance_digest",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);

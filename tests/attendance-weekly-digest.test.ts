@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 import { resolveCycleWindow } from "../src/lib/payroll/copilot/cycle-window.ts";
 import {
@@ -92,32 +91,8 @@ export function runAttendanceWeeklyDigestTests() {
     "a week is not due on its own last day — that day has not finished being worked",
   );
 
-  // --- The lockdown reaches every employee-facing surface ---------------------
-  // Owner 2026-09-08: the page is closed pending his rules on how employees are told
-  // it exists. Removing the nav row was UX ONLY, so the gate has to be asked by the
-  // page AND all three APIs — a gate with three doors around it is not a gate.
-  //
-  // Asserted on the sources because none of these can be invoked without a Supabase
-  // client, and the defect being guarded against is precisely a surface that never
-  // calls the gate at all.
-  for (const surface of [
-    "app/employee-portals/attendance/digests/page.tsx",
-    "app/api/attendance/digests/route.ts",
-    "app/api/attendance/digests/[id]/confirm/route.ts",
-    "app/api/attendance/digests/[id]/dispute/route.ts",
-  ]) {
-    const source = readFileSync(surface, "utf8");
-    assert.match(
-      source,
-      /canOpenDigestPortal\(access\)/,
-      `${surface} must ask canOpenDigestPortal — an ungated surface reopens the page the nav row was removed to hide`,
-    );
-    assert.match(
-      source,
-      /canOpenDigestPortal\(access\)\.catch\(\(\) => false\)/,
-      `${surface} must fail CLOSED: a lookup that throws means "not verifiably allowed", never "let them in", on a surface showing somebody their own pay`,
-    );
-  }
+  // The per-surface gate assertions moved to attendance-digest-rules.test.ts with the
+  // 2026-09-15 release flow, which replaced the 2026-09-08 lockdown they used to pin.
 
   // --- Which months the bridge has to ask for --------------------------------
   // A settlement is written the week the employee answers; the candidate it belongs to

@@ -32,14 +32,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ lin
       throw validationError("`uphold` must be true or false.");
     }
 
-    await reviewDispute({
+    const result = await reviewDispute({
       lineId,
       notes: typeof payload.notes === "string" ? payload.notes : null,
       reviewerHrId: access.hrId,
       reviewerRole: String(access.role ?? ""),
       uphold: payload.uphold,
     });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });

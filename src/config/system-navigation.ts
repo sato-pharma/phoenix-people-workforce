@@ -1840,15 +1840,11 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: hrAuthorityNavigationRoles },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
       { href: "/employee-portals/attendance", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }] },
-      // Weekly Attendance digest row REMOVED 2026-09-08, owner instruction, while he settles
-      // the rules for telling people the page exists. Six real digests carrying real names
-      // and EGP amounts are sitting behind it, and nobody has been told they are there.
-      //
-      // The row is deleted rather than commented back in later from memory: the page and its
-      // API are unchanged and still gated on attendance:read, so restoring visibility is one
-      // line here. What this does NOT do is close the page — hiding a nav row is UX only, and
-      // /employee-portals/attendance/digests still answers for anyone who has the URL. If the
-      // page itself must refuse, that is a gate in the page, not an entry in this file.
+      // Restored 2026-09-15 with the owner's release rules: a week reaches this page only after
+      // the Super Admin releases it from /attendance/weekly-review, and the page shows the
+      // viewer's OWN released weeks and nothing else (the 2026-09-08 removal was the holding
+      // position while those rules were settled).
+      { href: "/employee-portals/attendance/digests", icon: CalendarCheck, label: "Weekly Attendance", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
     ],
     label: "Leave Management",
@@ -3102,6 +3098,18 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Employee Day-by-Day Report",
     description: "One employee, any date range — every calendar day with full detail, and confirm or reject that day's fingerprint deduction directly.",
     permissions: [{ resource: "attendance", action: "read" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
+    href: "/attendance/weekly-review",
+    icon: CalendarCheck,
+    label: "Weekly Attendance Review",
+    description:
+      "Every employee's flagged days for each closed week. Remove a wrong day, then release the week — nothing reaches an employee until it is released here.",
+    permissions: [{ resource: "attendance", action: "read" }],
+    // The page and its three APIs gate again on canReviewDisputes (Super Admin or the
+    // configured reviewer list); removing a day and releasing a week are the Super Admin's
+    // alone (canManageWeeklyReview). This row only decides who SEES the link.
     roles: systemAdministratorNavigationRoles,
   },
   {
@@ -4449,6 +4457,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/attendance/exceptions",
           // Banded with the reports rather than the calendars: a dispute is read
           // alongside the day it argues with, and the same evidence answers both.
+          "/attendance/weekly-review",
           "/attendance/disputes",
         ],
       },

@@ -73,7 +73,7 @@ export function runTelegramHardeningTests() {
   assert.equal(defaultTelegramPolicyFor("direct_orders").genericOnly, false, "direct_orders must carry full content — an approver cannot act on a generic ping");
   // The modules with real live callers are present in the default policy list.
   const moduleNames = new Set(defaultTelegramModulePolicies().map((policy) => policy.module));
-  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance", "direct_orders"]) {
+  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance", "direct_orders", "attendance_digest"]) {
     assert.ok(moduleNames.has(expected), `default policies should include ${expected}`);
   }
   // Orphaned entries with zero real callers under ANY spelling (verified by grepping every

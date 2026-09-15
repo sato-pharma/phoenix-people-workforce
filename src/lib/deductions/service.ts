@@ -1321,6 +1321,100 @@ export function resolveDecisionCharge(input: {
   };
 }
 
+/**
+ * Refuse to approve a fingerprint deduction for a day the employee already paid from annual
+ * leave in the weekly attendance review (owner decision 2026-09-15). That charge is permanent;
+ * approving the deduction as well takes the same day twice — once from leave, once from pay.
+ * The settle function refuses the opposite order (a balance charge after a decision).
+ *
+ * Fails CLOSED on a read error, except when the ledger table does not exist yet (the migration not
+ * applied), because then no such charge can exist either.
+ */
+async function assertDayNotPaidFromAnnualBalance(input: { employeeHrId: string | null; dates: string[] }) {
+  const hrId = String(input.employeeHrId ?? "").trim();
+  const dates = input.dates.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
+  if (!hrId || !dates.length) return;
+  const { data, error } = await getSupabaseAdmin()
+    .from("attendance_annual_balance_charges")
+    .select("work_date")
+    .ilike("employee_hr_id", hrId.replace(/[\\%_]/g, (char) => `\\${char}`))
+    .in("work_date", dates);
+  if (error) {
+    const code = String((error as { code?: unknown }).code ?? "");
+    const message = String((error as { message?: unknown }).message ?? "");
+    if (code === "PGRST205" || code === "42P01" || /could not find the table/i.test(message)) return;
+    throw new Error(`Failed to check the annual balance charges for this day: ${message}`);
+  }
+  const charged = ((data ?? []) as Array<{ work_date: string }>).map((row) => String(row.work_date));
+  if (charged.length) {
+    throw new Error(
+      `Conflict: the employee already paid ${charged.join(", ")} from their annual vacation balance in the weekly attendance review. Approving this deduction would take the day twice — record it as Do Not Take Action instead.`,
+    );
+  }
+}
+
+function isMissingTableError(error: unknown): boolean {
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "");
+  return code === "PGRST205" || code === "42P01" || /could not find the table/i.test(message);
+}
+
+/**
+ * Refuse to approve a fingerprint deduction for a day the weekly attendance review said is NOT
+ * charged, or has not finished deciding:
+ *   • removed before the week was released (the owner took it out),
+ *   • a dispute the reviewer upheld,
+ *   • a dispute still waiting for the reviewer — approving now would pre-empt that decision.
+ * The bridge closes these as Do Not Take Action, but only while the deduction is still Pending; a
+ * person approving it first would have charged a day the review cleared, with nothing reporting it.
+ * Fails CLOSED on a read error.
+ */
+async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: string | null; dates: string[] }) {
+  const hrId = String(input.employeeHrId ?? "").trim();
+  const dates = input.dates.filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date));
+  if (!hrId || !dates.length) return;
+  const hrPattern = hrId.replace(/[\\%_]/g, (char) => `\\${char}`);
+  const supabase = getSupabaseAdmin();
+
+  const [cleared, disputed] = await Promise.all([
+    // A trial-run week's removal never reaches payroll (the bridge skips it), so it must not block
+    // the real deduction either.
+    supabase
+      .from("attendance_settlements")
+      .select("work_date,action,attendance_digest_lines!inner(attendance_weekly_digests!inner(dry_run))")
+      .ilike("employee_hr_id", hrPattern)
+      .in("work_date", dates)
+      .in("action", ["removed", "dispute_upheld"])
+      .eq("attendance_digest_lines.attendance_weekly_digests.dry_run", false),
+    supabase
+      .from("attendance_digest_lines")
+      .select("work_date,attendance_weekly_digests!inner(employee_hr_id,dry_run)")
+      .eq("action", "disputed")
+      .in("work_date", dates)
+      .ilike("attendance_weekly_digests.employee_hr_id", hrPattern)
+      .eq("attendance_weekly_digests.dry_run", false),
+  ]);
+  for (const read of [cleared, disputed]) {
+    if (read.error && !isMissingTableError(read.error)) {
+      throw new Error(`Failed to check the weekly attendance review for this day: ${read.error.message}`);
+    }
+  }
+
+  const clearedRows = (cleared.error ? [] : (cleared.data ?? [])) as Array<{ work_date: string; action: string }>;
+  if (clearedRows.length) {
+    const days = clearedRows.map((row) => `${row.work_date} (${row.action === "removed" ? "removed before release" : "dispute upheld"})`);
+    throw new Error(
+      `Conflict: the weekly attendance review already cleared ${days.join(", ")}. Approving this deduction would charge a day the review said is not charged — record it as Do Not Take Action instead.`,
+    );
+  }
+  const disputedRows = (disputed.error ? [] : (disputed.data ?? [])) as Array<{ work_date: string }>;
+  if (disputedRows.length) {
+    throw new Error(
+      `Conflict: the employee has an open dispute for ${disputedRows.map((row) => String(row.work_date)).join(", ")} in the weekly attendance review. Decide the dispute first, or mark this deduction Needs Follow-up.`,
+    );
+  }
+}
+
 /** Super-Admin-gated: record or update a candidate's decision. */
 export async function recordDecision(input: {
   actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
@@ -1349,7 +1443,7 @@ export async function recordDecision(input: {
   const supabase = getSupabaseAdmin();
   const candidate = await supabase
     .from("deductions_candidates")
-    .select("id, locked_at, unit, raw_value, estimated_amount, dates")
+    .select("id, locked_at, unit, raw_value, estimated_amount, dates, category, employee_hr_id")
     .eq("id", input.candidateId)
     .single();
   if (candidate.error) throw new Error(`Not found: deductions candidate could not be loaded (${candidate.error.message})`);
@@ -1359,9 +1453,19 @@ export async function recordDecision(input: {
     raw_value: number | string;
     estimated_amount: number | string | null;
     dates: unknown;
+    category: string | null;
+    employee_hr_id: string | null;
   };
   if (candidateRow.locked_at) {
     throw new Error("Conflict: this candidate is locked by a publication — it can no longer be decided directly.");
+  }
+  if (input.decisionStatus === "Approved for Payroll" && candidateRow.category === "fingerprint") {
+    const reviewedDay = {
+      employeeHrId: candidateRow.employee_hr_id,
+      dates: Array.isArray(candidateRow.dates) ? (candidateRow.dates as unknown[]).map(String) : [],
+    };
+    await assertDayNotPaidFromAnnualBalance(reviewedDay);
+    await assertDayNotClearedInAttendanceReview(reviewedDay);
   }
 
   // Carry forward what is already recorded for anything this call did not

@@ -25,6 +25,7 @@ import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
 import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
+import { enforceAttendanceDigestEmailBlock } from "@/lib/notifications/attendance-digest-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
@@ -380,7 +381,11 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // single candidate_assigned eventType, so offers, interviews and the rest of recruitment keep
   // theirs. Chained after the CV block rather than replacing it: the two guard disjoint event sets,
   // and collapsing them would silently restore email for whichever one lost.
-  return enforceCandidateAssignedEmailBlock(withoutRecruitmentCvEmail, input.module, input.eventType);
+  const withoutCandidateAssignedEmail = enforceCandidateAssignedEmailBlock(withoutRecruitmentCvEmail, input.module, input.eventType);
+  // Same hard guarantee for the weekly attendance review (owner rule 2026-09-15): in-app and
+  // Telegram only, never email — see attendance-digest-channel-guard.ts. Its own module string, so
+  // the attendance.* notifications above keep their channels.
+  return enforceAttendanceDigestEmailBlock(withoutCandidateAssignedEmail, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

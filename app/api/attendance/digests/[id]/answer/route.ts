@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { canOpenDigestPortal, disputeDigestLine } from "@/lib/attendance/digest-service.ts";
+import { answerDigestLine, canOpenDigestPortal } from "@/lib/attendance/digest-service.ts";
+import { isDeductionMethod } from "@/lib/attendance/digest-rules.ts";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError, validationError } from "@/lib/http/api-errors";
@@ -9,6 +10,11 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * The employee's answer for one day of a released week: `method` is "salary" or
+ * "annual_balance", and `dispute: true` with a `reason` parks the day for the reviewer instead of
+ * settling it. Self-scoped — answerDigestLine refuses any digest that is not the caller's own.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const csrfError = assertSameOriginMutation(request);
@@ -16,7 +22,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "attendance", "read");
-    // TEMPORARY LOCKDOWN — owner 2026-09-08. Fails closed on a lookup error.
     if (!(await canOpenDigestPortal(access).catch(() => false))) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
@@ -24,32 +29,35 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const { id: rawId } = await params;
     const digestId = Number(rawId);
-    if (!Number.isInteger(digestId) || digestId <= 0) throw validationError("Invalid digest id.");
+    if (!Number.isInteger(digestId) || digestId <= 0) throw validationError("Invalid week id.");
 
     const payload = (await request.json().catch(() => ({}))) as {
       lineId?: unknown;
+      method?: unknown;
+      dispute?: unknown;
       reason?: unknown;
-      attachmentUrl?: unknown;
     };
     const lineId = Number(payload.lineId);
-    if (!Number.isInteger(lineId) || lineId <= 0) throw validationError("Invalid line id.");
-    const reason = String(payload.reason ?? "").trim();
-    if (!reason) throw validationError("Tell us why this day is wrong.");
+    if (!Number.isInteger(lineId) || lineId <= 0) throw validationError("Invalid day id.");
+    // Not defaulted: guessing the method moves money or leave days the employee never chose.
+    if (!isDeductionMethod(payload.method)) throw validationError("Choose salary or annual balance.");
+    if (typeof payload.dispute !== "boolean") throw validationError("Say whether you want to dispute this day.");
 
-    await disputeDigestLine({
+    const result = await answerDigestLine({
       actorHrId: access.hrId,
       actorRole: String(access.role ?? ""),
-      attachmentUrl: typeof payload.attachmentUrl === "string" ? payload.attachmentUrl : null,
       digestId,
+      dispute: payload.dispute,
+      disputeReason: typeof payload.reason === "string" ? payload.reason : null,
       lineId,
-      reason,
+      method: payload.method,
     });
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
-    const apiError = toApiError(error, "Attendance dispute could not be recorded.");
+    const apiError = toApiError(error, "Your answer could not be saved.");
     return NextResponse.json({ error: apiError.code, message: apiError.message }, { status: apiError.status });
   }
 }

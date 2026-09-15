@@ -1,38 +1,62 @@
-// Weekly attendance digest: generate a closed week, and record what the employee
-// says about each flagged day.
+// Weekly attendance review: build a closed week, let the Super Admin review and release it, and
+// record what each employee chooses for every flagged day.
 //
-// PERMANENTLY SILENT. Owner decision 2026-09-08: "never send anyone anything". This
-// module notifies NOBODY — no email, no Telegram, no in-app notice, not to the
-// employee and not to a reviewer. A digest is a PAGE an employee visits, never a
-// message that arrives.
+// OWNER DECISION 2026-09-15 — replaces the 2026-09-08 "permanently silent" ruling.
 //
-// THAT IS WHY THERE IS NO AUTO-CONFIRM. The original design settled a day the
-// employee did not answer within 48 hours. A window can only run against someone who
-// was told it had started, so with no notice there is no window: an unanswered day
-// simply stays unanswered, no settlement is written, and the day reaches the owner in
-// the month-end Deductions queue as Pending exactly as it does today. Silence costs
-// the employee nothing here, which is the only honest reading of silence from someone
-// who was never asked.
+//   1. BUILT, NOT SENT. The daily job builds a closed week as `awaiting_release`. It is visible
+//      only on the admin review page, where a day can be removed before anybody sees it.
+//   2. RELEASED BY THE SUPER ADMIN. Release opens the week and tells each employee in-app and by
+//      Telegram (never email). A trial-run week (dry_run) can never be released.
+//   3. SALARY OR ANNUAL BALANCE. The employee does not confirm or deny the day — they choose how
+//      it is paid: from salary, or from annual vacation balance (the same number of days, only
+//      when the balance covers them).
+//   4. THEN A DISPUTE, IF THEY WANT ONE. After choosing, they may dispute the day; it waits for
+//      the reviewer, and a rejected dispute applies the method they chose.
+//   5. SILENCE MEANS SALARY. A day not answered within 2 working days of the release is settled
+//      to salary by the daily job.
 //
-// SCOPE. This module records an ANSWER. It never writes a deduction: the month-end
-// Fingerprint connector stays the only author of deductions_candidates, and
-// digest-bridge.ts applies the answer to the candidate once it exists. Two writers of
-// one employee-day is how this database charged 19 employee-days twice in July 2026.
+// SCOPE. This module records an answer and, for balance, spends leave days. It never writes a
+// deduction: the month-end Fingerprint connector stays the only author of deductions_candidates,
+// and digest-bridge.ts applies the answer to the candidate once it exists. Two writers of one
+// employee-day is how this database charged 19 employee-days twice in July 2026.
 //
-// CONCURRENCY. Every state change guards on the row's CURRENT action inside the WHERE
-// clause, not just its id, and treats "zero rows affected" as a conflict rather than a
-// silent no-op — the same TOCTOU-safe shape as decideExcuseRequestAsManager in
-// src/lib/excuses/service.ts.
+// ATOMICITY. Every settlement goes through phx_attendance_settle_digest_line, which writes the
+// settlement, the balance charge, the line and the digest status in one transaction, guarded on
+// the line's current action. A day paid from balance also re-checks, under the same per-employee
+// lock leave approval takes, that nothing spent the balance between the read and the write.
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
-import { normalizeAttendanceHrId } from "@/lib/attendance/metrics.ts";
+import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report.ts";
 import { resolveCycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
-import { completedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
+import { latestClosedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
 import { buildWeekDigests, type BuiltDigest } from "@/lib/attendance/digest-generator.ts";
+import {
+  answerDueDate,
+  balanceCoversDays,
+  balanceReadIsComplete,
+  canManageWeeklyReview,
+  deadlineApplies,
+  disputeSalaryFallbackText,
+  isDeductionMethod,
+  isOpenLineAction,
+  payrollDecisionBlocksBalance,
+  type DeductionMethod,
+  type DigestLineAction,
+  type DigestStatus,
+} from "@/lib/attendance/digest-rules.ts";
+import { notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
+import { buildAttendanceCalendarContext, cairoTodayIso } from "@/lib/attendance/working-days.ts";
+import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule.ts";
+import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
+import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { calculatePaymentForRequest } from "@/lib/vacation/service";
+import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
+
+export type { DigestLineAction, DeductionMethod, DigestStatus };
 
 export type DigestSettings = {
   disputeReviewerHrIds: string[];
@@ -40,10 +64,8 @@ export type DigestSettings = {
   showEstimatedAmount: boolean;
   dryRun: boolean;
   enabled: boolean;
+  answerWorkingDays: number;
 };
-
-/** No `auto_confirmed`: nothing settles without a person choosing it. */
-export type DigestLineAction = "pending" | "confirmed" | "disputed";
 
 const SETTINGS_DEFAULTS: DigestSettings = {
   disputeReviewerHrIds: [],
@@ -51,26 +73,29 @@ const SETTINGS_DEFAULTS: DigestSettings = {
   showEstimatedAmount: true,
   dryRun: true,
   enabled: false,
+  answerWorkingDays: 2,
 };
 
 export async function getDigestSettings(): Promise<DigestSettings> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_settings")
-    .select("dispute_reviewer_hr_ids,cycle_anchor_day,show_estimated_amount,dry_run,enabled")
+    .select("dispute_reviewer_hr_ids,cycle_anchor_day,show_estimated_amount,dry_run,enabled,answer_working_days")
     .eq("id", 1)
     .maybeSingle();
   if (error) throw error;
   if (!data) return SETTINGS_DEFAULTS;
   const row = data as Record<string, unknown>;
+  const answerWorkingDays = Number(row.answer_working_days);
   return {
     disputeReviewerHrIds: Array.isArray(row.dispute_reviewer_hr_ids) ? (row.dispute_reviewer_hr_ids as string[]) : [],
     cycleAnchorDay: Number(row.cycle_anchor_day) || SETTINGS_DEFAULTS.cycleAnchorDay,
     showEstimatedAmount: row.show_estimated_amount !== false,
-    // Both flags FAIL SAFE: a missing or unreadable value keeps the module quiet and
-    // keeps money out of it, rather than defaulting to "live".
+    // Both flags FAIL SAFE: a missing or unreadable value keeps the module quiet and keeps money
+    // out of it, rather than defaulting to "live".
     dryRun: row.dry_run !== false,
     enabled: row.enabled === true,
+    answerWorkingDays: Number.isInteger(answerWorkingDays) && answerWorkingDays > 0 ? answerWorkingDays : SETTINGS_DEFAULTS.answerWorkingDays,
   };
 }
 
@@ -89,19 +114,22 @@ export type GenerateResult = {
 };
 
 /**
- * Build the digests for the settlement week that has just CLOSED, open for answers
- * immediately — there is no send step to wait for.
+ * Build the digests for the settlement week that has just CLOSED, waiting for release.
  *
- * Only a closed week, for the same reason the deductions collector refuses an
- * in-progress month: a day that has not ended cannot be judged.
+ * Only a closed week, for the same reason the deductions collector refuses an in-progress month:
+ * a day that has not ended cannot be judged. Nothing is sent here — ever. The notice goes out
+ * when the Super Admin releases the week.
  */
 export async function generateDigestsForCompletedWeek(input: {
   todayIso: string;
   createdBy: string;
 }): Promise<GenerateResult> {
   const settings = await getDigestSettings();
-  const cycle = resolveCycleWindow(input.todayIso, settings.cycleAnchorDay);
-  const week = completedSettlementWeek(input.todayIso, cycle);
+  // Not simply today's cycle: on the 24th that is already the next cycle, and the week that has
+  // just closed is the previous cycle's week 4. See latestClosedSettlementWeek.
+  const due = latestClosedSettlementWeek(input.todayIso, settings.cycleAnchorDay);
+  const cycle = due?.cycle ?? resolveCycleWindow(input.todayIso, settings.cycleAnchorDay);
+  const week = due?.week ?? null;
   if (!week) {
     return {
       cycleKey: cycle.cycleKey,
@@ -145,7 +173,7 @@ export async function generateDigestsForCompletedWeek(input: {
         week_index: week.index,
         week_start: week.startIso,
         week_end: week.endIso,
-        status: "open",
+        status: "awaiting_release",
         total_deduction_days: digest.totalDeductionDays,
         // NULL, not 0, when any day could not be priced. See digest-generator.ts.
         total_deduction_value: digest.totalDeductionValue,
@@ -212,7 +240,10 @@ export type DigestLineRow = {
   reason: string;
   evidence: Record<string, string>;
   action: DigestLineAction;
+  chosenMethod: DeductionMethod | null;
   disputeReason: string | null;
+  reviewNotes: string | null;
+  removeReason: string | null;
 };
 
 export type DigestRow = {
@@ -222,13 +253,16 @@ export type DigestRow = {
   weekIndex: number;
   weekStart: string;
   weekEnd: string;
-  status: string;
+  status: DigestStatus;
   totalDeductionDays: number;
   /** null when any day in the week could not be priced. */
   totalDeductionValue: number | null;
   hasUnpricedDay: boolean;
   currency: string;
   dryRun: boolean;
+  releasedAt: string | null;
+  answerDueOn: string | null;
+  notifiedAt: string | null;
   lines: DigestLineRow[];
 };
 
@@ -236,6 +270,10 @@ function numberOrNull(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function textOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 function mapLine(row: Record<string, unknown>): DigestLineRow {
@@ -251,25 +289,46 @@ function mapLine(row: Record<string, unknown>): DigestLineRow {
     reason: String(row.reason ?? ""),
     evidence: (row.evidence ?? {}) as Record<string, string>,
     action: String(row.action) as DigestLineAction,
-    disputeReason: (row.dispute_reason as string | null) ?? null,
+    chosenMethod: isDeductionMethod(row.chosen_method) ? row.chosen_method : null,
+    disputeReason: textOrNull(row.dispute_reason),
+    reviewNotes: textOrNull(row.review_notes),
+    removeReason: textOrNull(row.remove_reason),
   };
 }
+
+const LINE_COLUMNS =
+  "id,digest_id,work_date,status,late_minutes,short_minutes,deduction_days,deduction_value,reason,evidence,action,chosen_method,dispute_reason,review_notes,remove_reason";
 
 async function loadLines(digestIds: number[]): Promise<Map<number, DigestLineRow[]>> {
   const byDigest = new Map<number, DigestLineRow[]>();
   if (!digestIds.length) return byDigest;
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_digest_lines")
-    .select("id,digest_id,work_date,status,late_minutes,short_minutes,deduction_days,deduction_value,reason,evidence,action,dispute_reason")
-    .in("digest_id", digestIds)
-    .order("work_date", { ascending: true });
-  if (error) throw error;
-  for (const raw of (data ?? []) as Record<string, unknown>[]) {
-    const line = mapLine(raw);
-    const list = byDigest.get(line.digestId) ?? [];
-    list.push(line);
-    byDigest.set(line.digestId, list);
+  // Paged: PostgREST stops at 1,000 rows without saying so, and a digest missing its later days
+  // would read as fully answered — and be closed, or released with the wrong day count.
+  // The ids are chunked too, so a long list never outgrows the request URL.
+  const PAGE = 1000;
+  const ID_CHUNK = 200;
+  for (let start = 0; start < digestIds.length; start += ID_CHUNK) {
+    const chunk = digestIds.slice(start, start + ID_CHUNK);
+    for (let offset = 0; ; offset += PAGE) {
+      const { data, error } = await supabase
+        .from("attendance_digest_lines")
+        .select(LINE_COLUMNS)
+        .in("digest_id", chunk)
+        .order("digest_id", { ascending: true })
+        .order("work_date", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + PAGE - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as Record<string, unknown>[];
+      for (const raw of rows) {
+        const line = mapLine(raw);
+        const list = byDigest.get(line.digestId) ?? [];
+        list.push(line);
+        byDigest.set(line.digestId, list);
+      }
+      if (rows.length < PAGE) break;
+    }
   }
   return byDigest;
 }
@@ -282,38 +341,21 @@ function mapDigest(row: Record<string, unknown>, lines: DigestLineRow[]): Digest
     weekIndex: Number(row.week_index),
     weekStart: String(row.week_start),
     weekEnd: String(row.week_end),
-    status: String(row.status),
+    status: String(row.status) as DigestStatus,
     totalDeductionDays: Number(row.total_deduction_days) || 0,
     totalDeductionValue: numberOrNull(row.total_deduction_value),
     hasUnpricedDay: row.has_unpriced_day === true,
     currency: String(row.currency ?? "EGP"),
     dryRun: row.dry_run !== false,
+    releasedAt: textOrNull(row.released_at),
+    answerDueOn: textOrNull(row.answer_due_on),
+    notifiedAt: textOrNull(row.notified_at),
     lines,
   };
 }
 
 const DIGEST_COLUMNS =
-  "id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,total_deduction_days,total_deduction_value,has_unpriced_day,currency,dry_run";
-
-/**
- * One employee's own digests. A voided week is hidden from the person it describes —
- * a digest cancelled during review describes a charge that no longer exists.
- */
-export async function listMyDigests(employeeHrId: string): Promise<DigestRow[]> {
-  const supabase = getSupabaseAdmin();
-  // HR ids are stored mixed-case; a plain .eq under-returns. Match every spelling.
-  const { data, error } = await supabase
-    .from("attendance_weekly_digests")
-    .select(DIGEST_COLUMNS)
-    .in("employee_hr_id", hrIdLookupKeys(employeeHrId))
-    .in("status", ["open", "settled"])
-    .order("week_start", { ascending: false })
-    .limit(24);
-  if (error) throw error;
-  const rows = (data ?? []) as Record<string, unknown>[];
-  const lines = await loadLines(rows.map((row) => Number(row.id)));
-  return rows.map((row) => mapDigest(row, lines.get(Number(row.id)) ?? []));
-}
+  "id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,total_deduction_days,total_deduction_value,has_unpriced_day,currency,dry_run,released_at,answer_due_on,notified_at";
 
 async function loadDigestOrThrow(digestId: number): Promise<DigestRow> {
   const supabase = getSupabaseAdmin();
@@ -328,55 +370,280 @@ async function loadDigestOrThrow(digestId: number): Promise<DigestRow> {
   return mapDigest(data as Record<string, unknown>, lines.get(digestId) ?? []);
 }
 
-function assertOwnDigest(digest: DigestRow, actorHrId: string) {
-  if (!hrIdsMatch(digest.employeeHrId, actorHrId)) {
-    throw validationError("You can only act on your own attendance digest.", "forbidden");
+/**
+ * A named reviewer never removes or rules on a day from their OWN week — that is deciding one's
+ * own pay. The Super Admin is exempt: there is nobody above him to send it to.
+ */
+function assertNotOwnPay(employeeHrId: string, actorHrId: string, actorRole: string | null | undefined) {
+  if (actorRole === "Super Admin") return;
+  if (hrIdsMatch(employeeHrId, actorHrId)) {
+    throw validationError("This is your own attendance. Another reviewer or the Super Admin has to decide it.", "forbidden");
   }
 }
 
-// ---------------------------------------------------------------------------
-// Who may open the digest at all
-// ---------------------------------------------------------------------------
+function assertOwnDigest(digest: DigestRow, actorHrId: string) {
+  if (!hrIdsMatch(digest.employeeHrId, actorHrId)) {
+    throw validationError("You can only act on your own attendance review.", "forbidden");
+  }
+}
 
-/**
- * TEMPORARY LOCKDOWN — owner instruction 2026-09-08, pending his rules on how
- * employees are told this page exists.
- *
- * Six real digests carrying real names and EGP amounts already exist. The portal row
- * was taken off the rail the same day, but hiding a nav row is UX only: the page and
- * its API still answered for anyone holding the URL. This is the gate that actually
- * closes them, and it is deliberately ONE function that all four employee-facing
- * surfaces ask — the page, the list API, confirm and dispute — because a gate living
- * in four places is a gate three of them will eventually disagree with.
- *
- * WHO GETS THROUGH TODAY: whoever may already decide a dispute, i.e. Super Admin or a
- * name in `dispute_reviewer_hr_ids`. That is the owner, so he can still see exactly
- * what an employee would. Everyone else is redirected or refused.
- *
- * HOW TO LIFT IT: replace the body with `return true` — the surfaces are already
- * self-scoped, so opening it to everyone is that one line — or read a setting if it
- * should be switchable without a deploy. Do NOT loosen it by adding roles: this is not
- * a permissions question, it is "has the owner decided how to tell people yet", and
- * today the answer is no.
- */
-export async function canOpenDigestPortal(access: {
-  role?: string | null;
-  hrId?: string | null;
-}): Promise<boolean> {
-  return canReviewDisputes(access);
+async function loadDirectoryByKey(): Promise<Map<string, EmployeeDirectoryRow>> {
+  const rows = await getEmployeeDirectoryRows({ includeInactive: true });
+  const byKey = new Map<string, EmployeeDirectoryRow>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hrId);
+    if (key && !byKey.has(key)) byKey.set(key, row);
+  }
+  return byKey;
+}
+
+function directoryRowFor(byKey: Map<string, EmployeeDirectoryRow>, hrId: string): EmployeeDirectoryRow | null {
+  const key = canonicalHrIdKey(hrId);
+  return key ? byKey.get(key) ?? null : null;
 }
 
 // ---------------------------------------------------------------------------
-// Who may decide a dispute
+// Annual balance
+// ---------------------------------------------------------------------------
+
+export type BalanceOption = {
+  /** Can annual balance pay for this whole day right now? */
+  covers: boolean;
+  /** Annual balance left before this day, in days. null when it could not be worked out. */
+  availableDays: number | null;
+  /** Why balance is not offered, in words an employee understands. */
+  unavailableReason: string | null;
+};
+
+type BalanceCheck = BalanceOption & {
+  /** The machine reason behind unavailableReason; null when balance covers the day. */
+  refusal: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  seenRequestDays: number | null;
+  seenChargeDays: number | null;
+  seenCopilotDays: number | null;
+};
+
+function unavailableReasonText(reason: string | null): string {
+  switch (reason) {
+    case "missing_hire_date":
+      return "Your hire date is not on file, so your annual balance cannot be worked out.";
+    case "first_six_months":
+      return "Annual balance cannot be used during the first six months of employment.";
+    case "insufficient_balance":
+      return "Your annual balance does not cover this day.";
+    case "payroll_decided":
+      return "This day has already been decided in the month-end deductions review, so annual balance can no longer be used for it.";
+    case "balance_unreadable":
+      return "Your annual balance could not be fully read right now. Try again shortly.";
+    default:
+      return "Your annual balance cannot be used for this day.";
+  }
+}
+
+async function readBalanceInputs(employeeHrId: string, periodStart: string, periodEnd: string) {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_balance_inputs", {
+    p_employee_hr_id: employeeHrId,
+    p_period_start: periodStart,
+    p_period_end: periodEnd,
+  });
+  if (error) throw error;
+  const row = (data ?? {}) as { requestDays?: unknown; chargeDays?: unknown; copilotDays?: unknown };
+  return {
+    requestDays: Number(row.requestDays) || 0,
+    chargeDays: Number(row.chargeDays) || 0,
+    copilotDays: Number(row.copilotDays) || 0,
+  };
+}
+
+/**
+ * The day's month-end fingerprint deduction, if the connector has built it yet. Keyed exactly as
+ * the connector keys it (`${hrId}:${dateIso}`), matched case-insensitively like the settle function.
+ */
+async function readDayDeduction(employeeHrId: string, workDate: string): Promise<{ lockedAt: string | null; decisionStatus: string | null } | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_candidates")
+    .select("id,locked_at,deductions_decisions(decision_status)")
+    .eq("category", "fingerprint")
+    .is("superseded_at", null)
+    .ilike("source_record_id", `${employeeHrId}:${workDate}`.replace(/[\\%_]/g, (char) => `\\${char}`));
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  if (!rows.length) return null;
+  // More than one live candidate for a day should not exist; if it does, the strictest one decides.
+  let result: { lockedAt: string | null; decisionStatus: string | null } | null = null;
+  for (const row of rows) {
+    const nested = row.deductions_decisions as { decision_status?: string } | Array<{ decision_status?: string }> | null;
+    const status = (Array.isArray(nested) ? nested[0]?.decision_status : nested?.decision_status) ?? null;
+    const candidate = { lockedAt: textOrNull(row.locked_at), decisionStatus: status };
+    if (!result || payrollDecisionBlocksBalance(candidate)) result = candidate;
+  }
+  return result;
+}
+
+/**
+ * Whether annual balance can pay for one day, using the same balance arithmetic a leave request
+ * is priced with (calculatePaymentForRequest) — never a second copy of it.
+ *
+ * The two figures a concurrent writer could change are read FIRST, so the settle function can
+ * refuse the write if either moved before it commits.
+ */
+async function checkAnnualBalance(input: {
+  employeeHrId: string;
+  hireDate: string | null;
+  workDate: string;
+  days: number;
+}): Promise<BalanceCheck> {
+  const period = getVacationBalancePeriod({ employeeHrId: input.employeeHrId, hireDate: input.hireDate, referenceDate: input.workDate });
+  let seen: { requestDays: number; chargeDays: number; copilotDays: number } | null = null;
+  if (period) seen = await readBalanceInputs(input.employeeHrId, period.periodStart, period.periodEnd);
+
+  const [snapshotOrFailure, dayDeduction] = await Promise.all([
+    // Fail-closed: a payroll balance ledger that cannot be read refuses balance instead of counting
+    // as zero days spent, in this period and in every earlier one the carried debt walks.
+    calculatePaymentForRequest({
+      durationDays: input.days,
+      employeeHrId: input.employeeHrId,
+      failClosedLedgerRead: true,
+      hireDate: input.hireDate,
+      startDate: input.workDate,
+      vacationType: "annual",
+    }).catch((error: unknown) => ({ failure: error })),
+    readDayDeduction(input.employeeHrId, input.workDate),
+  ]);
+  const payrollDecided = payrollDecisionBlocksBalance(dayDeduction);
+  if ("failure" in snapshotOrFailure) {
+    const failedRefusal = payrollDecided ? "payroll_decided" : "balance_unreadable";
+    return {
+      covers: false,
+      availableDays: null,
+      unavailableReason: unavailableReasonText(failedRefusal),
+      refusal: failedRefusal,
+      periodStart: period?.periodStart ?? null,
+      periodEnd: period?.periodEnd ?? null,
+      seenRequestDays: seen?.requestDays ?? null,
+      seenChargeDays: seen?.chargeDays ?? null,
+      seenCopilotDays: seen?.copilotDays ?? null,
+    };
+  }
+  const snapshot = snapshotOrFailure;
+  const readComplete =
+    !seen ||
+    balanceReadIsComplete({
+      calculatorUsedDays: snapshot.usedPaidDays,
+      carriedOverDebtDays: snapshot.carriedOverDebtDays,
+      requestDays: seen.requestDays,
+      chargeDays: seen.chargeDays,
+      copilotDays: seen.copilotDays,
+    });
+  const covers =
+    Boolean(period) &&
+    !payrollDecided &&
+    readComplete &&
+    snapshot.periodStart === period?.periodStart &&
+    snapshot.periodEnd === period?.periodEnd &&
+    balanceCoversDays({ days: input.days, paidDurationDays: snapshot.paidDurationDays, unpaidReason: snapshot.unpaidReason });
+
+  // The calculator's own refusal (first six months, no hire date) explains itself best; the
+  // incomplete-read reason is only for a balance that would otherwise have been offered.
+  const refusal = payrollDecided
+    ? "payroll_decided"
+    : snapshot.unpaidReason
+      ? snapshot.unpaidReason
+      : !readComplete
+        ? "balance_unreadable"
+        : "insufficient_balance";
+  return {
+    covers,
+    availableDays: period && readComplete && !snapshot.unpaidReason?.startsWith("missing") ? snapshot.balanceBeforeDays : null,
+    unavailableReason: covers ? null : unavailableReasonText(refusal),
+    refusal: covers ? null : refusal,
+    periodStart: period?.periodStart ?? null,
+    periodEnd: period?.periodEnd ?? null,
+    seenRequestDays: seen?.requestDays ?? null,
+    seenChargeDays: seen?.chargeDays ?? null,
+    seenCopilotDays: seen?.copilotDays ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The settle function
+// ---------------------------------------------------------------------------
+
+type SettleAction = "salary" | "annual_balance" | "auto_salary" | "dispute_upheld" | "dispute_rejected";
+
+function rethrowSettleError(error: { code?: string; message?: string }): never {
+  const message = error.message || "The day could not be saved.";
+  if (error.code === "40001") throw conflictError(message);
+  if (error.code === "P0002") throw notFoundError(message);
+  if (error.code === "22023") throw validationError(message);
+  // The double-charge guard: the day's month-end deduction was decided or locked first.
+  if (error.code === "55000") throw conflictError(message);
+  if (error.code === "23505") throw conflictError("This day has already been settled.");
+  throw new Error(message);
+}
+
+async function settleLine(input: {
+  lineId: number;
+  expected: DigestLineAction[];
+  action: SettleAction;
+  method: DeductionMethod | null;
+  actorHrId: string | null;
+  actorRole: string | null;
+  reviewerHrId?: string | null;
+  reason: string;
+  reviewNotes?: string | null;
+  balance?: BalanceCheck | null;
+}) {
+  const { error } = await getSupabaseAdmin().rpc("phx_attendance_settle_digest_line", {
+    p_line_id: input.lineId,
+    p_expected_actions: input.expected,
+    p_action: input.action,
+    p_method: input.method,
+    p_actor_hr_id: input.actorHrId ? hrIdForStorage(input.actorHrId) : null,
+    p_actor_role: input.actorRole,
+    p_reviewer_hr_id: input.reviewerHrId ? hrIdForStorage(input.reviewerHrId) : null,
+    p_reason: input.reason,
+    p_review_notes: input.reviewNotes ?? null,
+    p_period_start: input.balance?.periodStart ?? null,
+    p_period_end: input.balance?.periodEnd ?? null,
+    p_seen_request_days: input.balance?.seenRequestDays ?? null,
+    p_seen_charge_days: input.balance?.seenChargeDays ?? null,
+    p_seen_copilot_days: input.balance?.seenCopilotDays ?? null,
+  });
+  if (error) rethrowSettleError(error as { code?: string; message?: string });
+}
+
+// ---------------------------------------------------------------------------
+// Who may do what
 // ---------------------------------------------------------------------------
 
 /**
- * Super Admin, or anyone named in `dispute_reviewer_hr_ids`.
+ * Any signed-in employee may open their OWN weekly attendance review. Every surface behind this
+ * is self-scoped (listMyDigests filters on the caller, answers assert ownership), and only a
+ * RELEASED week is ever listed — the lock that stood here from 2026-09-08 existed because there
+ * was no release step to keep an unreviewed week from an employee. There is one now.
+ */
+export async function canOpenDigestPortal(access: { role?: string | null; hrId?: string | null }): Promise<boolean> {
+  return Boolean(access.hrId && String(access.hrId).trim());
+}
+
+// Removing a day and releasing a week: the Super Admin only. The rule itself lives in digest-rules.ts.
+export { canManageWeeklyReview };
+
+function assertCanManageWeeklyReview(actorRole: string | null) {
+  if (!canManageWeeklyReview({ role: actorRole })) {
+    throw forbiddenError("Only the Super Admin can remove a day or release a week.");
+  }
+}
+
+/**
+ * Super Admin, or anyone named in `dispute_reviewer_hr_ids`. Gates viewing the admin review page
+ * and deciding disputes. Removing and releasing need canManageWeeklyReview on top.
  *
- * An empty list is a working configuration, not a broken one — it means every dispute
- * lands on the Super Admin. This returns false rather than throwing when the list is
- * empty, and never falls back to "anyone with attendance access", which would let a
- * manager rule on their own team's pay.
+ * An empty list is a working configuration: everything lands on the Super Admin. Never falls back
+ * to "anyone with attendance access", which would let a manager rule on their own team's pay.
  */
 export async function canReviewDisputes(access: { role?: string | null; hrId?: string | null }): Promise<boolean> {
   if (access.role === "Super Admin") return true;
@@ -385,257 +652,654 @@ export async function canReviewDisputes(access: { role?: string | null; hrId?: s
   return settings.disputeReviewerHrIds.some((reviewer) => hrIdsMatch(reviewer, access.hrId));
 }
 
+// ---------------------------------------------------------------------------
+// Admin: the review queue
+// ---------------------------------------------------------------------------
+
+export type ReviewEmployee = {
+  digestId: number;
+  employeeHrId: string;
+  employeeName: string;
+  jobTitle: string | null;
+  status: DigestStatus;
+  totalDeductionDays: number;
+  totalDeductionValue: number | null;
+  hasUnpricedDay: boolean;
+  currency: string;
+  answerDueOn: string | null;
+  notified: boolean;
+  /** Built while dry_run was on — never released, even inside a week that otherwise is. */
+  dryRun: boolean;
+  lines: DigestLineRow[];
+};
+
+export type ReviewWeek = {
+  key: string;
+  cycleKey: string;
+  weekIndex: number;
+  weekStart: string;
+  weekEnd: string;
+  stage: "awaiting_release" | "released";
+  /** true only when EVERY digest in the week is a trial run; see ReviewEmployee.dryRun. */
+  dryRun: boolean;
+  releasedAt: string | null;
+  employees: ReviewEmployee[];
+};
+
+/**
+ * Every week still waiting for release, and every released week that still has a day open —
+ * newest first. A week whose every day is settled drops off; the settlement ledger is its record.
+ */
+export async function listReviewQueue(): Promise<ReviewWeek[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select(DIGEST_COLUMNS)
+    .in("status", ["awaiting_release", "open"])
+    .order("week_start", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const lines = await loadLines(rows.map((row) => Number(row.id)));
+  const directory = await loadDirectoryByKey();
+
+  const weeks = new Map<string, ReviewWeek>();
+  for (const raw of rows) {
+    const digest = mapDigest(raw, lines.get(Number(raw.id)) ?? []);
+    const stage = digest.status === "awaiting_release" ? "awaiting_release" : "released";
+    const key = `${digest.cycleKey}:w${digest.weekIndex}:${stage}`;
+    const week =
+      weeks.get(key) ??
+      ({
+        key,
+        cycleKey: digest.cycleKey,
+        weekIndex: digest.weekIndex,
+        weekStart: digest.weekStart,
+        weekEnd: digest.weekEnd,
+        stage,
+        dryRun: true,
+        releasedAt: null,
+        employees: [],
+      } satisfies ReviewWeek);
+    // A week that mixes trial-run and real digests (dry_run switched off mid-generation) is still
+    // releasable: releaseWeek skips the trial-run ones itself.
+    week.dryRun = week.dryRun && digest.dryRun;
+    if (digest.releasedAt && (!week.releasedAt || digest.releasedAt > week.releasedAt)) week.releasedAt = digest.releasedAt;
+    const person = directoryRowFor(directory, digest.employeeHrId);
+    week.employees.push({
+      digestId: digest.id,
+      employeeHrId: digest.employeeHrId,
+      employeeName: person?.displayName || person?.fullName || "Name not on file",
+      jobTitle: person?.jobTitle ?? null,
+      status: digest.status,
+      totalDeductionDays: digest.totalDeductionDays,
+      totalDeductionValue: digest.totalDeductionValue,
+      hasUnpricedDay: digest.hasUnpricedDay,
+      currency: digest.currency,
+      answerDueOn: digest.answerDueOn,
+      notified: Boolean(digest.notifiedAt),
+      dryRun: digest.dryRun,
+      lines: digest.lines,
+    });
+    weeks.set(key, week);
+  }
+
+  const list = Array.from(weeks.values());
+  for (const week of list) week.employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+  // Waiting-for-release first (that is the owner's to-do), then released, each newest first.
+  return list.sort((left, right) => {
+    if (left.stage !== right.stage) return left.stage === "awaiting_release" ? -1 : 1;
+    return right.weekStart.localeCompare(left.weekStart);
+  });
+}
+
+/** Recompute a digest's totals from the days still in it; void it if none are left. */
+async function refreshDigestTotals(digestId: number) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_digest_lines")
+    .select("deduction_days,deduction_value,action")
+    .eq("digest_id", digestId);
+  if (error) throw error;
+  const kept = ((data ?? []) as Array<{ deduction_days: unknown; deduction_value: unknown; action: string }>).filter(
+    (row) => row.action !== "removed",
+  );
+  const now = new Date().toISOString();
+  if (!kept.length) {
+    const { error: voidError } = await supabase
+      .from("attendance_weekly_digests")
+      .update({ status: "void", total_deduction_days: 0, total_deduction_value: 0, has_unpriced_day: false, updated_at: now })
+      .eq("id", digestId)
+      .eq("status", "awaiting_release");
+    if (voidError) throw voidError;
+    return;
+  }
+  const hasUnpricedDay = kept.some((row) => numberOrNull(row.deduction_value) === null);
+  const totalDays = kept.reduce((sum, row) => sum + (Number(row.deduction_days) || 0), 0);
+  const totalValue = hasUnpricedDay ? null : kept.reduce((sum, row) => sum + (Number(row.deduction_value) || 0), 0);
+  const { error: updateError } = await supabase
+    .from("attendance_weekly_digests")
+    .update({
+      total_deduction_days: Math.round(totalDays * 1000) / 1000,
+      total_deduction_value: totalValue === null ? null : Math.round(totalValue * 100) / 100,
+      has_unpriced_day: hasUnpricedDay,
+      updated_at: now,
+    })
+    .eq("id", digestId);
+  if (updateError) throw updateError;
+}
+
+/**
+ * Take one day out of a week before it is released. The employee never sees it and it is never
+ * charged. Only possible while the week is still waiting — once released, the employee has been
+ * told, and the way to clear a day then is to uphold a dispute.
+ */
+export async function removeDigestLine(input: { lineId: number; reason: string; actorHrId: string; actorRole: string | null }): Promise<void> {
+  assertCanManageWeeklyReview(input.actorRole);
+  const reason = input.reason.trim();
+  if (!reason) throw validationError("Say why this day is being removed.");
+
+  const { data: owner, error: ownerError } = await getSupabaseAdmin()
+    .from("attendance_digest_lines")
+    .select("id,attendance_weekly_digests!inner(employee_hr_id)")
+    .eq("id", input.lineId)
+    .maybeSingle();
+  if (ownerError) throw ownerError;
+  if (!owner) throw notFoundError("That day was not found.");
+  const nested = (owner as Record<string, unknown>).attendance_weekly_digests as
+    | { employee_hr_id?: string }
+    | Array<{ employee_hr_id?: string }>
+    | null;
+  assertNotOwnPay(String((Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id) ?? ""), input.actorHrId, input.actorRole);
+
+  // One transaction: the line moves to `removed` AND a `removed` settlement is written, which
+  // digest-bridge.ts turns into "Do Not Take Action" on the day's month-end deduction. Without the
+  // settlement that deduction would stay Pending and could still be approved for payroll. The
+  // function locks the digest row, so a removal and a release cannot interleave.
+  const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_remove_digest_line", {
+    p_line_id: input.lineId,
+    p_actor_hr_id: hrIdForStorage(input.actorHrId),
+    p_reason: reason,
+  });
+  if (error) rethrowSettleError(error as { code?: string; message?: string });
+  const removed = (data ?? {}) as { digestId?: unknown; workDate?: unknown };
+  const digestId = Number(removed.digestId);
+  const workDate = String(removed.workDate ?? "");
+
+  await refreshDigestTotals(digestId);
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: String(input.lineId),
+    entityType: "attendance_digest_line_removed",
+    newValues: { digestId, workDate, reason },
+    summary: `Attendance day ${workDate} removed before release`,
+  });
+}
+
+export type ReleaseResult = { released: number; notified: number; notNotified: number; skippedTrialRun: number };
+
+/**
+ * Release one week to its employees. Sets each employee's answer deadline — N working days after
+ * today, on THEIR weekly-off pattern and the holiday calendar — and tells them in-app and by
+ * Telegram. A trial-run week is refused outright (owner, 2026-09-15).
+ */
+export async function releaseWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
+  assertCanManageWeeklyReview(input.actorRole);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select(DIGEST_COLUMNS)
+    .eq("cycle_key", input.cycleKey)
+    .eq("week_index", input.weekIndex)
+    .eq("status", "awaiting_release");
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  if (!rows.length) throw conflictError("Nothing in this week is waiting for release.");
+
+  const digests = rows.map((row) => mapDigest(row, []));
+  const realDigests = digests.filter((digest) => !digest.dryRun);
+  const skippedTrialRun = digests.length - realDigests.length;
+  if (!realDigests.length) throw conflictError("This week was built as a trial run and can never be released.");
+
+  const settings = await getDigestSettings();
+  const todayIso = cairoTodayIso();
+  const horizon = new Date(`${todayIso}T00:00:00Z`);
+  horizon.setUTCDate(horizon.getUTCDate() + 45);
+  const horizonIso = horizon.toISOString().slice(0, 10);
+  const calendar = await buildAttendanceCalendarContext({ dateFromIso: todayIso, dateToIso: horizonIso });
+  // Refuse rather than guess. Without the holiday calendar a public holiday would count as one of
+  // the employee's two working days, and silence after the deadline costs them salary.
+  if (!calendar.holidaySourceConnected) {
+    throw conflictError("The public holiday calendar could not be read, so the answer deadline cannot be worked out. Nothing was released — try again shortly.");
+  }
+  const [directory, flexPolicies] = await Promise.all([loadDirectoryByKey(), loadAttendanceFlexPolicyGroups({ activeOnly: true })]);
+
+  let released = 0;
+  let notified = 0;
+  let notNotified = 0;
+  for (const digest of realDigests) {
+    const person = directoryRowFor(directory, digest.employeeHrId);
+    const jobTitle = person?.jobTitle ?? null;
+    // The employee's OWN weekly-off pattern, as the attendance report judges their days — a custom
+    // policy (e.g. Saturday off as well) must not count Saturday as a working day to answer in.
+    const policy = resolveActiveAttendancePolicy(
+      { hr_id: digest.employeeHrId, job_title: jobTitle },
+      flexPolicies,
+      todayIso,
+      horizonIso,
+    );
+    const workingWeekdays = policy?.working_weekdays ?? null;
+    const answerDueOn = answerDueDate({
+      releasedOnIso: todayIso,
+      workingDays: settings.answerWorkingDays,
+      isWorkingDay: (dateIso) =>
+        !calendar.holidaysByDate.has(dateIso) && isAttendanceScheduledWorkingDay({ dateIso, jobTitle, workingWeekdays }),
+    });
+    const now = new Date().toISOString();
+    const { data: updated, error: updateError } = await supabase
+      .from("attendance_weekly_digests")
+      .update({ status: "open", released_at: now, released_by_hr_id: hrIdForStorage(input.actorHrId), answer_due_on: answerDueOn, updated_at: now })
+      .eq("id", digest.id)
+      .eq("status", "awaiting_release")
+      .eq("dry_run", false)
+      .select("id");
+    if (updateError) throw updateError;
+    if (!updated || (updated as unknown[]).length === 0) continue;
+    released += 1;
+
+    // Read the days AFTER the release write: a day removed a moment before the click must not be
+    // counted in the notice.
+    const digestLines = (await loadLines([digest.id])).get(digest.id) ?? [];
+    const dayCount = digestLines.filter((line) => line.action === "pending").length;
+    if (dayCount === 0) {
+      // Nothing left to ask (every remaining day was answered before the 2026-09-15 release step
+      // existed). Close it now, or it would sit "released" forever with no answer ever coming.
+      if (!digestLines.some((line) => line.action === "disputed")) {
+        const { error: settleError } = await supabase
+          .from("attendance_weekly_digests")
+          .update({ status: "settled", updated_at: new Date().toISOString() })
+          .eq("id", digest.id)
+          .eq("status", "open");
+        if (settleError) throw settleError;
+      }
+      continue;
+    }
+    const sent = await notifyAttendanceWeekReleased({
+      digestId: digest.id,
+      employeeHrId: digest.employeeHrId,
+      weekStart: digest.weekStart,
+      weekEnd: digest.weekEnd,
+      dayCount,
+      answerDueOn,
+    });
+    if (sent) {
+      // The deadline sweep only settles digests with this stamp: a day nobody was told about is
+      // never taken from salary for going unanswered. If this write fails, say so — the employee
+      // was told, but their days would wait for a person instead of settling.
+      const { error: stampError } = await supabase
+        .from("attendance_weekly_digests")
+        .update({ notified_at: new Date().toISOString() })
+        .eq("id", digest.id);
+      if (stampError) {
+        notNotified += 1;
+      } else {
+        notified += 1;
+      }
+    } else {
+      notNotified += 1;
+    }
+  }
+
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: `${input.cycleKey}:w${input.weekIndex}`,
+    entityType: "attendance_digest_release",
+    newValues: { released, notified, notNotified, skippedTrialRun },
+    summary: `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s)`,
+  });
+  return { released, notified, notNotified, skippedTrialRun };
+}
+
+// ---------------------------------------------------------------------------
+// Employee: their own released weeks
+// ---------------------------------------------------------------------------
+
+export type MyDigestLine = DigestLineRow & { balance: BalanceOption | null };
+export type MyDigest = Omit<DigestRow, "lines"> & { overdue: boolean; lines: MyDigestLine[] };
+
+/**
+ * One employee's RELEASED weeks. A week waiting for release is invisible to the person it
+ * describes, and so is a removed day — both are still the Super Admin's to decide.
+ */
+export async function listMyDigests(employeeHrId: string): Promise<MyDigest[]> {
+  const supabase = getSupabaseAdmin();
+  // HR ids are stored mixed-case; a plain .eq under-returns. Match every spelling.
+  const { data, error } = await supabase
+    .from("attendance_weekly_digests")
+    .select(DIGEST_COLUMNS)
+    .in("employee_hr_id", hrIdLookupKeys(employeeHrId))
+    .in("status", ["open", "settled"])
+    .eq("dry_run", false)
+    .not("released_at", "is", null)
+    .order("week_start", { ascending: false })
+    .limit(24);
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const lines = await loadLines(rows.map((row) => Number(row.id)));
+  const todayIso = cairoTodayIso();
+
+  const hasPending = rows.some((row) => (lines.get(Number(row.id)) ?? []).some((line) => line.action === "pending"));
+  const hireDate = hasPending ? directoryRowFor(await loadDirectoryByKey(), employeeHrId)?.hireDate ?? null : null;
+
+  const result: MyDigest[] = [];
+  for (const row of rows) {
+    const digest = mapDigest(row, (lines.get(Number(row.id)) ?? []).filter((line) => line.action !== "removed"));
+    const overdue =
+      digest.status === "open" && deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: todayIso });
+    const withBalance: MyDigestLine[] = [];
+    for (const line of digest.lines) {
+      let balance: BalanceOption | null = null;
+      if (line.action === "pending" && !overdue) {
+        const check = await checkAnnualBalance({ employeeHrId: digest.employeeHrId, hireDate, workDate: line.workDate, days: line.deductionDays }).catch(
+          () => null,
+        );
+        balance = check
+          ? { covers: check.covers, availableDays: check.availableDays, unavailableReason: check.unavailableReason }
+          : { covers: false, availableDays: null, unavailableReason: "Your annual balance could not be read right now. Try again shortly." };
+      }
+      withBalance.push({ ...line, balance });
+    }
+    result.push({ ...digest, overdue, lines: withBalance });
+  }
+  return result;
+}
+
+/**
+ * The employee's answer for one day: salary or annual balance, and optionally a dispute.
+ *
+ * Without a dispute the day settles immediately. With one, the method is recorded and the day
+ * waits for the reviewer — nothing is spent from the balance until the dispute is decided.
+ */
+export async function answerDigestLine(input: {
+  digestId: number;
+  lineId: number;
+  method: DeductionMethod;
+  dispute: boolean;
+  disputeReason?: string | null;
+  actorHrId: string;
+  actorRole: string;
+}): Promise<{ outcome: "salary" | "annual_balance" | "disputed" }> {
+  if (!isDeductionMethod(input.method)) throw validationError("Choose salary or annual balance.");
+  const digest = await loadDigestOrThrow(input.digestId);
+  assertOwnDigest(digest, input.actorHrId);
+  if (digest.status !== "open" || digest.dryRun) throw conflictError("This week is not open for answers.");
+  if (deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: cairoTodayIso() })) {
+    throw conflictError("The deadline for this week has passed, so unanswered days are deducted from salary.");
+  }
+  const line = digest.lines.find((candidate) => candidate.id === input.lineId);
+  if (!line || line.action === "removed") throw notFoundError("That day was not found.");
+  if (line.action !== "pending") throw conflictError("That day has already been answered — reload and look again.");
+
+  let balance: BalanceCheck | null = null;
+  if (input.method === "annual_balance") {
+    const hireDate = directoryRowFor(await loadDirectoryByKey(), digest.employeeHrId)?.hireDate ?? null;
+    balance = await checkAnnualBalance({ employeeHrId: digest.employeeHrId, hireDate, workDate: line.workDate, days: line.deductionDays });
+    if (!balance.covers) throw conflictError(balance.unavailableReason ?? "Your annual balance does not cover this day.");
+  }
+
+  if (input.dispute) {
+    const reason = String(input.disputeReason ?? "").trim();
+    if (!reason) throw validationError("A dispute needs a reason.");
+    const now = new Date().toISOString();
+    const { data, error } = await getSupabaseAdmin()
+      .from("attendance_digest_lines")
+      .update({ action: "disputed", chosen_method: input.method, dispute_reason: reason, acted_at: now, updated_at: now })
+      .eq("id", line.id)
+      .eq("action", "pending")
+      .select("id");
+    if (error) throw error;
+    if (!data || (data as unknown[]).length === 0) throw conflictError("That day has already been answered — reload and look again.");
+    await writeAuditLog({
+      actorLoginId: input.actorHrId,
+      entityId: String(line.id),
+      entityType: "attendance_digest_answer",
+      newValues: { workDate: line.workDate, method: input.method, dispute: true, reason },
+      summary: `Employee chose ${input.method === "salary" ? "salary" : "annual balance"} and disputed ${line.workDate}`,
+    });
+    return { outcome: "disputed" };
+  }
+
+  await settleLine({
+    lineId: line.id,
+    expected: ["pending"],
+    action: input.method,
+    method: input.method,
+    actorHrId: input.actorHrId,
+    actorRole: input.actorRole,
+    reason: input.method === "salary" ? "Employee chose salary" : "Employee chose annual balance",
+    balance,
+  });
+  await writeAuditLog({
+    actorLoginId: input.actorHrId,
+    entityId: String(line.id),
+    entityType: "attendance_digest_answer",
+    newValues: { workDate: line.workDate, method: input.method, dispute: false, days: line.deductionDays },
+    summary: `Employee chose ${input.method === "salary" ? "salary" : "annual balance"} for ${line.workDate}`,
+  });
+  return { outcome: input.method };
+}
+
+// ---------------------------------------------------------------------------
+// Disputes
+// ---------------------------------------------------------------------------
+
 export type PendingDispute = {
   lineId: number;
   digestId: number;
   employeeHrId: string;
+  employeeName: string;
   workDate: string;
   deductionDays: number;
   deductionValue: number | null;
+  chosenMethod: DeductionMethod | null;
   reason: string;
   disputeReason: string | null;
   evidence: Record<string, string>;
 };
 
-/**
- * Every line waiting on a decision, oldest first.
- *
- * Nothing tells a reviewer this queue has grown — the module is silent by design — so
- * the page is the only signal it exists.
- */
+/** Every day waiting on a reviewer's decision, oldest first. */
 export async function listPendingDisputes(): Promise<PendingDispute[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_lines")
     .select(
-      "id,digest_id,work_date,deduction_days,deduction_value,reason,dispute_reason,evidence,attendance_weekly_digests!inner(employee_hr_id)",
+      "id,digest_id,work_date,deduction_days,deduction_value,chosen_method,reason,dispute_reason,evidence,attendance_weekly_digests!inner(employee_hr_id)",
     )
     .eq("action", "disputed")
     .order("work_date", { ascending: true })
     .limit(200);
   if (error) throw error;
+  const directory = await loadDirectoryByKey();
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
-    const nested = row.attendance_weekly_digests as
-      | { employee_hr_id?: string }
-      | Array<{ employee_hr_id?: string }>
-      | null;
-    const employeeHrId = Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id;
+    const nested = row.attendance_weekly_digests as { employee_hr_id?: string } | Array<{ employee_hr_id?: string }> | null;
+    const employeeHrId = String((Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id) ?? "");
+    const person = directoryRowFor(directory, employeeHrId);
     return {
       lineId: Number(row.id),
       digestId: Number(row.digest_id),
-      employeeHrId: normalizeAttendanceHrId(employeeHrId ?? "") ?? String(employeeHrId ?? ""),
+      employeeHrId,
+      employeeName: person?.displayName || person?.fullName || "Name not on file",
       workDate: String(row.work_date),
       deductionDays: Number(row.deduction_days) || 0,
       deductionValue: numberOrNull(row.deduction_value),
+      chosenMethod: isDeductionMethod(row.chosen_method) ? row.chosen_method : null,
       reason: String(row.reason ?? ""),
-      disputeReason: (row.dispute_reason as string | null) ?? null,
+      disputeReason: textOrNull(row.dispute_reason),
       evidence: (row.evidence ?? {}) as Record<string, string>,
     };
   });
 }
 
-// ---------------------------------------------------------------------------
-// Settling one line
-// ---------------------------------------------------------------------------
-
-async function insertSettlement(input: {
-  digestLineId: number;
-  employeeHrId: string;
-  workDate: string;
-  action: "confirmed" | "dispute_upheld" | "dispute_rejected";
-  deductionDays: number;
-  deductionValue: number | null;
-  actorHrId: string | null;
-  actorRole: string | null;
-  reviewerHrId?: string | null;
-  reason?: string | null;
-}) {
-  const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("attendance_settlements").insert({
-    digest_line_id: input.digestLineId,
-    employee_hr_id: hrIdForStorage(input.employeeHrId),
-    work_date: input.workDate,
-    action: input.action,
-    // An upheld dispute costs nothing, whatever the line said.
-    deduction_days: input.action === "dispute_upheld" ? 0 : input.deductionDays,
-    deduction_value: input.action === "dispute_upheld" ? 0 : input.deductionValue,
-    actor_hr_id: input.actorHrId ? hrIdForStorage(input.actorHrId) : null,
-    actor_role: input.actorRole,
-    reviewer_hr_id: input.reviewerHrId ? hrIdForStorage(input.reviewerHrId) : null,
-    reason: input.reason ?? null,
-  });
-  if (error) {
-    if (String(error.code) === "23505") throw conflictError("This day has already been settled.");
-    throw error;
-  }
-}
-
-/** Flip one line's action, refusing unless it is still where the caller believes it is. */
-async function transitionLine(input: {
-  lineId: number;
-  from: DigestLineAction[];
-  to: DigestLineAction;
-  patch?: Record<string, unknown>;
-}) {
-  const supabase = getSupabaseAdmin();
-  const now = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("attendance_digest_lines")
-    .update({ action: input.to, acted_at: now, updated_at: now, ...input.patch })
-    .eq("id", input.lineId)
-    .in("action", input.from)
-    .select("id");
-  if (error) throw error;
-  if (!data || (data as unknown[]).length === 0) {
-    throw conflictError("That day has already been answered — reload and look again.");
-  }
-}
-
-export async function confirmDigestLines(input: {
-  digestId: number;
-  lineIds: number[];
-  actorHrId: string;
-  actorRole: string;
-}): Promise<{ confirmed: number }> {
-  const digest = await loadDigestOrThrow(input.digestId);
-  assertOwnDigest(digest, input.actorHrId);
-  if (digest.status !== "open") throw conflictError("This digest is not open for answers.");
-
-  const wanted = new Set(input.lineIds);
-  const lines = digest.lines.filter((line) => wanted.has(line.id));
-  if (!lines.length) throw validationError("No matching days to confirm.");
-
-  let confirmed = 0;
-  for (const line of lines) {
-    if (line.action !== "pending") continue;
-    await transitionLine({ lineId: line.id, from: ["pending"], to: "confirmed" });
-    await insertSettlement({
-      digestLineId: line.id,
-      employeeHrId: digest.employeeHrId,
-      workDate: line.workDate,
-      action: "confirmed",
-      deductionDays: line.deductionDays,
-      deductionValue: line.deductionValue,
-      actorHrId: input.actorHrId,
-      actorRole: input.actorRole,
-      reason: "Employee confirmed",
-    });
-    confirmed += 1;
-  }
-
-  await maybeCloseDigest(input.digestId);
-  await writeAuditLog({
-    actorLoginId: input.actorHrId,
-    entityId: String(input.digestId),
-    entityType: "attendance_digest_confirm",
-    newValues: { confirmed, lineIds: input.lineIds },
-    summary: `Employee confirmed ${confirmed} attendance day(s)`,
-  });
-  return { confirmed };
-}
-
-export async function disputeDigestLine(input: {
-  digestId: number;
-  lineId: number;
-  reason: string;
-  attachmentUrl?: string | null;
-  actorHrId: string;
-  actorRole: string;
-}): Promise<void> {
-  const digest = await loadDigestOrThrow(input.digestId);
-  assertOwnDigest(digest, input.actorHrId);
-  if (digest.status !== "open") throw conflictError("This digest is not open for answers.");
-  if (!input.reason.trim()) throw validationError("A dispute needs a reason.");
-
-  const line = digest.lines.find((candidate) => candidate.id === input.lineId);
-  if (!line) throw notFoundError("Digest line was not found.");
-
-  // A dispute does NOT settle: it parks the line until a reviewer decides, which is
-  // why no settlement row is written here. Nobody is notified — the reviewer finds it
-  // on the disputes page.
-  await transitionLine({
-    lineId: line.id,
-    from: ["pending"],
-    to: "disputed",
-    patch: { dispute_reason: input.reason.trim(), dispute_attachment_url: input.attachmentUrl?.trim() || null },
-  });
-
-  await writeAuditLog({
-    actorLoginId: input.actorHrId,
-    entityId: String(line.id),
-    entityType: "attendance_digest_dispute",
-    newValues: { workDate: line.workDate, reason: input.reason.trim() },
-    summary: `Employee disputed the attendance charge for ${line.workDate}`,
-  });
-}
-
+/**
+ * Decide a disputed day. Upheld: no deduction at all. Rejected: the method the employee chose
+ * applies — and if they chose annual balance but it no longer covers the day (leave approved
+ * since), the day falls to salary and the settlement says why.
+ */
 export async function reviewDispute(input: {
   lineId: number;
   uphold: boolean;
   notes?: string | null;
   reviewerHrId: string;
   reviewerRole: string;
-}): Promise<void> {
+}): Promise<{ appliedMethod: DeductionMethod | null }> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_lines")
-    .select("id,digest_id,work_date,deduction_days,deduction_value,action")
+    .select("id,digest_id,work_date,deduction_days,action,chosen_method")
     .eq("id", input.lineId)
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw notFoundError("Digest line was not found.");
-  const line = data as Record<string, unknown>;
-  if (String(line.action) !== "disputed") throw conflictError("That day is not under dispute.");
-
+  if (!data) throw notFoundError("That day was not found.");
+  const line = data as { id: number; digest_id: number; work_date: string; deduction_days: unknown; action: string; chosen_method: unknown };
+  if (line.action !== "disputed") throw conflictError("That day is not under dispute.");
   const digest = await loadDigestOrThrow(Number(line.digest_id));
+  if (digest.dryRun) throw conflictError("This day belongs to a trial-run week, which can never be settled.");
+  assertNotOwnPay(digest.employeeHrId, input.reviewerHrId, input.reviewerRole);
+  const notes = input.notes?.trim() || null;
 
-  await insertSettlement({
-    digestLineId: Number(line.id),
-    employeeHrId: digest.employeeHrId,
-    workDate: String(line.work_date),
-    action: input.uphold ? "dispute_upheld" : "dispute_rejected",
-    deductionDays: Number(line.deduction_days) || 0,
-    deductionValue: numberOrNull(line.deduction_value),
+  if (input.uphold) {
+    await settleLine({
+      lineId: line.id,
+      expected: ["disputed"],
+      action: "dispute_upheld",
+      method: isDeductionMethod(line.chosen_method) ? line.chosen_method : null,
+      actorHrId: null,
+      actorRole: input.reviewerRole,
+      reviewerHrId: input.reviewerHrId,
+      reason: notes ?? "Dispute upheld",
+      reviewNotes: notes,
+    });
+    await writeAuditLog({
+      actorLoginId: input.reviewerHrId,
+      entityId: String(line.id),
+      entityType: "attendance_digest_dispute_review",
+      newValues: { uphold: true, notes },
+      summary: `Attendance dispute upheld for ${line.work_date}`,
+    });
+    return { appliedMethod: null };
+  }
+
+  let method: DeductionMethod = isDeductionMethod(line.chosen_method) ? line.chosen_method : "salary";
+  let reason = notes ?? "Dispute rejected";
+  let balance: BalanceCheck | null = null;
+  if (method === "annual_balance") {
+    const hireDate = directoryRowFor(await loadDirectoryByKey(), digest.employeeHrId)?.hireDate ?? null;
+    balance = await checkAnnualBalance({
+      employeeHrId: digest.employeeHrId,
+      hireDate,
+      workDate: line.work_date,
+      days: Number(line.deduction_days) || 0,
+    });
+    if (!balance.covers) {
+      // A read that failed is not an answer: settling now would move the day to salary for good
+      // because of a transient error. Refuse and let the reviewer try again.
+      if (balance.refusal === "balance_unreadable") {
+        throw conflictError("The employee's annual balance could not be fully read right now. Try again shortly.");
+      }
+      reason = `${reason}. ${disputeSalaryFallbackText(balance.refusal)}`;
+      method = "salary";
+      balance = null;
+    }
+  }
+
+  await settleLine({
+    lineId: line.id,
+    expected: ["disputed"],
+    action: "dispute_rejected",
+    method,
     actorHrId: null,
-    actorRole: null,
+    actorRole: input.reviewerRole,
     reviewerHrId: input.reviewerHrId,
-    reason: input.notes?.trim() || (input.uphold ? "Dispute upheld" : "Dispute rejected"),
+    reason,
+    reviewNotes: notes,
+    balance,
   });
-
-  await maybeCloseDigest(digest.id);
   await writeAuditLog({
     actorLoginId: input.reviewerHrId,
-    entityId: String(input.lineId),
+    entityId: String(line.id),
     entityType: "attendance_digest_dispute_review",
-    newValues: { uphold: input.uphold, notes: input.notes ?? null },
-    summary: `Attendance dispute ${input.uphold ? "upheld" : "rejected"} for ${String(line.work_date)}`,
+    newValues: { uphold: false, notes, appliedMethod: method },
+    summary: `Attendance dispute rejected for ${line.work_date}; ${method === "salary" ? "salary" : "annual balance"} applied`,
   });
+  return { appliedMethod: method };
 }
+
+// ---------------------------------------------------------------------------
+// The deadline
+// ---------------------------------------------------------------------------
+
+export type SweepResult = { digestsChecked: number; daysSettledToSalary: number; failures: number; failureMessages: string[] };
 
 /**
- * A digest closes once every line has reached a terminal answer.
- *
- * An UNANSWERED line never closes it, and that is deliberate: with nothing sent, an
- * employee who says nothing has not agreed to anything. The week simply stays open,
- * and the day travels to the month-end queue with no settlement attached.
+ * Settle every unanswered day whose deadline has passed to salary (owner, 2026-09-15). A disputed
+ * day is left alone: the employee did answer, and the reviewer has not.
  */
-async function maybeCloseDigest(digestId: number): Promise<void> {
+export async function settleOverdueAnswers(input: { todayIso: string; actor: string }): Promise<SweepResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("attendance_digest_lines")
-    .select("action")
-    .eq("digest_id", digestId);
-  if (error) throw error;
-  const actions = ((data ?? []) as { action: string }[]).map((row) => row.action);
-  if (!actions.length) return;
-  // A disputed line is NOT terminal — it is waiting for a reviewer.
-  if (actions.some((action) => action === "pending" || action === "disputed")) return;
-  await supabase
     .from("attendance_weekly_digests")
-    .update({ status: "settled", updated_at: new Date().toISOString() })
-    .eq("id", digestId)
-    .eq("status", "open");
+    .select("id,answer_due_on,notified_at")
+    .eq("status", "open")
+    .eq("dry_run", false)
+    // Only employees who were actually told. See deadlineApplies.
+    .not("notified_at", "is", null)
+    .lt("answer_due_on", input.todayIso)
+    .limit(2000);
+  if (error) throw error;
+  const digestIds = ((data ?? []) as Array<{ id: number; answer_due_on: string | null; notified_at: string | null }>)
+    .filter((row) => deadlineApplies({ answerDueOn: row.answer_due_on, notifiedAt: row.notified_at, todayCairoIso: input.todayIso }))
+    .map((row) => Number(row.id));
+  const lines = await loadLines(digestIds);
+
+  let daysSettledToSalary = 0;
+  let failures = 0;
+  const failureMessages: string[] = [];
+  for (const digestId of digestIds) {
+    for (const line of lines.get(digestId) ?? []) {
+      if (line.action !== "pending") continue;
+      try {
+        await settleLine({
+          lineId: line.id,
+          expected: ["pending"],
+          action: "auto_salary",
+          method: "salary",
+          actorHrId: null,
+          actorRole: null,
+          reason: "Not answered by the deadline after the week was released",
+        });
+        daysSettledToSalary += 1;
+      } catch (sweepError) {
+        // Somebody answered in the same instant: their answer stands, nothing to report.
+        if (sweepError instanceof Error && /answered|not open/i.test(sweepError.message)) continue;
+        // Anything else is a real failure. The daily job reports it (HTTP 500) so it is seen, and
+        // the next run tries the day again.
+        failures += 1;
+        failureMessages.push(`${line.workDate}: ${sweepError instanceof Error ? sweepError.message : String(sweepError)}`);
+      }
+    }
+  }
+
+  if (daysSettledToSalary > 0 || failures > 0) {
+    await writeAuditLog({
+      actorLoginId: input.actor,
+      entityId: input.todayIso,
+      entityType: "attendance_digest_auto_salary",
+      newValues: { digestsChecked: digestIds.length, daysSettledToSalary, failures, failureMessages: failureMessages.slice(0, 20) },
+      summary: `${daysSettledToSalary} unanswered attendance day(s) settled to salary after the deadline`,
+    });
+  }
+  return { digestsChecked: digestIds.length, daysSettledToSalary, failures, failureMessages: failureMessages.slice(0, 20) };
 }
 
-export { tileSettlementWeeks };
+export { isOpenLineAction, tileSettlementWeeks };
 export type { SettlementWeek, BuiltDigest };

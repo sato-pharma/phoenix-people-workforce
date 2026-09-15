@@ -65,6 +65,11 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // Not genericOnly: the recommendation IS the content. A generic "you have a notification" ping
   // cannot be approved or rejected, which is the entire point of sending it.
   { enabled: true, genericOnly: false, module: "early_birds", notes: "In-app and Telegram only; email is permanently blocked for this module.", optional: false },
+  // Weekly attendance review (owner rule 2026-09-15): in-app + Telegram only, email hard-blocked in
+  // attendance-digest-channel-guard.ts. Same reasoning as early_birds: without this row the
+  // unknown-module fail-safe drops Telegram and the in-app bell is left alone. The notice names
+  // only the week and the number of days, never an amount, so full content is safe to send.
+  { enabled: true, genericOnly: false, module: "attendance_digest", notes: "Weekly attendance review release notice; in-app and Telegram only, email permanently blocked.", optional: false },
 ];
 
 function cleanModule(value: unknown) {
