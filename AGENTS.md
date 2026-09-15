@@ -239,12 +239,13 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - 🔴 **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however justified the fix.** A late ruling is a rule for UPCOMING months. `monthly_closing_locks` is his decision — unlock only when he says so about that month. `never-fix-a-published-and-announced-month`
 - 🔒 **THE CITY RULE ALWAYS WINS — a wholesaler's sales split evenly over its OWN city's areas, even when its goods demonstrably LEFT the city**, except EZ (`evenSplitApplied`), Office, and El Qema's warehouses. **Never reintroduce a per-customer apportionment override.**
 - 🔒 **EL QEMA (`QM`), PEDIA ONLY — 3 bands, then the صعيد pass, then the lead ladder.** Per warehouse per product on the month total: **≤200** governorate only; **201–699** half governorate, half rest of country; **≥700** flat over the republic. Qalubeya = Qalubeya + Cairo, evenly — 🔴 **the 60/40, 75/25 and PRIORITY LADDER are GONE, so finding one missing is a DECISION, never a gap to repair.** The صعيد pass runs in EVERY band: Upper Egypt's credited sales pooled, half back across it, half over the republic. Then Qalubeya first, Tanta (D14) and Mahalla (D15) level behind, 2% per tier (`QEMA_LEAD_TIERS`), once per line and product, NOT in `splitTargetsFor`. 🔴 Upper Egypt membership is `UPPER_EGYPT_AREAS`, never August's region codes. `store-sales-city-split.ts`, pinned by `tests/qema-warehouse-split.test.ts`.
-- 🔒 **EL QEMA LEAVES NO TRACE IN A CLOSING DETAIL** — distributor, code, name and address are BLANK for everyone but Super Admin (and `scope: "system"`); totals untouched. **Never invent a source.** Mask after every computation and before every render (`closing-source-mask.ts`; only the closing export passes `revealSource: true`), pinned by `tests/closing-source-mask.test.ts`.
+- 🔒 **EL QEMA LEAVES NO TRACE IN A CLOSING DETAIL** — its detail ROWS are REMOVED for everyone but Super Admin (and `scope: "system"`); blanking was tried first and announced the hidden money. The standard workbook's distributor breakdowns and Source Coverage keep the money under an unnamed `—` (owner, 09-14); totals untouched. **Never invent a source.** Mask after every computation and before every render (`closing-source-mask.ts`; only the closing export passes `revealSource: true`), pinned by `tests/closing-source-mask.test.ts`.
 - 🔒 **THE WEEKLY BI AND NSM/DSM EXPORT DESIGNS ARE PASSWORD-LOCKED** in `src/lib/sales/weekly/export-design.pins.json` (values and formulas are not). Re-pin only via `scripts/weekly-export-design-unlock.ts --unlock`; 🔴 **never fix a red design test by editing the pins.** NSM/DSM stays BEIGE; the BI book keeps the house identity. New capability ships BESIDE. `tests/weekly-export-design-lock.test.ts` · `tests/weekly-nsm-dsm-beige-look.test.ts`.
 - 🔒 **THE PREMIUM MONTHLY CLOSING KEEPS ITS OWN EXECUTIVE LOOK** — rounded buttons, filled navy bands and its own navy are owner-approved exemptions. Pinned by `tests/closing-executive-look.test.ts`; the reference file is a spec, never a template. 🔴 **That look is THE WORKBOOK'S ONLY — the closing SCREEN stays Phoenix orange.** The screen was branded to the Sato workbook palette on 2026-09-12 at his request and he reverted it the same morning ("i mean the full front ui return orange as it was"), after five rounds on the Target column's ink alone. **Do not re-apply the workbook identity to a closing screen, and do not "fix" screen and download to match** — they are deliberately two looks.
 - 🔒 **THE OLD MONTHLY CLOSING EXPORT IS FROZEN — every new closing feature ships BESIDE it**, in the premium export. The shared `runExport` is pinned by `tests/sos-ui-truth.test.ts`. `the-old-monthly-closing-export-is-never-touched`
 - 🔒 **The premium closing workbook FILLS the `.xlsm` engine — it never rebuilds one.** Never round-trip it through ExcelJS; rewrite the data parts inside the zip, and ship the template EMPTY. `premium-closing-export-fills-the-xlsm-engine-never-rebuilds-it`
 - **Every weekly report and export MUST set `excludeUnmapped`, and an export must MATCH the screen** — label, never silently drop. The Weekly Summarized Report's LAYOUT AND SCOPE are locked; its ink is the house identity.
+- 🔴 **A typed payroll Addition (incentive, bonus, overtime) has NO ceiling** — owner, 2026-09-15: no refuse, no flag, no "large addition" warning; never re-propose one. `typed-payroll-additions-have-no-ceiling`
 - **The system FLAGS an expense; it NEVER auto-rejects one.** Never auto-publish a deductions month or approve a batch yourself; a same-day CRM check reads zero — never report it as measured.
 - **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days.** `-4` is the only leave type, and only **FWC** reaches salary.
 - **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and inactive leavers stay prorated with zero allowances; a regional employee travelling TO Cairo earns no outstation per-diem; DSM and Medical Rep titles auto-provision their real role (the title-governance guard is DELIBERATELY relaxed for those two).
@@ -301,9 +302,9 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 locally — parallel validation belongs to CI. **The binding limit is the Windows COMMIT charge, and it
 FLOATS** — read it live (`node scripts/new-session.mjs --status`), never budget against a remembered
 figure. 🔴 **Commit headroom can stay GREEN while physical RAM runs out — read FREE RAM, never the
-session count.** Under **2,600 MB** `~/.claude/hooks/heavy-job-gate.mjs` refuses to start a dev server
-or cold typecheck; under **1,800 MB** `mem-watchdog.ps1` reaps idle dev servers; under **500 MB** any
-node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
+session count.** `~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or `ci` under
+**5,000 MB** and lint or tests under **2,600 MB** — it does NOT gate a dev server (since 2026-09-12);
+under **1,800 MB** `mem-watchdog.ps1` reaps idle dev servers; under **500 MB** any node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
 
 Route work by tier:
 
@@ -365,7 +366,7 @@ so when he arms a long plan without it, say in one line that you are treating it
 production migration. **Do not re-ask, do not re-warn, and do not treat a phase boundary as a
 checkpoint.** **The run stops ONCE: after the last phase AND the cleanup are done.** Absorb and keep
 going through: a red CI check (fix, push again); a merge conflict (resolve it); a business-fact
-question (park it, deliver all at the end as ONE xlsx with dropdowns, §4); a blocked phase (finish
+question (park it, then ask all at the end in chat as multiple choice, §4 — an xlsx only for a long per-item list); a blocked phase (finish
 every other phase, then name it); a choice you could make yourself (prefer the reversible option).
 
 **Three things AUTORUN cannot waive:**
