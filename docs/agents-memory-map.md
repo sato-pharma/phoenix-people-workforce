@@ -152,6 +152,8 @@ status, give it its own line.
 
 - **"continue verifying" means RESUME the paused Source of Sales audit — never restart…** — `continue-verifying-resumes-sos-audit` · `sos-deep-audit-paused-checkpoint`
 - **Open every reply with a single recommended next step — it goes FIRST, not last.** — `recommendation-goes-first-not-last` **(inline — load-bearing)**
+- **Ask business-fact questions IN CHAT as multiple choice, never in prose** — `ask-business-questions-as-in-chat-multiple-choice` **(inline — load-bearing)**
+- **A typed payroll Addition has NO ceiling — never re-propose one.** — `typed-payroll-additions-have-no-ceiling`
 - **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however wrong it is.** — `never-fix-a-published-and-announced-month` **(inline — load-bearing)**
 - **THE FITS-THE-SCREEN GOLDEN RULE — never a horizontal scroll, always mobile AND…** — `never-horizontal-scroll-always-mobile-and-desktop-friendly` **(inline — load-bearing)**
 - **THE DOCUMENT IDENTITY — every company document wears SATO-DIS-2026-01 v1.0** — `the-house-document-identity-standard` **(inline — load-bearing)**

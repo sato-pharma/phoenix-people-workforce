@@ -19,7 +19,7 @@ Cookie-based role switching logs the real user out (incident-proven). Always use
    ```
    Use an HR_ID that actually holds that role when the caller supplies one; otherwise note the sweep used the role header alone.
 3. Classify each result: `200 ok` / `200-but-error` (grep the body for "Something went wrong", "Forbidden", "not authorized", empty-state markers the caller names) / `3xx redirect` (note target — a redirect to login or the hub is usually a deny) / `403` / `404` / `5xx`.
-4. The 15 roles live in `src/lib/auth/permissions.ts` (`PhoenixRole`). Sweep the subset the caller names; default minimums per AGENTS.md § Role-Based Testing.
+4. The roles live in `src/lib/auth/permissions.ts` (`phoenixRoles`, 19 as of 2026-09-15 — read the array, never trust a count). Sweep the subset the caller names; default minimums per AGENTS.md §7 "Role-based testing".
 
 ## Report format
 
