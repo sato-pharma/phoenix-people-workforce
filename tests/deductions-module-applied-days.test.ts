@@ -227,6 +227,16 @@ export async function runDeductionsModuleAppliedDaysTests(): Promise<void> {
       /only 4 were detected/,
       "deducting more days than were detected must be refused",
     );
+    // …except a figure the Super Admin raised on the weekly attendance review before release (owner,
+    // 2026-09-15: "Raise too"). Only the attendance bridge passes the flag; the database caps the day at 3.
+    const raised = resolveDecisionCharge({ candidate: base, appliedValue: 6, allowAboveDetected: true });
+    assert.equal(raised.appliedValue, 6, "a day the Super Admin raised before release reaches payroll at his figure");
+    assert.equal(raised.appliedAmount, 600, "and the amount follows it");
+    assert.throws(
+      () => resolveDecisionCharge({ candidate: base, appliedValue: 6 }),
+      /only 4 were detected/,
+      "without the flag, more days than were detected are still refused",
+    );
     assert.throws(
       () => resolveDecisionCharge({ candidate: base, appliedValue: -1 }),
       /non-negative/,

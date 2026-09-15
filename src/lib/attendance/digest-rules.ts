@@ -111,10 +111,75 @@ export function balanceReadIsComplete(input: {
   return calculatorThisPeriod + 0.01 >= authoritative;
 }
 
+// ---------------------------------------------------------------------------
+// Choosing the days (owner, 2026-09-15 — "I want full control")
+// ---------------------------------------------------------------------------
+//   • he picks a week of the current payroll month
+//   • only the flagged days can be ticked, and every day starts UNTICKED
+//   • an unticked day is cleared when the week is released — never deducted
+//   • a ticked day's days can be changed, DOWN or UP ("Raise too"), and payroll takes that figure
+
+/** The most a single flagged day can be made to deduct. A typo guard, not a policy: 30 instead of 0.3. */
+export const MAX_MARKED_DAYS = 3;
+
+/** The number of days a ticked day deducts, as typed. Rounded to 3 decimals (a digest day can be 0.125). */
+export function parseMarkedDays(value: unknown): { days: number; error: null } | { days: null; error: string } {
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  if (!Number.isFinite(parsed)) return { days: null, error: "Enter the number of days to deduct." };
+  const days = Math.round(parsed * 1000) / 1000;
+  if (days <= 0) return { days: null, error: "A ticked day must deduct more than 0 days. Untick it to clear it instead." };
+  if (days > MAX_MARKED_DAYS) return { days: null, error: `One day can deduct at most ${MAX_MARKED_DAYS} days.` };
+  return { days, error: null };
+}
+
 /**
- * Removing a day and releasing a week: the Super Admin ONLY (owner, 2026-09-15 — "i must approve
- * this"). A removal waives a colleague's deduction with nobody else looking, and a release is what
- * notifies every employee, so a named dispute reviewer gets neither.
+ * The days payroll must take for a settled day, when the Super Admin changed them before release.
+ * `undefined` when he did not — payroll then takes what the month-end fingerprint collector
+ * detected, exactly as before. A changed figure is passed even when it is HIGHER than detected
+ * (owner: "Raise too"), which is why the bridge also says allowAboveDetected.
+ */
+export function payrollDaysForSettledLine(line: { deductionDays: number; detectedDays: number | null }): number | undefined {
+  if (line.detectedDays === null) return undefined;
+  return Math.abs(line.deductionDays - line.detectedDays) < 1e-9 ? undefined : line.deductionDays;
+}
+
+/**
+ * Whether the Super Admin's figure can replace the month-end deduction's own. Only when the month-end
+ * collector detected the same days the weekly review did: otherwise the charge is scaled from a
+ * different base, and lowering a day could cost MORE than leaving it (risk review, 2026-09-15). Such a
+ * day is left Pending for a person. The collector keeps 2 decimals where a digest day keeps 3.
+ */
+export function editedDaysApplyToCandidate(input: { detectedDays: number; candidateRawValue: number }): boolean {
+  return Number.isFinite(input.candidateRawValue) && Math.abs(input.candidateRawValue - input.detectedDays) < 0.006;
+}
+
+export type ReviewWeekStage ="not_built" | "trial" | "awaiting_release" | "released" | "closed";
+
+/** Where a week stands, from its digests. A trial-run digest never counts as a real one. */
+export function reviewWeekStage(digests: ReadonlyArray<{ status: string; dryRun: boolean }>): ReviewWeekStage {
+  if (!digests.length) return "not_built";
+  const real = digests.filter((digest) => !digest.dryRun);
+  if (!real.length) return "trial";
+  if (real.some((digest) => digest.status === "awaiting_release")) return "awaiting_release";
+  if (real.some((digest) => digest.status === "open" || digest.status === "settled")) return "released";
+  return "closed";
+}
+
+/** The week the page opens on: the newest one waiting for release, else the newest released, else the newest. */
+export function pickDefaultReviewWeek<T extends { stage: ReviewWeekStage; weekStart: string }>(weeks: readonly T[]): T | null {
+  const newestFirst = [...weeks].sort((left, right) => right.weekStart.localeCompare(left.weekStart));
+  return (
+    newestFirst.find((week) => week.stage === "awaiting_release") ??
+    newestFirst.find((week) => week.stage === "released") ??
+    newestFirst[0] ??
+    null
+  );
+}
+
+/**
+ * Choosing days, building a week and releasing it: the Super Admin ONLY (owner, 2026-09-15 — "i must
+ * approve this"). Leaving a day unticked waives a colleague's deduction with nobody else looking, and
+ * a release is what notifies every employee, so a named dispute reviewer gets neither.
  */
 export function canManageWeeklyReview(access: { role?: string | null }): boolean {
   return access.role === "Super Admin";

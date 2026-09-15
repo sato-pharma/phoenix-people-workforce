@@ -1852,14 +1852,39 @@ He set the new rules on 2026-09-15, first in his own words and then by choosing 
 The daily job (`app/api/cron/attendance-weekly-digest`) builds each closed week as
 **`awaiting_release`** and **sends nothing**. The week then waits on the admin page
 **Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
-employee's flagged days by name. There he can **remove a single day** (a reason is required, and
-it is only possible before release) and then **release the week**.
+employee's flagged days by name.
 
-**A removed day is never charged, and that needs a record.** Removal
-(`phx_attendance_remove_digest_line`) writes a `removed` settlement, and the month-end bridge turns
-it into **Do Not Take Action** on that day's fingerprint deduction. Without the record, the
-deduction would stay Pending and payroll could still take it. The removal locks the week, and
-release reloads the days after it claims the week, so a removal and a release can never interleave.
+**He chooses the days (same day, second decision).** In his words: "I want to be able to select the
+week I want. And in the week I select … I can mark on the days that I want them to be deducted. … I
+want full control." His answers, chosen from options:
+
+- **The week picker** lists every closed week of the **current payroll month** (a paid month stays
+  closed), plus any older week still waiting for release or answers so none is stranded
+  (`listReviewWeeks`). A closed week the daily job never built shows **Build this week**
+  (`buildReviewWeek`), which builds it waiting for release and sends nothing. A trial-run week is
+  read-only.
+- **Only the flagged days can be ticked, and every day starts UNTICKED.** An unticked day is
+  **cleared at release and never deducted**.
+- **A ticked day's days can be edited, down or UP** ("Raise too"), more than 0 and at most 3 per day
+  (a typo guard). `detected_days` keeps what the report found; `deduction_days` is the figure the
+  employee sees, the balance charge takes and payroll approves.
+
+Ticking goes through `phx_attendance_mark_digest_line` (`markDigestLine`), which locks the week and
+refuses once it is released, in a trial run, or on a day already answered. Release goes through
+`phx_attendance_release_digest`, one call per employee: under the same lock it writes a `removed`
+settlement for every unticked day, then opens the week, or voids it when nothing is left (nobody is
+told), or settles it when only days answered before the release step remain. Releasing with nothing
+ticked therefore clears the whole week and notifies nobody. "Remove this day" is gone.
+
+**A cleared day is never charged, and that needs a record.** The `removed` settlement is what the
+month-end bridge turns into **Do Not Take Action** on that day's fingerprint deduction, and
+`recordDecision` then refuses to approve it. Without the record, the deduction would stay Pending
+and payroll could still take it.
+
+**A changed figure reaches payroll.** When a day's `deduction_days` differs from `detected_days`,
+the bridge approves the month-end deduction at the Super Admin's figure (`payrollDaysForSettledLine`)
+and passes `allowAboveDetected`, the one path allowed above the detected days. `recordDecision`
+carries a raised figure forward on a later plain Decide instead of throwing.
 
 **Release refuses when the public holiday calendar cannot be read.** Otherwise a holiday would count
 as a working day inside the answer window, and the deadline would come a day early. Nothing is
@@ -1873,10 +1898,11 @@ Only the Release click notifies anyone, and only `releaseWeek` in
 `src/lib/attendance/digest-service.ts` sets `released_at`. The employee page and API return released
 weeks only (`listMyDigests` filters `released_at is not null`). The review page, its list API and
 the dispute inbox are gated by `canReviewDisputes` (Super Admin or the reviewer list), failing
-closed. **Removing a day and releasing a week are the Super Admin's alone** (`canManageWeeklyReview`),
-checked in both routes (403) and again inside `removeDigestLine` and `releaseWeek`. A named dispute
-reviewer sees the page read-only, with no Remove or Release button, and decides disputes. The
-reason: a removal waives a colleague's deduction with nobody else looking, and a release notifies
+closed. **Ticking days, building a week and releasing it are the Super Admin's alone**
+(`canManageWeeklyReview`), checked in the mark, build and release routes (403) and again inside
+`markDigestLine`, `buildReviewWeek` and `releaseWeek`. A named dispute reviewer sees the page
+read-only, with no ticks, Build or Release button, and decides disputes. The reason: leaving a day
+unticked waives a colleague's deduction with nobody else looking, and a release notifies
 every employee, and "i must approve this" names him. The employee page is self-scoped: any employee
 sees their **own** released weeks, and nobody else's.
 
@@ -1898,6 +1924,21 @@ would refuse to settle later). Re-measure both if the migration is applied on a 
 **Deploy order:** apply the migration to production immediately before merging. The new code reads
 `released_at`, `chosen_method` and the new functions, none of which exist until then. The old code
 was never run against the migrated schema, so do not let the daily job fire between the two steps (it runs at 06:23 Cairo, from GitHub Actions).
+
+**Deploy order for the day selection:** apply `20260915230000_weekly_review_day_selection.sql` to
+production before merging its PR. The new code writes `detected_days`, reads `deduct` and calls
+`phx_attendance_mark_digest_line` / `phx_attendance_release_digest`, none of which exist until then.
+The migration is additive: the old code ignores the new columns, so the migration can go first
+safely. Its backfill copies each line's days into `detected_days` (25 lines on production on
+2026-09-15), and every line starts unticked.
+
+**A changed day reaches payroll only when month-end detected the same days** (risk review,
+2026-09-15). The Super Admin's figure is a count of the days the weekly review detected. If the
+month-end fingerprint deduction for that day detected a different number (`raw_value`, 2 decimals),
+applying his figure would price it from another base, so lowering a day could charge more. The
+bridge then leaves the deduction Pending, does not stamp the settlement, and alerts every run until a
+person decides it (`editedDaysApplyToCandidate`). Ticking a day locks the week before the day, the
+same order release uses, so the two cannot deadlock.
 
 ### 2. The notice: in-app and Telegram, never email
 

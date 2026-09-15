@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
 import { WeeklyAttendanceReview } from "@/components/attendance/weekly-attendance-review";
-import { canManageWeeklyReview, canReviewDisputes, getDigestSettings, listReviewQueue } from "@/lib/attendance/digest-service.ts";
+import { canManageWeeklyReview, canReviewDisputes, getDigestSettings, listReviewWeeks, loadReviewWeek } from "@/lib/attendance/digest-service.ts";
+import { pickDefaultReviewWeek } from "@/lib/attendance/digest-rules.ts";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
@@ -20,15 +21,18 @@ export default async function WeeklyAttendanceReviewPage() {
     redirect("/employee-portals");
   }
 
-  let initialWeeks: Awaited<ReturnType<typeof listReviewQueue>> = [];
+  let initialWeeks: Awaited<ReturnType<typeof listReviewWeeks>> = [];
+  let initialWeek: Awaited<ReturnType<typeof loadReviewWeek>> = null;
   let initialError: string | null = null;
   let answerWorkingDays = 2;
   try {
-    const [weeks, settings] = await Promise.all([listReviewQueue(), getDigestSettings()]);
+    const [weeks, settings] = await Promise.all([listReviewWeeks(), getDigestSettings()]);
     initialWeeks = weeks;
     answerWorkingDays = settings.answerWorkingDays;
+    const chosen = pickDefaultReviewWeek(weeks);
+    initialWeek = chosen ? await loadReviewWeek(chosen) : null;
   } catch (error) {
-    // Say it failed rather than showing an empty queue, which reads as "nothing to release".
+    // Say it failed rather than showing an empty page, which reads as "nothing to release".
     initialError = error instanceof Error ? error.message : "The weekly attendance review failed to load.";
   }
 
@@ -37,6 +41,7 @@ export default async function WeeklyAttendanceReviewPage() {
       answerWorkingDays={answerWorkingDays}
       canManage={canManageWeeklyReview(access)}
       initialError={initialError}
+      initialWeek={initialWeek}
       initialWeeks={initialWeeks}
     />
   );
