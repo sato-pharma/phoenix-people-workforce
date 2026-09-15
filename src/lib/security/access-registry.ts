@@ -446,17 +446,18 @@ export const accessRegistry = [
   // plain `attendance:read` grant because they are self-scoped INSIDE the service —
   // listMyDigests takes no employee parameter, and answerDigestLine asserts the
   // digest's own owner — so the grant opens a door to your OWN released week and
-  // nobody else's. The review, release, remove and dispute routes are guard:
+  // nobody else's. The review, release, build, mark and dispute routes are guard:
   // "domain-helper" instead: they show and decide other people's pay, so
   // canReviewDisputes gates them on Super Admin or the configured reviewer list ON
-  // TOP of the matrix grant, and release and remove narrow further to the Super Admin
-  // alone (canManageWeeklyReview). A matrix grant alone is what once let a Regional Manager
+  // TOP of the matrix grant, and release, build and mark (ticking the days to deduct)
+  // narrow further to the Super Admin alone (canManageWeeklyReview). A matrix grant alone is what once let a Regional Manager
   // export 69 employees' deduction amounts.
   sessionApi({ methods: readOnly, pattern: "/api/attendance/digests", permission: { resource: "attendance", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/digests/:id/answer", permission: { resource: "attendance", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/weekly-review", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/release", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
-  sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/lines/:lineId/remove", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/build", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/attendance/weekly-review/lines/:lineId/mark", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/attendance/disputes", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/disputes/:lineId/review", permission: { resource: "attendance", action: "read" }, guard: "domain-helper", csrfRequired: true }),
 

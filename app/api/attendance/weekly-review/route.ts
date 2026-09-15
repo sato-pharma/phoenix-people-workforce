@@ -1,16 +1,18 @@
 import { NextResponse } from "next/server";
 
-import { canReviewDisputes, listReviewQueue } from "@/lib/attendance/digest-service.ts";
+import { canReviewDisputes, listReviewWeeks, loadReviewWeek } from "@/lib/attendance/digest-service.ts";
+import { pickDefaultReviewWeek } from "@/lib/attendance/digest-rules.ts";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { toApiError, validationError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The admin review queue: every week waiting for release, and every released week with a day
- * still open. Super Admin or a named reviewer only — this lists every employee's flagged days.
+ * The admin review: the weeks to pick from, and one week in full — the one asked for
+ * (`?cycleKey=YYYY-MM&weekIndex=1..4`), or the newest waiting for release. Super Admin or a named
+ * reviewer only — this lists every employee's flagged days.
  */
 export async function GET(request: Request) {
   try {
@@ -19,8 +21,21 @@ export async function GET(request: Request) {
     if (!(await canReviewDisputes(access).catch(() => false))) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
-    const weeks = await listReviewQueue();
-    return NextResponse.json({ weeks });
+
+    const params = new URL(request.url).searchParams;
+    const rawCycleKey = params.get("cycleKey");
+    const rawWeekIndex = params.get("weekIndex");
+    const weeks = await listReviewWeeks();
+    let chosen: { cycleKey: string; weekIndex: number } | null = pickDefaultReviewWeek(weeks);
+    if (rawCycleKey !== null || rawWeekIndex !== null) {
+      const weekIndex = Number(rawWeekIndex);
+      if (!/^\d{4}-\d{2}$/.test(rawCycleKey ?? "") || !Number.isInteger(weekIndex) || weekIndex < 1 || weekIndex > 4) {
+        throw validationError("Invalid week.");
+      }
+      chosen = { cycleKey: String(rawCycleKey), weekIndex };
+    }
+    const week = chosen ? await loadReviewWeek(chosen) : null;
+    return NextResponse.json({ weeks, week });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });

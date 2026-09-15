@@ -23,6 +23,8 @@ export type AuditEntityType =
   // it, releasing a week to its employees, the employee's salary-or-balance choice, and the daily
   // job settling an unanswered day to salary once its deadline passed.
   | "attendance_digest_line_removed"
+  // The Super Admin ticking a day for deduction, or changing its days, before release (2026-09-15).
+  | "attendance_digest_line_marked"
   | "attendance_digest_release"
   | "attendance_digest_answer"
   | "attendance_digest_auto_salary"

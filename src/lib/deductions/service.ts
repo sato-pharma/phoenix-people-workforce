@@ -1267,6 +1267,12 @@ export function resolveDecisionCharge(input: {
   candidate: { unit: DeductionsCandidate["unit"]; rawValue: number; estimatedAmount: number | null; dates: readonly string[] };
   appliedDates?: readonly unknown[] | null;
   appliedValue?: number | null;
+  /**
+   * Let the applied days exceed what was detected. Only for a figure the Super Admin set himself
+   * before releasing the week on the weekly attendance review (owner, 2026-09-15: "Raise too"), or
+   * one already recorded that way. A reviewer typing here is still capped.
+   */
+  allowAboveDetected?: boolean;
 }): { appliedDates: string[] | null; appliedValue: number | null; appliedAmount: number | null } {
   const { candidate } = input;
 
@@ -1299,7 +1305,7 @@ export function resolveDecisionCharge(input: {
     if (!Number.isFinite(appliedValue) || appliedValue < 0) {
       throw new Error("Validation: the number of deducted days must be a non-negative number.");
     }
-    if (appliedValue > candidate.rawValue) {
+    if (appliedValue > candidate.rawValue && input.allowAboveDetected !== true) {
       throw new Error(
         `Validation: cannot deduct ${appliedValue} day(s) — only ${candidate.rawValue} were detected for this employee. Lower the number or clear the deduction instead.`,
       );
@@ -1431,6 +1437,8 @@ export async function recordDecision(input: {
    */
   appliedValue?: number | null;
   appliedDates?: readonly unknown[] | null;
+  /** See resolveDecisionCharge. Passed only by the weekly attendance bridge. */
+  allowAboveDetected?: boolean;
 }): Promise<DeductionsDecision> {
   assertDeductionsDecisionActor(input.actor);
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
@@ -1514,6 +1522,11 @@ export async function recordDecision(input: {
     },
     appliedDates: appliedDatesInput,
     appliedValue: appliedValueInput,
+    // A raised figure already on the decision was accepted when it was written. Carrying it forward
+    // must not throw, or every later "Decide" on that day would fail.
+    allowAboveDetected:
+      input.allowAboveDetected === true ||
+      (input.appliedValue === undefined && appliedValueInput != null && appliedValueInput > Number(candidateRow.raw_value)),
   });
 
   const now = new Date().toISOString();

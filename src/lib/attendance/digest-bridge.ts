@@ -21,7 +21,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recordDecision } from "@/lib/deductions/service.ts";
 import type { DeductionsDecisionStatus } from "@/lib/deductions/types.ts";
-import { decisionForSettlement } from "@/lib/attendance/digest-rules.ts";
+import { decisionForSettlement, editedDaysApplyToCandidate, payrollDaysForSettledLine } from "@/lib/attendance/digest-rules.ts";
 
 const SYSTEM_ACTOR = "system:weekly-attendance-digest";
 
@@ -114,17 +114,26 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
   // generation time, never the live setting — a cycle that ran in dry-run must stay
   // dry-run even after the flag is switched off.
   const dryByLine = new Map<number, boolean>();
+  // The days the Super Admin set on a day before releasing its week, when he changed them.
+  const payrollDaysByLine = new Map<number, number>();
+  const detectedDaysByLine = new Map<number, number>();
   const lineIds = settlements.map((row) => row.digest_line_id);
   for (let index = 0; index < lineIds.length; index += 200) {
     const { data: dryData, error: dryError } = await supabase
       .from("attendance_digest_lines")
-      .select("id,attendance_weekly_digests!inner(dry_run)")
+      .select("id,deduction_days,detected_days,attendance_weekly_digests!inner(dry_run)")
       .in("id", lineIds.slice(index, index + 200));
     if (dryError) throw dryError;
     for (const raw of (dryData ?? []) as Array<Record<string, unknown>>) {
       const nested = raw.attendance_weekly_digests as { dry_run?: boolean } | Array<{ dry_run?: boolean }> | null;
       const flag = Array.isArray(nested) ? nested[0]?.dry_run : nested?.dry_run;
       dryByLine.set(Number(raw.id), flag !== false);
+      const days = payrollDaysForSettledLine({
+        deductionDays: Number(raw.deduction_days) || 0,
+        detectedDays: raw.detected_days == null ? null : Number(raw.detected_days),
+      });
+      if (days !== undefined) payrollDaysByLine.set(Number(raw.id), days);
+      if (raw.detected_days != null) detectedDaysByLine.set(Number(raw.id), Number(raw.detected_days));
     }
   }
 
@@ -142,7 +151,7 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
     const sourceRecordId = `${settlement.employee_hr_id}:${settlement.work_date}`;
     const { data: candidateData, error: candidateError } = await supabase
       .from("deductions_candidates")
-      .select("id")
+      .select("id,unit,raw_value")
       .eq("category", "fingerprint")
       .eq("month_key", monthKey)
       .eq("source_record_id", sourceRecordId)
@@ -150,6 +159,8 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       .maybeSingle();
     if (candidateError) throw candidateError;
     const candidateId = (candidateData as { id: string } | null)?.id ?? null;
+    const candidateUnit = (candidateData as { unit?: string } | null)?.unit ?? null;
+    const candidateRaw = Number((candidateData as { raw_value?: unknown } | null)?.raw_value);
     if (!candidateId) {
       // Normal, not an error: the connector builds a month's candidates only after the month
       // closes, and a day can also be cancelled by evidence that arrived afterwards (an excuse, an
@@ -187,13 +198,29 @@ export async function applyDigestAnswersForMonth(monthKey: string): Promise<Brid
       continue;
     }
 
+    // A day the Super Admin changed before release is charged at HIS figure, higher than detected
+    // included (owner, 2026-09-15: "Raise too"). A cleared day has no figure to pass.
+    const setDays = decision.status === "Approved for Payroll" && candidateUnit === "days" ? payrollDaysByLine.get(settlement.digest_line_id) : undefined;
+    // His figure is a number of the days the WEEKLY review detected. When month-end detected
+    // different days, the charge would be priced from another base — lowering a day could cost
+    // more. Leave it Pending and unstamped so it is raised every run until a person decides.
+    if (setDays !== undefined && !editedDaysApplyToCandidate({ detectedDays: detectedDaysByLine.get(settlement.digest_line_id) ?? Number.NaN, candidateRawValue: candidateRaw })) {
+      result.alerts.push(
+        `${settlement.employee_hr_id} ${settlement.work_date}: the Super Admin set ${setDays} day(s) on the weekly review, but the month-end deduction detected ${Number.isFinite(candidateRaw) ? candidateRaw : "an unreadable number of"} day(s) where the week detected ${detectedDaysByLine.get(settlement.digest_line_id) ?? "none"}. Decide it by hand.`,
+      );
+      continue;
+    }
     try {
       await recordDecision({
         actor: { role: "Super Admin", hrId: SYSTEM_ACTOR, loginId: SYSTEM_ACTOR },
         candidateId,
         decisionStatus: decision.status,
         decisionReason: decision.reason,
-        hrNote: `Applied from the weekly attendance digest settlement recorded on ${settlement.work_date}.`,
+        hrNote:
+          setDays === undefined
+            ? `Applied from the weekly attendance digest settlement recorded on ${settlement.work_date}.`
+            : `Applied from the weekly attendance digest settlement recorded on ${settlement.work_date}, at ${setDays} day(s) set by the Super Admin before release.`,
+        ...(setDays === undefined ? {} : { appliedValue: setDays, allowAboveDetected: true }),
       });
     } catch (decisionFailure) {
       // One locked or refused candidate must not stop every other day in the month from being

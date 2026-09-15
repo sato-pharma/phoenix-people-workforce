@@ -30,8 +30,8 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report.ts";
-import { resolveCycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
-import { latestClosedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
+import { resolveCycleWindow, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
+import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
 import { buildWeekDigests, type BuiltDigest } from "@/lib/attendance/digest-generator.ts";
 import {
   answerDueDate,
@@ -42,10 +42,13 @@ import {
   disputeSalaryFallbackText,
   isDeductionMethod,
   isOpenLineAction,
+  parseMarkedDays,
   payrollDecisionBlocksBalance,
+  reviewWeekStage,
   type DeductionMethod,
   type DigestLineAction,
   type DigestStatus,
+  type ReviewWeekStage,
 } from "@/lib/attendance/digest-rules.ts";
 import { notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
 import { buildAttendanceCalendarContext, cairoTodayIso } from "@/lib/attendance/working-days.ts";
@@ -56,7 +59,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 
-export type { DigestLineAction, DeductionMethod, DigestStatus };
+export type { DigestLineAction, DeductionMethod, DigestStatus, ReviewWeekStage };
 
 export type DigestSettings = {
   disputeReviewerHrIds: string[];
@@ -141,7 +144,21 @@ export async function generateDigestsForCompletedWeek(input: {
       dryRun: settings.dryRun,
     };
   }
+  return generateDigestsForWeek({ cycle, week, createdBy: input.createdBy, settings });
+}
 
+/**
+ * Build one closed week's digests, waiting for release. An employee who already has a digest for the
+ * week is left alone. Used by the daily job for the week that has just closed, and by the Super Admin
+ * for an earlier closed week of the current payroll month that was never built.
+ */
+async function generateDigestsForWeek(input: {
+  cycle: CycleWindow;
+  week: SettlementWeek;
+  createdBy: string;
+  settings: DigestSettings;
+}): Promise<GenerateResult> {
+  const { cycle, week, settings } = input;
   const report = await getFingerprintAttendanceReport({ dateFrom: week.startIso, dateTo: week.endIso });
   const built = buildWeekDigests(report.rows);
   const employeesSeen = new Set(report.rows.map((row) => row.employeeHrId)).size;
@@ -196,6 +213,9 @@ export async function generateDigestsForCompletedWeek(input: {
         worked_minutes: Math.round(line.workedMinutes),
         deduction_days: line.deductionDays,
         deduction_value: line.deductionValue,
+        // What was detected, kept apart from deduction_days, which the Super Admin may change before release.
+        detected_days: line.deductionDays,
+        detected_value: line.deductionValue,
         reason: line.reason,
         evidence: line.evidence,
       })),
@@ -244,6 +264,12 @@ export type DigestLineRow = {
   disputeReason: string | null;
   reviewNotes: string | null;
   removeReason: string | null;
+  /** Ticked for deduction by the Super Admin before release. An unticked pending day is cleared on release. */
+  deduct: boolean;
+  /** The days the fingerprint report detected. `deductionDays` is the figure charged. */
+  detectedDays: number | null;
+  /** The Super Admin changed the days before release, up or down. */
+  adjusted: boolean;
 };
 
 export type DigestRow = {
@@ -277,6 +303,8 @@ function textOrNull(value: unknown): string | null {
 }
 
 function mapLine(row: Record<string, unknown>): DigestLineRow {
+  const deductionDays = Number(row.deduction_days) || 0;
+  const detectedDays = numberOrNull(row.detected_days);
   return {
     id: Number(row.id),
     digestId: Number(row.digest_id),
@@ -284,7 +312,7 @@ function mapLine(row: Record<string, unknown>): DigestLineRow {
     status: String(row.status),
     lateMinutes: Number(row.late_minutes) || 0,
     shortMinutes: Number(row.short_minutes) || 0,
-    deductionDays: Number(row.deduction_days) || 0,
+    deductionDays,
     deductionValue: numberOrNull(row.deduction_value),
     reason: String(row.reason ?? ""),
     evidence: (row.evidence ?? {}) as Record<string, string>,
@@ -293,11 +321,14 @@ function mapLine(row: Record<string, unknown>): DigestLineRow {
     disputeReason: textOrNull(row.dispute_reason),
     reviewNotes: textOrNull(row.review_notes),
     removeReason: textOrNull(row.remove_reason),
+    deduct: row.deduct === true,
+    detectedDays,
+    adjusted: detectedDays !== null && Math.abs(deductionDays - detectedDays) > 1e-9,
   };
 }
 
 const LINE_COLUMNS =
-  "id,digest_id,work_date,status,late_minutes,short_minutes,deduction_days,deduction_value,reason,evidence,action,chosen_method,dispute_reason,review_notes,remove_reason";
+  "id,digest_id,work_date,status,late_minutes,short_minutes,deduction_days,deduction_value,reason,evidence,action,chosen_method,dispute_reason,review_notes,remove_reason,deduct,detected_days";
 
 async function loadLines(digestIds: number[]): Promise<Map<number, DigestLineRow[]>> {
   const byDigest = new Map<number, DigestLineRow[]>();
@@ -629,12 +660,12 @@ export async function canOpenDigestPortal(access: { role?: string | null; hrId?:
   return Boolean(access.hrId && String(access.hrId).trim());
 }
 
-// Removing a day and releasing a week: the Super Admin only. The rule itself lives in digest-rules.ts.
+// Choosing days, building a week and releasing it: the Super Admin only. The rule lives in digest-rules.ts.
 export { canManageWeeklyReview };
 
 function assertCanManageWeeklyReview(actorRole: string | null) {
   if (!canManageWeeklyReview({ role: actorRole })) {
-    throw forbiddenError("Only the Super Admin can remove a day or release a week.");
+    throw forbiddenError("Only the Super Admin can choose the days to deduct, build a week or release it.");
   }
 }
 
@@ -673,60 +704,130 @@ export type ReviewEmployee = {
   lines: DigestLineRow[];
 };
 
-export type ReviewWeek = {
-  key: string;
+/** One entry in the week picker. */
+export type ReviewWeekOption = {
   cycleKey: string;
   weekIndex: number;
   weekStart: string;
   weekEnd: string;
-  stage: "awaiting_release" | "released";
-  /** true only when EVERY digest in the week is a trial run; see ReviewEmployee.dryRun. */
-  dryRun: boolean;
+  stage: ReviewWeekStage;
+  employeeCount: number;
+};
+
+export type ReviewWeek = ReviewWeekOption & {
   releasedAt: string | null;
   employees: ReviewEmployee[];
 };
 
+type DigestHead = { cycleKey: string; weekIndex: number; weekStart: string; weekEnd: string; status: string; dryRun: boolean };
+
+/** Every digest of one payroll month, or every digest still waiting for release or answers. Paged. */
+async function readDigestHeads(scope: { cycleKey: string } | { unfinished: true }): Promise<DigestHead[]> {
+  const supabase = getSupabaseAdmin();
+  const PAGE = 1000;
+  const heads: DigestHead[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const base = supabase.from("attendance_weekly_digests").select("id,cycle_key,week_index,week_start,week_end,status,dry_run");
+    const scoped = "cycleKey" in scope ? base.eq("cycle_key", scope.cycleKey) : base.in("status", ["awaiting_release", "open"]);
+    const { data, error } = await scoped.order("id", { ascending: true }).range(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    for (const row of rows) {
+      heads.push({
+        cycleKey: String(row.cycle_key),
+        weekIndex: Number(row.week_index),
+        weekStart: String(row.week_start),
+        weekEnd: String(row.week_end),
+        status: String(row.status),
+        dryRun: row.dry_run !== false,
+      });
+    }
+    if (rows.length < PAGE) break;
+  }
+  return heads;
+}
+
 /**
- * Every week still waiting for release, and every released week that still has a day open —
- * newest first. A week whose every day is settled drops off; the settlement ledger is its record.
+ * The weeks the Super Admin can pick (owner, 2026-09-15 — "select the week I want"): every CLOSED
+ * week of the current payroll month, built or not, plus any older week still waiting for release or
+ * answers, so a week is never stranded when the month turns. Newest first.
  */
-export async function listReviewQueue(): Promise<ReviewWeek[]> {
+export async function listReviewWeeks(todayIso: string = cairoTodayIso()): Promise<ReviewWeekOption[]> {
+  const settings = await getDigestSettings();
+  const current = closedWeeksOfCurrentCycle(todayIso, settings.cycleAnchorDay);
+  const currentKey = current?.cycle.cycleKey ?? null;
+  const [inCycle, unfinished] = await Promise.all([
+    currentKey ? readDigestHeads({ cycleKey: currentKey }) : Promise.resolve([] as DigestHead[]),
+    readDigestHeads({ unfinished: true }),
+  ]);
+
+  const groups = new Map<string, { option: Omit<ReviewWeekOption, "stage" | "employeeCount">; digests: DigestHead[] }>();
+  if (current) {
+    for (const week of current.weeks) {
+      groups.set(`${current.cycle.cycleKey}:${week.index}`, {
+        option: { cycleKey: current.cycle.cycleKey, weekIndex: week.index, weekStart: week.startIso, weekEnd: week.endIso },
+        digests: [],
+      });
+    }
+  }
+  for (const digest of [...inCycle, ...unfinished.filter((row) => row.cycleKey !== currentKey)]) {
+    const key = `${digest.cycleKey}:${digest.weekIndex}`;
+    const group = groups.get(key) ?? {
+      option: { cycleKey: digest.cycleKey, weekIndex: digest.weekIndex, weekStart: digest.weekStart, weekEnd: digest.weekEnd },
+      digests: [],
+    };
+    group.digests.push(digest);
+    groups.set(key, group);
+  }
+
+  return Array.from(groups.values())
+    .map(({ option, digests }) => ({ ...option, stage: reviewWeekStage(digests), employeeCount: digests.length }))
+    .sort((left, right) => right.weekStart.localeCompare(left.weekStart));
+}
+
+/**
+ * One week in full: every employee and every flagged day, whatever their state — cleared days
+ * included, so the Super Admin can see what he did not deduct. A closed week of the current payroll
+ * month that was never built comes back empty, as `not_built`; any other unknown week is null.
+ */
+export async function loadReviewWeek(input: { cycleKey: string; weekIndex: number; todayIso?: string }): Promise<ReviewWeek | null> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
     .select(DIGEST_COLUMNS)
-    .in("status", ["awaiting_release", "open"])
-    .order("week_start", { ascending: false })
+    .eq("cycle_key", input.cycleKey)
+    .eq("week_index", input.weekIndex)
+    .order("id", { ascending: true })
     .limit(1000);
   if (error) throw error;
   const rows = (data ?? []) as Record<string, unknown>[];
+
+  if (!rows.length) {
+    const settings = await getDigestSettings();
+    const current = closedWeeksOfCurrentCycle(input.todayIso ?? cairoTodayIso(), settings.cycleAnchorDay);
+    const week = current && current.cycle.cycleKey === input.cycleKey ? current.weeks.find((candidate) => candidate.index === input.weekIndex) : undefined;
+    if (!week) return null;
+    return {
+      cycleKey: input.cycleKey,
+      weekIndex: week.index,
+      weekStart: week.startIso,
+      weekEnd: week.endIso,
+      stage: "not_built",
+      employeeCount: 0,
+      releasedAt: null,
+      employees: [],
+    };
+  }
+
   const lines = await loadLines(rows.map((row) => Number(row.id)));
   const directory = await loadDirectoryByKey();
-
-  const weeks = new Map<string, ReviewWeek>();
-  for (const raw of rows) {
-    const digest = mapDigest(raw, lines.get(Number(raw.id)) ?? []);
-    const stage = digest.status === "awaiting_release" ? "awaiting_release" : "released";
-    const key = `${digest.cycleKey}:w${digest.weekIndex}:${stage}`;
-    const week =
-      weeks.get(key) ??
-      ({
-        key,
-        cycleKey: digest.cycleKey,
-        weekIndex: digest.weekIndex,
-        weekStart: digest.weekStart,
-        weekEnd: digest.weekEnd,
-        stage,
-        dryRun: true,
-        releasedAt: null,
-        employees: [],
-      } satisfies ReviewWeek);
-    // A week that mixes trial-run and real digests (dry_run switched off mid-generation) is still
-    // releasable: releaseWeek skips the trial-run ones itself.
-    week.dryRun = week.dryRun && digest.dryRun;
-    if (digest.releasedAt && (!week.releasedAt || digest.releasedAt > week.releasedAt)) week.releasedAt = digest.releasedAt;
+  const digests = rows.map((row) => mapDigest(row, lines.get(Number(row.id)) ?? []));
+  let releasedAt: string | null = null;
+  const employees: ReviewEmployee[] = [];
+  for (const digest of digests) {
+    if (digest.releasedAt && (!releasedAt || digest.releasedAt > releasedAt)) releasedAt = digest.releasedAt;
     const person = directoryRowFor(directory, digest.employeeHrId);
-    week.employees.push({
+    employees.push({
       digestId: digest.id,
       employeeHrId: digest.employeeHrId,
       employeeName: person?.displayName || person?.fullName || "Name not on file",
@@ -741,107 +842,126 @@ export async function listReviewQueue(): Promise<ReviewWeek[]> {
       dryRun: digest.dryRun,
       lines: digest.lines,
     });
-    weeks.set(key, week);
   }
-
-  const list = Array.from(weeks.values());
-  for (const week of list) week.employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
-  // Waiting-for-release first (that is the owner's to-do), then released, each newest first.
-  return list.sort((left, right) => {
-    if (left.stage !== right.stage) return left.stage === "awaiting_release" ? -1 : 1;
-    return right.weekStart.localeCompare(left.weekStart);
-  });
+  employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+  const first = digests[0]!;
+  return {
+    cycleKey: first.cycleKey,
+    weekIndex: first.weekIndex,
+    weekStart: first.weekStart,
+    weekEnd: first.weekEnd,
+    stage: reviewWeekStage(digests),
+    employeeCount: digests.length,
+    releasedAt,
+    employees,
+  };
 }
 
-/** Recompute a digest's totals from the days still in it; void it if none are left. */
-async function refreshDigestTotals(digestId: number) {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_digest_lines")
-    .select("deduction_days,deduction_value,action")
-    .eq("digest_id", digestId);
-  if (error) throw error;
-  const kept = ((data ?? []) as Array<{ deduction_days: unknown; deduction_value: unknown; action: string }>).filter(
-    (row) => row.action !== "removed",
-  );
-  const now = new Date().toISOString();
-  if (!kept.length) {
-    const { error: voidError } = await supabase
-      .from("attendance_weekly_digests")
-      .update({ status: "void", total_deduction_days: 0, total_deduction_value: 0, has_unpriced_day: false, updated_at: now })
-      .eq("id", digestId)
-      .eq("status", "awaiting_release");
-    if (voidError) throw voidError;
-    return;
-  }
-  const hasUnpricedDay = kept.some((row) => numberOrNull(row.deduction_value) === null);
-  const totalDays = kept.reduce((sum, row) => sum + (Number(row.deduction_days) || 0), 0);
-  const totalValue = hasUnpricedDay ? null : kept.reduce((sum, row) => sum + (Number(row.deduction_value) || 0), 0);
-  const { error: updateError } = await supabase
-    .from("attendance_weekly_digests")
-    .update({
-      total_deduction_days: Math.round(totalDays * 1000) / 1000,
-      total_deduction_value: totalValue === null ? null : Math.round(totalValue * 100) / 100,
-      has_unpriced_day: hasUnpricedDay,
-      updated_at: now,
-    })
-    .eq("id", digestId);
-  if (updateError) throw updateError;
-}
+export type MarkResult = {
+  lineId: number;
+  digestId: number;
+  deduct: boolean;
+  deductionDays: number;
+  deductionValue: number | null;
+  detectedDays: number | null;
+  adjusted: boolean;
+  totalDeductionDays: number;
+  totalDeductionValue: number | null;
+  hasUnpricedDay: boolean;
+};
 
 /**
- * Take one day out of a week before it is released. The employee never sees it and it is never
- * charged. Only possible while the week is still waiting — once released, the employee has been
- * told, and the way to clear a day then is to uphold a dispute.
+ * Tick or untick one flagged day before its week is released, and set how many days it deducts —
+ * lower OR higher than detected (owner, 2026-09-15: "I want full control", "Raise too"). An unticked
+ * day is cleared when the week is released and never deducted. The database function locks the
+ * week's row, so a tick and a release cannot interleave, and refuses once the week has been released.
  */
-export async function removeDigestLine(input: { lineId: number; reason: string; actorHrId: string; actorRole: string | null }): Promise<void> {
+export async function markDigestLine(input: {
+  lineId: number;
+  deduct: boolean;
+  days: unknown;
+  actorHrId: string;
+  actorRole: string | null;
+}): Promise<MarkResult> {
   assertCanManageWeeklyReview(input.actorRole);
-  const reason = input.reason.trim();
-  if (!reason) throw validationError("Say why this day is being removed.");
+  if (typeof input.deduct !== "boolean") throw validationError("Say whether this day is deducted.");
+  let days: number | null = null;
+  if (input.days !== null && input.days !== undefined) {
+    const parsed = parseMarkedDays(input.days);
+    if (parsed.error !== null) throw validationError(parsed.error);
+    days = parsed.days;
+  }
 
-  const { data: owner, error: ownerError } = await getSupabaseAdmin()
-    .from("attendance_digest_lines")
-    .select("id,attendance_weekly_digests!inner(employee_hr_id)")
-    .eq("id", input.lineId)
-    .maybeSingle();
-  if (ownerError) throw ownerError;
-  if (!owner) throw notFoundError("That day was not found.");
-  const nested = (owner as Record<string, unknown>).attendance_weekly_digests as
-    | { employee_hr_id?: string }
-    | Array<{ employee_hr_id?: string }>
-    | null;
-  assertNotOwnPay(String((Array.isArray(nested) ? nested[0]?.employee_hr_id : nested?.employee_hr_id) ?? ""), input.actorHrId, input.actorRole);
-
-  // One transaction: the line moves to `removed` AND a `removed` settlement is written, which
-  // digest-bridge.ts turns into "Do Not Take Action" on the day's month-end deduction. Without the
-  // settlement that deduction would stay Pending and could still be approved for payroll. The
-  // function locks the digest row, so a removal and a release cannot interleave.
-  const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_remove_digest_line", {
+  const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_mark_digest_line", {
     p_line_id: input.lineId,
+    p_deduct: input.deduct,
+    p_days: days,
     p_actor_hr_id: hrIdForStorage(input.actorHrId),
-    p_reason: reason,
   });
   if (error) rethrowSettleError(error as { code?: string; message?: string });
-  const removed = (data ?? {}) as { digestId?: unknown; workDate?: unknown };
-  const digestId = Number(removed.digestId);
-  const workDate = String(removed.workDate ?? "");
+  const row = (data ?? {}) as Record<string, unknown>;
+  const result: MarkResult = {
+    lineId: Number(row.lineId),
+    digestId: Number(row.digestId),
+    deduct: row.deduct === true,
+    deductionDays: Number(row.deductionDays) || 0,
+    deductionValue: numberOrNull(row.deductionValue),
+    detectedDays: numberOrNull(row.detectedDays),
+    adjusted: row.adjusted === true,
+    totalDeductionDays: Number(row.totalDeductionDays) || 0,
+    totalDeductionValue: numberOrNull(row.totalDeductionValue),
+    hasUnpricedDay: row.hasUnpricedDay === true,
+  };
+  const workDate = String(row.workDate ?? "");
 
-  await refreshDigestTotals(digestId);
   await writeAuditLog({
     actorLoginId: input.actorHrId,
     entityId: String(input.lineId),
-    entityType: "attendance_digest_line_removed",
-    newValues: { digestId, workDate, reason },
-    summary: `Attendance day ${workDate} removed before release`,
+    entityType: "attendance_digest_line_marked",
+    newValues: { digestId: result.digestId, workDate, deduct: result.deduct, deductionDays: result.deductionDays, detectedDays: result.detectedDays },
+    summary: result.deduct
+      ? `Attendance day ${workDate} ticked for deduction at ${result.deductionDays} day(s) before release`
+      : `Attendance day ${workDate} unticked before release`,
   });
+  return result;
 }
 
-export type ReleaseResult = { released: number; notified: number; notNotified: number; skippedTrialRun: number };
+/**
+ * Build a closed week of the current payroll month that the daily job never built — it builds only
+ * the week that has just closed. Nothing is sent: the week waits for release like any other. A week
+ * with any digest at all, a trial run included, is never built again.
+ */
+export async function buildReviewWeek(input: {
+  cycleKey: string;
+  weekIndex: number;
+  actorHrId: string;
+  actorRole: string | null;
+}): Promise<GenerateResult> {
+  assertCanManageWeeklyReview(input.actorRole);
+  const settings = await getDigestSettings();
+  const current = closedWeeksOfCurrentCycle(cairoTodayIso(), settings.cycleAnchorDay);
+  const week = current && current.cycle.cycleKey === input.cycleKey ? current.weeks.find((candidate) => candidate.index === input.weekIndex) : undefined;
+  if (!current || !week) throw conflictError("Only a closed week of the current payroll month can be built.");
+
+  const { data: existing, error: existingError } = await getSupabaseAdmin()
+    .from("attendance_weekly_digests")
+    .select("id")
+    .eq("cycle_key", input.cycleKey)
+    .eq("week_index", input.weekIndex)
+    .limit(1);
+  if (existingError) throw existingError;
+  if ((existing ?? []).length) throw conflictError("This week has already been built.");
+
+  return generateDigestsForWeek({ cycle: current.cycle, week, createdBy: input.actorHrId, settings });
+}
+
+export type ReleaseResult = { released: number; notified: number; notNotified: number; skippedTrialRun: number; clearedDays: number };
 
 /**
- * Release one week to its employees. Sets each employee's answer deadline — N working days after
- * today, on THEIR weekly-off pattern and the holiday calendar — and tells them in-app and by
- * Telegram. A trial-run week is refused outright (owner, 2026-09-15).
+ * Release one week to its employees. Every day the Super Admin did not tick is cleared first — never
+ * deducted — and only the ticked days are asked about. Sets each employee's answer deadline — N
+ * working days after today, on THEIR weekly-off pattern and the holiday calendar — and tells them
+ * in-app and by Telegram. A trial-run week is refused outright (owner, 2026-09-15).
  */
 export async function releaseWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
   assertCanManageWeeklyReview(input.actorRole);
@@ -877,6 +997,7 @@ export async function releaseWeek(input: { cycleKey: string; weekIndex: number; 
   let released = 0;
   let notified = 0;
   let notNotified = 0;
+  let clearedDays = 0;
   for (const digest of realDigests) {
     const person = directoryRowFor(directory, digest.employeeHrId);
     const jobTitle = person?.jobTitle ?? null;
@@ -895,35 +1016,24 @@ export async function releaseWeek(input: { cycleKey: string; weekIndex: number; 
       isWorkingDay: (dateIso) =>
         !calendar.holidaysByDate.has(dateIso) && isAttendanceScheduledWorkingDay({ dateIso, jobTitle, workingWeekdays }),
     });
-    const now = new Date().toISOString();
-    const { data: updated, error: updateError } = await supabase
-      .from("attendance_weekly_digests")
-      .update({ status: "open", released_at: now, released_by_hr_id: hrIdForStorage(input.actorHrId), answer_due_on: answerDueOn, updated_at: now })
-      .eq("id", digest.id)
-      .eq("status", "awaiting_release")
-      .eq("dry_run", false)
-      .select("id");
-    if (updateError) throw updateError;
-    if (!updated || (updated as unknown[]).length === 0) continue;
+    // One transaction per employee, under the week's row lock: clear every unticked day (a `removed`
+    // settlement, which the bridge turns into Do Not Take Action), then open the week — or void it
+    // when nothing is left, or settle it when only days answered before the release step remain. It
+    // refuses a trial-run digest and one another click already released.
+    const { data: releasedRow, error: releaseError } = await supabase.rpc("phx_attendance_release_digest", {
+      p_digest_id: digest.id,
+      p_actor_hr_id: hrIdForStorage(input.actorHrId),
+      p_answer_due_on: answerDueOn,
+    });
+    if (releaseError) rethrowSettleError(releaseError as { code?: string; message?: string });
+    const outcome = (releasedRow ?? {}) as { released?: unknown; status?: unknown; pendingDays?: unknown; clearedDays?: unknown };
+    clearedDays += Number(outcome.clearedDays) || 0;
+    if (outcome.released !== true) continue;
     released += 1;
 
-    // Read the days AFTER the release write: a day removed a moment before the click must not be
-    // counted in the notice.
-    const digestLines = (await loadLines([digest.id])).get(digest.id) ?? [];
-    const dayCount = digestLines.filter((line) => line.action === "pending").length;
-    if (dayCount === 0) {
-      // Nothing left to ask (every remaining day was answered before the 2026-09-15 release step
-      // existed). Close it now, or it would sit "released" forever with no answer ever coming.
-      if (!digestLines.some((line) => line.action === "disputed")) {
-        const { error: settleError } = await supabase
-          .from("attendance_weekly_digests")
-          .update({ status: "settled", updated_at: new Date().toISOString() })
-          .eq("id", digest.id)
-          .eq("status", "open");
-        if (settleError) throw settleError;
-      }
-      continue;
-    }
+    // Only the ticked days are asked about. None pending: nobody is told.
+    const dayCount = Number(outcome.pendingDays) || 0;
+    if (outcome.status !== "open" || dayCount === 0) continue;
     const sent = await notifyAttendanceWeekReleased({
       digestId: digest.id,
       employeeHrId: digest.employeeHrId,
@@ -954,10 +1064,10 @@ export async function releaseWeek(input: { cycleKey: string; weekIndex: number; 
     actorLoginId: input.actorHrId,
     entityId: `${input.cycleKey}:w${input.weekIndex}`,
     entityType: "attendance_digest_release",
-    newValues: { released, notified, notNotified, skippedTrialRun },
-    summary: `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s)`,
+    newValues: { released, notified, notNotified, skippedTrialRun, clearedDays },
+    summary: `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s), ${clearedDays} unticked day(s) cleared`,
   });
-  return { released, notified, notNotified, skippedTrialRun };
+  return { released, notified, notNotified, skippedTrialRun, clearedDays };
 }
 
 // ---------------------------------------------------------------------------

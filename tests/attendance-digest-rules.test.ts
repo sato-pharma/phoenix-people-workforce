@@ -11,10 +11,16 @@ import {
   decisionForSettlement,
   disputeSalaryFallbackText,
   isAnswerOverdue,
+  MAX_MARKED_DAYS,
+  editedDaysApplyToCandidate,
+  parseMarkedDays,
+  payrollDaysForSettledLine,
   payrollDecisionBlocksBalance,
+  pickDefaultReviewWeek,
   releaseNoticeReached,
+  reviewWeekStage,
 } from "../src/lib/attendance/digest-rules.ts";
-import { latestClosedSettlementWeek } from "../src/lib/attendance/digest-weeks.ts";
+import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek } from "../src/lib/attendance/digest-weeks.ts";
 
 // The weekly attendance review, owner decision 2026-09-15:
 //   release gate → employee chooses salary or annual balance → may then dispute →
@@ -220,27 +226,34 @@ export function runAttendanceDigestRulesTests() {
     );
   }
 
-  // --- Removing a day and releasing a week: the Super Admin only -----------------------------
-  assert.equal(canManageWeeklyReview({ role: "Super Admin" }), true, "the Super Admin releases and removes");
+  // --- Choosing days, building a week and releasing it: the Super Admin only ---------------------
+  assert.equal(canManageWeeklyReview({ role: "Super Admin" }), true, "the Super Admin ticks days, builds and releases");
   for (const role of ["HR Advisory", "HR Operations", "CEO", "Employee", null, undefined]) {
-    assert.equal(canManageWeeklyReview({ role }), false, `${String(role)} must not release a week or remove a day, even as a named dispute reviewer`);
+    assert.equal(canManageWeeklyReview({ role }), false, `${String(role)} must not tick a day, build or release a week, even as a named dispute reviewer`);
   }
   for (const surface of [
     "app/api/attendance/weekly-review/release/route.ts",
-    "app/api/attendance/weekly-review/lines/[lineId]/remove/route.ts",
+    "app/api/attendance/weekly-review/lines/[lineId]/mark/route.ts",
+    "app/api/attendance/weekly-review/build/route.ts",
   ]) {
     const source = readFileSync(surface, "utf8");
     assert.match(source, /if \(!canManageWeeklyReview\(access\)\) \{\s*return NextResponse\.json\([^)]*\{ status: 403 \}\)/, `${surface} must refuse anyone but the Super Admin with a 403`);
     assert.match(source, /actorRole: access\.role \?\? null/, `${surface} must hand the caller's role to the service, which checks it again`);
   }
+  assert.equal(
+    existsSync("app/api/attendance/weekly-review/lines/[lineId]/remove/route.ts"),
+    false,
+    "Remove this day was replaced by the ticks (owner, 2026-09-15) and must stay deleted",
+  );
   const serviceSource = readFileSync("src/lib/attendance/digest-service.ts", "utf8");
-  for (const fn of ["export async function removeDigestLine", "export async function releaseWeek"]) {
+  for (const fn of ["export async function markDigestLine", "export async function buildReviewWeek", "export async function releaseWeek"]) {
     const body = serviceSource.slice(serviceSource.indexOf(fn), serviceSource.indexOf("\n}\n", serviceSource.indexOf(fn)));
     assert.match(body, /assertCanManageWeeklyReview\(input\.actorRole\)/, `${fn} must refuse anyone but the Super Admin itself, not only in the route`);
   }
   const reviewPage = readFileSync("src/components/attendance/weekly-attendance-review.tsx", "utf8");
-  assert.match(reviewPage, /const canRemove = canManage && /, "a dispute reviewer must not see Remove this day");
-  assert.match(reviewPage, /const releasable = canManage && /, "a dispute reviewer must not see Release this week");
+  assert.match(reviewPage, /const canMark =\s+canManage && /, "a dispute reviewer must not see the ticks");
+  assert.match(reviewPage, /const releasable =\s+canManage && /, "a dispute reviewer must not see Release this week");
+  assert.match(reviewPage, /const canBuild = canManage && /, "a dispute reviewer must not see Build this week");
   assert.match(readFileSync("app/(admin)/attendance/weekly-review/page.tsx", "utf8"), /canManage=\{canManageWeeklyReview\(access\)\}/, "the page must pass the Super Admin check down");
 
   // --- A rejected dispute that falls back to salary says why ----------------------------------
@@ -259,7 +272,13 @@ export function runAttendanceDigestRulesTests() {
   assert.match(mine, /\.not\("released_at", "is", null\)/, "listMyDigests must only return RELEASED weeks");
   assert.match(mine, /\.eq\("dry_run", false\)/, "listMyDigests must never return a trial-run week");
   const release = service.slice(service.indexOf("export async function releaseWeek"), service.indexOf("export type MyDigestLine"));
-  assert.match(release, /\.eq\("dry_run", false\)/, "the release write itself must refuse a trial-run digest, not only the button");
+  assert.match(
+    release,
+    /\.rpc\("phx_attendance_release_digest", \{/,
+    "the release must go through the database function that clears the unticked days under the week's lock",
+  );
+  assert.doesNotMatch(release, /from\("attendance_weekly_digests"\)\s*\.update\(\{ status: "open"/, "…never a plain status write that skips the clearing");
+  assert.match(release, /if \(outcome\.status !== "open" \|\| dayCount === 0\) continue;/, "a week with nothing ticked is released to nobody");
 
   const cron = readFileSync("app/api/cron/attendance-weekly-digest/route.ts", "utf8");
   assert.doesNotMatch(cron, /notifyAttendanceWeekReleased|releaseWeek/, "the daily job must never release or notify — only the owner's click does");
@@ -275,8 +294,9 @@ export function runAttendanceDigestRulesTests() {
   const migration = readFileSync("supabase/migrations/20260915210000_weekly_digest_release_and_balance_choice.sql", "utf8");
   const settleFn = migration.slice(
     migration.indexOf("create or replace function public.phx_attendance_settle_digest_line"),
-    migration.indexOf("revoke all on function public.phx_attendance_settle_digest_line"),
+    migration.indexOf("revoke execute on function public.phx_attendance_settle_digest_line"),
   );
+  assert.ok(settleFn.length > 0 && settleFn.length < migration.length / 2, "the settle function slice must find both of its markers");
   assert.match(
     settleFn,
     /c\.locked_at is not null or coalesce\(d\.decision_status, 'Pending'\) <> 'Pending'/,
@@ -291,14 +311,53 @@ export function runAttendanceDigestRulesTests() {
 
   const removeFn = migration.slice(
     migration.indexOf("create or replace function public.phx_attendance_remove_digest_line"),
-    migration.indexOf("revoke all on function public.phx_attendance_remove_digest_line"),
+    migration.indexOf("revoke execute on function public.phx_attendance_remove_digest_line"),
   );
+  assert.ok(removeFn.length > 0 && removeFn.length < migration.length / 2, "the removal function slice must find both of its markers");
   assert.match(removeFn, /v_digest\.status <> 'awaiting_release'/, "a day can only be removed before release");
   assert.match(
     removeFn,
     /insert into public\.attendance_settlements \([^;]*'removed'[^;]*;/,
     "a removal must leave a 'removed' settlement for the bridge",
   );
+
+  // The Super Admin's ticks (owner, 2026-09-15 — "I want full control").
+  const selection = readFileSync("supabase/migrations/20260915230000_weekly_review_day_selection.sql", "utf8");
+  const markFn = selection.slice(
+    selection.indexOf("create or replace function public.phx_attendance_mark_digest_line"),
+    selection.indexOf("revoke execute on function public.phx_attendance_mark_digest_line"),
+  );
+  assert.ok(markFn.length > 0 && markFn.length < selection.length / 2, "the mark function slice must find both of its markers");
+  assert.match(markFn, /v_digest\.dry_run is distinct from false/, "a trial-run week's days can never be ticked");
+  assert.match(markFn, /v_digest\.status <> 'awaiting_release'/, "a day can only be ticked or changed before release");
+  assert.match(markFn, /v_line\.action <> 'pending'/, "an answered day can never be changed");
+  assert.match(markFn, /if v_days <= 0 or v_days > 3 then/, "the database refuses 0 days and more than 3, whoever calls");
+  assert.ok(markFn.indexOf("for update") < markFn.indexOf("v_digest.status <> 'awaiting_release'"), "the release check must run under the week's lock");
+  assert.match(
+    markFn,
+    /select \* into v_digest from public\.attendance_weekly_digests\s+where id = \(select digest_id from public\.attendance_digest_lines where id = p_line_id\)\s+for update;[\s\S]*select \* into v_line from public\.attendance_digest_lines where id = p_line_id and digest_id = v_digest\.id for update;/,
+    "lock the week before the day, the order release takes them in — the other order deadlocks a tick against a release",
+  );
+  assert.match(selection, /grant execute on function public\.phx_attendance_mark_digest_line\([^)]*\) to service_role;/);
+
+  const releaseFn = selection.slice(
+    selection.indexOf("create or replace function public.phx_attendance_release_digest"),
+    selection.indexOf("revoke execute on function public.phx_attendance_release_digest"),
+  );
+  assert.ok(releaseFn.length > 0 && releaseFn.length < selection.length / 2, "the release function slice must find both of its markers");
+  assert.match(
+    releaseFn,
+    /where digest_id = v_digest\.id and action = 'pending' and deduct = false/,
+    "release must clear exactly the unticked days that are still pending",
+  );
+  assert.match(
+    releaseFn,
+    /insert into public\.attendance_settlements \([^;]*'removed'[^;]*;/,
+    "an unticked day must leave a 'removed' settlement, or payroll could still approve it",
+  );
+  assert.match(releaseFn, /v_digest\.status <> 'awaiting_release' or v_digest\.dry_run is distinct from false/, "release refuses a trial run or a week already released");
+  assert.match(releaseFn, /when v_kept = 0 then 'void'/, "a week with nothing ticked is voided, never opened to the employee");
+  assert.match(selection, /grant execute on function public\.phx_attendance_release_digest\([^)]*\) to service_role;/);
 
   assert.match(
     release,
@@ -361,4 +420,87 @@ export function runAttendanceDigestRulesTests() {
   );
   assert.match(bridge, /if \(decision\.status === "Do Not Take Action"\) result\.alerts\.push\(line\);/, "a cleared day that could not be closed is money: it alerts, not warns");
   assert.match(bridge, /\.range\(from, from \+ PAGE - 1\);[\s\S]*if \(page\.length < PAGE\) break;/, "settlements are read page by page, so skipped rows cannot hide newer answers");
+
+  // --- Choosing the days (owner, 2026-09-15 — "I want full control") -------------------------------
+  // The week picker: every closed week of the current payroll month. Cycle 2026-09 runs 24 Aug–23 Sep.
+  {
+    const sep15 = closedWeeksOfCurrentCycle("2026-09-15", 24);
+    assert.equal(sep15?.cycle.cycleKey, "2026-09");
+    assert.deepEqual(sep15?.weeks.map((week) => week.index), [1, 2, 3], "on the 15th weeks 1-3 are closed; week 4 is still running and cannot be judged");
+    const sep24 = closedWeeksOfCurrentCycle("2026-09-24", 24);
+    assert.equal(sep24?.cycle.cycleKey, "2026-09", "on the 24th the month that just ended is still the one to review");
+    assert.deepEqual(sep24?.weeks.map((week) => week.index), [1, 2, 3, 4]);
+    const oct1 = closedWeeksOfCurrentCycle("2026-10-01", 24);
+    assert.equal(oct1?.cycle.cycleKey, "2026-10");
+    assert.deepEqual(oct1?.weeks.map((week) => week.index), [1], "once the new month's week 1 closes, the previous month drops out of the picker");
+  }
+
+  assert.equal(reviewWeekStage([]), "not_built");
+  assert.equal(reviewWeekStage([{ status: "awaiting_release", dryRun: true }]), "trial", "a trial-run week is never releasable");
+  assert.equal(
+    reviewWeekStage([{ status: "awaiting_release", dryRun: true }, { status: "awaiting_release", dryRun: false }]),
+    "awaiting_release",
+    "one real employee waiting makes the week releasable",
+  );
+  assert.equal(reviewWeekStage([{ status: "open", dryRun: false }, { status: "void", dryRun: false }]), "released");
+  assert.equal(reviewWeekStage([{ status: "settled", dryRun: false }]), "released");
+  assert.equal(reviewWeekStage([{ status: "void", dryRun: false }]), "closed", "a week released with nothing ticked deducted nothing");
+
+  {
+    const options = [
+      { stage: "released" as const, weekStart: "2026-09-07" },
+      { stage: "awaiting_release" as const, weekStart: "2026-08-31" },
+      { stage: "not_built" as const, weekStart: "2026-09-14" },
+    ];
+    assert.equal(pickDefaultReviewWeek(options)?.weekStart, "2026-08-31", "the page opens on the week waiting for his release");
+    assert.equal(pickDefaultReviewWeek(options.filter((option) => option.stage !== "awaiting_release"))?.weekStart, "2026-09-07", "…else the newest released week");
+    assert.equal(pickDefaultReviewWeek([{ stage: "not_built" as const, weekStart: "2026-09-14" }])?.weekStart, "2026-09-14");
+    assert.equal(pickDefaultReviewWeek([]), null);
+  }
+
+  assert.deepEqual(parseMarkedDays("0.5"), { days: 0.5, error: null });
+  assert.deepEqual(parseMarkedDays(1.23456), { days: 1.235, error: null }, "days are kept to 3 decimals, as the database stores them");
+  assert.equal(parseMarkedDays(MAX_MARKED_DAYS).days, 3, "3 days is allowed — he may raise a day");
+  assert.match(parseMarkedDays(3.001).error ?? "", /at most 3 days/, "more than 3 is a typo guard: 30 instead of 0.3");
+  assert.match(parseMarkedDays(0).error ?? "", /Untick it/, "0 days is an untick, not a ticked day");
+  for (const blank of ["", "abc", null, undefined]) {
+    assert.match(parseMarkedDays(blank).error ?? "", /Enter the number/, `${String(blank)} is not a number of days`);
+  }
+
+  assert.equal(payrollDaysForSettledLine({ deductionDays: 0.5, detectedDays: 0.5 }), undefined, "an unchanged day leaves payroll's own figure alone");
+  assert.equal(payrollDaysForSettledLine({ deductionDays: 0.25, detectedDays: 0.5 }), 0.25, "a lowered day reaches payroll");
+  assert.equal(payrollDaysForSettledLine({ deductionDays: 2, detectedDays: 0.5 }), 2, "a RAISED day reaches payroll too — 'Raise too'");
+  assert.equal(payrollDaysForSettledLine({ deductionDays: 1, detectedDays: null }), undefined, "a line built before detected days existed is left alone");
+
+  assert.equal(editedDaysApplyToCandidate({ detectedDays: 1, candidateRawValue: 1 }), true, "the same detected days: his figure replaces payroll's");
+  assert.equal(editedDaysApplyToCandidate({ detectedDays: 0.125, candidateRawValue: 0.13 }), true, "the deductions table keeps 2 decimals, so 0.125 stored as 0.13 is the same day");
+  assert.equal(
+    editedDaysApplyToCandidate({ detectedDays: 1, candidateRawValue: 0.25 }),
+    false,
+    "month-end detected different days: lowering 1 to 0.5 against a 0.25 base would charge MORE, so it must go to a person",
+  );
+  assert.equal(editedDaysApplyToCandidate({ detectedDays: 1, candidateRawValue: Number.NaN }), false, "an unreadable month-end figure never takes his edit");
+  assert.match(
+    bridge,
+    /if \(setDays !== undefined && !editedDaysApplyToCandidate\(\{ detectedDays: detectedDaysByLine\.get\(settlement\.digest_line_id\) \?\? Number\.NaN, candidateRawValue: candidateRaw \}\)\) \{\s*result\.alerts\.push\(/,
+    "a changed day whose month-end deduction detected different days must alert and stay Pending, never be charged from another base",
+  );
+  assert.match(bridge, /\.select\("id,unit,raw_value"\)/, "the bridge must read the month-end deduction's detected days to compare them");
+
+  assert.match(
+    bridge,
+    /decision\.status === "Approved for Payroll" && candidateUnit === "days" \? payrollDaysByLine\.get\(settlement\.digest_line_id\)/,
+    "only an approved day-unit deduction takes the Super Admin's figure",
+  );
+  assert.match(
+    bridge,
+    /\.\.\.\(setDays === undefined \? \{\} : \{ appliedValue: setDays, allowAboveDetected: true \}\)/,
+    "a day whose days the Super Admin changed must reach payroll at his figure, raised or lowered",
+  );
+  assert.match(
+    record,
+    /input\.appliedValue === undefined && appliedValueInput != null && appliedValueInput > Number\(candidateRow\.raw_value\)/,
+    "a raised figure already on the decision must carry forward on a later Decide instead of throwing",
+  );
+  assert.match(service, /detected_days: line\.deductionDays,/, "a built week must keep the detected days apart from the figure he may change");
 }

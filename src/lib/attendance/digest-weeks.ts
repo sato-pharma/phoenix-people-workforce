@@ -114,3 +114,18 @@ export function latestClosedSettlementWeek(
   const previous = completedSettlementWeek(todayIso, previousCycle);
   return previous ? { cycle: previousCycle, week: previous } : null;
 }
+
+/**
+ * The weeks the Super Admin can pick on the review page: every CLOSED week of the current payroll
+ * month (owner, 2026-09-15 — "current payroll month"; a paid month stays closed). The current month
+ * is the one the latest closed week belongs to, so on the 24th, before the new month has a closed
+ * week of its own, it is still the month that just ended.
+ */
+export function closedWeeksOfCurrentCycle(
+  todayIso: string,
+  anchorDay?: number,
+): { cycle: CycleWindow; weeks: SettlementWeek[] } | null {
+  const due = latestClosedSettlementWeek(todayIso, anchorDay);
+  if (!due) return null;
+  return { cycle: due.cycle, weeks: tileSettlementWeeks(due.cycle).filter((week) => week.index <= due.week.index) };
+}
