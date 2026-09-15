@@ -10,21 +10,22 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
-import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels, candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { getFileForDownload, uploadCandidateFile } from "@/lib/recruitment/files";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { WHATSAPP_VIDEOS_BUCKET } from "@/lib/whatsapp-videos/inbox";
+import { pickInboxCvs, type InboxDocumentMessage } from "@/lib/whatsapp-inbox/cv-pick";
 import { findWhatsAppInboxLine, whatsAppInboxLineLabel } from "@/lib/whatsapp-inbox/lines";
 import {
+  addInboxPositionRecord,
   inboxAreaOptions,
-  isInboxRegionCode,
+  inboxPositionRecord,
   isInboxRoleFamily,
   matchesInboxPlaceFilter,
   parseInboxPlaceFilter,
-  type InboxPositionFact,
+  type InboxPositionRecord,
 } from "@/lib/whatsapp-inbox/position-filter";
 import { WHATSAPP_INBOX_CONVERSATIONS_TABLE, WHATSAPP_INBOX_MESSAGES_TABLE } from "@/lib/whatsapp-inbox/record";
 
@@ -197,23 +198,7 @@ async function namesFor(candidateIds: string[], hrIds: string[]) {
 
 type Names = Awaited<ReturnType<typeof namesFor>>;
 
-/** One application with the region as it should be READ: the company region's name, or what the person typed. */
-type PositionRecord = InboxPositionFact & { regionLabel: string | null };
-
-function textOrNull(value: string | null | undefined): string | null {
-  const trimmed = String(value ?? "").trim().replace(/\s+/g, " ");
-  return trimmed || null;
-}
-
-function positionRecord(family: CandidateRoleFamily, regionCode: string | null, regionOther: string | null, area: string | null): PositionRecord {
-  const code: CandidateRegionCode | null = isInboxRegionCode(regionCode) ? regionCode : null;
-  return {
-    areaName: textOrNull(area),
-    family,
-    regionCode: code,
-    regionLabel: code ? candidateRegionLabels[code] : textOrNull(regionOther),
-  };
-}
+type PositionRecord = InboxPositionRecord;
 
 /**
  * Which job each chat's person applied for, and the region and area they chose for it.
@@ -250,18 +235,14 @@ async function positionsFor(rows: ConversationRow[]): Promise<Map<string, Positi
       area_other_text: string | null;
     }>) {
       if (!isInboxRoleFamily(session.job_title_family)) continue;
-      const record = positionRecord(
+      const record = inboxPositionRecord(
         session.job_title_family,
         session.region_code,
         session.region_other_text,
         session.area_name ?? session.area_other_text,
       );
       const key = `${session.phone_number_id ?? ""}|${session.wa_id}`;
-      const list = byContact.get(key) ?? [];
-      const same = (other: PositionRecord) =>
-        other.family === record.family && other.regionLabel === record.regionLabel && other.areaName === record.areaName;
-      if (!list.some(same)) list.push(record);
-      byContact.set(key, list);
+      byContact.set(key, addInboxPositionRecord(byContact.get(key) ?? [], record));
     }
   }
   const result = new Map<string, PositionRecord[]>();
@@ -291,7 +272,7 @@ async function positionsFor(rows: ConversationRow[]): Promise<Map<string, Positi
     const family = candidateRoleFamilyOrNull(candidate?.applied_for_job_title);
     result.set(
       row.id,
-      family ? [positionRecord(family, candidate?.preferred_region_code ?? null, null, candidate?.preferred_area_name ?? null)] : [],
+      family ? [inboxPositionRecord(family,candidate?.preferred_region_code ?? null, null, candidate?.preferred_area_name ?? null)] : [],
     );
   }
   return result;
@@ -299,14 +280,10 @@ async function positionsFor(rows: ConversationRow[]): Promise<Map<string, Positi
 
 type CvSummary = NonNullable<InboxConversationSummary["cv"]>;
 
-/**
- * The CV each chat can open from the list: the newest DOCUMENT the person sent. Applicants send their
- * CV as a PDF or Word file, and a document is the one message type that is almost always a CV here —
- * photos are mostly certificates, so they are left in the chat. `count` says when there are several.
- */
+/** The CV each chat can open from the list: the documents the person sent, chosen by `pickInboxCvs`. */
 async function cvsFor(rows: ConversationRow[]): Promise<Map<string, CvSummary>> {
   const supabase = getSupabaseAdmin();
-  const result = new Map<string, CvSummary>();
+  const documents: InboxDocumentMessage[] = [];
   const ids = rows.map((row) => row.id);
   for (let index = 0; index < ids.length; index += 50) {
     const { data, error } = await supabase
@@ -318,13 +295,9 @@ async function cvsFor(rows: ConversationRow[]): Promise<Map<string, CvSummary>> 
       .order("sent_at", { ascending: false })
       .limit(1000);
     if (error) throw error;
-    for (const message of (data ?? []) as Array<{ id: string; conversation_id: string; media_file_name: string | null }>) {
-      const existing = result.get(message.conversation_id);
-      if (existing) existing.count += 1;
-      else result.set(message.conversation_id, { count: 1, fileName: message.media_file_name, messageId: message.id });
-    }
+    documents.push(...((data ?? []) as InboxDocumentMessage[]));
   }
-  return result;
+  return pickInboxCvs(documents);
 }
 
 function summarize(
