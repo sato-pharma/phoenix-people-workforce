@@ -98,6 +98,7 @@ export function KpisFilterBar({
   kpiRules,
   month,
   period,
+  rep,
   tab,
   total,
   visible,
@@ -109,6 +110,11 @@ export function KpisFilterBar({
   kpiRules?: "legacy" | "phoenix";
   month: string;
   period: string;
+  /**
+   * The rep whose doctor list is open on the Coverage tab, carried so a filter change keeps it open.
+   * The server drops it again if the new filters take him off the board.
+   */
+  rep?: string | null;
   tab: string;
   /** Reps in the viewer's scope, before filtering. */
   total: number;
@@ -125,7 +131,7 @@ export function KpisFilterBar({
 
   const push = (next: KpiFilterState) => {
     startTransition(() =>
-      router.push(`${basePath}?${buildKpisQuery({ month, period, tab, filters: next })}`),
+      router.push(`${basePath}?${buildKpisQuery({ month, period, rep, tab, filters: next })}`),
     );
   };
 

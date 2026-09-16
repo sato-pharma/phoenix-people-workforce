@@ -368,6 +368,12 @@ import {
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
 import {
+  runKpiCoverageDetailOrderTests,
+  runKpiCoverageLegacyListTests,
+  runKpiCoveragePhoenixListTests,
+  runKpiCoverageRepSelectionTests,
+} from "./kpis-coverage-doctor-lists.test.ts";
+import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
   runTwoKpiReportsGradeAndBandTests,
@@ -2524,6 +2530,10 @@ await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody 
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
+await runTest("KPIs coverage doctor lists (legacy: the covered and not-covered lists add up to the row, and a rep's list is never cut)", runKpiCoverageLegacyListTests);
+await runTest("KPIs coverage doctor lists (a URL can only open a rep already on the viewer's board, and only on the Coverage tab)", runKpiCoverageRepSelectionTests);
+await runTest("KPIs coverage doctor lists (newest visit first; late doctors before the ones not due yet)", runKpiCoverageDetailOrderTests);
+await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Fragment } from "react";
 
 import {
   pageHeaderDescriptionClassName,
@@ -53,7 +54,7 @@ import {
   isTooEarlyToScore,
 } from "@/lib/crm/kpis-filters";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
-import type { KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
+import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 
 /**
  * The KPIs board — Summary, Call Rate, Coverage and Frequency over one rep list.
@@ -154,6 +155,12 @@ type ViewContext = {
   tab: KpiTab;
   /** True when the current sort is a measure, so a rank disc actually means something. */
   showRank: boolean;
+  /**
+   * The rep whose doctors the Coverage tab has open, carried on every link so a sort or a removed
+   * filter does not close the list. Null when none is open — and on a board of ONE rep, whose list
+   * opens by itself and so never needs to ride in the URL.
+   */
+  openRep: string | null;
 };
 
 /**
@@ -163,13 +170,17 @@ type ViewContext = {
  * specific: a sort link that quietly dropped the area filter would put a WIDER set of reps on
  * screen than the manager asked for, under a heading still saying the filter is on.
  */
-function hrefWith(context: ViewContext, overrides: { tab?: KpiTab; filters?: KpiFilterState }): string {
+function hrefWith(
+  context: ViewContext,
+  overrides: { tab?: KpiTab; filters?: KpiFilterState; rep?: string | null },
+): string {
   const { basePath, board } = context;
   return `${basePath}?${buildKpisQuery({
     month: board.month,
     period: board.range.periodKey,
     tab: overrides.tab ?? context.tab,
     filters: overrides.filters ?? board.filters,
+    rep: overrides.rep !== undefined ? overrides.rep : context.openRep,
   })}`;
 }
 
@@ -576,7 +587,18 @@ function coverageFloorBadge(row: KpiRepRow): React.ReactNode {
  * AM and PM figures, `over-visiting` beside the Above count, and `below-coverage-floor` beside the
  * coverage percentage — would each be the same fact said twice.
  */
-function RepCell({ rank, row, rules }: { rank?: number; row: KpiRepRow; rules?: KpisBoard["kpiRules"] }) {
+function RepCell({
+  action,
+  rank,
+  row,
+  rules,
+}: {
+  /** A control under the name — the Coverage tab's "Show doctors". */
+  action?: React.ReactNode;
+  rank?: number;
+  row: KpiRepRow;
+  rules?: KpisBoard["kpiRules"];
+}) {
   const flags = kpiFlagsOf(row).filter(
     (flag) =>
       flag !== "below-am-target" &&
@@ -605,6 +627,7 @@ function RepCell({ rank, row, rules }: { rank?: number; row: KpiRepRow; rules?: 
           ))}
         </span>
       ) : null}
+      {action ? <span className="mt-2 block">{action}</span> : null}
     </td>
   );
 }
@@ -832,8 +855,301 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   );
 }
 
+// ── Coverage: one rep's doctors ───────────────────────────────────────────────────────────────
+
+/*
+ * THE COVERAGE TAB'S DOCTOR LISTS — owner, 2026-09-16: "when i press on coverage tab covered dr
+ * appear with the last visit date and not covered appears".
+ *
+ * One rep at a time, opened from his own row. The lists are built on the server for the rep the URL
+ * names, and only when he is already on this viewer's board (`selectKpiCoverageRep` in
+ * crm/kpis-board.ts), so a doctor list never reaches a browser for anybody outside that reach. Both
+ * lists come out of the computation that produced the Covered and Not reached counts on the same
+ * row, so they always add up to them.
+ */
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "3 Sep 2026", or "3 Sep" without the year — the spelling reps-list-vacant-areas.tsx prints, by
+ * string arithmetic on the ISO day. No Date parsing, so no server time zone can move the day.
+ *
+ * NO-BREAK SPACES inside the date, so a wrapped line breaks between two dates and never inside one.
+ * With plain spaces a doctor planned on fifteen days wrapped as "3 Sep · 5" over "Sep · 7 Sep" in
+ * the side-by-side lists at 1024px, where the "5" and the "Sep" read as two different days.
+ */
+function dayLabel(iso: string | null, withYear = true): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
+  if (!match) return null;
+  const day = `${Number(match[3])}\u00A0${MONTHS[Number(match[2]) - 1]}`;
+  return withYear ? `${day}\u00A0${match[1]}` : day;
+}
+
+/**
+ * The element a toggle scrolls back to after its navigation. Separate ids for the desktop row and
+ * the phone card: both are in the page, one of them hidden, and a hidden element cannot be scrolled
+ * to.
+ */
+function coverageAnchor(surface: "desktop" | "mobile", repKey: string): string {
+  return `kpi-doctors-${surface}-${repKey.replace(/[^a-z0-9]+/gi, "-")}`;
+}
+
+/**
+ * "Show doctors" / "Hide doctors" for one rep, or null where there is nothing to toggle: a rep with
+ * no planned doctor has no list, and a board of one rep shows his list without being asked.
+ *
+ * A LINK, like every other control on this board, so opening a list re-runs the server-side scope
+ * gate. The fragment brings the rep's own row back into view once the page has re-rendered.
+ */
+function coverageDoctorsToggle(context: ViewContext, row: KpiRepRow, surface: "desktop" | "mobile"): React.ReactNode {
+  const key = row.coverageRepKey;
+  if (!key || !row.hasMeasurablePlan || context.board.reps.length === 1) return null;
+  const open = context.openRep === key;
+  return (
+    <Link
+      aria-expanded={open}
+      className={
+        open
+          ? "inline-flex items-center gap-1.5 border border-orange-300 bg-orange-50 px-2 py-1 text-phx-2xs font-bold text-orange-900 transition-colors hover:border-orange-400"
+          : "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+      }
+      href={`${hrefWith(context, { rep: open ? null : key })}#${coverageAnchor(surface, key)}`}
+    >
+      <span>{open ? "Hide doctors" : "Show doctors"}</span>
+      <span aria-hidden>{open ? "▴" : "▾"}</span>
+    </Link>
+  );
+}
+
+/** The doctor's name with his speciality and grade under it. Never his id — a missing name says so. */
+function CoverageDoctorName({ doctor }: { doctor: KpiCoverageDoctor }) {
+  const meta = [doctor.speciality, doctor.grade ? `Grade ${doctor.grade}` : null].filter(Boolean).join(" · ");
+  return (
+    <span className="block min-w-0">
+      {doctor.name ? (
+        <span className="block font-semibold leading-5 text-slate-900" dir="auto">
+          {doctor.name}
+        </span>
+      ) : (
+        <span className="block font-semibold leading-5 text-slate-500">Name not on the plan</span>
+      )}
+      {meta ? <span className="block text-phx-3xs leading-4 text-slate-500">{meta}</span> : null}
+    </span>
+  );
+}
+
+function CoverageNotDueChip() {
+  return (
+    <span className="inline-block border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-semibold leading-4 text-slate-600">
+      Not due yet
+    </span>
+  );
+}
+
+/**
+ * The days the plan booked him, without the year — the board's header already names the month. The
+ * space before each separator is a no-break one too, so a wrapped line ends on "·" and the next line
+ * starts on a day, never on a stray dot.
+ */
+function planDaysLabel(doctor: KpiCoverageDoctor): string {
+  const days = doctor.planDates.map((day) => dayLabel(day, false)).filter((day): day is string => Boolean(day));
+  return days.length > 0 ? days.join("\u00A0· ") : "No day on the plan";
+}
+
+/** One of the two lists: the podium card's frame and header, holding a desktop table or phone rows. */
+function CoverageListCard({
+  children,
+  count,
+  empty,
+  hint,
+  title,
+}: {
+  children: React.ReactNode;
+  count: number;
+  empty: string;
+  hint: string;
+  title: string;
+}) {
+  return (
+    <div className="min-w-0 border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
+        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
+          {title} · <span className="tabular-nums">{count}</span>
+        </p>
+        <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{hint}</p>
+      </div>
+      {count === 0 ? <p className="px-3 py-3 text-phx-2xs text-slate-500">{empty}</p> : children}
+    </div>
+  );
+}
+
+/**
+ * Both lists for the open rep. `surface` decides the shape only: two fixed-layout tables side by side
+ * from `lg` inside the desktop row, stacked cards under the phone card.
+ */
+function CoverageDoctors({
+  context,
+  detail,
+  surface,
+}: {
+  context: ViewContext;
+  detail: KpiCoverageDetail;
+  surface: "desktop" | "mobile";
+}) {
+  const { board } = context;
+  const period = board.range.isWholeMonth ? board.monthLabel : board.range.periodLabel;
+  const planned = detail.covered.length + detail.notCovered.length;
+  const notDue = detail.notCovered.filter((doctor) => !doctor.due).length;
+  const due = detail.notCovered.length - notDue;
+
+  const covered = (
+    <CoverageListCard
+      count={detail.covered.length}
+      empty="No planned doctor has been visited in this period yet."
+      hint="Seen at least once · latest visit first"
+      title="Covered"
+    >
+      {surface === "desktop" ? (
+        <table className="hidden w-full table-fixed md:table">
+          <colgroup>
+            <col style={{ width: "60%" }} />
+            <col style={{ width: "40%" }} />
+          </colgroup>
+          <thead className="border-b border-slate-100">
+            <tr>
+              <th className={TH} scope="col">
+                Doctor
+              </th>
+              <th className={TH} scope="col">
+                Last visit
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {detail.covered.map((doctor) => (
+              <tr key={doctor.contactCrmId}>
+                <td className={TD}>
+                  <CoverageDoctorName doctor={doctor} />
+                </td>
+                <td className={TD}>
+                  <span className="block font-semibold tabular-nums text-slate-900">
+                    {dayLabel(doctor.lastVisitDate) ?? "—"}
+                  </span>
+                  <span className="block text-phx-3xs leading-4 text-slate-500">
+                    {doctor.visits} visit{doctor.visits === 1 ? "" : "s"} in the period
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {detail.covered.map((doctor) => (
+            <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
+              <CoverageDoctorName doctor={doctor} />
+              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+                Last visit{" "}
+                <span className="font-bold tabular-nums text-slate-900">{dayLabel(doctor.lastVisitDate) ?? "—"}</span> ·{" "}
+                {doctor.visits} visit{doctor.visits === 1 ? "" : "s"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CoverageListCard>
+  );
+
+  const notCovered = (
+    <CoverageListCard
+      count={detail.notCovered.length}
+      empty="Every planned doctor has been visited at least once."
+      hint={notDue > 0 ? `${due} due · ${notDue} not due yet · oldest planned day first` : "Oldest planned day first"}
+      title="Not covered"
+    >
+      {surface === "desktop" ? (
+        <table className="hidden w-full table-fixed md:table">
+          <colgroup>
+            <col style={{ width: "55%" }} />
+            <col style={{ width: "45%" }} />
+          </colgroup>
+          <thead className="border-b border-slate-100">
+            <tr>
+              <th className={TH} scope="col">
+                Doctor
+              </th>
+              <th className={TH} scope="col">
+                Planned for
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {detail.notCovered.map((doctor) => (
+              <tr key={doctor.contactCrmId}>
+                <td className={TD}>
+                  <CoverageDoctorName doctor={doctor} />
+                </td>
+                <td className={TD}>
+                  <span className="block tabular-nums text-slate-900">{planDaysLabel(doctor)}</span>
+                  {doctor.due ? null : (
+                    <span className="mt-1 block">
+                      <CoverageNotDueChip />
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {detail.notCovered.map((doctor) => (
+            <li className="px-3 py-2.5 text-sm" key={doctor.contactCrmId}>
+              <CoverageDoctorName doctor={doctor} />
+              <span className="mt-1 block text-phx-3xs leading-4 text-slate-500">
+                Planned for <span className="font-bold tabular-nums text-slate-900">{planDaysLabel(doctor)}</span>
+              </span>
+              {doctor.due ? null : (
+                <span className="mt-1 block">
+                  <CoverageNotDueChip />
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </CoverageListCard>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="min-w-0">
+        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-900">
+          Doctors planned in {period}
+        </p>
+        <p className={`mt-0.5 leading-4 ${CAPTION}`}>
+          {planned === 0
+            ? `No doctor was planned for ${detail.repName} in this period.`
+            : `${detail.repName}: ${detail.covered.length} of ${planned} seen at least once. Not covered means no visit in the period yet — a doctor whose planned day is still ahead is marked Not due yet.`}
+        </p>
+      </div>
+      {planned === 0 ? null : surface === "desktop" ? (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {covered}
+          {notCovered}
+        </div>
+      ) : (
+        <>
+          {covered}
+          {notCovered}
+        </>
+      )}
+    </div>
+  );
+}
+
 function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRow[] }) {
-  const { filters } = context.board;
+  const { coverageDetail: detail, filters } = context.board;
   return (
     <table className="hidden w-full table-fixed md:table">
       <colgroup>
@@ -887,24 +1203,41 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
       </thead>
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
-          <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
-            <td className={NUM}>{row.plannedDoctors}</td>
-            <td className={NUM}>{row.visitedDoctors}</td>
-            <td className={NUM}>{row.missedDoctors}</td>
-            <td className={NUM}>{row.offPlanDoctors}</td>
-            <MeasureCell
-              band={coverageBandOf(row)}
-              caption={
-                row.hasMeasurablePlan
-                  ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
-                  : "No planned doctors to be a percentage of"
-              }
-              extra={coverageFloorBadge(row)}
-              fill={coverageFill(row)}
-              value={planPct(row, row.coveragePct)}
-            />
-          </tr>
+          <Fragment key={row.agentCrmId ?? `${row.repName}-${index}`}>
+            <tr
+              className="scroll-mt-20"
+              id={row.coverageRepKey ? coverageAnchor("desktop", row.coverageRepKey) : undefined}
+            >
+              <RepCell
+                action={coverageDoctorsToggle(context, row, "desktop")}
+                rank={context.showRank ? index + 1 : undefined}
+                row={row}
+                rules={context.board.kpiRules}
+              />
+              <td className={NUM}>{row.plannedDoctors}</td>
+              <td className={NUM}>{row.visitedDoctors}</td>
+              <td className={NUM}>{row.missedDoctors}</td>
+              <td className={NUM}>{row.offPlanDoctors}</td>
+              <MeasureCell
+                band={coverageBandOf(row)}
+                caption={
+                  row.hasMeasurablePlan
+                    ? `${row.visitedDoctors} of ${row.plannedDoctors} planned doctors`
+                    : "No planned doctors to be a percentage of"
+                }
+                extra={coverageFloorBadge(row)}
+                fill={coverageFill(row)}
+                value={planPct(row, row.coveragePct)}
+              />
+            </tr>
+            {detail && row.coverageRepKey === detail.repKey ? (
+              <tr>
+                <td className="bg-slate-50/60 px-4 py-4 sm:px-5" colSpan={6}>
+                  <CoverageDoctors context={context} detail={detail} surface="desktop" />
+                </td>
+              </tr>
+            ) : null}
+          </Fragment>
         ))}
       </tbody>
     </table>
@@ -1031,12 +1364,15 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
  * carries all three meters rather than only the current tab's.
  */
 function RepCard({
+  action,
   amTarget,
   pmTarget,
   rank,
   row,
   rules,
 }: {
+  /** A control under the card, e.g. the Coverage tab's "Show doctors". */
+  action?: React.ReactNode;
   amTarget: number;
   pmTarget: number;
   rank?: number;
@@ -1143,6 +1479,7 @@ function RepCard({
           ))}
         </div>
       ) : null}
+      {action ? <div className="mt-2.5">{action}</div> : null}
     </div>
   );
 }
@@ -1189,6 +1526,9 @@ export function KpisBoardView({
   const context: ViewContext = {
     basePath,
     board,
+    // Only a rep the server actually built a list for. A board of one rep opens his list without a
+    // `rep` in the URL, so there is nothing to carry for him.
+    openRep: board.reps.length > 1 ? (board.coverageDetail?.repKey ?? null) : null,
     tab,
     // A rank disc beside a name means nothing when the list is alphabetical, so it only appears
     // once a MEASURE is what the order is expressing.
@@ -1238,6 +1578,7 @@ export function KpisBoardView({
               periodOptions={periodOptions}
               rangeFrom={board.range.dateFrom}
               rangeTo={board.range.windowEnd}
+              rep={context.openRep}
               tab={tab}
             />
           </div>
@@ -1249,6 +1590,7 @@ export function KpisBoardView({
             kpiRules={board.kpiRules}
             month={board.month}
             period={board.range.periodKey}
+            rep={context.openRep}
             tab={tab}
             total={board.scopedReps}
             visible={board.reps.length}
@@ -1448,17 +1790,32 @@ export function KpisBoardView({
 
               <div className="border-t border-slate-100">
                 <div className="divide-y divide-slate-100 md:hidden">
-                  {board.reps.map((row, index) => (
-                    <div key={String(row.agentCrmId ?? `${row.repName}-${index}`)}>
-                      <RepCard
-                        amTarget={board.amTarget}
-                        pmTarget={board.pmTarget}
-                        rank={context.showRank ? index + 1 : undefined}
-                        row={row}
-                        rules={board.kpiRules}
-                      />
-                    </div>
-                  ))}
+                  {board.reps.map((row, index) => {
+                    const coverageKey = tab === "coverage" ? row.coverageRepKey : null;
+                    const detail =
+                      coverageKey && board.coverageDetail?.repKey === coverageKey ? board.coverageDetail : null;
+                    return (
+                      <div
+                        className={coverageKey ? "scroll-mt-20" : undefined}
+                        id={coverageKey ? coverageAnchor("mobile", coverageKey) : undefined}
+                        key={String(row.agentCrmId ?? `${row.repName}-${index}`)}
+                      >
+                        <RepCard
+                          action={tab === "coverage" ? coverageDoctorsToggle(context, row, "mobile") : undefined}
+                          amTarget={board.amTarget}
+                          pmTarget={board.pmTarget}
+                          rank={context.showRank ? index + 1 : undefined}
+                          row={row}
+                          rules={board.kpiRules}
+                        />
+                        {detail ? (
+                          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-4">
+                            <CoverageDoctors context={context} detail={detail} surface="mobile" />
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="hidden md:block">
                   {tab === "summary" ? <SummaryTable context={context} rows={board.reps} /> : null}

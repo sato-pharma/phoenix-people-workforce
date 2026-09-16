@@ -57,6 +57,7 @@ export function KpisPeriodPicker({
   periodOptions,
   rangeFrom,
   rangeTo,
+  rep,
   tab,
 }: {
   basePath: string;
@@ -73,6 +74,11 @@ export function KpisPeriodPicker({
   /** The window in force, so the date inputs open on what the board is already showing. */
   rangeFrom: string;
   rangeTo: string;
+  /**
+   * The rep whose doctor list is open on the Coverage tab. Carried like the filters, so moving to
+   * another week keeps his list open for the new week; the server rebuilds it for the new window.
+   */
+  rep?: string | null;
   tab: KpiTab;
 }) {
   const router = useRouter();
@@ -92,7 +98,7 @@ export function KpisPeriodPicker({
     // unfiltered Summary" — and a picker that silently widened the board while the chips still
     // said a filter was on would be the worst of the two possible bugs.
     startTransition(() =>
-      router.push(`${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, tab, filters })}`),
+      router.push(`${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, rep, tab, filters })}`),
     );
   };
 

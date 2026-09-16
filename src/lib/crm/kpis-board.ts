@@ -78,7 +78,13 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
 import { countCallRateWorkingDays } from "@/lib/crm/call-rate";
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
-import { getRepDoctorLists, monthLabelOf, type RepDoctorListRepRow } from "@/lib/crm/rep-doctor-lists";
+import {
+  getRepDoctorLists,
+  monthLabelOf,
+  repDoctorListRepKey,
+  type RepDoctorListDoctorRow,
+  type RepDoctorListRepRow,
+} from "@/lib/crm/rep-doctor-lists";
 import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
 import { resolveRepKpiStandards, type RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
@@ -256,7 +262,148 @@ export type KpiRepRow = {
    * crm/phoenix-kpi-rules.ts); absent before it, when every field above means what it always meant.
    */
   phoenix?: PhoenixRepKpis | null;
+
+  /**
+   * The key the Coverage tab opens this rep's doctor list by — the value of the URL's `rep`. Stamped
+   * by `joinKpiRows`, so the view never has to rebuild it (see {@link kpiCoverageRepKey}). Null when
+   * the rep has neither a CRM id nor an hr id, and then there is no list to open.
+   */
+  coverageRepKey?: string | null;
 };
+
+/**
+ * One doctor on the Coverage tab's two lists. Owner, 2026-09-16: "when i press on coverage tab
+ * covered dr appear with the last visit date and not covered appears".
+ *
+ * A NAME, never an id: `contactCrmId` keys the rendered row and is never printed.
+ */
+export type KpiCoverageDoctor = {
+  contactCrmId: number;
+  /** Null when the plan carried no name for him. The view prints a phrase for that, never the id. */
+  name: string | null;
+  speciality: string | null;
+  grade: string | null;
+  /** Visits inside the window that count toward coverage. 0 exactly on the not-covered list. */
+  visits: number;
+  /** The latest of those visits, YYYY-MM-DD. Null exactly on the not-covered list. */
+  lastVisitDate: string | null;
+  /** Every day the plan booked him inside the window, earliest first. */
+  planDates: string[];
+  /**
+   * False when every day the plan booked him is still ahead. He counts as not covered all the same —
+   * the whole window's list is the denominator (see the header) — but he is not late, and the list
+   * says so rather than letting next Tuesday's doctor read like last Tuesday's.
+   */
+  due: boolean;
+};
+
+/**
+ * One rep's covered and not-covered doctors, for the Coverage tab.
+ *
+ * Built for ONE rep per page load, and only on that tab, so a company-wide doctor list never travels
+ * to a browser. `covered.length` is the rep's `visitedDoctors` and `notCovered.length` his
+ * `missedDoctors`, by construction: both lists come out of the same computation as those counts.
+ */
+export type KpiCoverageDetail = {
+  /** The rep's {@link kpiCoverageRepKey}. */
+  repKey: string;
+  repName: string;
+  covered: KpiCoverageDoctor[];
+  notCovered: KpiCoverageDoctor[];
+};
+
+/**
+ * The key a rep's doctor list is opened by, for a rep the doctor-list builder did not key itself.
+ * The builder's OWN rep key rather than the `crm:`/`hr:` join key below, because it is the key that
+ * builder stamped on every doctor row — so the rows it selects are exactly the rows this rep's
+ * coverage was counted from. `joinKpiRows` copies the builder's key straight off its rep row where
+ * there is one, and falls back to this only for a rep it never listed.
+ */
+export function kpiCoverageRepKey(row: Pick<KpiRepRow, "agentCrmId" | "agentHrId">): string | null {
+  return repDoctorListRepKey(row.agentCrmId, row.agentHrId);
+}
+
+/**
+ * Which rep's doctor list the Coverage tab opens.
+ *
+ * Only ever one of `reps` — the rows the viewer's scope and filters already let through — so a `rep`
+ * typed into the URL for anybody outside that set opens nothing. A board showing ONE rep (a Medical
+ * Rep looking at himself, or a filter down to one person) opens his list unasked, because there is
+ * nobody else to choose.
+ */
+export function selectKpiCoverageRep(reps: readonly KpiRepRow[], requested: string | null | undefined): KpiRepRow | null {
+  if (reps.length === 1) return reps[0] ?? null;
+  if (!requested) return null;
+  return reps.find((row) => row.coverageRepKey != null && row.coverageRepKey === requested) ?? null;
+}
+
+/**
+ * The legacy doctor list's rows for one rep, in the Coverage tab's shape: doctors (SP contacts) on
+ * the plan and nothing else — exactly the population `plannedDoctors` counts in
+ * buildRepDoctorListsBoard. Off-plan visits and pharmacies are the other columns' business.
+ */
+export function legacyKpiCoverageDoctors(
+  doctors: readonly RepDoctorListDoctorRow[],
+  repKey: string,
+): Array<Omit<KpiCoverageDoctor, "due">> {
+  return doctors
+    .filter((doctor) => doctor.repKey === repKey && doctor.kind === "sp" && doctor.status !== "off_plan")
+    .map((doctor) => ({
+      contactCrmId: doctor.contactCrmId,
+      // The builder fills a missing name with "Contact <id>", and the board prints names, never ids.
+      name: doctor.contactName === `Contact ${doctor.contactCrmId}` ? null : doctor.contactName,
+      speciality: doctor.speciality?.trim() || null,
+      grade: doctor.gradeRaw?.trim() || null,
+      visits: doctor.status === "seen" ? doctor.visits : 0,
+      lastVisitDate: doctor.status === "seen" ? doctor.lastVisitDate : null,
+      planDates: doctor.planDates,
+    }));
+}
+
+/** Plain code-unit order. YYYY-MM-DD sorts correctly as text, and `localeCompare` may skip the hyphens. */
+const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
+/**
+ * Splits one rep's planned doctors into the two lists and orders each.
+ *
+ * Covered reads newest visit first, like a diary running backwards. Not covered puts the doctors who
+ * are already late on top, oldest booking first, and the ones not due yet underneath — so the first
+ * name on the list is always the longest-standing miss.
+ */
+export function buildKpiCoverageDetail(input: {
+  repKey: string;
+  repName: string;
+  doctors: ReadonlyArray<Omit<KpiCoverageDoctor, "due">>;
+  todayIso: string;
+}): KpiCoverageDetail {
+  const covered: KpiCoverageDoctor[] = [];
+  const notCovered: KpiCoverageDoctor[] = [];
+  for (const doctor of input.doctors) {
+    const row: KpiCoverageDoctor = {
+      ...doctor,
+      planDates: [...doctor.planDates],
+      // An undated booking cannot be shown to lie ahead, so it is never excused as one.
+      due: doctor.planDates.length === 0 || doctor.planDates.some((day) => day <= input.todayIso),
+    };
+    if (row.visits > 0) covered.push(row);
+    else notCovered.push(row);
+  }
+  // Unnamed doctors last: a phrase standing in for a name should not sit among the As.
+  const byName = (left: KpiCoverageDoctor, right: KpiCoverageDoctor): number =>
+    Number(left.name == null) - Number(right.name == null) ||
+    (left.name ?? "").localeCompare(right.name ?? "") ||
+    left.contactCrmId - right.contactCrmId;
+  covered.sort(
+    (left, right) => compareText(right.lastVisitDate ?? "", left.lastVisitDate ?? "") || byName(left, right),
+  );
+  notCovered.sort(
+    (left, right) =>
+      Number(right.due) - Number(left.due) ||
+      compareText(left.planDates[0] ?? "", right.planDates[0] ?? "") ||
+      byName(left, right),
+  );
+  return { repKey: input.repKey, repName: input.repName, covered, notCovered };
+}
 
 export type KpisBoard = {
   month: string;
@@ -364,6 +511,11 @@ export type KpisBoard = {
     gradedDoctors: number;
     ungradedDoctors: number;
   } | null;
+  /**
+   * The Coverage tab's two doctor lists for the ONE rep it has open. Null when no rep is open, and
+   * always null when the board was built for any other tab.
+   */
+  coverageDetail?: KpiCoverageDetail | null;
 };
 
 /** One place on a podium. `value` is already the percentage the caption prints. */
@@ -622,6 +774,8 @@ export function joinKpiRows(input: {
 
   for (const list of docLists) {
     const row = claim(list.agentCrmId, canonicalHrIdKey(list.agentHrId), list.repName);
+    // The builder's OWN key, the one stamped on every doctor row it counted this rep's coverage from.
+    row.coverageRepKey = list.repKey;
     row.plannedDoctors = list.plannedDoctors;
     row.visitedDoctors = list.visitedDoctors;
     row.missedDoctors = list.missedDoctors;
@@ -661,6 +815,9 @@ export function joinKpiRows(input: {
     row.pmAttainmentPct = attainmentPct(row, row.pmVerified, pmTarget);
     row.pharmacyAttainmentPct = attainmentPct(row, row.pharmacyVerified, pharmacyTarget);
     row.meetsCoverageFloor = row.hasMeasurablePlan ? row.coveragePct >= COVERAGE_TARGET_FLOOR_PCT : null;
+    // A rep with no doctor-list row (visits only) still gets a key: under the Phoenix rules his plan
+    // is read from another source, and his list opens by it all the same.
+    row.coverageRepKey ??= kpiCoverageRepKey(row);
   }
 
   // Scope is applied AFTER the join, never before: a rep whose hr id appears on only one of the two
@@ -763,6 +920,11 @@ export async function getKpisBoard(input: {
   todayIso: string;
   /** The advanced filters from the URL. They can only ever NARROW what the scope gate allowed. */
   filters?: KpiFilterState;
+  /**
+   * Set by the Coverage tab alone: build `coverageDetail` for the rep the URL's `rep` names (see
+   * {@link selectKpiCoverageRep}). Every other tab leaves it out and pays nothing for it.
+   */
+  coverageDoctors?: { rep: string | null } | null;
 }): Promise<KpisBoard> {
   const range = repsPlansRange(input.month, input.todayIso, input.period);
   const scope = await getDoctorCoverageScope(input.access);
@@ -822,6 +984,7 @@ export async function getKpisBoard(input: {
     kpiRules: "legacy",
     kpiRulesNote: null,
     phoenixTotals: null,
+    coverageDetail: null,
   };
 
   if (scope.kind === "none") {
@@ -841,6 +1004,9 @@ export async function getKpisBoard(input: {
     getRepDoctorLists({
       month: input.month,
       window: { from: range.dateFrom, to: range.windowEnd },
+      // The Coverage tab picks one rep's doctors out of this list, so it must not be cut at the
+      // drill-down cap. The rows are in memory either way; only the chosen rep's leave this file.
+      uncapped: Boolean(input.coverageDoctors),
     }),
     getEmployeeDirectoryRows({ includeInactive: true }),
     // The window's OWN end, not today. callRate.workingDays counts the days worked so far; this
@@ -907,6 +1073,23 @@ export async function getKpisBoard(input: {
   // the URL by hand.
   const facets = buildKpiFacets(scopedReps);
   const reps = applyKpiFilters(scopedReps, filters);
+
+  // THE COVERAGE TAB'S DOCTOR LISTS, for one rep. Chosen from `reps` — after the scope gate AND the
+  // filters — so a URL can only ever open a rep who is already on screen. Read from whichever rules
+  // scored his row, so the two lists always add up to the Covered and Not reached numbers beside them.
+  const coverageRep = input.coverageDoctors ? selectKpiCoverageRep(reps, input.coverageDoctors.rep) : null;
+  const coverageRepKey = coverageRep?.coverageRepKey ?? null;
+  const coverageDetail =
+    coverageRep && coverageRepKey
+      ? buildKpiCoverageDetail({
+          repKey: coverageRepKey,
+          repName: coverageRep.repName,
+          doctors: phoenix
+            ? phoenix.coverageDoctorsFor(coverageRep.agentHrId)
+            : legacyKpiCoverageDoctors(docList.doctors, coverageRepKey),
+          todayIso: input.todayIso,
+        })
+      : null;
 
   // THE TWO REPORTS RIDE THE SAME POPULATION as the four tabs beside them: the same scope object
   // (never re-resolved — see rep-kpi-reports-data.ts), then narrowed to exactly the rows that
@@ -1006,6 +1189,7 @@ export async function getKpisBoard(input: {
     isCurrentMonth: docList.isCurrentMonth,
     scopeLabel: scope.kind === "company" ? scope.label : scope.label,
     reps,
+    coverageDetail,
     kpiReports,
     scopedReps: scopedReps.length,
     facets,

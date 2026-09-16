@@ -135,6 +135,27 @@ export type PhoenixPlanEntry = {
   planDate: string | null;
   grade: string | null;
   speciality: string | null;
+  /** The doctor's name as the plan carries it. Read only by the Coverage tab's doctor list. */
+  contactName?: string | null;
+};
+
+/**
+ * One doctor in rule 5's population — planned in the period, pharmacies and the catch-all out — as
+ * the Coverage tab lists him. Built in the same pass as `PhoenixRepKpis.coverage`, from the same
+ * two maps, so the list and the count beside it cannot disagree.
+ */
+export type PhoenixCoverageDoctor = {
+  contactCrmId: number;
+  /** Null when no plan entry carried a name. */
+  name: string | null;
+  speciality: string | null;
+  grade: string | null;
+  /** Regular visits in the period on his AM or PM list — the visits that decide coverage. */
+  visits: number;
+  /** The latest of those visits, YYYY-MM-DD. Null exactly when `visits` is 0. */
+  lastVisitDate: string | null;
+  /** Every day the plan booked him inside the period, earliest first. */
+  planDates: string[];
 };
 
 export type PhoenixVisit = {
@@ -214,14 +235,8 @@ export function phoenixVisitLane(
   return lists.has("AM") ? "am" : "pm";
 }
 
-/**
- * Every Phoenix KPI for ONE rep.
- *
- * `visits` must cover the month from its first day to `window.dateTo` (the follow-up needs the
- * month so far); `planEntries` must cover the whole month (frequency is a monthly norm). Visits are
- * expected already collapsed for duplicate submissions, exactly as the old board receives them.
- */
-export function computePhoenixRepKpis(input: {
+/** Everything one rep is scored from. See {@link computePhoenixRepKpis} for what each list must cover. */
+export type PhoenixRepInput = {
   window: { dateFrom: string; dateTo: string; windowEnd: string };
   month: { start: string; end: string };
   /** Cairo today. */
@@ -233,7 +248,53 @@ export function computePhoenixRepKpis(input: {
   planEntries: readonly PhoenixPlanEntry[];
   visits: readonly PhoenixVisit[];
   standards?: RepKpiStandards;
-}): PhoenixRepKpis {
+};
+
+/**
+ * Every Phoenix KPI for ONE rep.
+ *
+ * `visits` must cover the month from its first day to `window.dateTo` (the follow-up needs the
+ * month so far); `planEntries` must cover the whole month (frequency is a monthly norm). Visits are
+ * expected already collapsed for duplicate submissions, exactly as the old board receives them.
+ */
+export function computePhoenixRepKpis(input: PhoenixRepInput): PhoenixRepKpis {
+  return scorePhoenixRep(input).kpis;
+}
+
+/**
+ * Rule 5's doctors for ONE rep, one row each: who was planned in the period, how often and when he
+ * was last seen in it, and the days the plan booked him.
+ *
+ * The SAME computation as {@link computePhoenixRepKpis}, not a second reading of the rule: a doctor
+ * here is covered exactly when he counts toward `coverage.visited` there, so the Coverage tab's list
+ * always adds up to the numbers printed beside it.
+ */
+export function computePhoenixCoverageDoctors(input: PhoenixRepInput): PhoenixCoverageDoctor[] {
+  const { plannedInWindow, windowVisitsByContact, windowLastVisitByContact, panelGrade } = scorePhoenixRep(input);
+  return [...plannedInWindow].map(([contactCrmId, doctor]) => {
+    const visits = windowVisitsByContact.get(contactCrmId) ?? 0;
+    return {
+      contactCrmId,
+      name: doctor.name,
+      speciality: doctor.speciality,
+      grade: panelGrade.get(contactCrmId) ?? doctor.grade,
+      visits,
+      lastVisitDate: visits > 0 ? (windowLastVisitByContact.get(contactCrmId) ?? null) : null,
+      planDates: [...doctor.planDates].sort(),
+    };
+  });
+}
+
+/** A doctor planned in the period, while the plan entries are being read. */
+type PlannedDoctor = { name: string | null; speciality: string | null; grade: string | null; planDates: Set<string> };
+
+function scorePhoenixRep(input: PhoenixRepInput): {
+  kpis: PhoenixRepKpis;
+  plannedInWindow: ReadonlyMap<number, PlannedDoctor>;
+  windowVisitsByContact: ReadonlyMap<number, number>;
+  windowLastVisitByContact: ReadonlyMap<number, string>;
+  panelGrade: ReadonlyMap<number, string | null>;
+} {
   const { window, month, holidays } = input;
   const standards = input.standards ?? DEFAULT_REP_KPI_STANDARDS;
 
@@ -254,6 +315,8 @@ export function computePhoenixRepKpis(input: {
   const monthSoFar = { am: 0, pm: 0 };
   /** Regular visits per contact: in the window (coverage) and in the month so far (frequency). */
   const windowVisitsByContact = new Map<number, number>();
+  /** The latest of each contact's window visits — the date the Coverage tab prints. */
+  const windowLastVisitByContact = new Map<number, string>();
   const monthVisitsByContact = new Map<number, number>();
 
   for (const visit of input.visits) {
@@ -273,7 +336,11 @@ export function computePhoenixRepKpis(input: {
     if (lane === "am" || lane === "pm") {
       if (visit.contact_crm_id != null) {
         monthVisitsByContact.set(visit.contact_crm_id, (monthVisitsByContact.get(visit.contact_crm_id) ?? 0) + 1);
-        if (inWindow) windowVisitsByContact.set(visit.contact_crm_id, (windowVisitsByContact.get(visit.contact_crm_id) ?? 0) + 1);
+        if (inWindow) {
+          windowVisitsByContact.set(visit.contact_crm_id, (windowVisitsByContact.get(visit.contact_crm_id) ?? 0) + 1);
+          const latest = windowLastVisitByContact.get(visit.contact_crm_id);
+          if (!latest || day > latest) windowLastVisitByContact.set(visit.contact_crm_id, day);
+        }
       }
       if (countable && day < input.today) monthSoFar[lane] += 1;
     }
@@ -283,7 +350,7 @@ export function computePhoenixRepKpis(input: {
   // Coverage (rule 5) — the doctors planned in the period, pharmacies out.
   const isPharmacyContact = (contact: number, speciality: string | null): boolean =>
     listsByContact.get(contact)?.has("Pharmacy") === true || isPharmacySpeciality(speciality);
-  const plannedInWindow = new Set<number>();
+  const plannedInWindow = new Map<number, PlannedDoctor>();
   const plannedInMonth = new Map<number, string | null>();
   for (const entry of input.planEntries) {
     const contact = entry.contactCrmId;
@@ -291,11 +358,18 @@ export function computePhoenixRepKpis(input: {
     if (contact == null || contact === CATCH_ALL_CONTACT_CRM_ID || !day) continue;
     if (day < month.start || day > month.end || isPharmacyContact(contact, entry.speciality)) continue;
     if (!plannedInMonth.has(contact) || plannedInMonth.get(contact) == null) plannedInMonth.set(contact, entry.grade);
-    if (day >= window.dateFrom && day <= window.windowEnd) plannedInWindow.add(contact);
+    if (day >= window.dateFrom && day <= window.windowEnd) {
+      const doctor = plannedInWindow.get(contact) ?? { name: null, speciality: null, grade: null, planDates: new Set<string>() };
+      doctor.name ??= entry.contactName?.trim() || null;
+      doctor.speciality ??= entry.speciality;
+      doctor.grade ??= entry.grade;
+      doctor.planDates.add(day);
+      plannedInWindow.set(contact, doctor);
+    }
   }
   let visited = 0;
   let plannedOffList = 0;
-  for (const contact of plannedInWindow) {
+  for (const contact of plannedInWindow.keys()) {
     if ((windowVisitsByContact.get(contact) ?? 0) > 0) visited += 1;
     if (!listsByContact.has(contact)) plannedOffList += 1;
   }
@@ -333,7 +407,7 @@ export function computePhoenixRepKpis(input: {
     };
   }
 
-  return {
+  const kpis: PhoenixRepKpis = {
     workingDays,
     am: slice(counts.am, workingDays, amTarget),
     pm: slice(counts.pm, workingDays, pmTarget),
@@ -349,4 +423,5 @@ export function computePhoenixRepKpis(input: {
     frequency: { judged, met, below, ungraded, pct: judged > 0 ? Math.round((met / judged) * 100) : null },
     followUp,
   };
+  return { kpis, plannedInWindow, windowVisitsByContact, windowLastVisitByContact, panelGrade };
 }
