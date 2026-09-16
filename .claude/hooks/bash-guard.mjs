@@ -242,6 +242,10 @@ try {
       if (!linked) continue;
 
       const advice = pnpmAdvice(withoutHeredocBodies(cmd), root || dir);
+      // The placeholder below says `<file>`, never `<script>`: Semgrep's
+      // unknown-value-with-script-tag rule reads any string holding "<script" as an HTML tag and
+      // flags every value passed beside it as XSS — five false findings on 2026-09-16. This text
+      // reaches the agent as JSON on stdout, never a web page.
       deny(
         'pnpm is refused inside a linked worktree (AGENTS.md §5). node_modules here is a JUNCTION ' +
           "to the primary checkout's, so pnpm sees the lockfile as moved and its deps check offers " +
@@ -254,7 +258,7 @@ try {
             : advice?.note
               ? `${advice.note}\n`
               : 'No node-direct equivalent is recorded for that one — invoke the script itself ' +
-                '(`node scripts/<script>`, see package.json), or run it from the primary checkout.\n') +
+                '(`node scripts/<file>`, see package.json), or run it from the primary checkout.\n') +
           'Invoke node directly here; pnpm belongs in the primary folder only.',
       );
     }
