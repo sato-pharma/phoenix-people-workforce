@@ -7,6 +7,10 @@ import {
   loadClosingPerformanceReview,
   PERFORMANCE_REVIEW_MONTHS,
 } from "@/lib/sales/closing-performance-review";
+import {
+  canOpenClosingPerformanceReview,
+  CLOSING_PERFORMANCE_REVIEW_AUDIENCE_MESSAGE,
+} from "@/lib/sales/closing-performance-review-access";
 import { buildClosingPerformanceReviewWorkbook } from "@/lib/sales/closing-performance-review-export";
 import { parseCodeList, parsePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 
@@ -34,10 +38,19 @@ function slug(value: string | null | undefined): string {
  * The selection travels because the owner's rule is that an export matches the screen. A workbook
  * that quietly covered every region while the reader was looking at Delta, or one month while the
  * screen totalled three, would be different data wearing the same title.
+ *
+ * It admits exactly who the page admits, asked through the same function. The permission is not the
+ * boundary here: `sales:export` reaches down to Medical Rep, and the review reads every line, region
+ * and rep company-wide for whatever month the body names, published or not.
  */
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    if (!canOpenClosingPerformanceReview(access)) {
+      return Response.json({ error: CLOSING_PERFORMANCE_REVIEW_AUDIENCE_MESSAGE }, { status: 403 });
+    }
+    // The page loads its review only with sales:import, so the file needs that key too, and its own.
+    await assertPermission(access, "sales", "import");
     await assertPermission(access, "sales", "export");
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
