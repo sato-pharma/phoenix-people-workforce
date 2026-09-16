@@ -150,8 +150,14 @@ import path from "node:path";
  * (direct-order-detail-primitives.tsx). A returned order's open rung now reads "Returned — waiting
  * for <requester>", which a four-segment bar on a phone cut mid-name. `truncate` -> `break-words`,
  * the same trade as the batch-file columns above.
+ *
+ * 202 -> 201 on 2026-09-16: the admin global search's placeholder (topbar.tsx), outside `main`, so
+ * a sweep over `main` never counted it. "Search employees, reports, pages..." needs 215px; the box
+ * gave it 195px at 768 and 150px at 1024, and only widens past it at xl, so on every admin page
+ * between those widths it ended in an ellipsis. `truncate` -> `leading-tight`: it wraps to two
+ * lines, which fit inside the h-10 box. Pinned by tests/shell-chrome-overflows.test.ts.
  */
-const BASELINE = 202;
+const BASELINE = 201;
 
 const ROOTS = ["app", "src"];
 
@@ -245,8 +251,9 @@ export function runNoEllipsisTruncationRatchetTests() {
   assert.ok(
     count <= BASELINE,
     `${count - BASELINE} new UI truncation site(s) were added — the count went ${BASELINE} -> ${count}.\n` +
-      `The owner's rule is that text is never cut off with an ellipsis and never wraps. Give the ` +
-      `text room instead: widen the column, let the table scroll horizontally, or shorten the label.\n` +
+      `The owner's rule is that text is never cut off with an ellipsis, and a page never scrolls ` +
+      `sideways either: where the two collide, wrapping wins. Let the text wrap (break-words), give ` +
+      `it room by merging columns, or shorten the label.\n` +
       `Sites now present:\n  ${sites.slice(-12).join("\n  ")}`,
   );
 
