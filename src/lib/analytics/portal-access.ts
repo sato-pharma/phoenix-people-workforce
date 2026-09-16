@@ -15,7 +15,9 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 
 // ── Portal mount (/employee-portals/sales-analytics) ──────────────────────────────────────────
 // Every sales-facing field/manager role gets the 3 core dashboards (Source of Sales, Monthly
-// Closing, Weekly), each scoped to the viewer via resolveAnalyticsViewerScope. Mirrors
+// Closing, Weekly), each scoped to the viewer via resolveAnalyticsViewerScope — except Weekly for a
+// Medical Rep: those pages also need a weekly territory-viewer role (territory-gate.ts), because his
+// weekly screen is his own area's (owner, 2026-09-16). Mirrors
 // showSalesAnalyticsTab in src/lib/employee-portal/navigation.ts exactly (including "Manager" as
 // the legacy alias for District Manager — see access-scope.ts / permissions.ts scopeForRole) —
 // keep both lists in lockstep.
@@ -37,7 +39,8 @@ export function canViewPortalCoreAnalytics(role: PhoenixRole): boolean {
 // The two DETAILED dashboards — Executive Comparison and Cross-Source Reconciliation — are
 // additionally shown to the Regional Manager (region-scoped, per owner: "RM must see detailed
 // sales analytics") and the line-scoped managers. Medical Rep and District Manager get the core
-// three only. CEO / Super Admin / SFE Manager use the /admin analytics tree instead.
+// dashboards only (a Medical Rep two of the three, see above). CEO / Super Admin / SFE Manager use the
+// /admin analytics tree instead.
 const PORTAL_DETAILED_ANALYTICS_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>([
   "Regional Manager",
   "National Sales Manager",

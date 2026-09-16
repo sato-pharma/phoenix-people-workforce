@@ -107,9 +107,10 @@ export type EmployeePortalNavVisibility = {
   // PM/GPM) — NOT Marketing Manager (Head-Office line) or Medical Rep (no line).
   showMonthlyClosingTab?: boolean;
   // Sales Analytics — the portal-native analytics module at /employee-portals/sales-analytics
-  // (Source of Sales + Monthly Closing + Weekly for everyone; + Executive Comparison + Reconciliation
-  // for RM and line managers). Every page enforces sales/weekly_sales read AND the per-viewer
-  // AnalyticsViewerScope server-side; this flag only surfaces the sidebar link.
+  // (Source of Sales + Monthly Closing for everyone, Weekly for everyone but a Medical Rep; + Executive
+  // Comparison + Reconciliation for RM and line managers). Every page enforces sales/weekly_sales read
+  // AND the per-viewer AnalyticsViewerScope server-side (the Weekly pages also the territory gate,
+  // territory-gate.ts); this flag only surfaces the sidebar link.
   showSalesAnalyticsTab?: boolean;
   // Sales vs Target (/employee-portals/sales-vs-target) — Source of Sales + Direct Orders measured
   // against target, from July 2026 onwards. The FIRST sales surface a Medical Rep can open (owner
