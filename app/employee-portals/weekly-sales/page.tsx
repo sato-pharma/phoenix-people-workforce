@@ -7,6 +7,7 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { DashboardSkeleton } from "@/components/employee-portal/skeleton-templates";
 import { PortalWeeklyDashboard } from "@/components/sales/weekly/portal-weekly-dashboard";
+import { PortalWeeklyRepView } from "@/components/sales/weekly/portal-weekly-rep-view";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -19,6 +20,11 @@ import {
   type PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
+import {
+  getPortalWeeklyRepSales,
+  isPortalWeeklyRepRole,
+  type PortalWeeklyRepSales,
+} from "@/lib/sales/weekly/portal-weekly-rep";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
 export const runtime = "nodejs";
@@ -97,6 +103,29 @@ async function PortalWeeklyContent({
   );
 }
 
+/**
+ * A Medical Rep's own screen. His data is narrowed to his own seat on the server
+ * (getPortalWeeklyRepSales); the managers' dashboard, its API and its export still refuse him.
+ */
+async function PortalWeeklyRepContent({ access, month }: { access: AccessContext; month: string | null }) {
+  let payload: PortalWeeklyRepSales | null = null;
+  let loadError: string | null = null;
+  try {
+    payload = await getPortalWeeklyRepSales(access, { month });
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "Failed to load Weekly Sales.";
+  }
+
+  if (payload) return <PortalWeeklyRepView data={payload} />;
+
+  return (
+    <EmployeePortalEmptyState
+      message={loadError ?? "No Weekly Sales data is available for your area yet."}
+      title="Weekly Sales unavailable"
+    />
+  );
+}
+
 export default async function PortalWeeklySalesPage({
   searchParams,
 }: {
@@ -104,12 +133,31 @@ export default async function PortalWeeklySalesPage({
 }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
-  if (!isPortalWeeklyRole(access.role)) {
+  const isRep = isPortalWeeklyRepRole(access.role);
+  if (!isRep && !isPortalWeeklyRole(access.role)) {
     redirect(resolveLandingPathForRole(access.role));
   }
   await assertPermission(access, "sales", "read");
 
-  const filters = parseFilters(await searchParams);
+  const params = await searchParams;
+
+  if (isRep) {
+    const rawMonth = Array.isArray(params.month) ? params.month[0] : params.month;
+    return (
+      <EmployeePortalPageShell
+        badge="Sales Operations"
+        description="Your own area's sales week by week, per product — an early read ahead of the Monthly Closing."
+        errorBoundaryTitle="Weekly Sales unavailable"
+        title="Weekly Sales"
+      >
+        <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={1} />}>
+          <PortalWeeklyRepContent access={access} month={rawMonth?.trim() || null} />
+        </Suspense>
+      </EmployeePortalPageShell>
+    );
+  }
+
+  const filters = parseFilters(params);
 
   return (
     <EmployeePortalPageShell

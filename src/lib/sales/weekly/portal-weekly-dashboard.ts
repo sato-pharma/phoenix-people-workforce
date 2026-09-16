@@ -30,7 +30,11 @@ import type {
   WeeklyRanked,
 } from "@/lib/sales/weekly/types";
 
-/** Roles allowed to open the portal Weekly Sales dashboard. Medical Reps intentionally excluded. */
+/**
+ * Roles allowed to open the portal Weekly Sales dashboard, its API and its export. Medical Reps stay
+ * excluded: the same page gives a rep his own area's screen instead (PORTAL_WEEKLY_REP_ROLES in
+ * portal-weekly-rep.ts), never this territory dashboard.
+ */
 export const PORTAL_WEEKLY_ROLES = [
   "District Manager",
   "Regional Manager",

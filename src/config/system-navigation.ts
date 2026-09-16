@@ -1538,9 +1538,11 @@ const employeePortalNavigationSectionSeeds = [
       // order still need the workspace, and their queue lives in it now that the standalone
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
-      { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Weekly Stock — roles mirror PORTAL_WEEKLY_STOCK_ROLES. Unlike Weekly Sales it INCLUDES Medical Rep
-      // (owner, 2026-09-14), scoped to his own line and region by resolveWeeklyAccessScope.
+      // Weekly Sales — roles mirror PORTAL_WEEKLY_ROLES plus PORTAL_WEEKLY_REP_ROLES. Medical Rep added
+      // 2026-09-16 (owner): the page gives him his own area's weekly sales only (portal-weekly-rep.ts).
+      { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Medical Rep"] },
+      // Weekly Stock — roles mirror PORTAL_WEEKLY_STOCK_ROLES. It includes Medical Rep (owner,
+      // 2026-09-14), scoped to his own line and region by resolveWeeklyAccessScope.
       { href: "/employee-portals/weekly-stock", icon: Package, label: "Weekly Stock", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
