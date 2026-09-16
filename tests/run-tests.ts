@@ -1558,6 +1558,7 @@ import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
+import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -1687,6 +1688,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
+import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5079,6 +5081,10 @@ await runTest(
   runPortalChromeNeverClipsTextTests,
 );
 await runTest(
+  "shell chrome fits outside main (the portal icon rail's nav fits its 58px rail and keeps the active marker inside the clip; the admin search placeholder wraps, never an ellipsis)",
+  runShellChromeOverflowsTests,
+);
+await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
   runAdminFilenameCellsNeverEllipsiseTests,
 );
@@ -5675,6 +5681,11 @@ await runTest(
 await runTest(
   "Monthly Closing details and the scoped export open PUBLISHED months only: a scoped viewer naming an unpublished month is refused in plain words, naming none opens the newest published month, and Super Admin / system, SFE Manager, CEO, Finance Manager and the Marketing Manager keep every validated month",
   runClosingDetailsPublicationGateTests,
+);
+
+await runTest(
+  "Performance Review export admits exactly who its page admits: the page, its reload route and its export all ask one audience check (Super Admin, system scope, SFE Manager) before the rate limit, the body or the company-wide load — sales:export alone reaches down to Medical Rep",
+  runClosingPerformanceReviewExportGateTests,
 );
 
 await runTest(

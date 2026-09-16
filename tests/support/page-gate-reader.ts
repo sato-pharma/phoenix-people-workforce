@@ -335,18 +335,19 @@ const ACCESS_FIELD_INEQUALITY_ALONE = /^access\.[A-Za-z_$][\w$]*\s*!==\s*"[^"]*"
  *     admit. A group is therefore reduced only when EVERY conjunct is an `access.<field> !== "…"`
  *     comparison, and refused whole otherwise.
  *
- * That refusal is not theoretical. Five files write the deny condition with a hoisted boolean:
+ * That refusal is not theoretical. Four files write the deny condition with a hoisted boolean:
  *
  *     const canReadPlans = await canAccess(access, "weekly_plans", "read");
  *     if (!canReadPlans && access.role !== "CEO" && access.role !== "Super Admin") redirect(…);
  *
  * — /admin/weekly-plans, /admin/weekly-plans/calendar and /employee-portals/plans on `canReadPlans`,
- * /sales/monthly-closing and its performance-review on `isSystemAdministratorViewer`. Reducing those
- * to {CEO, Super Admin} and {SFE Manager} would be WRONG, not merely conservative: everyone holding
- * weekly_plans:read gets in, and so does Super Admin. hr-seat-route-coherence.test.ts already records
- * /hr/admin/weekly-plans/calendar as unparseable for exactly this reason — *"an OR chain … which is
- * why it cannot be parsed"* — and both HR seats hold weekly_plans:read, so a naive admit list would
- * have made that test accuse two rows that work.
+ * /sales/monthly-closing on `isSystemAdministratorViewer`. Reducing those to {CEO, Super Admin} and
+ * {SFE Manager, CEO} would be WRONG, not merely conservative: everyone holding weekly_plans:read gets
+ * in, and so does Super Admin. (/sales/monthly-closing/performance-review was the fifth until
+ * 2026-09-16; its gate is now `canOpenClosingPerformanceReview`, reported as an unreadable predicate.)
+ * hr-seat-route-coherence.test.ts already records /hr/admin/weekly-plans/calendar as unparseable for
+ * exactly this reason — *"an OR chain … which is why it cannot be parsed"* — and both HR seats hold
+ * weekly_plans:read, so a naive admit list would have made that test accuse two rows that work.
  *
  * ## What the four reducible forms measure to, checked one by one on 2026-09-05
  *
