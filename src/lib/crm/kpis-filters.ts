@@ -523,8 +523,9 @@ export function kpiFiltersToParams(filters: KpiFilterState): Record<string, stri
  *
  * Two builders would be two answers the first time either changed, and the symptom is specific and
  * nasty: a sort link that quietly drops the area filter puts a WIDER set of reps on screen than the
- * manager asked for, under a heading that still says the filter is on. Month and tab are the only
- * things any caller may set positionally; everything else rides in the filter state.
+ * manager asked for, under a heading that still says the filter is on. Month, period, tab and the
+ * open rep are the only things any caller may set positionally; everything else rides in the filter
+ * state.
  */
 export function buildKpisQuery(input: {
   month: string;
@@ -533,11 +534,18 @@ export function buildKpisQuery(input: {
   /** The active tab id. `summary` is the default and is omitted. */
   tab: string;
   filters: KpiFilterState;
+  /**
+   * The rep whose doctor list the Coverage tab has open (the row's `coverageRepKey`). Written ONLY
+   * on that tab, so moving to another tab closes the list instead of carrying a stale `rep` along.
+   * The server re-checks it against the reps the viewer may see, so the URL can never widen scope.
+   */
+  rep?: string | null;
 }): string {
   const query = new URLSearchParams();
   query.set("month", input.month);
   if (input.period && input.period !== "month") query.set("period", input.period);
   if (input.tab && input.tab !== "summary") query.set("tab", input.tab);
+  if (input.rep && input.tab === "coverage") query.set("rep", input.rep);
   for (const [key, value] of Object.entries(kpiFiltersToParams(input.filters))) query.set(key, value);
   return query.toString();
 }

@@ -64,7 +64,16 @@ export default async function AdminKpisPage({ searchParams }: PageProps) {
   let board: Awaited<ReturnType<typeof getKpisBoard>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getKpisBoard({ access, month, period: one(params?.period), todayIso: today, filters });
+    board = await getKpisBoard({
+      access,
+      month,
+      period: one(params?.period),
+      todayIso: today,
+      filters,
+      // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
+      // already on this viewer's board, and ignores it otherwise.
+      coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
+    });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "KPI data is unavailable.";
   }
