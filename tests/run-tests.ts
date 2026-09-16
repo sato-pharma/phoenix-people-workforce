@@ -1026,6 +1026,7 @@ import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
 import { runAnalyticsMultiSelectTimeFiltersTests } from "./analytics-multi-select-time-filters.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
+import { runApprovalsHubEmployeeContextGuardTests } from "./approvals-hub-employee-context-guard.test.ts";
 import { runStaleDeployRecoveryTests } from "./stale-deploy-recovery.test.ts";
 import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
@@ -3529,6 +3530,7 @@ await runTest("analytics dual-mode routing (pages moved, bounce removed, permiss
 await runTest("analytics multi-select time filters (period/channel/week/year)", runAnalyticsMultiSelectTimeFiltersTests);
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
+await runTest("approvals hub employee context (a 403 body never becomes context state, so HR Operations does not crash the hub on an employee she may approve for but not read)", runApprovalsHubEmployeeContextGuardTests);
 await runTest("stale-deploy chunk-error recovery", runStaleDeployRecoveryTests);
 await runTest("payroll copilot (assemble + flags + validator + parser)", runPayrollCopilotTests);
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
