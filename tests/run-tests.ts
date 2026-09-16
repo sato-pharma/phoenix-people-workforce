@@ -1674,6 +1674,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5640,6 +5641,11 @@ await runTest(
 await runTest(
   "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "Monthly Closing details and the scoped export open PUBLISHED months only: a scoped viewer naming an unpublished month is refused in plain words, naming none opens the newest published month, and Super Admin / system, SFE Manager, CEO, Finance Manager and the Marketing Manager keep every validated month",
+  runClosingDetailsPublicationGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
