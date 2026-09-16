@@ -16,6 +16,11 @@ import {
   OFFICIAL_LINE_VALUES,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import {
+  MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
+  resolveMedicalRepSosAreaCodes,
+} from "@/lib/sales/medical-rep-area-scope";
+import type { ComparisonScope } from "@/lib/sales/monthly-closing-comparison";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
 import {
   type MonthlyClosingCell,
@@ -32,9 +37,11 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // Employee-portal Monthly Closing.
 //
 // A read-only, published-gated view of the monthly closing matrix for sales
-// managers and product managers. The viewer NEVER picks a line — it is resolved
-// from their HR_ID. Two scoping tiers:
+// managers, product managers and medical reps. The viewer NEVER picks a line — it
+// is resolved from their HR_ID. Three scoping tiers:
 //
+//  • own area   — Medical Rep: their line, narrowed to their OWN area(s) and nothing
+//                 else. Never their region: that holds every sibling rep's area.
 //  • territory  — District / Regional Manager: their line, narrowed to their own
 //                 region (they only see their scope). National Sales Manager is
 //                 line-scoped and sees the whole line.
@@ -52,9 +59,20 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Roles that can open the portal Monthly Closing tab. Medical Rep stays excluded — no line.
+ * Roles that can open the portal Monthly Closing tab.
  */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
+  // Medical Rep added 2026-09-16 (owner: "show monthly closing his scope in medical reps accounts").
+  // They were left out as having "no line", which is no longer true: resolveSalesAccessScope resolves a
+  // rep's own line, and their pharmacy action lists already read published closings through it.
+  //
+  // What they must NOT inherit is the bound that engine gives their SELF scope — their REGION, which holds
+  // every sibling rep's area, and a sibling is at their own rank. So resolvePortalClosingScope narrows
+  // them to their OWN area(s) with no region fallback (an empty region set, which applyRegionScope
+  // honours as "no rows"), and loadMonthlyClosingDetails applies the same bound to the Details tab
+  // and to their export. A rep with no area on file sees a message, never their region instead.
+  "Medical Rep",
+
   "District Manager",
   // "Manager" is the legacy alias for District Manager (see scopeForRole in permissions.ts and
   // PORTAL_CORE_ANALYTICS_ROLES in analytics/portal-access.ts). A DM whose session role resolves to
@@ -108,6 +126,9 @@ export type PortalClosingScope = {
    * matrix to those regions (District/Regional Manager); null means every region (National Sales
    * Manager, company roles, or a viewer whose own region could not be resolved — fail-open to the
    * whole line, never a blank sheet).
+   *
+   * ALWAYS an EMPTY set for a Medical Rep: their bound is `areaCodes` alone, and an empty region set is
+   * what stops applyRegionScope widening them to their region when their areas match nothing.
    */
   regionNames: Set<string> | null;
   /**
@@ -115,8 +136,16 @@ export type PortalClosingScope = {
    * a District / Regional Manager whose seat resolved, and then the AUTHORITATIVE bound — it takes
    * precedence over `regionNames` because an area's operational owner can differ from its geography.
    * null for every other role and whenever the seat map couldn't answer (region bound then stands).
+   *
+   * For a Medical Rep: their OWN area codes (see medical-rep-area-scope.ts), and the only bound they have.
+   * Empty when their area is not on file.
    */
   areaCodes: Set<string> | null;
+  /**
+   * True only for a Medical Rep whose own area could not be resolved. Their bounds are then both empty,
+   * so every loader shows them nothing — the page says why rather than rendering a blank closing.
+   */
+  areaUnresolved: boolean;
   /**
    * EVERY product line this viewer may open, in display order — normally just their own, but a
    * per-user `line_scope_override` (a Product Manager covering both Pedia and Anti Infective) or a
@@ -202,9 +231,11 @@ export async function resolvePortalClosingScope(
   // (null = the whole line). A region-scoped viewer with NO geography at all — no region label and
   // no seat areas — comes back as an EMPTY set, which applyRegionScope honours as "no rows" rather
   // than widening to the line (an empty set is truthy, so it must be checked explicitly).
-  const [line, salesScope] = await Promise.all([
+  const isMedicalRep = access.role === "Medical Rep";
+  const [line, salesScope, repAreaCodes] = await Promise.all([
     resolveEmployeeLineName(access),
     resolveSalesAccessScope(access),
+    isMedicalRep ? resolveMedicalRepSosAreaCodes(access) : Promise.resolve(null),
   ]);
   const regionNames = salesScope.allowedRegionNames;
   // A District / Regional Manager's real geography is their seat's areas, which can sit outside their
@@ -252,6 +283,12 @@ export async function resolvePortalClosingScope(
     allowedLines[0] ??
     null;
 
+  if (isMedicalRep) {
+    // 🔴 THEIR OWN AREA, NEVER THEIR REGION — both engine bounds above are replaced, not narrowed. See
+    // medicalRepClosingGeography.
+    return { line: defaultLine, allowedLines, productCodes: null, ...medicalRepClosingGeography(repAreaCodes) };
+  }
+
   if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
     const hrKey = canonicalHrIdKey(
       resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
@@ -264,12 +301,50 @@ export async function resolvePortalClosingScope(
       productCodes: productCodes.size > 0 ? productCodes : null,
       regionNames,
       areaCodes,
+      areaUnresolved: false,
     };
   }
 
   // Territory roles: DM/RM are narrowed to their own areas (seat map) or, failing that, their own
   // region; NSM is line-scoped so both bounds are null ⇒ the whole line.
-  return { line: defaultLine, allowedLines, productCodes: null, regionNames, areaCodes };
+  return { line: defaultLine, allowedLines, productCodes: null, regionNames, areaCodes, areaUnresolved: false };
+}
+
+/**
+ * A Medical Rep's geography bound for the portal closing, from their own area codes
+ * (resolveMedicalRepSosAreaCodes; null = no area on file). Pure, so the bound itself is testable.
+ *
+ * 🔴 THEIR OWN AREA, NEVER THEIR REGION. The sales engine hands a rep's SELF scope their region label, and
+ * a region holds every sibling rep's area — the same rank as them, which scope never reaches. So the
+ * region set is EMPTIED rather than kept: applyRegionScope honours an empty set as "no rows" once their
+ * areas match nothing, instead of falling back to the region or to the whole line. Unresolved ⇒ both
+ * bounds empty ⇒ nothing, and `areaUnresolved` lets the page say why.
+ */
+export function medicalRepClosingGeography(
+  repAreaCodes: readonly string[] | null,
+): Pick<PortalClosingScope, "regionNames" | "areaCodes" | "areaUnresolved"> {
+  const areaCodes = new Set((repAreaCodes ?? []).map((code) => code.trim().toUpperCase()).filter(Boolean));
+  return { regionNames: new Set<string>(), areaCodes, areaUnresolved: areaCodes.size === 0 };
+}
+
+/**
+ * The scope a Medical Rep's Export XLSX hands its comparison sheets (Distributor Comparison, Rankings
+ * & Mix, Gaps & White-Space, Summary & Insights and the hidden Calc sheet). Null = no area on file,
+ * and the export refuses rather than build anything.
+ *
+ * 🔴 A REP'S FILE ONLY — the owner's decision, 2026-09-16, asked because the old export is frozen.
+ * Those sheets measure white space against MASTER lists of every area and brick in the company, so
+ * with no scope a rep's file named every other area in the country — the sibling reps' areas among
+ * them — as "zero sales". The leaves are already the rep's own rows, booked by closingAreaOf exactly
+ * as scopeComparisonInput matches them, so this trims the masters and drops none of the rep's sales.
+ * Every OTHER viewer still passes no scope, and their workbook stays byte-for-byte what it was.
+ *
+ * Unresolved is null, never `{ areaCodes: [] }`: scopeComparisonInput reads an empty list as "no
+ * filter" and would fall open to the whole country.
+ */
+export function medicalRepComparisonScope(repAreaCodes: readonly string[] | null): ComparisonScope | null {
+  const { areaCodes, areaUnresolved } = medicalRepClosingGeography(repAreaCodes);
+  return areaUnresolved ? null : { areaCodes: [...(areaCodes ?? [])] };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -523,6 +598,10 @@ export function scopeMatrixToAreaCodes(
  * Collapsing the two is what previously turned the engine's fail-CLOSED empty set straight back into
  * the whole line: an empty Set is truthy, so it cleared the null guard, narrowed to zero regions,
  * and then hit the fallback below.
+ *
+ * A Medical Rep arrives with their own area codes and an EMPTY region set (resolvePortalClosingScope).
+ * That is what keeps the rep inside their areas: when those match no row the empty set answers "no rows",
+ * where their region label would have handed them every sibling rep's area.
  */
 export function applyRegionScope(
   matrix: MonthlyClosingMatrix,
@@ -559,6 +638,11 @@ export type PortalClosingResult = {
   selectedPeriod: string | null;
   /** True when the viewer has a line but nothing has been published for it yet. */
   awaitingPublish: boolean;
+  /**
+   * Set only when the viewer's own scope cannot be resolved — today a Medical Rep with no area on
+   * file. The plain-words reason there is nothing to show; `matrix` is null alongside it.
+   */
+  scopeMessage?: string | null;
   /** Live monthly only: distinct distributors uploaded this period + the fixed expected total (completion bar). */
   distributorsUploaded?: number;
   distributorsExpected?: number;
@@ -583,6 +667,19 @@ export async function loadPortalMonthlyClosing(input: {
   const scope = await resolvePortalClosingScope(input.access);
   if (scope.allowedLines.length === 0) {
     return { matrix: null, line: null, availableLines: [], availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+  // A rep with no area on file: their bounds are empty, so a load would only render an empty closing.
+  // Say why instead — and never reach for their region to fill the gap.
+  if (scope.areaUnresolved) {
+    return {
+      matrix: null,
+      line: scope.line,
+      availableLines: [],
+      availablePeriods: [],
+      selectedPeriod: null,
+      awaitingPublish: false,
+      scopeMessage: MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
+    };
   }
 
   // Publication is per (line, period), so "which lines can this viewer even open" is one read per

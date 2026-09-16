@@ -15,6 +15,7 @@ import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { loadOperationalRegionResolver, loadSplitRegions } from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { evenSplitKey, loadEvenSplitCustomerKeys } from "@/lib/sales/even-split-registry";
+import { resolveMedicalRepSosAreaCodes } from "@/lib/sales/medical-rep-area-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { rowIsInRegionScope, rowMatchesRegionFilter } from "@/lib/sales/sos-region-basis";
@@ -604,6 +605,19 @@ export async function loadMonthlyClosingDetails(
     // having to remember it — the store city split above all. See even-split-registry.ts.
     loadEvenSplitCustomerKeys(),
   ]);
+
+  // 🔴 A MEDICAL REP SEES THEIR OWN AREA, NOT THEIR REGION. The engine reads their SELF scope at region
+  // level, and their region holds every sibling rep's area. So their bound is their own area(s), resolved
+  // exactly as the portal Monthly Closing matrix beside this tab resolves it, and it REPLACES the
+  // region bound below rather than narrowing inside it. No area on file ⇒ out of scope, never the
+  // region. Checked before the empty-month answer so a rep with no area never reads as "no data".
+  let repClosingAreaCodes: Set<string> | null = null;
+  if (access.role === "Medical Rep") {
+    const repAreaCodes = await resolveMedicalRepSosAreaCodes(access, { references });
+    if (!repAreaCodes) return empty(true);
+    repClosingAreaCodes = new Set(repAreaCodes);
+  }
+
   if (batchIds.length === 0) return empty(false);
 
   const rawRows = await readImportRows(batchIds, line);
@@ -783,6 +797,7 @@ export async function loadMonthlyClosingDetails(
     {
       allowedRegionCodes,
       allowedAreaCodes: scope.allowedAreaCodes,
+      allowedClosingAreaCodes: repClosingAreaCodes,
       allowedProductCodes: scope.allowedProductCodes,
       dropConfidential: !confidentialIncluded,
     },
@@ -968,13 +983,23 @@ export function applyDetailScope(
      * other areas. Empty set = fail closed, same convention as the region bound.
      */
     allowedAreaCodes?: Set<string> | null;
+    /**
+     * A Medical Rep's OWN area bound, matched on the CLOSING area (`closingAreaOf`) — the area the
+     * Closing Matrix books the row in — so their Details rows are exactly the ones behind their own matrix
+     * row, including a wholesaler share the city split credits to them. When present it REPLACES both
+     * bounds above: their region would add every sibling rep's area. Empty set = fail closed.
+     */
+    allowedClosingAreaCodes?: Set<string> | null;
     allowedProductCodes: Set<string> | null;
     dropConfidential: boolean;
   },
 ): ClosingDetailRow[] {
   let out = rows;
   if (scope.dropConfidential) out = out.filter((row) => !row.isConfidential);
-  if (scope.allowedAreaCodes) {
+  if (scope.allowedClosingAreaCodes) {
+    const allowed = new Set([...scope.allowedClosingAreaCodes].map((code) => code.trim().toUpperCase()));
+    out = out.filter((row) => allowed.has(closingAreaOf(row)));
+  } else if (scope.allowedAreaCodes) {
     const allowed = scope.allowedAreaCodes;
     out = out.filter((row) => allowed.has(row.areaCode.trim().toUpperCase()));
   } else if (scope.allowedRegionCodes) {

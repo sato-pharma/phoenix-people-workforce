@@ -500,9 +500,10 @@ export function runEmployeePortalNavigationTests() {
 
   // Monthly Closing -- portal render of /sales/monthly-closing, gated by PORTAL_CLOSING_ROLES
   // (monthly-closing-portal.ts). Every line-owning field-sales management role sees it, plus the
-  // Marketing Manager (owner, 2026-08-12 -- her three oversight lines); Medical Rep (no line) does
-  // not. The layout/registry/catalog all gate the tab on showMonthlyClosingTab, so this flag is the
-  // single sidebar switch for the module.
+  // Marketing Manager (owner, 2026-08-12 -- her three oversight lines) and the Medical Rep (owner,
+  // 2026-09-16 -- their own area only; the bound is server-side, see
+  // tests/medical-rep-monthly-closing.test.ts). The layout/registry/catalog all gate the tab on
+  // showMonthlyClosingTab, so this flag is the single sidebar switch for the module.
   assert.equal(districtManager.showMonthlyClosingTab, true, "District Manager should see Monthly Closing");
   assert.equal(regionalManager.showMonthlyClosingTab, true, "Regional Manager should see Monthly Closing");
   assert.equal(nationalSalesManager.showMonthlyClosingTab, true, "National Sales Manager should see Monthly Closing");
@@ -514,7 +515,9 @@ export function runEmployeePortalNavigationTests() {
     "Marketing Manager should see Monthly Closing -- her tab is the portal answer to the admin " +
       "/sales/monthly-closing URL, which redirects her as a portal-navigation role",
   );
-  assert.equal(medicalRep.showMonthlyClosingTab, false, "Medical Rep should NOT see Monthly Closing (no product line to resolve)");
+  assert.equal(medicalRep.showMonthlyClosingTab, true, "Medical Rep should see Monthly Closing (owner, 2026-09-16) -- scoped server-side to their own area");
+  assert.equal(plainEmployee.showMonthlyClosingTab, false, "A plain Employee has no closing to see");
+  assert.equal(trainingManager.showMonthlyClosingTab, false, "Training Manager is not a closing role");
   // The legacy "Manager" alias for District Manager must resolve to the same access.
   assert.equal(
     resolveEmployeePortalNavVisibility("Manager").showMonthlyClosingTab,

@@ -103,8 +103,8 @@ export type EmployeePortalNavVisibility = {
   showWeeklyStockTab?: boolean;
   // Monthly Closing — the portal render of the admin /sales/monthly-closing Closing Matrix +
   // Details, published-gated and scoped to the viewer (see loadPortalMonthlyClosing /
-  // canAccessPortalClosing). Shown to the field-sales management roles that own a line (DM/RM/NSM/
-  // PM/GPM) — NOT Marketing Manager (Head-Office line) or Medical Rep (no line).
+  // canAccessPortalClosing). Shown to the field-sales roles that own a line (DM/RM/NSM/PM/GPM), the
+  // Marketing Manager for her oversight lines, and the Medical Rep for their own area(s) only.
   showMonthlyClosingTab?: boolean;
   // Sales Analytics — the portal-native analytics module at /employee-portals/sales-analytics
   // (Source of Sales + Monthly Closing + Weekly for everyone; + Executive Comparison + Reconciliation
@@ -696,10 +696,12 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Marketing Manager",
     // Monthly Closing — mirrors PORTAL_CLOSING_ROLES (monthly-closing-portal.ts), the server-side
     // gate this flag must stay in sync with. isDistrictManager already folds in the legacy "Manager"
-    // alias. Medical Rep is excluded (no resolvable product line). Marketing Manager added
-    // 2026-08-12 (owner) — she opens her three oversight lines here; see PORTAL_CLOSING_ROLES for
-    // why this tab, and not the admin /sales/monthly-closing URL she named, is her door.
+    // alias. Marketing Manager added 2026-08-12 (owner) — she opens her three oversight lines here;
+    // see PORTAL_CLOSING_ROLES for why this tab, and not the admin /sales/monthly-closing URL she
+    // named, is her door. Medical Rep added 2026-09-16 (owner) — their own area(s) only, never their
+    // region; the bound is enforced server-side in resolvePortalClosingScope, not by this flag.
     showMonthlyClosingTab:
+      isMedicalRep ||
       isDistrictManager ||
       isRegionalManager ||
       isNationalSalesManager ||

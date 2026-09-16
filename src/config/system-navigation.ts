@@ -1546,11 +1546,12 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/weekly-stock", icon: Package, label: "Weekly Stock", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
-      // PORTAL_CLOSING_ROLES: no Medical Rep (no line). Marketing Manager added 2026-08-12 (owner)
+      // PORTAL_CLOSING_ROLES. Marketing Manager added 2026-08-12 (owner)
       // — this row IS the "/sales/monthly-closing tab" he asked her to have; that admin URL bounces
       // portal-navigation roles before any permission check, so her door is here. She opens Anti
       // Infective / Pedia / CNS through the line picker and exports the full workbook for each.
-      { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Medical Rep added 2026-09-16 (owner) — scoped to their OWN area(s), never their region.
+      { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Sales Analytics (/employee-portals/sales-analytics) — hidden from every role, owner
       // request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National Sales
       // Manager, Product Manager, Group Product Manager, Marketing Manager. Kept in the catalog

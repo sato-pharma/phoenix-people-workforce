@@ -1,6 +1,11 @@
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { isMainStoresRow } from "@/lib/sales/closing-main-stores";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
-import { maskComparisonLeaves, type SourceMaskViewer } from "@/lib/sales/closing-source-mask";
+import {
+  MASKED_SOURCE_LABEL,
+  maskComparisonLeaves,
+  type SourceMaskViewer,
+} from "@/lib/sales/closing-source-mask";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 // Distributor comparison + insights for the Monthly Closing report. The on-screen matrix
@@ -819,10 +824,17 @@ export function comparisonLeavesFromRows(
     // filtered comparison dropped it from the area the Matrix credits. Identical to `areaCode` on
     // every row in production except a re-booked one.
     const areaCode = closingAreaOf(row);
+    // 🔒 A MAIN STORES ROW IS FILED UNDER THE UNNAMED `—`, where El Qema's own leaves go for every
+    // reader who may not see the name (owner, 2026-09-14: a distributor breakdown keeps the money
+    // and drops the name). Its distributor is blank by design, and a blank code falls between two
+    // chairs here: `distinctDistributors` skips it, so no per-distributor grid carries the money,
+    // while `rollupByDistributor` still lists it as a row with no name. It has no brick and no
+    // client code either, so the two leaves below never see it.
+    const distributorCode = isMainStoresRow(row) ? MASKED_SOURCE_LABEL : row.distributorCode;
 
-    const dpKey = `${row.distributorCode}|${row.regionCode}|${areaCode}|${row.productCode}`;
+    const dpKey = `${distributorCode}|${row.regionCode}|${areaCode}|${row.productCode}`;
     const dp = distProduct.get(dpKey) ?? {
-      areaCode, distributorCode: row.distributorCode, productCode: row.productCode,
+      areaCode, distributorCode, productCode: row.productCode,
       productName: row.productName || row.productCode, regionCode: row.regionCode, units: 0, value: 0,
     };
     dp.units += row.qty;
