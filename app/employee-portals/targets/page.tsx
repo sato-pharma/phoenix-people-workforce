@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { RepTargetsView } from "@/components/sales/rep-targets-view";
 import {
   TargetsWorkspace,
   type DmRollup,
@@ -26,7 +27,13 @@ import {
   rollupAchievementByRegion,
 } from "@/lib/sales/monthly-targets";
 import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
-import { filterAchievementForScope, isPortalTargetsRole, resolvePortalTargetsBound } from "@/lib/sales/portal-targets";
+import {
+  filterAchievementForScope,
+  isPortalRepTargetsRole,
+  isPortalTargetsRole,
+  resolvePortalTargetsBound,
+} from "@/lib/sales/portal-targets";
+import { loadRepTargets } from "@/lib/sales/rep-targets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +47,10 @@ export const maxDuration = 60;
 // Same TargetsWorkspace component as the admin page, with canEdit={false}: no upload, no template,
 // no inline inputs, no Save, no line-wide audit export. Rows are bounded by area code before any
 // rollup runs — see the note on filterAchievementForScope.
+//
+// A MEDICAL REP reaches the same URL (owner, 2026-09-16) and is answered by the branch at the top
+// of the page, before the manager gate: their own targets, bounded to their HR id, in their own view.
+// They must never fall through to the manager path — its bound would hand a rep the whole line.
 
 /**
  * A 13-month window (6 back → current → 6 forward), matching the admin page's picker — including
@@ -64,6 +75,28 @@ export default async function PortalTargetsPage({
 }) {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
+
+  if (isPortalRepTargetsRole(access.role)) {
+    await assertPermission(access, "sales", "read");
+    const { period } = await searchParams;
+    // Not caught: a failed read belongs to the error boundary, exactly as on the rep's Sales vs
+    // Target page — an empty result would tell the rep a published month is still awaiting closing.
+    const repTargets = await loadRepTargets(access, period ?? null);
+    return (
+      <EmployeePortalPageShell
+        badge="Field Performance"
+        description="Your own targets by product and month, and how far you reached them once each month's closing is published."
+        errorBoundaryTitle="Targets unavailable"
+        // The view renders its own command band — the same reason the manager branch below
+        // suppresses the shell's banner.
+        hero={<></>}
+        title="Targets"
+      >
+        <RepTargetsView data={repTargets} basePath="/employee-portals/targets" salesVsTargetHref="/employee-portals/sales-vs-target" />
+      </EmployeePortalPageShell>
+    );
+  }
+
   if (!isPortalTargetsRole(access.role)) redirect(resolveLandingPathForRole(access.role));
   await assertPermission(access, "sales", "read");
 

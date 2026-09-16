@@ -332,7 +332,8 @@ function buildEmployeePortalSections({
         // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
         ...(showTerritoryManagementTab ? [{ href: "/employee-portals/territory-management", label: "Territory Management", icon: Waypoints }] : []),
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away,
-        // so without this twin a DM/RM/NSM had no targets surface at all.
+        // so without this twin a DM/RM/NSM had no targets surface at all. A Medical Rep gets the same
+        // link and is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
       ],
