@@ -28,7 +28,7 @@ import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
+import { canAccessDoctorList, canAccessMyList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
 import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
@@ -60,6 +60,9 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
 
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/overview");
+
+  // A medical rep's door onto this board is My List, which opens their own list (2026-09-16).
+  if (canAccessMyList(access)) redirect("/employee-portals/my-list");
 
   // Unlike the admin page this explains rather than redirects: a portal user who lands here from a
   // stale bookmark should be told the board is for manager seats, not bounced to the dashboard with

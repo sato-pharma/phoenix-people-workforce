@@ -61,6 +61,7 @@ import {
   formatDistance,
   MAX_CONTACTS_PER_SHARED_PHONE,
   metresBetween,
+  possessiveOf,
   type RosterEntry,
 } from "./location-confidence";
 
@@ -237,7 +238,7 @@ export function buildPhoenixInsights(
 
     // 2. THE OWNER'S OWN EXAMPLE — the same full name under another rep, a long way off.
     if (myPin && mine.nameKey.length >= MIN_NAME_KEY && sameName.length <= RARE_NAME_MAX) {
-      const twins: { agrees: string[]; metres: number; repName: string }[] = [];
+      const twins: { agrees: string[]; metres: number; repKey: string; repName: string }[] = [];
       for (const other of sameName) {
         if (other.repKey === row.repKey) continue;
         const otherPin = pins.get(other.contactCrmId);
@@ -255,14 +256,17 @@ export function buildPhoenixInsights(
         // flagged contacts to 319, and every one that survives can state its own reason.
         const agrees = agreementsBetween(mine, other);
         if (agrees.length === 0) continue;
-        twins.push({ agrees, metres, repName });
+        twins.push({ agrees, metres, repKey: other.repKey, repName });
       }
       if (twins.length > 0) {
         const furthest = twins.reduce((best, twin) => (twin.metres > best.metres ? twin : best));
-        const reps = new Set(twins.map((twin) => twin.repName));
+        // Counted by rep KEY, not by name. On My List every partner's name is the same placeholder
+        // (location-confidence.ts, UNNAMED_REP), so a set of names would collapse two reps into one
+        // and tell a rep the name sits on "another rep's list" when it sits on two.
+        const reps = new Set(twins.map((twin) => twin.repKey));
         const where =
           reps.size === 1
-            ? `This exact name is also on ${furthest.repName}'s list, ${formatDistance(furthest.metres)} away`
+            ? `This exact name is also on ${possessiveOf(furthest.repName, "list")}, ${formatDistance(furthest.metres)} away`
             : `This exact name is also on ${reps.size} other reps' lists, the furthest ${formatDistance(furthest.metres)} away`;
         // The phone is the only one of the three that settles it. Two records reachable on one
         // number are one doctor, so the question stops being "who are these people" and becomes

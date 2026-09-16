@@ -2,7 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
-import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
+import { DOCTOR_LIST_PORTAL_ROLES, MY_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
@@ -32,6 +32,8 @@ export type EmployeePortalNavVisibility = {
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showRepsListTab?: boolean;
+  /** My List — the Reps List board opened on the viewer's own contact list. Medical Rep only. */
+  showMyListTab?: boolean;
   /** Reps Plans — the split call rate for the reps who report to you. Manager seats only. */
   showRepsPlansTab?: boolean;
   /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
@@ -420,6 +422,9 @@ export function resolveEmployeePortalNavVisibility(
   // is the "visible row he cannot open" bug the sidebar tests exist to catch. Asking the list itself
   // makes the two answers one answer.
   const showRepsListTab = DOCTOR_LIST_PORTAL_ROLES.includes(resolvedRole);
+  // My List — the rep's own door onto the same board, read off the list its page enforces
+  // (canAccessMyList), for the same one-answer reason as the row above.
+  const showMyListTab = MY_LIST_PORTAL_ROLES.includes(resolvedRole);
   // Reps Plans — IMPORTED rather than spelled out, unlike Reps List above.
   // src/lib/crm/reps-plans-access.ts is the enforcing gate and was deliberately built free of any
   // server-only import for exactly this caller, so there is no second copy to drift out of step.
@@ -533,6 +538,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showRepsListTab,
+    showMyListTab,
     showRepsPlansTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,

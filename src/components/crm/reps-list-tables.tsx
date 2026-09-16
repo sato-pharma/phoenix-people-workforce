@@ -31,6 +31,7 @@ import {
   confidenceLabel,
   describeSharing,
   NEIGHBOUR_M,
+  sharedWithCell,
   type ConfidenceBand,
 } from "@/lib/crm/location-confidence";
 import type { PhoenixInsight } from "@/lib/crm/phoenix-insights";
@@ -1016,6 +1017,7 @@ function GroupTable({
 export function RepsListContacts({
   activityAvailable,
   activityMonthLabel,
+  exportTitle = "Reps List",
   groups,
   repName,
 }: {
@@ -1025,6 +1027,8 @@ export function RepsListContacts({
   /** "August 2026". Names the window in the filter label and in the export header, so a saved file
    * can never be read against the wrong month. */
   activityMonthLabel: string;
+  /** The download's sheet name and title — "My List" on a rep's own page, so the file says what it is. */
+  exportTitle?: string;
   groups: RepsListGroup[];
   repName: string;
 }) {
@@ -1134,7 +1138,7 @@ export function RepsListContacts({
       map: row.seenAt ? `${row.seenAt.lat}, ${row.seenAt.lon}` : "",
       nearby: (row.nearby ?? []).map((entry_) => entry_.name).join(", "),
       phone: phoneOf(row) ?? "",
-      shared_with: (row.sharedWith ?? []).map((entry_) => entry_.repName).join(", "),
+      shared_with: sharedWithCell((row.sharedWith ?? []).map((entry_) => entry_.repName)),
       speciality: row.speciality ?? "",
       visits: row.activity ? row.activity.visits : "",
     })),
@@ -1328,13 +1332,13 @@ export function RepsListContacts({
             { key: "nearby", label: "Same address as" },
           ]}
           rows={exportRows}
-          sheetName="Reps List"
+          sheetName={exportTitle}
           subtitle={
             activityAvailable
               ? `${repName} · grouped by brick, as held by the CRM · activity for ${activityMonthLabel}`
               : `${repName} · grouped by brick, as held by the CRM`
           }
-          title="Reps List"
+          title={exportTitle}
         />
       </div>
 
