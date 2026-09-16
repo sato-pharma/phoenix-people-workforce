@@ -21,6 +21,7 @@ import {
   type VsTargetTabInput,
 } from "@/lib/sales/weekly/summary-workbook";
 import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -39,9 +40,10 @@ const VS_TARGET_MAX_MONTHS = 12;
 // Weekly Sales — "Summarized Report" (5-tab management workbook).
 //
 // A SECOND export alongside the analyst BI workbook at /api/sales/weekly/export, which is untouched.
-// Same auth posture as that route: weekly_sales:read + the viewer's weekly access scope, so a
-// product- or territory-scoped viewer gets the same redaction they get on screen. Its own rate-limit
-// scope, so downloading this cannot consume the BI workbook's budget.
+// Same auth posture as that route: weekly_sales:read, the territory-viewer role gate (a Medical Rep
+// holds the grant but never gets a territory workbook — territory-gate.ts), and the viewer's weekly
+// access scope, so a product- or territory-scoped viewer gets the same redaction they get on screen.
+// Its own rate-limit scope, so downloading this cannot consume the BI workbook's budget.
 //
 // Note the sibling /api/sales/weekly/export-batches route has neither a rate limit nor an access
 // scope — it reads with the service-role client directly. That is not a pattern to copy here; doing
@@ -50,6 +52,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "read");
+    assertWeeklyTerritoryViewer(access);
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,

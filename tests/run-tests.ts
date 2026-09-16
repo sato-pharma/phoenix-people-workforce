@@ -1420,6 +1420,8 @@ import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-cha
 import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runMedicalRepMonthlyClosingTests } from "./medical-rep-monthly-closing.test.ts";
+import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-export-matches-screen.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
@@ -1555,6 +1557,7 @@ import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test
 
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
+import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
@@ -4577,6 +4580,16 @@ await runTest(
 );
 
 await runTest(
+  "medical rep monthly closing (owner 2026-09-16): the rep opens the portal tab, and its matrix, Details and export show their OWN area only — never a sibling rep's area in their region, never their region when their area matches nothing or is not on file",
+  runMedicalRepMonthlyClosingTests,
+);
+
+await runTest(
+  "scoped closing export matches the screen (owner 2026-09-16, \"Fix every scoped file now\"): every scoped viewer's file is built from their own Details rows, so the city split's shares and Main Stores are in it; a Main Stores row names no warehouse brick, block or invoice; the comparison files it under the unnamed \"—\"; its value reaches the file's matrix and Total with no factory price",
+  runScopedClosingExportMatchesScreenTests,
+);
+
+await runTest(
   "portal home plan count (reads canonical countPlanAwaiting, never the superseded empty weekly_plans table)",
   runPortalHomePlanCountCanonicalTests,
 );
@@ -5074,6 +5087,7 @@ await runTest(
 
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 await runTest("weekly sales for a medical rep (own seat only, line kept while geography lifts, managers' API and export still refuse him)", runWeeklySalesRepViewTests);
+await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API, its three workbooks and the Sales Analytics weekly pages; every manager role still passes)", runWeeklyTerritoryGateTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
 await runTest(

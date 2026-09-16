@@ -50,14 +50,21 @@ export const MAIN_STORES_LABEL = "Main Stores" as const;
 /** The minimum a row must carry for a share to be built from it. Structural, so the caller keeps its own type. */
 type ShareableRow = {
   areaCode?: string | null;
+  areaMismatch?: boolean;
   areaName?: string | null;
+  blockCode?: string | null;
   bonusQty?: number | null;
+  brickId?: string;
+  brickName?: string | null;
+  brickUnmapped?: boolean;
   clientAddress?: string | null;
   clientCode?: string | null;
   clientName?: string | null;
+  discount?: number | null;
   distributorCode?: string | null;
   effectiveUnits?: number | null;
   factoryPrice?: number | null;
+  invoiceDate?: string | null;
   isDirect?: boolean;
   missingClientCode?: boolean;
   officialLine?: string | null;
@@ -65,6 +72,7 @@ type ShareableRow = {
   qty?: number | null;
   regionCode?: string | null;
   regionName?: string | null;
+  rowNumber?: number | null;
   salesValue?: number | null;
   sheetAreaCode?: string | null;
   sheetAreaName?: string | null;
@@ -73,6 +81,19 @@ type ShareableRow = {
 
 const isMasked = (row: ShareableRow): boolean =>
   MASKED_SOURCE_DISTRIBUTORS.has(String(row.distributorCode ?? "").trim().toUpperCase());
+
+/**
+ * True for a row `buildMainStoresRows` made: no distributor, no client code, and the label for a name.
+ *
+ * All three, not the label alone. A real distributor's line with no client code could in principle
+ * carry the words "Main Stores" as its buyer, and treating that as a warehouse share would take the
+ * distributor's name off real money.
+ */
+export function isMainStoresRow(row: Pick<ShareableRow, "clientCode" | "clientName" | "distributorCode">): boolean {
+  return !String(row.distributorCode ?? "").trim()
+    && !String(row.clientCode ?? "").trim()
+    && String(row.clientName ?? "").trim() === MAIN_STORES_LABEL;
+}
 
 /**
  * Whole units that add back to the total, by LARGEST REMAINDER.
@@ -253,6 +274,22 @@ export function buildMainStoresRows<T extends ShareableRow & StoreSplitRow>(
         clientCode: "",
         clientName: MAIN_STORES_LABEL,
         clientAddress: "",
+        // 🔴 NOR ANYTHING COPIED OFF ONE OF EL QEMA'S OWN INVOICE LINES. The row above is spread from
+        // `bucket.template`, the first warehouse share that happened to land in this area, so without
+        // these it printed that warehouse's brick, block, invoice date, sheet row and discount. On
+        // Pedia 2026-08 El Qema's rows sit in 14 warehouse bricks, Benha's among them with 6,656 units,
+        // so a Kafr El-Sheikh 1 row could name a brick in Benha: the Details tab shows the brick on
+        // every row, and the scoped workbook prints every one of these columns. It was not even true:
+        // a share is pooled from all of El Qema's warehouses, so there is no one brick or invoice
+        // behind it, just as there is no one buyer. The two flags go with the brick they describe.
+        brickId: "",
+        brickName: "",
+        blockCode: "",
+        invoiceDate: null,
+        rowNumber: null,
+        discount: 0,
+        areaMismatch: false,
+        brickUnmapped: false,
         factoryPrice: null,
         qty: units,
         bonusQty: 0,

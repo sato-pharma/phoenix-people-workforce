@@ -21,7 +21,15 @@ import {
   buildPortalClosingWorkbook,
   fileDirectCellsUnderMatrixRegions,
 } from "@/lib/sales/monthly-closing-export";
-import { loadPortalMonthlyClosing, resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
+import {
+  loadPortalMonthlyClosing,
+  medicalRepComparisonScope,
+  resolvePortalClosingScope,
+} from "@/lib/sales/monthly-closing-portal";
+import {
+  MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
+  resolveMedicalRepSosAreaCodes,
+} from "@/lib/sales/medical-rep-area-scope";
 import { MARKETING_OVERSIGHT_LINE_ROLES, normalizeLineKey } from "@/lib/sales/access-scope";
 import {
   filterMonthlyClosingMatrix,
@@ -573,8 +581,8 @@ export async function POST(request: Request) {
     }
 
     // Every other scoped sales role (District/Regional/National Sales Manager, Product/Group
-    // Product Manager, and any other "sales: read" role — SFE Manager is carved out above) can
-    // export exactly what the Details tab shows them: the raw rows already scoped by
+    // Product Manager, Medical Rep, and any other "sales: read" role — SFE Manager is carved out
+    // above) can export exactly what the Details tab shows them: the rows already scoped by
     // loadMonthlyClosingDetails (line, region, per-user product allowlist, confidential lock). No
     // Matrix/Comparison sheets — those loaders are unscoped and would leak data outside this
     // caller's access if included here.
@@ -600,14 +608,26 @@ export async function POST(request: Request) {
     if (gate.kind === "refused") {
       return NextResponse.json({ success: false, error: gate.error }, { status: 403 });
     }
+    // 🔴 NOT REVEALED — THE FILE IS THE VIEWER'S OWN DETAILS TAB, and that is what makes its totals
+    // their screen's. Owner, 2026-09-16, choosing "Fix every scoped file now" after being shown a
+    // Medical Rep's file at 23,007 EGP beside a screen at 82,981 for the same area and month.
+    //
+    // Read revealed, as it was until then, the loader handed back the rows AS INVOICED: every store
+    // row still in the area that invoiced it, and El Qema's warehouse rows in the warehouses' own
+    // areas, which the mask below then removed. The file's Closing Matrix, Target vs Achievement and
+    // Total are all rebuilt from these rows, so every scoped file lacked its area's share of the city
+    // split and all of Main Stores. Unrevealed, the loader does both passes over the WHOLE month with
+    // the real source before it scopes — credited shares, and Main Stores standing in for El Qema —
+    // which is the arithmetic the screen's matrix was built from. Nothing below needs the real
+    // distributor any more: the one computation left, the comparison, files Main Stores under `—`.
+    //
+    // The full-workbook branch above still reveals, because it runs that split itself.
     const details = await loadMonthlyClosingDetails({
       access,
       line: body.line ?? null,
       period: body.period ?? null,
       availableLines,
       availablePeriods,
-      // Revealed for the same reason as above; masked below, once nothing computes from it.
-      revealSource: true,
       filters: detailFilters,
       includeConfidential: body.includeConfidential === true,
       unpaged: true,
@@ -657,19 +677,38 @@ export async function POST(request: Request) {
     // note above records why she no longer does — she is admitted by `marketingOversight !== null`
     // to the full-workbook branch further up and returns there. The branch would be dead code, and
     // loadMonthlyClosingWithStoreSplit is not even imported here any more.
+    //
+    // 🔴 A MEDICAL REP'S FILE ONLY — the owner's decision, 2026-09-16, taken because this export is
+    // frozen. The comparison sheets measure white space against every area and brick in the company,
+    // so with no scope a rep's Gaps & White-Space and Calc sheets named every other area in the
+    // country, the sibling reps' areas included, as "zero sales". Narrowed to the rep's own areas (see
+    // medicalRepComparisonScope). Every other viewer keeps `undefined` exactly as before, so no other
+    // viewer's comparison is narrowed by this.
+    const repComparisonScope = access.role === "Medical Rep"
+      ? medicalRepComparisonScope(await resolveMedicalRepSosAreaCodes(access))
+      : undefined;
+    if (repComparisonScope === null) {
+      return NextResponse.json(
+        { success: false, error: MEDICAL_REP_AREA_UNRESOLVED_MESSAGE },
+        { status: 403 },
+      );
+    }
     const scopedPortal =
       await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null);
     const scopedMatrix = scopedPortal?.matrix ?? null;
     // 🔒 EVERYTHING ABOVE THIS LINE HAS FINISHED COMPUTING. From here the rows are only written
-    // into a workbook, so this is where the source mask belongs. See closing-source-mask.ts.
+    // into a workbook, so this is where the source mask belongs. See closing-source-mask.ts. The rows
+    // arrive masked already (they were not revealed); the drop stays as the guard on the way into the
+    // workbook, so a reveal added back above can never print El Qema's name.
     const shownDetails = { ...details, rows: [...withoutMaskedSourceRows(details.rows, access)] };
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
           // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
-          // `access`: these rows carry the real source, and the comparison masks it for this reader.
-          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, undefined, access, { regionBasis: "organogram" }),
+          // `access` still masks any El Qema leaf; Main Stores rows go under `—` in the leaves.
+          // `organogram`: its sheets name the matrix's regions, not the map's (owner, 2026-09-16).
+          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, repComparisonScope, access, { regionBasis: "organogram" }),
           shownDetails,
           // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
           scopedPortal?.office ?? null,
