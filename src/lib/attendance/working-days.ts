@@ -68,8 +68,19 @@ export function isoWeekKey(dateIso: string): { key: string; weekStartIso: string
 export type AttendanceCalendarContext = {
   /** ISO date -> holiday name. Multi-day holidays are expanded per day. */
   holidaysByDate: Map<string, string>;
-  /** False when the public-holiday calendar could not be reached (company holidays still apply). */
+  /**
+   * False when a month's lookup failed, or Google's calendar could not be read for a month with no
+   * company or fixed-date public holiday. A month that has one stays connected during an outage: see
+   * holidayCalendarReachable.
+   */
   holidaySourceConnected: boolean;
+  /**
+   * False when Google's holiday calendar could not be read for some month in the range. Company and
+   * fixed-date public holidays still load, but the moving Islamic and Coptic holidays (both Eids,
+   * Islamic New Year, the Prophet's Birthday, Coptic Easter) are missing, so such a day reads as an
+   * ordinary working day. The weekly attendance review's answer window refuses on it.
+   */
+  holidayCalendarReachable: boolean;
   todayIso: string;
 };
 
@@ -102,6 +113,7 @@ export async function buildAttendanceCalendarContext(input: {
 }): Promise<AttendanceCalendarContext> {
   const holidaysByDate = new Map<string, string>();
   let holidaySourceConnected = true;
+  let holidayCalendarReachable = true;
 
   if (isIsoDate(input.dateFromIso) && isIsoDate(input.dateToIso)) {
     const months = listMonthsInRange(input.dateFromIso, input.dateToIso);
@@ -111,9 +123,11 @@ export async function buildAttendanceCalendarContext(input: {
     for (const result of results) {
       if (!result) {
         holidaySourceConnected = false;
+        holidayCalendarReachable = false;
         continue;
       }
       if (!result.connected) holidaySourceConnected = false;
+      if (!result.calendarReachable) holidayCalendarReachable = false;
       for (const holiday of result.holidays) {
         const endDate = holiday.endDate ?? holiday.startDate;
         for (const dateIso of listIsoDatesInRange(holiday.startDate, endDate)) {
@@ -123,7 +137,7 @@ export async function buildAttendanceCalendarContext(input: {
     }
   }
 
-  return { holidaysByDate, holidaySourceConnected, todayIso: cairoTodayIso() };
+  return { holidaysByDate, holidaySourceConnected, holidayCalendarReachable, todayIso: cairoTodayIso() };
 }
 
 export type AttendanceDayClassification = {

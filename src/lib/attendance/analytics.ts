@@ -250,7 +250,8 @@ export async function getAttendanceAnalytics(): Promise<AttendanceAnalyticsData>
     dataUnavailable.push(error instanceof Error ? `Weekly trend unavailable: ${error.message}` : "Weekly trend unavailable.");
   }
 
-  if (!context.holidaySourceConnected) {
+  // Two different failures, and the second used to be silent here: a Google Calendar outage keeps holidaySourceConnected true for any month holding a company or fixed-date public holiday (1 May, say) while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing (owner, 2026-09-16).
+  if (!context.holidaySourceConnected || !context.holidayCalendarReachable) {
     dataUnavailable.push("Public-holiday calendar unreachable — holidays may be counted as working days.");
   }
 

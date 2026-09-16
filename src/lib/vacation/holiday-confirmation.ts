@@ -11,6 +11,7 @@
 // (app/api/notifications/holiday-confirmation/route.ts) can nudge a System
 // Admin before the day arrives.
 
+import { logError } from "@/lib/observability/log";
 import { getEgyptianNationalHolidays } from "@/lib/vacation/national-holidays";
 import { listHolidayOverridesOverlappingRange } from "@/lib/vacation/holiday-override-store";
 
@@ -59,6 +60,18 @@ export async function getUpcomingUnconfirmedHolidays(
   const { month, year } = monthYearOf(targetDateIso);
 
   const raw = await getEgyptianNationalHolidays({ month, year });
+  // Silence here compounds. The moving Islamic and Coptic holidays are exactly the ones that need
+  // confirming AND exactly the ones a Google Calendar outage hides, so a reminder skipped during an
+  // outage leaves that holiday unconfirmed — and an unconfirmed holiday is missing again from every
+  // later outage, because only a confirmed one survives as an override. Say so instead of returning
+  // an empty list that reads as "nothing to confirm" (owner, 2026-09-16). No notification is sent
+  // from here: this is an observability record for the daily cron's own run.
+  if (!raw.calendarReachable) {
+    logError("Holiday confirmation reminder: Google's holiday calendar could not be read", {
+      labels: { event: "holiday_confirmation_calendar_unreachable", month, targetDateIso, year },
+    });
+    return [];
+  }
   const candidates = raw.holidays.filter((holiday) => holiday.startDate === targetDateIso);
   if (candidates.length === 0) return [];
 

@@ -91,6 +91,15 @@ async function confirmedHolidaysNear(period: CopilotPeriod) {
     getConfirmedNationalHolidays(period),
     getConfirmedNationalHolidays(adjacentPeriod(period, 1)),
   ]);
+  // Bridging DEDUCTS a day. During a Google Calendar outage company and fixed-date holidays still
+  // load while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing,
+  // so the windows would be computed against an incomplete calendar. Refuse, exactly as the live
+  // deductions connector does (owner, 2026-09-16).
+  if (![prior, current, next].every((result) => result.calendarReachable)) {
+    throw new Error(
+      "The Egypt national-holiday calendar could not be read, so the holiday list may be incomplete. Refusing to compute holiday bridging rather than risk deducting a day beside a public holiday it cannot see.",
+    );
+  }
   const seen = new Set<string>();
   const holidays = [];
   for (const holiday of [...prior.holidays, ...current.holidays, ...next.holidays]) {

@@ -390,6 +390,9 @@ function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport
     ["Severity banding (Summary)", "No Entry / No Signal / Conflict Days in the per-employee table are banded green (0), amber (1-2), or red (3+) — a per-employee scale. The same totals company-wide, on Cover, are not banded the same way: a company-wide sum banded on a per-employee threshold would read as red almost regardless of the real distribution."],
     ["Data freshness", "The CRM (iReports360) mirror can lag live field activity by up to roughly two days — a just-elapsed date showing No Entry is not yet a confirmed gap."],
     ["Scope", "This report is NOT a payroll report. It exists for awareness and accuracy review only; it does not drive any deduction, incentive, or leave-balance calculation."],
+    ["Public holidays", report.holidayCalendarReachable
+      ? "Google's Egypt holiday calendar was read for every month in this range."
+      : "Google's Egypt holiday calendar could NOT be read for part of this range. Company and fixed-date public holidays are still applied, but the moving Islamic and Coptic holidays — both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter — are missing, so such a day shows here as an ordinary working day."],
     ["Unmapped CRM visits", report.unmappedCrmVisitCount == null
       ? "Not computed for this query (only tracked on a full company-wide scan)."
       : `${report.unmappedCrmVisitCount} CRM visit(s) in this date range have no resolved employee identity at all (company-wide, not limited to the filtered roster) — a blind spot in CRM attribution, not necessarily related to anyone shown above.`],

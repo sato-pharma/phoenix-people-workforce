@@ -527,6 +527,39 @@ export async function getConfirmedNationalHolidays(input: {
 }
 
 /**
+ * Confirmed holidays across several months at once, PLUS whether Google's calendar could be read
+ * for every one of them.
+ *
+ * A Google Calendar outage is not the same as "no holidays". Company and fixed-date public
+ * holidays still load, so `connected` stays true for a month holding one (1 May, say) while the
+ * moving Islamic and Coptic holidays — both Eids, Islamic New Year, the Prophet's Birthday and
+ * Coptic Easter — are missing and read as ordinary working days. Owner rule, 2026-09-16: a path
+ * that can cost an employee money refuses while `calendarReachable` is false, rather than charge,
+ * approve or allow a day that was actually a public holiday. Each caller words its own refusal,
+ * because what it is refusing to do differs; this gathers the months, dedupes, and reports both
+ * flags.
+ */
+export async function getConfirmedNationalHolidaysForPeriods(
+  periods: ReadonlyArray<{ month: number; year: number }>,
+): Promise<{ calendarReachable: boolean; connected: boolean; holidays: EgyptianNationalHoliday[] }> {
+  const results = await Promise.all(periods.map((period) => getConfirmedNationalHolidays(period)));
+  const holidays: EgyptianNationalHoliday[] = [];
+  const seen = new Set<string>();
+  for (const result of results) {
+    for (const holiday of result.holidays) {
+      if (seen.has(holiday.id)) continue;
+      seen.add(holiday.id);
+      holidays.push(holiday);
+    }
+  }
+  return {
+    calendarReachable: results.every((result) => result.calendarReachable),
+    connected: results.every((result) => result.connected),
+    holidays,
+  };
+}
+
+/**
  * Every confirmed national-holiday DATE between two ISO dates, as a set.
  *
  * Exists because a consumer that walks a calendar day by day needs "is this date a holiday", not
@@ -538,7 +571,7 @@ export async function getConfirmedNationalHolidays(input: {
  * BEST EFFORT, and the direction of the failure matters. A month whose lookup throws is skipped
  * rather than fatal, so an outage UNDER-excludes holidays. Downstream that reads as an ordinary
  * working day, which for an absence detector means a false alarm rather than a missed one — the
- * safer direction, but not a free one: read the `verified` flag on EgyptianNationalHolidayResult
+ * safer direction, but not a free one: read `calendarReachable` on EgyptianNationalHolidayResult
  * before using this anywhere a missing holiday would move money.
  *
  * NOTE: company-vacation-report.ts keeps its own copy of this loop deliberately. That version is

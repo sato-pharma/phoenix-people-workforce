@@ -630,6 +630,15 @@ export function CompanyActivityReportTable({
             <MetricCard description="Days showing BOTH presence and a leave signal." label="Conflict Days" tone={totals.conflictDays > 0 ? "rose" : "emerald"} value={totals.conflictDays} />
           </div>
 
+          {report.holidayCalendarReachable ? null : (
+            <p className="rounded-sm border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-amber-900">
+              <strong className="font-bold">The public holiday calendar could not be read</strong> for part of this range.
+              Company and fixed-date public holidays still apply, but the moving Islamic and Coptic holidays — both Eids,
+              Islamic New Year, the Prophet&apos;s Birthday and Coptic Easter — are missing, so such a day shows below as an
+              ordinary working day.
+            </p>
+          )}
+
           {report.unmappedCrmVisitCount != null && report.unmappedCrmVisitCount > 0 ? (
             <p className="rounded-sm border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-amber-900">
               <strong className="font-bold">{report.unmappedCrmVisitCount} CRM visit(s)</strong> in this date range (company-wide,

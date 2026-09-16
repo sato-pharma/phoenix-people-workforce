@@ -1066,6 +1066,12 @@ async function loadAnswerWindow(input: {
   if (!calendar.holidaySourceConnected) {
     return { context: null, unreadable: "The public holiday calendar", cause: null };
   }
+  // During a Google Calendar outage company and fixed-date holidays still load, so a month with one
+  // (1 May, say) stays connected while both Eids, Islamic New Year, the Prophet's Birthday and Coptic
+  // Easter are missing. An Eid day would then count as a day to answer in.
+  if (!calendar.holidayCalendarReachable) {
+    return { context: null, unreadable: "The public holiday calendar", cause: null };
+  }
   if (leave instanceof Error) {
     return { context: null, unreadable: "Leave requests", cause: leave.message };
   }

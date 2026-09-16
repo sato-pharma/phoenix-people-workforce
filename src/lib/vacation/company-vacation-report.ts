@@ -45,7 +45,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
-import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays, getConfirmedNationalHolidaysForPeriods } from "@/lib/vacation/national-holidays";
 import type { CompanyVacationReportSource } from "@/lib/vacation/company-vacation-report-source";
 
 /** Same threshold as attendance-cross-check.ts's AV_HALF_DAY_MAX_WORKED_MINUTES —
@@ -198,6 +198,28 @@ function monthKeysBetween(startDate: string, endDate: string): Array<{ month: nu
     }
   }
   return keys;
+}
+
+/**
+ * Whether the day being approved can be told apart from a public holiday.
+ *
+ * The listing below is best-effort on purpose — an outage just under-excludes a month, and the
+ * historical half is cached under this report's own tag, so a degraded list can outlive the
+ * 10-minute holiday cache. Approving is the part that costs money: it takes the day off the
+ * employee's annual balance for good. So the approve path asks this first and refuses while
+ * Google's calendar cannot be read (owner, 2026-09-16), rather than approve what may be an Eid.
+ */
+export async function getHolidayCalendarReadinessForLeave(
+  startDate: string,
+  endDate: string,
+): Promise<{ message: string | null; readable: boolean }> {
+  const { calendarReachable } = await getConfirmedNationalHolidaysForPeriods(monthKeysBetween(startDate, endDate));
+  if (calendarReachable) return { message: null, readable: true };
+  return {
+    message:
+      "The public holiday calendar could not be read, so a day that was actually a public holiday cannot be told from a working day. Nothing was approved and no balance was changed — try again shortly.",
+    readable: false,
+  };
 }
 
 async function loadHolidayDates(startDate: string, endDate: string): Promise<string[]> {

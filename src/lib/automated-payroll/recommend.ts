@@ -597,6 +597,15 @@ async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<st
       month: period.month,
       year: period.year,
     });
+    // A Google Calendar outage still returns company and fixed-date public holidays, so the
+    // compliance engine reads an unconfirmed Eid, Islamic New Year, the Prophet's Birthday or
+    // Coptic Easter as an ordinary working day and can raise CRM leave on it. That day is written
+    // into the leave-balance ledger for good and settles to salary once the balance runs out, so
+    // refuse the whole step rather than take a public holiday off someone's balance (owner,
+    // 2026-09-16).
+    if (preview.metadata?.holidayCalendarReachable === false || preview.metadata?.holidayConnected === false) {
+      throw new PayrollCrmLeaveUnavailableError(period, "the Egypt national-holiday calendar");
+    }
     for (const candidate of preview.reviewCandidates) {
       if (candidate.type !== "vacation_signal" || !candidate.dateIso) continue;
       const compact = compactHrKey(candidate.hrId);
@@ -606,6 +615,9 @@ async function loadCrmLeaveDatesByCompact(period: PayrollPeriod): Promise<Map<st
       byCompact.set(compact, dates);
     }
   } catch (error) {
+    // The holiday-calendar refusal above is already the right answer and already names its cause —
+    // don't relabel it as a failed CRM read.
+    if (error instanceof PayrollCrmLeaveUnavailableError) throw error;
     logError("Automated payroll: CRM leave load failed — the run cannot compute vacation deductions", {
       labels: { event: "automated_payroll_crm_leave_load_failed", month: period.month, year: period.year },
       error,

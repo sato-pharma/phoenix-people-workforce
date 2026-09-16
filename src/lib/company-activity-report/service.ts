@@ -56,7 +56,7 @@ export async function getCompanyActivityReport(input: {
   const dates = listIsoDatesInRange(startDate, endDate);
 
   if (employees.length === 0 || dates.length === 0) {
-    return { startDate, endDate, summaries: [], days: [], unmappedCrmVisitCount: null };
+    return { startDate, endDate, holidayCalendarReachable: true, summaries: [], days: [], unmappedCrmVisitCount: null };
   }
 
   const employeeHrIds = employees.map((employee) => employee.hrId);
@@ -109,6 +109,7 @@ export async function getCompanyActivityReport(input: {
     endDate,
     summaries,
     days: allDays,
+    holidayCalendarReachable: calendarContext.holidayCalendarReachable,
     unmappedCrmVisitCount: crmResult.unmappedCrmVisitCount,
   };
 }

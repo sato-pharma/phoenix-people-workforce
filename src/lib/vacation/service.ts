@@ -37,7 +37,7 @@ import {
   sameWorkforceDepartment,
 } from "@/lib/workforce/hierarchy-resolver";
 import { addDaysToDateOnly, daysBetweenDateOnly, parseDateOnly, toDateOnlyString } from "@/lib/date-only";
-import { getConfirmedNationalHolidays, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
+import { getConfirmedNationalHolidays, getConfirmedNationalHolidaysForPeriods, type EgyptianNationalHoliday } from "@/lib/vacation/national-holidays";
 import {
   calculateVacationDurationDays,
   calculateVacationPayment,
@@ -1024,10 +1024,18 @@ export async function validateOfficialHolidayAdjacency(input: {
   const dayAfterEnd = addDaysToDateOnly(input.endDate, 1);
   if (!dayBeforeStart || !dayAfterEnd) return;
 
-  const holidays: EgyptianNationalHoliday[] = [];
-  for (const period of holidayMonthKeysForDates([dayBeforeStart, dayAfterEnd])) {
-    const result = await getConfirmedNationalHolidays(period);
-    if (result.connected) holidays.push(...result.holidays);
+  // Fails closed on a Google Calendar outage (owner, 2026-09-16). Company and fixed-date holidays
+  // still load during one, so this check would otherwise run against a calendar missing both Eids,
+  // Islamic New Year, the Prophet's Birthday and Coptic Easter, and would let a request through
+  // right beside a holiday it cannot see. The wording deliberately avoids "national holiday",
+  // which the company-report approve route maps to its own adjacency message.
+  const { calendarReachable, holidays } = await getConfirmedNationalHolidaysForPeriods(
+    holidayMonthKeysForDates([dayBeforeStart, dayAfterEnd]),
+  );
+  if (!calendarReachable) {
+    throw new Error(
+      "The public holiday calendar could not be read just now, so this request cannot be checked against the official holidays. Nothing was saved — try again shortly.",
+    );
   }
 
   const isHolidayDate = (value: string) =>

@@ -70,7 +70,7 @@ export default async function AdminCompanyActivityReportPage({
   // touches four data sources per employee-day, not one.
   const report = applied
     ? await getCompanyActivityReport({ employees, endDate, startDate })
-    : { days: [], endDate, startDate, summaries: [], unmappedCrmVisitCount: null };
+    : { days: [], endDate, holidayCalendarReachable: true, startDate, summaries: [], unmappedCrmVisitCount: null };
 
   // Remount the panel on every applied query — see the identical pattern (and the comment
   // explaining why a `key` replaces a state-syncing effect) in the Company Vacation Report's page.

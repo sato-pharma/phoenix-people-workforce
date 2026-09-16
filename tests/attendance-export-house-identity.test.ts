@@ -52,6 +52,7 @@ function summaryFixture(missingDataDates: string[]) {
     dateFrom: "2026-07-01",
     dateTo: "2026-07-31",
     generatedAt: "2026-08-01T00:00:00Z",
+    holidayCalendarReachable: true,
     holidaySourceConnected: true,
     missingDataDates,
     month: "July 2026",

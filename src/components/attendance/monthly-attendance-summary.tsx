@@ -81,9 +81,9 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
       <AdminCallout tone="neutral">
         {attendanceMonthlyCycleNote}
       </AdminCallout>
-      {initialData && !initialData.holidaySourceConnected ? (
+      {initialData && (!initialData.holidaySourceConnected || !initialData.holidayCalendarReachable) ? (
         <AdminCallout tone="warning">
-          The public-holiday calendar could not be reached. Company holidays are still applied, but public holidays in this month may be counted as working days, slightly overcounting absences.
+          The public-holiday calendar could not be reached. Company and fixed-date public holidays are still applied, but the moving Islamic and Coptic holidays — both Eids, Islamic New Year, the Prophet&apos;s Birthday and Coptic Easter — may be counted as working days, overcounting absences.
         </AdminCallout>
       ) : null}
       {/* An attendance-agent outage used to be indistinguishable from mass absence: days with no

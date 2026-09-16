@@ -7,7 +7,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/vacation/company-vacation-report";
+import { COMPANY_VACATION_REPORT_CACHE_TAG, getHolidayCalendarReadinessForLeave } from "@/lib/vacation/company-vacation-report";
 import {
   createVacationRequestAsAdmin,
   isVacationSchemaMissing,
@@ -62,6 +62,20 @@ export async function POST(request: Request) {
       : requestedDayPart === "am_only" || requestedDayPart === "pm_only"
         ? requestedDayPart
         : "pm_only";
+
+    // A Google Calendar outage hides the moving Islamic and Coptic holidays, so the CRM day being
+    // approved here could itself be an Eid — and approving takes the day off this employee's annual
+    // balance for good, with no correction path once a later month is published. Refuse while the
+    // calendar cannot be read (owner, 2026-09-16). The adjacency guard below now fails closed on
+    // the same outage; this asks first so the answer names the money rather than the adjacency rule.
+    const holidayCalendar = await getHolidayCalendarReadinessForLeave(startDate, endDate);
+    if (!holidayCalendar.readable) {
+      return NextResponse.json({
+        error: "holiday_calendar_unreadable",
+        message: holidayCalendar.message,
+        success: false,
+      }, { status: 409 });
+    }
 
     // Holiday-adjacency guard — the employee self-submit path already blocks a request starting
     // or ending directly before/after a confirmed national holiday; the admin-create path (which
@@ -133,6 +147,12 @@ export async function POST(request: Request) {
     }
     if (isVacationSchemaMissing(error)) {
       return NextResponse.json({ error: "vacation_schema_missing", message, success: false }, { status: 409 });
+    }
+    // The adjacency guard reads one month either side, so it can span a month the readiness check
+    // above did not — and the 10-minute holiday cache can expire between the two calls. Rare, but it
+    // must read as "try again shortly", not as a 500.
+    if (/holiday calendar could not be read/i.test(message)) {
+      return NextResponse.json({ error: "holiday_calendar_unreadable", message, success: false }, { status: 409 });
     }
     if (/national holiday/i.test(message)) {
       return NextResponse.json({
