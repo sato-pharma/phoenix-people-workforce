@@ -140,6 +140,10 @@ function formatShare(value: number | null): string {
 function formatWeeks(sold: number, covered: number): string {
   return covered > 0 ? `${sold} of ${covered}` : "—";
 }
+/** The weeks line under a desktop average: the workbook's Weeks Sold and Weeks Covered, in words. */
+function formatWeeksSold(sold: number, covered: number): string {
+  return covered > 0 ? `Sold ${sold} of ${covered} ${covered === 1 ? "week" : "weeks"}` : "No week uploaded";
+}
 
 export function WeeklySalesDepotDetail({
   audience,
@@ -696,7 +700,7 @@ function Kpi({
           <Icon className="h-3.5 w-3.5" />
         </span>
         <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
+        <p className="mt-0.5 text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
         <p className="mt-0.5 text-phx-2xs font-semibold text-slate-400">{sub}</p>
       </div>
     </>
@@ -728,11 +732,14 @@ function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="border border-slate-100 bg-slate-50 px-2 py-1.5">
       <p className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
+      <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
 
+// The desktop tables open at 1024 px, where the portal's main column leaves them about 620 px. They fit it
+// by merging columns, never by shrinking type: the movement badge sits under the name, the weeks under
+// the average, and no figure column is narrower than its widest figure.
 const TH = "px-3 py-2.5 font-black";
 const TH_NUM = "px-3 py-2.5 text-right font-black";
 const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
@@ -751,13 +758,11 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col className="w-[27%]" />
-            <col className="w-[23%]" />
-            <col className="w-[9%]" />
-            <col className="w-[12%]" />
-            <col className="w-[9%]" />
-            <col className="w-[9%]" />
-            <col className="w-[11%]" />
+            <col className="w-[26%]" />
+            <col className="w-[24%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
@@ -766,8 +771,6 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
               <th className={TH_NUM}>Units</th>
               <th className={TH_NUM}>Value</th>
               <th className={TH_NUM}>Avg / week</th>
-              <th className={TH_NUM}>Weeks</th>
-              <th className={TH}>Movement</th>
             </tr>
           </thead>
           <tbody>
@@ -780,14 +783,16 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.productName}</p>
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">{cell.line}</p>
+                  <div className="mt-1.5">
+                    <MovementBadge movement={cell.movement} />
+                  </div>
+                  {isRep ? <BasisNote basis={cell.basis} /> : null}
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(cell.units)}</td>
                 <td className={TD_NUM}>{formatEgpFull(cell.value)}</td>
-                <td className={TD_NUM}>{formatAvgUnits(cell.avgWeeklyUnits)}</td>
-                <td className={TD_NUM}>{formatWeeks(cell.weeksSold, cell.weeksCovered)}</td>
-                <td className="px-3 py-2.5">
-                  <MovementBadge movement={cell.movement} />
-                  {isRep ? <BasisNote basis={cell.basis} /> : null}
+                <td className={TD_NUM}>
+                  <p>{formatAvgUnits(cell.avgWeeklyUnits)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatWeeksSold(cell.weeksSold, cell.weeksCovered)}</p>
                 </td>
               </tr>
             ))}
@@ -838,13 +843,12 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[11%]" />
-            <col className="w-[14%]" />
-            <col className="w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[11%]" />
-            <col className="w-[15%]" />
+            <col className="w-[26%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
@@ -853,7 +857,6 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
               <th className={TH_NUM}>Value</th>
               <th className={TH_NUM}>Avg / week</th>
               <th className={TH_NUM}>Share</th>
-              <th className={TH}>Movement</th>
               <th className={TH}>Depots</th>
             </tr>
           </thead>
@@ -863,14 +866,14 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
                 <td className="px-3 py-2.5">
                   <DrillName name={row.productName} onClick={onDrill ? () => onDrill(row.productCode) : undefined} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.line}</p>
+                  <div className="mt-1.5">
+                    <MovementBadge movement={weeklySalesMovement(row.units, row.value)} />
+                  </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(row.units)}</td>
                 <td className={TD_NUM}>{formatEgpFull(row.value)}</td>
                 <td className={TD_NUM}>{formatAvgUnits(row.avgWeeklyUnits)}</td>
                 <td className={TD_NUM}>{formatShare(row.share)}</td>
-                <td className="px-3 py-2.5">
-                  <MovementBadge movement={weeklySalesMovement(row.units, row.value)} />
-                </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatCount(row.depotCount)}</p>
                   <p className="break-words">
@@ -927,12 +930,11 @@ function GroupTable({
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[15%]" />
-            <col className="w-[15%]" />
-            <col className="w-[10%]" />
-            <col className="w-[11%]" />
-            <col className="w-[21%]" />
+            <col className="w-[36%]" />
+            <col className="w-[19%]" />
+            <col className="w-[17%]" />
+            <col className="w-[12%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
@@ -940,7 +942,6 @@ function GroupTable({
               <th className={TH_NUM}>Sales value</th>
               <th className={TH_NUM}>Avg weekly sales</th>
               <th className={TH_NUM}>Share</th>
-              <th className={TH}>Movement</th>
               <th className={TH}>Products</th>
             </tr>
           </thead>
@@ -950,13 +951,13 @@ function GroupTable({
                 <td className="px-3 py-2.5">
                   <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
                   {row.parentName ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.parentName}</p> : null}
+                  <div className="mt-1.5">
+                    <MovementBadge movement={weeklySalesMovement(0, row.value)} />
+                  </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatEgpFull(row.value)}</td>
                 <td className={TD_NUM}>{formatEgpFull(row.avgWeeklyValue)}</td>
                 <td className={TD_NUM}>{formatShare(row.share)}</td>
-                <td className="px-3 py-2.5">
-                  <MovementBadge movement={weeklySalesMovement(0, row.value)} />
-                </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatCount(row.productCount)}</p>
                   <p className="break-words">

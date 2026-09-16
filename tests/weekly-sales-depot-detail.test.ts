@@ -972,6 +972,18 @@ export async function runWeeklySalesDepotDetailTests() {
   assert.doesNotMatch(detail, /\btruncate\b/, "long names wrap, never an ellipsis");
   assert.equal((detail.match(/<table className="w-full table-fixed/g) ?? []).length, 3, "every table is fixed-layout");
   assert.equal((detail.match(/<colgroup>/g) ?? []).length, 3, "and sized by its colgroup");
+  // At 1024 px the portal leaves a desktop table about 620 px, where a Movement or a Weeks column clipped its
+  // own header and let the badge stick out. The tables fit by merging columns instead.
+  const desktopTables = detail
+    .split('<table className="w-full table-fixed')
+    .slice(1)
+    .map((chunk) => chunk.slice(0, chunk.indexOf("</table>")));
+  for (const table of desktopTables) {
+    const widths = [...table.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
+    assert.equal(widths.length, (table.match(/<th className=/g) ?? []).length, "every column header has its own col");
+    assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "every colgroup adds up to the table's width");
+    assert.doesNotMatch(table, />(?:Movement|Weeks)<\/th>/, "the movement badge sits under the name and the weeks under the average");
+  }
   assert.match(detail, /hidden lg:block/, "desktop reads full tables");
   assert.match(detail, /lg:hidden/, "a phone reads cards");
   assert.match(detail, /const exportHref = `\$\{exportPath\}\$\{query \? `\?\$\{query\}` : ""\}`;/, "Export sends the screen's own query");
