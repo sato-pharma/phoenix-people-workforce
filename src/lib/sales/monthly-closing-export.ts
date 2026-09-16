@@ -3516,6 +3516,15 @@ export async function buildMonthlyClosingWorkbook(
 }
 
 /**
+ * The Data sheet's title in both scoped builders below. It used to say "every invoice line in your
+ * scope", and since 2026-09-16 that is not what the sheet holds: the rows are the viewer's own
+ * Details tab, where a store's sale sits in the areas it is credited to and Main Stores stands in
+ * for El Qema's warehouses. A title calling those invoice lines would send a reader looking for
+ * invoices that do not exist.
+ */
+const SCOPED_DATA_SUBTITLE = "Data — every row of your closing, as your Details tab shows it";
+
+/**
  * Details-only export: just "Data" (+ "Total" + "Confidential" when applicable) — no Matrix,
  * Comparison, Rankings, Gaps, or Summary. For a viewer whose access is scoped to part of the
  * company (a single line, region, or product allowlist), the full Closing Matrix + distributor
@@ -3537,7 +3546,7 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
   const visible = details.rows.filter((row) => !row.isConfidential);
   const confidential = details.rows.filter((row) => row.isConfidential);
 
-  writeRawDataSheet(workbook, "Data", visible, "Data — every invoice line in your scope", details.line, details.period);
+  writeRawDataSheet(workbook, "Data", visible, SCOPED_DATA_SUBTITLE, details.line, details.period);
   writeTotalSheet(workbook, null, { ...details, rows: visible }, "Data");
   if (confidential.length > 0) {
     writeRawDataSheet(
@@ -3581,7 +3590,8 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
  * split's redistribution math needs the WHOLE month's rows to be correct — computing it from
  * already-narrowed rows would silently underweight it, not just narrow it), and Channel
  * Comparison/Breakdown (their RPCs are line-wide with no product/area scoping today). Omitted
- * rather than guessed at.
+ * rather than guessed at. The split's EFFECT is here all the same: `details.rows` are the viewer's
+ * own Details tab, whose shares the loader worked out over the whole month before scoping them.
  */
 export async function buildPortalClosingWorkbook(
   matrix: MonthlyClosingMatrix,
@@ -3601,9 +3611,16 @@ export async function buildPortalClosingWorkbook(
   // every other sheet exists — same two-step as buildMonthlyClosingWorkbook's Dashboard.
   const dashboard = workbook.addWorksheet(sanitizeSheetName("Dashboard"), { views: [{ showGridLines: false }] });
 
-  // Rebuild the cells from the raw rows so the Matrix ties to the Data sheet (the store split
-  // moves sales between a city's areas, so the store-split matrix and the pre-split rows disagree
-  // cell-by-cell). `preserveTargets` keeps the scoped matrix's per-area/product targets — the whole
+  // Rebuild the cells from the rows so the Matrix ties to the Data sheet. The rows are the viewer's
+  // own Details tab — the store split's shares already credited to the areas that earn them and
+  // Main Stores in place of El Qema — so the rebuilt cells are the screen's cells as well. They used
+  // to be the rows as invoiced, which tied this sheet to Data and to nothing the viewer could see:
+  // a Medical Rep's file read 23,007 EGP against a screen of 82,981 (owner, 2026-09-16, "Fix every
+  // scoped file now"). A Main Stores row carries no factory price, and nothing here needs one: the
+  // rebuild, the Data sheet, Total's SUMIFS and the Calc leaves all add up the value ON the row,
+  // never units × price.
+  //
+  // `preserveTargets` keeps the scoped matrix's per-area/product targets — the whole
   // of the viewer's scope is present here, so the achievement is honest — without which the
   // exported Closing Matrix and Target vs Achievement sheets came out with every target blank.
   // `includeDirect` because this workbook's job is to hand the reader their own Monthly Closing
@@ -3629,7 +3646,7 @@ export async function buildPortalClosingWorkbook(
   writeRankingsSheet(workbook, comparison, ref);
   writeGapsSheet(workbook, comparison, ref);
   writeSummarySheet(workbook, comparison, ref);
-  writeRawDataSheet(workbook, "Data", visible, "Data — every invoice line in your scope", details.line, details.period);
+  writeRawDataSheet(workbook, "Data", visible, SCOPED_DATA_SUBTITLE, details.line, details.period);
   const headline: ClosingHeadline = {
     salesUnits: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
     salesValue: rebuiltMatrix.grandTotal.rowTotal.salesValue,

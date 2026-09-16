@@ -124,13 +124,18 @@ export function runMonthlyClosingRegionScopeTests() {
     // her lines from the head-office oversight set (Anti Infective / Pedia / CNS), not her own
     // label. See tests/marketing-manager-monthly-closing.test.ts for the full gate set.
     "Marketing Manager",
+    // Medical Rep moved here from the denied list 2026-09-16 (owner: "show monthly closing his scope
+    // in medical reps accounts"). They were denied as having "no line"; their line resolves like a DM's.
+    // What they must NEVER get is the region-wide view this gate admits the others to — their bound is
+    // their own area(s), enforced in resolvePortalClosingScope and loadMonthlyClosingDetails, and
+    // pinned by tests/medical-rep-monthly-closing.test.ts.
+    "Medical Rep",
   ] as PhoenixRole[]) {
     assert.equal(gate(allowed), true, `${allowed} may open the portal Monthly Closing`);
   }
-  // These denials are the ones that carry meaning and must not follow her out: Medical Rep and
-  // Employee have no line, and CEO / Super Admin / SFE Manager have the admin surface instead.
+  // These denials are the ones that carry meaning and must not follow either of them out: Employee
+  // has no line, and CEO / Super Admin / SFE Manager have the admin surface instead.
   for (const denied of [
-    "Medical Rep",
     "Employee",
     "CEO",
     "Super Admin",

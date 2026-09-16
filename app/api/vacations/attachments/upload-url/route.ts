@@ -7,7 +7,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { sanitizeStorageSegment, vacationAttachmentBucket } from "@/lib/vacation/service";
+import { buildPendingVacationAttachmentPath, isPendingVacationAttachmentKind } from "@/lib/vacation/attachment-transport";
+import { vacationAttachmentBucket } from "@/lib/vacation/service";
 import { assertVacationRouteRateLimit } from "@/lib/vacation/route-guards";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -20,8 +21,8 @@ export const dynamic = "force-dynamic";
 // bucket (no function body involved), then calls /api/vacations/requests with the resulting storage
 // path instead of the raw file. Permission-gated identically to the submit route, so only users who
 // may create a leave request can reserve an upload slot. See attachment-transport.ts for the
-// download-and-cleanup side of this.
-const ATTACHMENT_KINDS = new Set(["sick", "compensatory"]);
+// download-and-cleanup side of this, and for the pending path shape: the submit route refuses any
+// reference that is not the caller's own slot in exactly that shape.
 
 export async function POST(request: Request) {
   try {
@@ -39,18 +40,22 @@ export async function POST(request: Request) {
     });
 
     const body = (await request.json().catch(() => ({}))) as { fileName?: string; kind?: string };
-    const kind = ATTACHMENT_KINDS.has(String(body?.kind ?? "")) ? String(body.kind) : null;
+    const requestedKind = body?.kind;
+    const kind = isPendingVacationAttachmentKind(requestedKind) ? requestedKind : null;
     if (!kind) {
       return NextResponse.json(
         { error: "invalid_attachment_kind", message: "Attachment kind must be sick or compensatory.", success: false },
         { status: 400 },
       );
     }
-    const employeeHrId = sanitizeStorageSegment(access.hrId, "unknown-employee");
-    const fileName = sanitizeStorageSegment(body?.fileName, kind === "sick" ? "sick-document" : "compensatory-event-photo");
     // Random per-upload id so concurrent uploads never collide; the pending object is downloaded into
     // its final canonical path and deleted as soon as the request is created (or on failure).
-    const path = `pending/${kind}/${employeeHrId}/${crypto.randomUUID()}/${fileName}`;
+    const path = buildPendingVacationAttachmentPath({
+      fileName: body?.fileName,
+      hrId: access.hrId,
+      kind,
+      uploadId: crypto.randomUUID(),
+    });
 
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.storage.from(vacationAttachmentBucket).createSignedUploadUrl(path);

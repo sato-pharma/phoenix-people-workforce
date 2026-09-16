@@ -15,6 +15,7 @@ import {
   rollupByArea,
   rollupByRep,
   shiftPeriod,
+  splitPeriodAtPublication,
   totalRows,
   type BrickSalesRow,
   type VsTargetNames,
@@ -262,6 +263,84 @@ export function runSalesVsTargetTests() {
     pickLandingPeriod([...loadedMonth, directOrderOnly], new Set<string>(), "2026-08"),
     "2026-08",
     "with nothing published at all the caller's fallback wins, and the UI renders the not-published panel",
+  );
+
+  // ── An unpublished month quotes its TARGET, never its sales ────────────────
+  // Confirmed on production 2026-09-16: a CNS medical rep's September 2026 carried a 300,085.04 EGP
+  // target, yet the not-published panel's "A target of … is already loaded" sentence could never
+  // render. It read `totals.targetValue`, and `totals` is built from PUBLISHED rows only — so for an
+  // unpublished month it is 0 by construction. The target now comes from the raw rows of the month,
+  // beside pendingDirectValue, while the publication gate itself stays exactly as it was.
+  const septemberTargets = [
+    row({ period: "2026-09", productCode: "P1", targetValue: 180_050.02, hasTarget: true, hasActual: false }),
+    row({ period: "2026-09", productCode: "P2", targetValue: 120_035.02, hasTarget: true, hasActual: false }),
+  ];
+  // Real money already sitting in the unpublished month, so "no sales quoted" is tested against a
+  // month that HAS sales to leak rather than one with nothing to leak.
+  const septemberSale = row({ period: "2026-09", productCode: "P3", actualValue: 9_876.5, hasActual: true });
+  const unpublishedSeptember = splitPeriodAtPublication([...septemberTargets, septemberSale], published);
+  assert.equal(unpublishedSeptember.salesLoaded, false, "September has no published closing, so its sales are not loaded");
+  assert.equal(
+    unpublishedSeptember.pendingTargetValue,
+    300_085.04,
+    "THE HEADLINE: an unpublished month with targeted rows must quote the target already loaded for it — " +
+      "0 here is the not-published panel's target sentence never rendering",
+  );
+  assert.deepEqual(
+    unpublishedSeptember.rows,
+    [],
+    "no row of an unpublished month crosses the publication gate — the gate is unchanged by the fix",
+  );
+  assert.equal(
+    totalRows(unpublishedSeptember.rows).actualValue,
+    0,
+    "so the sales the dashboard quotes for an unpublished month stay empty: the target is quoted, the sales are not",
+  );
+  assert.equal(
+    totalRows(unpublishedSeptember.rows).targetValue,
+    0,
+    "and the published totals' own target is 0 here too, which is exactly why the panel cannot quote it",
+  );
+  assert.equal(
+    unpublishedSeptember.pendingDirectValue,
+    9_876.5,
+    "the booked value stays its own figure, and none of it is folded into the quoted target",
+  );
+
+  const publishedJuly = splitPeriodAtPublication(loadedMonth, published);
+  assert.equal(publishedJuly.salesLoaded, true, "a published month loads its sales");
+  assert.deepEqual(publishedJuly.rows, loadedMonth, "every row of a published month crosses the gate");
+  assert.equal(
+    publishedJuly.pendingTargetValue,
+    0,
+    "a published month quotes its target in the totals, never a second time as a pending figure",
+  );
+
+  // The figure is worthless if the panel stops reading it, and no unit test can render the dashboard (a
+  // .tsx client component this runner cannot load). Pinned by reading the source whole-file, comments
+  // stripped, and slicing on the panel's own branch markers rather than a byte window.
+  const dashboardSource = readFileSync(
+    new URL("../src/components/sales/vs-target/vs-target-dashboard.tsx", import.meta.url),
+    "utf8",
+  )
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const panelStart = dashboardSource.indexOf("{!data.salesLoaded ? (");
+  const panelEnd = dashboardSource.indexOf(") : data.isEmptyScope ? (", panelStart);
+  assert.ok(
+    panelStart !== -1 && panelEnd > panelStart,
+    "the not-published panel is the `!data.salesLoaded` branch ahead of the empty-scope branch — re-point this " +
+      "check at wherever the panel moved, never drop it",
+  );
+  const notPublishedPanel = dashboardSource.slice(panelStart, panelEnd);
+  assert.ok(
+    notPublishedPanel.includes("formatEgpFull(data.pendingTargetValue)"),
+    "the not-published panel must quote pendingTargetValue — the only target an unpublished month carries",
+  );
+  assert.ok(
+    !notPublishedPanel.includes("data.totals."),
+    "the not-published panel must read nothing from `totals`: its target is always 0 there, and its sales are " +
+      "exactly what the publication gate withholds",
   );
 
   // ── Trend keeps empty months visible ───────────────────────────────────────
