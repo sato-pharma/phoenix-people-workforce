@@ -1066,7 +1066,12 @@ export function EmployeePortalSidebar({
             >
               {collapsed ? <ChevronsRight className="h-[17px] w-[17px]" /> : <ChartColumnBig className="h-[17px] w-[17px]" />}
             </button>
-            <nav className="phoenix-employee-sidebar-scroll mt-5 flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 pb-3">
+            {/* A 52px link leaves this nav no room for side padding or a scrollbar track in the 58px
+                rail: `px-2` plus the sidebar scroller's reserved gutter made it wider than the rail,
+                so it hung past the card's clip and hid the active marker. The nav is the marker's
+                positioning context, which keeps it on the rail's edge at 58px and collapsed alike.
+                Budget: src/config/sidebar-metrics.ts; pinned by tests/shell-chrome-overflows.test.ts. */}
+            <nav className="relative mt-5 flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {sections.map((section) => {
                 const Icon = sectionRailIcon(section.title);
                 const active = section.title === activeSectionTitle;
@@ -1074,7 +1079,7 @@ export function EmployeePortalSidebar({
                 return (
                   <Link
                     aria-label={section.title}
-                    className={`relative flex h-10 w-[52px] items-center justify-center rounded transition ${
+                    className={`flex h-10 w-[52px] items-center justify-center rounded transition ${
                       active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
                     }`}
                     href={firstItem.href}
@@ -1083,7 +1088,7 @@ export function EmployeePortalSidebar({
                     prefetch
                     title={section.title}
                   >
-                    {active ? <span className="absolute left-[-8px] h-7 w-[3px] rounded-r-sm bg-[#F05A1A]" /> : null}
+                    {active ? <span className="absolute left-0 h-7 w-[3px] rounded-r-sm bg-[#F05A1A]" /> : null}
                     <Icon className="h-[16px] w-[16px]" />
                   </Link>
                 );
