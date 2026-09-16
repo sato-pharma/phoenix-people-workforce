@@ -1088,6 +1088,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runTargetVisualsSharedTests } from "./target-visuals-shared.test.ts";
+import { runSalesTargetTablesFitTheScreenTests } from "./sales-target-tables-fit-the-screen.test.ts";
 import { runPortalIdentityBandAndSalesWindowTests } from "./portal-identity-band-and-sales-window.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
@@ -3603,6 +3604,7 @@ await runTest("direct orders approval window on mobile (every table desktop-only
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("target visuals shared (both target modules import one visual language; neither forks a primitive; null achievement stays neutral, null percent stays an em dash, ring arc stays clamped)", runTargetVisualsSharedTests);
+await runTest("sales target tables fit the screen (Portal Targets and Sales vs Target desktop tables: every column holds its unwrappable content at the narrowest 1024px portal table, merged column counts, colgroup and colSpan agree, no sideways scroll, floor or ellipsis)", runSalesTargetTablesFitTheScreenTests);
 await runTest("portal identity band and sales window (nothing renders above the identity banner on any of the 9 role centers, no horizontal nav rows on the portal, no ellipsis, a leaver leaves the list but not the money, every keycard names its closing month, and the landing page fits a 375px screen)", runPortalIdentityBandAndSalesWindowTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
