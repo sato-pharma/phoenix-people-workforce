@@ -2,6 +2,10 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { loadClosingPerformanceReview } from "@/lib/sales/closing-performance-review";
+import {
+  canOpenClosingPerformanceReview,
+  CLOSING_PERFORMANCE_REVIEW_AUDIENCE_MESSAGE,
+} from "@/lib/sales/closing-performance-review-access";
 import { parseCodeList, parsePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 
 export const runtime = "nodejs";
@@ -16,10 +20,17 @@ export const dynamic = "force-dynamic";
  * The filter is applied HERE rather than in the browser, unlike the Monthly Closing screen's own:
  * the review is six views derived from the matrix, and narrowing after the derivation would leave
  * a rank of "3rd of 50" printed above a table showing four rows.
+ *
+ * Same audience as the page, asked through the same function. `sales:import` alone names the same
+ * two roles today, but only because of how the matrix happens to read — one override granting it
+ * to another role would open the company-wide review to that role here, and nowhere else.
  */
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    if (!canOpenClosingPerformanceReview(access)) {
+      return Response.json({ error: CLOSING_PERFORMANCE_REVIEW_AUDIENCE_MESSAGE, success: false }, { status: 403 });
+    }
     await assertPermission(access, "sales", "import");
 
     const url = new URL(request.url);

@@ -8,16 +8,21 @@ import {
   loadClosingPerformanceReview,
   type ClosingPerformanceReview,
 } from "@/lib/sales/closing-performance-review";
+import { canOpenClosingPerformanceReview } from "@/lib/sales/closing-performance-review-access";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Performance Review — the presentation cut of the Monthly Closing.
  *
- * Same audience and same gate as /sales/monthly-closing itself: Super Admin and system scope get it,
- * SFE Manager gets it because he already reads that matrix (owner decision, 2026-08-05), and everyone
- * else reaches the closing through the employee portal. It publishes nothing and mutates nothing —
- * it re-reads the closing and re-shapes it, so there is no write to gate separately.
+ * Super Admin and system scope get it, SFE Manager gets it because he already reads that matrix
+ * (owner decision, 2026-08-05), and everyone else reaches the closing through the employee portal.
+ * /sales/monthly-closing has also admitted the CEO since 2026-09-07; this page does not.
+ *
+ * That audience is `canOpenClosingPerformanceReview`, and both API routes behind this page ask the
+ * same function — the export once asked only `sales:export`, which reaches down to Medical Rep. It
+ * publishes nothing and mutates nothing — it re-reads the closing and re-shapes it, so there is no
+ * write to gate separately.
  */
 export default async function ClosingPerformanceReviewPage({
   searchParams,
@@ -29,8 +34,7 @@ export default async function ClosingPerformanceReviewPage({
     redirect("/employee-portals/source-of-sales");
   }
 
-  const isSystemAdministratorViewer = access.role === "Super Admin" || access.scope === "system";
-  if (!isSystemAdministratorViewer && access.role !== "SFE Manager") {
+  if (!canOpenClosingPerformanceReview(access)) {
     redirect(resolveLandingPathForRole(access.role));
   }
 
