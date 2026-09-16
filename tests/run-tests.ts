@@ -1557,6 +1557,7 @@ import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
+import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -5077,6 +5078,10 @@ await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowra
 await runTest(
   "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
   runPortalChromeNeverClipsTextTests,
+);
+await runTest(
+  "shell chrome fits outside main (the portal icon rail's nav fits its 58px rail and keeps the active marker inside the clip; the admin search placeholder wraps, never an ellipsis)",
+  runShellChromeOverflowsTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
