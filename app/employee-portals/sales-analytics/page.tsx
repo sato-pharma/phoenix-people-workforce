@@ -7,6 +7,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canViewPortalCoreAnalytics, canViewPortalDetailedAnalytics } from "@/lib/analytics/portal-access";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { isWeeklyTerritoryViewerRole } from "@/lib/sales/weekly/territory-gate";
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 
 import {
@@ -21,8 +22,10 @@ export const dynamic = "force-dynamic";
 
 // Portal Sales Analytics hub. The employee-portal layout supplies the portal shell; this page only
 // renders the tile grid. Field roles reach their OWN scoped analytics here — never via an /admin URL.
-// Tiles follow the tier matrix (see canViewPortalDetailedAnalytics): everyone gets the 3 core
-// dashboards; RM + line managers additionally get Executive Comparison + Reconciliation.
+// Tiles follow the tier matrix (see canViewPortalDetailedAnalytics): everyone gets the core
+// dashboards; RM + line managers additionally get Executive Comparison + Reconciliation. The Weekly
+// tile goes to the weekly territory viewers only: a Medical Rep's weekly screen is his own area's,
+// and the Weekly Sales Analytics pages send him away (territory-gate.ts).
 
 const CORE_MODULES = [
   {
@@ -81,9 +84,12 @@ export default async function PortalSalesAnalyticsHubPage() {
   await assertPermission(access, "sales", "read");
   if (!canViewPortalCoreAnalytics(access.role)) redirect(resolveLandingPathForRole(access.role));
 
+  const coreModules: ReadonlyArray<(typeof CORE_MODULES)[number]> = isWeeklyTerritoryViewerRole(access.role)
+    ? CORE_MODULES
+    : CORE_MODULES.filter((mod) => mod.href !== "/employee-portals/sales-analytics/weekly-sales");
   const modules = canViewPortalDetailedAnalytics(access.role)
-    ? [...CORE_MODULES, ...DETAILED_MODULES]
-    : CORE_MODULES;
+    ? [...coreModules, ...DETAILED_MODULES]
+    : coreModules;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">

@@ -6,8 +6,14 @@
 // territory dashboard: region and distributor breakdowns, a Field Force table that names every rep in
 // the line, and an export. A rep must see none of that. He sees his own area's value week by week and
 // each product's units week by week, and no other rep's name or number (the owner's Source of Sales
-// precedent, 2026-09-14). So PORTAL_WEEKLY_ROLES keeps refusing him, the managers' API and export keep
-// refusing him, and this module is the only path by which weekly figures reach a rep's screen.
+// precedent, 2026-09-14). So PORTAL_WEEKLY_ROLES keeps refusing him on the managers' portal screen, its
+// API and its export, and the territory gate (territory-gate.ts) refuses him on the admin dashboard
+// API, its three workbooks and the portal Sales Analytics weekly pages, which his `weekly_sales:read`
+// grant alone opened until 2026-09-16. Weekly sales totals reach him cut to his own areas by two paths:
+// this module, and the month-pace strip on his Source of Sales screen (sos-month-pace-loader.ts).
+// Weekly Stock is the exception: it covers the depots of his line and region (owner, 2026-09-14), and
+// each depot, area and region row carries the average weekly sales its weeks of cover are measured
+// against.
 //
 // WHY THE LOAD LIFTS HIS GEOGRAPHY, THEN KEEPS ONLY HIS SEAT
 // ────────────────────────────────────────────────────────

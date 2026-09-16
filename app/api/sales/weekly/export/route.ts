@@ -6,6 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { buildWeeklyExportWorkbook } from "@/lib/sales/weekly/export-workbook";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -16,6 +17,8 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "read");
+    // The grant reaches Medical Rep too; this is a territory workbook, so the role decides (territory-gate.ts).
+    assertWeeklyTerritoryViewer(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:weekly" });
 
     const params = new URL(request.url).searchParams;
