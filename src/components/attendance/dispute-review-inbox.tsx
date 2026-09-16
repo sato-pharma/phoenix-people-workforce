@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { disputeSalaryFallbackText } from "@/lib/attendance/digest-rules.ts";
 import type { PendingDispute } from "@/lib/attendance/digest-service.ts";
 
 // Square edges (owner rule 2026-09-04) and no horizontal scroll at any width: each
@@ -58,13 +59,20 @@ export function DisputeReviewInbox({ initialDisputes, initialError }: Props) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.message ?? "Could not record that decision.");
-      // A rejected annual-balance choice falls back to salary when the balance no longer
-      // covers the day. Say so: the reviewer clicked "reject", not "charge salary".
+      const notices: string[] = [];
+      // A rejected annual-balance choice falls back to salary when the balance can no longer be
+      // used. Say so, with the real cause: the reviewer clicked "reject", not "charge salary".
       if (!uphold && dispute.chosenMethod === "annual_balance" && payload?.appliedMethod === "salary") {
-        setNotice(
-          `${dispute.employeeName}, ${formatDay(dispute.workDate)}: the annual balance no longer covers this day, so it was deducted from salary.`,
+        notices.push(`${dispute.employeeName}, ${formatDay(dispute.workDate)}: ${disputeSalaryFallbackText(payload?.balanceRefusal ?? null)}`);
+      }
+      // The decision is saved either way. Say when the employee could not be told, so nobody
+      // assumes they were.
+      if (payload?.notified === false) {
+        notices.push(
+          `${dispute.employeeName} could not be told in the app or on Telegram. The decision is saved and shows on their weekly attendance page.`,
         );
       }
+      if (notices.length) setNotice(notices.join(" "));
       setDisputes((current) => current.filter((item) => item.lineId !== lineId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not record that decision.");

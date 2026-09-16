@@ -212,13 +212,24 @@ function addDaysIso(dateIso: string, days: number): string {
 }
 
 /**
- * The last day an employee can still answer: the Nth working day AFTER the release date.
+ * How many calendar days the answer window is walked before giving up. Longer than any leave a person
+ * can be on, so leave never reaches it; it exists only so a predicate that never says "working"
+ * cannot loop forever.
+ */
+export const ANSWER_WINDOW_MAX_CALENDAR_DAYS = 1000;
+
+/**
+ * The last day an employee can still answer: the Nth day AFTER the release date that counts toward
+ * the answer window (countsTowardAnswerWindow).
  *
  * Released on a Sunday with 2 working days → Monday and Tuesday are the two days, and the answer
  * is due by the end of Tuesday. The release day itself never counts — a week released at 11pm
- * must not have spent half its window already. Capped at 60 calendar days so a predicate that
- * never says "working" (a broken calendar) cannot loop forever; the cap falls back to the plain
- * calendar count, which is the most generous reading the employee could be given.
+ * must not have spent half its window already.
+ *
+ * If no day in ANSWER_WINDOW_MAX_CALENDAR_DAYS counts, the answer is the last day walked: later than
+ * any date the walk could have found, so a broken calendar can only make a deadline more generous,
+ * never take salary sooner. Until 2026-09-15 the cap was 60 days and fell back to the plain calendar
+ * count — the EARLIEST reading, which a leave longer than the cap would have reached.
  */
 export function answerDueDate(input: {
   releasedOnIso: string;
@@ -228,14 +239,48 @@ export function answerDueDate(input: {
   const wanted = Math.max(1, Math.floor(input.workingDays));
   let counted = 0;
   let cursor = input.releasedOnIso;
-  for (let step = 0; step < 60; step += 1) {
+  for (let step = 0; step < ANSWER_WINDOW_MAX_CALENDAR_DAYS; step += 1) {
     cursor = addDaysIso(cursor, 1);
     if (input.isWorkingDay(cursor)) {
       counted += 1;
       if (counted === wanted) return cursor;
     }
   }
-  return addDaysIso(input.releasedOnIso, wanted);
+  return cursor;
+}
+
+/**
+ * The leave requests whose days pause the answer window: approved leave (owner, 2026-09-15 — "Pause
+ * for leave days"), and leave still waiting for a decision (owner, 2026-09-16 — "Pending pauses
+ * too"), so a sick day filed before anyone approves it is not settled to salary while it waits. The
+ * waiting statuses are the vacation module's in-flight set (IN_FLIGHT_VACATION_STATUSES in
+ * src/lib/vacation/service.ts), and a test holds the two lists together. A rejected or returned
+ * request pauses nothing, and a deadline already given or saved is never brought back earlier
+ * (heldAnswerDueDate).
+ */
+export const ANSWER_WINDOW_LEAVE_STATUSES = ["approved", "needs_assignment", "pending_manager", "pending_hr"] as const;
+
+/**
+ * Whether a day counts toward the employee's answer window: a day on their own schedule that is
+ * neither a public holiday nor a day of leave (ANSWER_WINDOW_LEAVE_STATUSES). Someone on leave is not
+ * at work to answer, so the window waits until they are back.
+ */
+export function countsTowardAnswerWindow(input: {
+  isScheduledWorkingDay: boolean;
+  isPublicHoliday: boolean;
+  onLeave: boolean;
+}): boolean {
+  return input.isScheduledWorkingDay && !input.isPublicHoliday && !input.onLeave;
+}
+
+/**
+ * The deadline that holds when it is worked out again: the later of the date the employee was told
+ * and the date the answer window gives now. Leave approved after the release moves it later. Nothing
+ * moves it earlier — a cancelled leave or a shorter setting never shortens a deadline already given.
+ */
+export function heldAnswerDueDate(input: { toldDueOn: string | null; recomputedDueOn: string }): string {
+  if (!input.toldDueOn) return input.recomputedDueOn;
+  return input.recomputedDueOn > input.toldDueOn ? input.recomputedDueOn : input.toldDueOn;
 }
 
 /** Overdue only once the due date has fully passed in Cairo — the due date itself is still open. */
@@ -280,14 +325,14 @@ export function balanceCoversDays(input: {
   return input.paidDurationDays + 1e-9 >= input.days;
 }
 
-// The release notice. No amount: Telegram is a lock-screen channel, and the amount is one tap away.
+// The notices. No amount on either: Telegram is a lock-screen channel, and the amount is one tap away.
 function formatShortDay(dateIso: string): string {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(
     new Date(`${dateIso}T00:00:00Z`),
   );
 }
 
-function formatDueDay(dateIso: string): string {
+function formatLongDay(dateIso: string): string {
   return new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(
     new Date(`${dateIso}T00:00:00Z`),
   );
@@ -301,6 +346,41 @@ export function buildWeekReleasedMessage(input: { weekStart: string; weekEnd: st
       `Your attendance for ${formatShortDay(input.weekStart)} to ${formatShortDay(input.weekEnd)} has ${days} with a deduction.\n\n` +
       `For each day, choose whether it is deducted from your salary or from your annual vacation balance. ` +
       `After choosing, you can dispute the day if you believe it is wrong.\n\n` +
-      `Please answer by the end of ${formatDueDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`,
+      `Please answer by the end of ${formatLongDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`,
+  };
+}
+
+/**
+ * The dispute decision notice (owner, 2026-09-15 — "Yes, in-app and Telegram"). Names the day and the
+ * outcome and, for a rejected dispute, where the deduction is taken from — with the real cause when
+ * annual balance could not be used (disputeSalaryFallbackText). The reviewer's note is not quoted: it
+ * is free text on a lock-screen channel, and it is one tap away on the employee's page.
+ */
+export function buildDisputeDecidedMessage(input: {
+  workDate: string;
+  upheld: boolean;
+  appliedMethod: DeductionMethod | null;
+  chosenMethod: DeductionMethod | null;
+  balanceRefusal: string | null;
+  hasReviewerNote: boolean;
+}) {
+  const note = input.hasReviewerNote ? " The reviewer left a note on your weekly attendance page." : "";
+  if (input.upheld) {
+    return {
+      title: `Attendance dispute accepted — ${formatShortDay(input.workDate)}`,
+      message: `Your dispute for ${formatLongDay(input.workDate)} was accepted. Nothing is deducted for that day.${note}`,
+    };
+  }
+  const outcome =
+    input.appliedMethod === "annual_balance"
+      ? "The deduction for that day is taken from your annual vacation balance, as you chose."
+      : input.chosenMethod === "annual_balance"
+        ? disputeSalaryFallbackText(input.balanceRefusal)
+        : input.chosenMethod === "salary"
+          ? "The deduction for that day is taken from your salary, as you chose."
+          : "The deduction for that day is taken from your salary.";
+  return {
+    title: `Attendance dispute rejected — ${formatShortDay(input.workDate)}`,
+    message: `Your dispute for ${formatLongDay(input.workDate)} was rejected. ${outcome}${note}`,
   };
 }

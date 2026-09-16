@@ -4,6 +4,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -1366,14 +1367,39 @@ function isMissingTableError(error: unknown): boolean {
 }
 
 /**
+ * Whether the employee record says this person has LEFT: any employment status outside active and
+ * on leave, read through the auth module's own isTerminalEmploymentStatus so nobody here keeps a
+ * second list of statuses. Fails CLOSED — an unreadable record, or no record at all, counts as
+ * still with the company, which keeps the month-end block in place.
+ */
+async function employeeHasLeft(employeeHrId: string): Promise<boolean> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("employment_status")
+    .ilike("hr_id", employeeHrId)
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return false;
+  return isTerminalEmploymentStatus((data as { employment_status?: string | null }).employment_status);
+}
+
+/**
  * Refuse to approve a fingerprint deduction for a day the weekly attendance review said is NOT
  * charged, or has not finished deciding:
  *   • removed before the week was released (the owner took it out),
  *   • a dispute the reviewer upheld,
- *   • a dispute still waiting for the reviewer — approving now would pre-empt that decision.
- * The bridge closes these as Do Not Take Action, but only while the deduction is still Pending; a
- * person approving it first would have charged a day the review cleared, with nothing reporting it.
- * Fails CLOSED on a read error.
+ *   • a dispute still waiting for the reviewer — approving now would pre-empt that decision,
+ *   • a day still pending in a week waiting for release (owner, 2026-09-15 — "Block until
+ *     released"): the employee has not been asked, and the Super Admin may still untick the day,
+ *   • a day still pending in a released week (owner, 2026-09-16 — "Block until answered"): the
+ *     employee can still pay it from annual balance or dispute it, until they answer or the answer
+ *     deadline settles it.
+ * A day still pending when payroll closes is not deducted that month. The bridge closes the cleared
+ * days as Do Not Take Action, but only while the deduction is still Pending; a person approving it
+ * first would have charged a day the review cleared, with nothing reporting it. The bridge's own
+ * approvals never trip the pending check: a fingerprint deduction is one day (the connector writes
+ * `dates: [row.dateIso]`), and the bridge approves a day only once it has settled. Fails CLOSED on a
+ * read error.
  */
 async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: string | null; dates: string[] }) {
   const hrId = String(input.employeeHrId ?? "").trim();
@@ -1382,7 +1408,7 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
   const hrPattern = hrId.replace(/[\\%_]/g, (char) => `\\${char}`);
   const supabase = getSupabaseAdmin();
 
-  const [cleared, disputed] = await Promise.all([
+  const [cleared, disputed, undecided] = await Promise.all([
     // A trial-run week's removal never reaches payroll (the bridge skips it), so it must not block
     // the real deduction either.
     supabase
@@ -1399,8 +1425,18 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
       .in("work_date", dates)
       .ilike("attendance_weekly_digests.employee_hr_id", hrPattern)
       .eq("attendance_weekly_digests.dry_run", false),
+    // A day still pending in a real week: waiting for release, or released and not answered yet. A
+    // trial-run week is never released, so it never blocks.
+    supabase
+      .from("attendance_digest_lines")
+      .select("work_date,attendance_weekly_digests!inner(employee_hr_id,status,dry_run,notified_at)")
+      .eq("action", "pending")
+      .in("work_date", dates)
+      .ilike("attendance_weekly_digests.employee_hr_id", hrPattern)
+      .in("attendance_weekly_digests.status", ["awaiting_release", "open"])
+      .eq("attendance_weekly_digests.dry_run", false),
   ]);
-  for (const read of [cleared, disputed]) {
+  for (const read of [cleared, disputed, undecided]) {
     if (read.error && !isMissingTableError(read.error)) {
       throw new Error(`Failed to check the weekly attendance review for this day: ${read.error.message}`);
     }
@@ -1419,6 +1455,50 @@ async function assertDayNotClearedInAttendanceReview(input: { employeeHrId: stri
       `Conflict: the employee has an open dispute for ${disputedRows.map((row) => String(row.work_date)).join(", ")} in the weekly attendance review. Decide the dispute first, or mark this deduction Needs Follow-up.`,
     );
   }
+  const allUndecidedRows = (undecided.error ? [] : (undecided.data ?? [])) as Array<{ work_date: string; attendance_weekly_digests: unknown }>;
+  const nestedDigest = (row: { attendance_weekly_digests: unknown }) => {
+    const nested = row.attendance_weekly_digests as
+      | { status?: string; notified_at?: string | null }
+      | Array<{ status?: string; notified_at?: string | null }>
+      | null;
+    return Array.isArray(nested) ? nested[0] : nested;
+  };
+  const weekStatus = (row: { attendance_weekly_digests: unknown }) => nestedDigest(row)?.status;
+  const weekNotified = (row: { attendance_weekly_digests: unknown }) => Boolean(nestedDigest(row)?.notified_at);
+  // A day of a released week whose notice reached NOBODY, for somebody who has LEFT, blocks nothing:
+  // HR decides it (the owner's answer, 2026-09-16). Notices only go to current staff, so a leaver is
+  // never told, their answer deadline never runs out, and this check would otherwise refuse the day
+  // in their FINAL payroll for ever. HR settles it here as it did before the weekly review existed —
+  // approve it from the final pay, or record Do Not Take Action. Nothing is deducted automatically
+  // without a notice, and the annual-balance guard still refuses a day already decided, so no day is
+  // ever charged twice. Anyone still with the company keeps the block, because they can answer; so
+  // does a week still waiting for release, which is still the Super Admin's to untick.
+  const untold = allUndecidedRows.filter((row) => weekStatus(row) === "open" && !weekNotified(row));
+  const undecidedRows = untold.length && (await employeeHasLeft(hrId)) ? allUndecidedRows.filter((row) => !untold.includes(row)) : allUndecidedRows;
+  if (undecidedRows.length) {
+    const daysOf = (rows: Array<{ work_date: string }>) => Array.from(new Set(rows.map((row) => String(row.work_date))));
+    const unreleased = daysOf(undecidedRows.filter((row) => weekStatus(row) === "awaiting_release"));
+    if (unreleased.length) {
+      throw new Error(
+        `Conflict: ${unreleased.join(", ")} ${unreleased.length === 1 ? "is" : "are"} still waiting for release in the weekly attendance review, so the employee has not been asked yet. Release that week on the Weekly Attendance Review page first, or mark this deduction Needs Follow-up.`,
+      );
+    }
+    // Released and not answered yet: the employee can still pay the day from annual balance or dispute it.
+    throw new Error(
+      `Conflict: the employee has not answered ${daysOf(undecidedRows).join(", ")} in the weekly attendance review yet, and can still choose annual balance or dispute. Wait for their answer or for the answer deadline to settle it, or mark this deduction Needs Follow-up.`,
+    );
+  }
+}
+
+/**
+ * The two weekly-attendance-review checks recordDecision runs before approving a fingerprint day,
+ * for a caller that WRITES before it calls recordDecision. The Employee Day-by-Day Report creates
+ * the day's candidate, or raises its stored ceiling, first — so without this an approval the review
+ * refuses would still leave that write behind. recordDecision runs them both again itself.
+ */
+export async function assertFingerprintDayApprovable(input: { employeeHrId: string | null; dates: string[] }) {
+  await assertDayNotPaidFromAnnualBalance(input);
+  await assertDayNotClearedInAttendanceReview(input);
 }
 
 /** Super-Admin-gated: record or update a candidate's decision. */

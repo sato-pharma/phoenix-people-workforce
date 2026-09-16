@@ -165,7 +165,7 @@ export function classifyAttendanceDay(input: {
   };
 }
 
-type ApprovedLeaveRow = {
+type LeaveRequestRow = {
   employee_hr_id: string | null;
   end_date: string | null;
   start_date: string | null;
@@ -180,8 +180,25 @@ export async function getApprovedLeaveDayMap(input: {
   dateToIso: string;
   employeeHrIds?: string[];
 }): Promise<Map<string, Set<string>>> {
+  return getLeaveDayMap({ ...input, statuses: ["approved"] });
+}
+
+/**
+ * Leave days per employee within the range, from requests in any of `statuses` (dates clamped to the
+ * range, HR IDs normalized). The weekly attendance review's answer window also counts leave still
+ * waiting for a decision (ANSWER_WINDOW_LEAVE_STATUSES in digest-rules.ts); every other reader wants
+ * approved leave only, through getApprovedLeaveDayMap.
+ */
+export async function getLeaveDayMap(input: {
+  dateFromIso: string;
+  dateToIso: string;
+  employeeHrIds?: string[];
+  statuses: readonly string[];
+}): Promise<Map<string, Set<string>>> {
   const leaveByEmployee = new Map<string, Set<string>>();
   if (!isIsoDate(input.dateFromIso) || !isIsoDate(input.dateToIso)) return leaveByEmployee;
+  const statuses = [...input.statuses];
+  const failure = statuses.length === 1 && statuses[0] === "approved" ? "Approved leave lookup failed" : "Leave lookup failed";
 
   const supabase = getSupabaseAdmin();
   const normalizedFilter = (input.employeeHrIds ?? [])
@@ -191,29 +208,29 @@ export async function getApprovedLeaveDayMap(input: {
   // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
   // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
   // HeadersOverflowError — callers pass company/site-wide rosters here, so batch when filtered.
-  const rows: ApprovedLeaveRow[] = [];
+  const rows: LeaveRequestRow[] = [];
   if (normalizedFilter.length > 0) {
     for (let i = 0; i < normalizedFilter.length; i += 100) {
       const batch = normalizedFilter.slice(i, i + 100);
       const { data, error } = await supabase
         .from("v2_vacation_requests")
         .select("employee_hr_id,start_date,end_date")
-        .eq("status", "approved")
+        .in("status", statuses)
         .lte("start_date", input.dateToIso)
         .gte("end_date", input.dateFromIso)
         .in("employee_hr_id", batch);
-      if (error) throw new Error(`Approved leave lookup failed: ${error.message}`);
-      rows.push(...((data ?? []) as ApprovedLeaveRow[]));
+      if (error) throw new Error(`${failure}: ${error.message}`);
+      rows.push(...((data ?? []) as LeaveRequestRow[]));
     }
   } else {
     const { data, error } = await supabase
       .from("v2_vacation_requests")
       .select("employee_hr_id,start_date,end_date")
-      .eq("status", "approved")
+      .in("status", statuses)
       .lte("start_date", input.dateToIso)
       .gte("end_date", input.dateFromIso);
-    if (error) throw new Error(`Approved leave lookup failed: ${error.message}`);
-    rows.push(...((data ?? []) as ApprovedLeaveRow[]));
+    if (error) throw new Error(`${failure}: ${error.message}`);
+    rows.push(...((data ?? []) as LeaveRequestRow[]));
   }
 
   for (const row of rows) {

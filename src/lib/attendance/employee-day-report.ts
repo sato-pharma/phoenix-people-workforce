@@ -63,7 +63,7 @@ import { cairoTodayIso } from "@/lib/attendance/working-days";
 // "fingerprint_report" and sourceRecordId `${normalizeAttendanceHrId(hrId)}:${dateIso}`
 // — and this file also runs a by-day reuse scan first, so the collector and an
 // on-demand confirmation converge on ONE candidate instead of double-charging.
-import { insertCandidateDrafts, listCandidatesForMonth, recordDecision } from "@/lib/deductions/service.ts";
+import { assertFingerprintDayApprovable, insertCandidateDrafts, listCandidatesForMonth, recordDecision } from "@/lib/deductions/service.ts";
 import { compactDeductionsHrId } from "@/lib/deductions/candidate-key.ts";
 import type { DeductionsCandidateDraft, DeductionsDecision } from "@/lib/deductions/types.ts";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -614,6 +614,13 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
           year,
         }) ?? null)
       : null;
+
+  // The weekly attendance review's own checks, BEFORE anything is written. recordDecision runs them
+  // too, but only after the candidate below has been created or its stored ceiling raised — and a
+  // refusal then leaves that write behind, for a day the review says is not payroll's to charge.
+  if (input.decisionStatus === "Approved for Payroll") {
+    await assertFingerprintDayApprovable({ employeeHrId: hrId, dates: [input.dateIso] });
+  }
 
   // 1) Reuse ANY existing non-superseded fingerprint candidate that already covers this exact
   //    employee + day, whichever surface created it (the monthly connector, or an earlier
