@@ -197,11 +197,17 @@ export function runShellChromeOverflowsTests() {
   const navNeeds = linkWidth + padLeft + padRight + track.px;
   const navFillsRail = nav.includes("w-full") || nav.includes("self-stretch");
   const markerContext = link.includes("relative") ? "link" : nav.includes("relative") ? "nav" : null;
+  assert.ok(
+    markerContext,
+    `${LAYOUT}: neither the rail link nor its nav is \`relative\`, so the active marker is placed ` +
+      `against some ancestor outside the rail.`,
+  );
 
-  for (const [state, width] of [
-    ["expanded", railWidth],
-    ["collapsed", collapsedAside - PORTAL_CARD_BORDER],
-  ] as const) {
+  const rails: Array<{ state: string; width: number }> = [
+    { state: "expanded", width: railWidth },
+    { state: "collapsed", width: collapsedAside - PORTAL_CARD_BORDER },
+  ];
+  for (const { state, width } of rails) {
     assert.ok(
       navNeeds <= width,
       `${LAYOUT}: the icon rail's nav needs ${navNeeds}px (a ${linkWidth}px link + ${padLeft}px + ` +
@@ -211,15 +217,13 @@ export function runShellChromeOverflowsTests() {
         `and the card's clip swallows the active marker. Nav: "${navMatch[1]}".`,
     );
 
-    assert.ok(
-      markerContext,
-      `${LAYOUT}: neither the rail link nor its nav is \`relative\`, so the active marker is placed ` +
-        `against some ancestor outside the rail.`,
-    );
-    const navWidth = navFillsRail ? width : navNeeds;
-    const navX = (width - navWidth) / 2;
-    const linkX = navX + padLeft + (navWidth - padLeft - padRight - track.px - linkWidth) / 2;
-    const markerX = (markerContext === "link" ? linkX : navX) + markerInset;
+    // Typed on purpose. assert.ok is overloaded in @types/node, so TypeScript type-checks each call's
+    // message while it narrows the loop, and the message below reads these values: left to
+    // inference, they depend on themselves (TS7022 under strict).
+    const navWidth: number = navFillsRail ? width : navNeeds;
+    const navX: number = (width - navWidth) / 2;
+    const linkX: number = navX + padLeft + (navWidth - padLeft - padRight - track.px - linkWidth) / 2;
+    const markerX: number = (markerContext === "link" ? linkX : navX) + markerInset;
     assert.ok(
       markerX >= 0 && markerX + markerWidth <= width,
       `${LAYOUT}: in the ${state} ${width}px rail the active section's marker lands at ${markerX}px ` +
