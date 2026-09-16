@@ -147,4 +147,7 @@ export type CompanyActivityReport = {
    * cannot be scoped to anyone). Null when not computed for this query shape (see crm-detail.ts) —
    * never a fabricated 0. */
   unmappedCrmVisitCount: number | null;
+  /** False when Google's holiday calendar could not be read for a month in the range: a Google Calendar outage keeps holidaySourceConnected true for any month holding a company or fixed-date public holiday (1 May, say) while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing (owner, 2026-09-16).
+   * Those days then show as ordinary working days here. */
+  holidayCalendarReachable: boolean;
 };

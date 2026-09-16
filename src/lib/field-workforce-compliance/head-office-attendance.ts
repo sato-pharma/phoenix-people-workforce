@@ -52,6 +52,9 @@ export type HeadOfficeEmployeeAttendance = {
 export type HeadOfficeAttendanceCalendarResult = {
   employeeCount: number;
   employees: HeadOfficeEmployeeAttendance[];
+  /** False when Google's holiday calendar could not be read for this month: a Google Calendar outage keeps holidaySourceConnected true for any month holding a company or fixed-date public holiday (1 May, say) while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing (owner, 2026-09-16). Such a
+   * day then shows as a missing day here instead of a holiday. */
+  holidayCalendarReachable: boolean;
   month: number;
   year: number;
 };
@@ -101,7 +104,7 @@ export async function getHeadOfficeAttendanceCalendar(input: {
   });
 
   if (headOfficeEmployees.length === 0) {
-    return { employeeCount: 0, employees: [], month, year };
+    return { employeeCount: 0, employees: [], holidayCalendarReachable: true, month, year };
   }
 
   const employeeHrIds = headOfficeEmployees.map((employee) => employee.hrId);
@@ -185,5 +188,5 @@ export async function getHeadOfficeAttendanceCalendar(input: {
 
   employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName, undefined, { numeric: true }));
 
-  return { employeeCount: employees.length, employees, month, year };
+  return { employeeCount: employees.length, employees, holidayCalendarReachable: context.holidayCalendarReachable, month, year };
 }

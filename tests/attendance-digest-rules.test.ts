@@ -26,6 +26,7 @@ import {
 } from "../src/lib/attendance/digest-rules.ts";
 import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek } from "../src/lib/attendance/digest-weeks.ts";
 import { withWeekBuildLock } from "../src/lib/attendance/week-build-lock.ts";
+import { buildAttendanceCalendarContext } from "../src/lib/attendance/working-days.ts";
 
 // The weekly attendance review, owner decisions 2026-09-15 and 2026-09-16:
 //   release gate → employee chooses salary or annual balance → may then dispute →
@@ -487,6 +488,32 @@ export async function runAttendanceDigestRulesTests() {
     /if \(!calendar\.holidaySourceConnected\) \{\s*return \{ context: null/,
     "an unreadable holiday calendar gives no deadline — a holiday would count as a working day to answer in",
   );
+  assert.match(
+    answerWindowSource,
+    /if \(!calendar\.holidayCalendarReachable\) \{\s*return \{ context: null, unreadable: "The public holiday calendar"/,
+    "a Google Calendar outage gives no deadline either — a fixed-date holiday keeps the month connected while both Eids are missing",
+  );
+  // The outage itself, through the real holiday lookup. Google unreachable in May: Labour Day (a fixed
+  // date) still loads, so the month reads as connected, the flag release trusted before, while Eid
+  // al-Adha is missing. 2099 keeps this month out of the holiday cache a real lookup fills.
+  {
+    const savedFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => {
+        throw new TypeError("fetch failed");
+      }) as typeof fetch;
+      const outage = await buildAttendanceCalendarContext({ dateFromIso: "2099-05-01", dateToIso: "2099-05-31" });
+      assert.equal(outage.holidaysByDate.get("2099-05-01"), "Labour Day", "a fixed-date holiday still loads during an outage");
+      assert.equal(outage.holidaySourceConnected, true, "…so the month still reads as connected, which is why that flag cannot be the gate");
+      assert.equal(
+        outage.holidayCalendarReachable,
+        false,
+        "a Google Calendar outage must read as unreachable even in a month a fixed-date holiday keeps connected",
+      );
+    } finally {
+      globalThis.fetch = savedFetch;
+    }
+  }
   assert.match(
     answerWindowSource,
     /if \(leave instanceof Error\) \{\s*return \{ context: null/,

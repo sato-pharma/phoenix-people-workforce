@@ -12,6 +12,7 @@ function context(overrides: Partial<AttendanceCalendarContext> = {}): Attendance
   return {
     holidaysByDate: new Map<string, string>(),
     holidaySourceConnected: true,
+    holidayCalendarReachable: true,
     todayIso: "2026-06-10",
     ...overrides,
   };

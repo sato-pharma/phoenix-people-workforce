@@ -1889,8 +1889,12 @@ carries a raised figure forward on a later plain Decide instead of throwing.
 **Release refuses when the public holiday calendar or leave requests cannot be read**
 (`loadAnswerWindow`). Without them a holiday, or a day the employee is on leave, would count as a
 working day inside the answer window, and the deadline would come early. Nothing is released in
-that case. The deadline is counted on the employee's own attendance policy's weekly days off
-(`resolveActiveAttendancePolicy`), not a company-wide default.
+that case. **A Google Calendar outage counts as unreadable** (owner, 2026-09-16,
+`holidayCalendarReachable`). Company and fixed-date public holidays still load during an outage,
+so a month with 1 May, for example, used to read as connected while both Eids, Islamic New Year,
+the Prophet's Birthday and Coptic Easter were missing. The deadline is counted on the employee's
+own attendance policy's weekly days off (`resolveActiveAttendancePolicy`), not a company-wide
+default.
 
 **A build that fails is undone.** If a write fails partway through a build, by the daily job or by
 Build this week, `undoPartialBuild` deletes every digest that run created, and their days with them,
@@ -2088,8 +2092,9 @@ days wait (`deadlinesMoved` in the job's result). **A deadline is never brought 
 of the date the employee was told and the date worked out now holds (`heldAnswerDueDate`), and the
 save only ever moves a stored date later, so a rejected or cancelled leave request, or a lowered
 `answer_working_days`, never takes salary sooner. When the holiday calendar or leave requests
-cannot be read, the daily job settles **nothing** and returns 500, and an employee answering after
-the stored date is told to try again shortly. A calendar that never yields a working day cannot hang
+cannot be read, a Google Calendar outage included, the daily job settles **nothing** and returns
+500, and an employee answering after the stored date is told to try again shortly. A calendar
+that never yields a working day cannot hang
 the count: after 1,000 days it returns the last day walked, later than any date a real count could
 give. Measured on production, read-only, the night of 15–16 September 2026: all 551 leave requests,
 whatever their status, and all 7 employees with a real digest store their HR ID upper-case and
@@ -2163,12 +2168,13 @@ cycle, so week 4 is built on the 24th.
   can decide anything.
 - **Raising `answer_working_days` also lengthens deadlines already running,** once their stored
   date passes. Lowering it never shortens one.
-- **The holiday calendar can read as connected during a Google Calendar outage.** For a month with
-  a company or fixed-date public holiday, `connected` stays true while the moving Islamic and
-  Coptic holidays, such as the two Eids, are missing, so a release in such a month could set a
-  deadline too early. This predates the follow-ups: release trusted the same flag before. A
-  deadline worked out again never comes earlier than the one given, so the daily job cannot make
-  it worse.
+- **A Google Calendar outage holds release and the deadline until it passes.** While Google's
+  holiday calendar cannot be read, release refuses, the daily job settles nothing, returns 500 and
+  tries again on its next run, and an employee answering after the stored date is told to try again
+  shortly, even when leave has moved their deadline later. A failed read is remembered for up to 10
+  minutes (the holiday cache), so this can last that long after Google answers again. Until
+  2026-09-16 an outage in a month with a company or fixed-date public holiday read as connected, so
+  a release could count an Eid day.
 
 ### Settled later
 
@@ -2187,6 +2193,54 @@ by the risk review of those follow-ups later that day. He chose the recommended 
 - **"HR decides"** (2026-09-16): a day of a released week whose notice reached nobody stops blocking
   month-end approval once that employee has left, so a final payroll is never held up by a question
   they were never asked (§3).
+
+## A Google Calendar outage is not "no holidays" — owner decisions, 2026-09-16
+
+Egypt's moving holidays — both Eids, Islamic New Year, the Prophet's Birthday, Coptic Easter /
+Sham Ennessim — cannot be derived from a Gregorian rule. They exist only in Google's calendar. So
+when that feed cannot be read, `national-holidays.ts` falls back to the company list plus the seven
+fixed-date public holidays (7 Jan, 25 Jan, 25 Apr, 1 May, 30 Jun, 23 Jul, 6 Oct), and a month
+holding one of those comes back **`connected: true` with a non-empty list** while every moving
+holiday is simply absent and reads as an ordinary working day.
+
+Every gate written against `connected` therefore passed straight through the outage. **`calendarReachable`
+is the flag that tells the truth**, and a failed read is cached for 10 minutes, so an outage
+outlives itself by that long.
+
+**Checked read-only against production on 16 September 2026** (Railway DNS and network logs,
+deployment `e2cfc46b`, nothing triggered): `calendar.google.com` resolved NOERROR at 01:21, 01:31
+and 01:34 Cairo, each followed by real TLS traffic out on 443 that closed cleanly — the calendar was
+reachable that day. Railway's log feeds are short-retention, so a later re-probe returning nothing
+is a quiet feed, not an outage.
+
+### The rule
+
+**A path that can take money, or a day off a leave balance, REFUSES while `calendarReachable` is
+false. A path that only shows something keeps working and says the calendar is degraded.** The
+owner chose all four recommended options on 2026-09-16 ("1A 2A 3A 4A").
+
+| Reader | Answer | Why |
+| --- | --- | --- |
+| Weekly attendance review — release, the daily deadline sweep, the employee's late answer | **Refuses** | An Eid counted as a working day inside the answer window brings the deadline early, and the day settles to salary. |
+| Employee Day-by-Day report — **"Approved for Payroll"** | **Refuses** (1A/2A) | The day cannot be told apart from a public holiday and approving charges it. **Rejecting ("Do Not Take Action") stays open** — that direction costs nobody money. |
+| Automated Payroll part 2 — CRM leave (`loadCrmLeaveDatesByCompact`) | **Refuses** (1A) | CRM leave raised on an unconfirmed Eid is written into the leave-balance ledger for good, and settles to salary once the balance runs out. |
+| Payroll Copilot — holiday bridging | **Refuses** (1A) | Bridging *deducts* a day beside a holiday; computing the windows from half a calendar deducts the wrong day. |
+| Live deductions connectors — CRM, DSM no-record, holiday bridge | **Refuses** (already did) | Same money, already gated on `calendarReachable`. |
+| Leave filed next to a holiday (`validateOfficialHolidayAdjacency`) | **Refuses** (3A) | It would otherwise clear a request sitting right beside a holiday it cannot see. Its wording deliberately avoids the phrase *national holiday*, which the company-report approve route maps to its own adjacency message. |
+| Company Vacation Report — the approve click | **Refuses** (2A) | Approving takes the day off the employee's annual balance for good, with no correction path once a later month is published. 409 `holiday_calendar_unreadable`. |
+| Attendance analytics banner · monthly attendance summary · Company Activity Report (screen **and** workbook) · Head Office attendance calendar · the deductions/attendance reconciliation line | **Degraded, and says so** (4A) | Reading a month is not charging for it. Each now names what is missing rather than implying every holiday was lost. |
+| The T-3 holiday confirmation reminder | **Records the outage** (4A) | It used to return an empty list, which reads as *nothing to confirm*. The moving holidays are exactly what needs confirming **and** exactly what an outage hides, and only a confirmed holiday survives the next outage as an override — so silence loses that holiday twice. It writes an error log; **it sends no notification and no email.** |
+
+**Still deliberately degraded:** the vacation report's overlap *warnings* (`fetchHolidaysForRows`
+in `src/lib/vacation/service.ts`) under-warn during an outage. They only weaken a nudge — no money
+and no balance moves through them — so they were left alone rather than widen this change.
+
+### The shape to reuse
+
+`getConfirmedNationalHolidaysForPeriods(periods)` gathers several months at once, dedupes by
+holiday id, and reports **both** flags as ALL-of: one unreadable month makes the whole span
+unreadable. Each caller words its own refusal, because what it is refusing to do differs. Pinned by
+`tests/holiday-calendar-outage-gates.test.ts`.
 
 ## The premium Monthly Closing wears its own executive look — owner decision, 2026-09-08
 

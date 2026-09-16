@@ -1644,6 +1644,7 @@ import { runSecretBoxTests } from "./secret-box.test.ts";
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
 import { runAttendanceDigestEmailBlockTests } from "./attendance-digest-email-block.test.ts";
+import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
@@ -5389,6 +5390,10 @@ await runTest(
   runAttendanceDigestRulesTests,
 );
 await runTest("weekly attendance release notice is in-app + Telegram only, never email", runAttendanceDigestEmailBlockTests);
+await runTest(
+  "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",
+  runHolidayCalendarOutageGateTests,
+);
 
 await runTest(
   "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",
