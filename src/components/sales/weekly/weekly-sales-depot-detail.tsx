@@ -916,6 +916,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
   );
 }
 
+/** A row with no code of its own ("Region not mapped") has nothing to filter the page by, so its name is not a link. */
 function GroupTable({
   nameLabel,
   rows,
@@ -949,7 +950,7 @@ function GroupTable({
             {rows.map((row) => (
               <tr key={`${row.code}|${row.parentName}`} className="border-b border-slate-100 align-top transition hover:bg-orange-50/40">
                 <td className="px-3 py-2.5">
-                  <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
+                  <DrillName name={row.name} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
                   {row.parentName ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.parentName}</p> : null}
                   <div className="mt-1.5">
                     <MovementBadge movement={weeklySalesMovement(0, row.value)} />
@@ -978,7 +979,7 @@ function GroupTable({
               <div className="min-w-0 flex-1 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
+                    <DrillName name={row.name} onClick={onDrill && row.code ? () => onDrill(row.code) : undefined} />
                     <p className="break-words text-phx-2xs font-semibold text-slate-500">
                       {[row.parentName, `${row.productCount} products`, `${row.soldCount} sold`, `${row.returnsCount} returns`]
                         .filter(Boolean)

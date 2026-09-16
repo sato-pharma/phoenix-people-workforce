@@ -31,6 +31,11 @@ import type { WeeklyFilterMode } from "@/lib/sales/weekly/types";
 /** Filter code for depots that carry no area mapping — the same code Weekly Stock uses. */
 export const WEEKLY_SALES_DETAIL_UNMAPPED_AREA = "__unmapped__";
 export const WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL = "Area not mapped";
+/**
+ * A depot whose upload names no region (the overseas distributor's "Unallocated POS") is filed here, never as
+ * a row with no name. The Weekly Summarized Report calls the same rows "Region not mapped".
+ */
+export const WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL = "Region not mapped";
 /** A client-side filter that resolved to nothing sends this, so the server returns nothing, not everything. */
 export const WEEKLY_SALES_DETAIL_NOTHING = "__none__";
 
@@ -566,7 +571,7 @@ export function buildWeeklySalesDepotDetail(input: {
         distributorCode: up(row.distributorCode),
         distributorName: row.distributorName || row.distributorCode,
         regionCode: up(row.regionCode),
-        regionName: row.regionName || row.regionCode,
+        regionName: row.regionName || row.regionCode || WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL,
         areaCode: row.areaCode?.trim() ? row.areaCode.trim().toUpperCase() : null,
         areaName: cell.areaName,
         branchKey: salesDepotKey(row),
@@ -682,7 +687,10 @@ export function buildWeeklySalesDepotDetail(input: {
     // An unmapped depot is filed per region, so "Area not mapped" never reads as one place spanning the country.
     const areaKey = cell.areaCode ?? `${WEEKLY_SALES_DETAIL_UNMAPPED_AREA}|${up(cell.regionCode) || up(cell.regionName)}`;
     accumulate(areas, areaKey, cell.areaName, cell.regionName, cell, exact);
-    if (audience === "manager") accumulate(regions, up(cell.regionCode) || up(cell.regionName), cell.regionName, "", cell, exact);
+    // "Region not mapped" keeps an empty code: the page has no region to filter to, so the row is not a drill.
+    const regionKey =
+      cell.regionCode || (cell.regionName === WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL ? "" : up(cell.regionName));
+    if (audience === "manager") accumulate(regions, regionKey, cell.regionName, "", cell, exact);
     accumulate(distributors, cell.distributorCode, cell.distributorName, "", cell, exact);
   }
 

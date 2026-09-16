@@ -26,6 +26,7 @@ import {
   WEEKLY_SALES_DETAIL_NOTHING,
   WEEKLY_SALES_DETAIL_UNMAPPED_AREA,
   WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL,
+  WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL,
   buildWeeklySalesDepotDetail,
   salesDepotKey,
   weeklySalesMonthLabel,
@@ -583,6 +584,74 @@ export async function runWeeklySalesDepotDetailTests() {
     1200,
     "the Area filter can pick the unmapped depots",
   );
+  {
+    // The overseas distributor's "Unallocated POS" names no region. In production it read as a Regions row with
+    // no name. It is labelled on every tab and in the book, and keeps an empty code: the page has no region to
+    // filter to, so the row is not a drill.
+    const noRegion = buildWeeklySalesDepotDetail({
+      audience: "manager",
+      rows: [
+        ...MANAGER_ROWS,
+        sourceRow({
+          batchId: "ps-w1",
+          distributorCode: "PS",
+          distributorName: "Overseas",
+          regionCode: "",
+          regionName: "",
+          areaCode: null,
+          branchCode: "UNALLOCATED_POS",
+          branchName: "Unallocated POS",
+          salesUnits: 2,
+          salesValue: 80,
+        }),
+      ],
+      areaNames: AREA_NAMES,
+      uploads: UPLOADS,
+      period: SEPTEMBER_PERIOD,
+    });
+    assert.deepEqual(
+      noRegion.regions.map((region) => [region.name, region.code, region.value]),
+      [
+        ["Upper Egypt", "UE", 4200],
+        ["Cairo", "CA", 700],
+        [WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL, "", 80],
+      ],
+      "a depot whose upload names no region is listed under Region not mapped, never as a row with no name",
+    );
+    assert.deepEqual(
+      noRegion.areas.map((area) => [area.name, area.parentName, area.value]),
+      [
+        ["Assuit 1", "Upper Egypt", 3700],
+        [WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL, "Cairo", 700],
+        [WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL, "Upper Egypt", 500],
+        [WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL, WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL, 80],
+      ],
+    );
+    assert.equal(
+      noRegion.depots.find((depot) => depot.name === "Unallocated POS")?.parentName,
+      `${WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL} · Overseas`,
+    );
+    const book = buildWeeklySalesDepotDetailWorkbook(
+      {
+        view: noRegion,
+        scope: { summary: "All tracked lines · all regions · Super Admin", periodLabel: weeklySalesPeriodLabel(SEPTEMBER_PERIOD) },
+        status: "ok",
+        allocationUnavailable: false,
+      },
+      { generatedAtCairo: "16 Sep 2026, 21:30" },
+    );
+    for (const [name, rowCount] of [
+      ["Sales by Depot", noRegion.cells.length],
+      ["By Area", noRegion.areas.length],
+      ["By Region", noRegion.regions.length],
+    ] as const) {
+      const sheet = sheetOf(book, name);
+      const column = columnOf(sheet, "Region");
+      const regions = Array.from({ length: rowCount }, (_, index) => String(sheet.getRow(4 + index).getCell(column).value ?? ""));
+      assert.ok(regions.includes(WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL), `"${name}" names the missing region, as the screen does`);
+      assert.equal(regions.includes(""), false, `"${name}" has no row without a region`);
+    }
+  }
 
   // ── 5. the filter cascade, in Weekly Stock's order ───────────────────────────────────────────
   {
@@ -987,6 +1056,11 @@ export async function runWeeklySalesDepotDetailTests() {
   assert.match(detail, /hidden lg:block/, "desktop reads full tables");
   assert.match(detail, /lg:hidden/, "a phone reads cards");
   assert.match(detail, /const exportHref = `\$\{exportPath\}\$\{query \? `\?\$\{query\}` : ""\}`;/, "Export sends the screen's own query");
+  assert.equal(
+    (detail.match(/<DrillName name=\{row\.name\} onClick=\{onDrill && row\.code \? /g) ?? []).length,
+    2,
+    "a group row with no code of its own (Region not mapped) is not a drill, on desktop or on a phone",
+  );
 
   const managers = readSource("../src/components/sales/weekly/portal-weekly-dashboard-impl.tsx");
   assert.match(
