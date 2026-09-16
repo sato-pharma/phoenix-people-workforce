@@ -435,6 +435,7 @@ import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
 import { runRepsListVacantAreasTests } from "./reps-list-vacant-areas.test.ts";
+import { runMyListTests } from "./my-list.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
@@ -4197,6 +4198,11 @@ await runTest(
 await runTest(
   "reps list vacant areas (tab three — the doctors of an area with nobody in the seat are the open list its LAST rep left behind: the latest occupancy wins and a vacant placeholder never does; a holder now seated elsewhere keeps his list for the territory he works today and it is never shown under the vacant area; a vacancy with no list stays on screen and says why; the vacancy cascade offers only lines and regions a vacancy sits in; and both doors read it under the Reps List scope, restricted before any option is derived)",
   runRepsListVacantAreasTests,
+);
+
+await runTest(
+  "my list (the Reps List board in a Medical Rep account, opened on the rep's OWN list — owner 2026-09-16. The reach is the session's HR id and nothing else, so no URL parameter can open a colleague's list; Medical Rep stays off the manager board's role list, whose picker names every rep in reach; the two pages send each other's viewers across; and under the locked downward rule a peer's NAME is withheld server-side while the highlight, the partner's visits in the score and the insight all stay — unnamed partners are counted, never repeated, and counted by rep so two never collapse into one)",
+  runMyListTests,
 );
 
 await runTest(

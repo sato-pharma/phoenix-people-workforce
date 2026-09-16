@@ -77,6 +77,63 @@ export const SAME_CUSTOMER_M = 200;
  */
 export const MAX_CONTACTS_PER_SHARED_PHONE = 3;
 
+/**
+ * What a Medical Rep reads in place of another rep's name, on their own list.
+ *
+ * 🔒 SCOPE RUNS DOWNWARD ONLY — the owner's locked rule: an employee never sees their own manager,
+ * nor anyone at or above their own RANK. Another rep is AT a rep's rank. The owner's 2026-09-01
+ * approval to print a rep's name on a shared row was given for a MANAGER reading a rep outside
+ * their own team — someone below them — and it does not reach a rep reading a peer.
+ *
+ * So My List keeps everything the match is FOR — the violet row, the partner's visits in the score,
+ * the insight — and withholds only the name. A caller opts in by putting this label in the name map
+ * in place of each partner's name; the sentence builders below then count those partners instead of
+ * repeating the label, so two of them read "2 other reps", never "another rep and another rep".
+ */
+export const UNNAMED_REP = "another rep";
+
+/** Named reps as they are, then the unnamed ones COUNTED — "another rep", "2 other reps". */
+function repPhraseParts(names: readonly string[]): string[] {
+  const named = names.filter((name) => name !== UNNAMED_REP);
+  const unnamed = names.length - named.length;
+  if (unnamed === 0) return named;
+  return [...named, unnamed === 1 ? UNNAMED_REP : `${unnamed} other reps`];
+}
+
+/**
+ * Reps joined for a sentence: "Sara", "Sara and Omar", "Sara, Omar and Hana" — exactly as the three
+ * builders below have always joined them — and unnamed partners counted rather than repeated.
+ */
+export function joinRepNames(names: readonly string[]): string {
+  const parts = repPhraseParts(names);
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * "Sara's list", "Sara and Omar's list", "another rep's list" — and "2 other reps' lists", where
+ * the trailing s takes the apostrophe alone and each of those reps holds a list of their own.
+ */
+export function possessiveOf(who: string, noun: string): string {
+  return who.endsWith(" reps") ? `${who}' ${noun}s` : `${who}'s ${noun}`;
+}
+
+/** The export's "Shared with" cell: named reps comma-joined as they always were, unnamed ones counted. */
+export function sharedWithCell(names: readonly string[]): string {
+  return repPhraseParts(names).join(", ");
+}
+
+/**
+ * The name map a rep's own list is read with: EVERY key of the map it is given, and no name.
+ *
+ * The keys are kept because they are what a match needs — `findSharedCustomers` and the insights
+ * drop a partner whose key has no entry — so the rep sees every shared customer a manager would see
+ * on the same list. Only the value changes, to `UNNAMED_REP`.
+ */
+export function withRepNamesWithheld(repNames: ReadonlyMap<string, string>): Map<string, string> {
+  return new Map([...repNames.keys()].map((repKey): [string, string] => [repKey, UNNAMED_REP]));
+}
+
 /** One check-in, reduced to what scoring needs. */
 export type CheckinPoint = {
   /**
@@ -282,11 +339,10 @@ export function scoreLocationConfidence(
   // face of the popup instead of quietly lifting the percentage, so the line names the rep and the
   // count, and sits with the reasons that produced the score rather than in a footnote.
   if (shared && shared.count > 0 && shared.repNames.length > 0) {
-    const names = shared.repNames;
-    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const who = joinRepNames(shared.repNames);
     reasons.push({
       detail:
-        `${shared.count} of these ${shared.count === 1 ? "visits is" : "visits are"} from ${who}'s own record of ` +
+        `${shared.count} of these ${shared.count === 1 ? "visits is" : "visits are"} from ${possessiveOf(who, "own record")} of ` +
         "the same customer. The CRM gives each rep their own row for one doctor, so their visits are counted here too.",
       label: "Counted from a shared customer",
       points: null,
@@ -301,19 +357,27 @@ export function scoreLocationConfidence(
   // there are 41 such rows in production. So the gap gets named instead of left to be inferred.
   const distant = shared?.distant ?? [];
   if (distant.length > 0) {
-    const names = distant.map((entry) => entry.repName);
-    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const who = joinRepNames(distant.map((entry) => entry.repName));
+    // It opens the sentence, so an unnamed partner is capitalised there; a name is printed as it is.
+    const subject = who.startsWith(UNNAMED_REP) ? `${who.charAt(0).toUpperCase()}${who.slice(1)}` : who;
+    // Several reps hold several records, so the plural reads "share" and names the nearest record.
+    const several = distant.length > 1;
+    const verb = several ? "share" : "shares";
     const nearest = distant.reduce<number | null>(
       (best, entry) => (entry.metres != null && (best == null || entry.metres < best) ? entry.metres : best),
       null,
     );
     const where =
       nearest == null
-        ? "has no confirmed location of their own"
-        : `stands about ${formatDistance(nearest)} away`;
+        ? several
+          ? "their records have no confirmed location of their own"
+          : "their record has no confirmed location of their own"
+        : several
+          ? `the nearest of their records stands about ${formatDistance(nearest)} away`
+          : `their record stands about ${formatDistance(nearest)} away`;
     reasons.push({
       detail:
-        `${who} shares this customer, but their record ${where}, so their visits are not evidence about ` +
+        `${subject} ${verb} this customer, but ${where}, so their visits are not evidence about ` +
         "this pin and are left out of the score. A shared phone can be a clinic switchboard, or one doctor working in two places.",
       label: "Shared, but not the same place",
       points: null,
@@ -592,17 +656,13 @@ export function findSharedCustomers(
 /** The small line under a highlighted row: who this customer is shared with, and how it was judged. */
 export function describeSharing(shared: readonly SharedWith[]): string {
   if (shared.length === 0) return "";
-  const names = shared.map((entry) => entry.repName);
-  const who =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const who = joinRepNames(shared.map((entry) => entry.repName));
   const basis = shared.every((entry) => entry.basis === "shared phone")
     ? "same phone number"
     : shared.every((entry) => entry.basis === "name and location")
       ? "same name, same place"
       : "same name and phone";
-  return `Also on ${who}'s list — matched by ${basis}`;
+  return `Also on ${possessiveOf(who, "list")} — matched by ${basis}`;
 }
 
 /**

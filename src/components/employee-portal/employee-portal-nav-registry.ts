@@ -136,6 +136,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // is the one page on it a manager reads standing in a pharmacy. Reachable from the phone by the
   // owner's golden rule for it — "must be mobile friendly", never desktop-only.
   { label: "Reps", fullLabel: "Reps List", href: "/employee-portals/reps-list", icon: BookUser, flags: ["showRepsListTab"], permission: { resource: "crm_visits", action: "read" } },
+  // My List is Reps List at a Medical Rep's reach — their own contact list (owner, 2026-09-16). Its
+  // own href rather than a second label on the one above: this registry holds one entry per href.
+  { label: "My List", fullLabel: "My List", href: "/employee-portals/my-list", icon: BookUser, flags: ["showMyListTab"], permission: { resource: "crm_visits", action: "read" } },
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
