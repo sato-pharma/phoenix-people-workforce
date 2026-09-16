@@ -1694,6 +1694,7 @@ import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.te
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
+import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5712,6 +5713,11 @@ await runTest(
 await runTest(
   "black closing export names the Closing Matrix's organogram region on every sheet (Upper Egypt 1 and 2, never the map's Upper Egypt), moves no money, and its Direct tab keeps area-bearing direct orders (Minia 2's 20,370, Anti Infective August)",
   runClosingExportOrganogramRegionLabelsTests,
+);
+
+await runTest(
+  "sign-in throttle tells an office from an attacker: an address where different colleagues signed in today gets ten failures per colleague (max 150) before everyone behind it is refused, an unknown address stays at fifteen, and only successful sign-ins count as colleagues",
+  runLoginSharedNetworkThrottleTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
