@@ -1559,6 +1559,7 @@ import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test
 
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
+import { runWeeklySalesDepotDetailTests } from "./weekly-sales-depot-detail.test.ts";
 import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
@@ -5095,6 +5096,10 @@ await runTest(
 
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
 await runTest("weekly sales for a medical rep (own seat only, line kept while geography lifts, managers' API and export still refuse him)", runWeeklySalesRepViewTests);
+await runTest(
+  "weekly sales depot detail (gap-aware average per week, units never above one product, a rep's own share adds up to his page, export is the screen)",
+  runWeeklySalesDepotDetailTests,
+);
 await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API, its three workbooks and the Sales Analytics weekly pages; every manager role still passes)", runWeeklyTerritoryGateTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);

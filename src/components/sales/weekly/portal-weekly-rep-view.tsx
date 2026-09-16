@@ -16,8 +16,11 @@
 //
 // A week whose previous upload never happened carries two weeks of sales. It is marked, it gets no
 // up/down arrow, and it can never be the "best week": a data hole must not read as a good week.
+//
+// A second tab, "Depot Detail", lays the same month out exactly as Weekly Stock (owner, 2026-09-16):
+// every product at every depot, still his own area's share and nothing wider.
 
-import { useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -25,6 +28,8 @@ import {
   ArrowDownRight,
   ArrowUp,
   ArrowUpRight,
+  Building2,
+  CalendarRange,
   Coins,
   Layers,
   MapPin,
@@ -34,11 +39,14 @@ import {
   Trophy,
 } from "lucide-react";
 
+import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
 import type {
   PortalWeeklyRepSales,
   PortalWeeklyRepStatus,
   RepWeeklyWeek,
 } from "@/lib/sales/weekly/portal-weekly-rep";
+
+type RepTab = "month" | "detail";
 
 // ── formatting (identical to the managers' tabs, so the two screens speak one language) ─────────
 function formatEgp(value: number): string {
@@ -72,6 +80,10 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
+  const [tab, setTab] = useState<RepTab>("month");
+  // Depot Detail loads on its first opening, then stays mounted so its own filters survive a tab switch.
+  const [detailOpened, setDetailOpened] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   if (data.status !== "ok") return <RepWeeklyEmpty status={data.status} />;
 
@@ -103,9 +115,14 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
     });
   };
   const syncNow = () => {
+    setRefreshKey((key) => key + 1);
     startTransition(() => {
       router.refresh();
     });
+  };
+  const openTab = (next: RepTab) => {
+    if (next === "detail") setDetailOpened(true);
+    setTab(next);
   };
 
   return (
@@ -158,129 +175,193 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
         </div>
       </div>
 
-      {/* KPI strip — the four questions a rep asks about his own month. */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <RepTile
-          accent="#F97316"
-          icon={Coins}
-          label="Month total"
-          value={formatEgp(totals.value)}
-          sub={`${weeks.length} ${weeks.length === 1 ? "week" : "weeks"} uploaded`}
-        />
-        <RepTile
-          accent="#0EA5E9"
-          icon={TrendingUp}
-          label="Latest week"
-          value={lastWeek ? formatEgp(byWeek[lastWeek.weekNumber] ?? 0) : "—"}
-          sub={latestWeekNote(lastWeek, previousWeek)}
-          delta={latestWeekDelta(lastWeek, previousWeek, byWeek)}
-        />
-        <RepTile
-          accent="#22C55E"
-          icon={Trophy}
-          label="Best week"
-          value={bestWeek ? `Week ${bestWeek.weekNumber}` : "—"}
-          sub={bestWeek ? formatEgp(byWeek[bestWeek.weekNumber] ?? 0) : "no complete week with sales yet"}
-        />
-        <RepTile
-          accent="#8B5CF6"
-          icon={Package}
-          label="Products sold"
-          value={formatNumber(productsSold)}
-          sub="units per product below"
-        />
-      </div>
+      <RepTabBar active={tab} onChange={openTab} />
 
-      {gapWeeks.length > 0 ? (
-        <Notice>
-          {`${gapWeeks.length === 1 ? "Week" : "Weeks"} ${gapWeeks.join(", ")} ${
-            gapWeeks.length === 1 ? "follows a week that was" : "follow weeks that were"
-          } never uploaded, so the figure carries the missing week too and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
-        </Notice>
-      ) : null}
+      {tab === "month" ? (
+        <>
+          {/* KPI strip — the four questions a rep asks about his own month. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <RepTile
+              accent="#F97316"
+              icon={Coins}
+              label="Month total"
+              value={formatEgp(totals.value)}
+              sub={`${weeks.length} ${weeks.length === 1 ? "week" : "weeks"} uploaded`}
+            />
+            <RepTile
+              accent="#0EA5E9"
+              icon={TrendingUp}
+              label="Latest week"
+              value={lastWeek ? formatEgp(byWeek[lastWeek.weekNumber] ?? 0) : "—"}
+              sub={latestWeekNote(lastWeek, previousWeek)}
+              delta={latestWeekDelta(lastWeek, previousWeek, byWeek)}
+            />
+            <RepTile
+              accent="#22C55E"
+              icon={Trophy}
+              label="Best week"
+              value={bestWeek ? `Week ${bestWeek.weekNumber}` : "—"}
+              sub={bestWeek ? formatEgp(byWeek[bestWeek.weekNumber] ?? 0) : "no complete week with sales yet"}
+            />
+            <RepTile
+              accent="#8B5CF6"
+              icon={Package}
+              label="Products sold"
+              value={formatNumber(productsSold)}
+              sub="units per product below"
+            />
+          </div>
 
-      {data.allocationUnavailable ? (
-        <Notice>
-          The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and
-          your figure reads low. Press Sync now in a moment.
-        </Notice>
-      ) : null}
+          {gapWeeks.length > 0 ? (
+            <Notice>
+              {`${gapWeeks.length === 1 ? "Week" : "Weeks"} ${gapWeeks.join(", ")} ${
+                gapWeeks.length === 1 ? "follows a week that was" : "follow weeks that were"
+              } never uploaded, so the figure carries the missing week too and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
+            </Notice>
+          ) : null}
 
-      {/* Week by week, in EGP — money adds across products, so a week total is legitimate. */}
-      <RepSection title="Your sales · week by week">
-        {weeks.length === 0 ? (
-          <p className="py-4 text-center text-xs font-semibold text-slate-400">
-            {`No weekly sheet has been uploaded for ${data.month?.name ?? "this month"} yet.`}
-          </p>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2">
-            {weeks.map((week, index) => {
-              const value = byWeek[week.weekNumber] ?? 0;
-              const previous = index === 0 ? null : (byWeek[weeks[index - 1].weekNumber] ?? 0);
-              const rank = rankWeek(value, weekPeak);
-              return (
-                <div
-                  key={week.weekNumber}
-                  className={`border px-3 py-2.5 ${
-                    week.spansGap ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50/60"
-                  }`}
-                >
-                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                    {`Week ${week.weekNumber}${monthShort ? ` · ${monthShort}` : ""}`}
-                  </p>
-                  <div className="mt-1 flex flex-wrap items-center gap-x-1">
-                    <DirectionArrow direction={weekDirection(value, previous, week.spansGap)} />
-                    <span
-                      className={`text-sm tabular-nums sm:text-base ${rank.text} ${weekMark(rank, week.spansGap)}`}
+          {data.allocationUnavailable ? (
+            <Notice>
+              The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and
+              your figure reads low. Press Sync now in a moment.
+            </Notice>
+          ) : null}
+
+          {/* Week by week, in EGP — money adds across products, so a week total is legitimate. */}
+          <RepSection title="Your sales · week by week">
+            {weeks.length === 0 ? (
+              <p className="py-4 text-center text-xs font-semibold text-slate-400">
+                {`No weekly sheet has been uploaded for ${data.month?.name ?? "this month"} yet.`}
+              </p>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2">
+                {weeks.map((week, index) => {
+                  const value = byWeek[week.weekNumber] ?? 0;
+                  const previous = index === 0 ? null : (byWeek[weeks[index - 1].weekNumber] ?? 0);
+                  const rank = rankWeek(value, weekPeak);
+                  return (
+                    <div
+                      key={week.weekNumber}
+                      className={`border px-3 py-2.5 ${
+                        week.spansGap ? "border-amber-200 bg-amber-50/60" : "border-slate-200 bg-slate-50/60"
+                      }`}
                     >
-                      {isNil(value) ? "—" : formatEgp(value)}
-                    </span>
-                  </div>
-                  {week.spansGap ? (
-                    <p className="mt-1 text-phx-2xs font-semibold text-amber-700">includes a missing upload</p>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {areas.length > 1 ? (
-          <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
-            {areas.map((area) => (
-              <div key={area.key} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
-                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-                  <span className="break-words text-xs font-black text-slate-800">{area.areaName}</span>
-                  <span className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-                    {[area.lineName, area.regionName].filter(Boolean).join(" · ")}
-                  </span>
-                </span>
-                <span className="text-xs font-black tabular-nums text-slate-900">{formatEgp(area.value)}</span>
+                      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                        {`Week ${week.weekNumber}${monthShort ? ` · ${monthShort}` : ""}`}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-1">
+                        <DirectionArrow direction={weekDirection(value, previous, week.spansGap)} />
+                        <span
+                          className={`text-sm tabular-nums sm:text-base ${rank.text} ${weekMark(rank, week.spansGap)}`}
+                        >
+                          {isNil(value) ? "—" : formatEgp(value)}
+                        </span>
+                      </div>
+                      {week.spansGap ? (
+                        <p className="mt-1 text-phx-2xs font-semibold text-amber-700">includes a missing upload</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        ) : null}
-      </RepSection>
+            )}
 
-      {/* Per product, in UNITS — one product per row, the only level at which a unit count means anything. */}
-      <RepSection title="Units per product · week by week">
-        {products.length === 0 ? (
-          <p className="py-4 text-center text-xs font-semibold text-slate-400">
-            {`No product sales reached your area in ${data.month?.name ?? "this month"} yet.`}
-          </p>
-        ) : (
-          <>
-            <ProductTable products={products} weeks={weeks} />
-            <ProductCards products={products} weeks={weeks} />
-          </>
-        )}
-        <p className="mt-3 border-t border-slate-100 pt-2.5 text-phx-2xs font-semibold leading-relaxed text-slate-400">
-          Units are shown per product only. Units of different products are never added together.
-        </p>
-      </RepSection>
+            {areas.length > 1 ? (
+              <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
+                {areas.map((area) => (
+                  <div key={area.key} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                      <span className="break-words text-xs font-black text-slate-800">{area.areaName}</span>
+                      <span className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                        {[area.lineName, area.regionName].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
+                    <span className="text-xs font-black tabular-nums text-slate-900">{formatEgp(area.value)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </RepSection>
 
-      <AttributionStrip exactValue={totals.exactValue} allocatedValue={totals.allocatedValue} />
+          {/* Per product, in UNITS — one product per row, the only level at which a unit count means anything. */}
+          <RepSection title="Units per product · week by week">
+            {products.length === 0 ? (
+              <p className="py-4 text-center text-xs font-semibold text-slate-400">
+                {`No product sales reached your area in ${data.month?.name ?? "this month"} yet.`}
+              </p>
+            ) : (
+              <>
+                <ProductTable products={products} weeks={weeks} />
+                <ProductCards products={products} weeks={weeks} />
+              </>
+            )}
+            <p className="mt-3 border-t border-slate-100 pt-2.5 text-phx-2xs font-semibold leading-relaxed text-slate-400">
+              Units are shown per product only. Units of different products are never added together.
+            </p>
+          </RepSection>
+
+          <AttributionStrip exactValue={totals.exactValue} allocatedValue={totals.allocatedValue} />
+        </>
+      ) : null}
+
+      {/* Outside the tab switch above so it stays mounted once opened (see detailOpened). */}
+      {detailOpened ? (
+        <WeeklySalesDepotDetail
+          audience="rep"
+          feedPath="/api/employee-portals/weekly-sales/rep-depot-detail"
+          exportPath="/api/employee-portals/weekly-sales/rep-depot-detail/export"
+          hostQuery={data.month ? new URLSearchParams({ month: data.month.code }).toString() : ""}
+          refreshKey={refreshKey}
+          active={tab === "detail"}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** The rep's two views of his month, in the managers' tab bar's exact look. */
+function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepTab) => void }) {
+  const tabs: { key: RepTab; label: string; hint: string; icon: typeof Coins }[] = [
+    { key: "month", label: "My Month", hint: "Week by week, per product", icon: CalendarRange },
+    { key: "detail", label: "Depot Detail", hint: "Every product at every depot", icon: Building2 },
+  ];
+  return (
+    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+      <div className="flex flex-col sm:flex-row">
+        {tabs.map((item) => {
+          const isActive = active === item.key;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onChange(item.key)}
+              aria-current={isActive ? "page" : undefined}
+              className={`relative flex flex-1 items-center gap-3 px-4 py-3 text-left transition ${
+                isActive ? "bg-slate-900" : "bg-white hover:bg-slate-50"
+              }`}
+            >
+              <span
+                className={`absolute inset-x-0 bottom-0 h-0.5 transition-all ${isActive ? "bg-orange-500" : "bg-transparent"}`}
+              />
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center ${
+                  isActive ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+              </span>
+              <span className="min-w-0">
+                <span className={`block break-words text-sm font-black tracking-tight ${isActive ? "text-white" : "text-slate-900"}`}>
+                  {item.label}
+                </span>
+                <span className="block break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">{item.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
