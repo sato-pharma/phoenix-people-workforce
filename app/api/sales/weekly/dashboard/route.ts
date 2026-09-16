@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "read");
+    // The grant reaches Medical Rep too; this is a territory view, so the role decides (territory-gate.ts).
+    assertWeeklyTerritoryViewer(access);
 
     const params = new URL(request.url).searchParams;
     const parseList = (key: string) =>
