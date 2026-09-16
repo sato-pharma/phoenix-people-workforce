@@ -323,3 +323,20 @@ export function applyWeeklyAccessScope<
   // Confidential Head Office line — stripped for everyone except CEO / Super Admin.
   return scope.canViewHeadOffice ? scoped : scoped.filter((row) => !isHeadOfficeLine(row.officialLine));
 }
+
+/**
+ * The same scope with its GEOGRAPHY lifted: a territory viewer keeps his line bound, and
+ * applyWeeklyAccessScope still strips the confidential products and the Head Office line, but the
+ * region and area bounds are gone. Every other tier comes back unchanged, as the same object.
+ *
+ * The result is WIDER than the viewer may see. It exists only to LOAD depot rows whose region label
+ * is older than the organogram ("UE" rows for an Upper Egypt 1 or 2 viewer), and every caller narrows
+ * what it loaded straight back to the viewer's own areas before building a figure (own-area-scope.ts,
+ * and the rep's own Weekly Sales screen through repWeeklyLoadScope and selectRepWeeklySales).
+ * Never hand it to anything that renders rows. Pure.
+ */
+export function liftWeeklyGeography(scope: WeeklyAccessScope): WeeklyAccessScope {
+  if (scope.tier !== "territory") return scope;
+  if (!scope.allowedRegionCodes && !scope.allowedAreaCodes) return scope;
+  return { ...scope, allowedRegionCodes: null, allowedAreaCodes: null };
+}

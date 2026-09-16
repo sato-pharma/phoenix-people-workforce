@@ -181,13 +181,24 @@ export function runWeeklyStockDashboardTests() {
   // ── Wiring: scope and Head Office are enforced on the server, never by the screen.
   const service = readSource("../src/lib/sales/weekly/stock-dashboard-service.ts");
   assert.match(service, /resolveWeeklyAccessScope\(ctx\)/, "stock resolves the same per-viewer scope as Weekly Sales");
-  assert.match(service, /accessScope,\n\s+\}\),/, "the scope is handed to the weekly engine, which enforces it");
+  // The load may lift a territory viewer's region bound for its row grain (own-area-scope.ts), so the flag
+  // travels beside the scope, and weekly-own-area-lift.test.ts pins the narrowing back to his own depots.
+  assert.match(
+    service,
+    /accessScope,\n\s+liftRowGrainGeography: liftGrain,\n\s+\}\),/,
+    "the scope is handed to the weekly engine, which enforces it",
+  );
   assert.match(service, /excludeUnmapped: true/, "unmapped products never reach a stock total");
   const engine = readSource("../src/lib/sales/weekly/service.ts");
   assert.match(
     engine,
-    /stockRows: filters\?\.includeStockRows\s+\? scopedRows\.map/,
+    /stockRows: filters\?\.includeStockRows\s+\? grainScopedRows\.map/,
     "stock rows come from the scoped rows — after the access scope and the Head Office rule, never before",
+  );
+  assert.match(
+    engine,
+    /const grainScopedRows = grainLifted\s+\? applyWeeklyTrackedLineScope\(applyWeeklyAccessScope\(realRows, grainScope\), \{\s+includeUntracked: lineNamedExplicitly,\s+\}\)\.filter\(passesRowFilters\)\s+: scopedRows;/,
+    "a lifted grain passes the same access scope, Head Office rule, tracked-line rule and filters — never raw rows",
   );
   for (const route of ["../app/api/sales/weekly/stock/route.ts", "../app/api/sales/weekly/stock/export/route.ts"]) {
     const source = readSource(route);

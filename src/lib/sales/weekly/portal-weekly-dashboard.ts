@@ -19,6 +19,12 @@ import {
 } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import {
+  mayLiftWeeklyGeography,
+  resolveWeeklyOwnAreaKeys,
+  weeklyFieldForceGeography,
+  weeklyScopeOwnAreaKeys,
+} from "@/lib/sales/weekly/own-area-scope";
+import {
   buildPortalWeeklyFieldForce,
   loadFieldForceSeatIndex,
   type PortalWeeklyFieldForce,
@@ -354,6 +360,13 @@ export async function getPortalWeeklyDashboard(
 }> {
   const scope = await resolvePortalWeeklyScope(ctx);
   const includeFieldForce = options?.includeFieldForce === true;
+  // A district or regional manager's grid loads with his region bound LIFTED and is narrowed straight
+  // back to his own areas (own-area-scope.ts). Depot rows keep the region label they were mapped with,
+  // so an Upper Egypt 2 or Delta (3) manager's region-bound load never even fetched the "UE" rows the
+  // depot split shares with his areas. Only the grid's row grain lifts; everything above it on this
+  // screen stays on his own scope.
+  const ownAreaKeys = includeFieldForce ? weeklyScopeOwnAreaKeys(scope.accessScope) : new Set<string>();
+  const liftGrain = mayLiftWeeklyGeography(scope.accessScope, ownAreaKeys);
 
   // The two supporting indexes the Field Force tab needs are independent of the dashboard load, so
   // they are fetched ALONGSIDE it rather than after it — the tab costs one round trip of latency,
@@ -380,6 +393,7 @@ export async function getPortalWeeklyDashboard(
       // read SHORT against the same page's own total, which is the one discrepancy a reader cannot
       // explain. Unmapped products surface on the Completeness tracker instead, where they belong.
       includeFactRows: includeFieldForce,
+      liftRowGrainGeography: liftGrain,
     }),
     // The owner's depot-split rule. Fails soft to an empty index, which simply means no branch is
     // split and only hand-mapped branches reach a rep.
@@ -396,16 +410,76 @@ export async function getPortalWeeklyDashboard(
         areaSplit,
         seatIndex,
         // The dashboard's stable product universe, so column N is the same product on every rep's
-        // row and in every scope — the same reason the NSM/DSM workbook takes a productAxis.
-        productAxis: trimmed.availableProducts.map((option) => ({ code: option.code, name: option.name })),
-        weekComparison: trimmed.weekComparison,
+        // row and in every scope — the same reason the NSM/DSM workbook takes a productAxis. A lifted
+        // grain takes the products it actually carries instead: that universe is the region-bound one
+        // and would drop a product only the lifted rows hold.
+        productAxis: liftGrain
+          ? undefined
+          : trimmed.availableProducts.map((option) => ({ code: option.code, name: option.name })),
+        // A lifted grain has its own upload calendar, so its gap flags travel with it.
+        weekComparison: liftGrain ? (data.factRowWeekGaps ?? []) : trimmed.weekComparison,
         seatIndexUnavailable: seatIndex.seats.length === 0,
+        geography:
+          liftGrain && scope.accessScope.tier === "territory"
+            ? weeklyFieldForceGeography(data.factRows ?? [], scope.accessScope, ownAreaKeys)
+            : null,
       })
     : null;
 
   // Never ship the row grain to the browser. It is thousands of rows per month and the client has no
-  // use for it — everything the screen renders is already aggregated into `fieldForce`.
-  const { factRows: _factRows, ...clientSafe } = trimmed;
+  // use for it — everything the screen renders is already aggregated into `fieldForce`. A lifted
+  // grain's gap flags go with it, so the payload is exactly what it was before the lift.
+  const { factRows: _factRows, factRowWeekGaps: _factRowWeekGaps, ...clientSafe } = trimmed;
 
   return { data: clientSafe, scope, comparison, fieldForce };
+}
+
+/**
+ * One month's Field Force grid and nothing else, for the month-pace strip on the portal Source of Sales
+ * page. Lighter than getPortalWeeklyDashboard — the strip reads only the grid, so there is no
+ * comparison month and no option trimming — and, like every weekly report, it leaves unmapped products
+ * out (excludeUnmapped), which is also how the medical rep's own Weekly Sales page reads a month.
+ *
+ * The viewer's region bound is lifted for the load and narrowed straight back to his own areas
+ * (own-area-scope.ts). A medical rep needs that as much as a manager: an Upper Egypt 2 rep's
+ * region-bound load never fetched the "UE" depot rows at all, so his strip read about zero. His own
+ * areas are his filled rep seats, from the same seat index the grid is keyed by. null when the viewer
+ * has no weekly access.
+ */
+export async function getPortalWeeklyMonthFieldForce(
+  ctx: AccessContext,
+  cycleMonth: string,
+): Promise<PortalWeeklyFieldForce | null> {
+  const [accessScope, seatIndex] = await Promise.all([resolveWeeklyAccessScope(ctx), loadFieldForceSeatIndex()]);
+  if (accessScope.tier === "none") return null;
+
+  const ownAreaKeys = await resolveWeeklyOwnAreaKeys(ctx, accessScope, seatIndex.seats);
+  const liftGrain = mayLiftWeeklyGeography(accessScope, ownAreaKeys);
+
+  const [data, areaSplit] = await Promise.all([
+    loadWeeklyDashboard({
+      cycleMonths: [cycleMonth],
+      cycleMonthMode: "include",
+      // Only the grid is read, never the option lists, which is the precondition for narrowing the fetch.
+      narrowRowsToCycleMonths: [cycleMonth],
+      accessScope,
+      allWeeks: true,
+      excludeUnmapped: true,
+      includeFactRows: true,
+      liftRowGrainGeography: liftGrain,
+    }),
+    loadWeeklyAreaSplitIndex().catch(() => null),
+  ]);
+
+  return buildPortalWeeklyFieldForce({
+    rows: data.factRows ?? [],
+    areaSplit,
+    seatIndex,
+    weekComparison: liftGrain ? (data.factRowWeekGaps ?? []) : data.weekComparison,
+    seatIndexUnavailable: seatIndex.seats.length === 0,
+    geography:
+      liftGrain && accessScope.tier === "territory"
+        ? weeklyFieldForceGeography(data.factRows ?? [], accessScope, ownAreaKeys)
+        : null,
+  });
 }

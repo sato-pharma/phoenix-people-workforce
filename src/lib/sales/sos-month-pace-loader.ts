@@ -3,8 +3,11 @@
 //
 // Targets come from the achievement engine, bounded by the same rule Sales vs Target uses
 // (resolveVsTargetBound — a medical rep sees only the rows attributed to him). Weekly value comes from
-// the Weekly Sales field-force build, which already spreads depot rows to areas the way the Weekly
-// Sales page does, and is then narrowed to the viewer's line, areas and products here.
+// the Weekly Sales field-force build for the month (getPortalWeeklyMonthFieldForce), which spreads depot
+// rows to areas the way the Weekly Sales page does — with the viewer's region bound lifted and narrowed
+// straight back to his own areas, so a depot row still labelled with a region the organogram has since
+// split reaches him — and is then narrowed to the viewer's line, areas and products here. Like every
+// weekly report, it leaves unmapped products out.
 //
 // Direct orders come from phx_monthly_closing_direct — the closing's own direct half, so an order
 // counts in the month Finance books it, at its pharmacy's area. They are left out when the month's
@@ -18,7 +21,7 @@ import { daysInPeriod } from "@/lib/sales/periods";
 import { salesLineCodeForOfficialLine } from "@/lib/sales/portal-targets";
 import { buildMonthPace, type MonthPaceResult } from "@/lib/sales/sos-month-pace";
 import { filterRowsForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
-import { getPortalWeeklyDashboard } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import { getPortalWeeklyMonthFieldForce } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 
 type ClosingDirectRow = { area_code: string | null; product_code: string | null; sales_value: number | string | null };
@@ -55,11 +58,7 @@ export async function loadPortalMonthPace(input: {
   const [achievement, bound, weekly, directRows, directInWeekly] = await Promise.all([
     loadMonthlyAchievement(period),
     resolveVsTargetBound(input.access),
-    getPortalWeeklyDashboard(
-      { cycleMonths: [`${period}-01`], cycleMonthMode: "include" },
-      input.access,
-      { includeFieldForce: true },
-    ).catch(() => null),
+    getPortalWeeklyMonthFieldForce(input.access, `${period}-01`).catch(() => null),
     rpcAll<ClosingDirectRow>(getSupabaseAdmin(), "phx_monthly_closing_direct", { p_line: input.line, p_period: period }, [
       "region_code",
       "area_code",
@@ -76,12 +75,12 @@ export async function loadPortalMonthPace(input: {
   });
   const targetAreas = new Set(targetRows.map((row) => String(row.areaCode).trim().toUpperCase()));
 
-  const weeklyRows = (weekly?.fieldForce?.reps ?? []).filter((rep) => {
+  const weeklyRows = (weekly?.reps ?? []).filter((rep) => {
     if (rep.kind === "unattributed" || !rep.areaCode) return false;
     if (salesLineCodeForOfficialLine(rep.lineName) !== lineCode) return false;
     const area = rep.areaCode.trim().toUpperCase();
     // A rep with no explicit area bound is bounded by his own target rows; everyone else by the
-    // weekly scope already applied upstream, plus their area bound when they have one.
+    // weekly narrowing already applied upstream, plus their area bound when they have one.
     if (areaSet) return areaSet.has(area);
     if (bound.kind === "self") return targetAreas.has(area);
     return true;

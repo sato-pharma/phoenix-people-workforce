@@ -110,6 +110,30 @@ export function weekHasDecumulationGap(
   return currWeekNumber - prevWeekNumber > 1;
 }
 
+// The same M6 flag for every (cycle month, week number) present in a set of rows, ordered by month then
+// week — exactly what the dashboard's weekComparison computes, without its money. For a row grain that
+// is NOT the dashboard's own (a lifted load, service.ts liftRowGrainGeography), whose uploaded weeks can
+// differ from the viewer's region-bound ones. Pure.
+export function weekGapFlags(
+  rows: readonly { cycleMonth?: string | null; weekNumber?: number | null }[],
+): { cycleMonth: string; weekNumber: number; spansGap: boolean }[] {
+  const weeksByMonth = new Map<string, Set<number>>();
+  for (const row of rows) {
+    if (!row.cycleMonth || row.weekNumber == null) continue;
+    const weeks = weeksByMonth.get(row.cycleMonth) ?? new Set<number>();
+    weeks.add(row.weekNumber);
+    weeksByMonth.set(row.cycleMonth, weeks);
+  }
+  return [...weeksByMonth.keys()].sort().flatMap((cycleMonth) => {
+    const weeks = [...(weeksByMonth.get(cycleMonth) ?? [])].sort((a, b) => a - b);
+    return weeks.map((weekNumber, i) => ({
+      cycleMonth,
+      weekNumber,
+      spansGap: weekHasDecumulationGap(i > 0 ? weeks[i - 1] : null, weekNumber),
+    }));
+  });
+}
+
 // M6 remediation (chosen fix: "suppress + flag"): when a week spans an upload gap its de-cumulated
 // single-week figure silently includes the missing week(s) and is NOT a true weekly value, so it must
 // never be shown as one. This nulls the figure at the source (the week-comparison builder), so every
