@@ -1,13 +1,16 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeLoginId, resolveStoredLoginId } from "@/lib/auth/credentials";
+import {
+  loginIpFailureLimit,
+  loginIpThrottleMaxFailures,
+  loginLockoutMinutes,
+  loginSharedNetworkLookbackHours,
+  loginThrottleMaxFailures,
+  loginThrottleWindowMinutes,
+} from "@/lib/auth/login-throttle-policy";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-const loginThrottleWindowMinutes = 15;
-const loginThrottleMaxFailures = 10;
-const loginIpThrottleMaxFailures = 15;
-const loginLockoutMinutes = 30;
 
 export function getRequestIp(request: Request) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -177,9 +180,42 @@ export async function isLoginRateLimited(loginId: string, ip: string | null) {
     return true;
   }
 
-  if (!ipAttemptsResult.error && (ipAttemptsResult.count ?? 0) >= loginIpThrottleMaxFailures) {
-    return true;
+  // The network gate: strict for an unknown address, roomier for a shared office network that has
+  // already let colleagues in (see login-throttle-policy.ts). The extra read only runs once the
+  // strict limit is reached, so an ordinary sign-in costs nothing more.
+  const ipFailures = ipAttemptsResult.error ? 0 : ipAttemptsResult.count ?? 0;
+  if (ip && ipFailures >= loginIpThrottleMaxFailures) {
+    const accountsSignedInFromIp = await countAccountsSignedInFromIp(ip);
+    if (ipFailures >= loginIpFailureLimit(accountsSignedInFromIp)) {
+      return true;
+    }
   }
 
   return false;
+}
+
+// Different accounts that signed in SUCCESSFULLY from this address in the lookback — the evidence
+// that it is a shared office network rather than one attacker. A failed read counts as zero, which
+// keeps the strict limit: the extra room has to be earned, never assumed.
+async function countAccountsSignedInFromIp(ip: string) {
+  const since = new Date(Date.now() - loginSharedNetworkLookbackHours * 60 * 60 * 1000).toISOString();
+  const { data, error } = await getSupabaseAdmin()
+    .from("auth_login_attempts")
+    .select("login_id")
+    .eq("ip", ip)
+    .eq("success", true)
+    .gte("attempted_at", since)
+    .limit(1000);
+
+  if (error) {
+    logError("Could not count the accounts signed in from a throttled address (keeping the strict limit)", { labels: { event: "login_shared_network_lookup_failed", component: "auth", ip }, error });
+    return 0;
+  }
+
+  const accounts = new Set<string>();
+  for (const row of (data ?? []) as { login_id?: string | null }[]) {
+    const key = normalizeLoginId(row.login_id).toUpperCase();
+    if (key) accounts.add(key);
+  }
+  return accounts.size;
 }
