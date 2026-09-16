@@ -11,6 +11,7 @@ import {
   loadMonthlyClosingChannelBreakdown,
   loadMonthlyClosingChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
+import { gateClosingDetailsPeriod } from "@/lib/sales/closing-details-publication-gate";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { maskedClosingClientCodes, withoutMaskedSourceRows } from "@/lib/sales/closing-source-mask";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
@@ -136,11 +137,11 @@ export async function POST(request: Request) {
     // different, lesser workbook that does not match what CEO's own access already permits.
     // Finance Manager added 2026-08-10 (owner): full-scope Monthly Closing, ANY line, ALWAYS —
     // including periods that were never published. This branch is the only one that delivers that.
-    // The scoped branch below routes through loadPortalMonthlyClosing, which is publication-gated:
-    // on an unpublished (line, period) it returns matrix: null and the route silently degrades to
-    // buildClosingDetailsWorkbook — Data + Total sheets only, HTTP 200, nothing on screen or in the
-    // file saying why. Even when published it omits Retail/Direct, Store Split, Channel
-    // Comparison/Breakdown, Source Coverage and July Direct.
+    // The scoped branch below is publication-gated: it refuses an unpublished (line, period) with a
+    // 403 (closing-details-publication-gate.ts, since 2026-09-16 — before that it answered HTTP 200
+    // with the unpublished month's rows, inside the newest PUBLISHED month's matrix, or in Data +
+    // Total sheets when the line had nothing published). Even when published it omits Retail/Direct,
+    // Store Split, Channel Comparison/Breakdown, Source Coverage and July Direct.
     //
     // Like the CEO note above, this does not widen him: getSalesScope already returns COMPANY for
     // the role, and the confidential/Head-Office locks named at the top of this comment are
@@ -576,6 +577,24 @@ export async function POST(request: Request) {
       listMonthlyClosingLines(),
       listMonthlyClosingPeriods(),
     ]);
+    // PUBLISHED MONTHS ONLY, checked before a single row is read. This branch used to load the rows
+    // of any validated month and download them with HTTP 200, to a scoped viewer whose own screen
+    // could not show that month. Worse, loadPortalMonthlyClosing below answers an unpublished month
+    // with the NEWEST PUBLISHED one, so the file named for the unpublished month carried its sales
+    // inside the published month's products, targets and Office grid (Data + Total sheets only when
+    // the line had nothing published). Checked here, that call always gets the month it was asked
+    // for. Every reader the full-workbook branch above admits returned before this line, so nobody
+    // who keeps unpublished months is gated here. See closing-details-publication-gate.ts.
+    const gate = await gateClosingDetailsPeriod({
+      access,
+      line: body.line ?? null,
+      requestedPeriod: body.period ?? null,
+      availableLines,
+      includeConfidential: body.includeConfidential === true,
+    });
+    if (gate.kind === "refused") {
+      return NextResponse.json({ success: false, error: gate.error }, { status: 403 });
+    }
     const details = await loadMonthlyClosingDetails({
       access,
       line: body.line ?? null,
