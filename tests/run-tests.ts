@@ -1675,6 +1675,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5646,6 +5647,11 @@ await runTest(
 await runTest(
   "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "vacation submit takes a storage path only for the caller's OWN pending upload of the matching kind (never another employee's, a filed sick/ document, a traversal or an extra segment), checked with leave:create before any download or delete",
+  runVacationPendingAttachmentPathTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
