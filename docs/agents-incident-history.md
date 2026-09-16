@@ -316,6 +316,14 @@ silent hard block, not a prompt.
 user-level `~/.claude/settings.json` denies TWO — the same one and, since 2026-08-23, the owner's own
 `mcp__45bb6356-…`. Both counts read live 2026-08-29; check the file you actually mean.
 
+**Correction, 2026-09-16:** the repo file now denies BOTH connectors, and six more silent hard
+blocks joined them there: `gh pr merge` with `--auto` and any `gh api` call naming
+`enablePullRequestAutoMerge` (AGENTS.md §2), and `railway service source connect` (§2.3), each for
+Bash and PowerShell. Until then those six lived only in the gitignored `settings.local.json`, so a
+cloud session, or a worktree opted out of the local-settings sync, had none of them. The same change
+stopped the repo file auto-approving `pnpm install --frozen-lockfile` and `pnpm run
+worktree:sync-env`, both banned inside a worktree (§5).
+
 So the three file paths in `CLAUDE.md`'s table no longer have an entry there and **no dialog will
 fire on any of them.** (`office-allocation.ts` was never in that list — it has the CI lock instead,
 which is untouched and still turns a PR red.)

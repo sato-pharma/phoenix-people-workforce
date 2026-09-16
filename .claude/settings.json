@@ -77,8 +77,6 @@
   },
   "permissions": {
     "allow": [
-      "Bash(pnpm install --frozen-lockfile)",
-      "Bash(pnpm run worktree:sync-env)",
       "Bash(git fetch *)",
       "Bash(git status*)",
       "Bash(git log *)",
@@ -141,7 +139,13 @@
     "ask": [],
     "deny": [
       "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087",
-      "mcp__45bb6356-8105-4482-9464-25bfd754baec"
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec",
+      "Bash(gh pr merge *--auto*)",
+      "PowerShell(gh pr merge *--auto*)",
+      "Bash(gh api *enablePullRequestAutoMerge*)",
+      "PowerShell(gh api *enablePullRequestAutoMerge*)",
+      "Bash(railway service source connect*)",
+      "PowerShell(railway service source connect*)"
     ]
   }
 }

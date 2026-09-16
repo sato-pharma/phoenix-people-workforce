@@ -40,7 +40,7 @@ etc.) — dev-auth and the dev server will fail until you populate it. From
 inside the new worktree, run:
 
 ```bash
-pnpm run worktree:sync-env
+node scripts/sync-worktree-env.mjs
 ```
 
 This copies `.env.local` and the other local-only env files (`.env.*.rls.local`,

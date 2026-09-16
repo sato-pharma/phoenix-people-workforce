@@ -9,9 +9,9 @@
 // version, meant to be run on demand.
 //
 // Report-only, on purpose, exactly like the guard: it prints paste-ready push commands and pushes
-// nothing. `permissions.ask` in .claude/settings.json gates "Bash(git push*)" behind an approval
-// prompt, and a tool that silently does the thing you configured a prompt for is worse than one
-// that tells you to do it yourself.
+// nothing. A push waits for the owner's say-so, and no prompt enforces it: `permissions.ask` in
+// .claude/settings.json has been empty since 2026-08-14. A tool that pushed on its own would skip
+// the only check left — a session asking the owner first.
 //
 // TWO MEASUREMENT TRAPS THIS DELIBERATELY AVOIDS — both were hit for real before it existed:
 //
