@@ -19,6 +19,7 @@ import {
   buildClosingDetailsWorkbook,
   buildMonthlyClosingWorkbook,
   buildPortalClosingWorkbook,
+  fileDirectCellsUnderMatrixRegions,
 } from "@/lib/sales/monthly-closing-export";
 import { loadPortalMonthlyClosing, resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
 import { MARKETING_OVERSIGHT_LINE_ROLES, normalizeLineKey } from "@/lib/sales/access-scope";
@@ -300,7 +301,8 @@ export async function POST(request: Request) {
       const aggregateComparisonPromise = comparisonFromRows
         ? null
         // `access`: the comparison names distributors, so it masks El Qema for this reader itself.
-        : loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes }, access);
+        // `organogram`: its sheets name the matrix's regions, not the map's (owner, 2026-09-16).
+        : loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes }, access, { regionBasis: "organogram" });
       // An in-flight promise whose rejection is never awaited is an UNHANDLED rejection, which can
       // take the process down. If the details read below throws first we leave this scope without
       // ever awaiting this one, so park a no-op handler now. The real `await` still surfaces the
@@ -389,6 +391,7 @@ export async function POST(request: Request) {
           { areaCodes: scopedAreaCodes },
           // These rows were read with the real source, so the loader masks them for this reader.
           access,
+          { regionBasis: "organogram" },
         );
 
       // Under a row-level filter the aggregate matrix cannot express the slice — rebuild its
@@ -444,7 +447,9 @@ export async function POST(request: Request) {
         ? null
         : {
           retail: applyStoreSplitToMatrix(retailFiltered, storeSplitNet).matrix,
-          directCells: parts.directCells,
+          // Under the region the WHOLE month's matrix files each order's area in, so a direct order on
+          // an area the organogram re-owns is not dropped from both channel tabs. See the helper.
+          directCells: fileDirectCellsUnderMatrixRegions(parts.directCells, parts.combined),
         };
 
       // The filter stamp, in human names (standing rule: names, never raw codes). Options lists
@@ -664,21 +669,22 @@ export async function POST(request: Request) {
           // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
           // `access`: these rows carry the real source, and the comparison masks it for this reader.
-          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, undefined, access),
+          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, undefined, access, { regionBasis: "organogram" }),
           shownDetails,
           // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
           scopedPortal?.office ?? null,
         )
       : await buildClosingDetailsWorkbook(shownDetails);
     // These rows are already narrowed to this caller's own access, so a District Manager's file is
-    // named for their region without the route having to re-derive the scope.
+    // named for their region without the route having to re-derive the scope. The matrix's region,
+    // as on every sheet inside the file.
     return fileResponse(buffer, closingFileName({
       kind: "details",
       line: details.line,
       period: details.period,
       region: regionScopeLabel((function* () {
         for (const row of details.rows) {
-          yield row.regionName;
+          yield row.operationalRegionName || row.regionName;
         }
       })()),
     }));
