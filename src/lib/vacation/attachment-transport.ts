@@ -1,3 +1,4 @@
+import { isUuid } from "@/lib/http/uuid";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   sanitizeStorageSegment,
@@ -9,8 +10,6 @@ export type PendingVacationAttachmentKind = "sick" | "compensatory";
 
 const pendingAttachmentRoot = "pending";
 const unknownEmployeeSegment = "unknown-employee";
-// The per-upload id is crypto.randomUUID(): lowercase hex in the 8-4-4-4-12 shape.
-const pendingUploadIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function isPendingVacationAttachmentKind(value: unknown): value is PendingVacationAttachmentKind {
   return value === "sick" || value === "compensatory";
@@ -57,7 +56,7 @@ export function parsePendingVacationAttachmentPath(storagePath: string | null | 
   if (segments.length !== 5) return null;
   const [root, kind, owner, uploadId, fileName] = segments;
   if (root !== pendingAttachmentRoot || !isPendingVacationAttachmentKind(kind)) return null;
-  if (!isPendingSegment(owner) || !pendingUploadIdPattern.test(uploadId) || !isPendingSegment(fileName)) return null;
+  if (!isPendingSegment(owner) || !isUuid(uploadId) || !isPendingSegment(fileName)) return null;
   return { fileName, kind, owner, uploadId };
 }
 
