@@ -138,17 +138,21 @@ function HierarchyTable({
     <>
       {/* Desktop. `table-fixed` with a colgroup and NO min-width floor — the page fits its screen.
           It fits by MERGING, never by shrinking type: the share bar rides under the Sales figure
-          instead of owning a column, so seven columns became six. Below `lg` the shell's sidebar
-          leaves too little width for six money columns, so a tablet gets the cards instead. */}
+          instead of owning a column, and so does the "no target" amount — the part of those sales
+          with no target, printed only where there is some — so seven columns became five. The
+          "Achievement" header and the growth pill cannot wrap, and six columns of the 619px the
+          portal leaves this table at a 1024px screen were too narrow for both: they spilled into
+          a sideways scroll. Below `lg` the shell's sidebar leaves too little width for the money
+          columns, so a tablet gets the cards instead.
+          tests/sales-target-tables-fit-the-screen.test.ts holds the arithmetic. */}
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col style={{ width: "25%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "17%" }} />
-            <col style={{ width: "17%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "14%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "21%" }} />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className={TABLE_HEAD_CLASS}>
@@ -157,7 +161,6 @@ function HierarchyTable({
               <th className="px-4 py-2.5 text-right">Target</th>
               <th className="px-4 py-2.5 text-right">Achievement</th>
               <th className="px-4 py-2.5 text-right">vs {priorLabel}</th>
-              <th className="px-4 py-2.5 text-right">No target</th>
             </tr>
           </thead>
           <tbody>
@@ -189,6 +192,14 @@ function HierarchyTable({
                       <span className="mt-1.5 block">
                         <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
                       </span>
+                      {node.current.uncoveredActualValue !== 0 ? (
+                        <span className="mt-1.5 flex flex-wrap items-baseline justify-end gap-x-1.5">
+                          <span className="font-semibold tabular-nums text-amber-600">
+                            {formatEgpFull(node.current.uncoveredActualValue)}
+                          </span>
+                          <span className="text-phx-xs text-slate-500">no target</span>
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right align-top tabular-nums text-slate-600">
                       {node.current.targetValue === 0 ? (
@@ -203,19 +214,10 @@ function HierarchyTable({
                     <td className="px-4 py-3 text-right align-top">
                       {hasPrior ? <GrowthPill value={node.growth} /> : <span className="text-xs text-slate-400">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right align-top tabular-nums">
-                      {node.current.uncoveredActualValue === 0 ? (
-                        <span className="text-slate-300">—</span>
-                      ) : (
-                        <span className="font-semibold text-amber-600">
-                          {formatEgpFull(node.current.uncoveredActualValue)}
-                        </span>
-                      )}
-                    </td>
                   </tr>
                   {isOpen ? (
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      <td className="px-4 py-4" colSpan={6}>
+                      <td className="px-4 py-4" colSpan={5}>
                         <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
                       </td>
                     </tr>
