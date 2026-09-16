@@ -37,7 +37,7 @@ import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export
 import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import { loadMonthlyClosingComparisonFromRows } from "@/lib/sales/monthly-closing-comparison";
 import { type ClosingDetailsResult, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
-import { buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
+import { buildMonthlyClosingWorkbook, fileDirectCellsUnderMatrixRegions } from "@/lib/sales/monthly-closing-export";
 import { mergeMonthlyClosingMatrices } from "@/lib/sales/monthly-closing-period-merge";
 import {
   filterMonthlyClosingMatrix,
@@ -132,7 +132,9 @@ async function loadConsolidatedMonth(
   return {
     applied,
     details,
-    directCells: parts.directCells,
+    // Under the region this month's WHOLE matrix files each order's area in, as the single-month
+    // export does, so a direct order on an area the organogram re-owns reaches both channel tabs.
+    directCells: fileDirectCellsUnderMatrixRegions(parts.directCells, parts.combined),
     matrix: splitMatrix,
     monthRows,
     office,
@@ -248,9 +250,11 @@ export async function buildConsolidatedClosingWorkbook(input: {
 
   // From rows, over the whole span: the aggregate comparison RPC reads one month at a time.
   // `input.access`: the rows carry the real source, and the comparison masks El Qema for this reader.
+  // `organogram`: each row counts under the region ITS month's matrix shows, as the merged matrix
+  // does (owner, 2026-09-16).
   const comparison = await loadMonthlyClosingComparisonFromRows(matrix.line, matrix.period, details.rows, {
     areaCodes: scopedAreaCodes,
-  }, input.access);
+  }, input.access, { regionBasis: "organogram" });
 
   const filterParts = consolidatedFilterParts(input.filter, details.options);
   const anySplitApplied = months.some((month) => isStoreCitySplitActive(month.period));

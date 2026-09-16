@@ -432,7 +432,7 @@ export function runMedicalRepMonthlyClosingTests() {
     "and refuses a rep with no area on file rather than build the country-wide lists",
   );
   assert.ok(
-    exportRoute.includes("loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, repComparisonScope, access)"),
+    exportRoute.includes('loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows, repComparisonScope, access, { regionBasis: "organogram" })'),
     "and hands that scope to the comparison the workbook's sheets are built from",
   );
 
