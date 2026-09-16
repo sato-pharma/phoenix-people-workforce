@@ -1419,6 +1419,8 @@ import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-cha
 import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runMedicalRepMonthlyClosingTests } from "./medical-rep-monthly-closing.test.ts";
+import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-export-matches-screen.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
@@ -4571,6 +4573,16 @@ await runTest(
 await runTest(
   "marketing manager monthly closing (portal tab, three gates agree, full workbook, no sales:import)",
   runMarketingManagerMonthlyClosingTests,
+);
+
+await runTest(
+  "medical rep monthly closing (owner 2026-09-16): the rep opens the portal tab, and its matrix, Details and export show their OWN area only — never a sibling rep's area in their region, never their region when their area matches nothing or is not on file",
+  runMedicalRepMonthlyClosingTests,
+);
+
+await runTest(
+  "scoped closing export matches the screen (owner 2026-09-16, \"Fix every scoped file now\"): every scoped viewer's file is built from their own Details rows, so the city split's shares and Main Stores are in it; a Main Stores row names no warehouse brick, block or invoice; the comparison files it under the unnamed \"—\"; its value reaches the file's matrix and Total with no factory price",
+  runScopedClosingExportMatchesScreenTests,
 );
 
 await runTest(
