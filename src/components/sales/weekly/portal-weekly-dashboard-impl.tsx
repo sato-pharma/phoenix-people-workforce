@@ -18,6 +18,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Boxes,
+  Building2,
   CalendarRange,
   CheckCircle2,
   Clock,
@@ -36,6 +37,7 @@ import {
 
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
+import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
 import type {
   PortalWeeklyComparison,
   PortalWeeklyScopeView,
@@ -54,8 +56,10 @@ type Props = {
  * Which tab is showing. "field" is the DEFAULT by the owner's instruction (2026-09-01): opening
  * Weekly Sales must land on the medical reps, because that is what the screen is read for. The
  * distributor view it used to open on is still one click away and is otherwise unchanged.
+ * "detail" is Weekly Sales laid out exactly as Weekly Stock (owner, 2026-09-16): every product at every
+ * depot, then products, depots, areas, regions and distributors.
  */
-type WeeklyTab = "field" | "distribution";
+type WeeklyTab = "field" | "distribution" | "detail";
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 function formatEgp(value: number): string {
@@ -112,6 +116,8 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   const [comparison, setComparison] = useState<PortalWeeklyComparison | null>(initialComparison);
   const [fieldForce, setFieldForce] = useState<PortalWeeklyFieldForce | null>(initialFieldForce);
   const [activeTab, setActiveTab] = useState<WeeklyTab>("field");
+  // The Depot Detail tab loads on its first opening, then stays mounted so its own filters survive a tab switch.
+  const [detailOpened, setDetailOpened] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -239,6 +245,11 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   const resetFilters = () =>
     setSelection({ months: [], weeks: [], regions: [], products: [], lines: [], distributors: [] });
 
+  const openTab = (next: WeeklyTab) => {
+    if (next === "detail") setDetailOpened(true);
+    setActiveTab(next);
+  };
+
   const monthOptions = useMemo(
     () => data.availableMonths.map((m) => ({ code: m.code, label: m.name })),
     [data.availableMonths],
@@ -264,6 +275,14 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     [data.distributors],
   );
 
+  // A drill from the Depot Detail tab narrows the page's own filter to exactly that one code, as Weekly
+  // Stock's drills do. The detail sends codes upper-cased; the option list keeps the chip's own spelling.
+  const drillFilter = (key: MultiKey, options: { code: string }[], code: string) => {
+    const match = options.find((option) => option.code.toUpperCase() === code.toUpperCase())?.code ?? code;
+    setMode(key, "include");
+    setSel(key, [match]);
+  };
+
   const isEmpty = data.kpis.salesValue === 0 && data.kpis.salesUnits === 0;
   const isProductScoped = scope.role === "Product Manager" || scope.role === "Group Product Manager";
 
@@ -272,29 +291,13 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   const totalDistributors = data.distributors.length;
   const allUploaded = totalDistributors > 0 && uploadedCount >= totalDistributors;
 
-  // The filter bar governs BOTH tabs, so it is defined once and rendered inside each. Rendering it
+  // The filter bar governs EVERY tab, so it is defined once and rendered inside each. Rendering it
   // here rather than above the tab content keeps the Distribution tab's own order (KPIs, then
   // filters) exactly as it shipped — the owner asked for a new default tab, not a re-laid-out old one.
-  const filtersSection = (
-          <Section
-            title="Filters"
-            overflowVisible
-            action={
-              activeFilterCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Reset {activeFilterCount}
-                </button>
-              ) : (
-                <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
-              )
-            }
-          >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+  // The fields are split from their panel because the Depot Detail tab adds its own area, depot and
+  // movement fields to the same panel, so that tab still has exactly one filter bar.
+  const filterFields = (
+            <>
               <MultiSelectFilter
                 label="Month"
                 icon={<CalendarRange className="h-3 w-3" />}
@@ -357,7 +360,28 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
                   onModeChange={(m) => setMode("distributors", m)}
                 />
               ) : null}
-            </div>
+            </>
+  );
+  const filtersSection = (
+          <Section
+            title="Filters"
+            overflowVisible
+            action={
+              activeFilterCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset {activeFilterCount}
+                </button>
+              ) : (
+                <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
+              )
+            }
+          >
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{filterFields}</div>
           </Section>
   );
 
@@ -404,7 +428,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
       </div>
 
       {/* Tabs. Field Force is the default landing view — see WeeklyTab. */}
-      <WeeklyTabBar active={activeTab} onChange={setActiveTab} repCount={fieldForce?.totals.repsWithSales ?? 0} />
+      <WeeklyTabBar active={activeTab} onChange={openTab} repCount={fieldForce?.totals.repsWithSales ?? 0} />
 
       {isEmpty ? (
         <EmptyState isProductScoped={isProductScoped} isEmpty={data.scopeEmpty} />
@@ -413,7 +437,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
           {filtersSection}
           <PortalWeeklyFieldForceView fieldForce={fieldForce} scopeSummary={scope.scopeSummary} />
         </>
-      ) : (
+      ) : activeTab === "distribution" ? (
         <>
           {/* KPI strip */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
@@ -533,7 +557,29 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
           {/* Completeness tracker */}
           <CompletenessTracker data={data} />
         </>
-      )}
+      ) : null}
+
+      {/* Depot Detail sits outside the chain above so it stays mounted once opened (see detailOpened). */}
+      {detailOpened ? (
+        <WeeklySalesDepotDetail
+          audience="manager"
+          feedPath="/api/employee-portals/weekly-sales/depot-detail"
+          exportPath="/api/employee-portals/weekly-sales/depot-detail/export"
+          hostQuery={buildQuery()}
+          hostFields={filterFields}
+          hostActiveCount={activeFilterCount}
+          onHostReset={resetFilters}
+          hostDrill={{
+            ...(vis.product ? { products: (code: string) => drillFilter("products", productOptions, code) } : {}),
+            ...(vis.region ? { regions: (code: string) => drillFilter("regions", regionOptions, code) } : {}),
+            ...(vis.distributor
+              ? { distributors: (code: string) => drillFilter("distributors", distributorOptions, code) }
+              : {}),
+          }}
+          refreshKey={refreshTick}
+          active={activeTab === "detail" && !isEmpty}
+        />
+      ) : null}
     </div>
   );
 }
@@ -541,11 +587,12 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 
 /**
- * The two views of one week's sales.
+ * The three views of one week's sales.
  *
  * "Field Force" leads because it answers the question the screen is opened for — how each medical
  * rep is doing, week by week, per product. "Distribution" is the original dashboard: the same
  * numbers cut by distributor, region and product, which is the supply-side view of the same sheet.
+ * "Depot Detail" is the same sheet laid out as Weekly Stock: every product at every depot.
  */
 function WeeklyTabBar({
   active,
@@ -559,6 +606,7 @@ function WeeklyTabBar({
   const tabs: { key: WeeklyTab; label: string; hint: string; icon: typeof Users }[] = [
     { key: "field", label: "Field Force", hint: "Reps week by week, per product", icon: Users },
     { key: "distribution", label: "Distribution", hint: "Distributors, regions and products", icon: Truck },
+    { key: "detail", label: "Depot Detail", hint: "Every product at every depot", icon: Building2 },
   ];
   return (
     <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
@@ -589,15 +637,16 @@ function WeeklyTabBar({
                 <Icon className="h-4 w-4" />
               </span>
               <span className="min-w-0">
+                {/* Three tabs share a row from the sm breakpoint, so a label wraps rather than being clipped. */}
                 <span
-                  className={`block whitespace-nowrap text-sm font-black tracking-tight ${
+                  className={`block break-words text-sm font-black tracking-tight ${
                     isActive ? "text-white" : "text-slate-900"
                   }`}
                 >
                   {tab.label}
                 </span>
                 <span
-                  className={`block whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide ${
+                  className={`block break-words text-phx-2xs font-bold uppercase tracking-wide ${
                     isActive ? "text-slate-400" : "text-slate-400"
                   }`}
                 >

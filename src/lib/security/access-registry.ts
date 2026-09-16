@@ -1362,6 +1362,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/source-of-sales/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/export", permission: { resource: "sales", action: "read" } }),
+  // Weekly Sales Depot Detail. The managers' pair keeps the managers' Weekly Sales gate (a Medical Rep is
+  // refused); the rep's pair admits a Medical Rep only and returns his own area's share and nothing wider.
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/depot-detail", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/depot-detail/export", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/rep-depot-detail", permission: { resource: "sales", action: "read" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/weekly-sales/rep-depot-detail/export", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/employee-portals/double-visit-report/export", permission: { resource: "double_visit_analytics", action: "export" }, guard: "domain-helper" }),
   // Team Calendar rep-day visits drill-down. Role-checked in the handler (National Sales
   // Manager only) plus a per-line scope guard (isHrIdInNsmTeamScope) rather than a matrix
