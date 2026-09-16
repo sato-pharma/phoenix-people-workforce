@@ -306,8 +306,14 @@ export function buildPortalWeeklyFieldForce(input: {
   seatIndex: FieldForceSeatIndex;
   /** The dashboard's stable product universe, so the axis does not change with the view. */
   productAxis?: { code: string; name: string }[];
-  /** weekComparison, read only for its spansGap flags. */
-  weekComparison?: Pick<WeeklyDashboard["weekComparison"][number], "weekNumber" | "spansGap">[];
+  /**
+   * weekComparison, read only for its spansGap flags — or, for a lifted load, that grain's own gap flags
+   * (factRowWeekGaps), which carry no money.
+   */
+  weekComparison?: readonly (
+    | WeeklyDashboard["weekComparison"][number]
+    | NonNullable<WeeklyDashboard["factRowWeekGaps"]>[number]
+  )[];
   seatIndexUnavailable?: boolean;
   /**
    * Required whenever `rows` came from a load with the geography lifted (liftRowGrainGeography).
