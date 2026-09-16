@@ -1457,6 +1457,7 @@ import { runRecruitmentOpsMarkerTests } from "./recruitment-ops-marker.test.ts";
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
+import { runPnpmWorktreeGuardTests } from "./pnpm-worktree-guard.test.ts";
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
@@ -4758,6 +4759,15 @@ await runTest(
   + "mistaken for coverage, reports a working tree it cannot read as UNVERIFIED rather than clean "
   + "in both modes, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
+);
+
+await runTest(
+  "pnpm is refused inside a linked worktree and untouched in the primary (every entry form — "
+  + "install, i, add, run, exec, dlx and the bare script shorthand — is denied after a cd, a "
+  + "newline or a &&, for the PowerShell tool as well as Bash, while talking about pnpm, a "
+  + "heredoc documenting it and the primary checkout itself all stay allowed, and the deny names "
+  + "a node command that really exists)",
+  runPnpmWorktreeGuardTests,
 );
 
 await runTest(
