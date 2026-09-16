@@ -1686,6 +1686,7 @@ import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
+import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5674,6 +5675,11 @@ await runTest(
 await runTest(
   "Monthly Closing details and the scoped export open PUBLISHED months only: a scoped viewer naming an unpublished month is refused in plain words, naming none opens the newest published month, and Super Admin / system, SFE Manager, CEO, Finance Manager and the Marketing Manager keep every validated month",
   runClosingDetailsPublicationGateTests,
+);
+
+await runTest(
+  "Performance Review export admits exactly who its page admits: the page, its reload route and its export all ask one audience check (Super Admin, system scope, SFE Manager) before the rate limit, the body or the company-wide load — sales:export alone reaches down to Medical Rep",
+  runClosingPerformanceReviewExportGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
