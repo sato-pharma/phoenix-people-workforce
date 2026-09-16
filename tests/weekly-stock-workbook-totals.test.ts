@@ -197,13 +197,13 @@ export async function runWeeklyStockWorkbookTotalsTests() {
     for (const label of tab.summed) {
       const col = columnOf.get(label);
       assert.ok(col, `${tab.name}: the "${label}" column is in the file`);
-      const letter = sheet.getColumn(col).letter;
-      const match = /^SUM\(([A-Z]+)(\d+):([A-Z]+)(\d+)\)$/.exec(String(totalRow.getCell(col).formula));
-      assert.ok(match, `${tab.name}: "${label}" is a plain SUM over its own column`);
-      assert.deepEqual(
-        [match[1], Number(match[2]), match[3], Number(match[4])],
-        [letter, FIRST_DATA_ROW, letter, totalRowNumber - 1],
-        `${tab.name}: the "${label}" SUM covers the data rows and nothing else`,
+      // Annotated on purpose: the assertion below takes `letter` inside this loop, and without the annotation
+      // TypeScript reads that assertion while still inferring `letter` and gives up (TS7022).
+      const letter: string = sheet.getColumn(col).letter;
+      assert.equal(
+        totalRow.getCell(col).formula,
+        `SUM(${letter}${FIRST_DATA_ROW}:${letter}${totalRowNumber - 1})`,
+        `${tab.name}: the "${label}" TOTAL is a plain SUM over its own column's data rows and nothing else`,
       );
       let sum = 0;
       for (let r = FIRST_DATA_ROW; r < totalRowNumber; r += 1) {
