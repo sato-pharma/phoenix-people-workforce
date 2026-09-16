@@ -506,6 +506,7 @@ import { runWeeklyPosValueRowTests } from "./weekly-pos-value-row-is-not-units.t
 import { runWeeklyFileTotalsSelfCheckTests } from "./weekly-file-totals-self-check.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
+import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -2710,6 +2711,10 @@ await runTest("weekly POS value row is not units", runWeeklyPosValueRowTests);
 await runTest("weekly file totals self-check", runWeeklyFileTotalsSelfCheckTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
+await runTest(
+  "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
+  runWeeklyStockWorkbookTotalsTests,
+);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
 await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProductsTests);
