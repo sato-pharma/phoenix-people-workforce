@@ -222,6 +222,10 @@ export async function loadWeeklySalesDepotDetail(
       allWeeks: true,
       narrowRowsToCycleMonths: includeMonths,
       includeFactRows: true,
+      // Unrounded rows: rounded one by one, they add up to a few pounds off the Weekly Sales headline beside
+      // this tab. A rep's detail does not ask for them, because it must match his own page, which adds the
+      // rounded rows.
+      factRowsFullPrecision: true,
       // Owner rule for every weekly report and export: unmapped products never reach a total.
       excludeUnmapped: true,
     }),

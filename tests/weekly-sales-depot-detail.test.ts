@@ -42,7 +42,7 @@ import type { WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 // Weekly Sales — Depot Detail (owner, 2026-09-16: "make weekly sales detailed exactly as weekly stock",
 // on both portal pages; a Medical Rep sees his own area only, and his export is exactly his screen).
 //
-// Five things here are load-bearing and none is visible when it breaks:
+// Six things here are load-bearing and none is visible when it breaks:
 //
 //   1. THE AVERAGE PER WEEK IS A TRUE AVERAGE. Most distributors restate the month to date, so a sheet
 //      after a missed upload carries two weeks, a month's first sheet carries weeks 1..n, and a sheet
@@ -55,6 +55,8 @@ import type { WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 //      Sales page — the two are filed by the same seat lookup, so they cannot disagree.
 //   5. THE DOWNLOAD IS THE SCREEN. Same loader, same query, no hand-written total that counts money twice,
 //      and no SUM under a unit column.
+//   6. EVERY TOTAL IS ADDED BEFORE IT IS ROUNDED. Parts rounded first add up to a different figure from the
+//      Weekly Sales page this tab sits on, and from a rep's own page.
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -506,6 +508,53 @@ export async function runWeeklySalesDepotDetailTests() {
     "one product code across depots is the one place a unit total is valid",
   );
 
+  // Totals are added from unrounded figures and rounded once. Three depots each selling a third of a unit for
+  // EGP 3.33 make one unit and EGP 10, not 0.99 and 9.99. A rep's allocated quarters and a month of
+  // de-cumulated rows are fractions like these, and a total added from rounded parts disagrees with the page
+  // this tab sits on (production, 2026-09-16: EGP 8 on every month, 0.01 of a unit on a rep's products).
+  const thirdRows = ["T1", "T2", "T3"].map((branchCode) =>
+    sourceRow({ branchCode, branchName: `Depot ${branchCode}`, salesUnits: 1 / 3, salesValue: 10 / 3 }),
+  );
+  const thirds = buildWeeklySalesDepotDetail({
+    audience: "manager",
+    rows: thirdRows,
+    areaNames: AREA_NAMES,
+    uploads: UPLOADS,
+    period: SEPTEMBER_PERIOD,
+  });
+  assert.deepEqual(
+    thirds.cells.map((cell) => [cell.units, cell.value]),
+    [
+      [0.33, 3.33],
+      [0.33, 3.33],
+      [0.33, 3.33],
+    ],
+    "fixture: each depot shows its own third, rounded",
+  );
+  assert.deepEqual(
+    thirds.products.map((product) => [product.units, product.value]),
+    [[1, 10]],
+    "a product's units and value are added before rounding: three thirds make one unit, not 0.99",
+  );
+  assert.equal(thirds.kpis.value, 10, "the headline is added before rounding, so it equals the Weekly Sales headline");
+  assert.deepEqual(
+    [thirds.areas, thirds.regions, thirds.distributors].map((rows) => rows.map((row) => row.value)),
+    [[10], [10], [10]],
+    "an area, region or distributor is added before rounding",
+  );
+  const allocatedThirds = buildWeeklySalesDepotDetail({
+    audience: "rep",
+    rows: thirdRows.map((row) => ({ ...row, basis: "allocated" as const })),
+    areaNames: AREA_NAMES,
+    uploads: UPLOADS,
+    period: SEPTEMBER_PERIOD,
+  });
+  assert.deepEqual(
+    [allocatedThirds.kpis.value, allocatedThirds.kpis.allocatedValue, allocatedThirds.kpis.mappedValue],
+    [10, 10, 0],
+    "a rep's allocated total is added before rounding, as his own page adds it",
+  );
+
   // ── 4. a depot with no area is kept, labelled, and filed per region ──────────────────────────
   assert.equal(view.kpis.unmappedValue, 1200, "the two multi-area depots are counted, not dropped");
   assert.deepEqual(
@@ -878,9 +927,25 @@ export async function runWeeklySalesDepotDetailTests() {
   assert.match(managerService, /resolvePortalWeeklyScope\(ctx\)/, "the managers' scope resolves from the session");
   assert.match(managerService, /accessScope: scope\.accessScope,/, "and is handed to the weekly engine, which enforces it");
   assert.match(managerService, /excludeUnmapped: true/, "unmapped products never reach a managers' total");
+  assert.match(
+    managerService,
+    /factRowsFullPrecision: true/,
+    "the managers' detail reads unrounded rows, so its headline equals the Weekly Sales headline beside it",
+  );
+  const weeklyEngine = readSource("../src/lib/sales/weekly/service.ts");
+  assert.match(
+    weeklyEngine,
+    /salesValue: filters\?\.factRowsFullPrecision \? row\.salesValue : Number\(row\.salesValue\.toFixed\(2\)\),\s+salesUnits: filters\?\.factRowsFullPrecision \? row\.netQty : Number\(row\.netQty\.toFixed\(2\)\),/,
+    "the weekly engine hands unrounded rows to the caller that asks, and the BI workbook's rounded rows to every other",
+  );
   const repService = readSource("../src/lib/sales/weekly/portal-weekly-rep-depot-detail.ts");
   assert.match(repService, /accessScope: repWeeklyLoadScope\(scope\),/, "a rep's load lifts geography but keeps his line");
   assert.match(repService, /excludeUnmapped: true/, "unmapped products never reach a rep's total");
+  assert.doesNotMatch(
+    repService,
+    /factRowsFullPrecision/,
+    "a rep's detail reads the same rounded rows as his own Weekly Sales page, so the two cannot disagree",
+  );
   assert.match(repService, /selectOwnRepSeats\(seatIndex\.seats, viewerKeys, allowedLineNames\)/, "his seats are matched to his own identity");
 
   for (const [pattern, isExport] of [

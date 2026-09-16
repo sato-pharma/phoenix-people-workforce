@@ -273,6 +273,11 @@ export function weeklySalesPeriodLabel(period: WeeklySalesDetailPeriod, localWee
 }
 
 const up = (value: string | null | undefined) => (value ?? "").trim().toUpperCase();
+/**
+ * Rounds a figure for the screen, ONCE. Every total is built from unrounded figures and rounded at the end:
+ * adding figures that were each rounded first drifts from the true total (a hundredth of a unit on a rep's
+ * allocated quarters, pounds over a month of rows), and then this tab disagrees with the page it sits on.
+ */
 const round2 = (value: number) => Number(value.toFixed(2));
 /** Anything smaller than half a piastre, or half a unit's hundredth, is a rounding residue, not a sale. */
 const EPSILON = 0.005;
@@ -391,16 +396,32 @@ type GroupAccumulator = {
   returnsValue: number;
 };
 
-function accumulate(map: Map<string, GroupAccumulator>, code: string, name: string, parentName: string, cell: WeeklySalesDetailCell) {
+/** A cell's figures before rounding: what every total is added from. */
+type ExactFigures = {
+  units: number;
+  value: number;
+  allocatedValue: number;
+  avgWeeklyUnits: number | null;
+  avgWeeklyValue: number | null;
+};
+
+function accumulate(
+  map: Map<string, GroupAccumulator>,
+  code: string,
+  name: string,
+  parentName: string,
+  cell: WeeklySalesDetailCell,
+  exact: ExactFigures,
+) {
   const current =
     map.get(code) ??
     { code, name, parentName, value: 0, avgWeeklyValue: 0, products: new Set<string>(), soldCount: 0, returnsCount: 0, returnsValue: 0 };
-  current.value += cell.value;
-  current.avgWeeklyValue += cell.avgWeeklyValue ?? 0;
+  current.value += exact.value;
+  current.avgWeeklyValue += exact.avgWeeklyValue ?? 0;
   current.products.add(cell.productCode);
   if (cell.movement === "returns") {
     current.returnsCount += 1;
-    current.returnsValue += cell.value;
+    current.returnsValue += exact.value;
   } else {
     current.soldCount += 1;
   }
@@ -513,7 +534,7 @@ export function buildWeeklySalesDepotDetail(input: {
     cellsByKey.set(key, current);
   }
 
-  const allCells: WeeklySalesDetailCell[] = [];
+  const allEntries: { cell: WeeklySalesDetailCell; exact: ExactFigures }[] = [];
   for (const cell of cellsByKey.values()) {
     if (Math.abs(cell.units) <= EPSILON && Math.abs(cell.value) <= EPSILON) continue;
     const { row } = cell;
@@ -532,28 +553,38 @@ export function buildWeeklySalesDepotDetail(input: {
           : Math.abs(cell.mappedValue) <= EPSILON
             ? "allocated"
             : "mixed";
-    allCells.push({
-      distributorCode: up(row.distributorCode),
-      distributorName: row.distributorName || row.distributorCode,
-      regionCode: up(row.regionCode),
-      regionName: row.regionName || row.regionCode,
-      areaCode: row.areaCode?.trim() ? row.areaCode.trim().toUpperCase() : null,
-      areaName: cell.areaName,
-      branchKey: salesDepotKey(row),
-      branchName: row.branchName || row.branchCode,
-      productCode: up(row.productCode),
-      productName: row.productName || row.productCode,
-      line: row.line,
-      units: round2(cell.units),
-      value: round2(cell.value),
-      avgWeeklyUnits: weeksCovered > 0 ? round2(cell.units / weeksCovered) : null,
-      avgWeeklyValue: weeksCovered > 0 ? round2(cell.value / weeksCovered) : null,
-      weeksSold,
-      weeksCovered,
-      share: null,
-      movement: weeklySalesMovement(cell.units, cell.value),
-      basis,
-      allocatedValue: round2(cell.allocatedValue),
+    const exact: ExactFigures = {
+      units: cell.units,
+      value: cell.value,
+      allocatedValue: cell.allocatedValue,
+      avgWeeklyUnits: weeksCovered > 0 ? cell.units / weeksCovered : null,
+      avgWeeklyValue: weeksCovered > 0 ? cell.value / weeksCovered : null,
+    };
+    allEntries.push({
+      exact,
+      cell: {
+        distributorCode: up(row.distributorCode),
+        distributorName: row.distributorName || row.distributorCode,
+        regionCode: up(row.regionCode),
+        regionName: row.regionName || row.regionCode,
+        areaCode: row.areaCode?.trim() ? row.areaCode.trim().toUpperCase() : null,
+        areaName: cell.areaName,
+        branchKey: salesDepotKey(row),
+        branchName: row.branchName || row.branchCode,
+        productCode: up(row.productCode),
+        productName: row.productName || row.productCode,
+        line: row.line,
+        units: round2(exact.units),
+        value: round2(exact.value),
+        avgWeeklyUnits: exact.avgWeeklyUnits == null ? null : round2(exact.avgWeeklyUnits),
+        avgWeeklyValue: exact.avgWeeklyValue == null ? null : round2(exact.avgWeeklyValue),
+        weeksSold,
+        weeksCovered,
+        share: null,
+        movement: weeklySalesMovement(cell.units, cell.value),
+        basis,
+        allocatedValue: round2(exact.allocatedValue),
+      },
     });
   }
 
@@ -569,8 +600,8 @@ export function buildWeeklySalesDepotDetail(input: {
   const branchOptions = new Map<string, string>();
   const productOptions = new Map<string, string>();
 
-  const cells = allCells
-    .filter((cell) => {
+  const entries = allEntries
+    .filter(({ cell }) => {
       distributorOptions.set(cell.distributorCode, cell.distributorName);
       if (distributorFilter.size > 0 && !distributorFilter.has(cell.distributorCode)) return false;
       areaOptions.set(cell.areaCode ?? WEEKLY_SALES_DETAIL_UNMAPPED_AREA, cell.areaName);
@@ -583,16 +614,17 @@ export function buildWeeklySalesDepotDetail(input: {
       return true;
     })
     .sort(
-      (a, b) =>
+      ({ cell: a }, { cell: b }) =>
         a.regionName.localeCompare(b.regionName) ||
         a.areaName.localeCompare(b.areaName) ||
         a.branchName.localeCompare(b.branchName) ||
         a.distributorName.localeCompare(b.distributorName) ||
         a.productName.localeCompare(b.productName),
     );
+  const cells = entries.map((entry) => entry.cell);
 
-  const totalValue = cells.reduce((sum, cell) => sum + cell.value, 0);
-  for (const cell of cells) cell.share = shareOf(cell.value, totalValue);
+  const totalValue = entries.reduce((sum, entry) => sum + entry.exact.value, 0);
+  for (const { cell, exact } of entries) cell.share = shareOf(exact.value, totalValue);
 
   const products = new Map<string, WeeklySalesDetailProductRow>();
   const depots = new Map<string, GroupAccumulator>();
@@ -607,17 +639,17 @@ export function buildWeeklySalesDepotDetail(input: {
   let returnsValue = 0;
   let returnsCount = 0;
 
-  for (const cell of cells) {
+  for (const { cell, exact } of entries) {
     depotKeys.add(cell.branchKey);
     if (cell.areaCode) areaKeys.add(cell.areaCode);
-    else unmappedValue += cell.value;
+    else unmappedValue += exact.value;
     if (cell.basis !== "whole") {
-      allocatedValue += cell.allocatedValue;
-      mappedValue += cell.value - cell.allocatedValue;
+      allocatedValue += exact.allocatedValue;
+      mappedValue += exact.value - exact.allocatedValue;
     }
     if (cell.movement === "returns") {
       returnsCount += 1;
-      returnsValue += cell.value;
+      returnsValue += exact.value;
     }
 
     const product =
@@ -635,10 +667,10 @@ export function buildWeeklySalesDepotDetail(input: {
         soldDepots: 0,
         returnsDepots: 0,
       };
-    product.units += cell.units;
-    product.value += cell.value;
-    product.avgWeeklyUnits += cell.avgWeeklyUnits ?? 0;
-    product.avgWeeklyValue += cell.avgWeeklyValue ?? 0;
+    product.units += exact.units;
+    product.value += exact.value;
+    product.avgWeeklyUnits += exact.avgWeeklyUnits ?? 0;
+    product.avgWeeklyValue += exact.avgWeeklyValue ?? 0;
     product.depotCount += 1;
     if (cell.movement === "returns") product.returnsDepots += 1;
     else product.soldDepots += 1;
@@ -646,12 +678,12 @@ export function buildWeeklySalesDepotDetail(input: {
 
     const depotParent =
       audience === "rep" ? cell.distributorName : [cell.regionName, cell.distributorName].filter(Boolean).join(" · ");
-    accumulate(depots, `${cell.branchKey}`, cell.branchName, depotParent, cell);
+    accumulate(depots, `${cell.branchKey}`, cell.branchName, depotParent, cell, exact);
     // An unmapped depot is filed per region, so "Area not mapped" never reads as one place spanning the country.
     const areaKey = cell.areaCode ?? `${WEEKLY_SALES_DETAIL_UNMAPPED_AREA}|${up(cell.regionCode) || up(cell.regionName)}`;
-    accumulate(areas, areaKey, cell.areaName, cell.regionName, cell);
-    if (audience === "manager") accumulate(regions, up(cell.regionCode) || up(cell.regionName), cell.regionName, "", cell);
-    accumulate(distributors, cell.distributorCode, cell.distributorName, "", cell);
+    accumulate(areas, areaKey, cell.areaName, cell.regionName, cell, exact);
+    if (audience === "manager") accumulate(regions, up(cell.regionCode) || up(cell.regionName), cell.regionName, "", cell, exact);
+    accumulate(distributors, cell.distributorCode, cell.distributorName, "", cell, exact);
   }
 
   const productRows = [...products.values()]
@@ -677,7 +709,7 @@ export function buildWeeklySalesDepotDetail(input: {
     audience,
     kpis: {
       value: round2(totalValue),
-      avgWeeklyValue: round2(cells.reduce((sum, cell) => sum + (cell.avgWeeklyValue ?? 0), 0)),
+      avgWeeklyValue: round2(entries.reduce((sum, entry) => sum + (entry.exact.avgWeeklyValue ?? 0), 0)),
       depotCount: depotKeys.size,
       productCount: products.size,
       areaCount: areaKeys.size,
