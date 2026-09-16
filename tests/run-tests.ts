@@ -1562,6 +1562,8 @@ import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
 import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 import { runWeeklySalesDepotDetailTests } from "./weekly-sales-depot-detail.test.ts";
 import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
+import { runWeeklyUnitsOneProductTests } from "./weekly-units-one-product.test.ts";
+import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
@@ -5103,6 +5105,14 @@ await runTest(
   runWeeklySalesDepotDetailTests,
 );
 await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API, its three workbooks and the Sales Analytics weekly pages; every manager role still passes)", runWeeklyTerritoryGateTests);
+await runTest(
+  "weekly sales unit totals appear only for one product (the Sales Units and Stock Units tiles, the Units column on a region or distributor cut, the export's Summary and Week Comparison)",
+  runWeeklyUnitsOneProductTests,
+);
+await runTest(
+  "weekly sales fits the screen with square corners (Distribution and Field Force tabs: no round corner, scroll box, width floor or ellipsis; every table fixed, its columns, head row, body row and colSpans one shape totalling 100%)",
+  runWeeklySalesFitsTheScreenTests,
+);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
 await runTest(
