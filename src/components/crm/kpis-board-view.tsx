@@ -873,12 +873,16 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 /**
  * "3 Sep 2026", or "3 Sep" without the year — the spelling reps-list-vacant-areas.tsx prints, by
  * string arithmetic on the ISO day. No Date parsing, so no server time zone can move the day.
+ *
+ * NO-BREAK SPACES inside the date, so a wrapped line breaks between two dates and never inside one.
+ * With plain spaces a doctor planned on fifteen days wrapped as "3 Sep · 5" over "Sep · 7 Sep" in
+ * the side-by-side lists at 1024px, where the "5" and the "Sep" read as two different days.
  */
 function dayLabel(iso: string | null, withYear = true): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? "");
   if (!match) return null;
-  const day = `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]}`;
-  return withYear ? `${day} ${match[1]}` : day;
+  const day = `${Number(match[3])}\u00A0${MONTHS[Number(match[2]) - 1]}`;
+  return withYear ? `${day}\u00A0${match[1]}` : day;
 }
 
 /**
@@ -942,10 +946,14 @@ function CoverageNotDueChip() {
   );
 }
 
-/** The days the plan booked him, without the year — the board's header already names the month. */
+/**
+ * The days the plan booked him, without the year — the board's header already names the month. The
+ * space before each separator is a no-break one too, so a wrapped line ends on "·" and the next line
+ * starts on a day, never on a stray dot.
+ */
 function planDaysLabel(doctor: KpiCoverageDoctor): string {
   const days = doctor.planDates.map((day) => dayLabel(day, false)).filter((day): day is string => Boolean(day));
-  return days.length > 0 ? days.join(" · ") : "No day on the plan";
+  return days.length > 0 ? days.join("\u00A0· ") : "No day on the plan";
 }
 
 /** One of the two lists: the podium card's frame and header, holding a desktop table or phone rows. */

@@ -279,6 +279,17 @@ export function runKpiCoverageRepSelectionTests() {
   const view = read("src/components/crm/kpis-board-view.tsx");
   assert.match(view, /<CoverageDoctors context=\{context\} detail=\{detail\} surface="desktop" \/>/, "the desktop table shows the open list");
   assert.match(view, /<CoverageDoctors context=\{context\} detail=\{detail\} surface="mobile" \/>/, "and so do the phone cards");
+
+  // A date is one unit on screen. Measured 2026-09-16 at 1024px: with plain spaces a long list of
+  // planned days wrapped as "3 Sep · 5" over "Sep · 7 Sep", so no-break spaces hold each date together
+  // and keep every separator on the day before it.
+  assert.match(
+    view,
+    /const day = `\$\{Number\(match\[3\]\)\}\\u00A0\$\{MONTHS\[Number\(match\[2\]\) - 1\]\}`;/,
+    "a day and its month never split across two lines",
+  );
+  assert.match(view, /return withYear \? `\$\{day\}\\u00A0\$\{match\[1\]\}` : day;/, "nor a date and its year");
+  assert.match(view, /days\.join\("\\u00A0· "\)/, "and a wrapped list of planned days never starts a line on a separator");
 }
 
 // ── Ordering and "not due yet" ────────────────────────────────────────────────────────────────
