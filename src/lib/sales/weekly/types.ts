@@ -525,6 +525,12 @@ export type WeeklyDashboard = {
    * with the live master price. Only present when `includeStockRows` is requested.
    */
   stockRows?: import("./stock-dashboard").WeeklyStockSourceRow[];
+  /**
+   * The upload-gap flag of every (month, week) in the LIFTED row grain (liftRowGrainGeography with
+   * includeFactRows), whose weeks can differ from the viewer's own weekComparison. Flags only, no money.
+   * Undefined whenever the grain was not lifted.
+   */
+  factRowWeekGaps?: { cycleMonth: string; weekNumber: number; spansGap: boolean }[];
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

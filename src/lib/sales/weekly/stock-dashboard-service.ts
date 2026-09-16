@@ -9,6 +9,15 @@
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
+import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import {
+  admitWeeklyStockRows,
+  mayLiftWeeklyGeography,
+  resolveWeeklyOwnAreaKeys,
+  weeklyStockProductPredicate,
+  withExtraWeeklyOptions,
+} from "@/lib/sales/weekly/own-area-scope";
+import { loadFieldForceSeatIndex } from "@/lib/sales/weekly/portal-weekly-field-force";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import {
   WEEKLY_STOCK_STATUS_LABELS,
@@ -160,9 +169,23 @@ export async function loadWeeklyStockDashboard(
   filters: WeeklyStockRequestFilters,
   ctx: AccessContext,
 ): Promise<WeeklyStockPayload> {
-  const accessScope = await resolveWeeklyAccessScope(ctx);
+  const [accessScope, seatIndex] = await Promise.all([
+    resolveWeeklyAccessScope(ctx),
+    // A medical rep's own areas are his filled rep seats; every other viewer's come from his scope.
+    ctx.role === "Medical Rep" ? loadFieldForceSeatIndex() : Promise.resolve(null),
+  ]);
 
-  const [data, areaNames] = await Promise.all([
+  // A territory viewer's depots load with his region bound LIFTED and are narrowed straight back to the
+  // ones that serve his own areas (own-area-scope.ts). Depot rows keep the region label they were mapped
+  // with, so an Upper Egypt 1, Upper Egypt 2 or Delta (3) viewer's region-bound load held almost none of
+  // the depots that stock his areas. Everyone else loads exactly as before.
+  const ownAreaKeys = await resolveWeeklyOwnAreaKeys(ctx, accessScope, seatIndex?.seats);
+  const liftGrain = mayLiftWeeklyGeography(accessScope, ownAreaKeys);
+  // A lifted load applies the product filter after the narrowing instead of inside the load, so the
+  // product list can still offer every product his depots carry while one of them is chosen.
+  const productFilterInLoad = !liftGrain;
+
+  const [data, areaNames, areaSplit] = await Promise.all([
     loadWeeklyDashboard({
       // Every week: the snapshot is each distributor's own latest stock upload, and the cover average
       // looks back across month boundaries.
@@ -174,16 +197,26 @@ export async function loadWeeklyStockDashboard(
       distributorFilterMode: filters.distributorFilterMode,
       regionCodes: filters.regionCodes,
       regionFilterMode: filters.regionFilterMode,
-      productCodes: filters.productCodes,
-      productFilterMode: filters.productFilterMode,
+      productCodes: productFilterInLoad ? filters.productCodes : undefined,
+      productFilterMode: productFilterInLoad ? filters.productFilterMode : undefined,
       lineCodes: filters.lineCodes,
       lineFilterMode: filters.lineFilterMode,
       accessScope,
+      liftRowGrainGeography: liftGrain,
     }),
     loadAreaNames(),
+    // The owner's depot-split rule, which says which areas a depot serves. Fails soft to no index, which
+    // leaves only depots mapped by hand to one of his areas.
+    liftGrain ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
   ]);
 
-  const view = buildWeeklyStockView(data.stockRows ?? [], areaNames, {
+  const scopedStockRows =
+    liftGrain && accessScope.tier === "territory"
+      ? admitWeeklyStockRows(data.stockRows ?? [], { bound: accessScope, ownAreaKeys, areaSplit })
+      : (data.stockRows ?? []);
+  const stockRows = productFilterInLoad ? scopedStockRows : scopedStockRows.filter(weeklyStockProductPredicate(filters));
+
+  const view = buildWeeklyStockView(stockRows, areaNames, {
     asOfWeekStart: filters.asOfWeekStart,
     areaCodes: filters.areaCodes,
     branchKeys: filters.branchKeys,
@@ -196,9 +229,23 @@ export async function loadWeeklyStockDashboard(
   const regions = allowedRegions
     ? data.availableRegions.filter((region) => allowedRegions.has(region.code.toUpperCase()))
     : data.availableRegions;
-  const products = allowedProducts
+  const scopedProducts = allowedProducts
     ? data.availableProducts.filter((product) => allowedProducts.has(product.code.toUpperCase()))
     : data.availableProducts;
+  // The load's option lists are the region-bound ones, so a lifted viewer also gets what his narrowed
+  // depots carry — read before the product filter, so choosing one product never hides the others.
+  const products = liftGrain
+    ? withExtraWeeklyOptions(
+        scopedProducts,
+        scopedStockRows.map((row) => ({ code: row.productCode, name: row.productName })),
+      )
+    : scopedProducts;
+  const distributorUniverse = liftGrain
+    ? withExtraWeeklyOptions(
+        data.distributors,
+        scopedStockRows.map((row) => ({ code: row.distributorCode, name: row.distributorName })),
+      )
+    : data.distributors;
   const showLines = accessScope.tier === "full" || ctx.role === "Marketing Manager";
   const regionNames = new Map(data.availableRegions.map((region) => [region.code.toUpperCase(), region.name]));
 
@@ -206,7 +253,7 @@ export async function loadWeeklyStockDashboard(
     view,
     options: {
       // Only distributors that actually carry stock in scope — POS and Direct report none.
-      distributors: data.distributors.filter((distributor) =>
+      distributors: distributorUniverse.filter((distributor) =>
         view.distributors.some((row) => row.code === distributor.code.toUpperCase()) ||
         (filters.distributorCodes ?? []).some((code) => code.toUpperCase() === distributor.code.toUpperCase()),
       ),
