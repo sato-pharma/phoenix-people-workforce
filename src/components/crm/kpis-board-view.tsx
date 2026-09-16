@@ -75,6 +75,15 @@ import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from 
  * that can grow, because clipped content adds nothing to `scrollWidth` and would certify a page
  * that is in fact overflowing — the Stars of the Fortnight header sat 36px past `main` that way.
  *
+ * The column widths are set by the HEADER WORDS, not by the numbers under them. app/globals.css
+ * forces every `thead th` in both shells to 0.78rem black uppercase, so a one-word head such as
+ * PLANNED needs about 97px with its padding and has nowhere to wrap. The narrowest table on either
+ * shell is the portal's at 1024px, sidebar open, display scale 100%: 619px wide. The four board
+ * tables' colgroups were measured there on 2026-09-16, sort arrows on, so that each head fits in
+ * Segoe UI, Segoe UI Variable and Aptos. The Coverage table's 12% columns (74px) had pushed Planned,
+ * Covered and Not reached past their cells, and Frequency carried a sixth column for five cells.
+ * tests/kpis-board-tables-fit.test.ts holds each column at its measured floor.
+ *
  * ## Mobile gets cards, desktop gets the table — inlined, NOT through the primitive
  *
  * This file has no "use client": it renders on the server. PortalResponsiveDataList does have one,
@@ -670,11 +679,11 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
       {/* Five columns, because the call rate is two measures and merging them back into one is
           the thing the owner banned. Fixed widths, no min-width floor — the fits-the-screen rule. */}
       <colgroup>
-        <col style={{ width: "30%" }} />
-        <col style={{ width: "17%" }} />
-        <col style={{ width: "17%" }} />
-        <col style={{ width: "18%" }} />
-        <col style={{ width: "18%" }} />
+        <col style={{ width: "26%" }} />
+        <col style={{ width: "20%" }} />
+        <col style={{ width: "22%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "16%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -762,15 +771,17 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   return (
     <table className="hidden w-full table-fixed md:table">
       {/* The Attainment column is gone: it held (AM + PM) over one denominator, which is the
-          average the owner banned. Each side now carries its own score in its own column. Pharmacy
-          (2026-09-05) is narrower than AM/PM because it carries no "of target" sub-line. */}
+          average the owner banned. Each side now carries its own score in its own column. PHARMACY
+          and CAMPAIGN are the longest head words here, up to 111px at the 619px table (measured
+          2026-09-16), so they get the most room; AM and PM are two-letter heads over lines that
+          wrap. */}
       <colgroup>
         <col style={{ width: "24%" }} />
-        <col style={{ width: "9%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "13%" }} />
+        <col style={{ width: "13%" }} />
         <col style={{ width: "19%" }} />
         <col style={{ width: "19%" }} />
-        <col style={{ width: "15%" }} />
-        <col style={{ width: "14%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -1152,13 +1163,14 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
   const { coverageDetail: detail, filters } = context.board;
   return (
     <table className="hidden w-full table-fixed md:table">
+      {/* The detail row below spans every column: its colSpan moves with this colgroup. */}
       <colgroup>
-        <col style={{ width: "26%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "26%" }} />
+        <col style={{ width: "23%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "11%" }} />
+        <col style={{ width: "18%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -1249,13 +1261,14 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
   const phoenix = isPhoenix(context.board);
   return (
     <table className="hidden w-full table-fixed md:table">
+      {/* Five columns for five cells. This colgroup once carried a sixth, copied from Coverage,
+          which left a blank 26% strip at the right and squeezed Frequency into 12%. */}
       <colgroup>
-        <col style={{ width: "26%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "12%" }} />
-        <col style={{ width: "26%" }} />
+        <col style={{ width: "25%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "16%" }} />
+        <col style={{ width: "21%" }} />
+        <col style={{ width: "22%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>

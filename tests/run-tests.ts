@@ -374,6 +374,7 @@ import {
   runKpiCoveragePhoenixListTests,
   runKpiCoverageRepSelectionTests,
 } from "./kpis-coverage-doctor-lists.test.ts";
+import { runKpisBoardTablesFitTests } from "./kpis-board-tables-fit.test.ts";
 import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
@@ -2537,6 +2538,7 @@ await runTest("KPIs coverage doctor lists (legacy: the covered and not-covered l
 await runTest("KPIs coverage doctor lists (a URL can only open a rep already on the viewer's board, and only on the Coverage tab)", runKpiCoverageRepSelectionTests);
 await runTest("KPIs coverage doctor lists (newest visit first; late doctors before the ones not due yet)", runKpiCoverageDetailOrderTests);
 await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
+await runTest("KPIs board tables fit the screen (every column holds the width its head measured at the portal's 619px table at 1024px; Coverage's 12% columns had pushed Planned, Covered and Not reached past their cells, and Frequency had six columns for five cells)", runKpisBoardTablesFitTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
