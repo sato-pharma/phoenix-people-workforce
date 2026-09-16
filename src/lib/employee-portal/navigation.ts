@@ -671,13 +671,17 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager" ||
       resolvedRole === "Medical Rep",
+    // Mirrors PORTAL_WEEKLY_ROLES (portal-weekly-dashboard.ts) plus PORTAL_WEEKLY_REP_ROLES
+    // (portal-weekly-rep.ts). Medical Rep added 2026-09-16 (owner): the same page shows him his own
+    // area's weekly sales only, never the managers' dashboard, its API or its export.
     showWeeklyTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
-      resolvedRole === "Marketing Manager",
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Medical Rep",
     // Weekly Stock — mirrors PORTAL_WEEKLY_STOCK_ROLES (stock-dashboard-service.ts), the server-side
     // gate this flag must stay in sync with.
     showWeeklyStockTab:

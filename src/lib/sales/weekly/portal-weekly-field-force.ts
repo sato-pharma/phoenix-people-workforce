@@ -52,6 +52,8 @@ import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/ty
 export type FieldForceSeat = {
   seatId: string;
   lineCode: string;
+  /** The line's NAME as the org tree spells it, for a screen that must name a seat with no sales row. */
+  lineName: string;
   areaCode: string;
   areaName: string;
   regionCode: string;
@@ -144,6 +146,7 @@ export function selectFieldForceSeats(
     const seat: FieldForceSeat = {
       seatId: norm(row.seat_id),
       lineCode: norm(row.line_code),
+      lineName: norm(row.line_name) || norm(row.line_code),
       areaCode,
       areaName: norm(row.area_name) || areaCode,
       regionCode: upper(row.region_code),

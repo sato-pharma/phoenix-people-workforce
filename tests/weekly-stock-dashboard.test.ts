@@ -218,7 +218,7 @@ export function runWeeklyStockDashboardTests() {
   assert.equal(resolvePortalNav("Employee").showWeeklyStockTab, false, "a plain employee does not see it");
   const flags = resolvePortalNav("Medical Rep");
   assert.equal(flags.showWeeklyStockTab, true, "the Medical Rep sidebar shows Weekly Stock");
-  assert.equal(flags.showWeeklyTab, false, "and still does not show Weekly Sales");
+  assert.equal(flags.showWeeklyTab, true, "and Weekly Sales too — his own area's screen (owner, 2026-09-16)");
   for (const role of PORTAL_WEEKLY_STOCK_ROLES) {
     assert.equal(resolvePortalNav(role).showWeeklyStockTab, true, `${role}: nav flag matches the server role list`);
   }
