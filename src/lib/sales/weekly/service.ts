@@ -799,6 +799,12 @@ export async function loadWeeklyDashboard(filters?: {
   /** Export only: also return the row-level fact grain (factRows) for the BI workbook's Data sheet. */
   includeFactRows?: boolean;
   /**
+   * Depot Detail only: factRows keep their sales value and units unrounded. Every other caller gets them
+   * rounded to 2 decimals, as the BI workbook always has. Rows rounded one by one add up to a different
+   * figure from `kpis` (EGP 8 over every month), so a screen that totals these rows needs them unrounded.
+   */
+  factRowsFullPrecision?: boolean;
+  /**
    * Weekly Stock only: also return `stockRows` — every scoped row across the fetched weeks, de-cumulated
    * but NOT narrowed to the selected week and NOT latest-stock-adjusted, because the stock builder picks
    * each distributor's own snapshot and sales window itself.
@@ -1483,8 +1489,8 @@ export async function loadWeeklyDashboard(filters?: {
           weekStart: row.weekStart,
           batchId: row.batchId,
           family: familyByCode.get(normalizeCode(row.productCode)) ?? "",
-          salesValue: Number(row.salesValue.toFixed(2)),
-          salesUnits: Number(row.netQty.toFixed(2)),
+          salesValue: filters?.factRowsFullPrecision ? row.salesValue : Number(row.salesValue.toFixed(2)),
+          salesUnits: filters?.factRowsFullPrecision ? row.netQty : Number(row.netQty.toFixed(2)),
           stockUnits: Number(row.stockQty.toFixed(2)),
         }))
       : undefined,
