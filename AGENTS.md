@@ -82,7 +82,7 @@ cost, the deploy path or the region.
 - **Merged-branch checks must be squash-aware:** `gh pr list --head <branch> --state merged`, never `git branch --merged`.
 - **A regression test counts only if you break the fix and see its own headline assertion fire.**
 - **`list_migrations` reports the ledger, not reality** — query `pg_class`/`pg_proc`.
-- **Auto-git workflows are permanently banned.** Always ask first.
+- **Commit, push and open the PR WITHOUT asking; ALWAYS ask before merge** (owner rule, 2026-09-16 — supersedes the old auto-git ban). Branch first, stage only the task's files, never `--auto`.
 
 ### 2.1 Session-level traps
 
