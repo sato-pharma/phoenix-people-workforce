@@ -29,10 +29,14 @@ import type { AchievementRow } from "@/lib/sales/monthly-targets";
 /**
  * Employee-portal-shell roles that get the read-only Targets view.
  *
- * Owner decision 2026-07-30: District / Regional / National Sales Manager, read-only. Medical Rep is
- * deliberately excluded (their target numbers reach them through the achievement/incentive
- * surfaces). The Head-Office "Manager" rung is excluded too: it owns no field areas, so the bound
- * below would fail it closed to an empty grid — a dead tab is worse than no tab.
+ * Owner decision 2026-07-30: District / Regional / National Sales Manager, read-only. The Head-Office
+ * "Manager" rung is excluded: it owns no field areas, so the bound below would fail it closed to an
+ * empty grid — a dead tab is worse than no tab.
+ *
+ * Medical Rep is NOT in this list, and must never be added to it. Reps reach the same tab since
+ * 2026-09-16 (owner), but through PORTAL_REP_TARGETS_ROLES below and their own view: the bound in
+ * this module resolves a rep to their whole LINE (no seat areas, so `areaCodes` is null), and this
+ * workspace would show one rep the targets and sales of every rep on it.
  */
 export const PORTAL_TARGETS_ROLES = [
   "District Manager",
@@ -44,6 +48,21 @@ const portalTargetsRoleSet = new Set<PhoenixRole>(PORTAL_TARGETS_ROLES);
 
 export function isPortalTargetsRole(role: PhoenixRole | string | null | undefined): boolean {
   return portalTargetsRoleSet.has(String(role ?? "").trim() as PhoenixRole);
+}
+
+/**
+ * Portal roles that get the Targets tab as their OWN numbers only (owner, 2026-09-16).
+ *
+ * Bounded to the rows the attribution engine resolved to the viewer's HR id, never to a line or an
+ * area list — see src/lib/sales/rep-targets.ts. Deliberately disjoint from PORTAL_TARGETS_ROLES, so
+ * no role can ever resolve to both views.
+ */
+export const PORTAL_REP_TARGETS_ROLES = ["Medical Rep"] as const satisfies readonly PhoenixRole[];
+
+const portalRepTargetsRoleSet = new Set<PhoenixRole>(PORTAL_REP_TARGETS_ROLES);
+
+export function isPortalRepTargetsRole(role: PhoenixRole | string | null | undefined): boolean {
+  return portalRepTargetsRoleSet.has(String(role ?? "").trim() as PhoenixRole);
 }
 
 /**

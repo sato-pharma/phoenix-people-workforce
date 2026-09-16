@@ -3,6 +3,7 @@ import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
+import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
@@ -1718,6 +1719,7 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
+await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
 await runTest(
   "test wiring is complete (no test file imported-but-uninvoked, none orphaned)",
   runTestWiringCompleteTests,

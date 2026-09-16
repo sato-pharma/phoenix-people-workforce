@@ -44,6 +44,8 @@ const CONVERTED = [
   "../src/components/sales/targets-workspace.tsx",
   "../src/components/recruitment/bulk-cv-extraction-panel.tsx",
   "../src/components/recruitment/intake-health-view.tsx",
+  // Born converted (2026-09-16): the Medical Rep Targets tab ships its desktop table and phone cards together.
+  "../src/components/sales/rep-targets-view.tsx",
 ];
 
 function read(relative: string): string {

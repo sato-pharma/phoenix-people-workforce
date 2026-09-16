@@ -323,6 +323,7 @@ export function CommandBand({
   ring,
   aside,
   footer,
+  besideFrom = "lg",
 }: {
   kicker: string;
   title: string;
@@ -331,12 +332,26 @@ export function CommandBand({
   ring?: React.ReactNode;
   aside?: React.ReactNode;
   footer?: React.ReactNode;
+  /**
+   * The width from which the ring and aside sit BESIDE the headline rather than below it. In the
+   * employee portal a 1024px screen leaves the page 621px next to the sidebar, and a ring plus an
+   * aside there squeezed the headline column to 100px (measured 2026-09-16) — a portal page that
+   * carries both passes "xl".
+   */
+  besideFrom?: "lg" | "xl";
 }) {
   return (
     // SURFACE_CLASS first: tailwind-merge lets the LATER class win, so the orange top rule must
     // come after the surface's all-sides `border border-slate-200` or it is silently dropped.
     <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
-      <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+      <div
+        className={cn(
+          "flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6",
+          besideFrom === "xl"
+            ? "xl:flex-row xl:items-center xl:justify-between"
+            : "lg:flex-row lg:items-center lg:justify-between",
+        )}
+      >
         <div className="min-w-0">
           <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
           <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">{title}</h1>

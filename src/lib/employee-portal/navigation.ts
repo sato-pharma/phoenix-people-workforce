@@ -141,7 +141,9 @@ export type EmployeePortalNavVisibility = {
   showTerritoryManagementTab?: boolean;
   // Targets — READ-ONLY scoped view at /employee-portals/targets (owner decision 2026-07-30:
   // DM/RM/NSM view; editing and upload stay with SFE Manager / Super Admin on /sales/targets).
-  // Must stay in sync with PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts, the page gate.
+  // Medical Rep reaches the same URL since 2026-09-16 (owner) and is served their OWN targets.
+  // Must stay in sync with PORTAL_TARGETS_ROLES + PORTAL_REP_TARGETS_ROLES in
+  // src/lib/sales/portal-targets.ts, the page gate.
   showTargetsTab?: boolean;
   // Business Review — the portal-scoped view of /business-review, at
   // /employee-portals/business-review. Same field-management role set as Source of Sales;
@@ -749,11 +751,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
-    // Mirrors PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts (the enforcing gate). Spelled
-    // out rather than imported: that module reaches the Supabase server client via the sales scope
-    // resolver, which must not be pulled into this client-consumed nav helper. Medical Rep excluded
-    // by owner decision; the Head-Office "Manager" rung owns no areas, so exact-match again.
+    // Mirrors PORTAL_TARGETS_ROLES + PORTAL_REP_TARGETS_ROLES in src/lib/sales/portal-targets.ts
+    // (the enforcing gate). Spelled out rather than imported: that module reaches the Supabase server
+    // client via the sales scope resolver, which must not be pulled into this client-consumed nav
+    // helper. Medical Rep sees their OWN targets (owner, 2026-09-16); the Head-Office "Manager" rung
+    // owns no areas, so exact-match again.
     showTargetsTab:
+      isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,

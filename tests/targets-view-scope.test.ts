@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  PORTAL_REP_TARGETS_ROLES,
   PORTAL_TARGETS_ROLES,
   TARGETS_ADMIN_VIEW_ROLES,
   canViewTargetsAdminPage,
   filterAchievementForScope,
+  isPortalRepTargetsRole,
   isPortalTargetsRole,
   salesLineCodeForOfficialLine,
   type TargetsScopeBound,
@@ -55,10 +57,26 @@ export function runTargetsViewScopeTests() {
   for (const role of ["District Manager", "Regional Manager", "National Sales Manager"]) {
     assert.equal(isPortalTargetsRole(role), true, `${role} should reach the portal Targets view`);
   }
-  // Medical Rep excluded by owner decision; "Manager" is the Head-Office rung and owns no areas, so
-  // it would resolve to an empty grid — a dead tab is worse than no tab.
+  // Medical Rep never gets the MANAGER view: its bound resolves a rep to their whole line. Reps have
+  // their own, self-bounded view since 2026-09-16 (below). "Manager" is the Head-Office rung and owns
+  // no areas, so it would resolve to an empty grid — a dead tab is worse than no tab.
   for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "Group Product Manager", "Marketing Manager", "SFE Manager", "CEO", "Super Admin", "HR Advisory", "HR Operations"]) {
     assert.equal(isPortalTargetsRole(role), false, `${role} must NOT get the portal Targets view`);
+  }
+
+  // The rep's own view (owner, 2026-09-16).
+  assert.deepEqual([...PORTAL_REP_TARGETS_ROLES], ["Medical Rep"], "only Medical Rep gets the self-bounded Targets view");
+  assert.equal(isPortalRepTargetsRole("Medical Rep"), true);
+  assert.equal(isPortalRepTargetsRole(" Medical Rep "), true);
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Employee", "CEO", "Super Admin", "SFE Manager", "", null, undefined]) {
+    assert.equal(isPortalRepTargetsRole(role), false, `${String(role)} must NOT get the rep's own Targets view`);
+  }
+  for (const role of PORTAL_REP_TARGETS_ROLES) {
+    assert.equal(
+      isPortalTargetsRole(role),
+      false,
+      `${role} is in both Targets role lists — the manager bound would hand that role a whole line's numbers`,
+    );
   }
 
   // The CEO lockout fix: holds sales:read, lands in the ADMIN shell (so the portal twin is
@@ -144,6 +162,21 @@ export function runTargetsViewScopeTests() {
   assert.match(portalPage, /assertPermission\(access, "sales", "read"\)/);
   assert.doesNotMatch(portalPage, /"sales", "import"/, "the read-only view must never assert the write permission");
 
+  // A Medical Rep is answered by their OWN branch, BEFORE the manager gate — and that branch must
+  // not touch the manager bound, which resolves a rep to every rep on their line.
+  const repBranchAt = portalPage.indexOf("if (isPortalRepTargetsRole(access.role))");
+  const managerGateAt = portalPage.indexOf("if (!isPortalTargetsRole(access.role))");
+  assert.ok(repBranchAt > 0, "the portal Targets page must branch a Medical Rep to their own view");
+  assert.ok(repBranchAt < managerGateAt, "the rep branch must run BEFORE the manager gate, or a rep is bounced or worse");
+  const repBranch = portalPage.slice(repBranchAt, managerGateAt);
+  assert.match(repBranch, /assertPermission\(access, "sales", "read"\)/, "the rep branch must assert sales:read itself");
+  assert.match(repBranch, /loadRepTargets\(access,/, "the rep branch must read through the self-bounded loader");
+  assert.match(repBranch, /<RepTargetsView\b/);
+  assert.match(repBranch, /return \(/, "the rep branch must RETURN, never fall through to the manager path");
+  for (const managerOnly of ["resolvePortalTargetsBound", "filterAchievementForScope", "TargetsWorkspace", "loadMonthlyAchievement"]) {
+    assert.ok(!repBranch.includes(managerOnly), `the rep branch must not use ${managerOnly} — that is the whole-line manager path`);
+  }
+
   // ── The WRITE routes must NOT have moved to sales:read ──────────────────────
   for (const route of [
     "app/api/sales/targets/save/route.ts",
@@ -171,6 +204,14 @@ export function runTargetsViewScopeTests() {
   // The nav flag and the page gate must not drift.
   const navSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
   assert.match(navSource, /showTargetsTab/, "the portal nav must expose a Targets flag");
+  assert.match(
+    navSource,
+    /showTargetsTab:\s*isMedicalRep \|\|/,
+    "a Medical Rep must get the Targets link — the page serves them their own targets (owner, 2026-09-16)",
+  );
+  const catalogSource = readFileSync("src/config/system-navigation.ts", "utf8");
+  const targetsEntry = catalogSource.split("\n").find((line) => line.includes('href: "/employee-portals/targets"')) ?? "";
+  assert.match(targetsEntry, /roles: \[[^\]]*"Medical Rep"/, "the navigation catalogue's Targets entry must list Medical Rep too");
   const layoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
   assert.match(
     layoutSource,

@@ -36,6 +36,8 @@ const SHARED = "../src/components/sales/target-visuals.tsx";
 const CONSUMERS = [
   "../src/components/sales/targets-workspace.tsx",
   "../src/components/sales/vs-target/vs-target-dashboard.tsx",
+  // A Medical Rep's own Targets tab (owner, 2026-09-16) — the same figure, so the same primitives.
+  "../src/components/sales/rep-targets-view.tsx",
 ];
 
 /** Primitives the shared module owns. A consumer that declares one of these has forked it. */
