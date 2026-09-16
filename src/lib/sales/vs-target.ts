@@ -698,6 +698,45 @@ export function pickLandingPeriod(
   return newestPublished ?? fallback;
 }
 
+/**
+ * One month of a viewer's bound-scoped rows, divided at the Monthly Closing publication gate.
+ *
+ * `rows` keeps only the rows whose own (line, period) closing is PUBLISHED, and every sales figure
+ * the dashboard shows is built from `rows` alone — so a month nobody has published never shows a
+ * sale, however many raw rows it already holds.
+ *
+ * The two pending figures are what the "not published yet" panel quotes instead, and both come from
+ * the RAW rows because nothing else carries them. `totals` is built from `rows`, so for an
+ * unpublished month its target is 0 by construction: the panel's "a target of … is already loaded"
+ * sentence read `totals.targetValue` and could never render — confirmed on production 2026-09-16,
+ * where a CNS medical rep's September carried a 300,085.04 EGP target. Both figures are 0 once the
+ * month is published, when the same money and target sit inside `totals` instead.
+ */
+export function splitPeriodAtPublication(
+  rawRowsForPeriod: AchievementRow[],
+  publishedKeys: ReadonlySet<string>,
+): {
+  rows: AchievementRow[];
+  salesLoaded: boolean;
+  pendingDirectValue: number;
+  pendingTargetValue: number;
+} {
+  const rows = rawRowsForPeriod.filter((row) => isRowPublished(row, publishedKeys));
+  const salesLoaded = rows.length > 0;
+  return {
+    rows,
+    salesLoaded,
+    pendingDirectValue: salesLoaded
+      ? 0
+      : rawRowsForPeriod.reduce((sum, row) => sum + row.actualValue, 0),
+    // The target only, never the actual: a target is not a sale, so quoting it shows nothing the
+    // publication gate is holding back.
+    pendingTargetValue: salesLoaded
+      ? 0
+      : rawRowsForPeriod.reduce((sum, row) => sum + (row.targetValue ?? 0), 0),
+  };
+}
+
 // ── Totals with target-coverage accounting ───────────────────────────────────
 
 export type VsTargetTotals = {

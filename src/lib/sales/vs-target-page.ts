@@ -44,6 +44,7 @@ import {
   rollupByTeam,
   salesVsTargetPeriods,
   shiftPeriod,
+  splitPeriodAtPublication,
   totalRows,
   type TrendPoint,
   type VsTargetNames,
@@ -139,6 +140,14 @@ export type VsTargetDashboardData = {
    * has nothing at all".
    */
   pendingDirectValue: number;
+  /**
+   * Target already loaded for a not-yet-published month, from the same raw (unpublished) rows as
+   * `pendingDirectValue`. The "not published yet" panel quotes it, so a month whose target is set
+   * reads as "measured the moment the closing is published". `totals.targetValue` cannot stand in:
+   * `totals` is built from published rows only, so it is always 0 while that panel shows. A target,
+   * never a sale — no sales figure crosses the publication gate for it.
+   */
+  pendingTargetValue: number;
   /** True when this viewer has no sales territory at all. */
   isEmptyScope: boolean;
 };
@@ -192,6 +201,7 @@ export async function buildVsTargetDashboard(
       unplacedValue: 0,
       salesLoaded: false,
       pendingDirectValue: 0,
+      pendingTargetValue: 0,
       isEmptyScope: true,
     };
   }
@@ -221,7 +231,7 @@ export async function buildVsTargetDashboard(
   // Only PUBLISHED (line, period) pairs are real numbers on this live dashboard — Monthly
   // Closing publication is the owner's own "this month is done" gate, separate from and later
   // than the distributor files simply landing (owner ruling, 2026-08-13). `scopedAllRaw` is
-  // kept alongside for pickLandingPeriod's fallback messaging and pendingDirectValue below.
+  // kept alongside for pickLandingPeriod's fallback messaging and the pending figures below.
   const scopedAll = scopedAllRaw.filter((row) => isRowPublished(row, publishedKeys));
 
   // If the dashboard is scoped to a single line, use that line to look up merged area names (e.g. "Fayoum - Beni Suef").
@@ -245,12 +255,14 @@ export async function buildVsTargetDashboard(
   const priorPeriod = priorPeriodOf(period);
 
   const rawRowsForPeriod = scopedAllRaw.filter((row) => row.period === period);
-  const rows = rawRowsForPeriod.filter((row) => isRowPublished(row, publishedKeys));
   // A company fact, not a scope fact: the month's Monthly Closing has either been published
   // or it has not. A viewer with an empty territory in a published month is `isEmptyScope`,
   // which says so — computed from the RAW bound-scoped rows, never from `rows`, so an
   // unpublished period reads as "not published" and not as "you have no territory".
-  const salesLoaded = rows.length > 0;
+  const { rows, salesLoaded, pendingDirectValue, pendingTargetValue } = splitPeriodAtPublication(
+    rawRowsForPeriod,
+    publishedKeys,
+  );
 
   const priorRows = priorPeriod ? scopedAll.filter((row) => row.period === priorPeriod) : null;
 
@@ -307,9 +319,8 @@ export async function buildVsTargetDashboard(
       .filter((row) => row.areaCode == null && row.regionCode == null)
       .reduce((sum, row) => sum + row.actualValue, 0),
     salesLoaded,
-    pendingDirectValue: salesLoaded
-      ? 0
-      : rawRowsForPeriod.reduce((sum, row) => sum + row.actualValue, 0),
+    pendingDirectValue,
+    pendingTargetValue,
     isEmptyScope: rawRowsForPeriod.length === 0,
   };
 }
