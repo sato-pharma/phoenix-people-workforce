@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
-import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
 import {
   emptyClosingCell,
@@ -219,8 +219,12 @@ type RawColumn = {
 const RAW_COLUMNS: RawColumn[] = [
   { name: "Distributor", width: 13, value: (r) => r.distributorCode },
   { name: "Invoice Date", width: 12, value: (r) => r.invoiceDate ?? "" },
-  { name: "Region Code", width: 11, value: (r) => r.regionCode },
-  { name: "Region", width: 18, value: (r) => r.regionName },
+  // The Closing Matrix's region (the organogram territory that owns the row's closing area), so this
+  // sheet names the same region as the matrix beside it — on Anti Infective the map says Upper Egypt
+  // where the matrix says Upper Egypt 1 or 2 (owner, 2026-09-16). Geography only where the organogram
+  // has nothing. No formula keys on either column.
+  { name: "Region Code", width: 11, value: (r) => r.operationalRegionCode || r.regionCode },
+  { name: "Region", width: 18, value: (r) => r.operationalRegionName || r.regionName },
   { name: "Area Code", width: 11, value: (r) => r.areaCode },
   { name: "Area", width: 22, value: (r) => r.areaName },
   { name: "Block", width: 11, value: (r) => r.blockCode },
@@ -399,9 +403,12 @@ function writeTotalSheet(
     const key = `${row.areaCode}||${row.productCode}`;
     if (!keys.has(key)) keys.set(key, row);
   }
+  // Region labels are the matrix's own (see RAW_COLUMNS). The SUMIFS key on area and product only,
+  // so relabelling moves no number.
+  const regionCodeOf = (row: ClosingDetailRow) => row.operationalRegionCode || row.regionCode;
   const ordered = [...keys.values()].sort(
     (left, right) =>
-      left.regionCode.localeCompare(right.regionCode) ||
+      regionCodeOf(left).localeCompare(regionCodeOf(right)) ||
       left.areaName.localeCompare(right.areaName) ||
       left.productName.localeCompare(right.productName),
   );
@@ -415,8 +422,8 @@ function writeTotalSheet(
       candidate.areaCode === row.areaCode &&
       candidate.productCode === row.productCode;
     return [
-      row.regionCode,
-      row.regionName,
+      regionCodeOf(row),
+      row.operationalRegionName || row.regionName,
       row.areaCode,
       row.areaName,
       row.productCode,
@@ -2171,11 +2178,42 @@ export function selectJulyDirectRowsForScope(
   });
 }
 
+/**
+ * The region the Closing Matrix shows an area under, for a sheet that lists rows the matrix already
+ * placed: July's hand-mapped direct orders. Their table was keyed on the map region, so on Anti
+ * Infective it said Upper Egypt for areas the matrix files under Upper Egypt 1 and 2 (owner,
+ * 2026-09-16: every sheet names the matrix's region). A row with no area, or an area the matrix does
+ * not carry, keeps its own region, named from the matrix where the matrix has it.
+ */
+function matrixRegionForArea(
+  matrix: Pick<MonthlyClosingMatrix, "regions">,
+): (areaCode: string, fallbackRegionCode: string) => { regionCode: string; regionName: string } {
+  const byArea = new Map<string, { regionCode: string; regionName: string }>();
+  const nameByRegion = new Map<string, string>();
+  matrix.regions.forEach((region) => {
+    nameByRegion.set(normalizeCode(region.regionCode), region.regionName);
+    region.areas.forEach((area) => {
+      if (isSyntheticDirectArea(area)) return;
+      const key = normalizeCode(area.areaCode);
+      if (key && !byArea.has(key)) byArea.set(key, { regionCode: region.regionCode, regionName: region.regionName });
+    });
+  });
+  return (areaCode, fallbackRegionCode) => {
+    const placed = byArea.get(normalizeCode(areaCode));
+    if (placed) return placed;
+    return {
+      regionCode: fallbackRegionCode,
+      regionName: nameByRegion.get(normalizeCode(fallbackRegionCode)) ?? fallbackRegionCode,
+    };
+  };
+}
+
 function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix): void {
   const period = matrix.period;
   const rows = selectJulyDirectRowsForScope(matrix);
   if (rows.length === 0) return;
   const line = matrix.line;
+  const regionOf = matrixRegionForArea(matrix);
 
   const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Orders (July)"), {
     views: [{ state: "frozen", ySplit: 5 }],
@@ -2197,14 +2235,14 @@ function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosing
   const withoutArea = rows.filter((row) => !row.areaCode);
   const ordered = [
     ...withArea.sort((a, b) =>
-      a.regionCode.localeCompare(b.regionCode) ||
+      regionOf(a.areaCode, a.regionCode).regionCode.localeCompare(regionOf(b.areaCode, b.regionCode).regionCode) ||
       a.areaCode.localeCompare(b.areaCode) ||
       a.pharmacy.localeCompare(b.pharmacy)),
     ...withoutArea,
   ];
 
   const body: CellValue[][] = ordered.map((row) => [
-    row.regionCode,
+    regionOf(row.areaCode, row.regionCode).regionName,
     row.areaCode ? `${row.areaCode} — ${row.areaName}` : row.areaName,
     row.repName || "—",
     row.pharmacy,
@@ -2815,7 +2853,8 @@ function directCustomerRows(
       clientCode: row.clientCode.trim() || "—",
       customer: row.clientName.trim() || "(no customer name on the sheet)",
       details: row.clientAddress.trim() || "—",
-      regionName: row.regionName || row.regionCode,
+      // The matrix's region, as on the Data sheet (see RAW_COLUMNS).
+      regionName: row.operationalRegionName || row.regionName || row.regionCode,
       areaName: row.areaName || row.areaCode || "—",
       repName: "—",
       productName: row.productName || row.productCode,
@@ -2825,17 +2864,55 @@ function directCustomerRows(
   if (fromInvoices.length > 0) return fromInvoices;
 
   if (matrix.period !== JULY_2026_DIRECT_PERIOD) return [];
+  const regionOf = matrixRegionForArea(matrix);
   return selectJulyDirectRowsForScope(matrix).map((row) => ({
     clientCode: "—",
     customer: row.pharmacy,
     details: row.note || "—",
-    regionName: row.regionCode,
+    regionName: regionOf(row.areaCode, row.regionCode).regionName,
     areaName: row.areaCode ? `${row.areaName} (${row.areaCode})` : row.areaName,
     repName: row.repName || "—",
     productName: row.product,
     units: row.qty,
     value: row.value,
   }));
+}
+
+/**
+ * Files each direct cell under the region the Closing Matrix shows its money in, so the Direct Sales
+ * tab and the Retail tab's direct figure keep every order the matrix counts.
+ *
+ * A direct order that names its own area is folded into that area's row by `injectDirectIntoMatrix`,
+ * but the cell itself still carries the MAP region. Both channel tabs keep only the regions the
+ * matrix holds, so wherever the organogram re-owns an area the order vanished from them while the
+ * matrix kept it: Anti Infective, August 2026, Minia 2's 20,370.00 was tagged Upper Egypt, a region
+ * that matrix no longer has (it holds Upper Egypt 1 and 2), and the Direct tab showed 31,254.10 of
+ * 51,624.10. Owner, 2026-09-16: fix the drop.
+ *
+ * `matrix` must be the WHOLE month's combined matrix, before any on-screen filter, so an area the
+ * reader filtered out is still filed under its own region and the tabs' region filter then drops it,
+ * exactly as before. The same rules as the injector decide which cells move: only months whose
+ * direct rows carry their own area (never July's overlay), and only an area the matrix has a row
+ * for. Anything else is returned untouched — it sits in its own region's Direct row on the matrix
+ * too. Moves no money, only the region a cell is counted under.
+ */
+export function fileDirectCellsUnderMatrixRegions(
+  directCells: readonly MonthlyClosingDirectCell[],
+  matrix: Pick<MonthlyClosingMatrix, "period" | "regions">,
+): MonthlyClosingDirectCell[] {
+  if (!directRowsCarryOwnArea(matrix.period)) return [...directCells];
+  const regionByArea = new Map<string, string>();
+  matrix.regions.forEach((region) => {
+    region.areas.forEach((area) => {
+      if (isSyntheticDirectArea(area)) return;
+      const key = normalizeCode(area.areaCode);
+      if (key && !regionByArea.has(key)) regionByArea.set(key, region.regionCode);
+    });
+  });
+  return directCells.map((cell) => {
+    const regionCode = regionByArea.get(normalizeCode(cell.areaCode ?? ""));
+    return regionCode === undefined || regionCode === cell.regionCode ? cell : { ...cell, regionCode };
+  });
 }
 
 function writeDirectChannelSheet(

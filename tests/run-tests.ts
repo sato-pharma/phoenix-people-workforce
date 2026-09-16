@@ -1324,6 +1324,7 @@ import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
+import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
@@ -5701,6 +5702,11 @@ await runTest(
 await runTest(
   "Performance Review export admits exactly who its page admits: the page, its reload route and its export all ask one audience check (Super Admin, system scope, SFE Manager) before the rate limit, the body or the company-wide load — sales:export alone reaches down to Medical Rep",
   runClosingPerformanceReviewExportGateTests,
+);
+
+await runTest(
+  "black closing export names the Closing Matrix's organogram region on every sheet (Upper Egypt 1 and 2, never the map's Upper Egypt), moves no money, and its Direct tab keeps area-bearing direct orders (Minia 2's 20,370, Anti Infective August)",
+  runClosingExportOrganogramRegionLabelsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
