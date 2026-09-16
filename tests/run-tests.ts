@@ -1673,6 +1673,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5635,6 +5636,11 @@ await runTest(
 await runTest(
   "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "no share token in tracked docs: a run of 43+ base64url characters mixing upper case, lower case and digits fails, and the failure names only file, line and the first 6 characters",
+  runDocsShareTokenGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
