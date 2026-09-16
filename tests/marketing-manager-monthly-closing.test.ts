@@ -94,10 +94,13 @@ export function runMarketingManagerMonthlyClosingTests() {
         "that admits a role whose tab is hidden is an access grant nobody can reach",
     );
   }
+  // Medical Rep joined PORTAL_CLOSING_ROLES on 2026-09-16 (owner), so the loop above now holds them
+  // too. What must not follow them in is anyone the gate never admitted: opening one role at a time
+  // is the contract, and a plain Employee is the role that proves the flag did not become "everyone".
   assert.equal(
-    resolveEmployeePortalNavVisibility("Medical Rep", "Medical Rep").showMonthlyClosingTab,
+    resolveEmployeePortalNavVisibility("Employee", "Employee").showMonthlyClosingTab,
     false,
-    "Medical Rep has no line and stays out of both — this change opened one role, not the gate",
+    "a plain Employee stays out of both — each change opens one named role, never the gate",
   );
 
   // Gate 3: the two permissions the page and the export route actually assert.
@@ -228,8 +231,11 @@ export function runMarketingManagerMonthlyClosingTests() {
   );
 
   // ── Roles this row must not leak to ────────────────────────────────────────
+  // Medical Rep USED to be the example here ("no resolvable product line"). The owner opened the
+  // tab to them on 2026-09-16, scoped to their own area — see tests/medical-rep-monthly-closing.test.ts.
+  // Training Manager holds no closing and is the standing example of a portal role outside the set.
   assert.ok(
-    !portalHrefsFor("Medical Rep").includes(PORTAL_CLOSING_HREF),
-    "Medical Rep must not pick up the portal closing row — no resolvable product line",
+    !portalHrefsFor("Training Manager").includes(PORTAL_CLOSING_HREF),
+    "Training Manager must not pick up the portal closing row — not a closing role",
   );
 }
