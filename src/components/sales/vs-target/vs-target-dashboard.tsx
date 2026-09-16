@@ -533,8 +533,10 @@ export function VsTargetDashboard({
             {data.pendingDirectValue !== 0
               ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
               : ""}
-            {data.totals.targetValue !== 0
-              ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the closing is published.`
+            {/* pendingTargetValue, never totals.targetValue: totals hold PUBLISHED rows only, so in this
+                panel their target is always 0 and the sentence could never render. */}
+            {data.pendingTargetValue !== 0
+              ? ` A target of ${formatEgpFull(data.pendingTargetValue)} is already loaded and will be measured as soon as the closing is published.`
               : ""}
           </p>
           <p className="mt-3 text-xs text-slate-500">Pick an earlier month above to see published results.</p>
