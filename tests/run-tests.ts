@@ -1684,6 +1684,7 @@ import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
+import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5666,6 +5667,11 @@ await runTest(
 await runTest(
   "vacation submit takes a storage path only for the caller's OWN pending upload of the matching kind (never another employee's, a filed sick/ document, a traversal or an extra segment), checked with leave:create before any download or delete",
   runVacationPendingAttachmentPathTests,
+);
+
+await runTest(
+  "Monthly Closing details and the scoped export open PUBLISHED months only: a scoped viewer naming an unpublished month is refused in plain words, naming none opens the newest published month, and Super Admin / system, SFE Manager, CEO, Finance Manager and the Marketing Manager keep every validated month",
+  runClosingDetailsPublicationGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
