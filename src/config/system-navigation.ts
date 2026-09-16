@@ -1538,9 +1538,11 @@ const employeePortalNavigationSectionSeeds = [
       // order still need the workspace, and their queue lives in it now that the standalone
       // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
-      { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Weekly Stock — roles mirror PORTAL_WEEKLY_STOCK_ROLES. Unlike Weekly Sales it INCLUDES Medical Rep
-      // (owner, 2026-09-14), scoped to his own line and region by resolveWeeklyAccessScope.
+      // Weekly Sales — roles mirror PORTAL_WEEKLY_ROLES plus PORTAL_WEEKLY_REP_ROLES. Medical Rep added
+      // 2026-09-16 (owner): the page gives him his own area's weekly sales only (portal-weekly-rep.ts).
+      { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Medical Rep"] },
+      // Weekly Stock — roles mirror PORTAL_WEEKLY_STOCK_ROLES. It includes Medical Rep (owner,
+      // 2026-09-14), scoped to his own line and region by resolveWeeklyAccessScope.
       { href: "/employee-portals/weekly-stock", icon: Package, label: "Weekly Stock", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
@@ -1589,9 +1591,10 @@ const employeePortalNavigationSectionSeeds = [
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.
       { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "territory" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
-      // Read-only Targets (owner decision 2026-07-30). Mirrors PORTAL_TARGETS_ROLES; editing and
-      // upload stay on the admin surface with SFE Manager / Super Admin.
-      { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      // Read-only Targets (owner decision 2026-07-30). Mirrors PORTAL_TARGETS_ROLES plus
+      // PORTAL_REP_TARGETS_ROLES — a Medical Rep is served their OWN targets only (owner, 2026-09-16).
+      // Editing and upload stay on the admin surface with SFE Manager / Super Admin.
+      { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
       // Scoped CRM Master. Catalog entry (so Modules Control can curate it); the rendered sidebar
       // link lives in the Fieldforce section of employee-portal-layout.tsx. Mirrors PORTAL_CRM_ROLES
       // in src/lib/crm/portal-crm-scope.ts (adds Medical Rep to the DSM/RM/NSM set above).
@@ -1612,6 +1615,11 @@ const employeePortalNavigationSectionSeeds = [
       // each viewer sees and getRepsListBoard applies it to the cascade before it derives an option,
       // so the picker is never wider than the viewer.
       { href: "/employee-portals/reps-list", icon: BookUser, label: "Reps List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Regional Manager", "District Manager"] },
+      // My List — the same board at a Medical Rep's reach, their own contact list (owner, 2026-09-16:
+      // "show in medical reps accounts the reps-list ... and call is My List"). The Medical Rep's door
+      // onto what Reps List above shows a manager. MY_LIST_PORTAL_ROLES verbatim, pinned equal by
+      // tests/my-list.test.ts; getMyListScope decides the reach from the session's own HR id.
+      { href: "/employee-portals/my-list", icon: BookUser, label: "My List", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep"] },
       // KPIs — THE 2026-08-28 REBUILD. Doctor Coverage stood here until the owner retired it that
       // day with "rebuild from the beginning"; this is the entry that comes back in its place, and
       // the drift check retired with it comes back too (tests/doctor-coverage-scope.test.ts).

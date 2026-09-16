@@ -3,6 +3,7 @@ import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
+import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
@@ -368,6 +369,12 @@ import {
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
 import {
+  runKpiCoverageDetailOrderTests,
+  runKpiCoverageLegacyListTests,
+  runKpiCoveragePhoenixListTests,
+  runKpiCoverageRepSelectionTests,
+} from "./kpis-coverage-doctor-lists.test.ts";
+import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
   runTwoKpiReportsGradeAndBandTests,
@@ -435,6 +442,7 @@ import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
 import { runRepsListVacantAreasTests } from "./reps-list-vacant-areas.test.ts";
+import { runMyListTests } from "./my-list.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
@@ -1544,6 +1552,7 @@ import { runCeoSosTableRowKeysTests } from "./ceo-sos-table-row-keys.test.ts";
 import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test.ts";
 
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
+import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
@@ -1674,6 +1683,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -1711,6 +1721,7 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
+await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
 await runTest(
   "test wiring is complete (no test file imported-but-uninvoked, none orphaned)",
   runTestWiringCompleteTests,
@@ -2523,6 +2534,10 @@ await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody 
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
+await runTest("KPIs coverage doctor lists (legacy: the covered and not-covered lists add up to the row, and a rep's list is never cut)", runKpiCoverageLegacyListTests);
+await runTest("KPIs coverage doctor lists (a URL can only open a rep already on the viewer's board, and only on the Coverage tab)", runKpiCoverageRepSelectionTests);
+await runTest("KPIs coverage doctor lists (newest visit first; late doctors before the ones not due yet)", runKpiCoverageDetailOrderTests);
+await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
@@ -4201,6 +4216,11 @@ await runTest(
 );
 
 await runTest(
+  "my list (the Reps List board in a Medical Rep account, opened on the rep's OWN list — owner 2026-09-16. The reach is the session's HR id and nothing else, so no URL parameter can open a colleague's list; Medical Rep stays off the manager board's role list, whose picker names every rep in reach; the two pages send each other's viewers across; and under the locked downward rule a peer's NAME is withheld server-side while the highlight, the partner's visits in the score and the insight all stay — unnamed partners are counted, never repeated, and counted by rep so two never collapse into one)",
+  runMyListTests,
+);
+
+await runTest(
   "crm plan verification (the ONLY thing Phoenix writes back into the customer's CRM — a district "
   + "manager signs off one rep's weekly or monthly plan. The vendor does NOT range-check the status "
   + "it is sent, proven live against a phantom plan id, so the refusal to lower an area manager's "
@@ -5048,6 +5068,7 @@ await runTest(
 );
 
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
+await runTest("weekly sales for a medical rep (own seat only, line kept while geography lifts, managers' API and export still refuse him)", runWeeklySalesRepViewTests);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
 await runTest(
@@ -5641,6 +5662,11 @@ await runTest(
 await runTest(
   "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "vacation submit takes a storage path only for the caller's OWN pending upload of the matching kind (never another employee's, a filed sick/ document, a traversal or an extra segment), checked with leave:create before any download or delete",
+  runVacationPendingAttachmentPathTests,
 );
 
 await runTest(

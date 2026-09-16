@@ -1,10 +1,15 @@
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 
+import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
-import { removePendingVacationAttachment, resolvePendingVacationAttachment } from "@/lib/vacation/attachment-transport";
+import {
+  isOwnPendingVacationAttachmentPath,
+  removePendingVacationAttachment,
+  resolvePendingVacationAttachment,
+} from "@/lib/vacation/attachment-transport";
 import {
   createVacationRequest,
   isVacationSchemaMissing,
@@ -47,6 +52,9 @@ export async function POST(request: Request) {
     if (uploadSizeError) return uploadSizeError;
 
     const access = await resolveAccessContext(request);
+    // Asserted again inside createVacationRequest, but a referenced upload is downloaded and deleted
+    // before that call, so a caller who may not file leave must be turned away before any storage call.
+    await assertPermission(access, "leave", "create");
     await assertVacationRouteRateLimit({
       actor: access.loginId ?? access.hrId,
       limit: 12,
@@ -82,16 +90,41 @@ export async function POST(request: Request) {
         }
       : null;
     if (body instanceof FormData) {
-      const sickAttachmentStoragePath = formText(body, "sickAttachmentStoragePath");
-      if (!sickAttachment && sickAttachmentStoragePath) {
+      // A storage path may only name the caller's OWN pending upload of the matching kind, exactly as
+      // /api/vacations/attachments/upload-url minted it. Both are checked before any is collected or
+      // downloaded: the service-role client copies the object into this request and the finally block
+      // deletes it, so an unchecked path let anyone lift, then erase, another employee's filed document.
+      const sickAttachmentStoragePath = sickAttachment ? "" : formText(body, "sickAttachmentStoragePath");
+      const compensatoryAttachmentStoragePath = compensatoryAttachment
+        ? ""
+        : formText(body, "compensatoryAttachmentStoragePath");
+      if (
+        (sickAttachmentStoragePath &&
+          !isOwnPendingVacationAttachmentPath({ hrId: access.hrId, kind: "sick", storagePath: sickAttachmentStoragePath })) ||
+        (compensatoryAttachmentStoragePath &&
+          !isOwnPendingVacationAttachmentPath({
+            hrId: access.hrId,
+            kind: "compensatory",
+            storagePath: compensatoryAttachmentStoragePath,
+          }))
+      ) {
+        return NextResponse.json(
+          {
+            error: "invalid_attachment_path",
+            message: "The attached file does not match your upload. Please attach the file again and resubmit.",
+            success: false,
+          },
+          { status: 400 },
+        );
+      }
+      if (sickAttachmentStoragePath) {
         pendingAttachmentPaths.push(sickAttachmentStoragePath);
         sickAttachment = await resolvePendingVacationAttachment(sickAttachmentStoragePath, {
           contentType: formText(body, "sickAttachmentContentType"),
           fileName: formText(body, "sickAttachmentFileName"),
         });
       }
-      const compensatoryAttachmentStoragePath = formText(body, "compensatoryAttachmentStoragePath");
-      if (!compensatoryAttachment && compensatoryAttachmentStoragePath) {
+      if (compensatoryAttachmentStoragePath) {
         pendingAttachmentPaths.push(compensatoryAttachmentStoragePath);
         compensatoryAttachment = await resolvePendingVacationAttachment(compensatoryAttachmentStoragePath, {
           contentType: formText(body, "compensatoryAttachmentContentType"),

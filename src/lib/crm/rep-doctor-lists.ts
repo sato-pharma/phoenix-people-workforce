@@ -207,6 +207,11 @@ export type RepDoctorListDoctorRow = {
   kind: CrmContactKind;
   /** null for an off-plan doctor — there is no planned call to point at. */
   lastPlanDate: string | null;
+  /** Every distinct day the plan booked this contact inside the window, earliest first. Empty for
+   * an off-plan doctor. The KPIs board prints these beside a doctor nobody has reached yet, because
+   * a doctor planned for next Tuesday and a doctor planned for last Tuesday are both "not covered"
+   * and only one of them is late. */
+  planDates: string[];
   lastVisitDate: string | null;
   /** `visits` minus `plannedCallsToDate`. Negative is behind, positive is over. 0 is on plan.
    * Signed on purpose — "how far off, and which way" is the whole question. */
@@ -545,6 +550,16 @@ export type RepDoctorListsInput = {
   planRows: readonly PlanRow[];
   /** Type-0 visits for the same window, duplicate submissions already collapsed. */
   visitRows: readonly VisitRow[];
+  /**
+   * Ship EVERY doctor row instead of the first REP_DOCTOR_DRILLDOWN_CAP.
+   *
+   * For the KPIs board's Coverage tab, which lists one rep's doctors and cannot name that rep in
+   * `filters.repKey` — that filter narrows `reps` too, and the board needs every rep. The board
+   * picks one rep's rows out of this list on the server and returns only those, so the company-wide
+   * rows never travel to a browser. The rows already exist in memory either way; this only stops
+   * them being cut.
+   */
+  uncapped?: boolean;
 };
 
 /**
@@ -562,6 +577,8 @@ export async function getRepDoctorLists(input: {
    * exactly this span, so a week's board never pays for a month's rows — and the builder cuts to it
    * again anyway, because it must be right on whatever it is handed. */
   window?: { from: string; to: string };
+  /** See `RepDoctorListsInput.uncapped`. */
+  uncapped?: boolean;
 }): Promise<RepDoctorListsBoard> {
   const monthWindow = monthBounds(input.month);
   const from = input.window?.from ?? monthWindow.from;
@@ -601,6 +618,7 @@ export async function getRepDoctorLists(input: {
     month: input.month,
     norms,
     planRows,
+    uncapped: input.uncapped,
     visitRows,
     window: input.window,
   });
@@ -708,6 +726,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     kind: CrmContactKind;
     lastPlanDate: string | null;
     name: string;
+    /** Distinct plan days; sorted once the plan side is complete. */
+    planDates: Set<string>;
     plannedCalls: number;
     plannedCallsToDate: number;
     regionName: string | null;
@@ -742,6 +762,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       if (row.plan_date && (!existing.lastPlanDate || row.plan_date > existing.lastPlanDate)) {
         existing.lastPlanDate = row.plan_date;
       }
+      if (row.plan_date) existing.planDates.add(row.plan_date);
       continue;
     }
     planned.set(key, {
@@ -751,6 +772,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       kind,
       lastPlanDate: row.plan_date,
       name: row.contact_name?.trim() || `Contact ${contactCrmId}`,
+      planDates: new Set(row.plan_date ? [row.plan_date] : []),
       plannedCalls: 1,
       plannedCallsToDate: dueByNow ? 1 : 0,
       regionName: row.crm_region_name,
@@ -890,6 +912,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       gradeRaw: contact.gradeRaw,
       kind: contact.kind,
       lastPlanDate: contact.lastPlanDate,
+      // YYYY-MM-DD sorts correctly as text — no Date parsing (see DATE DISCIPLINE above).
+      planDates: [...contact.planDates].sort(),
       lastVisitDate: seen?.lastVisitDate ?? null,
       planBelowGradeNorm,
       plannedCalls: contact.plannedCalls,
@@ -921,6 +945,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       gradeRaw: contact.gradeRaw,
       kind,
       lastPlanDate: null,
+      planDates: [],
       lastVisitDate: contact.lastVisitDate,
       planBelowGradeNorm: false,
       plannedCalls: 0,
@@ -1063,7 +1088,9 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   // A single rep's whole list is ~250 rows at the observed maximum, so it ships uncapped — the cap
   // exists only to stop the company-wide view (~9,000 rows) becoming a multi-megabyte payload.
-  const capped = filters.repKey ? filteredDoctors : filteredDoctors.slice(0, REP_DOCTOR_DRILLDOWN_CAP);
+  // `uncapped` is the KPIs board, which keeps these rows on the server (see RepDoctorListsInput).
+  const capped =
+    filters.repKey || input.uncapped ? filteredDoctors : filteredDoctors.slice(0, REP_DOCTOR_DRILLDOWN_CAP);
 
   return {
     appliedFilters: filters,

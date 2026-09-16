@@ -20,8 +20,8 @@ import type { WeeklyDistributorOption, WeeklyFilterMode } from "@/lib/sales/week
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
- * Portal roles that may open Weekly Stock. Unlike Weekly Sales, Medical Reps ARE included (owner,
- * 2026-09-14): a rep sees the stock at the depots of his own line and region.
+ * Portal roles that may open Weekly Stock. Medical Reps are included (owner, 2026-09-14): a rep sees
+ * the stock at the depots of his own line and region.
  * `showWeeklyStockTab` in src/lib/employee-portal/navigation.ts mirrors this list.
  */
 export const PORTAL_WEEKLY_STOCK_ROLES = [

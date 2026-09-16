@@ -89,7 +89,16 @@ export default async function PortalKpisPage({ searchParams }: PageProps) {
   // zero, which on this board would read as "every rep did nothing".
   let board: Awaited<ReturnType<typeof getKpisBoard>> | null = null;
   try {
-    board = await getKpisBoard({ access, month, period: one(params?.period), todayIso: today, filters });
+    board = await getKpisBoard({
+      access,
+      month,
+      period: one(params?.period),
+      todayIso: today,
+      filters,
+      // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
+      // already on this viewer's board, and ignores it otherwise.
+      coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
+    });
   } catch (error) {
     logPortalFailure({ hrId: access.hrId, module: "kpis", role: access.role, route: BASE_PATH }, error);
     board = null;

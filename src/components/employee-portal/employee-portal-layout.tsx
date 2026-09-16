@@ -211,6 +211,7 @@ function buildEmployeePortalSections({
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showRepsListTab = false,
+  showMyListTab = false,
   showRepsPlansTab = false,
   showKpisTab = false,
   showMedicalRepExpensesTab = false,
@@ -331,7 +332,8 @@ function buildEmployeePortalSections({
         // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
         ...(showTerritoryManagementTab ? [{ href: "/employee-portals/territory-management", label: "Territory Management", icon: Waypoints }] : []),
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away,
-        // so without this twin a DM/RM/NSM had no targets surface at all.
+        // so without this twin a DM/RM/NSM had no targets surface at all. A Medical Rep gets the same
+        // link and is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
       ],
@@ -372,10 +374,14 @@ function buildEmployeePortalSections({
         // the team's activity rows, this is the team's assignment — each rep's own CRM contact list,
         // grouped by brick. The admin twin is /admin/reps-list.
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
+        // The same board at a Medical Rep's reach: their own contact list and nobody else's. It takes
+        // Reps List's place in the order, because the two never appear together — Reps List is for
+        // the seats reps report to, and My List for the rep (owner, 2026-09-16).
+        ...(showMyListTab ? [{ href: "/employee-portals/my-list", label: "My List", icon: BookUser }] : []),
         // KPIs sits directly under Reps List because it answers the next question about the same
         // people: that board is who is on the list, this one is how well the list is being worked.
-        // Its role reach is WIDER — a Medical Rep sees his own three KPIs here, and correctly sees
-        // no Reps List above, because that board is about the reps who report to you.
+        // Its role reach is WIDER — a Medical Rep sees their own three KPIs here, and sees My List
+        // above instead of Reps List, because that board is about the reps who report to you.
         ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
         // Reps Plans sits under KPIs because it is the same question one level in: KPIs is how well
         // the list is being worked, this is how much of that work anything can PROVE. Manager seats

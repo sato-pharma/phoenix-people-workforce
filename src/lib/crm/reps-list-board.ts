@@ -27,6 +27,7 @@
  */
 
 import {
+  coverageRepKey,
   narrowCoverageOptions,
   repsMatching,
   resolveCoverageSelection,
@@ -51,6 +52,8 @@ import { monthBounds, monthLabelOf, repDoctorListRepKey, resolveRepDoctorListMon
 import { activityForContact, countUnvisited, type RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { loadRepsListActivity } from "@/lib/crm/reps-list-activity-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import { withRepNamesWithheld } from "@/lib/crm/location-confidence";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
 /** One rep offered by the cascade, with whatever CRM list they hold. */
 export type RepsListRep = {
@@ -380,16 +383,19 @@ export function withActivity(
   };
 }
 
-/** Assembles tab one — the cascade plus the selected rep's contact list, grouped by brick. */
-export async function getRepsListBoard(input: {
-  scope: CrmManagerScope;
-  params: { area?: string; line?: string; month?: string; region?: string; rep?: string };
-}): Promise<RepsListBoard> {
-  const cascade = await buildRepsCascade(input);
+/**
+ * Tab one's body — the selected rep's contact list and its month activity, over a cascade that has
+ * already decided who the viewer may see.
+ *
+ * Takes the cascade instead of building one, so Reps List and My List are ONE assembly over two
+ * reaches: a manager's cascade comes from `buildRepsCascade`, a rep's from `buildOwnListCascade`.
+ * A second copy of this body for My List would be the drift this file's header exists to prevent.
+ */
+async function assembleBoard(cascade: RepsCascade, month: string | undefined): Promise<RepsListBoard> {
   const today = cairoTodayIso();
   // An unparseable or hand-typed month falls back to the Cairo month we are in, never throws — this
   // rides in the URL, so a stale bookmark is a user-reachable input.
-  const activityMonth = resolveRepDoctorListMonth(input.params.month);
+  const activityMonth = resolveRepDoctorListMonth(month);
   const monthEnd = monthBounds(activityMonth).to;
   // The same clamp the builder applies internally, restated for the CAPTION so the screen can say
   // how much of the month it is actually reporting on. On the 2nd of a month that matters enormously:
@@ -445,6 +451,107 @@ export async function getRepsListBoard(input: {
     selected: cascade.selected,
     selection: cascade.selection,
     syncedAt: cascade.syncedAt,
+  };
+}
+
+/** Assembles tab one — the cascade plus the selected rep's contact list, grouped by brick. */
+export async function getRepsListBoard(input: {
+  scope: CrmManagerScope;
+  params: { area?: string; line?: string; month?: string; region?: string; rep?: string };
+}): Promise<RepsListBoard> {
+  return assembleBoard(await buildRepsCascade(input), input.params.month);
+}
+
+/**
+ * My List — the viewer's own contact list, on the same assembly as Reps List.
+ *
+ * The scope comes from `getMyListScope` (doctor-list-access.ts), which only ever answers with the
+ * session's own HR id. Everything below is Reps List with three differences, and only three:
+ *
+ *  - NO PICKER. A rep chooses nobody, so the options and the selection come back empty.
+ *  - A REP THE ORGANOGRAM HAS NOT SEATED STILL GETS THEIR LIST. The cascade offers seated reps only,
+ *    but a list is found by HR id, so an unseated rep is built from their list summary rather than
+ *    told they hold nothing.
+ *  - NO PEER IS NAMED. See `UNNAMED_REP` (location-confidence.ts) for the owner's rule this follows.
+ */
+export async function getMyListBoard(input: {
+  scope: CrmManagerScope;
+  params: { month?: string };
+}): Promise<RepsListBoard> {
+  return assembleBoard(await buildOwnListCascade(input.scope), input.params.month);
+}
+
+/**
+ * The cascade for one rep's own list, built THROUGH `buildRepsCascade` rather than beside it.
+ *
+ * The rep is selected exactly as a manager selects one — by rep key, off a tree restricted to the
+ * scope — so the join to the list, the counts and the sync time are the reviewed ones, not a copy.
+ *
+ * The shared-customer name map keeps EVERY KEY the manager's board holds and replaces every name.
+ * The keys are what a match needs (`findSharedCustomers` drops a partner it has no entry for), so a
+ * rep's list shows every shared customer, every partner's visits in the score and every insight a
+ * manager sees on it; only the name is withheld.
+ */
+async function buildOwnListCascade(scope: CrmManagerScope): Promise<RepsCascade> {
+  // ONE LIST OR NONE. Any other shape is a caller mistake, and it is refused, never widened.
+  const key = scope.kind === "agents" && scope.agentHrIds.length === 1 ? canonicalHrIdKey(scope.agentHrIds[0]) : null;
+  if (scope.kind !== "agents" || !key) {
+    return buildRepsCascade({
+      params: {},
+      scope: {
+        kind: "none",
+        reason:
+          scope.kind === "none" ? scope.reason : "My List opens one contact list, your own, and this session did not resolve to one.",
+      },
+    });
+  }
+
+  const hrId = scope.agentHrIds[0];
+  const cascade = await buildRepsCascade({ params: { rep: coverageRepKey(hrId) }, scope });
+
+  // A rep holding two seats is two entries under one key. The list is one, and it covers both seats'
+  // areas, so the areas are merged rather than taken from whichever seat sorts first.
+  const [seat] = cascade.reps;
+  let self: RepsListRep | null = seat
+    ? {
+        ...seat,
+        areaNames: [...new Set(cascade.reps.flatMap((rep) => rep.areaNames))].sort((left, right) => left.localeCompare(right)),
+      }
+    : null;
+  let syncedAt = cascade.syncedAt;
+
+  if (!self) {
+    const summary = (await getRepListSummaries()).find((candidate) => canonicalHrIdKey(candidate.hrId) === key);
+    self = {
+      agentCrmId: summary?.agentCrmId ?? null,
+      areaNames: [],
+      contactCount: summary ? summary.pmCount + summary.amCount : 0,
+      // The stored spelling when the summary has one — the session carries the lower-cased key.
+      hrId: summary?.hrId ?? hrId,
+      name: "",
+      pharmacyCount: summary?.pharmacyCount ?? 0,
+      repKey: coverageRepKey(hrId),
+    };
+    syncedAt = summary?.syncedAt ?? null;
+  }
+
+  // The organogram falls back to the HR id when a seat carries no name. An id is never printed at a
+  // reader, so the name comes from the employee directory then, and is left blank if it has none.
+  if (!self.name || self.name === self.hrId) {
+    const employee = (await getEmployeeDirectoryRows()).find((row) => canonicalHrIdKey(row.hrId) === key);
+    self = { ...self, name: employee?.displayName ?? "" };
+  }
+
+  return {
+    options: EMPTY_OPTIONS,
+    repNameByRepKey: withRepNamesWithheld(cascade.repNameByRepKey),
+    reps: [self],
+    repsIgnoringRep: [self],
+    scopeLabel: cascade.scopeLabel,
+    scopeReason: null,
+    selected: self,
+    selection: {},
+    syncedAt,
   };
 }
 

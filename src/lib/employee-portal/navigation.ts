@@ -2,7 +2,7 @@ import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
-import { DOCTOR_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
+import { DOCTOR_LIST_PORTAL_ROLES, MY_LIST_PORTAL_ROLES } from "@/lib/crm/doctor-list-roles";
 import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
@@ -32,6 +32,8 @@ export type EmployeePortalNavVisibility = {
   showTeamPerformanceTab?: boolean;
   showMedRepsPerformanceTab?: boolean;
   showRepsListTab?: boolean;
+  /** My List — the Reps List board opened on the viewer's own contact list. Medical Rep only. */
+  showMyListTab?: boolean;
   /** Reps Plans — the split call rate for the reps who report to you. Manager seats only. */
   showRepsPlansTab?: boolean;
   /** KPIs — Summary, Call Rate, Coverage and Frequency. Every portal-mode role with a reach. */
@@ -139,7 +141,9 @@ export type EmployeePortalNavVisibility = {
   showTerritoryManagementTab?: boolean;
   // Targets — READ-ONLY scoped view at /employee-portals/targets (owner decision 2026-07-30:
   // DM/RM/NSM view; editing and upload stay with SFE Manager / Super Admin on /sales/targets).
-  // Must stay in sync with PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts, the page gate.
+  // Medical Rep reaches the same URL since 2026-09-16 (owner) and is served their OWN targets.
+  // Must stay in sync with PORTAL_TARGETS_ROLES + PORTAL_REP_TARGETS_ROLES in
+  // src/lib/sales/portal-targets.ts, the page gate.
   showTargetsTab?: boolean;
   // Business Review — the portal-scoped view of /business-review, at
   // /employee-portals/business-review. Same field-management role set as Source of Sales;
@@ -420,6 +424,9 @@ export function resolveEmployeePortalNavVisibility(
   // is the "visible row he cannot open" bug the sidebar tests exist to catch. Asking the list itself
   // makes the two answers one answer.
   const showRepsListTab = DOCTOR_LIST_PORTAL_ROLES.includes(resolvedRole);
+  // My List — the rep's own door onto the same board, read off the list its page enforces
+  // (canAccessMyList), for the same one-answer reason as the row above.
+  const showMyListTab = MY_LIST_PORTAL_ROLES.includes(resolvedRole);
   // Reps Plans — IMPORTED rather than spelled out, unlike Reps List above.
   // src/lib/crm/reps-plans-access.ts is the enforcing gate and was deliberately built free of any
   // server-only import for exactly this caller, so there is no second copy to drift out of step.
@@ -533,6 +540,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCoverageReportTab,
     showMedRepsPerformanceTab,
     showRepsListTab,
+    showMyListTab,
     showRepsPlansTab,
     showKpisTab,
     showMedicalRepExpensesTab: isMedicalRep,
@@ -665,13 +673,17 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager" ||
       resolvedRole === "Medical Rep",
+    // Mirrors PORTAL_WEEKLY_ROLES (portal-weekly-dashboard.ts) plus PORTAL_WEEKLY_REP_ROLES
+    // (portal-weekly-rep.ts). Medical Rep added 2026-09-16 (owner): the same page shows him his own
+    // area's weekly sales only, never the managers' dashboard, its API or its export.
     showWeeklyTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       resolvedRole === "National Sales Manager" ||
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
-      resolvedRole === "Marketing Manager",
+      resolvedRole === "Marketing Manager" ||
+      resolvedRole === "Medical Rep",
     // Weekly Stock — mirrors PORTAL_WEEKLY_STOCK_ROLES (stock-dashboard-service.ts), the server-side
     // gate this flag must stay in sync with.
     showWeeklyStockTab:
@@ -739,11 +751,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
-    // Mirrors PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts (the enforcing gate). Spelled
-    // out rather than imported: that module reaches the Supabase server client via the sales scope
-    // resolver, which must not be pulled into this client-consumed nav helper. Medical Rep excluded
-    // by owner decision; the Head-Office "Manager" rung owns no areas, so exact-match again.
+    // Mirrors PORTAL_TARGETS_ROLES + PORTAL_REP_TARGETS_ROLES in src/lib/sales/portal-targets.ts
+    // (the enforcing gate). Spelled out rather than imported: that module reaches the Supabase server
+    // client via the sales scope resolver, which must not be pulled into this client-consumed nav
+    // helper. Medical Rep sees their OWN targets (owner, 2026-09-16); the Head-Office "Manager" rung
+    // owns no areas, so exact-match again.
     showTargetsTab:
+      isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
