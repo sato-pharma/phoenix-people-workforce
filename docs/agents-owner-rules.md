@@ -1886,10 +1886,30 @@ the bridge approves the month-end deduction at the Super Admin's figure (`payrol
 and passes `allowAboveDetected`, the one path allowed above the detected days. `recordDecision`
 carries a raised figure forward on a later plain Decide instead of throwing.
 
-**Release refuses when the public holiday calendar cannot be read.** Otherwise a holiday would count
-as a working day inside the answer window, and the deadline would come a day early. Nothing is
-released in that case. The deadline is counted on the employee's own attendance policy's weekly
-days off (`resolveActiveAttendancePolicy`), not a company-wide default.
+**Release refuses when the public holiday calendar or leave requests cannot be read**
+(`loadAnswerWindow`). Without them a holiday, or a day the employee is on leave, would count as a
+working day inside the answer window, and the deadline would come early. Nothing is released in
+that case. The deadline is counted on the employee's own attendance policy's weekly days off
+(`resolveActiveAttendancePolicy`), not a company-wide default.
+
+**A build that fails is undone.** If a write fails partway through a build, by the daily job or by
+Build this week, `undoPartialBuild` deletes every digest that run created, and their days with them,
+and the error is thrown. A half-built week would look built: Build this week refuses it for good,
+and an employee whose digest lost its days would be released with nothing on it. The undo deletes
+only a digest still waiting for release with no release stamp, so one a Release click reached first
+is kept. If the undo fails too, the error names the week and how many employees were left, because
+that week then needs a person. Checked on production on 2026-09-15, read-only: the digests table has
+no triggers of its own, a digest's days are deleted with it (`on delete cascade`), and a settlement
+or annual-balance charge pointing at it would block the delete rather than be orphaned. A digest the
+failed run has just created has neither.
+
+**Only one build of a week runs at a time** (`withWeekBuildLock`, found by the risk review on
+2026-09-16). Without it, the daily job and a Build this week click on the same week interleave: the
+click skips the employees the job has just created, the job then fails and deletes them, and nobody
+builds them again. The click now checks whether the week is built only after any build of it still
+running has finished. The lock lives in the server process, and production runs one replica. A build
+on a second server (two overlap briefly during a deploy) is caught by the unique key instead: its
+insert answers `23505`, that employee is skipped, and theirs stands.
 
 **A week mixing trial and real employees** releases the real ones only. The page says how many trial
 employees are skipped.
@@ -1949,6 +1969,18 @@ in-app as the only channel. The notice names the week, the number of days and th
 carries no amount**, because Telegram is a lock-screen channel. One notice per digest, ever
 (idempotency key `attendance_digest:<id>:released`).
 
+**The dispute decision is told the same way** (owner, same day, chosen from options: "Yes, in-app
+and Telegram"). When a reviewer accepts or rejects a disputed day, `reviewDispute` saves the decision
+first and then calls `notifyAttendanceDisputeDecided`, in-app and Telegram, never email. The notice
+names the day and the outcome. For a rejected day it says where the deduction is taken from (salary
+or annual balance, as the employee chose), and when balance could no longer be used it gives the
+real cause (`disputeSalaryFallbackText`). It carries **no amount** and does **not quote the
+reviewer's note**, which is free text on a lock-screen channel; it only says a note is waiting on the
+employee's page. One notice per decided day (idempotency key
+`attendance_digest:line:<line id>:dispute_decided`). A notice that fails never undoes the decision:
+the reviewer's screen says the employee could not be told, and the decision still shows on the
+employee's weekly attendance page.
+
 ### 3. Per day, the employee chooses salary or annual balance, and then may dispute
 
 - **Salary**, or **annual balance only**: the same number of days, and offered only when the
@@ -1985,6 +2017,40 @@ Payroll (a race, or a decision made before these guards shipped), the bridge rai
 naming the cause every run and the daily job returns 500. The same happens when the bridge cannot
 close a cleared day. A day that only needed salary, and could not be applied, is a warning.
 
+**A day nobody has finished deciding cannot be approved either.**
+`assertDayNotClearedInAttendanceReview` also refuses **Approved for Payroll** for a fingerprint day
+still pending in a real week:
+
+- **Waiting for release** (owner, same day, chosen from options: "Block until released"). The
+  employee has not been asked, and the Super Admin may still untick the day. The refusal says to
+  release that week on the Weekly Attendance Review page first, or to mark the deduction Needs
+  Follow-up.
+- **Released and not answered yet** (owner, 2026-09-16, chosen from options: "Block until
+  answered"). The employee can still pay the day from annual balance or dispute it, and approving
+  first would take that choice away. The refusal says to wait for their answer or for the answer
+  deadline to settle the day, or to mark the deduction Needs Follow-up. A week released just before
+  payroll closes waits about 2 working days. A day whose release notice failed waits until the
+  employee answers, because the daily job settles only days the employee was told about.
+
+**Except for somebody who has left** (owner, 2026-09-16, chosen from options: "HR decides"). A
+release notice only ever reaches current staff (`isActiveEmployee`), so a leaver is never told,
+their answer deadline never runs, and a released day of theirs would refuse approval in their
+**final** payroll for ever. So a day of a released week whose notice reached nobody
+(`notified_at` null) stops blocking once the employee record says they have left — any employment
+status outside active and on leave (`isTerminalEmploymentStatus`, the auth module's own test, read
+by `employeeHasLeft`). HR decides that day at month end as it did before the weekly review existed:
+approve it from the final pay, or record Do Not Take Action. Nothing is deducted automatically
+without a notice, and the settle function still refuses annual balance for a day already decided at
+month end (`55000`), so no day is ever charged twice. Anyone still with the company keeps the
+block, because they can still answer; so does a week still waiting for release, which is still the
+Super Admin's to untick. An employee record that cannot be read counts as still here, so the block
+stays.
+
+A day still pending when payroll closes is therefore not deducted that month. The bridge's own
+approvals never trip this check: a fingerprint deduction covers one day, and the bridge approves a
+day only once it has settled, when it is no longer pending. A trial-run week never blocks, because
+it is never released. Like the other two reads, this one fails closed.
+
 **The balance check reads every source of spent days.** On its own, the vacation calculator reads
 the payroll Copilot's balance ledger fail-open (a failed read counts as zero). The review asks it
 to read **fail-closed** (`failClosedLedgerRead`), in this period and in every earlier one the
@@ -2007,6 +2073,37 @@ weekly-off pattern and the holiday calendar, and the release day itself does not
 run first settles every day still unanswered after its deadline as **`auto_salary`**, then applies
 answers to payroll. This reverses 2026-09-08 rule 2 **on purpose**: that rule rested on "nobody is
 told", and now everybody is told, with the deadline in the notice.
+
+**Days on leave do not count** (owner, same day, chosen from options: "Pause for leave days"), and
+**leave still waiting for approval counts as leave** (owner, 2026-09-16, chosen from options:
+"Pending pauses too"). Someone on leave is not at work to answer, and a sick day is often filed
+before anyone approves it. So a day of a leave request that is approved, waiting for HR assignment,
+or pending with the manager or HR (`ANSWER_WINDOW_LEAVE_STATUSES`, read by `getLeaveDayMap`) is
+skipped like a weekly day off or a public holiday (`countsTowardAnswerWindow`). A test holds the
+waiting statuses equal to the vacation module's own in-flight set; a rejected or returned request
+pauses nothing. Leave can be filed or approved after the release, so the deadline is worked out
+again from the release day (`heldAnswerDeadlines`) before the daily job settles a week past its
+stored date, and before an answer given after that date is refused. A later date is saved and the
+days wait (`deadlinesMoved` in the job's result). **A deadline is never brought earlier:** the later
+of the date the employee was told and the date worked out now holds (`heldAnswerDueDate`), and the
+save only ever moves a stored date later, so a rejected or cancelled leave request, or a lowered
+`answer_working_days`, never takes salary sooner. When the holiday calendar or leave requests
+cannot be read, the daily job settles **nothing** and returns 500, and an employee answering after
+the stored date is told to try again shortly. A calendar that never yields a working day cannot hang
+the count: after 1,000 days it returns the last day walked, later than any date a real count could
+give. Measured on production, read-only, the night of 15–16 September 2026: all 551 leave requests,
+whatever their status, and all 7 employees with a real digest store their HR ID upper-case and
+trimmed, so the leave lookup's exact match misses none.
+
+**Whoever works a later date out saves it** (`saveLaterAnswerDeadlines`): the employee's page, the
+answer they file and the daily job all write it back, each guarded on the week still being open and
+its stored date still being earlier, so every surface reads one date. Showing a date is a promise,
+and the job settles on the **stored** one — a date only shown would be taken back the moment that
+leave request is rejected, taking to salary a day the employee was told they still had. A date the
+page cannot save is not shown either: the stored one stands. The job saves every date it moves
+before it settles the first day of any week, and reads the stored date once more immediately before
+settling each week, because minutes pass inside one run and the employee's page, or an answer of
+theirs, may have saved a later one in between.
 
 **The deadline runs only for someone who was actually told.** `notified_at` is stamped only when the
 notice reached in-app or Telegram (`releaseNoticeReached`), and the sweep skips every week without
@@ -2042,11 +2139,54 @@ cycle, so week 4 is built on the 24th.
   dispute inbox up to 200. Today's weeks are a few dozen.
 - **A notice that failed is not re-sent.** The employee still sees the week and can answer, and the
   deadline never runs for them, but nothing tells them again.
+- **A dispute decision notice that failed is not re-sent either.** The reviewer's screen says the
+  employee could not be told, and the decision shows on the employee's page.
+- **Leave filed after a day was settled does not reopen it.** Once the daily job has settled a day
+  to salary, a leave request for that window filed later changes nothing. Leave filed before the
+  settlement pauses the window even while it still waits for approval.
+- **A build killed mid-run is not undone.** The undo runs only when a write fails. A server stopped
+  in the middle of a build (a deploy restart) can leave a digest without its days, and Build this
+  week then refuses the week. The daily job adds an employee it finds with no digest, while that
+  week is still the latest closed one, but never the days of a digest that exists. The undo also
+  deletes a day the Super Admin ticked in the seconds between a digest appearing and its build
+  failing; rebuilt, that day comes back unticked.
+- **The review page shows the stored deadline.** The employee's page and the answer path work a
+  passed date out again and save it, and the daily job saves every date it moves, so the review page
+  is at most one page load or one daily run behind — and never shows a date earlier than the one the
+  employee holds for longer than that.
+- **The daily job's re-read is not a lock.** A deadline saved in the milliseconds between that read
+  and the settle that follows it is missed, and the day settles on the date just read. One replica
+  runs the job, the window is a few milliseconds wide, and a day settled to salary is still the
+  Super Admin's to set to Do Not Take Action at month end.
+- **Leave more than 45 days ahead is read on a later run.** Each read covers today plus 45 days, so
+  a longer leave moves the deadline again as its days come into range, always before the deadline
+  can decide anything.
+- **Raising `answer_working_days` also lengthens deadlines already running,** once their stored
+  date passes. Lowering it never shortens one.
+- **The holiday calendar can read as connected during a Google Calendar outage.** For a month with
+  a company or fixed-date public holiday, `connected` stays true while the moving Islamic and
+  Coptic holidays, such as the two Eids, are missing, so a release in such a month could set a
+  deadline too early. This predates the follow-ups: release trusted the same flag before. A
+  deadline worked out again never comes earlier than the one given, so the daily job cannot make
+  it worse.
 
-### Still open
+### Settled later
 
-Whether the employee is notified of a dispute **decision** was not settled on 2026-09-15. Today the
-reviewer's note is shown on the employee's page, and no notice is sent.
+Three follow-up questions, including the one this section used to hold, were put to him as options
+on the evening of 2026-09-15, and three more on 2026-09-16 — two just after midnight, and one raised
+by the risk review of those follow-ups later that day. He chose the recommended answer each time:
+
+- **"Yes, in-app and Telegram"**: the employee is told how a dispute was decided (§2).
+- **"Pause for leave days"**: days on approved leave do not count toward the answer window (§4).
+- **"Block until released"**: month-end approval refuses a day of a week still waiting for release
+  (§3).
+- **"Block until answered"** (2026-09-16): month-end approval also refuses a day of a released week
+  that the employee can still answer (§3).
+- **"Pending pauses too"** (2026-09-16): leave still waiting for approval pauses the answer window
+  as well (§4).
+- **"HR decides"** (2026-09-16): a day of a released week whose notice reached nobody stops blocking
+  month-end approval once that employee has left, so a final payroll is never held up by a question
+  they were never asked (§3).
 
 ## The premium Monthly Closing wears its own executive look — owner decision, 2026-09-08
 

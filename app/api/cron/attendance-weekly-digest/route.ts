@@ -19,7 +19,9 @@ export const maxDuration = 300;
  *      `awaiting_release`. This step SENDS NOTHING: a week reaches its employees only when
  *      the Super Admin releases it from the admin review page (owner, 2026-09-15).
  *   2. DEADLINE — settle every day still unanswered after its answer deadline (2 working
- *      days from release) to salary. Owner decision 2026-09-15.
+ *      days from release; days on leave, approved or still waiting for approval, do not
+ *      count, so leave filed since the release moves it later) to salary. Owner decisions
+ *      2026-09-15 and 2026-09-16.
  *   3. APPLY — take the settled answers and put them on the month-end deduction
  *      candidates, once those candidates exist.
  *

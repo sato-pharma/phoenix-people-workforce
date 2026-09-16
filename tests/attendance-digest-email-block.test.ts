@@ -5,10 +5,10 @@ import { enforceAttendanceDigestEmailBlock, isAttendanceDigestModule } from "../
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
 import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
 
-// Owner rule (2026-09-15): when a week of attendance is released, the employee is told IN-APP and
-// by TELEGRAM. Never email.
+// Owner rules (2026-09-15): when a week of attendance is released, and when a reviewer decides a
+// dispute, the employee is told IN-APP and by TELEGRAM. Never email.
 //
-// Three independent things have to hold, and the notice is only as quiet as the weakest one:
+// Three independent things have to hold, and each notice is only as quiet as the weakest one:
 //   1. the policy row must not ASK for email
 //   2. the guard must strip email even when something else asks for it anyway — the
 //      Telegram-failure fallback re-enters with ["email","in_app"], and an unlinked employee is
@@ -16,11 +16,23 @@ import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-gove
 //   3. Telegram must be explicitly allowed, or the unknown-module fail-safe disables it
 
 export function runAttendanceDigestEmailBlockTests() {
+  for (const eventType of ["week_released", "dispute_decided"]) {
+    const policy = resolveNotificationPolicy({ module: "attendance_digest", eventType });
+    assert.equal(policy.channels.includes("email"), false, `the attendance_digest policy for ${eventType} must not request email`);
+    assert.equal(policy.channels.includes("telegram"), true, `Telegram is one of the two delivery channels for ${eventType}`);
+    assert.equal(policy.channels.includes("in_app"), true, `in-app is the other for ${eventType}`);
+  }
+
   {
-    const policy = resolveNotificationPolicy({ module: "attendance_digest", eventType: "week_released" });
-    assert.equal(policy.channels.includes("email"), false, "the attendance_digest policy row must not request email");
-    assert.equal(policy.channels.includes("telegram"), true, "Telegram is one of the two delivery channels");
-    assert.equal(policy.channels.includes("in_app"), true, "in-app is the other");
+    // Both notices name their channels explicitly, which bypasses the policy's channel list — so the
+    // sender itself must never name email either.
+    const notify = readFileSync("src/lib/attendance/digest-notify.ts", "utf8");
+    assert.doesNotMatch(notify, /"email"/, "digest-notify.ts must never ask for email on either notice");
+    assert.equal(
+      (notify.match(/channels: \["in_app", "telegram"\],/g) ?? []).length,
+      2,
+      "the release notice and the dispute decision notice each send in-app and Telegram, and nothing else",
+    );
   }
 
   {

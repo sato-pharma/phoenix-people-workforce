@@ -13,7 +13,11 @@
 //   4. THEN A DISPUTE, IF THEY WANT ONE. After choosing, they may dispute the day; it waits for
 //      the reviewer, and a rejected dispute applies the method they chose.
 //   5. SILENCE MEANS SALARY. A day not answered within 2 working days of the release is settled
-//      to salary by the daily job.
+//      to salary by the daily job. A day the employee is on leave does not count, so the deadline
+//      moves past the leave (owner, 2026-09-15 — "Pause for leave days"), and leave still waiting
+//      for approval counts as leave (owner, 2026-09-16 — "Pending pauses too").
+//   6. THE DECISION IS TOLD. When a reviewer accepts or rejects a dispute, the employee is told
+//      in-app and by Telegram, with where a rejected day is taken from (owner, 2026-09-15).
 //
 // SCOPE. This module records an answer and, for balance, spends leave days. It never writes a
 // deduction: the month-end Fingerprint connector stays the only author of deductions_candidates,
@@ -33,13 +37,18 @@ import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-rep
 import { resolveCycleWindow, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
 import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
 import { buildWeekDigests, type BuiltDigest } from "@/lib/attendance/digest-generator.ts";
+import { withWeekBuildLock } from "@/lib/attendance/week-build-lock.ts";
 import {
+  ANSWER_WINDOW_LEAVE_STATUSES,
   answerDueDate,
   balanceCoversDays,
   balanceReadIsComplete,
   canManageWeeklyReview,
+  countsTowardAnswerWindow,
   deadlineApplies,
   disputeSalaryFallbackText,
+  heldAnswerDueDate,
+  isAnswerOverdue,
   isDeductionMethod,
   isOpenLineAction,
   parseMarkedDays,
@@ -50,12 +59,13 @@ import {
   type DigestStatus,
   type ReviewWeekStage,
 } from "@/lib/attendance/digest-rules.ts";
-import { notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
-import { buildAttendanceCalendarContext, cairoTodayIso } from "@/lib/attendance/working-days.ts";
+import { notifyAttendanceDisputeDecided, notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
+import { buildAttendanceCalendarContext, cairoTodayIso, getLeaveDayMap } from "@/lib/attendance/working-days.ts";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule.ts";
-import { resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
+import { normalizeAttendanceHrId, resolveActiveAttendancePolicy } from "@/lib/attendance/metrics";
 import { loadAttendanceFlexPolicyGroups } from "@/lib/attendance/policy-groups";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 
@@ -144,13 +154,21 @@ export async function generateDigestsForCompletedWeek(input: {
       dryRun: settings.dryRun,
     };
   }
-  return generateDigestsForWeek({ cycle, week, createdBy: input.createdBy, settings });
+  return withWeekBuildLock(cycle.cycleKey, week.index, () => generateDigestsForWeek({ cycle, week, createdBy: input.createdBy, settings }));
 }
 
 /**
  * Build one closed week's digests, waiting for release. An employee who already has a digest for the
  * week is left alone. Used by the daily job for the week that has just closed, and by the Super Admin
  * for an earlier closed week of the current payroll month that was never built.
+ *
+ * If a write fails, every digest this run created is deleted again (its days go with it) and the
+ * error is thrown. A half-built week looks built: Build this week refuses it for good, and an
+ * employee whose digest lost its days would be released with nothing on it. Callers hold
+ * withWeekBuildLock, so no other build of this week runs in this server at the same time: one that
+ * did could skip the employees this run creates, and this run's undo would then leave them with no
+ * digest at all. A build on another server getting there first is not a failure: the unique key
+ * answers 23505, and its digest stands. A build killed mid-run (a deploy restart) is not undone.
  */
 async function generateDigestsForWeek(input: {
   cycle: CycleWindow;
@@ -167,61 +185,76 @@ async function generateDigestsForWeek(input: {
   let digestsCreated = 0;
   let linesCreated = 0;
   let skippedExisting = 0;
+  const createdDigestIds: number[] = [];
 
-  for (const digest of built) {
-    const { data: existing, error: existingError } = await supabase
-      .from("attendance_weekly_digests")
-      .select("id")
-      .eq("employee_hr_id", hrIdForStorage(digest.employeeHrId))
-      .eq("cycle_key", cycle.cycleKey)
-      .eq("week_index", week.index)
-      .maybeSingle();
-    if (existingError) throw existingError;
-    if (existing) {
-      skippedExisting += 1;
-      continue;
+  try {
+    for (const digest of built) {
+      const { data: existing, error: existingError } = await supabase
+        .from("attendance_weekly_digests")
+        .select("id")
+        .eq("employee_hr_id", hrIdForStorage(digest.employeeHrId))
+        .eq("cycle_key", cycle.cycleKey)
+        .eq("week_index", week.index)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) {
+        skippedExisting += 1;
+        continue;
+      }
+
+      const { data: created, error: createError } = await supabase
+        .from("attendance_weekly_digests")
+        .insert({
+          employee_hr_id: hrIdForStorage(digest.employeeHrId),
+          cycle_key: cycle.cycleKey,
+          week_index: week.index,
+          week_start: week.startIso,
+          week_end: week.endIso,
+          status: "awaiting_release",
+          total_deduction_days: digest.totalDeductionDays,
+          // NULL, not 0, when any day could not be priced. See digest-generator.ts.
+          total_deduction_value: digest.totalDeductionValue,
+          has_unpriced_day: digest.hasUnpricedDay,
+          dry_run: settings.dryRun,
+        })
+        .select("id")
+        .single();
+      if (createError) {
+        // The daily job and a Build click (or two clicks) raced, and the other one created this
+        // employee's digest between the check above and this insert. Theirs stands.
+        if ((createError as { code?: string }).code === "23505") {
+          skippedExisting += 1;
+          continue;
+        }
+        throw createError;
+      }
+      const digestId = (created as { id: number }).id;
+      createdDigestIds.push(digestId);
+      digestsCreated += 1;
+
+      const { error: linesError } = await supabase.from("attendance_digest_lines").insert(
+        digest.lines.map((line) => ({
+          digest_id: digestId,
+          work_date: line.workDate,
+          status: line.status,
+          late_minutes: Math.round(line.lateMinutes),
+          short_minutes: Math.round(line.shortMinutes),
+          worked_minutes: Math.round(line.workedMinutes),
+          deduction_days: line.deductionDays,
+          deduction_value: line.deductionValue,
+          // What was detected, kept apart from deduction_days, which the Super Admin may change before release.
+          detected_days: line.deductionDays,
+          detected_value: line.deductionValue,
+          reason: line.reason,
+          evidence: line.evidence,
+        })),
+      );
+      if (linesError) throw linesError;
+      linesCreated += digest.lines.length;
     }
-
-    const { data: created, error: createError } = await supabase
-      .from("attendance_weekly_digests")
-      .insert({
-        employee_hr_id: hrIdForStorage(digest.employeeHrId),
-        cycle_key: cycle.cycleKey,
-        week_index: week.index,
-        week_start: week.startIso,
-        week_end: week.endIso,
-        status: "awaiting_release",
-        total_deduction_days: digest.totalDeductionDays,
-        // NULL, not 0, when any day could not be priced. See digest-generator.ts.
-        total_deduction_value: digest.totalDeductionValue,
-        has_unpriced_day: digest.hasUnpricedDay,
-        dry_run: settings.dryRun,
-      })
-      .select("id")
-      .single();
-    if (createError) throw createError;
-    const digestId = (created as { id: number }).id;
-    digestsCreated += 1;
-
-    const { error: linesError } = await supabase.from("attendance_digest_lines").insert(
-      digest.lines.map((line) => ({
-        digest_id: digestId,
-        work_date: line.workDate,
-        status: line.status,
-        late_minutes: Math.round(line.lateMinutes),
-        short_minutes: Math.round(line.shortMinutes),
-        worked_minutes: Math.round(line.workedMinutes),
-        deduction_days: line.deductionDays,
-        deduction_value: line.deductionValue,
-        // What was detected, kept apart from deduction_days, which the Super Admin may change before release.
-        detected_days: line.deductionDays,
-        detected_value: line.deductionValue,
-        reason: line.reason,
-        evidence: line.evidence,
-      })),
-    );
-    if (linesError) throw linesError;
-    linesCreated += digest.lines.length;
+  } catch (buildError) {
+    await undoPartialBuild({ createdDigestIds, label: `${cycle.cycleKey} week ${week.index}`, cause: buildError });
+    throw buildError;
   }
 
   await writeAuditLog({
@@ -241,6 +274,28 @@ async function generateDigestsForWeek(input: {
     employeesClean: Math.max(0, employeesSeen - built.length),
     dryRun: settings.dryRun,
   };
+}
+
+/**
+ * Delete what a failed build created, so the week is not left half-built. Only digests this run
+ * created that are still waiting for release and were never released — one a Release click reached
+ * first is kept. Their days go with them (the lines cascade), and nothing is settled on a day of a
+ * week nobody has released. If the undo fails too, the error names the week and how many employees
+ * were left, because that week then needs a person.
+ */
+async function undoPartialBuild(input: { createdDigestIds: number[]; label: string; cause: unknown }): Promise<void> {
+  if (!input.createdDigestIds.length) return;
+  const { error } = await getSupabaseAdmin()
+    .from("attendance_weekly_digests")
+    .delete()
+    .in("id", input.createdDigestIds)
+    .eq("status", "awaiting_release")
+    .is("released_at", null);
+  if (!error) return;
+  const cause = String((input.cause as { message?: unknown } | null)?.message ?? input.cause);
+  throw new Error(
+    `Building ${input.label} failed (${cause}), and undoing it failed too (${error.message}). ${input.createdDigestIds.length} employee(s) in that week are left without all their days, waiting for release. Nothing was sent.`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -943,16 +998,197 @@ export async function buildReviewWeek(input: {
   const week = current && current.cycle.cycleKey === input.cycleKey ? current.weeks.find((candidate) => candidate.index === input.weekIndex) : undefined;
   if (!current || !week) throw conflictError("Only a closed week of the current payroll month can be built.");
 
-  const { data: existing, error: existingError } = await getSupabaseAdmin()
-    .from("attendance_weekly_digests")
-    .select("id")
-    .eq("cycle_key", input.cycleKey)
-    .eq("week_index", input.weekIndex)
-    .limit(1);
-  if (existingError) throw existingError;
-  if ((existing ?? []).length) throw conflictError("This week has already been built.");
+  // Checked inside the lock: a build of this week still running (the daily job, or another click)
+  // finishes first, so this sees what it left — its digests when it succeeded, none when it failed
+  // and undid itself.
+  return withWeekBuildLock(current.cycle.cycleKey, week.index, async () => {
+    const { data: existing, error: existingError } = await getSupabaseAdmin()
+      .from("attendance_weekly_digests")
+      .select("id")
+      .eq("cycle_key", input.cycleKey)
+      .eq("week_index", input.weekIndex)
+      .limit(1);
+    if (existingError) throw existingError;
+    if ((existing ?? []).length) throw conflictError("This week has already been built.");
 
-  return generateDigestsForWeek({ cycle: current.cycle, week, createdBy: input.actorHrId, settings });
+    return generateDigestsForWeek({ cycle: current.cycle, week, createdBy: input.actorHrId, settings });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The answer window
+// ---------------------------------------------------------------------------
+
+/**
+ * How far past today the calendar and leave requests are read. A deadline only decides anything once
+ * it has arrived, and every day up to today is inside this, so a leave running past it only means a
+ * later run moves the stored date again.
+ */
+const ANSWER_HORIZON_DAYS = 45;
+
+function addCalendarDaysIso(dateIso: string, days: number): string {
+  const date = new Date(`${dateIso}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+type AnswerWindowContext = {
+  toIso: string;
+  holidaysByDate: Map<string, string>;
+  leaveByEmployee: Map<string, Set<string>>;
+  directory: Map<string, EmployeeDirectoryRow>;
+  flexPolicies: Awaited<ReturnType<typeof loadAttendanceFlexPolicyGroups>>;
+};
+
+/**
+ * Everything a deadline needs: the public holiday calendar, leave (approved, or still waiting for a
+ * decision — ANSWER_WINDOW_LEAVE_STATUSES), and each employee's job title and weekly-off pattern.
+ * When the calendar or leave cannot be read, `context` is null and `unreadable` names which. Every
+ * caller then refuses rather than guess: a deadline worked out without them comes too EARLY, and
+ * silence after the deadline costs salary.
+ */
+async function loadAnswerWindow(input: {
+  fromIso: string;
+  toIso: string;
+  employeeHrIds: string[];
+}): Promise<{ context: AnswerWindowContext | null; unreadable: string | null; cause: string | null }> {
+  const [calendar, leave, directory, flexPolicies] = await Promise.all([
+    buildAttendanceCalendarContext({ dateFromIso: input.fromIso, dateToIso: input.toIso }),
+    getLeaveDayMap({
+      dateFromIso: input.fromIso,
+      dateToIso: input.toIso,
+      employeeHrIds: input.employeeHrIds,
+      statuses: ANSWER_WINDOW_LEAVE_STATUSES,
+    }).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error)))),
+    loadDirectoryByKey(),
+    loadAttendanceFlexPolicyGroups({ activeOnly: true }),
+  ]);
+  if (!calendar.holidaySourceConnected) {
+    return { context: null, unreadable: "The public holiday calendar", cause: null };
+  }
+  if (leave instanceof Error) {
+    return { context: null, unreadable: "Leave requests", cause: leave.message };
+  }
+  return {
+    context: { toIso: input.toIso, holidaysByDate: calendar.holidaysByDate, leaveByEmployee: leave, directory, flexPolicies },
+    unreadable: null,
+    cause: null,
+  };
+}
+
+/**
+ * One employee's answer deadline: the Nth day after the release that counts — a scheduled working day
+ * on THEIR weekly-off pattern that is neither a public holiday nor a day of leave, approved or still
+ * waiting for approval.
+ */
+function answerDeadlineFor(
+  context: AnswerWindowContext,
+  input: { employeeHrId: string; releasedOnIso: string; workingDays: number },
+): string {
+  const jobTitle = directoryRowFor(context.directory, input.employeeHrId)?.jobTitle ?? null;
+  // The employee's OWN weekly-off pattern, as the attendance report judges their days — a custom
+  // policy (e.g. Saturday off as well) must not count Saturday as a working day to answer in.
+  const policy = resolveActiveAttendancePolicy(
+    { hr_id: input.employeeHrId, job_title: jobTitle },
+    context.flexPolicies,
+    input.releasedOnIso,
+    context.toIso,
+  );
+  const workingWeekdays = policy?.working_weekdays ?? null;
+  const leaveDays = context.leaveByEmployee.get(normalizeAttendanceHrId(input.employeeHrId) ?? "") ?? new Set<string>();
+  return answerDueDate({
+    releasedOnIso: input.releasedOnIso,
+    workingDays: input.workingDays,
+    isWorkingDay: (dateIso) =>
+      countsTowardAnswerWindow({
+        isScheduledWorkingDay: isAttendanceScheduledWorkingDay({ dateIso, jobTitle, workingWeekdays }),
+        isPublicHoliday: context.holidaysByDate.has(dateIso),
+        onLeave: leaveDays.has(dateIso),
+      }),
+  });
+}
+
+/**
+ * The deadline each released digest holds now: worked out again from its release day with the leave
+ * and holidays on record today, and never EARLIER than the date the employee was already given
+ * (heldAnswerDueDate). A digest with no release stamp keeps its stored date. `deadlines` is null when
+ * the calendar or leave requests cannot be read.
+ */
+async function heldAnswerDeadlines(input: {
+  digests: Array<Pick<DigestRow, "id" | "employeeHrId" | "releasedAt" | "answerDueOn">>;
+  todayIso: string;
+  workingDays: number;
+}): Promise<{ deadlines: Map<number, string> | null; unreadable: string | null; cause: string | null }> {
+  const deadlines = new Map<number, string>();
+  const released: Array<{ id: number; employeeHrId: string; releasedOnIso: string; answerDueOn: string | null }> = [];
+  for (const digest of input.digests) {
+    if (digest.releasedAt) {
+      released.push({
+        id: digest.id,
+        employeeHrId: digest.employeeHrId,
+        releasedOnIso: currentCairoDateOnlyIso(new Date(digest.releasedAt)),
+        answerDueOn: digest.answerDueOn,
+      });
+    } else if (digest.answerDueOn) {
+      deadlines.set(digest.id, digest.answerDueOn);
+    }
+  }
+  if (!released.length) return { deadlines, unreadable: null, cause: null };
+
+  // Every release day is on or before today, so starting from today finds the earliest.
+  const fromIso = released.reduce((earliest, digest) => (digest.releasedOnIso < earliest ? digest.releasedOnIso : earliest), input.todayIso);
+  const answerWindow = await loadAnswerWindow({
+    fromIso,
+    toIso: addCalendarDaysIso(input.todayIso, ANSWER_HORIZON_DAYS),
+    employeeHrIds: released.map((digest) => digest.employeeHrId),
+  });
+  const context = answerWindow.context;
+  if (!context) return { deadlines: null, unreadable: answerWindow.unreadable, cause: answerWindow.cause };
+  for (const digest of released) {
+    const recomputedDueOn = answerDeadlineFor(context, {
+      employeeHrId: digest.employeeHrId,
+      releasedOnIso: digest.releasedOnIso,
+      workingDays: input.workingDays,
+    });
+    deadlines.set(digest.id, heldAnswerDueDate({ toldDueOn: digest.answerDueOn, recomputedDueOn }));
+  }
+  return { deadlines, unreadable: null, cause: null };
+}
+
+/**
+ * Save an answer deadline that has moved LATER, so the employee's page, the review page and the
+ * daily job all read one date. Guarded on the week still being open and its stored date still being
+ * earlier, so a deadline is never brought forward and a week settled meanwhile is left alone.
+ * Nothing here throws: a save that failed is named back to the caller.
+ *
+ * Whoever works a later date out saves it, because showing it is a promise. The window is worked out
+ * from leave that may still be waiting for approval, and the daily job settles on the date that is
+ * STORED — so a date only shown and never saved is a date nothing holds: reject that leave request
+ * before the next run and the employee loses to salary a day they were told they still had.
+ */
+async function saveLaterAnswerDeadlines(
+  moves: Array<{ id: number; storedDueOn: string | null; dueOn: string | null }>,
+): Promise<{ moved: number; unsaved: Map<number, string> }> {
+  const supabase = getSupabaseAdmin();
+  let moved = 0;
+  const unsaved = new Map<number, string>();
+  for (const move of moves) {
+    if (!move.dueOn || !move.storedDueOn || move.dueOn <= move.storedDueOn) continue;
+    try {
+      const { data, error } = await supabase
+        .from("attendance_weekly_digests")
+        .update({ answer_due_on: move.dueOn })
+        .eq("id", move.id)
+        .eq("status", "open")
+        .lt("answer_due_on", move.dueOn)
+        .select("id");
+      if (error) unsaved.set(move.id, error.message);
+      else if ((data ?? []).length) moved += 1;
+    } catch (saveError) {
+      unsaved.set(move.id, saveError instanceof Error ? saveError.message : String(saveError));
+    }
+  }
+  return { moved, unsaved };
 }
 
 export type ReleaseResult = { released: number; notified: number; notNotified: number; skippedTrialRun: number; clearedDays: number };
@@ -960,11 +1196,19 @@ export type ReleaseResult = { released: number; notified: number; notNotified: n
 /**
  * Release one week to its employees. Every day the Super Admin did not tick is cleared first — never
  * deducted — and only the ticked days are asked about. Sets each employee's answer deadline — N
- * working days after today, on THEIR weekly-off pattern and the holiday calendar — and tells them
- * in-app and by Telegram. A trial-run week is refused outright (owner, 2026-09-15).
+ * working days after today, on THEIR weekly-off pattern, the holiday calendar and their leave,
+ * approved or still waiting for approval — and tells them in-app and by Telegram. A trial-run week
+ * is refused outright (owner, 2026-09-15).
  */
 export async function releaseWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
   assertCanManageWeeklyReview(input.actorRole);
+  // Under the same lock a build takes: a build of this week still running — the daily job, or a
+  // Build this week click — finishes first, so a release can never open half of a week and leave the
+  // rest of its employees in a week no later click will ever release.
+  return withWeekBuildLock(input.cycleKey, input.weekIndex, () => releaseBuiltWeek(input));
+}
+
+async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
@@ -983,38 +1227,30 @@ export async function releaseWeek(input: { cycleKey: string; weekIndex: number; 
 
   const settings = await getDigestSettings();
   const todayIso = cairoTodayIso();
-  const horizon = new Date(`${todayIso}T00:00:00Z`);
-  horizon.setUTCDate(horizon.getUTCDate() + 45);
-  const horizonIso = horizon.toISOString().slice(0, 10);
-  const calendar = await buildAttendanceCalendarContext({ dateFromIso: todayIso, dateToIso: horizonIso });
-  // Refuse rather than guess. Without the holiday calendar a public holiday would count as one of
-  // the employee's two working days, and silence after the deadline costs them salary.
-  if (!calendar.holidaySourceConnected) {
-    throw conflictError("The public holiday calendar could not be read, so the answer deadline cannot be worked out. Nothing was released — try again shortly.");
+  // Refuse rather than guess. Without the holiday calendar a public holiday would count as one of the
+  // employee's working days to answer in, and without their leave requests so would a day they are
+  // away — and silence after the deadline costs them salary.
+  const answerWindow = await loadAnswerWindow({
+    fromIso: todayIso,
+    toIso: addCalendarDaysIso(todayIso, ANSWER_HORIZON_DAYS),
+    employeeHrIds: realDigests.map((digest) => digest.employeeHrId),
+  });
+  if (!answerWindow.context) {
+    throw conflictError(
+      `${answerWindow.unreadable ?? "The attendance calendar"} could not be read, so the answer deadline cannot be worked out. Nothing was released — try again shortly.`,
+    );
   }
-  const [directory, flexPolicies] = await Promise.all([loadDirectoryByKey(), loadAttendanceFlexPolicyGroups({ activeOnly: true })]);
+  const answerContext = answerWindow.context;
 
   let released = 0;
   let notified = 0;
   let notNotified = 0;
   let clearedDays = 0;
   for (const digest of realDigests) {
-    const person = directoryRowFor(directory, digest.employeeHrId);
-    const jobTitle = person?.jobTitle ?? null;
-    // The employee's OWN weekly-off pattern, as the attendance report judges their days — a custom
-    // policy (e.g. Saturday off as well) must not count Saturday as a working day to answer in.
-    const policy = resolveActiveAttendancePolicy(
-      { hr_id: digest.employeeHrId, job_title: jobTitle },
-      flexPolicies,
-      todayIso,
-      horizonIso,
-    );
-    const workingWeekdays = policy?.working_weekdays ?? null;
-    const answerDueOn = answerDueDate({
+    const answerDueOn = answerDeadlineFor(answerContext, {
+      employeeHrId: digest.employeeHrId,
       releasedOnIso: todayIso,
       workingDays: settings.answerWorkingDays,
-      isWorkingDay: (dateIso) =>
-        !calendar.holidaysByDate.has(dateIso) && isAttendanceScheduledWorkingDay({ dateIso, jobTitle, workingWeekdays }),
     });
     // One transaction per employee, under the week's row lock: clear every unticked day (a `removed`
     // settlement, which the bridge turns into Do Not Take Action), then open the week — or void it
@@ -1097,15 +1333,45 @@ export async function listMyDigests(employeeHrId: string): Promise<MyDigest[]> {
   const rows = (data ?? []) as Record<string, unknown>[];
   const lines = await loadLines(rows.map((row) => Number(row.id)));
   const todayIso = cairoTodayIso();
+  const digests = rows.map((row) => mapDigest(row, (lines.get(Number(row.id)) ?? []).filter((line) => line.action !== "removed")));
 
-  const hasPending = rows.some((row) => (lines.get(Number(row.id)) ?? []).some((line) => line.action === "pending"));
+  const hasPending = digests.some((digest) => digest.lines.some((line) => line.action === "pending"));
   const hireDate = hasPending ? directoryRowFor(await loadDirectoryByKey(), employeeHrId)?.hireDate ?? null : null;
 
+  // A stored deadline that has passed may have moved: days on leave, approved or still waiting for
+  // approval, do not count (owner, 2026-09-15 and 2026-09-16), and leave can be filed after the
+  // release. Work those out again, so the page does not say the deadline passed while the answer is
+  // still accepted. If that cannot be done, the stored date stands for this page load.
+  const pastStoredDate = digests.filter(
+    (digest) =>
+      digest.status === "open" &&
+      digest.lines.some((line) => line.action === "pending") &&
+      deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: todayIso }),
+  );
+  let held: Map<number, string> | null = null;
+  if (pastStoredDate.length) {
+    const settings = await getDigestSettings().catch(() => null);
+    const read = settings
+      ? await heldAnswerDeadlines({ digests: pastStoredDate, todayIso, workingDays: settings.answerWorkingDays }).catch(() => null)
+      : null;
+    const deadlines = read?.deadlines ?? null;
+    held = deadlines;
+    if (deadlines) {
+      // Showing a later date is a promise, so it is SAVED before it is shown. The daily job settles
+      // on the STORED date, and a leave request rejected before its next run would otherwise bring
+      // the worked-out date back to the stored one and take the day to salary. A date that could not
+      // be saved is dropped here too, and the stored one stands on this page.
+      const { unsaved } = await saveLaterAnswerDeadlines(
+        pastStoredDate.map((digest) => ({ id: digest.id, storedDueOn: digest.answerDueOn, dueOn: deadlines.get(digest.id) ?? null })),
+      );
+      for (const id of unsaved.keys()) deadlines.delete(id);
+    }
+  }
+
   const result: MyDigest[] = [];
-  for (const row of rows) {
-    const digest = mapDigest(row, (lines.get(Number(row.id)) ?? []).filter((line) => line.action !== "removed"));
-    const overdue =
-      digest.status === "open" && deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: todayIso });
+  for (const digest of digests) {
+    const answerDueOn = held?.get(digest.id) ?? digest.answerDueOn;
+    const overdue = digest.status === "open" && deadlineApplies({ answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: todayIso });
     const withBalance: MyDigestLine[] = [];
     for (const line of digest.lines) {
       let balance: BalanceOption | null = null;
@@ -1119,7 +1385,7 @@ export async function listMyDigests(employeeHrId: string): Promise<MyDigest[]> {
       }
       withBalance.push({ ...line, balance });
     }
-    result.push({ ...digest, overdue, lines: withBalance });
+    result.push({ ...digest, answerDueOn, overdue, lines: withBalance });
   }
   return result;
 }
@@ -1143,8 +1409,24 @@ export async function answerDigestLine(input: {
   const digest = await loadDigestOrThrow(input.digestId);
   assertOwnDigest(digest, input.actorHrId);
   if (digest.status !== "open" || digest.dryRun) throw conflictError("This week is not open for answers.");
-  if (deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: cairoTodayIso() })) {
-    throw conflictError("The deadline for this week has passed, so unanswered days are deducted from salary.");
+  const todayIso = cairoTodayIso();
+  if (deadlineApplies({ answerDueOn: digest.answerDueOn, notifiedAt: digest.notifiedAt, todayCairoIso: todayIso })) {
+    // The stored date has passed, but days on leave do not count (owner, 2026-09-15; leave still
+    // waiting for approval too, 2026-09-16), and leave filed since the release moves the deadline.
+    // Work it out again before refusing — the daily job decides on the same answer — and refuse when
+    // that cannot be done.
+    const dueOn = await getDigestSettings()
+      .then((settings) => heldAnswerDeadlines({ digests: [digest], todayIso, workingDays: settings.answerWorkingDays }))
+      .then((held) => held.deadlines?.get(digest.id) ?? null)
+      .catch(() => null);
+    if (!dueOn) throw conflictError("Your answer deadline could not be checked right now. Try again shortly.");
+    if (isAnswerOverdue(dueOn, todayIso)) {
+      throw conflictError("The deadline for this week has passed, so unanswered days are deducted from salary.");
+    }
+    // This answer was accepted on the later date, so the later date is saved. The daily job settles
+    // the REST of this week on the stored one, and it must not take those days to salary on a
+    // deadline this employee has already been let past. A failed save never blocks the answer.
+    await saveLaterAnswerDeadlines([{ id: digest.id, storedDueOn: digest.answerDueOn, dueOn }]);
   }
   const line = digest.lines.find((candidate) => candidate.id === input.lineId);
   if (!line || line.action === "removed") throw notFoundError("That day was not found.");
@@ -1253,7 +1535,8 @@ export async function listPendingDisputes(): Promise<PendingDispute[]> {
 /**
  * Decide a disputed day. Upheld: no deduction at all. Rejected: the method the employee chose
  * applies — and if they chose annual balance but it no longer covers the day (leave approved
- * since), the day falls to salary and the settlement says why.
+ * since), the day falls to salary and the settlement says why. Either way the employee is then told
+ * in-app and by Telegram (owner, 2026-09-15); `notified` is false when neither channel took it.
  */
 export async function reviewDispute(input: {
   lineId: number;
@@ -1261,7 +1544,7 @@ export async function reviewDispute(input: {
   notes?: string | null;
   reviewerHrId: string;
   reviewerRole: string;
-}): Promise<{ appliedMethod: DeductionMethod | null }> {
+}): Promise<{ appliedMethod: DeductionMethod | null; balanceRefusal: string | null; notified: boolean }> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_lines")
@@ -1296,12 +1579,24 @@ export async function reviewDispute(input: {
       newValues: { uphold: true, notes },
       summary: `Attendance dispute upheld for ${line.work_date}`,
     });
-    return { appliedMethod: null };
+    const notified = await notifyAttendanceDisputeDecided({
+      digestId: digest.id,
+      lineId: line.id,
+      employeeHrId: digest.employeeHrId,
+      workDate: line.work_date,
+      upheld: true,
+      appliedMethod: null,
+      chosenMethod: isDeductionMethod(line.chosen_method) ? line.chosen_method : null,
+      balanceRefusal: null,
+      hasReviewerNote: Boolean(notes),
+    });
+    return { appliedMethod: null, balanceRefusal: null, notified };
   }
 
   let method: DeductionMethod = isDeductionMethod(line.chosen_method) ? line.chosen_method : "salary";
   let reason = notes ?? "Dispute rejected";
   let balance: BalanceCheck | null = null;
+  let balanceRefusal: string | null = null;
   if (method === "annual_balance") {
     const hireDate = directoryRowFor(await loadDirectoryByKey(), digest.employeeHrId)?.hireDate ?? null;
     balance = await checkAnnualBalance({
@@ -1317,6 +1612,7 @@ export async function reviewDispute(input: {
         throw conflictError("The employee's annual balance could not be fully read right now. Try again shortly.");
       }
       reason = `${reason}. ${disputeSalaryFallbackText(balance.refusal)}`;
+      balanceRefusal = balance.refusal;
       method = "salary";
       balance = null;
     }
@@ -1341,24 +1637,50 @@ export async function reviewDispute(input: {
     newValues: { uphold: false, notes, appliedMethod: method },
     summary: `Attendance dispute rejected for ${line.work_date}; ${method === "salary" ? "salary" : "annual balance"} applied`,
   });
-  return { appliedMethod: method };
+  // The employee is told where the day is taken from, with the real cause when balance fell to salary.
+  const notified = await notifyAttendanceDisputeDecided({
+    digestId: digest.id,
+    lineId: line.id,
+    employeeHrId: digest.employeeHrId,
+    workDate: line.work_date,
+    upheld: false,
+    appliedMethod: method,
+    chosenMethod: isDeductionMethod(line.chosen_method) ? line.chosen_method : null,
+    balanceRefusal,
+    hasReviewerNote: Boolean(notes),
+  });
+  return { appliedMethod: method, balanceRefusal, notified };
 }
 
 // ---------------------------------------------------------------------------
 // The deadline
 // ---------------------------------------------------------------------------
 
-export type SweepResult = { digestsChecked: number; daysSettledToSalary: number; failures: number; failureMessages: string[] };
+export type SweepResult = {
+  digestsChecked: number;
+  daysSettledToSalary: number;
+  /** Deadlines saved later, because days on leave (or holidays) since the release do not count. */
+  deadlinesMoved: number;
+  failures: number;
+  failureMessages: string[];
+};
 
 /**
  * Settle every unanswered day whose deadline has passed to salary (owner, 2026-09-15). A disputed
  * day is left alone: the employee did answer, and the reviewer has not.
+ *
+ * The stored deadline only says where to look. Days on leave do not count (owner, 2026-09-15 —
+ * "Pause for leave days"; leave still waiting for approval too, 2026-09-16 — "Pending pauses too"),
+ * and leave can be filed after the release, so each week past its stored date has its deadline
+ * worked out again first. A later date is saved and the days wait; a deadline is never brought
+ * forward. When the holiday calendar or leave requests cannot be read, nothing is settled at all and
+ * the run fails loudly — the next run tries again.
  */
 export async function settleOverdueAnswers(input: { todayIso: string; actor: string }): Promise<SweepResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
-    .select("id,answer_due_on,notified_at")
+    .select("id,employee_hr_id,week_start,released_at,answer_due_on,notified_at")
     .eq("status", "open")
     .eq("dry_run", false)
     // Only employees who were actually told. See deadlineApplies.
@@ -1366,16 +1688,68 @@ export async function settleOverdueAnswers(input: { todayIso: string; actor: str
     .lt("answer_due_on", input.todayIso)
     .limit(2000);
   if (error) throw error;
-  const digestIds = ((data ?? []) as Array<{ id: number; answer_due_on: string | null; notified_at: string | null }>)
-    .filter((row) => deadlineApplies({ answerDueOn: row.answer_due_on, notifiedAt: row.notified_at, todayCairoIso: input.todayIso }))
-    .map((row) => Number(row.id));
-  const lines = await loadLines(digestIds);
+  const pastStoredDate = ((data ?? []) as Array<Record<string, unknown>>)
+    .filter((row) =>
+      deadlineApplies({ answerDueOn: textOrNull(row.answer_due_on), notifiedAt: textOrNull(row.notified_at), todayCairoIso: input.todayIso }),
+    )
+    .map((row) => ({
+      id: Number(row.id),
+      employeeHrId: String(row.employee_hr_id ?? ""),
+      weekStart: String(row.week_start ?? ""),
+      releasedAt: textOrNull(row.released_at),
+      answerDueOn: textOrNull(row.answer_due_on),
+    }));
+  const lines = await loadLines(pastStoredDate.map((digest) => digest.id));
+  const withPending = pastStoredDate.filter((digest) => (lines.get(digest.id) ?? []).some((line) => line.action === "pending"));
 
   let daysSettledToSalary = 0;
+  let deadlinesMoved = 0;
   let failures = 0;
   const failureMessages: string[] = [];
-  for (const digestId of digestIds) {
-    for (const line of lines.get(digestId) ?? []) {
+  let heldDeadlines = new Map<number, string>();
+  if (withPending.length) {
+    const settings = await getDigestSettings();
+    const held = await heldAnswerDeadlines({ digests: withPending, todayIso: input.todayIso, workingDays: settings.answerWorkingDays });
+    if (!held.deadlines) {
+      throw new Error(
+        `${held.unreadable ?? "The attendance calendar"} could not be read${held.cause ? ` (${held.cause})` : ""}, so no overdue attendance day was settled to salary. The next run tries again.`,
+      );
+    }
+    heldDeadlines = held.deadlines;
+  }
+  // Save every deadline that moved later BEFORE settling anything, so the pages and the next run
+  // read one date and nothing is settled on a date this run worked out and then failed to save.
+  const saved = await saveLaterAnswerDeadlines(
+    withPending.map((digest) => ({ id: digest.id, storedDueOn: digest.answerDueOn, dueOn: heldDeadlines.get(digest.id) ?? digest.answerDueOn })),
+  );
+  deadlinesMoved = saved.moved;
+  for (const digest of withPending) {
+    const saveFailure = saved.unsaved.get(digest.id);
+    if (saveFailure) {
+      failures += 1;
+      failureMessages.push(`Week of ${digest.weekStart}: the later answer deadline could not be saved (${saveFailure})`);
+    }
+    const dueOn = heldDeadlines.get(digest.id) ?? digest.answerDueOn;
+    if (!dueOn || !isAnswerOverdue(dueOn, input.todayIso)) continue;
+    // Read the stored deadline once more, right before settling this week. Minutes pass while a run
+    // works through thousands of weeks, and the employee's page or an answer of theirs may have saved
+    // a later date in between — the date they were shown is the date that decides. A week no longer
+    // open is left alone, and a read that failed settles nothing.
+    const { data: storedRow, error: storedError } = await supabase
+      .from("attendance_weekly_digests")
+      .select("answer_due_on")
+      .eq("id", digest.id)
+      .eq("status", "open")
+      .maybeSingle();
+    if (storedError) {
+      failures += 1;
+      failureMessages.push(`Week of ${digest.weekStart}: the answer deadline could not be read again before settling (${storedError.message})`);
+      continue;
+    }
+    if (!storedRow) continue;
+    const storedNow = textOrNull((storedRow as Record<string, unknown>).answer_due_on);
+    if (!isAnswerOverdue(heldAnswerDueDate({ toldDueOn: storedNow, recomputedDueOn: dueOn }), input.todayIso)) continue;
+    for (const line of lines.get(digest.id) ?? []) {
       if (line.action !== "pending") continue;
       try {
         await settleLine({
@@ -1399,16 +1773,16 @@ export async function settleOverdueAnswers(input: { todayIso: string; actor: str
     }
   }
 
-  if (daysSettledToSalary > 0 || failures > 0) {
+  if (daysSettledToSalary > 0 || deadlinesMoved > 0 || failures > 0) {
     await writeAuditLog({
       actorLoginId: input.actor,
       entityId: input.todayIso,
       entityType: "attendance_digest_auto_salary",
-      newValues: { digestsChecked: digestIds.length, daysSettledToSalary, failures, failureMessages: failureMessages.slice(0, 20) },
-      summary: `${daysSettledToSalary} unanswered attendance day(s) settled to salary after the deadline`,
+      newValues: { digestsChecked: pastStoredDate.length, daysSettledToSalary, deadlinesMoved, failures, failureMessages: failureMessages.slice(0, 20) },
+      summary: `${daysSettledToSalary} unanswered attendance day(s) settled to salary after the deadline; ${deadlinesMoved} answer deadline(s) moved later`,
     });
   }
-  return { digestsChecked: digestIds.length, daysSettledToSalary, failures, failureMessages: failureMessages.slice(0, 20) };
+  return { digestsChecked: pastStoredDate.length, daysSettledToSalary, deadlinesMoved, failures, failureMessages: failureMessages.slice(0, 20) };
 }
 
 export { isOpenLineAction, tileSettlementWeeks };
