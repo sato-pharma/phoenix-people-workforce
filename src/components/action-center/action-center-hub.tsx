@@ -18,6 +18,7 @@ import type {
 } from "@/components/action-center/types";
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
+import { isEmployeeContext, type EmployeeContext } from "@/lib/action-center/employee-context";
 import {
   buildMarketingDecisionConfirmPrompt,
   type MarketingConfirmDecision,
@@ -56,31 +57,7 @@ type Props = {
   embedded?: boolean;
 };
 
-type ContextData = {
-  attendance: {
-    absentDays: number;
-    completeDays: number;
-    deductionDays: number;
-    exceptionDays: number;
-    lateDays: number;
-    shortDays: number;
-    totalRows: number;
-    dateFrom: string;
-    dateTo: string;
-  };
-  recentLeave: Array<{
-    endDate: string;
-    hrDecision: "approved" | "rejected" | null;
-    managerDecision: "approved" | "rejected" | null;
-    startDate: string;
-    vacationType: string;
-  }>;
-  recentExcuses: Array<{
-    excuseDate: string;
-    excuseType: "morning" | "afternoon";
-    status: string;
-  }>;
-};
+type ContextData = EmployeeContext;
 
 const SLA_THRESHOLDS: Record<ActionHubModule, number> = {
   leave: 3,
@@ -361,7 +338,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
   if (loading) return <p className="text-sm text-slate-400">Loading context…</p>;
   if (!data) return <p className="text-sm text-slate-400">Context unavailable.</p>;
 
-  const priorLeaveDecisions = data.recentLeave.map((r) => r.hrDecision ?? r.managerDecision);
+  const priorLeaveDecisions = (data.recentLeave ?? []).map((r) => r.hrDecision ?? r.managerDecision);
 
   return (
     <div className="space-y-5">
@@ -386,7 +363,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
         </div>
       </div>
 
-      {data.recentLeave.length > 0 && (
+      {(data.recentLeave?.length ?? 0) > 0 && (
         <div>
           <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">
             Recent leave &nbsp;
@@ -410,7 +387,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
         </div>
       )}
 
-      {data.recentExcuses.length > 0 && (
+      {(data.recentExcuses?.length ?? 0) > 0 && (
         <div>
           <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">Recent excuses</p>
           <div className="space-y-1">
@@ -493,7 +470,7 @@ function resolveResignationActions(status: string): Array<{ key: string; label: 
 export function ActionCenterHub({ initialData, initialModule, initialId, callerRole, embedded }: Props) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const contextCacheRef = useRef(new Map<string, ContextData>());
+  const contextCacheRef = useRef(new Map<string, ContextData | null>());
 
   const [activeModule, setActiveModule] = useState<ActionHubModule | "all">(initialModule ?? "all");
   const [activeFilter, setActiveFilter] = useState<"all" | "overdue" | "high">("all");
@@ -584,13 +561,16 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     async function loadContext() {
       if (!selected) { setContextData(null); return; }
       const hrId = selected.employeeHrId;
-      const cached = contextCacheRef.current.get(hrId);
-      if (cached) { setContextData(cached); return; }
+      if (contextCacheRef.current.has(hrId)) {
+        setContextData(contextCacheRef.current.get(hrId) ?? null);
+        return;
+      }
       setContextLoading(true);
       setContextData(null);
       try {
         const r = await fetch(`/api/approvals-hub/employee-context?hrId=${encodeURIComponent(hrId)}`);
-        const d = (await r.json()) as ContextData;
+        const body: unknown = r.ok ? await r.json() : null;
+        const d = isEmployeeContext(body) ? body : null;
         if (!cancelled) {
           contextCacheRef.current.set(hrId, d);
           setContextData(d);
@@ -883,7 +863,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const modules: Array<ActionHubModule | "all"> = ["all", "leave", "resignation", "excuse", "outstation", "marketing", "contract_renewal", "weekly_plan"];
   const isBulkModule = (m: ActionHubModule | "all") => m === "excuse" || m === "outstation" || m === "leave";
 
-  const priorLeaveHint = contextData?.recentLeave.length
+  const priorLeaveHint = contextData?.recentLeave?.length
     ? contextData.recentLeave.map((r) => r.hrDecision ?? r.managerDecision)
     : null;
 
