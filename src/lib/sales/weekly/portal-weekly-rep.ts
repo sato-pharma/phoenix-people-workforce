@@ -40,7 +40,7 @@
 import { resolveEmployeeIdentityId, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { bridgeEmployeeLineToOfficial } from "@/lib/sales/official-lines";
-import { resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
+import { liftWeeklyGeography, resolveWeeklyAccessScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import {
   buildPortalWeeklyFieldForce,
@@ -143,10 +143,11 @@ export function repWeeklyMonthLabel(cycleMonth: string): string {
  * Only the territory tier carries geography. Every other tier is returned unchanged, including "none",
  * which the caller refuses before loading anything. Lifting the bound is safe only because the caller
  * narrows the built grid to the viewer's own seat before anything is returned (selectRepWeeklySales).
+ * The lift is liftWeeklyGeography, the one the managers' Field Force tab, the month-pace strip and
+ * Weekly Stock lift with, so every weekly screen reads the same rows before it narrows.
  */
 export function repWeeklyLoadScope(scope: WeeklyAccessScope): WeeklyAccessScope {
-  if (scope.tier !== "territory") return scope;
-  return { ...scope, allowedRegionCodes: null, allowedAreaCodes: null };
+  return liftWeeklyGeography(scope);
 }
 
 /** True when the scope can read no weekly row at all: the "none" tier, or a line bound that is empty. */

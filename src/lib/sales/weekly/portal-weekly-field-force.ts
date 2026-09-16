@@ -277,9 +277,22 @@ export type PortalWeeklyFieldForce = {
   seatIndexUnavailable: boolean;
 };
 
-type TaggedRow = WeeklyFactExportRow & { exactArea: boolean };
+type TaggedRow = WeeklyFactExportRow & { exactArea: boolean; admittedWhole: boolean };
 
 const lineNameOf = (row: WeeklyFactExportRow) => norm(row.line) || "—";
+
+/**
+ * How a grid built from a LIFTED load is narrowed back to its viewer (own-area-scope.ts).
+ *
+ * `admitsWhole` answers for an input row: true when the viewer's own scope admits it, which is every
+ * row he saw before the lift. `ownAreaKeys` holds his own `${lineKey}|${AREA}` keys. A row his scope
+ * admits counts whole, exactly as before; any other row counts only for the share the depot split
+ * places in one of his own areas.
+ */
+export type FieldForceGeography = {
+  admitsWhole: (row: WeeklyFactExportRow) => boolean;
+  ownAreaKeys: ReadonlySet<string>;
+};
 
 /**
  * Build the field-force grid from a dashboard's fact rows.
@@ -293,16 +306,34 @@ export function buildPortalWeeklyFieldForce(input: {
   seatIndex: FieldForceSeatIndex;
   /** The dashboard's stable product universe, so the axis does not change with the view. */
   productAxis?: { code: string; name: string }[];
-  /** weekComparison, read only for its spansGap flags. */
-  weekComparison?: WeeklyDashboard["weekComparison"];
+  /**
+   * weekComparison, read only for its spansGap flags — or, for a lifted load, that grain's own gap flags
+   * (factRowWeekGaps), which carry no money.
+   */
+  weekComparison?: readonly (
+    | WeeklyDashboard["weekComparison"][number]
+    | NonNullable<WeeklyDashboard["factRowWeekGaps"]>[number]
+  )[];
   seatIndexUnavailable?: boolean;
+  /**
+   * Required whenever `rows` came from a load with the geography lifted (liftRowGrainGeography).
+   * Absent = every row counts, which is right only for rows already bounded to the viewer.
+   */
+  geography?: FieldForceGeography | null;
 }): PortalWeeklyFieldForce {
   const { rows, areaSplit, seatIndex } = input;
+  const geography = input.geography ?? null;
 
   // Tag BEFORE the split: a row carrying an area came from a branch the owner mapped by hand, and
   // splitWeeklyRowsByBranch leaves exactly those rows alone. After the split the two are
   // indistinguishable, and the exact/allocated mix is the whole honesty story of this screen.
-  const tagged: TaggedRow[] = rows.map((row) => ({ ...row, exactArea: Boolean(norm(row.areaCode)) }));
+  // Whether the viewer's own scope admits the row is read here too, while the row is still the one
+  // the caller handed in — the split's parts are copies.
+  const tagged: TaggedRow[] = rows.map((row) => ({
+    ...row,
+    exactArea: Boolean(norm(row.areaCode)),
+    admittedWhole: geography ? geography.admitsWhole(row) : true,
+  }));
   const { rows: split } = splitWeeklyRowsByBranch(tagged, areaSplit);
 
   const weekNumbers = new Set<number>();
@@ -325,6 +356,12 @@ export function buildPortalWeeklyFieldForce(input: {
     const units = Number(row.salesUnits) || 0;
     const week = row.weekNumber;
     if (week !== null && week !== undefined) weekNumbers.add(week);
+
+    // A lifted load holds rows the viewer's own scope never admitted. Of those, only the share the
+    // split placed in one of HIS areas may count: another district's share, and the residue of a row
+    // he could not see, stop here before a single figure is summed. The week is recorded first, so
+    // the column axis stays the loaded month's upload calendar.
+    if (!row.admittedWhole && !geography?.ownAreaKeys.has(fieldForceKey(row.line, row.areaCode))) continue;
 
     const areaCode = upper(row.areaCode);
     const seat = areaCode ? seatIndex.byLineArea.get(fieldForceKey(row.line, areaCode)) : undefined;

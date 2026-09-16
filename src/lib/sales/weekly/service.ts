@@ -5,6 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   applyWeeklyAccessScope,
+  liftWeeklyGeography,
   listWeeklyProductScopeAssignments,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
@@ -18,7 +19,7 @@ import {
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
-import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
+import { decumulateRows, suppressGapSpannedValue, weekGapFlags, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -810,6 +811,18 @@ export async function loadWeeklyDashboard(filters?: {
    * each distributor's own snapshot and sales window itself.
    */
   includeStockRows?: boolean;
+  /**
+   * Portal Field Force, month pace and Weekly Stock only: build `factRows` and `stockRows` with a
+   * territory viewer's REGION and AREA bounds lifted (liftWeeklyGeography) — his line bound, the
+   * confidential products and the Head Office strip all stay, and every filter above still applies.
+   * Nothing else on the payload moves: KPIs, trend, rankings, option lists and weekComparison stay on
+   * his own scope.
+   *
+   * The row grain is then WIDER than the viewer may see, so a caller that sets this MUST narrow those
+   * rows to his own areas before building any figure from them (own-area-scope.ts). No effect on a
+   * full, product or none tier.
+   */
+  liftRowGrainGeography?: boolean;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -1184,7 +1197,8 @@ export async function loadWeeklyDashboard(filters?: {
   // is that no screen can select it, which is the whole point — before this, one click on a dropdown
   // entry turned a 4M report into a 41M one with nothing on the page saying which had happened.
   const trackedRows = applyWeeklyTrackedLineScope(visibleRows, { includeUntracked: lineNamedExplicitly });
-  const scopedRows = trackedRows.filter((row) => {
+  // Named, because the lifted row grain below must pass exactly the same filters.
+  const passesRowFilters = (row: FactRow): boolean => {
     if (dropUnmapped && !mappedCodes.has(normalizeCode(row.productCode))) return false;
     if (!passesMultiFilter(distributor, normalizeCode(row.distributorCode))) return false;
     if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
@@ -1198,7 +1212,8 @@ export async function loadWeeklyDashboard(filters?: {
     // week's own sale (Royafloxacin June W3 would read 945 rather than 428).
     if (batchIdFilter.size > 0 && !batchIdFilter.has(row.batchId)) return false;
     return true;
-  });
+  };
+  const scopedRows = trackedRows.filter(passesRowFilters);
   // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
   // NOT by region/product/line — so selecting one value never removes the others from their own
   // dropdown (which would make multi-select impossible). Distributor options come from the batch list.
@@ -1282,6 +1297,24 @@ export async function loadWeeklyDashboard(filters?: {
   };
   const weekRowsAdj = latestStockOnly(weekRows);
   const priorRowsAdj = latestStockOnly(priorRows);
+
+  // The row grain factRows / stockRows are built from. The viewer's own rows unless the caller lifted
+  // the geography (liftRowGrainGeography), in which case the same filters and the same time scope run
+  // over rows scoped WITHOUT the region and area bounds. Only the returned grain differs: every
+  // aggregate above and below stays on the viewer's own scope, and the caller narrows this grain back
+  // to his own areas.
+  const grainScope = filters?.liftRowGrainGeography ? liftWeeklyGeography(accessScope) : accessScope;
+  const grainLifted = grainScope !== accessScope && Boolean(filters?.includeFactRows || filters?.includeStockRows);
+  const grainScopedRows = grainLifted
+    ? applyWeeklyTrackedLineScope(applyWeeklyAccessScope(realRows, grainScope), {
+        includeUntracked: lineNamedExplicitly,
+      }).filter(passesRowFilters)
+    : scopedRows;
+  const grainWeekRowsAdj = grainLifted
+    ? latestStockOnly(
+        timeFilterActive ? grainScopedRows : grainScopedRows.filter((row) => selectedWeekSet.has(row.weekStart)),
+      )
+    : weekRowsAdj;
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
@@ -1471,9 +1504,10 @@ export async function loadWeeklyDashboard(filters?: {
     trend,
     // Row-level grain for the BI export (hidden Data sheet → pivots/charts/formulas). Mirrors the exact
     // rows behind the on-screen aggregates (weekRowsAdj: time-scoped, latest-stock-only) so the workbook's
-    // pivots/formulas reconcile to the dashboard. Only built when requested (export path).
+    // pivots/formulas reconcile to the dashboard. Only built when requested (export path). A lifted
+    // grain (liftRowGrainGeography) is the one exception, and its caller narrows it before use.
     factRows: filters?.includeFactRows
-      ? weekRowsAdj.map((row) => ({
+      ? grainWeekRowsAdj.map((row) => ({
           distributorCode: row.distributorCode,
           distributorName: row.distributorName,
           productCode: row.productCode,
@@ -1495,7 +1529,7 @@ export async function loadWeeklyDashboard(filters?: {
         }))
       : undefined,
     stockRows: filters?.includeStockRows
-      ? scopedRows.map((row) => ({
+      ? grainScopedRows.map((row) => ({
           distributorCode: row.distributorCode,
           distributorName: row.distributorName,
           regionCode: row.regionCode,
@@ -1514,6 +1548,9 @@ export async function loadWeeklyDashboard(filters?: {
           factoryPrice: priceMap.get(normalizeCode(row.productCode)) ?? null,
         }))
       : undefined,
+    // Read over every lifted scoped row, not just the selected week's, so a week whose predecessor was
+    // never uploaded is flagged exactly as weekComparison would flag it for this grain.
+    factRowWeekGaps: grainLifted && filters?.includeFactRows ? weekGapFlags(grainScopedRows) : undefined,
   };
 }
 

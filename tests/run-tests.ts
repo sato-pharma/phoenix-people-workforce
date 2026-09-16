@@ -552,6 +552,7 @@ import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
 import { runWeeklyBranchAreaSplitTests } from "./weekly-branch-area-split.test.ts";
 import { runWeeklyBranchAttributionTests } from "./weekly-branch-attribution.test.ts";
+import { runWeeklyOwnAreaLiftTests } from "./weekly-own-area-lift.test.ts";
 import { runWeeklyBranchNameScopeTests } from "./weekly-branch-name-scope.test.ts";
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
@@ -2812,6 +2813,7 @@ await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pe
 await runTest("weekly branch area split (owner rule: even across governorates then areas)", runWeeklyBranchAreaSplitTests);
 await runTest("weekly branch name scope (a depot name names its territory)", runWeeklyBranchNameScopeTests);
 await runTest("weekly branch attribution (the split moves money and never creates it)", runWeeklyBranchAttributionTests);
+await runTest("weekly own-area lift (a UE-labelled depot reaches Upper Egypt 1/2 and Delta (3) viewers, narrowed to their own areas)", runWeeklyOwnAreaLiftTests);
 await runTest("weekly month vs target scoping (access bound, tab gate, region symmetry)", runWeeklyMonthTargetScopeTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
