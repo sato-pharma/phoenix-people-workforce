@@ -791,6 +791,7 @@ import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
+import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -3221,6 +3222,13 @@ await runTest(
   + "wrote nothing can never read like a success - the ambiguity that made an empty register "
   + "indistinguishable from an import that never arrived)",
   runDeviceImportAttemptLogTests,
+);
+await runTest(
+  "phoenix android web app (the force-installable APK for a managed rep tablet is one Google "
+  + "generates from the site, so CHROME must be force-installed beside it or the icon opens "
+  + "nothing; an existing package PATCHes rather than minting a second app the policy would "
+  + "never name, and app/icon.png itself is checked at 512x512 because that file is what travels)",
+  runAndroidWebAppTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
