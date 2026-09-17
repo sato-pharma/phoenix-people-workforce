@@ -82,6 +82,9 @@ function emptyScope(access: AccessContext, overrides: Partial<MarketingRoiScope>
     visibleRsmHrIds: new Set<string>(),
     visibleLineNames: null,
     visibleProductCodes: null,
+    // The Coverage Report does NOT run the territory route the ROI Tracker gained on 2026-09-18 —
+    // its roles were not part of that instruction, so this stays empty and the field is inert here.
+    visibleAreaIds: new Set<number>(),
     canRevealRestricted: canViewRestrictedProducts(access.role),
     ...overrides,
   };

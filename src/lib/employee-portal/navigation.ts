@@ -23,6 +23,11 @@ export type EmployeePortalNavVisibility = {
   /** The Market Awareness approvals queue — its own inbox under Approvals Hub, beside Marketing. */
   showMarketAwarenessInboxTab?: boolean;
   showMarketingInboxTab?: boolean;
+  /**
+   * Customer Validation — the field-capture screen. Its OWN flag since 2026-09-18: the Medical Rep
+   * keeps this one while showMarketingRequestsTab / showMarketingInboxTab go dark for them.
+   */
+  showMarketingValidationTab?: boolean;
   showMarketingAllRequestsTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
@@ -235,6 +240,26 @@ const marketingRequestRoles = new Set<PhoenixRole>([
   "Super Admin",
 ]);
 
+/**
+ * Who may RAISE a marketing request, and therefore who is offered the drafts workspace
+ * (/employee-portals/marketing-requests) and the Approval Inbox (.../inbox).
+ *
+ * THE MEDICAL REP IS DELIBERATELY ABSENT (owner, 2026-09-18: "from medical rep accounts hide
+ * /employee-portals/marketing-requests/inbox & /employee-portals/marketing-requests but leave
+ * /employee-portals/marketing-requests/validation"). A rep's job in this module is now the FIELD
+ * CAPTURE — stand at the venue, take the GPS fix and the live photo, validate the customer — and
+ * the spend request against that customer is raised by their District Manager. The rep keeps
+ * Customer Validation (marketingRequestRoles, above) and the ROI Tracker, so they can still do the
+ * capture and still watch what the money their manager spent on their area returned.
+ *
+ * This is the UX half only. The boundary is server-side: assertMarketingRequestCreationAccess and
+ * assertMarketingDraftWorkspaceAccess in src/lib/marketing-requests/service.ts, which this list
+ * must stay in lockstep with.
+ */
+const marketingRequestCreatorRoles = new Set<PhoenixRole>(
+  Array.from(marketingRequestRoles).filter((role) => role !== "Medical Rep"),
+);
+
 const hideMyPerformanceTabRoles = new Set<PhoenixRole>([
   "Training Manager",
 ]);
@@ -287,7 +312,26 @@ export const MARKET_AWARENESS_PORTAL_ROLES: readonly PhoenixRole[] = [
   "Super Admin",
 ] as const;
 
+/**
+ * The drafts workspace and the Approval Inbox. Medical Rep excluded — see
+ * marketingRequestCreatorRoles.
+ */
 export function canUseEmployeePortalMarketingRequests(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  return marketingRequestCreatorRoles.has(resolvePortalRole(roleLabel, accessRole));
+}
+
+/**
+ * Customer Validation (/employee-portals/marketing-requests/validation) — the field-capture screen.
+ *
+ * Its own predicate since 2026-09-18, because it is the ONE marketing surface a Medical Rep keeps
+ * when the drafts workspace and the Approval Inbox are hidden from them. Before this it shared
+ * canUseEmployeePortalMarketingRequests, so narrowing that list would have closed the capture screen
+ * on the very people who do the capturing.
+ */
+export function canUseEmployeePortalMarketingValidation(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ) {
@@ -347,6 +391,14 @@ export function canUseEmployeePortalMarketingAllRequests(
   return role === "Marketing Manager" || role === "SFE Manager" || role === "Super Admin";
 }
 
+/**
+ * ROI Tracker (/employee-portals/roi-tracker).
+ *
+ * Reads marketingRequestRoles, NOT the narrower creator list: the Medical Rep keeps this screen by
+ * owner instruction (2026-09-18) so they can "track roi of requests his manager did in his area".
+ * Rows are bounded server-side — resolveMarketingRoiScope gives a rep their own seat plus the
+ * requests whose target customer sits in their own area, nothing wider.
+ */
 export function canUseEmployeePortalMarketingRoiTracking(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
@@ -476,6 +528,7 @@ export function resolveEmployeePortalNavVisibility(
   // never extends to an unauthorized role. Contact HR Support is available to every
   // employee-portal user — everyone must be able to reach their HR team.
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingValidationTab = canUseEmployeePortalMarketingValidation(resolvedRole);
   const showMarketAwarenessTab = MARKET_AWARENESS_PORTAL_ROLES.includes(resolvedRole);
   // Only the seats that can actually hold a decision: the two manager-step holders and the CEO.
   // An empty queue for everyone else is noise, and the page scopes itself server-side anyway.
@@ -542,6 +595,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingInboxTab,
+    showMarketingValidationTab,
     showMarketAwarenessInboxTab,
     showMarketAwarenessTab,
     showMarketingRequestsTab,

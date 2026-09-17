@@ -7,7 +7,7 @@ import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/p
 export const dynamic = "force-dynamic";
 
 export default async function EmployeePortalMarketingValidationPage() {
-  await assertEmployeePortalMarketingPageAccess("requests");
+  await assertEmployeePortalMarketingPageAccess("validation");
 
   return (
     <EmployeePortalPageShell

@@ -223,6 +223,20 @@ export type MarketingRoiScope = {
   visibleLineNames: Set<string> | null;
   /** product codes the viewer owns (PM/GPM). null = no product restriction. */
   visibleProductCodes: Set<string> | null;
+  /**
+   * Area ids whose requests the viewer may see whatever seat raised them — a TERRITORY route
+   * beside the requester route above, matched against the target customer's `area_id`.
+   *
+   * Empty for every seat but the Medical Rep. Owner instruction 2026-09-18: a rep keeps the ROI
+   * Tracker "to be able to track roi of requests his manager did in his area". A rep raises no
+   * requests of their own any more, so the requester route alone leaves the page blank; this is
+   * what puts their District Manager's spend on their own patch in front of them, and nothing
+   * wider — a request the DM raised on a SIBLING rep's area carries that area's id and stays out.
+   *
+   * Same territorial rule the owner set for marketing customers on 2026-08-19 ("they must be
+   * assigned to areas"), applied to the report that reads them.
+   */
+  visibleAreaIds: Set<number>;
   /** the viewer may opt-in to reveal confidential products. */
   canRevealRestricted: boolean;
 };
