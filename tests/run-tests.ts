@@ -1362,6 +1362,10 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
 import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
 import { runPhoenixCrmTests } from "./phoenix-crm.test.ts";
+import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
+import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
+import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
+import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -4345,6 +4349,26 @@ await runTest(
 await runTest(
   "Phoenix CRM, the pilot space (the roster the Super Admin picks is the gate, from the day a rep joins, with no end until removed; the KPIs read Phoenix only — call rate AM against 2 and PM against 10 reported apart and never averaged, coverage, frequency with an unnormed grade left out, plan achieved on the planned day; only a doctor visit counts and 100000 is no doctor; every service function checks crm_visit_entry; the roster is update, in-app notice only, never deleted)",
   runPhoenixCrmTests,
+);
+
+await runTest(
+  "Phoenix CRM calendar (the field week is Saturday to Wednesday plus a Thursday morning for accounts, never Friday; a passed day is fixed; Ramadan is the pinned Umm al-Qura table, re-derived from Intl so a hand-edited year cannot ship, and the Super Admin's moved year replaces only that year)",
+  runPhoenixCrmCalendarTests,
+);
+
+await runTest(
+  "Phoenix CRM rules (timings belong to a place and a missing day is never Sunday; at most 15 PM doctors and 5 AM accounts a plan day; a customer planned on a day with no timing needs an exception; uncovered first, then behind the grade; far-apart doctors are measured, never blocked; a visit far from the place saves, flagged; reports keep AM and PM apart; the reviewer is the nearest occupied manager seat above the territory)",
+  runPhoenixCrmRulesTests,
+);
+
+await runTest(
+  "Phoenix CRM notices are in-app + Telegram only, never email, and a Super Admin test entry tells nobody",
+  runPhoenixCrmEmailBlockTests,
+);
+
+await runTest(
+  "Phoenix CRM edges (the phoenix_crm grants per role; every route asserts its listed action before reading anything, and every POST checks the origin first; the registry and the screens agree with the routes; nothing reaches the pilot or iReports360's tables; the phone's code imports no server code; the migration is service-role only, writes its own tables only, keeps the photo bucket private and never uses current_date)",
+  runPhoenixCrmBoundaryTests,
 );
 
 await runTest(

@@ -174,6 +174,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "payroll.*": { bypassQuietHours: true, channels: ["in_app", "email", "push"], permissionResource: "payroll", priority: "critical", recipientStrategy: ["permission_based"], sensitive: "payroll" },
   "password_reset.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
+  // Phoenix CRM (owner rule 2026-09-16): a grade or drop request and a weekly plan waiting for the
+  // reviewing manager, and the decision back to the rep — in-app and Telegram, never email.
+  // Recipients are passed explicitly (src/lib/phoenix-crm/server/notifications.ts), hence "cc". The
+  // hard guarantee is phoenix-crm-channel-guard.ts — this row is the intent, that filter is the
+  // enforcement.
+  "phoenix_crm.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
   // Owner request 2026-08-15: the "new CV received" notice must never be emailed — in-app and

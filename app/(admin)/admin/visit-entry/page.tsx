@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-// Visits for Reps moved into Phoenix CRM (the owner, 2026-09-14). Old links land on its Visits tab (the
-// default tab), which decides who may see it.
+// Visits for Reps lives in Phoenix CRM, the clean module that replaced the 2026-09-14 pilot (the owner,
+// 2026-09-16). Old links land on its opening tab, which decides who may see it.
 export default async function AdminVisitEntryPage() {
-  redirect("/admin/phoenix-crm");
+  redirect("/admin/field-crm");
 }

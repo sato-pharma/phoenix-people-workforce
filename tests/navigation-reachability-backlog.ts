@@ -163,6 +163,13 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/leave-management", roles: ["CEO","Finance Manager","Financial Advisor","HR Advisory","HR Operations","SFE Manager","Super Admin"], kind: "delisted-by-ruling", reason: "The Leave Management hub. Its only link was the sidebar row that opened it, removed 2026-09-05 when the owner ruled that no rail row may open a page of modules; its cards are rail rows now. The page still serves by direct URL. Guard's mechanical bucket: no-link-anywhere.", recorded: "2026-09-05" },
   { route: "/sales/source-of-sales-tools", roles: ["CEO","Finance Manager","SFE Manager","Super Admin"], kind: "delisted-by-ruling", reason: "The Source of Sales hub. Its only link was the sidebar row that opened it, removed 2026-09-05 when the owner ruled that no rail row may open a page of modules; its cards are rail rows now. The page still serves by direct URL. Guard's mechanical bucket: no-link-anywhere.", recorded: "2026-09-05" },
   { route: "/sales/weekly-tools", roles: ["CEO","SFE Manager","Super Admin"], kind: "delisted-by-ruling", reason: "The Weekly Sales hub. Its only link was the sidebar row that opened it, removed 2026-09-05 when the owner ruled that no rail row may open a page of modules; its cards are rail rows now. The page still serves by direct URL. Guard's mechanical bucket: no-link-anywhere.", recorded: "2026-09-05" },
+  // ── The Phoenix CRM pilot, delisted 2026-09-17 ───────────────────────────────────────────────────
+  // The owner, 2026-09-16: the clean Phoenix CRM (/admin/field-crm, /employee-portals/field-crm)
+  // takes the name, and the 2026-09-14 pilot's link is hidden when it ships; the pilot is removed
+  // after go-live. Its rail card now opens the clean module, so the pilot's admin page is reached by
+  // typed address only. Clear this row by deleting the pilot's pages, never by linking them again —
+  // its portal twin is recorded in the blind-spot rows below and goes with it.
+  { route: "/admin/phoenix-crm", roles: ["CEO","Finance Manager","Financial Advisor","HR Advisory","HR Operations","SFE Manager","Super Admin"], kind: "delisted-by-ruling", reason: "The 2026-09-14 Phoenix CRM pilot's admin page. Its only link was the Phoenix CRM rail card, handed to the clean module at /admin/field-crm when the owner ruled on 2026-09-16 that the pilot's link is hidden once that module ships; the pilot is removed after go-live. The page still serves by direct URL, and only to the pilot's own seats. Guard's mechanical bucket: no-link-anywhere.", recorded: "2026-09-17" },
   { route: "/admin/direct-orders/new", roles: ["CEO", "Finance Manager", "Financial Advisor", "HR Advisory", "HR Operations", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in app/employee-portals/direct-orders/new/page.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/email-notifications", roles: ["Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/lib/notifications/email-control-center.ts, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
   { route: "/admin/field-sales/dsm-performance", roles: ["CEO", "Finance Manager", "SFE Manager", "Super Admin"], kind: "linked-from-a-component", reason: "Reached from a hand-written link in src/components/admin/ceo-command-center.tsx, not the sidebar rail or a hub card — a recorded decision.", recorded: "2026-08-29" },
@@ -244,6 +251,7 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   { route: "/whatsapp-connect", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Public WhatsApp-coexistence onboarding, reached from the external Meta signup flow. Already recorded as invisible-to-literal-scan for the findability ratchet; this row is the same fact stated for the blind-spot roll-call, which reads a different helper.", recorded: "2026-09-04" },
   { route: "/workspace/marketing-requests/inbox", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "The Financial Advisor's landing page — src/lib/auth/landing.ts:25 returns it at sign-in. A landing destination is reached before any navigation is rendered, so no rail offers it.", recorded: "2026-09-04" },
   { route: "/workspace/vacancies", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "Reached through the portal-to-workspace href map in src/components/employee-portal/employee-portal-dashboard.tsx:840, where it is a map VALUE rather than an href key — a shape the literal sweep does not match.", recorded: "2026-09-04" },
+  { route: "/employee-portals/phoenix-crm", roles: "all", kind: "gate-unreadable-and-unlinked", reason: "The 2026-09-14 Phoenix CRM pilot's portal page, delisted with its admin twin (/admin/phoenix-crm, above). Its My Visits button and the old visit and plan addresses now open the clean Phoenix CRM at /employee-portals/field-crm, on the owner's 2026-09-16 ruling that the pilot's link is hidden once that module ships; the pilot is removed after go-live. Gate is getPhoenixCrmAccess, the pilot roster, which the reader does not parse. The pilot's own notices still carry this address as an actionUrl, a key the sweep does not match.", recorded: "2026-09-17" },
   // ── CLEARED 2026-08-30 ────────────────────────────────────────────────────────────────────────
   // /workspace/deductions and /workspace/payslips sat here from 2026-08-28, both recorded as
   // "reached via the workspace shell's basePath prop, never as a full-route literal". That reading
@@ -259,6 +267,10 @@ export const NAVIGATION_REACHABILITY_BACKLOG: readonly ReachabilityGap[] = [
   // from 2026-09-13, each reached only from a button on My Visits. They are now redirects into Phoenix
   // CRM (/employee-portals/phoenix-crm), which the scan finds as a link on its own, so no row replaces
   // them. Removed rather than re-worded, per this ratchet's own rule.
+  //
+  // 2026-09-17: the same five redirects (and /admin/visit-entry) now land in the clean Phoenix CRM at
+  // /employee-portals/field-crm (/admin/field-crm), which is what links that module; the pilot they
+  // used to reach is recorded above until it is removed.
 ];
 
 export const NAVIGATION_REACHABILITY_BACKLOG_SIZE = NAVIGATION_REACHABILITY_BACKLOG.length;

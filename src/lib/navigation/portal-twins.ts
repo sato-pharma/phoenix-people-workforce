@@ -105,6 +105,9 @@ const TWIN_RULES: readonly TwinRule[] = [
   // Phoenix CRM (the owner, 2026-09-14): Visits, Planning, KPIs and the pilot roster. The old Visits for
   // Reps page redirects to the admin Phoenix CRM page, which forwards a portal viewer from there.
   { from: "/admin/phoenix-crm", to: "/employee-portals/phoenix-crm", carryQuery: ["tab", "month"] },
+  // Phoenix CRM, the clean module (the owner, 2026-09-16): customer lists, weekly plans, visits and
+  // reports. Only the tab crosses, as the admin page's own preservedQuery does.
+  { from: "/admin/field-crm", to: "/employee-portals/field-crm", carryQuery: ["tab"] },
 
   // ── Direct orders ──────────────────────────────────────────────────────────
   { from: "/admin/direct-orders", to: "/employee-portals/direct-orders" },

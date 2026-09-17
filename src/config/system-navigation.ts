@@ -4058,15 +4058,18 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager"],
   },
   {
-    // Phoenix CRM (the owner, 2026-09-14): its own space — Visits, Planning, KPIs and the pilot roster.
-    // The Super Admin enters visits for reps, reads every pilot rep and picks who is in the pilot. The
-    // enforcing gates are crm_visit_entry checks inside the Phoenix CRM service.
-    href: "/admin/phoenix-crm",
+    // Phoenix CRM (the owner, 2026-09-16): the field force's customer lists with their timings, weekly
+    // plans, visits and reports, built clean in Phoenix. It took over this card from the 2026-09-14
+    // pilot, whose link the owner asked to hide when this module shipped; the pilot's pages still
+    // serve by typed address until it is removed after go-live. The admin-shell holders of
+    // phoenix_crm read are these three; reps and their managers open it from My Visits. The enforcing
+    // gate is phoenix_crm inside the page and every /api/phoenix-crm route.
+    href: "/admin/field-crm",
     icon: ClipboardList,
     label: "Phoenix CRM",
-    description: "Visits, weekly plans and KPIs of the pilot reps, entry for a rep, and the reps in the pilot.",
-    permissions: [{ resource: "crm_visit_entry", action: "update" }],
-    roles: ["Super Admin"],
+    description: "Customer lists with their timings, weekly plans, visits and reports, entered in Phoenix.",
+    permissions: [{ resource: "phoenix_crm", action: "read" }],
+    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
   {
     // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
@@ -4627,7 +4630,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/admin/kpis",
           "/admin/plan-verification",
           "/admin/doctor-list-changes",
-          "/admin/phoenix-crm",
+          "/admin/field-crm",
         ],
       },
       {
