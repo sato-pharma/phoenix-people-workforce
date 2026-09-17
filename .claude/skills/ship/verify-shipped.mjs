@@ -30,6 +30,25 @@ const REPO = 'Gawish-1997/phoenix-people-workforce';
 const HEALTHZ = 'https://phoenix-hr.satopharma.com/api/healthz';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+// Every git question below is asked in a folder. Normally that is this script's own, which sits in
+// the repository - but a copy pulled out with `git show` and run from a scratchpad has no
+// repository under it, so EVERY git call there fails. That used to surface as "one of the two
+// commits is not in this clone", which blames the clone for a missing folder and sent a session
+// hunting a fetch race that did not exist (measured 2026-09-17). So: try this script's folder, then
+// the caller's, and if neither is a checkout say exactly that.
+function findGitAnchor() {
+  for (const dir of [HERE, process.cwd()]) {
+    try {
+      execFileSync('git', ['-C', dir, 'rev-parse', '--git-dir'], { stdio: 'ignore' });
+      return dir;
+    } catch {
+      /* not a checkout - try the next */
+    }
+  }
+  return null;
+}
+const ANCHOR = findGitAnchor();
+
 const argv = process.argv.slice(2);
 const pr = (argv.find((a) => /^\d+$/.test(a)) || '').trim();
 const asJson = argv.includes('--json');
@@ -56,6 +75,50 @@ export function decide({ state, mergeSha, contains, building, mainRed }) {
   return { verdict: 'CANNOT TELL', code: 5, why: 'a source did not answer - see the notes; do not act as if it shipped' };
 }
 
+// Ancestry has FOUR ways of saying "no", and they are not the same thing: there is no live
+// revision, this folder is not a checkout, the fetch failed, or the commit is genuinely absent.
+// Collapsing them into one note is what made a working verifier read CANNOT TELL and blame a
+// missing commit. The clone is also routinely minutes behind production - so when a commit is
+// missing, fetch and ASK AGAIN before giving up. Primitives are injected so `--selftest` drives
+// every branch with no network and no clone.
+export async function resolveContains({
+  live,
+  mergeSha,
+  anchor,
+  have,
+  fetchMain,
+  isAncestor,
+  sleep = () => Promise.resolve(),
+  attempts = 2,
+}) {
+  const notes = [];
+  if (!live) return { contains: null, notes, fetches: 0 };
+  if (live === mergeSha) return { contains: true, notes, fetches: 0 };
+  if (!anchor) {
+    notes.push(
+      'ancestry needs a git checkout and this copy of the script is not inside one - run the copy that lives in the repository',
+    );
+    return { contains: null, notes, fetches: 0 };
+  }
+
+  let fetches = 0;
+  let present = await have();
+  for (let attempt = 1; !present && attempt <= attempts; attempt++) {
+    if (!(await fetchMain())) notes.push(`\`git fetch origin main\` failed on attempt ${attempt} - this clone may be stale`);
+    fetches += 1;
+    present = await have();
+    if (!present && attempt < attempts) await sleep();
+  }
+
+  if (!present) {
+    notes.push(
+      `the merge commit or the live revision is still missing from this clone after ${fetches} fetch(es) - ancestry not checked`,
+    );
+    return { contains: null, notes, fetches };
+  }
+  return { contains: await isAncestor(), notes, fetches };
+}
+
 if (argv.includes('--selftest')) {
   const CASES = [
     ['an open PR', { state: 'OPEN', mergeSha: null, contains: null, building: false, mainRed: false }, 'NOT MERGED'],
@@ -74,7 +137,52 @@ if (argv.includes('--selftest')) {
     if (got !== want) failed++;
     console.log(`${got === want ? 'PASS' : 'FAIL'}  ${name}  expected=${want} got=${got}`);
   }
-  console.log(`\nSELFTEST verify-shipped: ${CASES.length} cases, ${failed} failed`);
+
+  // The ancestry resolver. Its four ways of saying "no" have to stay four DIFFERENT answers - one
+  // of them reading as another is the defect this table exists for - and a missing commit has to
+  // survive a fetch and a re-ask before it counts. Fakes, so there is no clone and no network here.
+  const seq = (values, fallback) => {
+    let i = 0;
+    return () => (i < values.length ? values[i++] : fallback);
+  };
+  const ANC = [
+    ['the live revision IS the merge - no git asked at all',
+      { live: 'a', mergeSha: 'a' },
+      { contains: true, fetches: 0, notes: 0 }],
+    ['no live revision to compare against',
+      { live: null, mergeSha: 'a' },
+      { contains: null, fetches: 0, notes: 0 }],
+    ['not inside a git checkout - says THAT, never blames a missing commit',
+      { live: 'b', mergeSha: 'a', anchor: null, have: () => false, fetchMain: () => true, isAncestor: () => true },
+      { contains: null, fetches: 0, notes: 1, note: /not inside one/ }],
+    ['both commits already local - no fetch at all',
+      { live: 'b', mergeSha: 'a', anchor: 'x', have: () => true, fetchMain: () => true, isAncestor: () => true },
+      { contains: true, fetches: 0, notes: 0 }],
+    ['one fetch brings the live commit in',
+      { live: 'b', mergeSha: 'a', anchor: 'x', have: seq([false], true), fetchMain: () => true, isAncestor: () => true },
+      { contains: true, fetches: 1, notes: 0 }],
+    ['the first fetch fails, the second works - the failure is named and the answer still lands',
+      { live: 'b', mergeSha: 'a', anchor: 'x', have: seq([false, false], true), fetchMain: seq([false], true), isAncestor: () => true },
+      { contains: true, fetches: 2, notes: 1, note: /failed on attempt 1/ }],
+    ['still missing after the retry - unknown, and it says how many fetches it took',
+      { live: 'b', mergeSha: 'a', anchor: 'x', have: () => false, fetchMain: () => true, isAncestor: () => true },
+      { contains: null, fetches: 2, notes: 1, note: /still missing from this clone after 2 fetch/ }],
+    ['a live revision that does NOT contain the merge reads no, not unknown',
+      { live: 'b', mergeSha: 'a', anchor: 'x', have: () => true, fetchMain: () => true, isAncestor: () => false },
+      { contains: false, fetches: 0, notes: 0 }],
+  ];
+  for (const [name, opts, want] of ANC) {
+    const r = await resolveContains(opts);
+    const bad = [];
+    if (r.contains !== want.contains) bad.push(`contains expected=${want.contains} got=${r.contains}`);
+    if (r.fetches !== want.fetches) bad.push(`fetches expected=${want.fetches} got=${r.fetches}`);
+    if (r.notes.length !== want.notes) bad.push(`notes expected=${want.notes} got=${r.notes.length} [${r.notes.join(' | ')}]`);
+    if (want.note && !r.notes.some((n) => want.note.test(n))) bad.push(`no note matching ${want.note}`);
+    if (bad.length) failed++;
+    console.log(`${bad.length ? 'FAIL' : 'PASS'}  ancestry: ${name}${bad.length ? '  ->  ' + bad.join('; ') : ''}`);
+  }
+
+  console.log(`\nSELFTEST verify-shipped: ${CASES.length + ANC.length} cases, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 }
 
@@ -99,8 +207,12 @@ function gh(args) {
 const ghJson = (args) => JSON.parse(gh(args) || 'null');
 
 function git(args, { quiet = false } = {}) {
+  if (!ANCHOR) {
+    if (quiet) return null;
+    throw new Error('no git checkout to ask in');
+  }
   try {
-    return execFileSync('git', ['-C', HERE, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'] }).trim();
+    return execFileSync('git', ['-C', ANCHOR, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'] }).trim();
   } catch (e) {
     if (quiet) return null;
     throw e;
@@ -143,16 +255,18 @@ out.liveRevision = live || null;
 
 // 3 - is the merge contained in what is live? ancestry, and only after a fetch, since this clone
 // is usually behind by minutes.
-let contains = null;
-if (live) {
-  if (live === out.mergeSha) contains = true;
-  else {
-    git(['fetch', 'origin', 'main', '--quiet'], { quiet: true });
-    const haveBoth = gitOk(['cat-file', '-e', `${out.mergeSha}^{commit}`]) && gitOk(['cat-file', '-e', `${live}^{commit}`]);
-    if (!haveBoth) out.notes.push('one of the two commits is not in this clone even after a fetch - ancestry not checked');
-    else contains = gitOk(['merge-base', '--is-ancestor', out.mergeSha, live]);
-  }
-}
+const ancestry = await resolveContains({
+  live,
+  mergeSha: out.mergeSha,
+  anchor: ANCHOR,
+  have: () =>
+    gitOk(['cat-file', '-e', `${out.mergeSha}^{commit}`]) && gitOk(['cat-file', '-e', `${live}^{commit}`]),
+  fetchMain: () => git(['fetch', 'origin', 'main', '--quiet'], { quiet: true }) !== null,
+  isAncestor: () => gitOk(['merge-base', '--is-ancestor', out.mergeSha, live]),
+  sleep: () => new Promise((r) => setTimeout(r, 3000)),
+});
+const contains = ancestry.contains;
+for (const n of ancestry.notes) out.notes.push(n);
 out.liveContainsMerge = contains;
 
 // 4 - deployments: the rows for production, newest first, with their real STATES
