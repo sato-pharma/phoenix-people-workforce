@@ -5,15 +5,14 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
+import { downloadSalesUploadFile, removeSalesUploadObject } from "@/lib/sales/monthly-import-request";
+import { isOwnSalesImportUploadPath, SALES_UPLOAD_PATH_REFUSAL } from "@/lib/sales/sales-import-upload-path";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const LARGE_UPLOAD_BUCKET = "sales-imports";
 
 export async function POST(request: Request) {
   // For the large-file path we hold the temp storage object and delete it once processing is done
@@ -38,20 +37,20 @@ export async function POST(request: Request) {
       if (!storagePath) {
         return NextResponse.json({ success: false, error: "Uploaded file reference is missing." }, { status: 400 });
       }
+      // Only the caller's own upload slot, checked before it is downloaded or queued for the finally
+      // block's delete: both run with the service-role client, so an unchecked path let any importer
+      // read, and then erase, another importer's workbook.
+      if (!isOwnSalesImportUploadPath({ caller: access, storagePath })) {
+        return NextResponse.json({ success: false, ...SALES_UPLOAD_PATH_REFUSAL }, { status: 400 });
+      }
       cleanupStoragePath = storagePath;
-      const supabase = getSupabaseAdmin();
-      const { data, error } = await supabase.storage.from(LARGE_UPLOAD_BUCKET).download(storagePath);
-      if (error || !data) {
+      file = await downloadSalesUploadFile(storagePath);
+      if (!file) {
         return NextResponse.json(
           { success: false, error: "Uploaded workbook was not found in storage. Please re-upload." },
           { status: 400 },
         );
       }
-      const buffer = Buffer.from(await data.arrayBuffer());
-      const fileName = storagePath.split("/").pop() ?? "upload.xlsx";
-      file = new File([buffer], fileName, {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
     } else {
       // Small-file path (unchanged): the workbook arrives directly in the multipart body.
       const formData = await request.formData();
@@ -149,8 +148,6 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   } finally {
-    if (cleanupStoragePath) {
-      await getSupabaseAdmin().storage.from(LARGE_UPLOAD_BUCKET).remove([cleanupStoragePath]).catch(() => {});
-    }
+    await removeSalesUploadObject(cleanupStoragePath);
   }
 }

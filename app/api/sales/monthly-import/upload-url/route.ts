@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { SALES_IMPORT_BUCKET } from "@/lib/sales/monthly-import-request";
+import { buildSalesImportUploadPath } from "@/lib/sales/sales-import-upload-path";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -14,17 +16,9 @@ export const dynamic = "force-dynamic";
 // request body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE). Instead the browser asks here for a short-lived
 // signed upload URL into the private "sales-imports" bucket, uploads the file straight to Storage (no
 // function involved), then calls /validate with the returned storagePath. Permission-gated identically
-// to the validate route, so only users who may import sales can mint an upload URL.
-const BUCKET = "sales-imports";
-
-function sanitizeFileName(name: string): string {
-  const cleaned = String(name ?? "")
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const safe = cleaned || "upload.xlsx";
-  return /\.(xlsx|xls)$/i.test(safe) ? safe : `${safe}.xlsx`;
-}
+// to the validate route, so only users who may import sales can mint an upload URL. The path names its
+// caller (sales-import-upload-path.ts), and every route that takes a path back refuses one minted for
+// anybody else.
 
 export async function POST(request: Request) {
   try {
@@ -32,12 +26,17 @@ export async function POST(request: Request) {
     await assertPermission(access, "sales", "import");
 
     const body = (await request.json().catch(() => ({}))) as { fileName?: string };
-    const fileName = sanitizeFileName(body?.fileName ?? "upload.xlsx");
-    // Random per-upload prefix so concurrent uploads never collide; the file is deleted after validation.
-    const path = `incoming/${crypto.randomUUID()}/${fileName}`;
+    // Random per-upload id so concurrent uploads never collide; the file is deleted after validation.
+    const path = buildSalesImportUploadPath({ caller: access, fileName: body?.fileName, uploadId: crypto.randomUUID() });
+    if (!path) {
+      return NextResponse.json(
+        { success: false, error: "This account has no identity to hold an upload. Sign in again and retry." },
+        { status: 403 },
+      );
+    }
 
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
+    const { data, error } = await supabase.storage.from(SALES_IMPORT_BUCKET).createSignedUploadUrl(path);
     if (error || !data) {
       return NextResponse.json(
         { success: false, error: error?.message ?? "Could not create an upload URL." },
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ success: true, bucket: BUCKET, path, token: data.token, signedUrl: data.signedUrl });
+    return NextResponse.json({ success: true, bucket: SALES_IMPORT_BUCKET, path, token: data.token, signedUrl: data.signedUrl });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(

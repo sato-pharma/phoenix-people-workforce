@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "weekly_sales", "import");
     const uploadedBy = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
-    const resolved = await resolveWeeklyUploadRequest(request);
+    const resolved = await resolveWeeklyUploadRequest(request, access);
     cleanupPaths = resolved.storagePaths;
     if (!resolved.ok) {
       return NextResponse.json({ success: false, error: resolved.error, code: resolved.code }, { status: resolved.status });
