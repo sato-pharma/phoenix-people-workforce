@@ -17,6 +17,7 @@ import {
   bandHeader, sectionTitle, applyPrintSetup, labelFilters,
   groupRow, collapseBand,
 } from "@/lib/sales/weekly/export-kit";
+import { weeklyFactRowUnitsAreOneProduct } from "@/lib/sales/weekly/unit-totals";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Weekly Sales — interactive BI workbook (ExcelForge engine).
@@ -36,6 +37,24 @@ import {
 // "exotic" call (outline / conditional-format / chart / pivot / slicer) is wrapped so
 // a single failure degrades gracefully instead of corrupting the package.
 // ──────────────────────────────────────────────────────────────────────────────
+
+// ── Units of different products are never added (owner rule, 2026-08-27; this workbook, 2026-09-17) ──
+//
+// A unit or stock cell that adds rows of more than one product — a region, distributor, branch or line
+// row, a TOTAL row, the Dashboard's unit tiles — holds a dash instead of that sum, whenever the Data rows
+// are not one product's (unit-totals.ts). The cell stays a FORMULA in the SAME style, because the design
+// of this workbook is password-locked (export-design.pins.json) and the lock strips formulas but not the
+// kind of cell: blanking it any other way would be a design change. A product's own row keeps its units.
+
+/** The formula a unit cell holds instead of a sum across products. */
+const UNITS_ACROSS_PRODUCTS = `"—"`;
+/** Said in the subtitle of every sheet that shows that dash. */
+const UNITS_ACROSS_PRODUCTS_NOTE = "Units and stock read — wherever they would add different products together";
+
+/** A sheet's subtitle, with the note when its unit totals are dashed. */
+function withUnitsNote(subtitle: string, unitsAreOneProduct: boolean): string {
+  return unitsAreOneProduct ? subtitle : `${subtitle}   ·   ${UNITS_ACROSS_PRODUCTS_NOTE}`;
+}
 
 // ── JS-side aggregation derived from the row grain (layout only; values stay formulas) ──
 /**
@@ -151,9 +170,15 @@ function buildDataSheet(wb: Workbook, rows: WeeklyFactExportRow[]): number {
 type BreakdownDim = { name: string; code: string; extra?: string };
 function buildBreakdownSheet(
   wb: Workbook,
-  opts: { sheetName: string; title: string; subtitle: string; dimLabel: string; extraLabel?: string; critCol: "RegionCode" | "ProductCode" | "DistCode" | "BranchCode"; last: number; dims: BreakdownDim[]; generatedAt: string },
+  opts: {
+    sheetName: string; title: string; subtitle: string; dimLabel: string; extraLabel?: string; critCol: "RegionCode" | "ProductCode" | "DistCode" | "BranchCode"; last: number; dims: BreakdownDim[]; generatedAt: string;
+    /** Whether one row's units are one product's: always on the product sheet, otherwise only when the Data is. */
+    rowUnitsAreOneProduct: boolean;
+    /** Whether the TOTAL row's units are one product's: only when the Data is, on every sheet. */
+    totalUnitsAreOneProduct: boolean;
+  },
 ): { sheetName: string; firstRow: number; lastRow: number; nameCol: number; valueCol: number } {
-  const { sheetName, title, subtitle, dimLabel, extraLabel, critCol, last, dims, generatedAt } = opts;
+  const { sheetName, title, subtitle, dimLabel, extraLabel, critCol, last, dims, generatedAt, rowUnitsAreOneProduct, totalUnitsAreOneProduct } = opts;
   const sheet = wb.addSheet(sheetName);
   sheet.view = { showGridLines: false };
   const cfp = makeCfPriority();
@@ -178,8 +203,8 @@ function buildBreakdownSheet(
     sheet.setValue(row, cName, d.name); sheet.setStyle(row, cName, textCell(false, zebra));
     if (hasExtra) { sheet.setValue(row, cExtra, d.extra ?? ""); sheet.setStyle(row, cExtra, textCell(false, zebra)); }
     sheet.setFormula(row, cValue, sumifs1("Value", last, [[critCol, d.code]])); sheet.setStyle(row, cValue, numCell(F_VALUE, zebra));
-    sheet.setFormula(row, cUnits, sumifs1("Units", last, [[critCol, d.code]])); sheet.setStyle(row, cUnits, numCell(F_UNITS, zebra));
-    sheet.setFormula(row, cStock, sumifs1("Stock", last, [[critCol, d.code]])); sheet.setStyle(row, cStock, numCell(F_UNITS, zebra));
+    sheet.setFormula(row, cUnits, rowUnitsAreOneProduct ? sumifs1("Units", last, [[critCol, d.code]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(row, cUnits, numCell(F_UNITS, zebra));
+    sheet.setFormula(row, cStock, rowUnitsAreOneProduct ? sumifs1("Stock", last, [[critCol, d.code]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(row, cStock, numCell(F_UNITS, zebra));
     sheet.setFormula(row, cShare, div0(`${colLetter(cValue)}${row}`, `SUM(${valRange})`)); sheet.setStyle(row, cShare, numCell(F_PCT, zebra));
   });
 
@@ -188,8 +213,8 @@ function buildBreakdownSheet(
   sheet.setValue(totalRow, cName, "TOTAL"); sheet.setStyle(totalRow, cName, totalStyle);
   if (hasExtra) { sheet.setValue(totalRow, cExtra, ""); sheet.setStyle(totalRow, cExtra, totalStyle); }
   sheet.setFormula(totalRow, cValue, `SUM(${colLetter(cValue)}${firstRow}:${colLetter(cValue)}${lastRow})`); sheet.setStyle(totalRow, cValue, totalNumStyle(F_VALUE));
-  sheet.setFormula(totalRow, cUnits, `SUM(${colLetter(cUnits)}${firstRow}:${colLetter(cUnits)}${lastRow})`); sheet.setStyle(totalRow, cUnits, totalNumStyle(F_UNITS));
-  sheet.setFormula(totalRow, cStock, `SUM(${colLetter(cStock)}${firstRow}:${colLetter(cStock)}${lastRow})`); sheet.setStyle(totalRow, cStock, totalNumStyle(F_UNITS));
+  sheet.setFormula(totalRow, cUnits, totalUnitsAreOneProduct ? `SUM(${colLetter(cUnits)}${firstRow}:${colLetter(cUnits)}${lastRow})` : UNITS_ACROSS_PRODUCTS); sheet.setStyle(totalRow, cUnits, totalNumStyle(F_UNITS));
+  sheet.setFormula(totalRow, cStock, totalUnitsAreOneProduct ? `SUM(${colLetter(cStock)}${firstRow}:${colLetter(cStock)}${lastRow})` : UNITS_ACROSS_PRODUCTS); sheet.setStyle(totalRow, cStock, totalNumStyle(F_UNITS));
   sheet.setValue(totalRow, cShare, 1); sheet.setStyle(totalRow, cShare, totalNumStyle(F_PCT));
 
   sheet.setColumnWidth(1, 5); sheet.setColumnWidth(cName, 32);
@@ -206,13 +231,13 @@ function buildBreakdownSheet(
 }
 
 // ── Region → Product drill-down (collapsible outline groups) ──────────────────────────────────────
-function buildRegionProductDrill(wb: Workbook, data: WeeklyDashboard, tree: RegionNode[], last: number, generatedAt: string) {
+function buildRegionProductDrill(wb: Workbook, data: WeeklyDashboard, tree: RegionNode[], last: number, generatedAt: string, unitsAreOneProduct: boolean) {
   const title = "Region Drill (Region → Product)";
   const sheet = wb.addSheet("Region Drill", { outlineSummaryBelow: false });
   sheet.view = { showGridLines: false };
   const cfp = makeCfPriority();
   const ncols = 6; // Region/Product | Value | Units | Stock | % of Region | % of Total
-  bandHeader(sheet, ncols, title, labelFilters(data.appliedFilters));
+  bandHeader(sheet, ncols, title, withUnitsNote(labelFilters(data.appliedFilters), unitsAreOneProduct));
   const headerRow = 4;
   ["Region / Product", "Sales Value (EGP)", "Units Sold", "Stock Units", "% of Region", "% of Total"].forEach((h, i) => {
     sheet.setValue(headerRow, i + 1, h); sheet.setStyle(headerRow, i + 1, i === 0 ? headerStyle : headerRightStyle);
@@ -229,8 +254,9 @@ function buildRegionProductDrill(wb: Workbook, data: WeeklyDashboard, tree: Regi
     // Region header row = the region subtotal (summary above its product details).
     sheet.setValue(regRow, 1, reg.name); sheet.setStyle(regRow, 1, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     sheet.setFormula(regRow, 2, sumifs1("Value", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 2, totalNumStyle(F_VALUE));
-    sheet.setFormula(regRow, 3, sumifs1("Units", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 3, totalNumStyle(F_UNITS));
-    sheet.setFormula(regRow, 4, sumifs1("Stock", last, [["RegionCode", reg.code]])); sheet.setStyle(regRow, 4, totalNumStyle(F_UNITS));
+    // The region row adds its products; the product rows beneath it are each one product's.
+    sheet.setFormula(regRow, 3, unitsAreOneProduct ? sumifs1("Units", last, [["RegionCode", reg.code]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(regRow, 3, totalNumStyle(F_UNITS));
+    sheet.setFormula(regRow, 4, unitsAreOneProduct ? sumifs1("Stock", last, [["RegionCode", reg.code]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(regRow, 4, totalNumStyle(F_UNITS));
     sheet.setValue(regRow, 5, 1); sheet.setStyle(regRow, 5, totalNumStyle(F_PCT));
     sheet.setFormula(regRow, 6, div0(`B${regRow}`, valTotal)); sheet.setStyle(regRow, 6, totalNumStyle(F_PCT));
     row += 1;
@@ -259,9 +285,13 @@ function buildRegionProductDrill(wb: Workbook, data: WeeklyDashboard, tree: Regi
 // ── Region × Product matrix (Value + Units, heat-mapped) ──────────────────────────────────────────
 function buildMatrix(
   wb: Workbook,
-  opts: { sheetName: string; title: string; subtitle: string; rowDimLabel: string; rowDims: { code: string; name: string }[]; colDims: { code: string; name: string }[]; rowCrit: "ProductCode"; colCrit: "RegionCode"; last: number; generatedAt: string },
+  opts: {
+    sheetName: string; title: string; subtitle: string; rowDimLabel: string; rowDims: { code: string; name: string }[]; colDims: { code: string; name: string }[]; rowCrit: "ProductCode"; colCrit: "RegionCode"; last: number; generatedAt: string;
+    /** Whether the Units matrix's TOTAL row, which adds its product rows, is one product's. */
+    totalUnitsAreOneProduct: boolean;
+  },
 ) {
-  const { sheetName, title, subtitle, rowDimLabel, rowDims, colDims, rowCrit, colCrit, last, generatedAt } = opts;
+  const { sheetName, title, subtitle, rowDimLabel, rowDims, colDims, rowCrit, colCrit, last, generatedAt, totalUnitsAreOneProduct } = opts;
   const sheet = wb.addSheet(sheetName);
   sheet.view = { showGridLines: false };
   const cfp = makeCfPriority();
@@ -287,7 +317,8 @@ function buildMatrix(
     });
     const lastRow = firstRow + rowDims.length - 1, totalRow = lastRow + 1;
     sheet.setStyle(totalRow, 1, totalStyle); sheet.setValue(totalRow, 2, "TOTAL"); sheet.setStyle(totalRow, 2, totalStyle);
-    for (let c = 3; c <= totalCol; c += 1) { sheet.setFormula(totalRow, c, `SUM(${colLetter(c)}${firstRow}:${colLetter(c)}${lastRow})`); sheet.setStyle(totalRow, c, totalNumStyle(fmt)); }
+    const totalAddsProducts = measure === "Units" && !totalUnitsAreOneProduct;
+    for (let c = 3; c <= totalCol; c += 1) { sheet.setFormula(totalRow, c, totalAddsProducts ? UNITS_ACROSS_PRODUCTS : `SUM(${colLetter(c)}${firstRow}:${colLetter(c)}${lastRow})`); sheet.setStyle(totalRow, c, totalNumStyle(fmt)); }
     if (rowDims.length && colDims.length) {
       try {
         sheet.addConditionalFormat({
@@ -697,13 +728,13 @@ function buildBranchCoverageDepth(wb: Workbook, data: WeeklyDashboard, tree: Reg
 }
 
 // ── Line sub-dashboards (collapsible group per product line) ──────────────────────────────────────
-function buildLineDashboards(wb: Workbook, data: WeeklyDashboard, lineTree: LineNode[], regions: { code: string; name: string }[], last: number, generatedAt: string) {
+function buildLineDashboards(wb: Workbook, data: WeeklyDashboard, lineTree: LineNode[], regions: { code: string; name: string }[], last: number, generatedAt: string, unitsAreOneProduct: boolean) {
   const title = "By Line (sub-dashboards)";
   const sheet = wb.addSheet("By Line", { outlineSummaryBelow: false });
   sheet.view = { showGridLines: false };
   const cfp = makeCfPriority();
   const ncols = Math.max(5, 2 + regions.length); // header band spans the wider of the two tables
-  bandHeader(sheet, ncols, title, "Each product line's own performance — collapse a line to compare lines, expand to see its products.");
+  bandHeader(sheet, ncols, title, withUnitsNote("Each product line's own performance — collapse a line to compare lines, expand to see its products.", unitsAreOneProduct));
   const headerRow = 4;
   ["Line / Product", "Sales Value (EGP)", "Units Sold", "Stock Units", "Share of Line"].forEach((h, i) => { sheet.setValue(headerRow, i + 1, h); sheet.setStyle(headerRow, i + 1, i >= 1 && i !== 4 ? headerRightStyle : headerStyle); });
   let row = headerRow + 1;
@@ -712,8 +743,9 @@ function buildLineDashboards(wb: Workbook, data: WeeklyDashboard, lineTree: Line
     const lineRow = row;
     sheet.setValue(lineRow, 1, line.label); sheet.setStyle(lineRow, 1, { font: { bold: true, color: DEEP, name: HOUSE_XLSX_FONT, size: 10.5 }, alignment: { vertical: "center", indent: 1 }, border: GROUP_RULE });
     sheet.setFormula(lineRow, 2, sumifs1("Value", last, [["Line", line.key]])); sheet.setStyle(lineRow, 2, totalNumStyle(F_VALUE));
-    sheet.setFormula(lineRow, 3, sumifs1("Units", last, [["Line", line.key]])); sheet.setStyle(lineRow, 3, totalNumStyle(F_UNITS));
-    sheet.setFormula(lineRow, 4, sumifs1("Stock", last, [["Line", line.key]])); sheet.setStyle(lineRow, 4, totalNumStyle(F_UNITS));
+    // The line row adds its products; the product rows beneath it are each one product's.
+    sheet.setFormula(lineRow, 3, unitsAreOneProduct ? sumifs1("Units", last, [["Line", line.key]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(lineRow, 3, totalNumStyle(F_UNITS));
+    sheet.setFormula(lineRow, 4, unitsAreOneProduct ? sumifs1("Stock", last, [["Line", line.key]]) : UNITS_ACROSS_PRODUCTS); sheet.setStyle(lineRow, 4, totalNumStyle(F_UNITS));
     sheet.setValue(lineRow, 5, 1); sheet.setStyle(lineRow, 5, totalNumStyle(F_PCT));
     row += 1;
     const detailFirst = row;
@@ -907,17 +939,18 @@ function buildDashboard(
   wb: Workbook, dash: Worksheet, data: WeeklyDashboard, generatedAt: string, last: number,
   ranges: { region: ReturnType<typeof buildBreakdownSheet>; product: ReturnType<typeof buildBreakdownSheet>; distributor: ReturnType<typeof buildBreakdownSheet> },
   contentsSheets: { name: string; desc: string }[],
+  unitsAreOneProduct: boolean,
 ) {
   dash.view = { showGridLines: false };
-  bandHeader(dash, 12, "Weekly Sales BI", `${labelFilters(data.appliedFilters)}      ·      Generated ${generatedAt}`);
+  bandHeader(dash, 12, "Weekly Sales BI", withUnitsNote(`${labelFilters(data.appliedFilters)}      ·      Generated ${generatedAt}`, unitsAreOneProduct));
 
   const valRange = dataRange("Value", last);
   const unitRange = dataRange("Units", last);
   const stockRange = dataRange("Stock", last);
   const tiles: { label: string; formula?: string; value?: number; fmt: string }[] = [
     { label: "SALES VALUE (EGP)", formula: `SUM(${valRange})`, fmt: F_VALUE },
-    { label: "NET UNITS SOLD", formula: `SUM(${unitRange})`, fmt: F_UNITS },
-    { label: "STOCK ON HAND", formula: `SUM(${stockRange})`, fmt: F_UNITS },
+    { label: "NET UNITS SOLD", formula: unitsAreOneProduct ? `SUM(${unitRange})` : UNITS_ACROSS_PRODUCTS, fmt: F_UNITS },
+    { label: "STOCK ON HAND", formula: unitsAreOneProduct ? `SUM(${stockRange})` : UNITS_ACROSS_PRODUCTS, fmt: F_UNITS },
     { label: "PRODUCTS", value: data.kpis.productCount, fmt: F_UNITS },
     { label: "BRANCHES", value: data.kpis.branchCount, fmt: F_UNITS },
     { label: "DISTRIBUTORS", value: data.kpis.distributorCount, fmt: F_UNITS },
@@ -1024,15 +1057,19 @@ export async function buildWeeklyExportWorkbook(
   const productsAll = data.products.map((p) => ({ code: p.code, name: cleanText(p.name) }));
   const productsCapped = productsAll.slice(0, MAX_MATRIX_PRODUCTS);
 
-  const sub = labelFilters(data.appliedFilters);
-  const region = buildBreakdownSheet(wb, { sheetName: "By Region", title: "By Region", subtitle: sub, dimLabel: "Region", critCol: "RegionCode", last, dims: data.regions.map((r) => ({ name: cleanText(r.name), code: r.code })), generatedAt });
-  const product = buildBreakdownSheet(wb, { sheetName: "By Product", title: "By Product", subtitle: sub, dimLabel: "Product", critCol: "ProductCode", last, dims: data.products.map((p) => ({ name: cleanText(p.name), code: p.code })), generatedAt });
-  const distributor = buildBreakdownSheet(wb, { sheetName: "By Distributor", title: "By Distributor", subtitle: sub, dimLabel: "Distributor", critCol: "DistCode", last, dims: data.distributorBreakdown.map((d) => ({ name: cleanText(d.name), code: d.code })), generatedAt });
-  buildBreakdownSheet(wb, { sheetName: "By Branch", title: "By Branch", subtitle: sub, dimLabel: "Branch", extraLabel: "Region", critCol: "BranchCode", last, dims: data.branchBreakdown.map((b) => ({ name: cleanText(b.name), code: b.code, extra: cleanText(b.regionName) })), generatedAt });
+  // Every formula below adds the Data rows, so the Data rows answer whether a unit total is one product's.
+  const oneProduct = weeklyFactRowUnitsAreOneProduct(rows);
+  const sub = withUnitsNote(labelFilters(data.appliedFilters), oneProduct);
+  const units = { rowUnitsAreOneProduct: oneProduct, totalUnitsAreOneProduct: oneProduct };
+  const region = buildBreakdownSheet(wb, { sheetName: "By Region", title: "By Region", subtitle: sub, dimLabel: "Region", critCol: "RegionCode", last, dims: data.regions.map((r) => ({ name: cleanText(r.name), code: r.code })), generatedAt, ...units });
+  // A product row is one product by construction; only its TOTAL row adds products together.
+  const product = buildBreakdownSheet(wb, { sheetName: "By Product", title: "By Product", subtitle: sub, dimLabel: "Product", critCol: "ProductCode", last, dims: data.products.map((p) => ({ name: cleanText(p.name), code: p.code })), generatedAt, ...units, rowUnitsAreOneProduct: true });
+  const distributor = buildBreakdownSheet(wb, { sheetName: "By Distributor", title: "By Distributor", subtitle: sub, dimLabel: "Distributor", critCol: "DistCode", last, dims: data.distributorBreakdown.map((d) => ({ name: cleanText(d.name), code: d.code })), generatedAt, ...units });
+  buildBreakdownSheet(wb, { sheetName: "By Branch", title: "By Branch", subtitle: sub, dimLabel: "Branch", extraLabel: "Region", critCol: "BranchCode", last, dims: data.branchBreakdown.map((b) => ({ name: cleanText(b.name), code: b.code, extra: cleanText(b.regionName) })), generatedAt, ...units });
 
-  buildRegionProductDrill(wb, data, tree, last, generatedAt);
-  buildLineDashboards(wb, data, lineTree, regionsForCols, last, generatedAt);
-  buildMatrix(wb, { sheetName: "Region x Product", title: "Region × Product", subtitle: sub, rowDimLabel: "Product", rowDims: productsCapped, colDims: regionsForCols, rowCrit: "ProductCode", colCrit: "RegionCode", last, generatedAt });
+  buildRegionProductDrill(wb, data, tree, last, generatedAt, oneProduct);
+  buildLineDashboards(wb, data, lineTree, regionsForCols, last, generatedAt, oneProduct);
+  buildMatrix(wb, { sheetName: "Region x Product", title: "Region × Product", subtitle: sub, rowDimLabel: "Product", rowDims: productsCapped, colDims: regionsForCols, rowCrit: "ProductCode", colCrit: "RegionCode", last, generatedAt, totalUnitsAreOneProduct: oneProduct });
   buildRegionWeekTrajectory(wb, data, tree, last, generatedAt);
   buildZeroSalesGapMap(wb, data, productsCapped, regionsForCols, last, generatedAt);
   buildCrossTab(wb, data, last, generatedAt);
@@ -1071,7 +1108,7 @@ export async function buildWeeklyExportWorkbook(
     { name: "Report Sources", desc: "Validated source sheets behind this report." },
   ];
 
-  buildDashboard(wb, dash, data, generatedAt, last, { region, product, distributor }, contents);
+  buildDashboard(wb, dash, data, generatedAt, last, { region, product, distributor }, contents, oneProduct);
   wb.setActiveSheet("Dashboard");
 
   const b64 = await wb.buildBase64();

@@ -24,7 +24,8 @@ import {
 // `min-w-[760px]`, the trend tooltip over `min-w-[200px]`, and the file carried 37 `rounded*` classes.
 // Its chart labels were cut with "..." and two legend names with `truncate`. Its four tables now declare
 // their widths the same way (sortable headers count as head cells), each becomes cards below md, and
-// its chart labels wrap whole.
+// its chart labels wrap whole. Since the same day its Units and Stock columns appear only while their
+// figures are one product's (unit-totals.ts), so each of those tables is held with and without them.
 //
 // WHY THIS FILE EXISTS. On 2026-09-16 the owner found both rules broken on this page. The dashboard's
 // Breakdown table and upload completeness matrix sat in `hidden overflow-x-auto md:block` boxes, so a
@@ -188,32 +189,32 @@ const TABLES: TableSpec[] = [
     file: ADMIN_DASHBOARD,
     owner: "RankTable",
     bodyRowOwner: "RankTable",
-    widthsCall: "rankColumns()",
-    cases: [{ env: {}, widths: rankColumns() }],
+    widthsCall: "rankColumns(showUnits)",
+    cases: [true, false].map((showUnits) => ({ env: { showUnits }, widths: rankColumns(showUnits) })),
   },
   {
     name: "Admin Branches comparison",
     file: ADMIN_DASHBOARD,
     owner: "BranchComparisonTable",
     bodyRowOwner: "BranchComparisonTable",
-    widthsCall: "branchComparisonColumns()",
-    cases: [{ env: {}, widths: branchComparisonColumns() }],
+    widthsCall: "branchComparisonColumns(showUnits)",
+    cases: [true, false].map((showUnits) => ({ env: { showUnits }, widths: branchComparisonColumns(showUnits) })),
   },
   {
     name: "Admin Week-by-week comparison",
     file: ADMIN_DASHBOARD,
     owner: "WeekComparisonTable",
     bodyRowOwner: "WeekComparisonTable",
-    widthsCall: "weekComparisonColumns()",
-    cases: [{ env: {}, widths: weekComparisonColumns() }],
+    widthsCall: "weekComparisonColumns(showUnits)",
+    cases: [true, false].map((showUnits) => ({ env: { showUnits }, widths: weekComparisonColumns(showUnits) })),
   },
   {
     name: "Admin Stock on hand watchlist",
     file: ADMIN_DASHBOARD,
     owner: "ZeroStockTable",
     bodyRowOwner: "ZeroStockTable",
-    widthsCall: "zeroStockColumns()",
-    cases: [{ env: {}, widths: zeroStockColumns() }],
+    widthsCall: "zeroStockColumns(showStock)",
+    cases: [true, false].map((showStock) => ({ env: { showStock }, widths: zeroStockColumns(showStock) })),
   },
 ];
 
@@ -352,14 +353,23 @@ function shapeOf(slots: Slot[]): string {
   return slots.map((slot) => (slot.kind === "each" ? `each ${slot.over}` : slot.guard ? `if ${slot.guard}` : "one")).join(" | ");
 }
 
-/** The colSpan that spans a shape, as the source must spell it; null when the shape has no single spelling. */
+/**
+ * The colSpan that spans a shape, as the source must spell it; null when the shape has no single spelling.
+ * The cells every row has come first, then each condition's cells in the order the condition first appears:
+ * `3 + (showUnits ? 2 : 0)` spans three columns plus the two that come and go with `showUnits`.
+ */
 function spanOf(slots: Slot[]): string | null {
-  if (slots.some((slot) => slot.kind === "one" && slot.guard)) return null;
   const lists = slots.filter((slot): slot is Extract<Slot, { kind: "each" }> => slot.kind === "each");
-  const ones = slots.length - lists.length;
-  if (lists.length === 0) return String(ones);
-  if (lists.length === 1) return `${lists[0].over}.length + ${ones}`;
-  return null;
+  if (lists.length > 1) return null;
+  let ones = 0;
+  const guarded = new Map<string, number>();
+  for (const slot of slots) {
+    if (slot.kind !== "one") continue;
+    if (slot.guard) guarded.set(slot.guard, (guarded.get(slot.guard) ?? 0) + 1);
+    else ones += 1;
+  }
+  const base = lists.length === 1 ? `${lists[0].over}.length + ${ones}` : String(ones);
+  return [base, ...[...guarded].map(([guard, count]) => `(${guard} ? ${count} : 0)`)].join(" + ");
 }
 
 function tableProblems(sources: Map<string, ts.SourceFile>): string[] {

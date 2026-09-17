@@ -7,8 +7,12 @@
 // rule so the file matches the screen. A unit column on a table of regions or distributors is a total
 // too, and follows the same test. Every surface asks the questions below rather than re-deriving "one
 // product" itself, because the totals are added over DIFFERENT rows.
+//
+// The admin shell's Weekly Sales Dashboard and its Export Excel (the Weekly BI workbook) follow the same
+// rule (owner, 2026-09-17): every unit figure that adds rows appears only while those rows are one
+// product's, and the workbook, whose design is locked, keeps its cells and holds a dash in them instead.
 
-import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
+import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 
 /**
  * `kpis.salesUnits` and `kpis.stockUnits` add every row of the selected week(s). `kpis.productCount`
@@ -23,13 +27,21 @@ export function weeklyKpiUnitsAreOneProduct(data: Pick<WeeklyDashboard, "kpis">)
 export type WeeklyBreakdownCut = "product" | "region" | "distributor";
 
 /**
+ * Every cut a table of totals can take: the managers' Breakdown table's three, and the branch cut of the
+ * admin dashboard's Branches comparison and Stock on hand watchlist. Kept apart from WeeklyBreakdownCut,
+ * which the managers' portal also uses to index its own per-cut lookups, where there is no branch.
+ */
+export type WeeklyTotalsCut = WeeklyBreakdownCut | "branch";
+
+/**
  * A Breakdown row's units. A PRODUCT row is keyed by one product code, so its units are always one
- * product's. A region or distributor row adds every product it carried over the same rows as the KPI
- * totals, so its units are one product's only when the whole selection is.
+ * product's. A region, distributor or branch row adds every product it carried over the same rows as the
+ * KPI totals (`regions`, `distributorBreakdown`, `branchBreakdown` and `zeroSalesBranches` are all
+ * built from them), so its units are one product's only when the whole selection is.
  */
 export function weeklyBreakdownUnitsAreOneProduct(
   data: Pick<WeeklyDashboard, "kpis">,
-  cut: WeeklyBreakdownCut,
+  cut: WeeklyTotalsCut,
 ): boolean {
   return cut === "product" || weeklyKpiUnitsAreOneProduct(data);
 }
@@ -43,4 +55,26 @@ export function weeklyBreakdownUnitsAreOneProduct(
  */
 export function weeklyWeekComparisonUnitsAreOneProduct(data: Pick<WeeklyDashboard, "appliedFilters">): boolean {
   return Boolean(data.appliedFilters.productCode);
+}
+
+/**
+ * The change against the previous week on a unit tile (`compare.salesUnits`, `compare.stockUnits`). The
+ * prior figure adds the previous week's rows, and one product this week proves nothing about that week,
+ * so the change is one product's only when the tile is AND a product filter pins every scoped row to
+ * that product — the same reason as the week-by-week comparison.
+ */
+export function weeklyKpiUnitDeltaIsOneProduct(data: Pick<WeeklyDashboard, "kpis" | "appliedFilters">): boolean {
+  return weeklyKpiUnitsAreOneProduct(data) && weeklyWeekComparisonUnitsAreOneProduct(data);
+}
+
+/**
+ * The Weekly BI workbook's own totals. Its formulas add over its hidden Data sheet, which holds
+ * `factRows` — the export's grain, which is not always the rows behind `kpis` (the stock grain is lifted
+ * for it). So the workbook asks about the rows it actually adds: its unit totals are one product's
+ * exactly when those rows carry one product, keyed the way `kpis.productCount` keys it.
+ */
+export function weeklyFactRowUnitsAreOneProduct(
+  rows: readonly Pick<WeeklyFactExportRow, "productCode" | "productName">[],
+): boolean {
+  return new Set(rows.map((row) => row.productCode || row.productName)).size === 1;
 }

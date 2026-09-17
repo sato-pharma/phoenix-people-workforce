@@ -1567,6 +1567,7 @@ import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 import { runWeeklySalesDepotDetailTests } from "./weekly-sales-depot-detail.test.ts";
 import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
 import { runWeeklyUnitsOneProductTests } from "./weekly-units-one-product.test.ts";
+import { runWeeklyAdminUnitsOneProductTests } from "./weekly-admin-units-one-product.test.ts";
 import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
@@ -5154,6 +5155,10 @@ await runTest("weekly territory gate (a medical rep is refused the admin weekly 
 await runTest(
   "weekly sales unit totals appear only for one product (the Sales Units and Stock Units tiles, the Units column on a region or distributor cut, the export's Summary and Week Comparison)",
   runWeeklyUnitsOneProductTests,
+);
+await runTest(
+  "admin weekly sales unit totals appear only for one product (the dashboard's unit tiles and their changes, its region, branch, distributor and week tables, its unit charts and watchlist stock; the Weekly BI workbook dashes every unit total that adds products and keeps each product's own)",
+  runWeeklyAdminUnitsOneProductTests,
 );
 await runTest(
   "weekly sales fits the screen with square corners (Distribution and Field Force tabs: no round corner, scroll box, width floor or ellipsis; every table fixed, its columns, head row, body row and colSpans one shape totalling 100%)",

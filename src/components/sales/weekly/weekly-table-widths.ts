@@ -56,15 +56,26 @@ export function completenessColumns(monthCount: number): { distributor: number; 
 // abreast at 556px each. At 556px a money figure ("EGP 98,765,432") still fits its column without breaking
 // inside the number and a unit count fits whole; the name columns take what is left and wrap.
 
+// Units and stock columns appear only while their figures are one product's (unit-totals.ts). Without
+// them the room goes to the name and the value, so each set still totals 100%.
+
 /** A ranked table (By region, By product, By distributor): the name with its value bar beneath, sales
  * value, units, stock and share. */
-export function rankColumns(): { name: number; value: number; units: number; stock: number; share: number } {
-  return { name: 34, value: 24, units: 15, stock: 15, share: 12 };
+export function rankColumns(showUnits: boolean): {
+  name: number;
+  value: number;
+  units: number;
+  stock: number;
+  share: number;
+} {
+  return showUnits
+    ? { name: 34, value: 24, units: 15, stock: 15, share: 12 }
+    : { name: 54, value: 34, units: 0, stock: 0, share: 12 };
 }
 
 /** The Branches comparison table: the branch with its value bar beneath, its region, sales value, units,
  * stock and share. */
-export function branchComparisonColumns(): {
+export function branchComparisonColumns(showUnits: boolean): {
   branch: number;
   region: number;
   value: number;
@@ -72,12 +83,14 @@ export function branchComparisonColumns(): {
   stock: number;
   share: number;
 } {
-  return { branch: 26, region: 16, value: 20, units: 13, stock: 13, share: 12 };
+  return showUnits
+    ? { branch: 26, region: 16, value: 20, units: 13, stock: 13, share: 12 }
+    : { branch: 38, region: 22, value: 28, units: 0, stock: 0, share: 12 };
 }
 
 /** The Week-by-week comparison: month, week (with its gap chips wrapping beneath the week mark), period
  * date, sales value, sales units, stock units and the change against the previous week. */
-export function weekComparisonColumns(): {
+export function weekComparisonColumns(showUnits: boolean): {
   month: number;
   week: number;
   date: number;
@@ -86,10 +99,12 @@ export function weekComparisonColumns(): {
   stock: number;
   delta: number;
 } {
-  return { month: 12, week: 16, date: 14, value: 19, units: 13, stock: 13, delta: 13 };
+  return showUnits
+    ? { month: 12, week: 16, date: 14, value: 19, units: 13, stock: 13, delta: 13 }
+    : { month: 16, week: 20, date: 18, value: 26, units: 0, stock: 0, delta: 20 };
 }
 
 /** The Stock on hand watchlist: the branch with its stock bar beneath, its region and its stock units. */
-export function zeroStockColumns(): { branch: number; region: number; stock: number } {
-  return { branch: 52, region: 24, stock: 24 };
+export function zeroStockColumns(showStock: boolean): { branch: number; region: number; stock: number } {
+  return showStock ? { branch: 52, region: 24, stock: 24 } : { branch: 64, region: 36, stock: 0 };
 }

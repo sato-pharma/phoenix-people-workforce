@@ -89,18 +89,18 @@ function metricValue(worksheet: ExcelJS.Worksheet, label: string): unknown {
 
 const DASHBOARD = "src/components/sales/weekly/portal-weekly-dashboard-impl.tsx";
 
-function parse(rel: string): ts.SourceFile {
+export function parse(rel: string): ts.SourceFile {
   const text = readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
   return ts.createSourceFile(rel, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 }
 
-function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
+export function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
   visit(node);
   node.forEachChild((child) => walk(child, visit));
 }
 
 /** The conditions a node renders under: every `cond ? node : …` and `cond && node` above it. */
-function guardsOf(node: ts.Node): string[] {
+export function guardsOf(node: ts.Node): string[] {
   const guards: string[] = [];
   let child: ts.Node = node;
   for (let parent = node.parent; parent; child = parent, parent = parent.parent) {
@@ -125,7 +125,7 @@ function enclosingDeclaration(node: ts.Node): string | null {
 }
 
 /** The first `const <name> = …` under a node, as its source text. */
-function initializerOf(root: ts.Node, name: string): string | null {
+export function initializerOf(root: ts.Node, name: string): string | null {
   if (ts.isVariableDeclaration(root) && root.name.getText() === name && root.initializer) {
     return root.initializer.getText();
   }
