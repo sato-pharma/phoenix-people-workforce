@@ -69,6 +69,36 @@ export function runSalaryAllowancePolicyTests() {
   assert.equal(a14Allowances.extraCostOfLiving, 0);
   assert.equal(calculateNetSalary({ baseSalary: 10000, ...a14Allowances }), 10000);
 
+  // A personal fuel allowance (owner, 2026-09-15): a Medical Representative paid the standard 500
+  // plus a 1,500 car allowance inside Fuel Allowance. Before it, uploads normalized it to 500 and
+  // payroll paid 500.
+  const carAllowanceAllowances = resolveStandardSalaryAllowances({
+    employeeHrId: "PD-0013",
+    jobTitle: "Medical Representative",
+    month: 9,
+    year: 2026,
+  });
+  assert.equal(carAllowanceAllowances.fuelAllowance, 2000, "PD-0013's fuel is the standard 500 plus the 1,500 car allowance");
+  assert.equal(carAllowanceAllowances.extraCostOfLiving, 2000, "the exception is fuel only; cost of living stays the title's standard");
+  assert.equal(calculateNetSalary({ baseSalary: 16000, ...carAllowanceAllowances }), 20000);
+  for (const spelling of ["pd-0013", " PD0013 ", "PD 0013"]) {
+    assert.equal(
+      resolveStandardSalaryAllowances({ employeeHrId: spelling, jobTitle: "Medical Representative" }).fuelAllowance,
+      2000,
+      `the exception matches the HR id written "${spelling}"`,
+    );
+  }
+  assert.equal(
+    resolveStandardSalaryAllowances({ employeeHrId: "T-001", jobTitle: "Medical Representative", month: 9, year: 2026 }).fuelAllowance,
+    STANDARD_FUEL_ALLOWANCE,
+    "an employee without an approved exception keeps the standard fuel allowance",
+  );
+  assert.equal(
+    resolveStandardSalaryAllowances({ employeeHrId: "PD-0013", jobTitle: "Medical Representative", month: 3, year: 2026 }).fuelAllowance,
+    0,
+    "before the allowance policy took effect there is no fuel allowance at all, exception or not",
+  );
+
   assert.equal(calculateGrossSalary({ baseSalary: 14000, socialInsurance: 1200, taxes: 800 }), 16000);
   assert.deepEqual(
     resolveFixedSalaryAmounts({

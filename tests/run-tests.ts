@@ -692,6 +692,7 @@ import { runPositionVacancyStatusIntegrityTests } from "./position-vacancy-statu
 import { runReconcileStaleVacancyAreaGuardTests } from "./reconcile-stale-vacancy-area-guard.test.ts";
 import { runVacancyAutofillOnBecomingEligibleTests } from "./vacancy-autofill-on-becoming-eligible.test.ts";
 import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts";
+import { runEmployeeImportPersonalFuelAllowanceTests } from "./employee-import-personal-fuel-allowance.test.ts";
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
@@ -2996,6 +2997,7 @@ await runTest("position vacancy status integrity", runPositionVacancyStatusInteg
 await runTest("reconcile stale-replacement vacancy area + single-seat guard", runReconcileStaleVacancyAreaGuardTests);
 await runTest("vacancy autofill runs again when a hire becomes eligible", runVacancyAutofillOnBecomingEligibleTests);
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
+await runTest("employee import keeps an approved personal fuel allowance", runEmployeeImportPersonalFuelAllowanceTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("HR_ID alias normalization (legacy AAA -> AA)", runHrIdAliasNormalizationTests);
