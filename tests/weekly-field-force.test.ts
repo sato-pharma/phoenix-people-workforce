@@ -198,7 +198,7 @@ export function runWeeklyFieldForceTests() {
     // No split index: nothing is placed by name, so every credit here is a hand mapping.
     areaSplit: null,
     seatIndex: index,
-    weekComparison: [],
+    depotWeekGaps: [],
   });
 
   const mahmoud = built.reps.find((rep) => rep.repName === "Mahmoud Fathy");
@@ -273,7 +273,7 @@ export function runWeeklyFieldForceTests() {
     ],
     areaSplit: null,
     seatIndex: index,
-    weekComparison: [],
+    depotWeekGaps: [],
   });
   const exactRep = allocated.reps.find((rep) => rep.repName === "Mahmoud Fathy");
   assert.equal(exactRep?.exactValue, 400, "only the hand-mapped row counts as exact credit");
@@ -298,10 +298,8 @@ export function runWeeklyFieldForceTests() {
       { code: "P9", name: "Never sold" },
       { code: "P1", name: "Tebofortin 40mg" },
     ],
-    weekComparison: [
-      { cycleMonth: "2026-08-01", weekNumber: 3, weekStart: null, salesValue: null, salesUnits: null, stockUnits: 0, deltaValuePct: null, spansGap: true },
-      { cycleMonth: "2026-08-01", weekNumber: 1, weekStart: null, salesValue: 10, salesUnits: 1, stockUnits: 0, deltaValuePct: null, spansGap: false },
-    ],
+    // POS sent no sheet for week 2, so its week-3 figure holds weeks 2 and 3.
+    depotWeekGaps: [{ distributorCode: "POS", cycleMonth: "2026-08-01", weekNumber: 3 }],
   });
   assert.deepEqual(
     axed.productAxis.map((product) => product.code),
@@ -312,7 +310,28 @@ export function runWeeklyFieldForceTests() {
   assert.deepEqual(
     axed.gapWeekNumbers,
     [3],
-    "a week whose predecessor was never uploaded is FLAGGED, because its de-cumulated figure spans the gap and reads high",
+    "a week holding money from a depot that skipped the week before is FLAGGED, because its de-cumulated figure spans the gap and reads high",
+  );
+
+  // One rule on every Field Force tab (owner, 2026-09-17), including the ones whose load is not lifted:
+  // another depot's sheet for the missing week does not clear the flag.
+  const pooledWouldHide = buildPortalWeeklyFieldForce({
+    rows: [
+      factRow({ areaCode: "AB1", weekNumber: 1, salesValue: 10, salesUnits: 1 }),
+      factRow({ distributorCode: "IS", distributorName: "Ibn sina", areaCode: "AB1", weekNumber: 2, salesValue: 15, salesUnits: 1 }),
+      factRow({ areaCode: "AB1", weekNumber: 3, salesValue: 20, salesUnits: 2 }),
+    ],
+    areaSplit: null,
+    seatIndex: index,
+    depotWeekGaps: [{ distributorCode: "POS", cycleMonth: "2026-08-01", weekNumber: 3 }],
+  });
+  assert.deepEqual(pooledWouldHide.weekNumbers, [1, 2, 3], "fixture: some depot sent every week");
+  assert.deepEqual(pooledWouldHide.gapWeekNumbers, [3], "POS skipped week 2, so week 3 is flagged although Ibn sina sent week 2");
+  assert.deepEqual(
+    buildPortalWeeklyFieldForce({ rows: [factRow({ areaCode: "AB1", weekNumber: 3, salesValue: 20, salesUnits: 2 })], areaSplit: null, seatIndex: index })
+      .gapWeekNumbers,
+    [],
+    "with no depot gaps supplied nothing is flagged, so every loader must pass them",
   );
 
   // ── 5. failing soft ────────────────────────────────────────────────────────────────────────
@@ -320,7 +339,7 @@ export function runWeeklyFieldForceTests() {
     rows: [factRow({ areaCode: "AB1", salesValue: 100, salesUnits: 1 })],
     areaSplit: null,
     seatIndex: { byLineArea: new Map(), seats: [] },
-    weekComparison: [],
+    depotWeekGaps: [],
   });
   assert.equal(
     noSeats.seatIndexUnavailable,

@@ -19,7 +19,14 @@ import {
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
-import { decumulateRows, suppressGapSpannedValue, weekGapFlags, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
+import {
+  decumulateRows,
+  depotWeekGapKeys,
+  depotWeekGaps,
+  moneySpansDepotGap,
+  suppressGapSpannedValue,
+  weekHasDecumulationGap,
+} from "@/lib/sales/weekly/decumulate";
 import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
@@ -1172,6 +1179,11 @@ export async function loadWeeklyDashboard(filters?: {
   // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
   // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
   const realRows = decumulateRows(allRows);
+  // Read over every loaded row, before any scope or filter, because that is the set decumulateRows
+  // subtracted from: a depot's week spans a gap only when the depot sent no sheet at all for the week
+  // before it, whatever lines or regions this viewer may see.
+  const depotGaps = depotWeekGaps(allRows);
+  const depotGapKeys = depotWeekGapKeys(depotGaps);
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
@@ -1366,7 +1378,15 @@ export async function loadWeeklyDashboard(filters?: {
   // delta is vs the previous week number within the SAME month-cycle (W2−W1, W3−W2, …).
   const wcMap = new Map<
     string,
-    { cycleMonth: string; weekNumber: number; weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }
+    {
+      cycleMonth: string;
+      weekNumber: number;
+      weekStart: string;
+      salesValue: number;
+      salesUnits: number;
+      stockUnits: number;
+      depotSpansGap: boolean;
+    }
   >();
   for (const row of scopedRows) {
     if (!row.cycleMonth || row.weekNumber == null) continue;
@@ -1378,10 +1398,12 @@ export async function loadWeeklyDashboard(filters?: {
       salesValue: 0,
       salesUnits: 0,
       stockUnits: 0,
+      depotSpansGap: false,
     };
     cur.salesValue += row.salesValue;
     cur.salesUnits += row.netQty;
     cur.stockUnits += row.stockQty;
+    if (moneySpansDepotGap(row, { value: row.salesValue, units: row.netQty }, depotGapKeys)) cur.depotSpansGap = true;
     if (row.weekStart && (!cur.weekStart || row.weekStart < cur.weekStart)) cur.weekStart = row.weekStart;
     wcMap.set(key, cur);
   }
@@ -1407,6 +1429,9 @@ export async function loadWeeklyDashboard(filters?: {
       stockUnits: Number(w.stockUnits.toFixed(2)),
       deltaValuePct: suppressGapSpannedValue(spansGap, deltaValuePct),
       spansGap,
+      // Marked, never suppressed (owner, 2026-09-17): one depot skipping a week must not blank the figure
+      // every other depot sent, but the reader is told it reads high.
+      depotSpansGap: w.depotSpansGap,
     };
   });
 
@@ -1537,9 +1562,7 @@ export async function loadWeeklyDashboard(filters?: {
           factoryPrice: priceMap.get(normalizeCode(row.productCode)) ?? null,
         }))
       : undefined,
-    // Read over every lifted scoped row, not just the selected week's, so a week whose predecessor was
-    // never uploaded is flagged exactly as weekComparison would flag it for this grain.
-    factRowWeekGaps: grainLifted && filters?.includeFactRows ? weekGapFlags(grainScopedRows) : undefined,
+    factRowDepotWeekGaps: filters?.includeFactRows ? depotGaps : undefined,
   };
 }
 

@@ -67,7 +67,10 @@ export type RepWeeklyMonthOption = { code: string; name: string };
 export type RepWeeklyWeek = {
   /** Week of the month. Labelled by number, as on the managers' screen: distributors stamp different dates. */
   weekNumber: number;
-  /** The week before it was never uploaded, so this week's figure spans the gap and reads high. */
+  /**
+   * A depot whose sales reached his areas this week sent no sheet for the week before, so this week's
+   * figure spans that gap and reads high.
+   */
   spansGap: boolean;
 };
 
@@ -224,7 +227,10 @@ export function selectRepWeeklySales(input: {
   ownSeats: readonly FieldForceSeat[];
   month: RepWeeklyMonthOption | null;
   months: RepWeeklyMonthOption[];
-  /** Read only for each week's number and gap flag. Its money is line-wide and never copied. */
+  /**
+   * Read only for each week's number. Its money is line-wide and never copied, and so is its gap flag:
+   * one depot's sheet there hides another depot's missing week.
+   */
   weekComparison?: WeeklyDashboard["weekComparison"];
   allocationUnavailable?: boolean;
 }): PortalWeeklyRepSales {
@@ -237,10 +243,14 @@ export function selectRepWeeklySales(input: {
   const areas: RepWeeklyArea[] = [];
   const productsByCode = new Map<string, RepWeeklyProduct>();
   const totals = { value: 0, exactValue: 0, allocatedValue: 0, valueByWeek: {} as Record<number, number> };
+  // His own flags: a week reads high for him only when a depot whose money reached HIS seats skipped
+  // the week before. Another rep's depot missing a week says nothing about his figure.
+  const gapWeeks = new Set<number>();
 
   for (const seat of ownSeats) {
     const key = repWeeklySeatKey(seat);
     const entry = entryByKey.get(key);
+    for (const week of entry?.gapWeekNumbers ?? []) gapWeeks.add(week);
     const area: RepWeeklyArea = {
       key,
       lineName: repWeeklyLineName(seat),
@@ -281,11 +291,9 @@ export function selectRepWeeklySales(input: {
   // The week axis is the month's upload calendar, not his rows: a week he sold nothing in stays on screen
   // as a dash instead of silently disappearing.
   const calendar = new Set(fieldForce.weekNumbers);
-  const gapWeeks = new Set(fieldForce.gapWeekNumbers);
   for (const entry of input.weekComparison ?? []) {
     if (month && entry.cycleMonth !== month.code) continue;
     calendar.add(entry.weekNumber);
-    if (entry.spansGap) gapWeeks.add(entry.weekNumber);
   }
   const weeks: RepWeeklyWeek[] = [...calendar]
     .sort((a, b) => a - b)
@@ -396,7 +404,8 @@ export async function getPortalWeeklyRepSales(
     rows: dashboard.factRows ?? [],
     areaSplit,
     seatIndex,
-    weekComparison: dashboard.weekComparison,
+    // Flagged per depot, so each seat carries the gaps of the depots whose money reached it.
+    depotWeekGaps: dashboard.factRowDepotWeekGaps ?? [],
     seatIndexUnavailable: false,
   });
 

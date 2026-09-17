@@ -14,8 +14,9 @@
 //  4. IT FITS THE SCREEN (owner golden rule). No horizontal scroll at any width: a fixed-layout table on
 //     desktop, cards on a phone, and long names wrap rather than being cut.
 //
-// A week whose previous upload never happened carries two weeks of sales. It is marked, it gets no
-// up/down arrow, and it can never be the "best week": a data hole must not read as a good week.
+// A week that carries sales from a depot which sent no sheet for the week before also holds that missing
+// week. It is marked, it gets no up/down arrow, and it can never be the "best week": a data hole must not
+// read as a good week.
 //
 // A second tab, "Depot Detail", lays the same month out exactly as Weekly Stock (owner, 2026-09-16):
 // every product at every depot, still his own area's share and nothing wider.
@@ -215,8 +216,8 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
           {gapWeeks.length > 0 ? (
             <Notice>
               {`${gapWeeks.length === 1 ? "Week" : "Weeks"} ${gapWeeks.join(", ")} ${
-                gapWeeks.length === 1 ? "follows a week that was" : "follow weeks that were"
-              } never uploaded, so the figure carries the missing week too and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
+                gapWeeks.length === 1 ? "carries" : "carry"
+              } sales from a depot that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
             </Notice>
           ) : null}
 
@@ -395,7 +396,7 @@ function ProductTable({ products, weeks }: { products: ProductRow[]; weeks: RepW
               <th
                 key={week.weekNumber}
                 className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
-                title={week.spansGap ? "Includes a week that was never uploaded" : undefined}
+                title={week.spansGap ? "Also holds a week a depot never uploaded" : undefined}
               >
                 {`W${week.weekNumber}`}
                 {week.spansGap ? <span className="ml-0.5 text-amber-500">•</span> : null}
