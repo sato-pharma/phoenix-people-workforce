@@ -28,11 +28,56 @@ EXPO_PUBLIC_PHOENIX_API_URL=https://phoenix-people-workforce-staging.up.railway.
 Any non-production target is labelled on the login screen and on Profile — staging holds real names
 and real payroll, so which system is answering is never left implicit.
 
-## Producing an installable file
+## Producing an installable APK
 
-Expo Go runs the JavaScript but is not the app. A real `.apk`/`.aab` needs a signing key and a
-cloud build (`eas build -p android`), which needs an Expo account and a decision about how the app
-reaches employees — Play Store, unlisted Play, or a file sent directly. That decision is open.
+Expo Go runs the JavaScript but is not the app. A real `.apk` is built by **EAS Build**, on Expo's
+servers. That is not a preference: an Android build needs a JDK, the Android SDK and Gradle, none of
+which are installed on this machine, and a Gradle build wants several GB of RAM that a 16 GB box
+running a dozen sessions does not have.
+
+`eas.json` in this folder is already configured. Two profiles, matching the two ways the app can
+reach employees:
+
+| Profile | Produces | For |
+| --- | --- | --- |
+| `preview` | `.apk`, internal distribution | **Direct install** — a link or file sent to a handset |
+| `production` | `.aab`, store distribution | Play Store, if that is ever chosen |
+
+### The direct-install APK
+
+One thing has to happen first, and only the owner can do it: **an Expo account**. It is free, and
+`eas` will prompt for it.
+
+```bash
+cd mobile
+npx eas-cli@latest login     # or `register` — Expo account, not a Phoenix one
+npx eas-cli@latest init      # writes extra.eas.projectId into app.json — commit that
+npm run build:apk
+```
+
+The build runs on Expo's servers and finishes with a download link and a QR code. Opening that link
+on the handset installs it; Android will ask to allow installs from an unknown source, because the
+app does not come from the Play Store.
+
+**The signing key is generated and held by EAS, not by this repository.** That is deliberate — a
+keystore must never be committed, and `.gitignore` here refuses `*.jks`, `*.p12`, `*.key` and
+`*.p8` so it cannot happen by accident. Keep the Expo account; losing it means losing the key, and
+an APK signed with a different key cannot upgrade one already installed on a handset.
+
+### Installing a newer build over an older one
+
+`appVersionSource` is `local`, so the version lives in `app.json` where it can be read in a diff
+rather than in a service. Android refuses to install an APK whose `versionCode` is not higher than
+the installed one, so bump `expo.android.versionCode` before each build you intend to replace an
+existing install with. `expo.version` (`0.1.0`) is the human-readable one and is what people will
+quote back to you.
+
+### What the APK talks to
+
+Production (`https://phoenix-hr.satopharma.com`), so signing in signs a real employee into the real
+system with their own permissions. To build one pointed elsewhere, set
+`EXPO_PUBLIC_PHOENIX_API_URL` in the build profile's `env` block in `eas.json` — any non-production
+target is labelled on the login screen and on Profile.
 
 ## Why npm here, and pnpm in the repo root
 
