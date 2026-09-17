@@ -60,6 +60,23 @@ export type ScreeningQueueFilters = {
    * pasted to the other screener.
    */
   vacancy?: string | string[] | undefined;
+  /**
+   * WHICH CV IS OPEN — the one thing on this screen that had no address until 2026-09-18.
+   *
+   * Every filter here is a link on purpose, so "screen the New Medical Rep CVs in Tanta I have not
+   * read yet" survives a reload and can be pasted to the other screener. The CV being READ was the
+   * exception: it lived in component state, so there was no URL for it, which cost three things at
+   * once. A row could not be opened in a second tab, because a browser cannot open a `<button>`.
+   * A CV could not be sent to the other screener as a link. And reading one pushed the reader down
+   * a shared scroll, with the list they came from somewhere above — the owner's words were "when i
+   * view cv and pushed to the end of the screen and i really hustle to go back where i where".
+   *
+   * It is NOT a narrowing and must never become one: it says which row is open, not which rows
+   * exist, so it stays out of `ScreeningQueueNarrowing` and out of the queue's filtering entirely.
+   * Changing any filter drops it, which is correct — the CV you were reading may not be in the pile
+   * you just asked for.
+   */
+  candidate?: string | string[] | undefined;
 };
 
 /**
@@ -256,7 +273,26 @@ export type ScreeningHrefOptions = {
   source?: string | null;
   /** An open seat's vacancy id, or null to leave seat mode and go back to the whole pool. */
   vacancy?: number | null;
+  /** The CV to open on arrival. Not a filter — the queue is identical with or without it. */
+  candidate?: string | null;
 };
+
+/**
+ * The CV named in the link, or null.
+ *
+ * Deliberately NOT part of `parseScreeningFilters`: that function returns the narrowing the queue
+ * is built from, and a candidate id narrows nothing. Keeping it out is what guarantees that opening
+ * a CV in a new tab shows the same pile, with that one already open, rather than a pile of one.
+ *
+ * No shape check beyond emptiness. An id that matches no row selects nothing and the list falls back
+ * to its first row, which is the same thing that happens when a filter empties the pile — an
+ * unreadable id must never be an error page.
+ */
+export function parseOpenCandidateId(value: string | string[] | null | undefined): string | null {
+  const first = Array.isArray(value) ? value[0] : value;
+  const trimmed = typeof first === "string" ? first.trim() : "";
+  return trimmed === "" ? null : trimmed;
+}
 
 /**
  * The narrowing a screen should DRAW after one filter was picked, before the server has answered.
@@ -315,6 +351,9 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.rating) params.set("rating", options.rating);
   if (options.source) params.set("source", options.source);
   if (options.vacancy) params.set("vacancy", String(options.vacancy));
+  // LAST, so the filters read first in the address bar and the long id sits at the end where it is
+  // out of the way of a person reading the URL to see what the pile is.
+  if (options.candidate) params.set("candidate", options.candidate);
   const query = params.toString();
   return query ? `${base}?${query}` : base;
 }

@@ -27,7 +27,7 @@
 // it is actioned is a queue that loses your place on every single decision.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Eye, Search, X } from "lucide-react";
+import { Copy, Eye, FolderClosed, Search, X } from "lucide-react";
 
 import { candidateStatusLabel, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { candidateRedFlagLabels } from "@/lib/recruitment/red-flag";
@@ -48,6 +48,7 @@ const PAGE_STEP = 40;
 const EXTEND_MARGIN = 400;
 
 export function WorkstationCandidateList({
+  candidateHref,
   decidedById,
   ratedById,
   emptyLabel,
@@ -62,6 +63,8 @@ export function WorkstationCandidateList({
   title,
   totalLabel,
 }: {
+  /** Builds one CV's address, so each row is an anchor a browser can open in its own tab. */
+  candidateHref: (candidateId: string) => string;
   /**
    * What THIS session decided, keyed by candidate id.
    *
@@ -215,6 +218,7 @@ export function WorkstationCandidateList({
                     <CandidateBlock
                       active={row.id === selectedId}
                       decided={decidedById[row.id] ?? null}
+                      href={candidateHref(row.id)}
                       onSelect={() => onSelect(row.id)}
                       rating={row.id in ratedById ? (ratedById[row.id] ?? null) : row.rating}
                       row={row}
@@ -260,12 +264,15 @@ export function WorkstationCandidateList({
 function CandidateBlock({
   active,
   decided,
+  href,
   onSelect,
   rating,
   row,
 }: {
   active: boolean;
   decided: CandidateStatus | null;
+  /** This CV's own address, so the row can be opened in a second tab. See the element below. */
+  href: string;
   onSelect: () => void;
   /** The star as the reader sees it now — this sitting's if there is one, else the stored one. */
   rating: CandidateRating | null;
@@ -287,16 +294,32 @@ function CandidateBlock({
     row.unsavedFindings > 0 ||
     Boolean(row.locationLabel && !row.seatReason) ||
     Boolean(row.experienceLabel) ||
+    Boolean(row.folderLabel && !row.seatReason) ||
     row.band === "no_cv";
 
   // `min-w-0 flex-1` rather than `w-full`: the row sits in a flex line beside an optional tick-box
   // (see the call site). Alone in that line it is exactly the width it always was, so a reader who
   // cannot decide sees the list unchanged.
+  // ── THE ROW IS A LINK, AND A PLAIN CLICK STILL DOES WHAT IT ALWAYS DID ────────────────────────
+  //
+  // It was a `<button>`, and a button is unreachable by every way a person opens something in a
+  // second tab: ctrl-click, middle-click, ⌘-click, the context menu, dragging it to the tab strip.
+  // So reading a CV could only ever happen in the one pane, on the one shared scroll, and the price
+  // of every CV was finding your place in the list again afterwards.
+  //
+  // An anchor costs nothing and buys all of them. A plain left-click is intercepted and selects in
+  // place, which is the fast path a screener uses all day and it is unchanged — no navigation, no
+  // refetch, no history entry. A MODIFIED click is not ours: it falls through untouched and the
+  // browser does what the reader asked, in a tab of its own, with this list left exactly where it
+  // is. Middle-click never reaches this handler at all (it fires `auxclick`), so it works for free.
+  //
+  // `no-underline` because an anchor is underlined by default and this row's type scale is drawn,
+  // not inherited.
   return (
-    <button
+    <a
       aria-current={active ? "true" : undefined}
       className={cn(
-        "flex min-w-0 flex-1 flex-col gap-1.5 border-b border-phx-line px-3 py-2.5 text-left transition-colors",
+        "flex min-w-0 flex-1 flex-col gap-1.5 border-b border-phx-line px-3 py-2.5 text-left no-underline transition-colors",
         // THE SELECTED ROW IS MARKED ON ITS EDGE, not painted. A 2px rule in the accent plus the
         // faintest tint reads as "this one" from across the room without turning the open candidate
         // into the loudest object on a screen whose actual subject is the CV two panes to the right.
@@ -304,8 +327,12 @@ function CandidateBlock({
           ? "border-l-2 border-l-phx-accent bg-phx-accent-soft"
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
       )}
-      onClick={onSelect}
-      type="button"
+      href={href}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        onSelect();
+      }}
     >
       <span className="flex items-start gap-2.5">
         <span className="min-w-0 flex-1">
@@ -443,6 +470,19 @@ function CandidateBlock({
               {row.experienceLabel}
             </span>
           ) : null}
+          {/* WHERE IT IS FILED, for a CV that is filed AND still undecided. Those rejoined this queue
+              on 2026-09-18 — 371 of them, every one previously invisible here (isShelvedFromReview in
+              candidate-folder.ts) — and a row that silently rejoined the pile would be unreadable
+              against one that was never filed at all. Same argument the place badge above makes, so
+              it is dropped in seat mode for the same reason: there the seat sentence already says it.
+
+              `info`, not `warn`: being filed is not a problem with the CV, it is where to find it. */}
+          {row.folderLabel && !row.seatReason ? (
+            <Pill tone="info" title={`Filed under ${row.folderLabel}. Nobody has decided on it yet, so it is still in this queue.`}>
+              <FolderClosed className="h-2.5 w-2.5" />
+              {row.folderLabel}
+            </Pill>
+          ) : null}
           {row.band === "no_cv" ? (
             <Pill tone="warn" title="The reader judged the attached file not to be a CV.">
               Not a CV
@@ -475,6 +515,6 @@ function CandidateBlock({
           {candidateRedFlagLabels[redFlag]}
         </span>
       ) : null}
-    </button>
+    </a>
   );
 }

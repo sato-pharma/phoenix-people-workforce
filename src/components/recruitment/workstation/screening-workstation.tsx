@@ -140,6 +140,8 @@ type PendingUndo = {
 
 export function ScreeningWorkstation({
   canDecide,
+  candidateHref,
+  openCandidateId,
   canSendToManagers,
   canWriteNotes,
   counts,
@@ -165,6 +167,24 @@ export function ScreeningWorkstation({
    * decisions, a shared prop would move who can reject fifty CVs without anybody editing this file.
    */
   canDecide: boolean;
+  /**
+   * The address of one CV in this queue, so every row can be a real link.
+   *
+   * The rows were `<button>`s, which no browser can open in a new tab by any means — not
+   * ctrl-click, not middle-click, not the context menu. That is what the owner hit on 2026-09-18:
+   * reading a CV pushed him down one shared scroll and getting back to his place in the list was
+   * the expensive part of every single CV.
+   */
+  candidateHref: (candidateId: string) => string;
+  /**
+   * The CV named in the URL, opened on arrival. Null on an ordinary load.
+   *
+   * Only the INITIAL selection. A plain left-click stays component state and deliberately does NOT
+   * push a URL: the row is a link so the browser can open it elsewhere, not so that reading forty
+   * CVs leaves forty entries in the back button and forty server round-trips through a 1,121-row
+   * pool.
+   */
+  openCandidateId: string | null;
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
@@ -195,7 +215,9 @@ export function ScreeningWorkstation({
   // it, which is the one thing this mode must never do.
   const [queue, setQueue] = useState<ScreeningWorkQueue>(vacancyId === null ? "new" : "all");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
+  // The CV in the link wins on arrival; otherwise the top of the queue, exactly as before. An id
+  // that is not in this pile selects nothing and the effect below falls back to the first row.
+  const [selectedId, setSelectedId] = useState<string | null>(openCandidateId ?? rows[0]?.id ?? null);
   const [tab, setTab] = useState<IntelligenceTab>("summary");
   const [queueOpen, setQueueOpen] = useState(false);
   // ── WHAT FOLDS, AND WHY FOCUS OVERRIDES RATHER THAN REPLACES ────────────────
@@ -1219,6 +1241,7 @@ export function ScreeningWorkstation({
             )}
           >
             <WorkstationCandidateList
+              candidateHref={candidateHref}
               decidedById={decided}
               emptyLabel={emptyLabelFor(queue, chosenVacancy?.jobTitle ?? null, search, poolSize, filteredOut)}
               markedIds={marked}

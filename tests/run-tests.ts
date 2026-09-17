@@ -228,6 +228,9 @@ import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.t
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentScreeningWorkstationTests } from "./recruitment-screening-workstation.test.ts";
 import { runCandidateFolderTests } from "./candidate-folders.test.ts";
+import { runScreeningFiledPoolTests } from "./recruitment-screening-filed-pool.test.ts";
+import { runScreeningShortcutTests } from "./recruitment-screening-shortcuts.test.ts";
+import { runScreeningRowLinkTests } from "./recruitment-screening-row-link.test.ts";
 import { runCvFolderTreeTests } from "./cv-folder-tree.test.ts";
 import { runCandidateFolderFilerNameTests } from "./candidate-folder-filer-name.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
@@ -2253,6 +2256,18 @@ await runTest(
 await runTest(
   "recruitment CV folders (a filed CV leaves the pool, the region shelf is EIGHT, and a rejection cannot be shelved)",
   runCandidateFolderTests,
+);
+await runTest(
+  "recruitment screening pool (an UNDECIDED filed CV is still in the queue — filing hid 371 of them, unreachable even by name)",
+  runScreeningFiledPoolTests,
+);
+await runTest(
+  "recruitment screening shortcuts (7 of the 8 bound keys were named NOWHERE on the screen)",
+  runScreeningShortcutTests,
+);
+await runTest(
+  "recruitment screening row link (a CV had no address, so no browser could open it in its own tab)",
+  runScreeningRowLinkTests,
 );
 await runTest(
   "recruitment folder filer name (a filed CV names WHO filed it, never the raw HR id)",
