@@ -416,7 +416,7 @@ export function WeeklySalesDepotDetail({
               : view.distributors.length;
   const hasAnySales = view.availableBranches.length > 0 || view.cells.length > 0;
   const hasUnmappedArea = areaOptions.some((option) => option.code === WEEKLY_SALES_DETAIL_UNMAPPED_AREA);
-  // A manager's figures are whole depots unless his load was lifted and a depot-split share reached him.
+  // A manager's figures are whole depots unless his own areas' share of a depot-split depot reached him.
   const managerHasShares = !isRep && weeklySalesDetailShowsBasis(view);
   const shareOfTotal = (part: number) => (kpis.value > 0 ? `${formatShare(part / kpis.value)} of your total` : "Nothing sold yet");
   const drillArea = (code: string) =>
@@ -432,7 +432,7 @@ export function WeeklySalesDepotDetail({
           <p className="text-phx-md font-semibold text-amber-900">
             {isRep
               ? "The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and your figures read low."
-              : "The depot-to-area map did not load just now, so depots filed under another region that serve your areas are not counted and your figures read low."}{" "}
+              : "The depot-to-area map did not load just now, so depots serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted."}{" "}
             Press Sync now in a moment.
           </p>
         </div>
@@ -534,7 +534,7 @@ export function WeeklySalesDepotDetail({
                   icon={TriangleAlert}
                   label="Area not mapped"
                   value={formatEgp(kpis.unmappedValue)}
-                  sub="Depots serving several areas"
+                  sub={managerHasShares ? "Depots no rule places" : "Depots serving several areas"}
                   onClick={hasUnmappedArea ? () => drill("areas", WEEKLY_SALES_DETAIL_UNMAPPED_AREA) : undefined}
                 />
                 <Kpi
@@ -635,9 +635,11 @@ export function WeeklySalesDepotDetail({
             shown per product only; every total across products is a value.{" "}
             {isRep
               ? "A depot mapped to your area by hand credits you exactly. Any other depot has its money spread evenly across the governorates its name states, then evenly again across that governorate's areas on your line, so an allocated share is an allocation of depot shipments, not a record of sales observed in your territory. "
-              : "Depots that serve several areas are listed under Area not mapped. "}
+              : managerHasShares
+                ? "Depots no rule places in an area, such as warehouses and tenders, are listed under Area not mapped. "
+                : "Depots that serve several areas are listed under Area not mapped. "}
             {managerHasShares
-              ? "A depot filed under another region has its money spread evenly across the governorates its name states, then across their areas on your line, and reaches you only as the share in your own areas, marked Allocated share (Part allocated where the depot's mapping changed inside the period): an allocation of depot shipments, not a record of sales observed in your territory. Every other figure is the depot's whole sale. "
+              ? "A depot serving several areas has its money spread evenly across the governorates its name states, then across their areas on your line, and reaches you only as the share in your own areas, marked Allocated share (Part allocated where the depot's mapping changed inside the period); the shares in other managers' areas are not counted. That is an allocation of depot shipments, not a record of sales observed in your territory. Every other figure is the depot's whole sale. "
               : null}
             Products with no Product Master mapping are left out, and Head Office products are not tracked weekly. The
             Monthly Closing remains the official number.

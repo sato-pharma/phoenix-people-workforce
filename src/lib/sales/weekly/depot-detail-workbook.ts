@@ -5,7 +5,7 @@
 // It exports exactly what the screen shows for the same query: the rows come from the same loader the
 // feed calls, so the viewer's scope travels with them, and a Medical Rep's book holds his own screen and
 // nothing wider (no region tab, no other area). A manager's book carries the "How It Reached You" columns
-// only when a lifted load placed a depot-split share in it — the same test his screen's labels answer.
+// only when his own areas' share of a depot-split depot is in it — the same test his screen's labels answer.
 //
 // THE TOTAL ROW. addPhoenixTableSheet appends a TOTAL row that SUMs every `numeric` column. So a column
 // is numeric here only when its sum means something: value, average weekly value, share, and counts of
@@ -282,13 +282,15 @@ export function weeklySalesDepotDetailNotes(
             ? [
                 {
                   topic: "How it reached you",
-                  rule: "Whole depot: the depot is filed under your own region or areas, so its whole sale is shown. Allocated share: the depot is filed under another region, and its name places it across several areas; this is the part that falls in your own areas. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
+                  rule: "Whole depot: the depot is mapped to one of your areas by hand, or no rule places it in an area, so its whole sale is shown. Allocated share: the depot's name places it across several areas, and this is the part that falls in your own areas; the parts in other managers' areas are not counted. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
                 },
               ]
             : []),
           {
             topic: "Area not mapped",
-            rule: "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
+            rule: showBasis
+              ? "Depots no rule places in an area (warehouses, tenders) carry no area and are listed under this label, one line per region."
+              : "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
           },
         ]),
     ...(payload.allocationUnavailable
@@ -297,7 +299,7 @@ export function weeklySalesDepotDetailNotes(
             topic: "Allocation missing",
             rule: isRep
               ? "The depot-to-area map did not load when this file was made, so only depots mapped to your area by hand are counted and the figures read low."
-              : "The depot-to-area map did not load when this file was made, so depots filed under another region that serve your areas are not counted and the figures read low.",
+              : "The depot-to-area map did not load when this file was made, so depots serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted.",
           },
         ]
       : []),

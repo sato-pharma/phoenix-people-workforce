@@ -356,6 +356,14 @@ export type WeeklyBranchRow = {
 };
 
 /**
+ * How a row reached a manager whose load follows his own areas (own-area-share.ts):
+ *   mapped    — a depot mapped to one of his areas by hand: the depot's own sale there;
+ *   allocated — the part of a depot the owner's split rule places in one of his areas;
+ *   whole     — a depot no rule places in any area (a warehouse, a tender), which his own scope admits.
+ */
+export type WeeklyAreaBasis = "mapped" | "allocated" | "whole";
+
+/**
  * A single de-cumulated, access-scoped, filter-applied fact row — the row-level grain that powers the
  * interactive BI export (its hidden Data sheet, pivots, charts and SUMIFS formulas). Only populated
  * when `includeFactRows` is requested (the export path), so the on-screen dashboard payload stays lean.
@@ -393,6 +401,11 @@ export type WeeklyFactExportRow = {
   salesValue: number;
   salesUnits: number;
   stockUnits: number;
+  /**
+   * Set only on a load that followed the viewer's own areas (ownAreaShare): how the row reached him.
+   * Absent everywhere else, where a row carrying an area is hand-mapped and any other row is not placed.
+   */
+  areaBasis?: WeeklyAreaBasis;
 };
 
 export type WeeklyDashboard = {
