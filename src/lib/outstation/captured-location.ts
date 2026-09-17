@@ -13,8 +13,9 @@
  * to a 200 m match in Dokki.
  *
  * Deriving at READ time, from the coordinates already stored on the request, is deliberate:
- *   - it costs nothing (the centroid index is cached in-process; the match is pure maths),
- *     unlike a Google reverse-geocode which is a paid call per row;
+ *   - it costs nothing (the centroid index is cached for 5 minutes and concurrent lookups share
+ *     one read; the match is pure maths), unlike a Google reverse-geocode which is a paid call
+ *     per row;
  *   - it follows the owner's standing geography rule — a point always resolves against
  *     TODAY's brick/area/region tree, never the tree as it stood on the trip date.
  * The consequence, accepted: re-bricking an area changes what an old request reports. That
@@ -94,9 +95,10 @@ export async function resolveOutstationCapturedLocation(input: {
 }
 
 /**
- * Attach `capturedLocation` to a whole list of requests. Cheap by construction: the centroid
- * index is loaded once and cached in-process for 5 minutes, and each row is then pure maths,
- * so this stays O(rows) with no extra I/O — enriching a full admin page costs one index load.
+ * Attach `capturedLocation` to a whole list of requests. Every row asks for the centroid index at
+ * once, and `loadBrickCentroids` shares one in-flight lookup between them, so enriching a full
+ * admin page costs one index load even at the moment the 5-minute cache entry expires (before that
+ * sharing, an expired entry cost one database read PER ROW). Each row is then pure maths.
  * Never throws; a failed enrichment leaves the row's `capturedLocation` null.
  */
 export async function attachOutstationCapturedLocations<

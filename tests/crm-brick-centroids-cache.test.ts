@@ -127,8 +127,40 @@ export function runCrmBrickCentroidsCacheTests() {
     );
     assert.match(
       publicRegion,
-      /try\s*\{[\s\S]*return await loadBrickCentroidsCached\(\);[\s\S]*\}\s*catch\s*\{[\s\S]*return \[\];/,
-      "the public loadBrickCentroids must wrap the cached call in try/catch and degrade to [] — best-effort overlay, retried next request, never a cached empty",
+      /try\s*\{[\s\S]*return await loadBrickCentroidsShared\(\);[\s\S]*\}\s*catch\s*\{[\s\S]*return \[\];/,
+      "the public loadBrickCentroids must wrap the (shared) cached call in try/catch and degrade to [] — best-effort overlay, retried next request, never a cached empty",
+    );
+  }
+
+  // ── Concurrent callers share ONE lookup — a cache miss must not become one read per row ──────
+  // 2026-09-17: `unstable_cache` does not dedupe a miss, and attachOutstationCapturedLocations
+  // resolves one lookup per outstation request, all at once, on the Super Admin sidebar's 30-second
+  // badge poll. Every expiry therefore read source_of_sales_bricks once PER ROW: 7,178 reads a day
+  // in production, 93% of them in bursts of 61+ inside five seconds. The public wrapper must go
+  // through the single-flight, and nothing may call the cached read around it. The single-flight's
+  // own behaviour (one load per burst, slot cleared on settle and on failure) is exercised for real
+  // in tests/sos-reference-read-load.test.ts.
+  {
+    assert.match(
+      source,
+      /import\s*\{\s*singleFlight\s*\}\s*from\s*"@\/lib\/utils\/single-flight"/,
+      "brick-geo must take the shared single-flight helper, not a hand-rolled copy the behavioural test cannot see",
+    );
+    const sharedDecl = source.indexOf("const loadBrickCentroidsShared = singleFlight(");
+    assert.ok(
+      sharedDecl > cacheEnd && sharedDecl < publicStart,
+      "the shared lookup must be declared once, at module level, between the cached read and the public wrapper — declared inside the function it would be a new slot per call and share nothing",
+    );
+    assert.match(
+      source,
+      /const\s+loadBrickCentroidsShared\s*=\s*singleFlight\(\(\)\s*=>\s*loadBrickCentroidsCached\(\)\);/,
+      "the single-flight must wrap exactly the cached read, so every waiter gets the value the Data Cache lookup returned",
+    );
+    const cachedCalls = source.match(/loadBrickCentroidsCached\(\)/g) ?? [];
+    assert.equal(
+      cachedCalls.length,
+      1,
+      "the cached read may be called from ONE place — the single-flight — or a caller bypasses the sharing and a miss is one read per row again",
     );
   }
 }
