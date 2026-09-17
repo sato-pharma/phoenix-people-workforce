@@ -1790,8 +1790,9 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         // Deliberately still `pending` when emailInput.recipientAddressUnresolved is set, unlike
         // Telegram and push. That flag alone is not GUARD 1 in resolveNotificationDelivery: GUARD 1
         // also needs the stored policy's person modes (and candidateEmail, which the auth emails
-        // rely on) to resolve nobody, and it reads them when the email is sent. The deferred drain
-        // stores this payload and closes the row through that same guard, so it never sits pending.
+        // rely on) to resolve nobody, and it reads them when the email is sent. When quiet hours
+        // end, processDeferredDeliveryRetries sends this payload through safeSendNotificationEmail,
+        // which runs that guard before queueing and closes the row `skipped` — not pending for ever.
         deferredMetadata.emailInput = emailInput;
       } else if (channel === "email") {
         // Email is disabled for this recipient — skip immediately rather than writing a
