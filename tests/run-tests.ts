@@ -1704,6 +1704,7 @@ import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throt
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
+import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5763,6 +5764,11 @@ await runTest(
 await runTest(
   "the same workbook under another period is refused on its name AND figures, in the save step of every monthly upload screen: two months of a large all-Arabic workbook (both stored as .xlsx) and a distributor's fixed monthly file name load, the IS-S pair stays refused",
   runDuplicateUploadNameAndFiguresTests,
+);
+
+await runTest(
+  "the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money",
+  runSosMonthPaceAreaNamesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
