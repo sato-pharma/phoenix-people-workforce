@@ -490,6 +490,10 @@ now reaps busy dev servers and, under a lower floor, any node job. The hook now 
 The list is deliberately **not exclusive** — it never says "only" — so rules added later (rules 8
 and 9 below) extend it without making it false again.
 
+🔴 **That quoted hook text is itself now history: the gate it names was removed on 2026-09-17** (see
+*The heavy-job gate — RETIRED 2026-09-17* below). Nothing refuses a heavy job any more; the watchdog
+floors below are all that remain.
+
 ### 2026-09-09 — rule 5: concurrent dev servers, all of them BUSY
 
 **Two hard freezes, 17:34 and 20:36 Cairo.** Neither left a minidump; both left a GPU watchdog dump
@@ -590,9 +594,43 @@ not as what the machine is doing; a restarted watchdog's START line printing `ba
 The §5 hook stays true once they run: it lists what the watchdog reaps without claiming the list is
 complete, and rule 9 reaps nothing.
 
-### The heavy-job gate — prevention, where the watchdog is the cure
+### The heavy-job gate — RETIRED 2026-09-17, never to be rebuilt
 
-`~/.claude/hooks/heavy-job-gate.mjs` is a user-level **PreToolUse** hook (matcher `Bash|PowerShell`,
+🔴 **The gate and its queue no longer exist. Everything in this subsection is HISTORY — do not read
+any of it as a live rule, and do not rebuild it.** The owner removed both on 2026-09-17 after being
+shown the cost, measured from the gate's own log over its last 2 days 13 hours (2026-09-15 07:28 →
+2026-09-17 20:44 Cairo):
+
+| Measure | Reading |
+| --- | --- |
+| Wall clock spent waiting in the queue | **1,997 min — 33.3 h** |
+| …of which ran NOTHING (27 give-ups) | **1,205 min — 20.1 h** |
+| Longest single give-up | **16,029 s — 4 h 27 m** |
+| Commands refused outright by the gate | **23**, 15 of them a plain `tsc` |
+
+The arithmetic that made it unusable: its floor for a typecheck or build is **5,000 MB** of free
+physical RAM, and this 16 GB machine habitually sits at **1–2 GB** free with a dozen Claude sessions
+open (28 `claude` processes held 6.5 GB at the moment of removal, with no dev server running at all).
+So the floor was effectively never met and `tsc` simply stopped being runnable — the last refusal is
+stamped 20:44:37, at 2,334 MB. The per-call overhead was never the problem (measured at removal: 188 ms
+median against a 129 ms bare-node baseline, ~55 ms net); **the refusals and the waiting were.**
+
+What changed, on 2026-09-17:
+
+- the `heavy-job-gate.mjs` entry was removed from `PreToolUse` in `~/.claude/settings.json`;
+- `heavy-job-gate.mjs` and `heavy-jobs-lib.mjs` were moved to
+  `~/.claude/backups/_attic-2026-09/retired-heavy-job-2026-09-17/` (kept, not deleted);
+- `~/.claude/scripts/heavy-queue.mjs` became a **passthrough** — it still accepts `--max-wait-min`
+  and `--heavy` so nothing that calls it breaks, but runs the command immediately and never waits;
+- `memory-guard.mjs` and `session-census.mjs` stopped routing sessions at the queue.
+
+`mem-watchdog.ps1` (the cure) and `ram-guard.ps1` are untouched and still reclaim memory under their
+floors. **Prevention is now a human judgement: read live free RAM before starting a heavy job, and
+prefer pushing the branch and letting CI answer (§7).**
+
+The rest of this subsection records how the gate worked, for the record only.
+
+`~/.claude/hooks/heavy-job-gate.mjs` was a user-level **PreToolUse** hook (matcher `Bash|PowerShell`,
 timeout 15 s). It refuses a Bash or PowerShell call that would START a dev server, typecheck, build,
 lint or test run the machine cannot hold. The admission rule lives in
 `~/.claude/hooks/heavy-jobs-lib.mjs`, shared with the queue so the two can never disagree, and it
@@ -624,11 +662,12 @@ server by port, and that for typecheck, lint or tests the PR's CI is usually the
 
 ### Keep the thresholds in step
 
-Three tools read the same machine and must agree, or one fires where another stays silent:
+Three tools read the same machine and must agree, or one fires where another stays silent. **Since
+2026-09-17 there are two** — `heavy-jobs-lib.mjs` is retired and its column entry is struck through:
 
 | Threshold | Where it lives |
 | --- | --- |
-| **2,600 MB** | `mem-watchdog.ps1` `$TrimWarnMB` · `session-census.mjs` `RAM_WARN_MB` · `heavy-jobs-lib.mjs` `MIN_AVAIL_MB` |
+| **2,600 MB** | `mem-watchdog.ps1` `$TrimWarnMB` · `session-census.mjs` `RAM_WARN_MB` · ~~`heavy-jobs-lib.mjs` `MIN_AVAIL_MB`~~ (retired) |
 | **1,800 MB** | `mem-watchdog.ps1` `$LowRamMB` · `session-census.mjs` `RAM_FLOOR_MB` |
 | **500 MB** | `mem-watchdog.ps1` `$CritRamMB` — no counterpart; nothing warns, it only reclaims |
 | **1.0 GB** | `mem-watchdog.ps1` `$MultiNextMinGB` · `$CritKillMinGB` · `$BatchMinGB` · `$DeprioMinGB` |
@@ -976,10 +1015,9 @@ HEAVY jobs.
 🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
 dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
 3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
-`mem-watchdog.ps1`'s floor. `~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or
-`ci` under **5,000 MB** and lint or tests under **2,600 MB**; since 2026-09-12 it does NOT gate a dev
-server at all (`DEV_NEED_MB = 0` in `heavy-jobs-lib.mjs`), so the watchdog is that job's only floor; under
-**1,800 MB** the watchdog reaps IDLE dev servers, then all but the most recently active, and under
+`mem-watchdog.ps1`'s floor. 🔴 **The heavy-job gate that used to REFUSE such a job was removed on
+2026-09-17 (owner instruction) — the watchdog is now the only floor for every job, not just a dev
+server.** Under
 **500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
 by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
 statusline count is not a guard.** Account:
