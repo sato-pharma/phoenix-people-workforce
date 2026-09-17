@@ -82,12 +82,13 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs four required checks — three from `.github/workflows/ci.yml`, one from
+CI runs five required checks — four from `.github/workflows/ci.yml`, one from
 `.github/workflows/security-scan.yml`:
 
 | Check | Workflow | What it runs |
 |---|---|---|
-| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite** (`pnpm run test`), the production **build**, and the Playwright **login smoke test** — all in one job. |
+| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the production **build**, and the Playwright **login smoke test** — all in one job. |
+| `test` | ci.yml | The **unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`) on its own parallel job. **It left `validate` on 2026-09-17 (#3950)** — it read nothing the build produced, and was 96s of a 364s job; `validate` came back at 267s and the new job at 129s, under `typecheck`, so the wait fell by the whole 96s. **Anything that says a pinned test "runs in the required `validate` job" means this one.** |
 | `lint` | ci.yml | `pnpm run lint` (parallel job). |
 | `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
 | `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. **Blocking** — any finding fails the check. |

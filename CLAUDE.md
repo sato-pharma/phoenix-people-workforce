@@ -24,7 +24,7 @@ All commands run from the repo root.
 | Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
 **CI is the gate. Do not run a local full validation** — no "quick subset" of lint + typecheck
-before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's four
+before pushing, no `pnpm run ci` as a pre-push ritual. Push the branch and let the PR's five
 required checks answer. Migrations and production deploys are the two things CI never sees. Full
 rule, the retired `check:harden`, and the per-change matrix: [AGENTS.md §7](AGENTS.md).
 
@@ -76,7 +76,7 @@ owner approves that specific change in the conversation.
 **The Office golden rule is the one lock a session cannot talk itself past.** Locked 2026-08-11 at
 the owner's instruction. `tests/office-golden-rule-lock.test.ts` pins the formula with a source
 fingerprint, a behaviour fingerprint, and four verbatim clause checks, and it runs in the required CI
-`validate` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
+`test` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
 owner's password; it exists only as a scrypt verifier in `src/lib/sales/office-golden-rule.lock.json`
 and is not recoverable from this repository. **ARMED 2026-09-05 — before that date no verifier
 existed at all**, and `unlock` refused rather than re-pinning (it fails closed), so a session reading
