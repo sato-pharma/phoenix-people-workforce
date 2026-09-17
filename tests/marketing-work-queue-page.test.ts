@@ -33,8 +33,21 @@ export async function runMarketingWorkQueuePageTests() {
 
   assert.match(
     page,
-    /try \{\s*\n\s*workspace = await getApproverPendingRequests\(access\);\s*\n\s*\} catch \{/,
+    /try \{\s*\n\s*workspace = await getApproverPendingRequests\(access\);\s*\n\s*\} catch \(error\) \{/,
     "the queue read must be guarded — an unhandled throw is a blank screen with no explanation",
+  );
+  // A REFUSAL is not a failure. Since 2026-09-18 the Medical Rep is off the marketing approval
+  // chain by owner decision, so this route is simply not theirs — dressing that as "your queue
+  // could not be read" would send them chasing IT over something decided on purpose.
+  assert.match(
+    page,
+    /isForbiddenError\(error\)/,
+    "a forbidden read must be told apart from a broken one before the alarm copy is chosen",
+  );
+  assert.match(
+    page,
+    /Marketing approvals are not part of your role/,
+    "a refused viewer must be told the surface is not theirs, in words, not shown the red alarm",
   );
   assert.match(
     page,
@@ -48,7 +61,7 @@ export async function runMarketingWorkQueuePageTests() {
   );
   // The catch must return before any list renders, or the failure state and an empty queue both
   // appear and the reader picks whichever they see first.
-  const catchAt = page.indexOf("} catch {");
+  const catchAt = page.indexOf("} catch (error) {");
   const destructureAt = page.indexOf("const { advisoryRows, rows, upcomingRows }");
   assert.ok(catchAt > -1 && destructureAt > -1 && catchAt < destructureAt, "expected the catch to precede the render");
   const catchBlock = page.slice(catchAt, destructureAt);
@@ -56,6 +69,12 @@ export async function runMarketingWorkQueuePageTests() {
     catchBlock,
     /return \(/,
     "the failure branch must RETURN, not fall through into rendering an empty queue",
+  );
+  // Both branches return: the refusal panel must not fall through into the red alarm either.
+  assert.equal(
+    (catchBlock.match(/return \(/g) ?? []).length,
+    2,
+    "the catch must return twice — once for a refusal, once for a genuine read failure",
   );
 
   // And the success-but-empty case must be distinguishable from it.
