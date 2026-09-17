@@ -14,16 +14,32 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // so it is one month's file wearing two months' labels. March (399,890.48) and June (396,038.78)
 // are distinct files with distinct totals, which is what makes the pair stand out.
 //
-// SCOPE OF THIS GUARD — stated plainly, because the gap matters.
-// It refuses a commit when the SAME distributor already has a batch with the SAME file name in a
-// DIFFERENT period. That is exactly the shape above, and it works retroactively against every batch
-// already in the table, with no schema change and no backfill.
+// WHAT COUNTS AS THE SAME FILE — owner decision, 2026-09-17: the name AND the figures. The same
+// distributor, the same file name, the same total_rows, total_qty and total_value, under a
+// DIFFERENT period.
 //
-// It does NOT catch the same content uploaded under a renamed file. Catching that needs a content
-// hash stored on the batch, which needs a new column and a change to the batch insert; the insert
-// has nine call sites in a 4,000-line module, so that is deliberately left as a follow-up rather
-// than threaded through at speed. `source_of_sales_import_batches` has no hash column today —
-// verified against information_schema, not assumed.
+// The first version of this guard matched the name alone, and that refuses real months:
+//
+//  - Distributors export every month under one fixed name. Measured on production 2026-09-17:
+//    17 non-blocked batches share their name with another month, across 5 distributors, and only
+//    the IS-S pair above shares its figures too. A name-only rule refuses the next month from each
+//    of the other four.
+//  - A workbook over ~4 MB travels through Storage, whose object name keeps only [A-Za-z0-9._-]
+//    (sanitizeSalesImportFileName), and the server rebuilds the File from that object name. An
+//    all-Arabic name arrives as `.xlsx`, so every month of a distributor's large Arabic workbook
+//    carries the same name.
+//
+// The figures decide; the name stops two different files that happen to total the same from
+// colliding.
+//
+// WHERE IT RUNS — inside the two save steps, just before the batch row is written, because only
+// there are the figures known: persistDistributorSalesUpload (Monthly Import, Office, Direct, the
+// Normalizer's validated import) and persistNormalizedBatch (Upload Sales, the Normalizer's raw
+// import). It used to run in the Monthly Import commit route alone, which left every other monthly
+// upload screen with no cross-month check at all.
+//
+// It does NOT catch the same content uploaded under a renamed file; that needs a content hash
+// stored on the batch, and `source_of_sales_import_batches` has no hash column.
 //
 // Re-uploading the SAME period is untouched: that is the legitimate replace flow.
 
@@ -35,24 +51,85 @@ export type DuplicateUploadMatch = {
   totalValue: number;
 };
 
-/**
- * Find a previously committed batch for this distributor that used the same file name under a
- * different period. Blocked batches are ignored — they never became sales.
- */
-export async function findDuplicateUploadBatch(input: {
-  distributorCode: string;
+/** The batch a save step is about to write: its file name, its period and the figures it stores. */
+export type DuplicateUploadCandidate = {
   fileName: string;
   period: string | null;
-}): Promise<DuplicateUploadMatch | null> {
+  totalRows: number;
+  totalQty: number;
+  totalValue: number;
+};
+
+/** A stored batch as the lookup reads it. A numeric column can arrive as a string. */
+export type StoredUploadBatch = {
+  id: unknown;
+  period: unknown;
+  file_name: unknown;
+  status: unknown;
+  total_rows: unknown;
+  total_qty: unknown;
+  total_value: unknown;
+};
+
+// total_qty and total_value are numeric(18,6), and both save steps build them as float sums — one
+// rounds to 6 places before the insert, the other leaves the rounding to Postgres. The same file
+// can therefore come back a few millionths apart, never by a thousandth or by half a piastre, and
+// two real months are never that close on rows, quantity and value at once.
+const QTY_TOLERANCE = 0.0005;
+const VALUE_TOLERANCE = 0.005;
+
+/**
+ * The first stored batch that is this same file under a different period, or null. Pure: the
+ * database query only narrows the rows, this decides.
+ */
+export function pickDuplicateUploadClash(
+  rows: readonly StoredUploadBatch[],
+  candidate: DuplicateUploadCandidate,
+): DuplicateUploadMatch | null {
+  const fileName = candidate.fileName.trim();
+  // An empty sheet matches every other empty sheet; that is never the same month loaded twice.
+  if (!fileName || !(candidate.totalRows > 0)) return null;
+  const period = candidate.period ?? null;
+
+  const clash = rows.find((row) => {
+    if (row.status === "blocked") return false;
+    if (row.file_name !== fileName) return false;
+    const rowPeriod = typeof row.period === "string" ? row.period : null;
+    if (rowPeriod === period) return false;
+    if (Number(row.total_rows) !== candidate.totalRows) return false;
+    return (
+      Math.abs(Number(row.total_qty) - candidate.totalQty) < QTY_TOLERANCE &&
+      Math.abs(Number(row.total_value) - candidate.totalValue) < VALUE_TOLERANCE
+    );
+  });
+  if (!clash) return null;
+
+  return {
+    fileName: String(clash.file_name),
+    id: String(clash.id),
+    period: typeof clash.period === "string" ? clash.period : null,
+    totalRows: Number(clash.total_rows ?? 0),
+    totalValue: Number(clash.total_value ?? 0),
+  };
+}
+
+/**
+ * Find a previously committed batch for this distributor that is the same file — same name, same
+ * figures — under a different period. Blocked batches are ignored — they never became sales.
+ */
+export async function findDuplicateUploadBatch(
+  input: DuplicateUploadCandidate & { distributorCode: string },
+): Promise<DuplicateUploadMatch | null> {
   const fileName = input.fileName.trim();
-  if (!fileName) return null;
+  if (!fileName || !(input.totalRows > 0)) return null;
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("source_of_sales_import_batches")
-    .select("id,period,file_name,total_rows,total_value,status")
+    .select("id,period,file_name,status,total_rows,total_qty,total_value")
     .eq("distributor_code", input.distributorCode)
     .eq("file_name", fileName)
+    .eq("total_rows", input.totalRows)
     .neq("status", "blocked")
     .limit(50);
 
@@ -67,43 +144,31 @@ export async function findDuplicateUploadBatch(input: {
     );
   }
 
-  const clash = (data ?? []).find((row) => {
-    const rowPeriod = typeof row.period === "string" ? row.period : null;
-    return rowPeriod !== (input.period ?? null);
-  });
-  if (!clash) return null;
-
-  return {
-    fileName: String(clash.file_name),
-    id: String(clash.id),
-    period: typeof clash.period === "string" ? clash.period : null,
-    totalRows: Number(clash.total_rows ?? 0),
-    totalValue: Number(clash.total_value ?? 0),
-  };
+  return pickDuplicateUploadClash(data ?? [], { ...input, fileName });
 }
 
 export function duplicateUploadMessage(match: DuplicateUploadMatch, period: string | null): string {
+  const earlier = match.period ?? "that period";
   return (
-    `This file has already been imported for ${match.period ?? "another period"} ` +
+    `This file has already been imported for ${match.period ?? "another period"} with the same name and the same figures ` +
     `(${match.totalRows.toLocaleString("en-GB")} rows, ` +
     `${match.totalValue.toLocaleString("en-GB", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} EGP). ` +
     `Importing it again as ${period ?? "this period"} would count the same sales twice and leave ` +
     `the other month unloaded. If this really is a different month's data, re-export it from the ` +
-    `distributor; if you meant to replace ${match.period ?? "that period"}, import it under that period instead.`
+    `distributor. If you meant to replace ${earlier}, import it under that period instead; if ${earlier} ` +
+    `was the wrong month for it, delete that upload first.`
   );
 }
 
 /**
- * Refuse a commit that would load the same workbook into a second period.
+ * Refuse a save that would load the same workbook into a second period.
  *
- * Call before persisting, never on a dry run — the preview must still be able to show the user what
- * the file contains.
+ * Called by the save steps just before the batch row is written, never on a dry run, so the
+ * preview can still show the user what the file contains.
  */
-export async function assertNotADuplicateUpload(input: {
-  distributorCode: string;
-  fileName: string;
-  period: string | null;
-}): Promise<void> {
+export async function assertNotADuplicateUpload(
+  input: DuplicateUploadCandidate & { distributorCode: string },
+): Promise<void> {
   const match = await findDuplicateUploadBatch(input);
   if (!match) return;
   throw new SalesWorkflowError("duplicate_upload", duplicateUploadMessage(match, input.period), 409, {

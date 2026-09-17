@@ -20,6 +20,7 @@ import {
 } from "@/lib/sales/closing-organogram-regions";
 import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import {
   addClosingSales,
@@ -3148,6 +3149,20 @@ export async function persistDistributorSalesUpload(
 
   // Locked period: reject before writing anything (covers normal, normalizer-buffer, and Office paths).
   await assertPeriodNotLocked(result.period);
+
+  // The same workbook already loaded under another period: refuse before writing anything, with
+  // exactly the figures the insert below stores (see import-duplicate-guard.ts). Only a batch that
+  // will become sales is checked; a blocked one is kept for its reasons and never counts.
+  if (result.status === "validated") {
+    await assertNotADuplicateUpload({
+      distributorCode: result.distributor.code,
+      fileName: result.fileName,
+      period: result.period,
+      totalRows: result.rowCount,
+      totalQty: result.totals.totalQty,
+      totalValue: result.totals.totalValue,
+    });
+  }
 
   const supabase = getSupabaseAdmin();
 

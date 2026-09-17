@@ -17,7 +17,8 @@ import { duplicateUploadMessage } from "../src/lib/sales/import-duplicate-guard.
 const MIGRATION = fileURLToPath(
   new URL("../supabase/migrations/20260905163000_top_customers_shows_office_as_one_row.sql", import.meta.url),
 );
-const COMMIT_ROUTE = fileURLToPath(new URL("../app/api/sales/monthly-import/commit/route.ts", import.meta.url));
+const DISTRIBUTOR_SAVE = fileURLToPath(new URL("../src/lib/sales/monthly-distributor-import.ts", import.meta.url));
+const NORMALIZER_SAVE = fileURLToPath(new URL("../src/lib/sales/normalizer/service.ts", import.meta.url));
 const GUARD = fileURLToPath(new URL("../src/lib/sales/import-duplicate-guard.ts", import.meta.url));
 
 function executableSql(path: string) {
@@ -82,17 +83,25 @@ function testOfficeDoesNotTouchTheAllocationRule() {
   assert.ok(!/office_allocation|allocate/i.test(sql), "the Office row must not invoke any allocation logic");
 }
 
-function testCommitRouteRefusesADuplicateWorkbook() {
-  const route = readFileSync(COMMIT_ROUTE, "utf8");
-  assert.ok(
-    route.includes("assertNotADuplicateUpload("),
-    "the commit route must refuse a workbook already committed under another period",
-  );
-  // It must use the period the user actually chose. Earlier in the pipeline the period is unknown,
-  // and a null period would make the legitimate same-period replace flow look like a duplicate.
-  const call = route.slice(route.indexOf("assertNotADuplicateUpload("), route.indexOf("const uploadedBy"));
-  assert.ok(call.includes("period: resolved.period"), "the guard must be given the confirmed period");
-  assert.ok(call.includes("fileName: resolved.file.name"), "the guard must be given the uploaded file name");
+function testEverySaveStepRefusesADuplicateWorkbook() {
+  // The refusal first ran in the Monthly Import commit route, before the workbook was parsed, where
+  // only the file name is known — and a name alone refuses real months. It now runs inside the two
+  // save steps every monthly upload screen reaches, where the figures are known too. What counts as
+  // the same file is pinned in tests/duplicate-upload-name-and-figures.test.ts.
+  for (const [path, signature] of [
+    [DISTRIBUTOR_SAVE, "export async function persistDistributorSalesUpload("],
+    [NORMALIZER_SAVE, "export async function persistNormalizedBatch("],
+  ] as const) {
+    const source = readFileSync(path, "utf8");
+    const start = source.indexOf(signature);
+    assert.ok(start >= 0, `${signature} must exist`);
+    const call = source.indexOf("assertNotADuplicateUpload(", start);
+    const insert = source.indexOf('.from("source_of_sales_import_batches")', start);
+    assert.ok(
+      call > start && call < insert,
+      `${signature} must refuse a workbook already committed under another period before it writes the batch`,
+    );
+  }
 }
 
 function testGuardFailsClosedAndExplainsItself() {
@@ -114,6 +123,6 @@ function testGuardFailsClosedAndExplainsItself() {
 export function runSosOfficeRowAndDuplicateUploadTests() {
   testOfficeIsUnionedAsExactlyOneRow();
   testOfficeDoesNotTouchTheAllocationRule();
-  testCommitRouteRefusesADuplicateWorkbook();
+  testEverySaveStepRefusesADuplicateWorkbook();
   testGuardFailsClosedAndExplainsItself();
 }
