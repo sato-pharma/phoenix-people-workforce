@@ -11,6 +11,7 @@ import {
 import type { WeeklyBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import { canonicalWeeklyDistributorCode, weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
 import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
+import { matchWeeklySheet, weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 import type { WeeklyProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import type {
   WeeklyExcludedBranch,
@@ -340,18 +341,14 @@ const FILE_DECLARES_NO_TOTAL: Record<string, string> = {
 
 // ── adapters: each reads a verified real layout and emits neutral observations ───────────────────
 
+/** The worksheet an adapter reads, by the rule the verification screen shares (sheet-match.ts). */
 function findSheet(
   workbook: ExcelJS.Workbook,
-  matcher: { name?: string; includes?: string },
+  distributorCode: string,
+  role: WeeklyContractSheetRole,
 ): ExcelJS.Worksheet | undefined {
-  if (matcher.name) {
-    const exact = workbook.worksheets.find((sheet) => sheet.name.trim().toLowerCase() === matcher.name!.toLowerCase());
-    if (exact) return exact;
-  }
-  if (matcher.includes) {
-    return workbook.worksheets.find((sheet) => sheet.name.toLowerCase().includes(matcher.includes!.toLowerCase()));
-  }
-  return workbook.worksheets[0];
+  const matcher = weeklySheetMatcher(distributorCode, role);
+  return matcher ? matchWeeklySheet(workbook, matcher)?.worksheet : undefined;
 }
 
 const at = (row: ExcelJS.Row, col: number): ExcelJS.Cell => row.getCell(col);
@@ -384,7 +381,7 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
   const returnsC = contractSheet(ctx.contract, "returns");
   const stockC = contractSheet(ctx.contract, "stock");
 
-  const sales = findSheet(workbook, { name: "Branches Sales", includes: "Branches Sales" });
+  const sales = findSheet(workbook, "EG", "sales");
   if (sales) {
     names.push(sales.name);
     for (let r = dataStartRow(salesC, 2); r <= sales.rowCount; r += 1) {
@@ -410,7 +407,7 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
     }
   }
 
-  const returns = findSheet(workbook, { name: "Branch Sales Return", includes: "Branch Sales Return" });
+  const returns = findSheet(workbook, "EG", "returns");
   if (returns) {
     names.push(returns.name);
     for (let r = dataStartRow(returnsC, 2); r <= returns.rowCount; r += 1) {
@@ -444,7 +441,7 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
   // name — only its two sales sheets — and validated cleanly at 0 stock; because the engine keeps each distributor's stock
   // from its LATEST week, that one batch turned EGD's whole stock position into 0. Genuine zero is
   // still accepted: the check is for a readable quantity in the stock column, and "0" is readable.
-  const stock = findSheet(workbook, { name: "Current Stock Branches", includes: "Current Stock Branches" });
+  const stock = findSheet(workbook, "EG", "stock");
   if (!stock) {
     blockingReasons.push(
       `EGD: this workbook has no "Current Stock Branches" sheet (its sheets are: ${workbook.worksheets.map((sheet) => sheet.name.trim()).join(" · ")}). ` +
@@ -525,7 +522,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   const salesC = contractSheet(ctx.contract, "sales");
   const stockC = contractSheet(ctx.contract, "stock");
 
-  const sales = findSheet(workbook, { name: "SALES", includes: "SALES" });
+  const sales = findSheet(workbook, "RM", "sales");
   if (sales) {
     names.push(sales.name);
     for (let r = dataStartRow(salesC, 3); r <= sales.rowCount; r += 1) {
@@ -576,7 +573,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
   // branches) or a raw channel label (Key Accounts, Wholesale, Tenders, etc.). Strip the "إجمالى"
   // prefix when present; otherwise use the raw header as the branch key so that any column the
   // user has mapped is counted, regardless of its header format.
-  const stock = findSheet(workbook, { name: "STOCK", includes: "STOCK" });
+  const stock = findSheet(workbook, "RM", "stock");
   if (stock) {
     names.push(stock.name);
 
@@ -684,7 +681,7 @@ function adaptRM(ctx: AdapterContext): AdapterResult {
 function adaptISS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const combinedC = contractSheet(ctx.contract, "combined");
-  const sheet = findSheet(workbook, { name: "SalesAndStockReport2_DataHub", includes: "DataHub" }) ?? workbook.worksheets[0];
+  const sheet = findSheet(workbook, "IS-S", "combined");
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>();
   if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina Sato", blockingReasons: [] };
@@ -723,7 +720,7 @@ function adaptISS(ctx: AdapterContext): AdapterResult {
 function adaptIS(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const combinedC = contractSheet(ctx.contract, "combined");
-  const sheet = findSheet(workbook, { name: "Sheet2", includes: "Sheet2" }) ?? workbook.worksheets[0];
+  const sheet = findSheet(workbook, "IS", "combined");
   const observations: WeeklyObservation[] = [];
   const sheetDates = new Set<string>(); // IS has no date column → always require periodDate
   if (!sheet) return { observations, sheetDates, sheetName: "Ibn Sina", blockingReasons: [] };
@@ -795,7 +792,7 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
 
   // ── SALES matrix: header row 1; Mat. Code col3 / Mat. Desc col4; outlet columns 5..N-1;
   //    Total Qty at col N (detected dynamically — column count varies by month/file version).
-  const salesSheet = findSheet(salesWb, { name: "Data", includes: "Data" }) ?? salesWb.worksheets[0];
+  const salesSheet = findSheet(salesWb, "PS", "sales");
   if (salesSheet) {
     names.push(`Sales:${salesSheet.name}`);
     const header = salesSheet.getRow(headerRowOf(salesC, 1));
@@ -853,7 +850,7 @@ function adaptPS(ctx: AdapterContext, salesWb?: ExcelJS.Workbook, stockWb?: Exce
 
   // ── STOCK matrix: header row 1; Mat. Code col3 / Mat. Desc col4; LOCATION columns 7..N keyed by
   //    COLUMN INDEX (detected dynamically — column count varies by month/file version).
-  const stockSheet = findSheet(stockWb, { name: "Data", includes: "Data" }) ?? stockWb.worksheets[0];
+  const stockSheet = findSheet(stockWb, "PS", "stock");
   if (stockSheet) {
     names.push(`Stock:${stockSheet.name}`);
     const header = stockSheet.getRow(headerRowOf(stockC, 1));
@@ -993,9 +990,7 @@ function adaptPOS(ctx: AdapterContext): AdapterResult {
 
   const combinedC = contractSheet(ctx.contract, "combined");
 
-  const sheet =
-    findSheet(workbook, { name: "Purchasing Sales Data", includes: "Purchasing" }) ??
-    workbook.worksheets[0];
+  const sheet = findSheet(workbook, "POS", "combined");
   if (!sheet) {
     blockingReasons.push(
       "POS Purchasing Sales: could not find the data sheet. Expected a sheet named 'Purchasing Sales Data'.",
@@ -1221,7 +1216,7 @@ const SF_FIELD_WANTED: Record<string, string> = {
 function adaptSF(ctx: AdapterContext): AdapterResult {
   const workbook = ctx.workbooks[0];
   const combinedC = contractSheet(ctx.contract, "combined");
-  const sheet = findSheet(workbook, { name: "Sheet1", includes: "Sheet" }) ?? workbook.worksheets[0];
+  const sheet = findSheet(workbook, "SF", "combined");
   const observations: WeeklyObservation[] = [];
   const blockingReasons: string[] = [];
   const fileTotalChecks: WeeklyFileTotalCheck[] = [];

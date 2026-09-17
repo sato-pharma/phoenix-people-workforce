@@ -7,6 +7,12 @@
 // adapter's columns change, update the matching block here too (line refs point back to parser.ts).
 //
 // Column indexes are 1-based ExcelJS columns, matching the adapters.
+//
+// SHEET NAMES are not written here. Each sheet's `sheetName` / `sheetIncludes` is taken from
+// sheet-match.ts, the one rule the adapters, the verification screen and the column editor's preview
+// all use to pick a worksheet. They are kept on the contract for display only; nothing matches on them.
+
+import { weeklyContractSheetNames } from "@/lib/sales/weekly/sheet-match";
 
 export type WeeklyContractFieldRole = "key" | "value" | "context";
 
@@ -45,9 +51,9 @@ export type WeeklyContractSheetRole = "combined" | "sales" | "returns" | "stock"
 
 export type WeeklyContractSheet = {
   role: WeeklyContractSheetRole;
-  /** preferred exact sheet name */
+  /** preferred exact sheet name — display only; the worksheet is picked by sheet-match.ts */
   sheetName?: string;
-  /** fallback substring match when the exact name isn't found */
+  /** substring match when the exact name isn't found — display only, as above */
   sheetIncludes?: string;
   /** header row number (1-based): EG/IS/PS/SF = 1, RM/IS-S = 2 */
   headerRowNumber: number;
@@ -77,8 +83,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "sales",
-        sheetName: "Branches Sales",
-        sheetIncludes: "Branches Sales",
+        ...weeklyContractSheetNames("EG", "sales"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -92,8 +97,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
       {
         role: "returns",
-        sheetName: "Branch Sales Return",
-        sheetIncludes: "Return",
+        ...weeklyContractSheetNames("EG", "returns"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -104,8 +108,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
       {
         role: "stock",
-        sheetName: "Current Stock Branches",
-        sheetIncludes: "Stock",
+        ...weeklyContractSheetNames("EG", "stock"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -126,8 +129,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "sales",
-        sheetName: "SALES",
-        sheetIncludes: "SALES",
+        ...weeklyContractSheetNames("RM", "sales"),
         headerRowNumber: 2,
         formField: "file",
         fields: [
@@ -143,8 +145,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
       {
         role: "stock",
-        sheetName: "STOCK",
-        sheetIncludes: "STOCK",
+        ...weeklyContractSheetNames("RM", "stock"),
         headerRowNumber: 2,
         formField: "file",
         fields: [
@@ -168,8 +169,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "combined",
-        sheetName: "SalesAndStockReport2_DataHub",
-        sheetIncludes: "DataHub",
+        ...weeklyContractSheetNames("IS-S", "combined"),
         headerRowNumber: 2,
         formField: "file",
         fields: [
@@ -192,8 +192,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "combined",
-        sheetName: "Sheet2",
-        sheetIncludes: "Sheet2",
+        ...weeklyContractSheetNames("IS", "combined"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -221,8 +220,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "combined",
-        sheetName: "Sheet1",
-        sheetIncludes: "Sheet1",
+        ...weeklyContractSheetNames("SF", "combined"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -250,8 +248,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "combined",
-        sheetName: "Purchasing Sales Data",
-        sheetIncludes: "Purchasing",
+        ...weeklyContractSheetNames("POS", "combined"),
         headerRowNumber: 1,
         formField: "file",
         fields: [
@@ -276,8 +273,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
     sheets: [
       {
         role: "sales",
-        sheetName: "Data",
-        sheetIncludes: "Data",
+        ...weeklyContractSheetNames("PS", "sales"),
         headerRowNumber: 1,
         formField: "salesFile",
         fields: [
@@ -293,8 +289,7 @@ const CONTRACTS: readonly WeeklyDistributorContract[] = [
       },
       {
         role: "stock",
-        sheetName: "Data",
-        sheetIncludes: "Data",
+        ...weeklyContractSheetNames("PS", "stock"),
         headerRowNumber: 1,
         formField: "stockFile",
         fields: [

@@ -68,6 +68,7 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
     setPreviewing(true); setPreviewError(null);
     try {
       const fd = new FormData();
+      fd.set("distributorCode", draft.code);
       fd.set("sheets", JSON.stringify(draft.sheets));
       if (draft.splitFiles) {
         if (previewSalesFile) fd.set("salesFile", previewSalesFile);
@@ -76,12 +77,15 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
         fd.set("file", previewFile);
       }
       const res = await fetch("/api/sales/database-mapping/weekly-profile/preview", { method: "POST", body: fd });
-      const payload = (await res.json()) as { success?: boolean; error?: string; columns?: { sheetRole: string; field: string; observedHeader: string; status: "filled" | "empty" }[]; missingFiles?: string[] };
+      const payload = (await res.json()) as { success?: boolean; error?: string; columns?: { sheetRole: string; field: string; observedHeader: string; status: "filled" | "empty" }[]; missingFiles?: string[]; missingSheets?: string[] };
       if (!payload.success) { setPreviewError(payload.error ?? "Preview failed."); return; }
       const map: Record<string, { observedHeader: string; status: "filled" | "empty" }> = {};
       for (const c of payload.columns ?? []) map[`${c.sheetRole}|${c.field}`] = { observedHeader: c.observedHeader, status: c.status };
       setPreview(map);
-      if (payload.missingFiles?.length) setPreviewError(`Attach the ${payload.missingFiles.join(" + ")} file to preview those sheets too.`);
+      const notes: string[] = [];
+      if (payload.missingSheets?.length) notes.push(`This file has no ${payload.missingSheets.join(" or ")} sheet, so the import would read nothing from it.`);
+      if (payload.missingFiles?.length) notes.push(`Attach the ${payload.missingFiles.join(" + ")} file to preview those sheets too.`);
+      if (notes.length) setPreviewError(notes.join(" "));
     } catch (e) { setPreviewError(e instanceof Error ? e.message : "Preview failed."); }
     finally { setPreviewing(false); }
   }

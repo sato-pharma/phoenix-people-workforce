@@ -1605,6 +1605,7 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
     drift: { label: "Drift", cls: "bg-rose-50 text-rose-700" },
     uncertain: { label: "Check", cls: "bg-slate-100 text-slate-600" },
     empty: { label: "Empty", cls: "bg-rose-50 text-rose-700" },
+    missing: { label: "Missing", cls: "bg-rose-50 text-rose-700" },
   };
   const pill = map[status] ?? map.uncertain;
   return (
@@ -1616,11 +1617,12 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
 
 function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResult; verified: boolean; onConfirm: () => void }) {
   const drift = result.verdict === "drift";
+  const missingSheet = result.columns.some((col) => col.status === "missing");
   return (
     <div className={`mt-3 ${card}`}>
       <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-        {drift ? "Possible column drift — review carefully" : "Columns look consistent"}
+        {missingSheet ? "A sheet the import reads is missing from this file — review carefully" : drift ? "Possible column drift — review carefully" : "Columns look consistent"}
         <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
           {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
         </span>

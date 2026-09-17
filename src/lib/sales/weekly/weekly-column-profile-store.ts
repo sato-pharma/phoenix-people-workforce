@@ -20,6 +20,7 @@ import {
   type WeeklyContractSheetRole,
   type WeeklyDistributorContract,
 } from "@/lib/sales/weekly/column-contract";
+import { weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const PROFILE_TABLE = "weekly_sales_distributor_column_profile";
@@ -93,7 +94,7 @@ function parseMatrix(raw: unknown): WeeklyContractMatrix | undefined {
   return matrix;
 }
 
-function parseSheet(raw: unknown): WeeklyContractSheet | null {
+function parseSheet(raw: unknown, code: string): WeeklyContractSheet | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   const role = SHEET_ROLES.includes(r.role as WeeklyContractSheetRole) ? (r.role as WeeklyContractSheetRole) : null;
@@ -106,8 +107,14 @@ function parseSheet(raw: unknown): WeeklyContractSheet | null {
     formField,
     fields,
   };
-  if (typeof r.sheetName === "string" && r.sheetName.trim()) sheet.sheetName = r.sheetName;
-  if (typeof r.sheetIncludes === "string" && r.sheetIncludes.trim()) sheet.sheetIncludes = r.sheetIncludes;
+  // Sheet names are never taken from storage: a saved override holds whatever the code contract said on
+  // the day it was saved (EGD's stock sheet was once "Stock"). They come from sheet-match.ts, the rule the
+  // importer itself uses to pick a worksheet.
+  const matcher = weeklySheetMatcher(code, role);
+  if (matcher) {
+    sheet.sheetName = matcher.name;
+    sheet.sheetIncludes = matcher.includes;
+  }
   const matrix = parseMatrix(r.matrix);
   if (matrix) sheet.matrix = matrix;
   return sheet;
@@ -118,7 +125,7 @@ export function dbRowToContract(row: WeeklyColumnProfileRow): WeeklyDistributorC
   const code = codeKey(row.distributor_code);
   if (!code) return null;
   const sheetsRaw = Array.isArray(row.sheets) ? row.sheets : [];
-  const sheets = sheetsRaw.map(parseSheet).filter((s): s is WeeklyContractSheet => s !== null);
+  const sheets = sheetsRaw.map((raw) => parseSheet(raw, code)).filter((s): s is WeeklyContractSheet => s !== null);
   if (sheets.length === 0) return null;
   const codeContract = weeklyContractByCode(code);
   return {

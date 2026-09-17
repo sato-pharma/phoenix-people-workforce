@@ -236,7 +236,8 @@ export type WeeklySalesValidationResult = {
 // (never sales numbers) and compares it against the per-distributor column contract. Advisory only —
 // it never persists and the server /validate step remains the real validation boundary.
 
-export type WeeklyVerifyColumnStatus = "match" | "drift" | "uncertain" | "empty";
+/** "missing" = the file has no sheet the import would read for this column (sheet-match.ts). */
+export type WeeklyVerifyColumnStatus = "match" | "drift" | "uncertain" | "empty" | "missing";
 
 export type WeeklyVerifyColumn = {
   /** which file/sheet this column belongs to ("sales" | "stock" | "returns" | "combined") */

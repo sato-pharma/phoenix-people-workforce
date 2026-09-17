@@ -5,6 +5,8 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import type ExcelJS from "exceljs";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import type { WeeklyContractSheetRole } from "@/lib/sales/weekly/column-contract";
+import { matchWeeklySheet, weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,24 +15,14 @@ export const dynamic = "force-dynamic";
 // The admin uploads a sample file + the DRAFT sheets they're editing; we read the header cell at each
 // configured column index and echo it back so an off-by-one / wrong column is caught BEFORE saving.
 // Nothing is persisted. Only header text leaves the parse (no data rows).
+//
+// The worksheet is picked by sheet-match.ts, the rule the importer itself uses, keyed by the distributor
+// — never by the draft's sheet names and never by falling back to whatever sheet comes first. A sheet
+// the import would not find is named back in `missingSheets`.
 
 type DraftField = { field: string; label?: string; columnIndex: number };
-type DraftSheet = { role: string; sheetName?: string; sheetIncludes?: string; headerRowNumber?: number; formField?: string; fields?: DraftField[] };
+type DraftSheet = { role: string; headerRowNumber?: number; formField?: string; fields?: DraftField[] };
 type PreviewColumn = { sheetRole: string; field: string; label: string; columnIndex: number; observedHeader: string; status: "filled" | "empty" };
-
-function findSheet(workbook: ExcelJS.Workbook, sheet: DraftSheet): ExcelJS.Worksheet | undefined {
-  const name = sheet.sheetName?.trim().toLowerCase();
-  if (name) {
-    const exact = workbook.worksheets.find((ws) => ws.name.trim().toLowerCase() === name);
-    if (exact) return exact;
-  }
-  const includes = sheet.sheetIncludes?.trim().toLowerCase();
-  if (includes) {
-    const partial = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes(includes));
-    if (partial) return partial;
-  }
-  return workbook.worksheets[0];
-}
 
 export async function POST(request: Request) {
   try {
@@ -38,6 +30,10 @@ export async function POST(request: Request) {
     await assertPermission(access, "weekly_sales", "import");
 
     const form = await request.formData();
+    const distributorCode = String(form.get("distributorCode") ?? "").trim();
+    if (!distributorCode) {
+      return NextResponse.json({ success: false, error: "Pick a distributor, then preview again." }, { status: 400 });
+    }
     let sheets: DraftSheet[] = [];
     try {
       sheets = JSON.parse(String(form.get("sheets") ?? "[]")) as DraftSheet[];
@@ -66,6 +62,7 @@ export async function POST(request: Request) {
 
     const columns: PreviewColumn[] = [];
     const missingFiles = new Set<string>();
+    const missingSheets: string[] = [];
     for (const sheet of sheets) {
       const formField = sheet.formField ?? "file";
       const workbook = workbooks.get(formField);
@@ -73,9 +70,13 @@ export async function POST(request: Request) {
         missingFiles.add(formField);
         continue;
       }
-      const worksheet = findSheet(workbook, sheet);
-      if (!worksheet) continue;
-      const headerRow = worksheet.getRow(sheet.headerRowNumber === 2 ? 2 : 1);
+      const matcher = weeklySheetMatcher(distributorCode, sheet.role as WeeklyContractSheetRole);
+      const match = matcher ? matchWeeklySheet(workbook, matcher) : null;
+      if (!matcher || !match) {
+        missingSheets.push(matcher ? `"${matcher.name}" (${sheet.role})` : sheet.role);
+        continue;
+      }
+      const headerRow = match.worksheet.getRow(sheet.headerRowNumber === 2 ? 2 : 1);
       for (const field of sheet.fields ?? []) {
         const observedHeader = excelCellText(headerRow.getCell(field.columnIndex).value);
         columns.push({
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, columns, missingFiles: [...missingFiles] });
+    return NextResponse.json({ success: true, columns, missingFiles: [...missingFiles], missingSheets });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
