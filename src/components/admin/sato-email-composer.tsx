@@ -101,11 +101,11 @@ type SendResultView = {
 };
 
 const CARD = "rounded-2xl border border-phx-line bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]";
-const FIELD = "w-full rounded-lg border border-phx-line bg-phx-paper px-3 py-2.5 text-sm text-phx-ink";
+const FIELD = "w-full border border-phx-line bg-phx-paper px-3 py-2.5 text-sm text-phx-ink";
 const DARK_BUTTON =
-  "inline-flex h-[42px] items-center justify-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50";
+  "inline-flex h-[42px] items-center justify-center gap-1.5 bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50";
 const PALE_BUTTON =
-  "inline-flex h-[42px] items-center justify-center gap-1.5 rounded-lg border border-phx-line bg-white px-4 text-phx-xs font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-50";
+  "inline-flex h-[42px] items-center justify-center gap-1.5 border border-phx-line bg-white px-4 text-phx-xs font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-50";
 
 function newRequestId() {
   return `sato-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -589,7 +589,7 @@ export function SatoEmailComposer({
               </label>
               {attachments.map((file) => (
                 <span
-                  className="inline-flex items-center gap-2 rounded-lg border border-phx-line bg-phx-paper px-3 py-2 text-phx-xs font-black text-phx-ink"
+                  className="inline-flex items-center gap-2 border border-phx-line bg-phx-paper px-3 py-2 text-phx-xs font-black text-phx-ink"
                   key={file.id}
                 >
                   {file.filename}
@@ -668,7 +668,7 @@ export function SatoEmailComposer({
             </p>
 
             {polished ? (
-              <div className="mt-3 rounded-lg border border-phx-line bg-white p-3">
+              <div className="mt-3 border border-phx-line bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">
                     {polished.mode === "write" ? "What it wrote" : "What changed"}
@@ -697,7 +697,7 @@ export function SatoEmailComposer({
                   one line each, in the place you cannot miss before pressing Preview.
                 */}
                 {polished.checks.length > 0 ? (
-                  <div className="mt-3 rounded-lg border border-[#FED7AA] bg-phx-accent-soft p-3">
+                  <div className="mt-3 border border-[#FED7AA] bg-phx-accent-soft p-3">
                     <span className="text-phx-xs font-black uppercase tracking-wide text-phx-accent-press">
                       Check these before you send
                     </span>
