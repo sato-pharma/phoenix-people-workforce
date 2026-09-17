@@ -1697,6 +1697,7 @@ import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attach
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
 import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
+import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5725,6 +5726,11 @@ await runTest(
 await runTest(
   "sign-in throttle tells an office from an attacker: an address where different colleagues signed in today gets ten failures per colleague (max 150) before everyone behind it is refused, an unknown address stays at fifteen, and only successful sign-ins count as colleagues",
   runLoginSharedNetworkThrottleTests,
+);
+
+await runTest(
+  "a large sales workbook's storage path is honoured only from the importer upload-url minted it for: another importer's slot, a path outside incoming/<owner>/<upload id>/<file>, traversal and extra segments answer 400 before any download or delete",
+  runSalesImportUploadPathTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

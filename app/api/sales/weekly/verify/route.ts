@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       windowMs: 60_000,
     });
 
-    const resolved = await resolveWeeklyUploadRequest(request);
+    const resolved = await resolveWeeklyUploadRequest(request, access);
     cleanupPaths = resolved.storagePaths;
     if (!resolved.ok) {
       return NextResponse.json({ success: false, error: resolved.error, code: resolved.code }, { status: resolved.status });
