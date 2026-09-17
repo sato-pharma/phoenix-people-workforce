@@ -75,6 +75,60 @@ const sheetTags = (workbookXml) =>
     rid: (match[0].match(/r:id="(rId\d+)"/) ?? [])[1] ?? null,
   }));
 
+/** A part path with `.` and `..` walked and empty segments dropped: `xl/worksheets/../tables/t.xml` is `xl/tables/t.xml`. */
+const normalizePart = (path) =>
+  path
+    .split("/")
+    .reduce((acc, part) => {
+      if (part === "..") acc.pop();
+      else if (part !== "." && part !== "") acc.push(part);
+      return acc;
+    }, [])
+    .join("/");
+
+/**
+ * The `<Relationship>` entries of one .rels part, each with the zip entry its target names — `part`
+ * is null for a target that is not a part of this package.
+ *
+ * ATTRIBUTE ORDER IS NOT FIXED HERE EITHER. ExcelJS writes `Id` first; openpyxl writes `Type`, then
+ * `Target`, then `Id`. The regex this replaced in rule 5 — `Id="…"[^>]*Target="…"` — matched nothing
+ * in an openpyxl workbook.xml.rels, the sheet map came back EMPTY, and every autofilter reported
+ * "defined name _xlnm._FilterDatabase names unknown sheet" on a correct file. It is the trap
+ * `sheetTags` above records for `<sheet>`, one part further along.
+ *
+ * A TARGET THAT STARTS WITH `/` IS AN ABSOLUTE PART NAME and resolves from the PACKAGE ROOT — valid
+ * OPC (ECMA-376 Part 2), and Excel opens it. Only a relative target resolves against the folder of
+ * the part the .rels describes. openpyxl writes every worksheet, drawing, image and table target
+ * absolute, and rule 3 glued that onto the folder: `xl/` + `/xl/worksheets/sheet1.xml` became
+ * `xl/xl/worksheets/sheet1.xml`, reported missing. The unmapped contacts and pharmacies workbook
+ * (openpyxl, 2026-09-16) printed 14 PROBLEM(S) — ten of these and the four unknown sheets — and the
+ * same parts with the targets rewritten relative and `Id` moved first came back CLEAN. One package
+ * holds both kinds: openpyxl writes its styles and theme targets relative.
+ */
+const relationshipsOf = (relsName, relsXml = "") => {
+  // A .rels part describes the part it is named after: `xl/_rels/workbook.xml.rels` belongs to
+  // `xl/workbook.xml`, so its relative targets start in `xl/`; the package's own `_rels/.rels`
+  // starts at the root.
+  const folder = relsName.replace(/_rels\/[^/]*$/, "");
+  return [...relsXml.matchAll(/<Relationship\b[^>]*>/g)].map((match) => {
+    const attributes = Object.fromEntries(
+      [...match[0].matchAll(/([A-Za-z_:][\w.:-]*)\s*=\s*"([^"]*)"/g)].map((attr) => [attr[1], decodeEntities(attr[2])]),
+    );
+    const target = attributes.Target ?? "";
+    // `#'Sheet'!A1` is a FRAGMENT target: it names a place in the document, not a part in the
+    // package, and legitimately carries no TargetMode because it never leaves the file. Excel
+    // writes these for a shape that jumps to another sheet. Resolved as a path it becomes
+    // `xl/drawings/#'Sheet'!A1` and is reported missing — which reads as a corrupt workbook when
+    // the workbook is fine.
+    const internal =
+      target !== "" && attributes.TargetMode !== "External" && !/^https?:/.test(target) && !target.startsWith("#");
+    return {
+      id: attributes.Id ?? null,
+      part: internal ? normalizePart(target.startsWith("/") ? target : folder + target) : null,
+    };
+  });
+};
+
 const colIndex = (letters) => [...letters].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0);
 
 export async function checkWorkbook(bytes, { quiet = false } = {}) {
@@ -141,23 +195,10 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
   // ── 3. relationships ────────────────────────────────────────────────────────
   let relCount = 0;
   for (const name of names.filter((n) => n.endsWith(".rels"))) {
-    const base = name.replace(/_rels\/[^/]*$/, "");
-    for (const m of text[name].matchAll(/<Relationship\b[^>]*>/g)) {
-      const target = (m[0].match(/Target="([^"]*)"/) ?? [])[1];
-      // `#'Sheet'!A1` is a FRAGMENT target: it names a place in the document, not a part in the
-      // package, and legitimately carries no TargetMode because it never leaves the file. Excel
-      // writes these for a shape that jumps to another sheet. Resolved as a path it becomes
-      // `xl/drawings/#'Sheet'!A1` and is reported missing — which reads as a corrupt workbook when
-      // the workbook is fine.
-      if (!target || /TargetMode="External"/.test(m[0]) || /^https?:/.test(target) || target.startsWith("#")) continue;
+    for (const { part } of relationshipsOf(name, text[name])) {
+      if (!part) continue;
       relCount += 1;
-      const joined = base + target;
-      const resolved = joined.split("/").reduce((acc, part) => {
-        if (part === "..") acc.pop();
-        else if (part !== "." && part !== "") acc.push(part);
-        return acc;
-      }, []).join("/");
-      if (!names.includes(resolved)) note(`relationship in ${name} points at missing ${resolved}`);
+      if (!names.includes(part)) note(`relationship in ${name} points at missing ${part}`);
     }
   }
   say(`  3. relationships     ${relCount} internal`);
@@ -241,11 +282,12 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
     return rows.length ? Math.max(...rows) : 0;
   };
   const workbook = text["xl/workbook.xml"] ?? "";
-  const wbRels = text["xl/_rels/workbook.xml.rels"] ?? "";
-  const relTarget = Object.fromEntries([...wbRels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  const partByRid = Object.fromEntries(
+    relationshipsOf("xl/_rels/workbook.xml.rels", text["xl/_rels/workbook.xml.rels"]).map((rel) => [rel.id, rel.part]),
+  );
   const sheetFileByName = {};
   for (const tag of sheetTags(workbook)) {
-    if (tag.rid && relTarget[tag.rid]) sheetFileByName[tag.name] = `xl/${relTarget[tag.rid]}`;
+    if (tag.rid && partByRid[tag.rid]) sheetFileByName[tag.name] = partByRid[tag.rid];
   }
 
   for (const name of names.filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n))) {
@@ -259,10 +301,13 @@ export async function checkWorkbook(bytes, { quiet = false } = {}) {
     const [, startCol, , endCol] = ref.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/) ?? [];
     const span = colIndex(endCol) - colIndex(startCol) + 1;
     if (span !== columns) note(`table ${tableName}: ref ${ref} spans ${span} columns but declares ${columns}`);
-    // The table must live inside the sheet that owns it.
+    // The table must live inside the sheet that owns it: the sheet whose own relationships resolve
+    // to this table part. This used to look for the substring `../tables/table1.xml` in the sheet's
+    // .rels, which an openpyxl sheet never contains (it writes `/xl/tables/table1.xml`) — so an
+    // openpyxl table found no owner and its row bound was skipped without a word.
     const owner = Object.entries(sheetFileByName).find(([, file]) => {
-      const relFile = file.replace("worksheets/", "worksheets/_rels/") + ".rels";
-      return (text[relFile] ?? "").includes(name.replace("xl/", "../"));
+      const relsFile = file.replace(/[^/]*$/, (base) => `_rels/${base}.rels`);
+      return relationshipsOf(relsFile, text[relsFile]).some((rel) => rel.part === name);
     });
     if (owner) {
       const last = lastRowOf(owner[1]);
