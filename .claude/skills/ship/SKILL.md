@@ -120,8 +120,17 @@ production domain, and `main`'s own CI run for that sha (asked by sha, not scann
 Its exit code carries the answer, so a backgrounded run's notification is readable on its own:
 `0` shipped · `2` queued · `3` not live · `4` not merged · `5` cannot tell · `6` shipped but main is
 red. `--json` for the whole reading, `--simulate-live <sha>` to force the live revision, and
-`--selftest` for the 9-case verdict table — run that after editing the script, and expect
-`9 cases, 0 failed`.
+`--selftest` for the verdict and ancestry tables — run that after editing the script, and expect
+`17 cases, 0 failed`.
+
+**A `CANNOT TELL` names its own reason — read the note, do not assume a missing commit.** Ancestry
+needs a git checkout, and the script asks git in its own folder, falling back to yours. A copy
+lifted out with `git show` and run from a scratchpad has no checkout under it, and that used to
+surface as "one of the two commits is not in this clone", which blames the clone and sent a session
+hunting a fetch race that was never there (measured 2026-09-17, on this skill's own PR). It now says
+which of the four it is: no live revision, no checkout, a fetch that failed, or a commit genuinely
+absent after a fetch and a re-ask. When the clone is simply behind — normal here, production can be
+a commit ahead of your last fetch — it fetches and asks again before giving up.
 
 What it protects you from, and what to do if you read the sources by hand instead:
 
