@@ -175,13 +175,15 @@ const week = (cycleMonth: string, weekNumber: number, spansGap: boolean): WeekEn
   stockUnits: 0,
   deltaValuePct: null,
   spansGap,
+  depotSpansGap: spansGap,
 });
 
 const WEEKS: WeekEntry[] = [
   week("2026-09-01", 1, false),
   week("2026-09-01", 2, false),
   week("2026-09-01", 3, false),
-  // Week 5 was uploaded after a missing week 4, and he sold nothing in it: still a column, still flagged.
+  // Week 5 was uploaded after a missing week 4, and he sold nothing in it: still a column, but none of his
+  // money is in it, so it cannot read high for him.
   week("2026-09-01", 5, true),
   // Another month's calendar must never leak into this one.
   week("2026-08-01", 4, true),
@@ -241,7 +243,7 @@ export function runWeeklySalesRepViewTests() {
   );
 
   // ── 2. the privacy boundary ────────────────────────────────────────────────────────────────
-  const fieldForce = buildPortalWeeklyFieldForce({ rows: ROWS, areaSplit: null, seatIndex: index, weekComparison: WEEKS });
+  const fieldForce = buildPortalWeeklyFieldForce({ rows: ROWS, areaSplit: null, seatIndex: index });
   // The grid really does hold the neighbour, the vacancy and the residue — otherwise the cut below proves nothing.
   assert.ok(fieldForce.reps.some((rep) => rep.repName === "Nourhan Adel"), "fixture: the line-wide grid names the other rep");
   assert.ok(fieldForce.reps.some((rep) => rep.kind === "unattributed"), "fixture: the line-wide grid carries the residue bucket");
@@ -306,16 +308,43 @@ export function runWeeklySalesRepViewTests() {
   );
   assert.deepEqual(mine.areas[0].valueByWeek, {}, "the empty seat carries no invented weeks");
 
-  // ── 4. the week axis is the month's upload calendar ─────────────────────────────────────────
+  // ── 4. the week axis is the month's upload calendar; the flags are his own depots' ───────────
   assert.deepEqual(
     mine.weeks,
     [
       { weekNumber: 1, spansGap: false },
       { weekNumber: 2, spansGap: false },
       { weekNumber: 3, spansGap: false },
-      { weekNumber: 5, spansGap: true },
+      { weekNumber: 5, spansGap: false },
     ],
-    "weeks he sold nothing in stay as columns, a week after a missing upload is flagged, and another month's weeks never appear",
+    "weeks he sold nothing in stay as columns, another month's weeks never appear, and the line-wide gap flag is never copied",
+  );
+
+  // His loader flags the grid per depot. A week reads high for him only when a depot whose money
+  // reached HIS seats skipped the week before; another rep's depot skipping a week says nothing about him.
+  const gapRows: WeeklyFactExportRow[] = [
+    ...ROWS,
+    // Overseas skipped week 2, and its week 3 reached his area.
+    factRow({ distributorCode: "PS", distributorName: "Overseas", areaCode: "UE3", weekNumber: 3, salesValue: 800, salesUnits: 8 }),
+    // Ibn Sina-Sato's first sheet is week 2: it reached his neighbour with sales and him with stock only.
+    factRow({ distributorCode: "IS-S", distributorName: "Ibn Sina-Sato", areaCode: "UE4", weekNumber: 2, salesValue: 400, salesUnits: 4 }),
+    factRow({ distributorCode: "IS-S", distributorName: "Ibn Sina-Sato", areaCode: "UE3", weekNumber: 2, stockUnits: 30 }),
+  ];
+  const perDepot = buildPortalWeeklyFieldForce({
+    rows: gapRows,
+    areaSplit: null,
+    seatIndex: index,
+    depotWeekGaps: [
+      { distributorCode: "IS-S", cycleMonth: "2026-09-01", weekNumber: 2 },
+      { distributorCode: "PS", cycleMonth: "2026-09-01", weekNumber: 3 },
+    ],
+  });
+  assert.deepEqual(perDepot.gapWeekNumbers, [2, 3], "fixture: the line-wide grid flags both weeks");
+  const flaggedForHim = selectRepWeeklySales({ fieldForce: perDepot, ownSeats, month: SEPTEMBER, months: MONTHS, weekComparison: WEEKS });
+  assert.deepEqual(
+    flaggedForHim.weeks.filter((entry) => entry.spansGap).map((entry) => entry.weekNumber),
+    [3],
+    "his week 3 holds a skipping depot's money and is flagged; his week-2 money is all POS's, whatever his neighbour's depot skipped",
   );
 
   // ── 5. the same product across two of his areas is still one product ───────────────────────
@@ -324,7 +353,6 @@ export function runWeeklySalesRepViewTests() {
       rows: [...ROWS, factRow({ areaCode: "UE5", weekNumber: 2, salesValue: 200, salesUnits: 2 })],
       areaSplit: null,
       seatIndex: index,
-      weekComparison: WEEKS,
     }),
     ownSeats,
     month: SEPTEMBER,

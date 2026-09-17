@@ -555,6 +555,15 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
                         Spans gap
                       </span>
                     ) : null}
+                    {/* Kept, marked: one depot skipped the week before, the other depots' figures are real. */}
+                    {row.depotSpansGap && !row.spansGap ? (
+                      <span
+                        className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
+                        title="A depot whose sales are in this week sent no sheet for the week before, so this figure also holds the week it skipped and reads high."
+                      >
+                        Depot gap
+                      </span>
+                    ) : null}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-phx-ink-soft tabular-nums">{row.weekStart ?? "—"}</td>

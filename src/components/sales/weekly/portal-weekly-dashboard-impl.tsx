@@ -500,6 +500,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
               <div className="h-72 w-full">
                 <WeekCrossMonthChart weekComparison={data.weekComparison} />
               </div>
+              <WeekGapNote weekComparison={data.weekComparison} />
             </Section>
 
             {/* Ranked breakdown charts */}
@@ -862,22 +863,46 @@ function WeeklyTrendChart({ trend }: { trend: WeeklyDashboard["trend"] }) {
   );
 }
 
+// The chart compares the same week across the last two months.
+function crossMonthMonths(weekComparison: WeeklyDashboard["weekComparison"]): string[] {
+  return [...new Set(weekComparison.map((r) => r.cycleMonth).filter(Boolean) as string[])].sort().slice(-2);
+}
+
+function crossMonthShort(code: string): string {
+  const match = /^(\d{4})-(\d{2})-01$/.exec(code);
+  if (!match) return code;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+// A bar cannot say that it reads high, or that it was left at zero, so the line under the chart does.
+function WeekGapNote({ weekComparison }: { weekComparison: WeeklyDashboard["weekComparison"] }) {
+  const months = crossMonthMonths(weekComparison);
+  const shown = weekComparison.filter((r) => months.includes(r.cycleMonth) && r.weekNumber >= 1 && r.weekNumber <= 4);
+  const label = (r: WeeklyDashboard["weekComparison"][number]) => `${crossMonthShort(r.cycleMonth)} W${r.weekNumber}`;
+  const high = shown.filter((r) => r.depotSpansGap && !r.spansGap).map(label);
+  const hidden = shown.filter((r) => r.spansGap).map(label);
+  if (high.length === 0 && hidden.length === 0) return null;
+  return (
+    <div className="mt-3 space-y-1 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+      {high.length > 0 ? (
+        <p>{`${high.join(", ")} ${high.length === 1 ? "carries" : "carry"} sales from a depot that sent no sheet for the week before, so the figure also holds the week it skipped and reads high.`}</p>
+      ) : null}
+      {hidden.length > 0 ? (
+        <p>{`${hidden.join(", ")} ${hidden.length === 1 ? "is" : "are"} shown as zero: no depot sent the week before, so a figure would hold more than one week.`}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function WeekCrossMonthChart({ weekComparison }: { weekComparison: WeeklyDashboard["weekComparison"] }) {
   if (weekComparison.length === 0) return <NoData />;
 
   // Derive distinct months sorted chronologically, take last 2 (prior + current)
-  const allMonths = [...new Set(weekComparison.map((r) => r.cycleMonth).filter(Boolean) as string[])].sort();
-  const months = allMonths.slice(-2);
+  const months = crossMonthMonths(weekComparison);
   if (months.length === 0) return <NoData />;
 
-  const monthShort = (code: string): string => {
-    const match = /^(\d{4})-(\d{2})-01$/.exec(code);
-    if (!match) return code;
-    const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
-    return date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-  };
-
-  const labels = months.map(monthShort);
+  const labels = months.map(crossMonthShort);
   // Prior month = slate, current month = orange
   const MONTH_COLORS = ["#94A3B8", "#F97316"];
   const LABEL_COLORS = ["#64748B", "#C2410C"];

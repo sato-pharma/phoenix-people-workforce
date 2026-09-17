@@ -493,6 +493,13 @@ export type WeeklyDashboard = {
      * never shown as a true single-week value.
      */
     spansGap: boolean;
+    /**
+     * True when money in this week came from a depot that sent no sheet for the week before
+     * (depotWeekGaps in decumulate.ts), so that depot's part of the figure also holds the week it
+     * skipped. The figure is kept and the week is marked (owner, 2026-09-17); only spansGap suppresses.
+     * One depot's sheet cannot hide another depot's missing week here, as it can for spansGap.
+     */
+    depotSpansGap: boolean;
   }[];
   /** the validated source sheets this report was built from (powers the export's "Report Sources" block) */
   sources: {
@@ -526,11 +533,13 @@ export type WeeklyDashboard = {
    */
   stockRows?: import("./stock-dashboard").WeeklyStockSourceRow[];
   /**
-   * The upload-gap flag of every (month, week) in the LIFTED row grain (liftRowGrainGeography with
-   * includeFactRows), whose weeks can differ from the viewer's own weekComparison. Flags only, no money.
-   * Undefined whenever the grain was not lifted.
+   * Every depot week that spans an upload gap (depotWeekGaps in decumulate.ts): the depot sent no sheet
+   * for the week before it in that cycle month, so its de-cumulated figures hold more than one week.
+   * Read over every loaded row, whatever the viewer's scope, so it names depots and weeks the viewer may
+   * not see: server-only, stripped before any payload reaches the browser. Flags only, no money. Only
+   * present when `includeFactRows` is requested.
    */
-  factRowWeekGaps?: { cycleMonth: string; weekNumber: number; spansGap: boolean }[];
+  factRowDepotWeekGaps?: import("./decumulate").DepotWeekGap[];
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

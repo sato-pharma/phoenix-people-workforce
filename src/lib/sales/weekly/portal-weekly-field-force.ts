@@ -42,9 +42,10 @@
 
 import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
 import { type WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import { depotWeekGapKeys, moneySpansDepotGap, type DepotWeekGap } from "@/lib/sales/weekly/decumulate";
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
+import type { WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 
 // ── seat index ───────────────────────────────────────────────────────────────
 
@@ -247,6 +248,11 @@ export type FieldForceRep = {
   value: number;
   /** week-of-month -> EGP. Money is addable across products, so a week column is safe here. */
   valueByWeek: Record<number, number>;
+  /**
+   * This row's weeks whose figure reads high: money on THIS row came from a depot that sent no sheet for
+   * the week before. The rep's own screen reads it, so his flags are his depots' and no one else's.
+   */
+  gapWeekNumbers: number[];
   /** Value credited from a branch the owner mapped BY HAND. Exact, not allocated. */
   exactValue: number;
   /** Value placed by reading the branch name and spreading it. An allocation — label it. */
@@ -256,9 +262,12 @@ export type FieldForceRep = {
 };
 
 export type PortalWeeklyFieldForce = {
-  /** Week-of-month numbers present, ascending — the column axis. */
+  /** Week-of-month numbers carried by a row that counts on this grid, ascending — the column axis. */
   weekNumbers: number[];
-  /** Weeks whose de-cumulated figure silently spans a missing upload; the screen must flag these. */
+  /**
+   * Weeks where money that counts on this grid came from a depot that sent no sheet for the week before,
+   * so the de-cumulated figure silently holds the week it skipped; the screen must flag these.
+   */
   gapWeekNumbers: number[];
   /** Rows: real reps first (by value), then vacant areas, then the residue bucket. */
   reps: FieldForceRep[];
@@ -307,13 +316,12 @@ export function buildPortalWeeklyFieldForce(input: {
   /** The dashboard's stable product universe, so the axis does not change with the view. */
   productAxis?: { code: string; name: string }[];
   /**
-   * weekComparison, read only for its spansGap flags — or, for a lifted load, that grain's own gap flags
-   * (factRowWeekGaps), which carry no money.
+   * Every depot week that spans an upload gap (the dashboard's factRowDepotWeekGaps). A week is flagged
+   * where money that counts on this grid came from one of them, so a depot that skipped a week is caught
+   * even when another depot sent that week (owner, 2026-09-17: one rule on every Field Force tab). Absent
+   * = nothing is flagged, so every screen passes it.
    */
-  weekComparison?: readonly (
-    | WeeklyDashboard["weekComparison"][number]
-    | NonNullable<WeeklyDashboard["factRowWeekGaps"]>[number]
-  )[];
+  depotWeekGaps?: readonly DepotWeekGap[];
   seatIndexUnavailable?: boolean;
   /**
    * Required whenever `rows` came from a load with the geography lifted (liftRowGrainGeography).
@@ -339,6 +347,8 @@ export function buildPortalWeeklyFieldForce(input: {
   const weekNumbers = new Set<number>();
   const byKey = new Map<string, FieldForceRep>();
   const productsByKey = new Map<string, Map<string, FieldForceProduct>>();
+  const depotGapKeys = depotWeekGapKeys(input.depotWeekGaps ?? []);
+  const depotGapWeeksByKey = new Map<string, Set<number>>();
 
   let unattributedValue = 0;
 
@@ -355,13 +365,16 @@ export function buildPortalWeeklyFieldForce(input: {
     const value = Number(row.salesValue) || 0;
     const units = Number(row.salesUnits) || 0;
     const week = row.weekNumber;
-    if (week !== null && week !== undefined) weekNumbers.add(week);
 
     // A lifted load holds rows the viewer's own scope never admitted. Of those, only the share the
     // split placed in one of HIS areas may count: another district's share, and the residue of a row
-    // he could not see, stop here before a single figure is summed. The week is recorded first, so
-    // the column axis stays the loaded month's upload calendar.
+    // he could not see, stop here before a single figure is summed. Their week stops here too, so a
+    // column exists only where a row that counts for him carries it.
     if (!row.admittedWhole && !geography?.ownAreaKeys.has(fieldForceKey(row.line, row.areaCode))) continue;
+    if (week !== null && week !== undefined) weekNumbers.add(week);
+
+    // Money from a depot week that spans an upload gap reads high. A row that moves no money cannot.
+    const spansDepotGap = moneySpansDepotGap(row, { value, units }, depotGapKeys);
 
     const areaCode = upper(row.areaCode);
     const seat = areaCode ? seatIndex.byLineArea.get(fieldForceKey(row.line, areaCode)) : undefined;
@@ -389,11 +402,13 @@ export function buildPortalWeeklyFieldForce(input: {
         managerName: null,
         value: 0,
         valueByWeek: {},
+        gapWeekNumbers: [],
         exactValue: 0,
         allocatedValue: 0,
         products: [],
       }));
       accumulate(rep, productsByKey.get(key)!, row, value, units, week);
+      if (spansDepotGap) addGapWeek(depotGapWeeksByKey, key, week);
       continue;
     }
 
@@ -413,11 +428,13 @@ export function buildPortalWeeklyFieldForce(input: {
       managerName: seat.managerName,
       value: 0,
       valueByWeek: {},
+      gapWeekNumbers: [],
       exactValue: 0,
       allocatedValue: 0,
       products: [],
     }));
     accumulate(rep, productsByKey.get(key)!, row, value, units, week);
+    if (spansDepotGap) addGapWeek(depotGapWeeksByKey, key, week);
   }
 
   // Rank each rep's products by value, then attach.
@@ -454,18 +471,13 @@ export function buildPortalWeeklyFieldForce(input: {
 
   const orderedWeeks = [...weekNumbers].sort((a, b) => a - b);
 
-  // A week whose immediately-preceding upload is missing carries a de-cumulated figure that silently
-  // spans the gap. The dashboard already suppresses it in weekComparison; here the per-rep cell
-  // cannot be suppressed without breaking the row's own arithmetic, so the week is FLAGGED instead
-  // and the screen marks the column.
-  const gapWeekNumbers = [
-    ...new Set(
-      (input.weekComparison ?? [])
-        .filter((entry) => entry.spansGap)
-        .map((entry) => entry.weekNumber)
-        .filter((week) => orderedWeeks.includes(week)),
-    ),
-  ].sort((a, b) => a - b);
+  // A depot week whose previous week that depot never uploaded carries a de-cumulated figure that
+  // silently spans the gap. A per-rep cell cannot be suppressed without breaking the row's own
+  // arithmetic, so the week is FLAGGED instead and the screen marks the column. Per depot, so one depot's
+  // missing week is not hidden by another depot's sheet, and per row, so a rep carries only his own.
+  const byWeek = (a: number, b: number) => a - b;
+  const gapWeekNumbers = [...new Set([...depotGapWeeksByKey.values()].flatMap((weeks) => [...weeks]))].sort(byWeek);
+  for (const rep of reps) rep.gapWeekNumbers = [...(depotGapWeeksByKey.get(rep.key) ?? [])].sort(byWeek);
 
   // The axis is the dashboard's stable universe where one was supplied, narrowed to products that
   // actually appear — so column N is the same product on every rep's row, in every scope.
@@ -491,6 +503,13 @@ export function buildPortalWeeklyFieldForce(input: {
     totals,
     seatIndexUnavailable: input.seatIndexUnavailable ?? seatIndex.seats.length === 0,
   };
+}
+
+function addGapWeek(weeksByKey: Map<string, Set<number>>, key: string, week: number | null | undefined): void {
+  if (week === null || week === undefined) return;
+  const weeks = weeksByKey.get(key) ?? new Set<number>();
+  weeks.add(week);
+  weeksByKey.set(key, weeks);
 }
 
 function accumulate(

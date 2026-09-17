@@ -423,8 +423,9 @@ export async function getPortalWeeklyDashboard(
         productAxis: liftGrain
           ? undefined
           : trimmed.availableProducts.map((option) => ({ code: option.code, name: option.name })),
-        // A lifted grain has its own upload calendar, so its gap flags travel with it.
-        weekComparison: liftGrain ? (data.factRowWeekGaps ?? []) : trimmed.weekComparison,
+        // Flagged per depot, over the rows that count on this grid (owner, 2026-09-17): a pooled flag lets
+        // one depot's sheet hide another depot's missing week.
+        depotWeekGaps: data.factRowDepotWeekGaps ?? [],
         seatIndexUnavailable: seatIndex.seats.length === 0,
         geography:
           liftGrain && scope.accessScope.tier === "territory"
@@ -434,9 +435,9 @@ export async function getPortalWeeklyDashboard(
     : null;
 
   // Never ship the row grain to the browser. It is thousands of rows per month and the client has no
-  // use for it — everything the screen renders is already aggregated into `fieldForce`. A lifted
-  // grain's gap flags go with it, so the payload is exactly what it was before the lift.
-  const { factRows: _factRows, factRowWeekGaps: _factRowWeekGaps, ...clientSafe } = trimmed;
+  // use for it — everything the screen renders is already aggregated into `fieldForce`. The depot gap
+  // list goes with it: it is read over every loaded row, so it names depots and weeks beyond his scope.
+  const { factRows: _factRows, factRowDepotWeekGaps: _factRowDepotWeekGaps, ...clientSafe } = trimmed;
 
   return { data: clientSafe, scope, comparison, fieldForce };
 }
@@ -482,7 +483,7 @@ export async function getPortalWeeklyMonthFieldForce(
     rows: data.factRows ?? [],
     areaSplit,
     seatIndex,
-    weekComparison: liftGrain ? (data.factRowWeekGaps ?? []) : data.weekComparison,
+    depotWeekGaps: data.factRowDepotWeekGaps ?? [],
     seatIndexUnavailable: seatIndex.seats.length === 0,
     geography:
       liftGrain && accessScope.tier === "territory"
