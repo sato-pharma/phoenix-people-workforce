@@ -1704,6 +1704,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
@@ -5827,6 +5828,11 @@ await runTest(
 await runTest(
   "a manager bound to one region reads its organogram name on the weekly scope line: Upper Egypt 1, Upper Egypt 2 and Delta (3) (which depot labels never carry) and every other region, alike on Depot Detail, Weekly Sales and Weekly Stock; an unreadable organogram reads 1 region, never a code, and only a one-region viewer costs the read",
   runWeeklyScopeRegionNamesTests,
+);
+
+await runTest(
+  "no share token in tracked docs: a run of 43+ base64url characters mixing upper case, lower case and digits fails, and the failure names only file, line and the first 6 characters",
+  runDocsShareTokenGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
