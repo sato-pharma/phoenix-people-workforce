@@ -1,25 +1,35 @@
-// Early Birds — admin twin of /employee-portals/early-birds, serving CEO, SFE Manager and Super
+// Early Birds - admin twin of /employee-portals/early-birds, serving CEO, SFE Manager and Super
 // Admin (the three roles in this module's audience that resolve to the admin shell). Same board
 // component and same scope resolver as the portal page; only the shell differs.
 //
-// District is a URL search param so every switch re-runs the server-side scope gate.
+// District, fortnight and open rep are all URL search params so every switch re-runs the
+// server-side gates. The three guards and why they differ are documented on the portal twin.
 import { redirect } from "next/navigation";
 import { Sunrise } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
-import { EarlyBirdsDistrictSwitcher } from "@/components/early-birds/early-birds-district-switcher";
+import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
+import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { getEarlyBirdsRepHistory } from "@/lib/early-birds/history";
+import {
+  currentEarlyBirdsPeriod,
+  listSelectableEarlyBirdsPeriods,
+  resolveEarlyBirdsPeriodParam,
+} from "@/lib/early-birds/period";
 import { getEarlyBirdsBoard } from "@/lib/early-birds/service";
-import { assertDistrictInScope, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
+import { assertDistrictInScope, assertRepInRoster, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const ALLOWED_ROLES = new Set(["Super Admin", "CEO", "SFE Manager"]);
+const BASE_PATH = "/admin/early-birds";
 
-type PageProps = { searchParams?: Promise<{ district?: string; period?: string }> };
+type PageProps = { searchParams?: Promise<{ district?: string; period?: string; rep?: string }> };
 
 export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
@@ -80,22 +90,67 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
     );
   }
 
+  const todayIso = cairoTodayIso();
+  const period = resolveEarlyBirdsPeriodParam(params.period, todayIso);
+
   const data = await getEarlyBirdsBoard({
     managerHrId: district.hrId,
     managerName: district.name,
-    periodKey: params.period,
+    periodKey: period.periodKey,
     scopeLabel: district.name,
   });
+
+  const requestedRep = params.rep?.trim() ?? "";
+  const rep = requestedRep ? assertRepInRoster(data.ranking.scores, requestedRep) : null;
+  const repRefused = requestedRep.length > 0 && rep === null;
+  const repScore = rep ? data.ranking.scores.find((score) => score.hrIdKey === rep.hrIdKey) ?? null : null;
+  const history = rep ? await getEarlyBirdsRepHistory({ hrId: rep.hrId }) : null;
 
   return (
     <div className="space-y-5">
       {hero}
-      <EarlyBirdsDistrictSwitcher
-        basePath="/admin/early-birds"
+
+      <EarlyBirdsControls
+        basePath={BASE_PATH}
         districts={scope.districts}
-        selectedHrIdKey={district.hrIdKey}
+        livePeriodKey={currentEarlyBirdsPeriod(todayIso).periodKey}
+        periods={listSelectableEarlyBirdsPeriods(todayIso)}
+        repHrId={rep?.hrId ?? null}
+        scopeLabel={scope.scopeLabel}
+        selectedDistrict={district}
+        selectedPeriodKey={period.periodKey}
       />
-      <EarlyBirdsBoard action={<EarlyBirdsSyncAction />} data={data} viewerHrIdKey={scope.viewerHrIdKey} />
+
+      {repRefused ? (
+        <div className="border border-amber-200 bg-amber-50 px-5 py-4">
+          <p className="break-words text-sm font-bold text-amber-900">
+            That rep is not in {district.name}&apos;s ranking for {period.label}.
+          </p>
+          <p className="mt-1 break-words text-sm text-amber-800">
+            Switch district, or pick the fortnight he was ranked in. The board below is unaffected.
+          </p>
+        </div>
+      ) : null}
+
+      {rep && history ? (
+        <EarlyBirdsRepHistoryPanel
+          basePath={BASE_PATH}
+          district={district.hrId}
+          history={history}
+          name={rep.name}
+          period={data.period}
+          profile={data.profiles.get(rep.hrIdKey) ?? null}
+          score={repScore}
+        />
+      ) : null}
+
+      <EarlyBirdsBoard
+        action={<EarlyBirdsSyncAction />}
+        data={data}
+        openRepHrIdKey={rep?.hrIdKey ?? null}
+        repLink={{ basePath: BASE_PATH, district: district.hrId, period: period.periodKey }}
+        viewerHrIdKey={scope.viewerHrIdKey}
+      />
     </div>
   );
 }

@@ -6,7 +6,8 @@ import { EarlyBirdsHallOfFame } from "./early-birds-hall-of-fame";
 import { EarlyBirdsRacePanel } from "./early-birds-race-panel";
 import { EarlyBirdsRepTable } from "./early-birds-rep-table";
 import { EarlyBirdsWinnerPanel } from "./early-birds-winner-panel";
-import { formatStartClock } from "./early-birds-format";
+import { formatFortnightHeading, formatStartClock } from "./early-birds-format";
+import type { EarlyBirdsRepLinkContext } from "./early-birds-rep-link";
 
 // One board, rendered by both the admin page and the portal page. Only the surrounding shell
 // differs — the doctor-coverage precedent, so a CEO and a District Manager can never be looking at
@@ -23,11 +24,17 @@ export function EarlyBirdsBoard({
   data,
   viewerHrIdKey,
   action,
+  repLink,
+  openRepHrIdKey,
 }: {
   data: EarlyBirdsBoardData;
   viewerHrIdKey?: string | null;
   /** Sync-now island, rendered in the header. */
   action?: React.ReactNode;
+  /** Where a rep's name links to. Both pages pass it; it carries the open fortnight forward. */
+  repLink?: EarlyBirdsRepLinkContext | null;
+  /** The rep whose record is open, so the board can mark his row rather than only the panel. */
+  openRepHrIdKey?: string | null;
 }) {
   if (data.error) {
     return (
@@ -59,7 +66,7 @@ export function EarlyBirdsBoard({
       icon: Sunrise,
       label: "Fortnight leader",
       value: leader ? leader.name.split(/\s+/)[0] : "—",
-      sub: leader ? "current #1" : "nobody eligible yet",
+      sub: leader ? (data.closed ? "finished #1" : "current #1") : "nobody eligible yet",
       accent: "bg-amber-400",
       valueClass: "text-slate-900",
     },
@@ -97,7 +104,7 @@ export function EarlyBirdsBoard({
 
       <div className="overflow-hidden border border-slate-200 bg-white">
         <SectionHead
-          title={`This fortnight · ${data.period.label}`}
+          title={formatFortnightHeading(data.period.label, data.closed)}
           right={
             action ?? (
               // No nowrap: SectionHead's bar is overflow-hidden, so a chip that cannot wrap is
@@ -112,12 +119,19 @@ export function EarlyBirdsBoard({
       </div>
 
       <EarlyBirdsRacePanel
+        openRepHrIdKey={openRepHrIdKey}
+        repLink={repLink}
         scores={data.ranking.scores}
         viewerHrIdKey={viewerHrIdKey}
         winCountByHrIdKey={data.winCountByHrIdKey}
       />
 
-      <EarlyBirdsRepTable profiles={data.profiles} scores={data.ranking.scores} />
+      <EarlyBirdsRepTable
+        openRepHrIdKey={openRepHrIdKey}
+        profiles={data.profiles}
+        repLink={repLink}
+        scores={data.ranking.scores}
+      />
 
       <EarlyBirdsHallOfFame winners={data.hallOfFame} />
     </div>
