@@ -10,7 +10,7 @@
 //      removed. Nothing reaches an employee from here. The weeks follow the calendar month
 //      (digest-weeks.ts).
 //   2. RELEASED BY THE SUPER ADMIN, AS OFTEN AS HE LIKES. Release opens the days waiting now and tells
-//      each employee in-app and by Telegram (never email). Days that arrive after a release wait for a
+//      each employee by email, Telegram and in-app (owner, 2026-09-17). Days that arrive after a release wait for a
 //      second release of the same week. A trial-run week (dry_run) can never be released.
 //   3. SALARY OR ANNUAL BALANCE. The employee does not confirm or deny the day — they choose how
 //      it is paid: from salary, or from annual vacation balance (the same number of days, only
@@ -22,7 +22,7 @@
 //      moves past the leave (owner, 2026-09-15 — "Pause for leave days"), and leave still waiting
 //      for approval counts as leave (owner, 2026-09-16 — "Pending pauses too").
 //   6. THE DECISION IS TOLD. When a reviewer accepts or rejects a dispute, the employee is told
-//      in-app and by Telegram, with where a rejected day is taken from (owner, 2026-09-15).
+//      by email, Telegram and in-app, with where a rejected day is taken from (owner, 2026-09-15).
 //
 // SCOPE. This module records an answer and, for balance, spends leave days. It never writes a
 // deduction: the month-end Fingerprint connector stays the only author of deductions_candidates,
@@ -1279,7 +1279,9 @@ export type ReleaseResult = { released: number; notified: number; notNotified: n
  * the same week. Every day the Super Admin did not tick is cleared first — never deducted — and only the
  * ticked days are asked about. Sets each employee's answer deadline — N working days after today, on
  * THEIR weekly-off pattern, the holiday calendar and their leave, approved or still waiting for approval
- * — and tells them in-app and by Telegram. A trial-run week is refused outright (owner, 2026-09-15).
+ * — and tells them by email, Telegram and in-app. Their deadline runs only when a real channel told
+ * them and they still work here (releaseNoticeReached). A trial-run week is refused outright (owner,
+ * 2026-09-15).
  *
  * `seenLines` is every day waiting for release as the page showed it. When a day was added or changed
  * after the page loaded, nothing at all is released: the Super Admin reloads and looks again.
@@ -1677,7 +1679,8 @@ export async function listPendingDisputes(): Promise<PendingDispute[]> {
  * Decide a disputed day. Upheld: no deduction at all. Rejected: the method the employee chose
  * applies — and if they chose annual balance but it no longer covers the day (leave approved
  * since), the day falls to salary and the settlement says why. Either way the employee is then told
- * in-app and by Telegram (owner, 2026-09-15); `notified` is false when neither channel took it.
+ * by email, Telegram and in-app; `notified` is false when no real channel reached them
+ * (noticeReachedEmployee).
  */
 export async function reviewDispute(input: {
   lineId: number;

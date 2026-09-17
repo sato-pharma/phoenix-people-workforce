@@ -25,6 +25,8 @@ import {
   payrollDecisionBlocksBalance,
   pickDefaultReviewWeek,
   releaseNoticeRange,
+  noticeReachedEmployee,
+  noticeRecipientFactsFrom,
   releaseNoticeReached,
   releaseScope,
   reviewWeekStage,
@@ -244,15 +246,113 @@ export async function runAttendanceDigestRulesTests() {
   );
   assert.equal(deadlineApplies({ answerDueOn: "2026-09-17", notifiedAt: "2026-09-15T09:00:00Z", todayCairoIso: "2026-09-17" }), false);
 
-  assert.equal(releaseNoticeReached([{ channel: "in_app", status: "sent" }]), true);
-  assert.equal(releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "pending" }]), true);
-  assert.equal(
-    releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "failed" }]),
-    false,
-    "a notice every channel skipped or failed told nobody, and must not start the clock",
-  );
-  assert.equal(releaseNoticeReached([]), false, "no delivery at all is not a notice");
-  assert.equal(releaseNoticeReached([{ channel: "email", status: "sent" }]), false, "email is not one of this notice's channels");
+  // Owner, 2026-09-17 — "Only a real channel" and "HR decides, never automatic": an employee counts as
+  // told only when email or Telegram went out, or the in-app notice reached someone who has signed in
+  // before; and a leaver is never counted as told, so their days wait for HR.
+  {
+    const signedIn = { hasSignedIn: true, stillEmployed: true };
+    const neverSignedIn = { hasSignedIn: false, stillEmployed: true };
+    const leaver = { hasSignedIn: true, stillEmployed: false };
+
+    assert.equal(releaseNoticeReached([{ channel: "email", status: "sent" }], neverSignedIn), true, "an email that went out tells the employee");
+    assert.equal(releaseNoticeReached([{ channel: "telegram", status: "sent" }], neverSignedIn), true, "so does a Telegram message");
+
+    // Only what went out counts. A hold can never go out when there is no linked Telegram or no
+    // address, and the outbox files permanent email blocks under "retry" — so none of these starts
+    // the clock (risk review, 2026-09-17).
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "pending" }], neverSignedIn),
+      false,
+      "a Telegram message held for quiet hours has not gone out yet, and may never",
+    );
+    assert.equal(releaseNoticeReached([{ channel: "email", status: "pending" }], neverSignedIn), false, "an email held for quiet hours has not gone out yet");
+    assert.equal(releaseNoticeReached([{ channel: "telegram", status: "retrying" }], neverSignedIn), false, "a Telegram message waiting for a retry has not gone out");
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "sent" }, { channel: "email", status: "sent", queuedForRetry: true }], neverSignedIn),
+      false,
+      "an email handed to the outbox to retry did not go out — it may be a permanent block recorded as a retry",
+    );
+    assert.equal(
+      releaseNoticeReached([{ channel: "email", status: "sent", queuedForRetry: true }, { channel: "telegram", status: "sent" }], neverSignedIn),
+      true,
+      "another channel that did go out still tells them",
+    );
+    assert.equal(
+      releaseNoticeReached([{ channel: "email", status: "pending" }, { channel: "in_app", status: "sent" }], signedIn),
+      true,
+      "during quiet hours the in-app notice still tells someone who uses the app",
+    );
+
+    assert.equal(releaseNoticeReached([{ channel: "in_app", status: "sent" }], signedIn), true, "the app tells someone who uses it");
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "sent" }], neverSignedIn),
+      false,
+      "an in-app notice nobody can open tells nobody — the days wait for HR, never deducted for going unanswered",
+    );
+
+    for (const deliveries of [
+      [{ channel: "email", status: "sent" }],
+      [{ channel: "telegram", status: "sent" }],
+      [{ channel: "in_app", status: "sent" }, { channel: "email", status: "sent" }, { channel: "telegram", status: "sent" }],
+    ]) {
+      assert.equal(
+        releaseNoticeReached(deliveries, leaver),
+        false,
+        `a leaver is never counted as told, even when ${deliveries.map((d) => d.channel).join(" and ")} reached them — HR decides their days in the final pay`,
+      );
+    }
+
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "email", status: "skipped" }, { channel: "telegram", status: "failed" }], signedIn),
+      false,
+      "a notice every channel skipped or failed told nobody, and must not start the clock",
+    );
+    assert.equal(releaseNoticeReached([], signedIn), false, "no delivery at all is not a notice");
+    assert.equal(releaseNoticeReached([{ channel: "push", status: "sent" }], neverSignedIn), false, "push is not one of this notice's channels");
+
+    // The dispute decision deducts nothing on the answer, so a reached leaver counts there.
+    assert.equal(noticeReachedEmployee([{ channel: "email", status: "sent" }], { hasSignedIn: false }), true);
+    assert.equal(noticeReachedEmployee([{ channel: "in_app", status: "sent" }], { hasSignedIn: false }), false);
+    assert.equal(noticeReachedEmployee([{ channel: "in_app", status: "sent" }], { hasSignedIn: true }), true);
+    assert.equal(noticeReachedEmployee([{ channel: "email", status: "sent", queuedForRetry: true }], { hasSignedIn: false }), false);
+    assert.equal(noticeReachedEmployee([{ channel: "telegram", status: "pending" }], { hasSignedIn: true }), false);
+  }
+
+  {
+    // "Signed in" needs BOTH an active login and a recorded sign-in; "still works here" needs BOTH an
+    // employee row and a status that is not a leaver's.
+    const facts = (onEmployeeFile: boolean, terminalStatus: boolean, activeLogin: boolean, hasSession: boolean) =>
+      noticeRecipientFactsFrom({ onEmployeeFile, terminalStatus, activeLogin, hasSession });
+    assert.deepEqual(facts(true, false, true, true), { hasSignedIn: true, stillEmployed: true });
+    assert.equal(facts(true, false, true, false).hasSignedIn, false, "an active login that never signed in has not seen the app");
+    assert.equal(facts(true, false, false, true).hasSignedIn, false, "a deactivated login cannot open the app, whatever it did before");
+    assert.equal(facts(true, false, false, false).hasSignedIn, false);
+    assert.equal(facts(true, true, true, true).stillEmployed, false, "a leaver's status is a leaver");
+    assert.equal(facts(false, false, true, true).stillEmployed, false, "no employee row is no proof they still work here");
+  }
+
+  {
+    // The facts behind "signed in" and "still works here" are read from the tables that hold them.
+    const notify = readFileSync("src/lib/attendance/digest-notify.ts", "utf8");
+    assert.match(notify, /from\("app_sessions"\)/, "a sign-in is read from app_sessions, which every real password or biometric sign-in writes");
+    assert.match(notify, /from\("app_auth_users"\)[^\n]*\.eq\("is_active", true\)/, "only an active login counts");
+    assert.match(
+      notify,
+      /return noticeRecipientFactsFrom\(\{\s*onEmployeeFile: Boolean\(employee\.data\),\s*terminalStatus: isTerminalEmploymentStatus\(status\),\s*activeLogin: \(login\.data \?\? \[\]\)\.length > 0,\s*hasSession: \(session\.data \?\? \[\]\)\.length > 0,\s*\}\);/,
+      "the facts come from the employee row, payroll's leaver rule, the active login and its sessions",
+    );
+    assert.match(notify, /return releaseNoticeReached\(result\.deliveries, await loadNoticeRecipientFacts\(input\.employeeHrId\)\);/, "the release notice applies the leaver rule");
+    assert.match(notify, /return noticeReachedEmployee\(result\.deliveries, await loadNoticeRecipientFacts\(input\.employeeHrId\)\);/, "the dispute decision deducts nothing, so it does not");
+    assert.match(notify, /catch \(error\) \{\s*logError\("Weekly attendance release notification failed"[\s\S]*?return false;/, "a failed read counts as not told");
+
+    // The notification system has to say when an email was only handed to the outbox.
+    const system = readFileSync("src/lib/notifications/system.ts", "utf8");
+    assert.match(
+      system,
+      /const handedOffToOutbox = result\.skipped && result\.reason\.startsWith\("Queued for retry:"\);[\s\S]{0,1200}?deliveries\.push\(\{ channel, error, idempotencyKey, \.\.\.\(handedOffToOutbox \? \{ queuedForRetry: true \} : \{\}\), status \}\);/,
+      "an email handed to the outbox is reported as queued for retry, so it is not counted as told",
+    );
+  }
 
   // --- Releasing while the week runs: only the days the page showed ----------------------------
   // Owner, 2026-09-17: "Show live, release any time". The daily job keeps adding days to a waiting week,
@@ -362,6 +462,18 @@ export async function runAttendanceDigestRulesTests() {
   assert.match(notice.message, /dispute/i, "and says a dispute is possible after choosing");
   assert.match(notice.message, /Thursday 17 September/, "and gives the deadline");
   assert.doesNotMatch(notice.message, /EGP|\d+\.\d{2}/, "no amount on a lock-screen channel");
+  assert.match(notice.message, /has 2 days with a deduction\.\n\nFor each day, choose/, "the notice keeps its paragraphs");
+
+  // One day reads as that day (owner, 2026-09-17). 2026-09-09 is a Wednesday.
+  {
+    const oneDay = buildWeekReleasedMessage({ weekStart: "2026-09-09", weekEnd: "2026-09-09", dayCount: 1, answerDueOn: "2026-09-11" });
+    assert.equal(oneDay.title, "Attendance review — Wednesday 9 September", "a single day's title names that day, never \"9 Sept to 9 Sept\"");
+    assert.doesNotMatch(`${oneDay.title}\n${oneDay.message}`, / to \d/, "no range when there is one day");
+    assert.match(oneDay.message, /^Your attendance on Wednesday 9 September has a deduction\.\n\n/);
+    assert.match(oneDay.message, /salary or from your annual vacation balance/);
+    assert.match(oneDay.message, /dispute/);
+    assert.match(oneDay.message, /\n\nPlease answer by the end of Friday 11 September\. Any day not answered by then is deducted from salary\.$/);
+  }
 
   // --- The dispute decision notice (owner, 2026-09-15 — "Yes, in-app and Telegram") ------------------
   // 2026-09-10 is a Thursday.

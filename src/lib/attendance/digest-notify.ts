@@ -1,30 +1,64 @@
 // Telling an employee about their weekly attendance review: a week released for an answer, and a
 // disputed day decided.
 //
-// Owner rules 2026-09-15: in-app and Telegram, never email (hard-blocked in
-// attendance-digest-channel-guard.ts). The release notice is sent ONLY when the Super Admin
-// releases the week — the daily job that builds a week sends nothing. The decision notice is sent
-// when a reviewer accepts or rejects a disputed day.
+// Owner rule 2026-09-17 (replacing 2026-09-15's "never email"): by email to the employee's own work
+// address, by Telegram, and in-app — see attendance-digest-channels.ts. Email is named before
+// Telegram on purpose: a permanent Telegram failure falls back to email only when email has not been
+// tried yet, so the other order would email the employee twice. The release notice is sent ONLY when
+// the Super Admin releases the week — the daily job that builds a week sends nothing. The decision
+// notice is sent when a reviewer accepts or rejects a disputed day.
 //
 // Neither message carries an amount, and the decision notice does not quote the reviewer's note:
 // Telegram is a lock-screen channel, and both are one tap away on the page.
 
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import {
   buildDisputeDecidedMessage,
   buildWeekReleasedMessage,
+  noticeReachedEmployee,
+  noticeRecipientFactsFrom,
   releaseNoticeReached,
   type DeductionMethod,
+  type NoticeRecipientFacts,
 } from "@/lib/attendance/digest-rules.ts";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export { buildWeekReleasedMessage };
 
 export const WEEKLY_ATTENDANCE_PORTAL_URL = "/employee-portals/attendance/digests";
 
 /**
+ * Whether the employee still works here, and whether they have an active login that has signed in
+ * at least once. A signed-in session is read from `app_sessions`, which only a real password or
+ * biometric sign-in writes; Supabase's own last-sign-in time is not, because an Employee login does
+ * not open a Supabase session. Throws on a failed read: the caller then counts the employee as not
+ * told, which leaves their days for HR rather than the deadline.
+ */
+async function loadNoticeRecipientFacts(employeeHrId: string): Promise<NoticeRecipientFacts> {
+  const hrPattern = employeeHrId.trim().replace(/[\\%_]/g, (char) => `\\${char}`);
+  const supabase = getSupabaseAdmin();
+  const [employee, login, session] = await Promise.all([
+    supabase.from("employees").select("employment_status").ilike("hr_id", hrPattern).limit(1).maybeSingle(),
+    supabase.from("app_auth_users").select("hr_id").ilike("hr_id", hrPattern).eq("is_active", true).limit(1),
+    supabase.from("app_sessions").select("id").ilike("hr_id", hrPattern).limit(1),
+  ]);
+  if (employee.error) throw employee.error;
+  if (login.error) throw login.error;
+  if (session.error) throw session.error;
+  const status = (employee.data as { employment_status?: string | null } | null)?.employment_status;
+  return noticeRecipientFactsFrom({
+    onEmployeeFile: Boolean(employee.data),
+    terminalStatus: isTerminalEmploymentStatus(status),
+    activeLogin: (login.data ?? []).length > 0,
+    hasSession: (session.data ?? []).length > 0,
+  });
+}
+
+/**
  * Never throws: a notice that cannot be delivered must not undo a release already written.
- * Returns true only when in-app or Telegram actually took the notice — see releaseNoticeReached.
+ * Returns true only when the notice told someone who still works here — see releaseNoticeReached.
  */
 export async function notifyAttendanceWeekReleased(input: {
   digestId: number;
@@ -43,10 +77,11 @@ export async function notifyAttendanceWeekReleased(input: {
         eventType: "week_released",
         priority: "high",
         actionUrl: WEEKLY_ATTENDANCE_PORTAL_URL,
-        channels: ["in_app", "telegram"],
+        channels: ["in_app", "email", "telegram"],
         // The employee the week describes is the only recipient; naming them as the subject too
         // keeps this on the "sensitive content to its own subject" path if the module is ever
-        // listed as sensitive.
+        // listed as sensitive. It is also what copies their direct manager on the email (owner,
+        // 2026-09-17: keep the manager's copy).
         subjectHrId: input.employeeHrId,
         title,
         message,
@@ -60,7 +95,9 @@ export async function notifyAttendanceWeekReleased(input: {
       },
       [input.employeeHrId],
     );
-    return releaseNoticeReached(result.deliveries);
+    // Read after sending: the notice goes to a leaver or a never-signed-in employee too, and only
+    // whether it starts their deadline depends on these.
+    return releaseNoticeReached(result.deliveries, await loadNoticeRecipientFacts(input.employeeHrId));
   } catch (error) {
     logError("Weekly attendance release notification failed", {
       labels: { event: "attendance_digest_notify_failed", digestId: String(input.digestId) },
@@ -71,10 +108,10 @@ export async function notifyAttendanceWeekReleased(input: {
 }
 
 /**
- * Tell the employee how their disputed day was decided (owner, 2026-09-15 — "Yes, in-app and
- * Telegram"). Never throws: the decision is already saved, and a notice that cannot be delivered
- * must not make the reviewer think it was not. Returns true only when in-app or Telegram took the
- * notice — see releaseNoticeReached.
+ * Tell the employee how their disputed day was decided (owner, 2026-09-15; by email too since
+ * 2026-09-17). Never throws: the decision is already saved, and a notice that cannot be delivered
+ * must not make the reviewer think it was not. Returns true only when the notice reached the
+ * employee through a real channel — see noticeReachedEmployee.
  */
 export async function notifyAttendanceDisputeDecided(input: {
   digestId: number;
@@ -97,7 +134,7 @@ export async function notifyAttendanceDisputeDecided(input: {
         // No deadline rides on this one, unlike the release notice.
         priority: "normal",
         actionUrl: WEEKLY_ATTENDANCE_PORTAL_URL,
-        channels: ["in_app", "telegram"],
+        channels: ["in_app", "email", "telegram"],
         subjectHrId: input.employeeHrId,
         title,
         message,
@@ -111,7 +148,8 @@ export async function notifyAttendanceDisputeDecided(input: {
       },
       [input.employeeHrId],
     );
-    return releaseNoticeReached(result.deliveries);
+    // Nothing is deducted on this answer, so a leaver who was reached counts as told here.
+    return noticeReachedEmployee(result.deliveries, await loadNoticeRecipientFacts(input.employeeHrId));
   } catch (error) {
     logError("Attendance dispute decision notification failed", {
       labels: { event: "attendance_dispute_notify_failed", digestId: String(input.digestId), lineId: String(input.lineId) },

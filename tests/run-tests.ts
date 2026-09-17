@@ -1667,7 +1667,7 @@ import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
-import { runAttendanceDigestEmailBlockTests } from "./attendance-digest-email-block.test.ts";
+import { runAttendanceDigestNoticeChannelsTests } from "./attendance-digest-notice-channels.test.ts";
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
@@ -5503,7 +5503,10 @@ await runTest(
   "weekly attendance review release flow (nothing reaches an employee before release, a trial week never releases, 2 working days then salary, and a balance-paid day is never also deducted from pay)",
   runAttendanceDigestRulesTests,
 );
-await runTest("weekly attendance release notice is in-app + Telegram only, never email", runAttendanceDigestEmailBlockTests);
+await runTest(
+  "weekly attendance review notices go by email, Telegram and in-app, email before Telegram, and read as a letter on Telegram",
+  runAttendanceDigestNoticeChannelsTests,
+);
 await runTest(
   "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",
   runHolidayCalendarOutageGateTests,

@@ -39,10 +39,15 @@ export function interpolate(
   variables: Record<string, string>,
   escapeValues: boolean,
   rawHtmlTokens?: ReadonlySet<string>,
+  // Show a value's own line breaks as breaks. Off by default, so every other email renders as
+  // before: only a sender that asks gets it (the weekly attendance review, owner 2026-09-17).
+  options: { lineBreaks?: boolean } = {},
 ) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
     const value = variables[key] ?? "";
-    return escapeValues && !rawHtmlTokens?.has(key) ? escapeHtml(value) : value;
+    if (!escapeValues || rawHtmlTokens?.has(key)) return value;
+    const escaped = escapeHtml(value);
+    return options.lineBreaks ? escaped.replace(/\r?\n/g, "<br />") : escaped;
   });
 }
 
