@@ -557,6 +557,7 @@ import { runWeeklyOwnAreaLiftTests } from "./weekly-own-area-lift.test.ts";
 import { runWeeklyBranchNameScopeTests } from "./weekly-branch-name-scope.test.ts";
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
+import { runWeeklyStockKpiMonthsTests } from "./weekly-stock-kpi-months.test.ts";
 import { runWeeklyNsmDsmWorkbookTests } from "./weekly-nsm-dsm-workbook.test.ts";
 import { runWeeklyNsmDsmBeigeLookTests } from "./weekly-nsm-dsm-beige-look.test.ts";
 import { runWeeklyNsmDsmStockByBranchTests } from "./weekly-nsm-dsm-stock-by-branch.test.ts";
@@ -2819,6 +2820,10 @@ await runTest("weekly column profile store (editable merge + validation)", runWe
 await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
+await runTest(
+  "weekly stock across months: each distributor's latest week in scope, never one month-end per month (tiles, compare delta, both exports; one-month views unchanged)",
+  runWeeklyStockKpiMonthsTests,
+);
 await runTest("weekly NSM/DSM export (column arithmetic, date header)", runWeeklyNsmDsmWorkbookTests);
 await runTest("weekly NSM/DSM export keeps the beige look (exempt from the house identity)", runWeeklyNsmDsmBeigeLookTests);
 await runTest("weekly NSM/DSM Stock by branch (reporting distributors, no apportioned stock)", runWeeklyNsmDsmStockByBranchTests);

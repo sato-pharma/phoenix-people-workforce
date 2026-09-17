@@ -20,6 +20,7 @@ import {
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
 import { decumulateRows, suppressGapSpannedValue, weekGapFlags, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
+import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -1277,24 +1278,12 @@ export async function loadWeeklyDashboard(filters?: {
   const weekRows = timeFilterActive ? scopedRows : scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
   const priorRows = !timeFilterActive && priorCanonical ? scopedRows.filter((row) => priorWeekSet.has(row.weekStart)) : [];
 
-  // Stock is a point-in-time snapshot, NOT cumulative — summing it across the weeks of a month would
-  // multiply on-hand inventory. For the KPI / compare / ranking aggregates, keep stock only from the
-  // LATEST in-scope week of each (distributor, cycle_month) and zero it on earlier weeks; sales/units
-  // still sum across all weeks. (The trend + week-comparison read each week's own snapshot directly.)
-  const latestStockOnly = (rows: FactRow[]): FactRow[] => {
-    const latest = new Map<string, string>();
-    for (const row of rows) {
-      if (!row.cycleMonth) continue;
-      const key = `${row.distributorCode}||${row.cycleMonth}`;
-      const cur = latest.get(key);
-      if (!cur || row.weekStart > cur) latest.set(key, row.weekStart);
-    }
-    return rows.map((row) =>
-      !row.cycleMonth || row.weekStart === latest.get(`${row.distributorCode}||${row.cycleMonth}`)
-        ? row
-        : { ...row, stockQty: 0 },
-    );
-  };
+  // Stock is a point-in-time snapshot, NOT cumulative — summing it across weeks would multiply on-hand
+  // inventory. For the KPI / compare / ranking aggregates (and the factRows both Excel books total),
+  // latestStockOnly (latest-stock.ts) keeps stock only on each distributor's LATEST in-scope week — its
+  // latest cycle month, then that month's latest week — and zeroes it on every other week, so a scope
+  // spanning months reads what is on hand rather than one month-end per month. Sales/units still sum
+  // across all weeks. (The trend + week-comparison read each week's own snapshot directly.)
   const weekRowsAdj = latestStockOnly(weekRows);
   const priorRowsAdj = latestStockOnly(priorRows);
 
