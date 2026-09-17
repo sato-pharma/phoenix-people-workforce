@@ -33,6 +33,7 @@ import {
   type WeeklySalesDetailSourceRow,
   type WeeklySalesDetailUpload,
 } from "@/lib/sales/weekly/sales-depot-detail";
+import { weeklyScopeRegionPart } from "@/lib/sales/weekly/scope-region-names";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import type { WeeklyFactExportRow, WeeklyFilterMode } from "@/lib/sales/weekly/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -217,8 +218,11 @@ export function wholeDepotRows(rows: readonly WeeklyFactExportRow[]): WeeklySale
   }));
 }
 
-/** The workbook's scope line, in names — the same wording Weekly Stock uses. */
-function buildDetailScopeSummary(
+/**
+ * The workbook's scope line, in names — the same wording Weekly Stock uses. A single bound region is named from
+ * the organogram names resolvePortalWeeklyScope read, never from the depot rows' own labels. Pure.
+ */
+export function buildDetailScopeSummary(
   scope: WeeklyAccessScope,
   role: PhoenixRole,
   regionNames: ReadonlyMap<string, string>,
@@ -233,11 +237,7 @@ function buildDetailScopeSummary(
       break;
     case "territory":
       parts.push(scope.allowedLineNames && scope.allowedLineNames.size > 0 ? [...scope.allowedLineNames].join(" · ") : "All tracked lines");
-      if (!scope.allowedRegionCodes) parts.push("all regions");
-      else if (scope.allowedRegionCodes.size === 1) {
-        const code = [...scope.allowedRegionCodes][0];
-        parts.push(regionNames.get(code) ?? "1 region");
-      } else parts.push(`${scope.allowedRegionCodes.size} regions`);
+      parts.push(weeklyScopeRegionPart(scope.allowedRegionCodes, regionNames));
       break;
     case "none":
       parts.push("No access");
@@ -317,12 +317,11 @@ export async function loadWeeklySalesDepotDetail(
     period,
     filters: request.local,
   });
-  const regionNames = new Map(data.availableRegions.map((region) => [region.code.toUpperCase(), region.name]));
 
   return {
     view,
     scope: {
-      summary: buildDetailScopeSummary(scope.accessScope, ctx.role, regionNames),
+      summary: buildDetailScopeSummary(scope.accessScope, ctx.role, scope.regionNames),
       periodLabel: weeklySalesPeriodLabel(period),
     },
     status: "ok",

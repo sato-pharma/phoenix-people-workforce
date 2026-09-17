@@ -18,6 +18,7 @@ import {
   withExtraWeeklyOptions,
 } from "@/lib/sales/weekly/own-area-scope";
 import { loadFieldForceSeatIndex } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { loadWeeklyScopeRegionNames, weeklyScopeRegionPart } from "@/lib/sales/weekly/scope-region-names";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import {
   WEEKLY_STOCK_STATUS_LABELS,
@@ -136,7 +137,8 @@ async function loadAreaNames(): Promise<Map<string, string>> {
   return names;
 }
 
-function buildStockScopeSummary(
+/** The scope line on the screen and in the workbook, in names: a single bound region is named from the organogram. Pure. */
+export function buildStockScopeSummary(
   scope: WeeklyAccessScope,
   role: PhoenixRole,
   regionNames: ReadonlyMap<string, string>,
@@ -151,11 +153,7 @@ function buildStockScopeSummary(
       break;
     case "territory":
       parts.push(scope.allowedLineNames && scope.allowedLineNames.size > 0 ? [...scope.allowedLineNames].join(" · ") : "All tracked lines");
-      if (!scope.allowedRegionCodes) parts.push("all regions");
-      else if (scope.allowedRegionCodes.size === 1) {
-        const code = [...scope.allowedRegionCodes][0];
-        parts.push(regionNames.get(code) ?? code);
-      } else parts.push(`${scope.allowedRegionCodes.size} regions`);
+      parts.push(weeklyScopeRegionPart(scope.allowedRegionCodes, regionNames));
       break;
     case "none":
       parts.push("No access");
@@ -185,7 +183,7 @@ export async function loadWeeklyStockDashboard(
   // product list can still offer every product his depots carry while one of them is chosen.
   const productFilterInLoad = !liftGrain;
 
-  const [data, areaNames, areaSplit] = await Promise.all([
+  const [data, areaNames, areaSplit, regionNames] = await Promise.all([
     loadWeeklyDashboard({
       // Every week: the snapshot is each distributor's own latest stock upload, and the cover average
       // looks back across month boundaries.
@@ -208,6 +206,9 @@ export async function loadWeeklyStockDashboard(
     // The owner's depot-split rule, which says which areas a depot serves. Fails soft to no index, which
     // leaves only depots mapped by hand to one of his areas.
     liftGrain ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
+    // The scope line's region name, from the organogram: a depot keeps the region label it was mapped with, so
+    // the load's own region options never name Upper Egypt 1, Upper Egypt 2 or Delta (3). Fails soft.
+    loadWeeklyScopeRegionNames(accessScope),
   ]);
 
   const scopedStockRows =
@@ -247,7 +248,6 @@ export async function loadWeeklyStockDashboard(
       )
     : data.distributors;
   const showLines = accessScope.tier === "full" || ctx.role === "Marketing Manager";
-  const regionNames = new Map(data.availableRegions.map((region) => [region.code.toUpperCase(), region.name]));
 
   return {
     view,
