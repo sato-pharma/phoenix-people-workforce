@@ -13,6 +13,14 @@
       "headers": {
         "Authorization": "Bearer ${SUPABASE_PROD_TOKEN}"
       }
+    },
+    "mailbox": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "--env-file-if-exists=.env.local",
+        "scripts/mailbox-mcp.mjs"
+      ]
     }
   }
 }
