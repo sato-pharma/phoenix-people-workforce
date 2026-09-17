@@ -53,6 +53,7 @@ import {
   type KpiSortField,
   isTooEarlyToScore,
 } from "@/lib/crm/kpis-filters";
+import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
 
@@ -143,6 +144,48 @@ function pmPct(row: KpiRepRow): string {
  */
 function pharmacyValue(row: KpiRepRow): string {
   return row.hasCallRate ? rate(row.pharmacyRate) : "No calls";
+}
+
+/**
+ * ONE REP'S OVERALL KPI (owner, 2026-09-17: "consolidate ... into one percentage ... let them
+ * separated as they are").
+ *
+ * Through the SAME domain function the team figure comes from — `kpiIndexOf` in crm/kpi-index.ts —
+ * so a rep's row and the panel above it can never be two different averages. The four measures on
+ * the row are untouched: this reads them, it does not replace them.
+ */
+function repKpiIndex(row: KpiRepRow): KpiIndex {
+  return kpiIndexOf({
+    coveragePct: row.coveragePct,
+    frequencyPct: row.frequencyPct,
+    hasMeasurablePlan: row.hasMeasurablePlan,
+    amAttainmentPct: row.amAttainmentPct,
+    pmAttainmentPct: row.pmAttainmentPct,
+    hasCallRate: row.hasCallRate,
+  });
+}
+
+/**
+ * The overall percentage, or the marker for a rep none of the four could be scored for.
+ *
+ * "No score" and never "0%", for the same reason `hasMeasurablePlan` exists: a rep the plan asked
+ * nothing of and who logged nothing has no value on this axis, not a bad one.
+ */
+function overallValue(index: KpiIndex): string {
+  return index.overallPct == null ? "No score" : `${index.overallPct}%`;
+}
+
+/** What went into a row's average, in the width a table cell has. The full arithmetic is on the
+ * panel above the tiles — this says how many of the four the average could use. */
+function overallCaption(index: KpiIndex): string {
+  if (index.overallPct == null) {
+    const reasons = [...new Set(index.components.map((component) => component.excludedBecause).filter(Boolean))];
+    return reasons.join(" · ") || "Nothing to score";
+  }
+  const capped = index.components.filter((component) => component.capped);
+  const cappedNote =
+    capped.length > 0 ? ` · ${capped.map((component) => component.label).join(" and ")} capped at 100` : "";
+  return `${index.counted} of 4 measures averaged${cappedNote}`;
 }
 
 /** True once the CRM cutover makes the Phoenix KPI rules score this board (phase 6). */
@@ -345,10 +388,79 @@ function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean })
   );
 }
 
+// ── The overall KPI ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * THE ONE NUMBER, with the arithmetic that produced it printed beside it.
+ *
+ * Owner, 2026-09-17: "consolidate the result of the call rate and the coverage and the frequency
+ * and the KPIs in general into one percentage or one number ... so at the end of the day I can
+ * measure the KPIs overall from Phoenix. Okay, let them separated as they are and consolidate them
+ * based on average and mathematical actual calculations, and you must show in a line how it is
+ * calculated."
+ *
+ * THE FORMULA LINE IS NOT DECORATION AND MUST NEVER BE DROPPED. It carries this board's own
+ * numbers, so a manager can add the four tiles up by hand and land on the figure above — which is
+ * the only thing that makes one consolidated number trustworthy on a board whose whole premise is
+ * that its measures disagree on purpose. `crm/kpi-index.ts` writes both sentences; this panel only
+ * places them.
+ *
+ * It sits ABOVE the six tiles and replaces none of them. Every measure stays exactly where it was.
+ */
+function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolean }) {
+  const index = board.kpiIndex;
+  const band = kpiBandOf(index.overallPct);
+  const tone = toneOf(band);
+  return (
+    <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+      <div className="border border-slate-200 bg-slate-50 px-4 py-3.5">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+          <div className="min-w-0">
+            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Overall KPI</p>
+            <p className={`mt-1 text-3xl font-black leading-none tabular-nums ${tone.text}`}>{overallValue(index)}</p>
+            <div className="mt-0.5 w-36 max-w-full">
+              <KpiMeter band={band} value={index.overallPct} />
+            </div>
+          </div>
+          {/* basis-full on a phone, so the explanation gets the whole width instead of a column
+              three words wide; basis-0 from `sm` up, where it shares the row with the figure. */}
+          <div className="min-w-0 flex-1 basis-full sm:basis-0">
+            <p className="text-phx-2xs font-bold leading-4 text-slate-800">{index.formula}</p>
+            <p className="mt-1 text-phx-3xs leading-4 text-slate-500">{index.method}</p>
+            {partial ? (
+              // A single number is the easiest thing on this board to misread mid-month — the four
+              // tiles at least carry their own counts. So the caveat travels with it.
+              <p className="mt-1 text-phx-3xs font-semibold leading-4 text-slate-600">
+                {board.workingDays} of {board.workingDaysInWindow} working days are in, so this is a position in the
+                period rather than a finished score.
+              </p>
+            ) : null}
+          </div>
+          {/* No chip when nothing could be scored: the band would print "No plan" over a rep
+              population whose reason may have been no calls at all, and the line already says. */}
+          {index.overallPct == null ? null : (
+            <div className="min-w-0">
+              <KpiBandChip band={band} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** The number each tab puts under its own label, so the strip is a summary in its own right. */
 function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   const { totals } = board;
-  if (tab === "summary") return `${totals.reps} rep${totals.reps === 1 ? "" : "s"}`;
+  // THE OVERALL KPI is the Summary tab's own number (owner, 2026-09-17) — the one figure the whole
+  // board consolidates to. The head count it replaced here is still on screen twice over: its own
+  // tile, and the filter bar's "12 of 73". Falls back to the head count when not one of the four
+  // measures could be scored, because "No score reps" is not a sentence.
+  if (tab === "summary") {
+    return board.kpiIndex.overallPct == null
+      ? `${totals.reps} rep${totals.reps === 1 ? "" : "s"}`
+      : `${board.kpiIndex.overallPct}% overall`;
+  }
   // NOT "1.63 / 6.57" — a slash between two rates reads as a fraction, and the owner read it as
   // one on 2026-09-04 ("you are putting the call rate out of six. No never."). They are two
   // separate rates against two separate targets, so they are labelled, never divided.
@@ -676,14 +788,27 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
   const { filters } = context.board;
   return (
     <table className="hidden w-full table-fixed md:table">
-      {/* Five columns, because the call rate is two measures and merging them back into one is
-          the thing the owner banned. Fixed widths, no min-width floor — the fits-the-screen rule. */}
+      {/* SIX columns since 2026-09-17, when the owner asked for the four consolidated into one
+          ("let them separated as they are and consolidate them"). The four measures are untouched
+          and still five columns wide with the name — AM and PM stay apart, which is the thing he
+          banned merging — and Overall is added at the end, where a total belongs.
+
+          Percentages that sum to 100 on a `table-fixed`, no min-width floor anywhere: the
+          fits-the-screen rule's own answer. The 17 points Overall needs came off the other five —
+          three each from the name, Coverage and Frequency, four each from AM and PM, whose one-word
+          heads are the narrowest on the board — rather than any type getting smaller.
+
+          Every one of the six sits at or above its measured floor at the portal's 619px table
+          (tests/kpis-board-tables-fit.test.ts, which goes red otherwise): name 23 of 23, Coverage
+          17 of 17, Frequency 19 of 19, AM and PM 12 of 11, Overall 17 of 17. Only AM and PM carry a
+          spare point, so room for anything new has to come from one of those two. */}
       <colgroup>
-        <col style={{ width: "26%" }} />
-        <col style={{ width: "20%" }} />
-        <col style={{ width: "22%" }} />
-        <col style={{ width: "16%" }} />
-        <col style={{ width: "16%" }} />
+        <col style={{ width: "23%" }} />
+        <col style={{ width: "17%" }} />
+        <col style={{ width: "19%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "17%" }} />
       </colgroup>
       <thead className="border-y border-slate-200 bg-slate-50">
         <tr>
@@ -716,6 +841,17 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
             label="PM"
             sub={`Of ${context.board.pmTarget}`}
           />
+          {/* NOT SORTABLE, deliberately. The owner asked for the four consolidated into one figure
+              he can read; he did not ask for the board to be RANKED by it, and a sortable overall
+              is a blended rank — the one thing kpis-board.ts and the five podiums are built not to
+              produce. The four measures each keep their own sort, so every ranking on this board is
+              still a ranking on something real. */}
+          <th className={TH} scope="col">
+            Overall
+            <span className="mt-0.5 block text-phx-3xs font-bold normal-case tracking-normal text-slate-400">
+              Average of 4
+            </span>
+          </th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -757,10 +893,31 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
               fill={pmFill(row)}
               value={pmPct(row)}
             />
+            <OverallCell row={row} />
           </tr>
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * One rep's consolidated KPI, in the same cell shape as the four measures beside it.
+ *
+ * Its own cell rather than a variant of {@link MeasureCell}, because the caption it needs is about
+ * the AVERAGE — how many of the four it could use, and whether any of them ran over its standard —
+ * and not about a count of doctors or calls.
+ */
+function OverallCell({ row }: { row: KpiRepRow }) {
+  const overall = repKpiIndex(row);
+  const band = kpiBandOf(overall.overallPct);
+  return (
+    <MeasureCell
+      band={band}
+      caption={overallCaption(overall)}
+      fill={overall.overallPct}
+      value={overallValue(overall)}
+    />
   );
 }
 
@@ -1392,6 +1549,7 @@ function RepCard({
   row: KpiRepRow;
   rules?: KpisBoard["kpiRules"];
 }) {
+  const overall = repKpiIndex(row);
   const measures: Array<{
     band: KpiBand;
     caption: string;
@@ -1442,6 +1600,17 @@ function RepCard({
       fill: null,
       label: "Pharmacy",
       value: pharmacyValue(row),
+    },
+    // THE SIXTH CELL is the consolidated figure (owner, 2026-09-17), and it is LAST here for the
+    // same reason it is the last column on the desktop table: a total reads after the things it
+    // totals. Six measures fill the three-column grid exactly, so the card gains a row and no
+    // width — the fits-the-screen rule is untouched.
+    {
+      band: kpiBandOf(overall.overallPct),
+      caption: overallCaption(overall),
+      fill: overall.overallPct,
+      label: "Overall",
+      value: overallValue(overall),
     },
   ];
   const flags = kpiFlagsOf(row).filter(
@@ -1638,6 +1807,10 @@ export function KpisBoardView({
               </p>
             </div>
           ) : null}
+
+          {/* THE ONE NUMBER, above the six it comes from. Added 2026-09-17 on the owner's
+              instruction; the tiles below are exactly as they were. */}
+          <KpiOverallPanel board={board} partial={partial} />
 
           {/* Six tiles since 2026-09-06, when pharmacy joined as its own tile — never averaged into
               AM/PM, never blended with them. See PHARMACY_CALL_RATE_TARGET in crm/call-rate.ts for

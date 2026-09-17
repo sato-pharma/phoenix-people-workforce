@@ -402,6 +402,7 @@ import {
   runKpiSortTests,
   runKpiUrlTests,
 } from "./kpis-filters.test.ts";
+import { runKpiOverallIndexTests } from "./kpi-index.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import {
   runPortalKpisNavTabTests,
@@ -2575,6 +2576,7 @@ await runTest("KPIs URL state (a tab, month or period change carries every filte
 await runTest("KPIs facets (built from the viewer own rows, with a real bucket for an unresolved area)", runKpiFacetTests);
 await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody ranked at a 0 they do not have)", runKpiPodiumTests);
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
+await runTest("KPIs overall index (the four averaged, each capped at its own standard, so a 200% afternoon cannot pay for a missing morning)", runKpiOverallIndexTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
 await runTest("KPIs coverage doctor lists (legacy: the covered and not-covered lists add up to the row, and a rep's list is never cut)", runKpiCoverageLegacyListTests);
