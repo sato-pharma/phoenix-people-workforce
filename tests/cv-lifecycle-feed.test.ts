@@ -8,6 +8,7 @@ import {
   buildDailyChannelRollup,
   cvDetailRowCells,
   cvLifecycleRowCells,
+  cvLifecycleRowsAfter,
   oneRowPerCandidate,
   summarizeCvLifecycle,
   CV_DETAIL_COLUMNS,
@@ -336,21 +337,103 @@ export function runCvLifecycleFeedTests() {
   );
   assert.ok(reader.includes('const VIEW = "ats_v_cv_lifecycle"'), "the feed must still read that same view");
 
+  // ── The view that is LIVE is the newest migration that replaces it — pin that one ─────────────
+  //
+  // 2026-09-17: the view was 11.5% of all production database time. Two shapes caused it and both
+  // read as harmless tidy-ups, so both are pinned on whichever migration last defines the view:
+  //   * an OR inside the queue join cannot be hashed, so Postgres tested 1,587,790 row pairs;
+  //   * a view written with WITH is never flattened into its reader, so the five CV-text functions
+  //     ran for every file on every page instead of only for the rows the page returns.
+  const migrationsDir = path.join(repoRoot, "supabase/migrations");
+  const liveViewFile = fs
+    .readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .filter((name) =>
+      fs.readFileSync(path.join(migrationsDir, name), "utf8").includes("create or replace view public.ats_v_cv_lifecycle"),
+    )
+    .at(-1)!;
+  const liveViewSql = fs.readFileSync(path.join(migrationsDir, liveViewFile), "utf8");
+  const viewBody = liveViewSql
+    .slice(liveViewSql.indexOf("create or replace view public.ats_v_cv_lifecycle"))
+    .split("where f.kind = 'cv';")[0]!
+    .split("\n")
+    .map((line) => line.replace(/--.*$/, ""))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  assert.ok(viewBody.includes("f.id as file_id"), `${liveViewFile}: the view must be found and parsed`);
+  assert.ok(
+    !/\bas with\b/.test(viewBody),
+    `${liveViewFile}: the view must not carry its own WITH — a CTE-bearing view is never flattened, and the CV-text functions then run for every file on every page`,
+  );
+  assert.ok(
+    viewBody.includes("q.channel = ev.channel and q.match_a = ev.queue_match_a and q.match_b = ev.queue_match_b"),
+    `${liveViewFile}: the queue join must stay an equi-join on (channel, match_a, match_b)`,
+  );
+  assert.ok(!/left join \(.*\) q on[^)]* or /.test(viewBody), `${liveViewFile}: no OR may come back into the queue join`);
+
   // The email join is the one that silently returns nothing if it is "simplified" back to a single
   // provider_message_id comparison: measured 2026-09-04, that matched 0 of 244 email CVs, and 0
-  // reads as "email CVs have no arrival time" rather than as a broken join.
+  // reads as "email CVs have no arrival time" rather than as a broken join. In the equi-join form
+  // the email leg is the mailbox and uid on the event against parts 2 and 4 of the queue id.
   assert.ok(
-    migration.includes("email_mailbox = ev.mailbox_label"),
+    viewBody.includes("when e.channel = 'email' then e.mailbox_label") &&
+      viewBody.includes("when e.channel = 'email' then e.provider_uid") &&
+      viewBody.includes("when q_1.channel = 'email' then split_part(q_1.provider_message_id, ':', 2)") &&
+      viewBody.includes("when q_1.channel = 'email' then split_part(q_1.provider_message_id, ':', 4)"),
     "the email leg of the queue join must survive — without it every email CV loses its arrival time, silently",
+  );
+  assert.ok(
+    viewBody.includes("when e.channel = 'whatsapp' then e.provider_message_id") &&
+      viewBody.includes("when q_1.channel = 'whatsapp' then q_1.provider_message_id"),
+    "the WhatsApp leg of the queue join must survive",
+  );
+  assert.ok(
+    liveViewSql.includes("raise exception 'ats_v_cv_lifecycle content changed"),
+    `${liveViewFile}: a replace of this view must fingerprint the rows before and after and refuse a changed report`,
   );
 
   // Paging is not optional at this size: an unbounded select stops at 1000 rows with no marker and
-  // production already holds 979 CVs.
-  assert.ok(reader.includes(".range(from, from + PAGE_SIZE - 1)"), "the lifecycle read must stay paged");
+  // production already holds 1,429 CVs. It pages by CURSOR: an OFFSET page makes the database build
+  // and discard every row before it, which is what made the third page of each refresh the slowest.
+  assert.ok(reader.includes(".limit(PAGE_SIZE)"), "the lifecycle read must stay paged");
+  assert.ok(reader.includes(".or(cvLifecycleRowsAfter(cursor))"), "each page after the first must start after the last row read");
+  assert.ok(!/\.range\(/.test(reader), "the lifecycle read must not page by OFFSET again");
   assert.ok(
     reader.includes('.order("saved_in_phoenix_at"') && reader.includes('.order("file_id"'),
     "paging needs a TOTAL order — a nullable sort key alone drops rows between pages",
   );
+
+  // The cursor filter itself. BOTH legs matter: every file saved in one transaction shares `now()`,
+  // so without `eq … and file_id.lt` a page boundary inside such a batch drops the rest of it.
+  assert.equal(
+    cvLifecycleRowsAfter({
+      fileId: "0b9f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4",
+      savedInPhoenixAt: "2026-09-04T09:01:00.123456+00:00",
+    }),
+    'saved_in_phoenix_at.lt."2026-09-04T09:01:00.123456+00:00",' +
+      'and(saved_in_phoenix_at.eq."2026-09-04T09:01:00.123456+00:00",file_id.lt."0b9f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4")',
+    "the cursor must carry the stored instant to the microsecond and break ties on file_id",
+  );
+  // PostgREST trims trailing zeros from the fraction and may drop it entirely; both must round-trip.
+  assert.ok(
+    cvLifecycleRowsAfter({ fileId: "0b9f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4", savedInPhoenixAt: "2026-09-04T09:01:00+00:00" })
+      .includes('lt."2026-09-04T09:01:00+00:00"'),
+  );
+  for (const [savedInPhoenixAt, fileId] of [
+    ["2026-09-04T09:01:00.123Z\"),or(id.gt.0", "0b9f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4"],
+    ["", "0b9f1c2e-3d4a-4b5c-8d6e-7f8091a2b3c4"],
+    ["2026-09-04T09:01:00+00:00", "file-1"],
+    ["2026-09-04T09:01:00+00:00", "undefined"],
+  ] as const) {
+    assert.throws(
+      () => cvLifecycleRowsAfter({ fileId, savedInPhoenixAt }),
+      /unexpected/,
+      "a cursor that is not a timestamp and a uuid must throw — never splice it into a filter",
+    );
+  }
 
   // ── CV Details: everything Phoenix already knows about the PERSON ──────────────────────────────────────────────
   //

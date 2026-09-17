@@ -27,10 +27,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
+import { isUuid } from "@/lib/http/uuid";
 import { cairoDayKey } from "@/lib/recruitment/candidate-stats";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-/** The view does the four-way join; see 20260905011500_cv_lifecycle_view_and_share_links.sql. */
+/**
+ * The view does the four-way join; see 20260905011500_cv_lifecycle_view_and_share_links.sql, and
+ * 20260917190000_cv_lifecycle_view_exact_key_queue_join.sql for why it is written the way it is.
+ */
 const VIEW = "ats_v_cv_lifecycle";
 
 /**
@@ -280,6 +284,37 @@ function mapRow(row: RawRow): CvLifecycleRow {
   };
 }
 
+/** The last row of a page: where the next page starts, in the feed's own total order. */
+export type CvLifecycleCursor = { fileId: string; savedInPhoenixAt: string };
+
+// What PostgREST hands back for a timestamptz and a uuid. Anything else in a cursor means the view
+// changed shape under us, and splicing an unexpected string into a filter is how a page silently
+// matches nothing — so it throws instead.
+const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:\d{2})?|Z)$/;
+
+/**
+ * The PostgREST `or` filter for "every row AFTER this cursor" under
+ * `ORDER BY saved_in_phoenix_at DESC, file_id DESC`:
+ *
+ *   saved_in_phoenix_at < T  OR  (saved_in_phoenix_at = T AND file_id < F)
+ *
+ * The second leg is not optional. Every file saved in one transaction shares `now()`, so a batch
+ * import stamps many CVs with the SAME instant; a plain `saved_in_phoenix_at < T` would skip the
+ * rest of that batch the moment it straddled a page boundary.
+ *
+ * Values are double-quoted because a timestamp carries `.` and `:`, both reserved inside a
+ * PostgREST logic tree. The timestamp goes back exactly as PostgREST sent it — microseconds and
+ * offset intact — so the equality leg compares the stored instant, not a millisecond-rounded copy
+ * (a JavaScript `Date` would round, and then drop or repeat a row at that boundary).
+ */
+export function cvLifecycleRowsAfter(cursor: CvLifecycleCursor): string {
+  const savedAt = cursor.savedInPhoenixAt.trim();
+  const fileId = cursor.fileId.trim();
+  if (!TIMESTAMP_RE.test(savedAt)) throw new Error(`CV lifecycle cursor has an unexpected timestamp: ${savedAt}`);
+  if (!isUuid(fileId)) throw new Error(`CV lifecycle cursor has an unexpected file id: ${fileId}`);
+  return `saved_in_phoenix_at.lt."${savedAt}",and(saved_in_phoenix_at.eq."${savedAt}",file_id.lt."${fileId}")`;
+}
+
 /**
  * Every CV, newest first.
  *
@@ -287,19 +322,30 @@ function mapRow(row: RawRow): CvLifecycleRow {
  * is the one column in the view that is never null, and paging on a nullable sort key is how rows
  * go missing between pages. `file_id` breaks ties so the order is total — without it two CVs saved
  * in the same millisecond can appear on two consecutive pages, or on neither.
+ *
+ * PAGED BY CURSOR, NOT BY OFFSET (2026-09-17). An OFFSET page makes the database build, sort and
+ * throw away every row before it, so the third page computed all 1,429 rows to return 429 — and
+ * the cost grew with the square of the CV count. Measured on production this read was 11.5% of
+ * all database time. A cursor page filters on the sort key instead (pushed down to `ats_files`),
+ * so each page does the work for its own rows only. The rows and their order are the same; the one
+ * difference is an improvement: a CV arriving mid-read can no longer push an older row onto the
+ * next page and print it twice.
  */
 export async function loadCvLifecycle(): Promise<CvLifecycleRow[]> {
   const supabase = getSupabaseAdmin();
   const rows: CvLifecycleRow[] = [];
+  let cursor: CvLifecycleCursor | null = null;
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const from = page * PAGE_SIZE;
-    const { data, error } = await supabase
+    let query = supabase
       .from(VIEW)
       .select("*")
       .order("saved_in_phoenix_at", { ascending: false })
       .order("file_id", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .limit(PAGE_SIZE);
+    if (cursor) query = query.or(cvLifecycleRowsAfter(cursor));
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const batch = (data ?? []) as RawRow[];
@@ -307,6 +353,9 @@ export async function loadCvLifecycle(): Promise<CvLifecycleRow[]> {
     // A short page is the last page. Checking the length rather than asking for a count keeps this
     // to one round trip per page.
     if (batch.length < PAGE_SIZE) break;
+
+    const last = batch[batch.length - 1]!;
+    cursor = { fileId: String(last.file_id ?? ""), savedInPhoenixAt: String(last.saved_in_phoenix_at ?? "") };
   }
 
   return rows;
