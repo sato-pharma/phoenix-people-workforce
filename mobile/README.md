@@ -28,22 +28,39 @@ EXPO_PUBLIC_PHOENIX_API_URL=https://phoenix-people-workforce-staging.up.railway.
 Any non-production target is labelled on the login screen and on Profile — staging holds real names
 and real payroll, so which system is answering is never left implicit.
 
-## Producing an installable APK
+## How the app reaches employees
 
-Expo Go runs the JavaScript but is not the app. A real `.apk` is built by **EAS Build**, on Expo's
+**Decided 2026-09-18: managed Google Play.** The app is published as a private app to the company's
+own managed Play store and the tablets install it from there. Direct install — sending an `.apk` to
+each handset — was weighed the same day and rejected.
+
+The deciding argument was not update effort. A managed fleet blocks installs from unknown sources by
+default, so sideloading would have meant deliberately weakening that policy on every tablet, and a
+sideloaded app has no channel to pull a bad build back through. Managed Play keeps the fleet locked
+and makes a bad release withdrawable centrally.
+
+What it costs: a Google Play Console developer account, **US$25 one time** — not a subscription and
+not per device. Personal or Organization account; a credit or debit card, as prepaid cards are
+refused. 🔴 **Creating that account and paying the fee is the owner's own action.** It needs identity
+details and a payment method, and no session does it on his behalf. The fee is not refunded if the
+identity details are rejected, so it is worth getting right first time.
+
+`eas.json` carries both profiles, and `production` is now the live one:
+
+| Profile | Produces | Route | Status |
+| --- | --- | --- | --- |
+| `production` | `.aab`, store distribution | Managed Google Play | **The chosen route** |
+| `preview` | `.apk`, internal distribution | Direct install to one handset | Testing only — rejected as the way employees get the app |
+
+`preview` keeps its place: it is how a build gets onto a phone for a look before anything is
+published. It is no longer a distribution plan.
+
+### Building
+
+Expo Go runs the JavaScript but is not the app. A real binary is built by **EAS Build**, on Expo's
 servers. That is not a preference: an Android build needs a JDK, the Android SDK and Gradle, none of
 which are installed on this machine, and a Gradle build wants several GB of RAM that a 16 GB box
 running a dozen sessions does not have.
-
-`eas.json` in this folder is already configured. Two profiles, matching the two ways the app can
-reach employees:
-
-| Profile | Produces | For |
-| --- | --- | --- |
-| `preview` | `.apk`, internal distribution | **Direct install** — a link or file sent to a handset |
-| `production` | `.aab`, store distribution | Play Store, if that is ever chosen |
-
-### The direct-install APK
 
 One thing has to happen first, and only the owner can do it: **an Expo account**. It is free, and
 `eas` will prompt for it.
@@ -52,27 +69,54 @@ One thing has to happen first, and only the owner can do it: **an Expo account**
 cd mobile
 npx eas-cli@latest login     # or `register` — Expo account, not a Phoenix one
 npx eas-cli@latest init      # writes extra.eas.projectId into app.json — commit that
-npm run build:apk
+npm run build:aab            # the store artifact — the chosen route
+npm run build:apk            # a test install for a single handset
 ```
 
-The build runs on Expo's servers and finishes with a download link and a QR code. Opening that link
-on the handset installs it; Android will ask to allow installs from an unknown source, because the
-app does not come from the Play Store.
+### Publishing without living in the Play Console
 
-**The signing key is generated and held by EAS, not by this repository.** That is deliberate — a
-keystore must never be committed, and `.gitignore` here refuses `*.jks`, `*.p12`, `*.key` and
-`*.p8` so it cannot happen by accident. Keep the Expo account; losing it means losing the key, and
-an APK signed with a different key cannot upgrade one already installed on a handset.
+A private app does not go through public store review. The **Google Play Custom App Publishing API**
+publishes it to the organisation's managed Play store from our own console or an IDE, and Google
+documents a custom app appearing in the managed store **in as little as five minutes**, against over
+two hours through the Play Console UI. That is worth designing releases around: it keeps Phoenix the
+place a release is made from, instead of the Play Console becoming a manual step in every ship.
+
+Not wired up. The account has to exist first.
+
+### Signing — which key, and which one can be replaced
+
+**No keystore lives in this repository.** `.gitignore` here refuses `*.jks`, `*.p12`, `*.key` and
+`*.p8` so one cannot be committed by accident, and EAS generates and holds the key instead. That is
+true on both routes: `eas build` signs with the keystore attached to the project either way, and
+from the build's point of view an upload certificate and an app signing key are the same thing.
+
+What differs is what that key *is*, and it decides how bad losing it is:
+
+| Route | EAS holds | Google holds | If that key is lost |
+| --- | --- | --- | --- |
+| Managed Play (`.aab`) | the **upload** key | the **app signing** key | Recoverable — request an upload key reset in the Play Console. The app signing key never changes, so installed apps keep updating. |
+| Direct install (`.apk`) | the app signing key itself | nothing | Terminal — an APK signed with a different key cannot upgrade one already installed. |
+
+So on the chosen route, losing the Expo account is an inconvenience rather than a wall. That warning
+is real, but it belongs to the route that was rejected — do not carry it across.
+
+🔴 **The fingerprint to register with any API provider is the APP SIGNING key's, never the upload
+key's.** Google re-signs the artifact users actually receive, so a service keyed on a certificate
+fingerprint — Maps, Firebase, OAuth, anything of that shape — will reject the installed app if it
+was registered against the upload certificate. Both fingerprints sit on the Play Console's app
+signing page; take the app signing one. This is a failure that shows up late, in a feature that
+worked perfectly in testing.
 
 ### Installing a newer build over an older one
 
 `appVersionSource` is `local`, so the version lives in `app.json` where it can be read in a diff
-rather than in a service. Android refuses to install an APK whose `versionCode` is not higher than
-the installed one, so bump `expo.android.versionCode` before each build you intend to replace an
-existing install with. `expo.version` (`0.1.0`) is the human-readable one and is what people will
-quote back to you.
+rather than in a service. Bump `expo.android.versionCode` before every build meant to replace an
+existing one: Android refuses to install an APK whose code is not higher than the installed one, and
+managed Play refuses the upload outright — the friendlier of the two failures, because it happens
+before anyone has the build. `expo.version` (`0.1.0`) is the human-readable one and is what people
+will quote back to you.
 
-### What the APK talks to
+### What the app talks to
 
 Production (`https://phoenix-hr.satopharma.com`), so signing in signs a real employee into the real
 system with their own permissions. To build one pointed elsewhere, set
@@ -84,21 +128,21 @@ target is labelled on the login screen and on Profile.
 **There is no update pipeline today.** `eas.json` has no `channel` and `expo-updates` is not a
 dependency, deliberately, so that nothing here implies a capability that does not exist.
 
-It is worth knowing what it would buy, because it changes how a distribution route reads. EAS Update
-ships the non-native parts of the app — JavaScript, styling, images — over the air to an
-already-installed APK, internal distribution included. This app is almost entirely those parts:
-screens, business rules, API calls, copy. A new binary is needed only for a change to native code or
-native dependencies, a change to app permissions, or an Expo SDK upgrade. So "sideloaded means every
-tablet by hand, every release" is not true; it is by hand only for that smaller set.
+It is worth knowing what it would buy. EAS Update ships the non-native parts of the app —
+JavaScript, styling, images — over the air to an already-installed app. This app is almost entirely
+those parts: screens, business rules, API calls, copy. A new binary, and so a new store release, is
+needed only for a change to native code or native dependencies, a change to app permissions, or an
+Expo SDK upgrade.
 
 🔴 **If you wire it, pin the runtime-version policy deliberately — do not take a default.** The
 runtime version is what ties a JS bundle to the native binary that can run it. Publish a bundle to a
-binary whose runtime does not match and the app may misbehave or crash on launch. On a sideloaded
-fleet that is materially worse than it sounds: there is no store channel to push a recall through,
-so a bad bundle means reaching every affected tablet physically, in the field, one at a time.
+binary whose runtime does not match and the app may misbehave or crash on launch. Managed Play can
+withdraw a bad *binary*, but an over-the-air bundle never travels through the store at all — it goes
+from EAS straight to the installed app. So the recall path the chosen route buys does not cover the
+one channel that can reach every tablet at once.
 
-It is the same shape as the signing-key note above — cheap to get right at setup, expensive to
-discover later. Both are recorded here rather than left to be rediscovered.
+It is the same shape as the signing note above — cheap to get right at setup, expensive to discover
+later. Both are recorded here rather than left to be rediscovered.
 
 ## Why npm here, and pnpm in the repo root
 
