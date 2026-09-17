@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isUuid } from "@/lib/http/uuid";
 
 // The storage path of a large sales workbook, defined once. A workbook over ~4MB cannot be POSTed
 // through a function, so the browser uploads it straight to the private `sales-imports` bucket through
@@ -21,8 +22,11 @@ export const SALES_UPLOAD_PATH_REFUSAL = {
   error: "This file reference does not match your upload. Please upload the workbook again.",
 } as const;
 
-// The per-upload id is crypto.randomUUID(): lowercase hex in the 8-4-4-4-12 shape.
-const uploadIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The per-upload id is crypto.randomUUID(). The uuid shape has one definition, isUuid, which ignores
+// case; randomUUID mints lowercase, so an upper-cased copy of a real id is not a slot either.
+function isMintedUploadId(value: string): boolean {
+  return isUuid(value) && value === value.toLowerCase();
+}
 // The owner segment is a SHA-256 digest of the caller's identity, cut to 32 lowercase hex characters.
 const ownerPattern = /^[0-9a-f]{32}$/;
 
@@ -66,7 +70,7 @@ export function buildSalesImportUploadPath(input: {
   uploadId: string;
 }): string | null {
   const owner = salesImportUploadOwner(input.caller);
-  if (!owner || !uploadIdPattern.test(input.uploadId)) return null;
+  if (!owner || !isMintedUploadId(input.uploadId)) return null;
   return [SALES_IMPORT_UPLOAD_ROOT, owner, input.uploadId, sanitizeSalesImportFileName(input.fileName)].join("/");
 }
 
@@ -75,7 +79,7 @@ export function parseSalesImportUploadPath(storagePath: string | null | undefine
   const segments = String(storagePath ?? "").split("/");
   if (segments.length !== 4) return null;
   const [root, owner, uploadId, fileName] = segments;
-  if (root !== SALES_IMPORT_UPLOAD_ROOT || !ownerPattern.test(owner) || !uploadIdPattern.test(uploadId)) return null;
+  if (root !== SALES_IMPORT_UPLOAD_ROOT || !ownerPattern.test(owner) || !isMintedUploadId(uploadId)) return null;
   // The name must be exactly what the sanitizer mints. "." and ".." are path steps, not names, so they
   // are refused outright as well.
   if (/^\.+$/.test(fileName) || sanitizeSalesImportFileName(fileName) !== fileName) return null;
