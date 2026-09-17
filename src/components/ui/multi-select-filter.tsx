@@ -3,12 +3,18 @@
 import { ChevronDown, Search, X } from "lucide-react";
 import * as React from "react";
 
+import { useDropdownPanelPlacement } from "@/hooks/use-dropdown-panel-placement";
 import { cn } from "@/lib/utils";
 
 // Reusable multi-select filter with an include / exclude mode. A `<details>`-based dropdown that
 // matches the Weekly `WeekDropdown` and the MonthlyClosing `MultiSelect` visual language (58px field,
 // dark summary line, orange-accent checkboxes, square corners). Deliberately generic — it carries no
 // product/distributor/region-specific logic, so a single component drives every sales filter.
+//
+// Square corners, text that wraps and a panel that stays on the screen are the owner's golden rules
+// (AGENTS.md §4), pinned by tests/multi-select-filter-fits.test.ts. The panel is placed by
+// useDropdownPanelPlacement: a trigger in the right half of its room hangs it from its right edge,
+// and no panel crosses the screen's edge or `main`'s.
 //
 // Semantics (both modes): an EMPTY selection means "All" (no narrowing).
 //   include + codes -> keep only those codes.
@@ -53,6 +59,7 @@ export function MultiSelectFilter({
   disabled = false,
 }: MultiSelectFilterProps) {
   const [query, setQuery] = React.useState("");
+  const { detailsRef, onSummaryClick, onToggle, panelStyle } = useDropdownPanelPlacement();
 
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   const normalizedQuery = query.trim().toLowerCase();
@@ -69,19 +76,26 @@ export function MultiSelectFilter({
     count === 0 ? allLabel : mode === "include" ? `${count} included` : `All except ${count}`;
 
   return (
-    <details className={cn("group relative", disabled && "pointer-events-none opacity-50", className)}>
-      <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden">
+    <details
+      ref={detailsRef}
+      className={cn("group relative", disabled && "pointer-events-none opacity-50", className)}
+      onToggle={onToggle}
+    >
+      <summary
+        className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-3 border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden"
+        onClick={onSummaryClick}
+      >
         <span className="min-w-0">
           <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
             {icon}
-            {label}
+            <span className="min-w-0 break-words">{label}</span>
           </span>
-          <span className="flex items-center gap-1.5">
-            <span className="block truncate text-sm font-black text-phx-ink">{summary}</span>
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="min-w-0 break-words text-sm font-black text-phx-ink">{summary}</span>
             {count > 0 ? (
               <span
                 className={cn(
-                  "shrink-0 rounded-[3px] px-1 text-phx-3xs font-black uppercase tracking-wide text-white",
+                  "shrink-0 px-1 text-phx-3xs font-black uppercase tracking-wide text-white",
                   mode === "include" ? "bg-phx-accent" : "bg-phx-ink",
                 )}
               >
@@ -93,16 +107,19 @@ export function MultiSelectFilter({
         <ChevronDown className="h-4 w-4 shrink-0 text-phx-ink-faint transition group-open:rotate-180" />
       </summary>
 
-      <div className="absolute left-0 top-full z-50 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-phx-line bg-white shadow-lg">
+      <div
+        className="absolute left-0 top-full z-50 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-lg"
+        style={panelStyle}
+      >
         {/* Mode toggle + bulk actions */}
-        <div className="flex items-center justify-between gap-2 border-b border-phx-line p-2">
-          <div className="flex items-center rounded-[5px] border border-phx-line bg-phx-paper p-0.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line p-2">
+          <div className="flex items-center border border-phx-line bg-phx-paper p-0.5">
             <button
               type="button"
               aria-label={`Include mode for ${label}`}
               onClick={() => onModeChange("include")}
               className={cn(
-                "rounded-[4px] px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
+                "px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
                 mode === "include" ? "bg-phx-accent text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
@@ -113,7 +130,7 @@ export function MultiSelectFilter({
               aria-label={`Exclude mode for ${label}`}
               onClick={() => onModeChange("exclude")}
               className={cn(
-                "rounded-[4px] px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
+                "px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
                 mode === "exclude" ? "bg-phx-ink text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
@@ -157,7 +174,7 @@ export function MultiSelectFilter({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
-                className="h-8 w-full rounded-[5px] border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10"
+                className="h-8 w-full border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10"
               />
               {query ? (
                 <button
@@ -182,16 +199,16 @@ export function MultiSelectFilter({
             visibleOptions.map((option) => (
               <label
                 key={option.code}
-                className="flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-phx-ink transition hover:bg-phx-paper"
+                className="flex cursor-pointer items-start gap-2 px-2 py-1.5 text-sm text-phx-ink transition hover:bg-phx-paper"
               >
                 <input
                   type="checkbox"
                   aria-label={option.label}
-                  className="h-4 w-4 accent-phx-accent"
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-phx-accent"
                   checked={selectedSet.has(option.code)}
                   onChange={() => onSelectedChange(toggle(selected, option.code))}
                 />
-                <span className="truncate">{option.label}</span>
+                <span className="min-w-0 break-words">{option.label}</span>
               </label>
             ))
           )}
