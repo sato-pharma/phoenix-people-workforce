@@ -176,7 +176,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Awr Appr", fullLabel: "Awareness Approvals", href: "/employee-portals/market-awareness/inbox", icon: Inbox, flags: ["showMarketAwarenessInboxTab"], permission: { resource: "market_awareness", action: "read" }, navBadge: "market-awareness-approvals-pending" },
   { label: "Awareness", fullLabel: "Market Awareness", href: "/employee-portals/market-awareness", icon: Sparkles, flags: ["showMarketAwarenessTab"], permission: { resource: "market_awareness", action: "read" } },
   // Marketing Requests
-  { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
+  { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingValidationTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
   { label: "Inbox", fullLabel: "Marketing Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"], navBadge: "marketing-approvals-pending" },
   { label: "All", fullLabel: "All Marketing Requests", href: "/employee-portals/marketing-requests/all", icon: ClipboardList, flags: ["showMarketingAllRequestsTab"] },

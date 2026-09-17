@@ -203,6 +203,7 @@ function buildEmployeePortalSections({
   showMarketAwarenessInboxTab = false,
   showMarketAwarenessTab = false,
   showMarketingRequestsTab = false,
+  showMarketingValidationTab = false,
   showMarketingInboxTab = false,
   showMarketingAllRequestsTab = false,
   showMarketingCustomerDatabaseTab = false,
@@ -405,7 +406,9 @@ function buildEmployeePortalSections({
       title: "Marketing & ROI",
       items: [
         ...(showMarketAwarenessTab ? [{ href: "/employee-portals/market-awareness", label: "Market Awareness", icon: Sparkles }] : []),
-        ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
+        // Customer Validation rides its OWN flag: the Medical Rep keeps the field-capture screen
+        // after the drafts workspace below went dark for them (owner, 2026-09-18).
+        ...(showMarketingValidationTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
         // Company-wide register — every request and where it is stopped. Sits beside the personal

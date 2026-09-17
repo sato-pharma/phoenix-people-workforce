@@ -995,6 +995,28 @@ export const companyMarketingRoles = new Set<AccessContext["role"]>([
   "Super Admin",
 ]);
 
+/**
+ * Who may RAISE a marketing request — `marketingCreatorRoles` minus the Medical Rep.
+ *
+ * Owner instruction 2026-09-18: *"from medical rep accounts hide
+ * /employee-portals/marketing-requests/inbox & /employee-portals/marketing-requests but leave
+ * /employee-portals/marketing-requests/validation"*. A rep's job in this module is now the FIELD
+ * CAPTURE alone — stand at the venue, take the GPS fix and the live photo, validate the customer —
+ * and the spend request against that customer is raised by their District Manager, who sees it
+ * through the hierarchy route in `canSeeMarketingCustomer`.
+ *
+ * `marketingCreatorRoles` is deliberately NOT narrowed: it still gates Customer Validation
+ * (`assertMarketingAccess`) and, through `assertMarketingWorkspaceAccess`, the ROI Tracker — the
+ * two surfaces the rep keeps. Narrowing that set instead would have closed the capture screen on
+ * the very people who do the capturing.
+ *
+ * Must stay in lockstep with `canUseEmployeePortalMarketingRequests`
+ * (src/lib/employee-portal/navigation.ts), which is the UX half. This is the boundary.
+ */
+export const marketingRequestCreatorRoles = new Set<AccessContext["role"]>(
+  Array.from(marketingCreatorRoles).filter((role) => role !== "Medical Rep"),
+);
+
 function cleanText(value: unknown) {
   const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
   return normalized || null;
@@ -1218,6 +1240,44 @@ export function assertMarketingWorkspaceAccess(access: AccessContext) {
 
 export function assertMarketingRequestAccess(access: AccessContext) {
   assertMarketingAccess(access);
+}
+
+/**
+ * The boundary behind /employee-portals/marketing-requests and its Approval Inbox — the two
+ * surfaces the Medical Rep lost on 2026-09-18. See `marketingRequestCreatorRoles`.
+ *
+ * Read side (the drafts workspace, the approver inbox): the creator roles PLUS the company-wide
+ * oversight roles, exactly as `assertMarketingWorkspaceAccess` reads today, minus the rep.
+ */
+export function assertMarketingDraftWorkspaceAccess(access: AccessContext) {
+  if (access.scope === "system") return;
+  if (!marketingRequestCreatorRoles.has(access.role) && !companyMarketingRoles.has(access.role)) {
+    throw forbiddenError(`Forbidden: ${access.role} cannot use marketing requests.`);
+  }
+}
+
+/** Write side: who may raise or resubmit a marketing request. */
+export function assertMarketingRequestCreationAccess(access: AccessContext) {
+  if (access.scope === "system") return;
+  if (!marketingRequestCreatorRoles.has(access.role)) {
+    throw forbiddenError(`Forbidden: ${access.role} cannot raise a marketing request.`);
+  }
+}
+
+/**
+ * The Approval Inbox boundary.
+ *
+ * Deliberately a NEGATIVE test rather than an allow-list. This queue has always been scoped to the
+ * ACTOR — it returns the rungs assigned to them and nothing else — so a seat holding no rung
+ * already saw an empty list, and turning that into a refusal for every seat would change behaviour
+ * far beyond what was asked. The only door this closes is the Medical Rep's, which is the one the
+ * owner named on 2026-09-18; every other role keeps exactly the answer it had.
+ */
+export function assertMarketingApprovalInboxAccess(access: AccessContext) {
+  if (access.scope === "system") return;
+  if (marketingCreatorRoles.has(access.role) && !marketingRequestCreatorRoles.has(access.role)) {
+    throw forbiddenError(`Forbidden: ${access.role} cannot open the marketing approval inbox.`);
+  }
 }
 
 /**
@@ -7126,7 +7186,7 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
 );
 
 export async function getMarketingRequestDraftWorkspace(access: AccessContext): Promise<MarketingRequestDraftWorkspace> {
-  assertMarketingWorkspaceAccess(access);
+  assertMarketingDraftWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
   // The first 8 queries below are reference/lookup tables (types, products, distributors,
@@ -7469,7 +7529,7 @@ export async function createMarketingRequestDraft(
   access: AccessContext,
   options: CreateDraftOptions = {},
 ): Promise<MarketingRequestDraftDetail> {
-  assertMarketingAccess(access);
+  assertMarketingRequestCreationAccess(access);
   await assertMarketingWorkflowTransition({
     access,
     actionKey: "create_draft",
@@ -7653,7 +7713,7 @@ export async function resubmitReturnedMarketingRequest(
   input: MarketingRequestCreateDraft & { requestId: string },
   access: AccessContext,
 ): Promise<MarketingRequestDraftDetail> {
-  assertMarketingAccess(access);
+  assertMarketingRequestCreationAccess(access);
   const requestId = cleanText(input.requestId);
   if (!requestId) throw validationError("Marketing request ID is required.");
 
@@ -7956,6 +8016,10 @@ export async function reopenRejectedMarketingRequest(
 
 /** Approver inbox: marketing requests awaiting the current user's decision. */
 export async function getApproverPendingRequests(access: AccessContext): Promise<MarketingApproverInboxWorkspace> {
+  // The Approval Inbox is one of the two surfaces the Medical Rep lost on 2026-09-18. A rep holds
+  // no rung on any chain, so this queue was already empty for them — but an empty page is not a
+  // closed door, and the page guard that hides it is UX. This is the boundary.
+  assertMarketingApprovalInboxAccess(access);
   const actorHrId = requireMarketingDecisionActor(access);
   const supabase = getSupabaseAdmin();
 

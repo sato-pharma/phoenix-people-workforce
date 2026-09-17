@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/server";
 import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
 import {
   getApproverPendingRequests,
@@ -152,7 +152,27 @@ export default async function MarketingRequestsWorkQueuePage() {
   let workspace: Awaited<ReturnType<typeof getApproverPendingRequests>>;
   try {
     workspace = await getApproverPendingRequests(access);
-  } catch {
+  } catch (error) {
+    // A refusal is not a failure, and must not be dressed as one. Since 2026-09-18 the Medical Rep
+    // is out of the marketing approval chain entirely (owner instruction), so this route is simply
+    // not theirs — telling them their queue "could not be read" would send them chasing IT over a
+    // decision that was made on purpose.
+    if (isForbiddenError(error)) {
+      return (
+        <Shell>
+          <p className="text-phx-sm font-medium leading-5 text-slate-600">
+            Marketing approvals are not part of your role. Your marketing work is Customer
+            Validation — capture the venue, and your manager raises the request against it.
+          </p>
+          <Link
+            className="mt-4 inline-flex border border-slate-300 px-4 py-2 text-phx-md font-semibold text-slate-700"
+            href="/employee-portals/marketing-requests/validation"
+          >
+            Open Customer Validation
+          </Link>
+        </Shell>
+      );
+    }
     // The whole point of the contract: this is NOT an empty queue.
     return (
       <Shell>

@@ -686,8 +686,11 @@ export function runEmployeePortalNavigationTests() {
   );
   assert.match(
     layoutSource,
-    /showMarketingRequestsTab \? \[\{ href: "\/employee-portals\/marketing-requests\/validation"/,
-    "Customer Validation nav item must be gated behind showMarketingRequestsTab",
+    /showMarketingValidationTab \? \[\{ href: "\/employee-portals\/marketing-requests\/validation"/,
+    // Its own flag since 2026-09-18 (owner): the Medical Rep keeps Customer Validation while the
+    // drafts workspace and the Approval Inbox — which showMarketingRequestsTab gates — are closed
+    // to them. Putting the two back on one flag silently reopens both.
+    "Customer Validation nav item must be gated behind showMarketingValidationTab",
   );
   assert.match(
     layoutSource,
@@ -722,7 +725,7 @@ export function runEmployeePortalNavigationTests() {
   // --- Dashboard Marketing quick-action: full module, role-gated only ----------
   // Visible for authorized roles regardless of the (legacy) beta flag argument.
   assert.equal(
-    shouldShowEmployeePortalMarketingQuickAction(undefined, "Medical Rep"),
+    shouldShowEmployeePortalMarketingQuickAction(undefined, "District Manager"),
     true,
     "Dashboard Marketing quick-action shows for an authorized role (full module, flag-independent)",
   );
@@ -743,6 +746,15 @@ export function runEmployeePortalNavigationTests() {
   );
 
   // Never surfaces for roles not authorized for Marketing.
+  // The Medical Rep joined that list on 2026-09-18 (owner): the quick action says "Submit Marketing
+  // Request", and a rep no longer submits one — they validate the customer their District Manager
+  // then raises the spend against. It follows canUseEmployeePortalMarketingRequests, so it falls
+  // away with the sidebar link rather than needing a gate of its own.
+  assert.equal(
+    shouldShowEmployeePortalMarketingQuickAction(true, "Medical Rep"),
+    false,
+    "Marketing quick-action must not surface for a Medical Rep — they raise no requests",
+  );
   assert.equal(
     shouldShowEmployeePortalMarketingQuickAction(true, "Employee"),
     false,

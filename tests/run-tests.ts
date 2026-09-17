@@ -1436,6 +1436,7 @@ import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-cha
 import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runMedicalRepMarketingScopeTests } from "./medical-rep-marketing-scope.test.ts";
 import { runMedicalRepMonthlyClosingTests } from "./medical-rep-monthly-closing.test.ts";
 import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-export-matches-screen.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
@@ -4680,6 +4681,11 @@ await runTest(
 await runTest(
   "marketing manager monthly closing (portal tab, three gates agree, full workbook, no sales:import)",
   runMarketingManagerMonthlyClosingTests,
+);
+
+await runTest(
+  "medical rep marketing scope (owner 2026-09-18): the rep loses the drafts workspace and the Approval Inbox in the sidebar, the nav catalog AND server-side, keeps Customer Validation so their District Manager has a validated customer to raise against, keeps the ROI Tracker, and sees their own area's requests in it",
+  runMedicalRepMarketingScopeTests,
 );
 
 await runTest(

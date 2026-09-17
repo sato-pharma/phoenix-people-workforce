@@ -1725,12 +1725,16 @@ const employeePortalNavigationSectionSeeds = [
           "Super Admin",
         ],
       },
+      // THE MEDICAL REP IS DELIBERATELY ABSENT from this row and from the Approval Inbox row below
+      // (owner, 2026-09-18): a rep's job in this module is the field capture on Customer Validation
+      // above, and the spend request against what they validated is raised by their District
+      // Manager. Mirrors canUseEmployeePortalMarketingRequests; the boundary is server-side
+      // (assertMarketingDraftWorkspaceAccess / assertMarketingRequestCreationAccess).
       {
         href: "/employee-portals/marketing-requests",
         icon: Megaphone,
         label: "Marketing Requests",
         roles: [
-          "Medical Rep",
           "District Manager",
           "Regional Manager",
           "National Sales Manager",
@@ -1751,7 +1755,6 @@ const employeePortalNavigationSectionSeeds = [
         // actually use.
         navBadge: "marketing-approvals-pending",
         roles: [
-          "Medical Rep",
           "District Manager",
           "Regional Manager",
           "National Sales Manager",

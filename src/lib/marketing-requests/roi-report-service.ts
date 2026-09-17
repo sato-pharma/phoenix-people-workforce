@@ -453,7 +453,9 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
       supabase
         .from("marketing_roi_distributor_rollup")
         .select("marketing_normalized_name, parent_distributor_code"),
-      supabase.from("marketing_customers").select("id, display_name"),
+      // `area_id` too: it is the TERRITORY route a Medical Rep's ROI Tracker runs on — see the
+      // scope gate below and MarketingRoiScope.visibleAreaIds.
+      supabase.from("marketing_customers").select("id, display_name, area_id"),
       supabase.from("marketing_request_types").select("id, name"),
       loadLatestValidatedPeriod(supabase),
     ]);
@@ -537,11 +539,30 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
     }
   }
 
+  const customerRows = (customersResult.data ?? []) as Array<{
+    id: string;
+    display_name?: string | null;
+    area_id?: number | string | null;
+  }>;
   const customerNameById = new Map(
-    ((customersResult.data ?? []) as Array<{ id: string; display_name?: string | null }>).map(
-      (row) => [row.id, (row.display_name ?? "").trim() || row.id] as const,
-    ),
+    customerRows.map((row) => [row.id, (row.display_name ?? "").trim() || row.id] as const),
   );
+  const customerAreaIdById = new Map<string, number>();
+  for (const row of customerRows) {
+    if (row.area_id === null || row.area_id === undefined) continue;
+    const areaId = Number(row.area_id);
+    if (Number.isFinite(areaId)) customerAreaIdById.set(row.id, areaId);
+  }
+  /**
+   * The territory route (owner, 2026-09-18): a Medical Rep sees a request raised by anyone when its
+   * TARGET CUSTOMER sits in their own area — in practice, their District Manager's spend on their
+   * own patch. Empty for every other seat, so this is a no-op for them.
+   */
+  const requestIsInViewerArea = (customerId: string) => {
+    if (scope.visibleAreaIds.size === 0) return false;
+    const areaId = customerAreaIdById.get(customerId);
+    return areaId !== undefined && scope.visibleAreaIds.has(areaId);
+  };
   const typeNameById = new Map(
     ((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>).map(
       (row) => [Number(row.id), (row.name ?? "").trim() || `Type ${row.id}`] as const,
@@ -627,7 +648,7 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
         const owned = scope.visibleProductCodes;
         if (!rawProducts.some((product) => owned.has(product.code))) continue;
       } else if (scope.visibleRequesterHrIds) {
-        if (!scope.visibleRequesterHrIds.has(requesterKey)) continue;
+        if (!scope.visibleRequesterHrIds.has(requesterKey) && !requestIsInViewerArea(request.customerId)) continue;
       } else {
         continue;
       }
