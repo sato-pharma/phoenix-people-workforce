@@ -178,8 +178,9 @@ would have switched off for every future conflict as well.
 
 So: **install with a plain `npm install`.** If `--legacy-peer-deps` or `--force` ever looks
 necessary again, something real has changed and belongs in this section rather than in somebody's
-shell history. No CI job installs `mobile/` — nothing in `.github/workflows/` mentions it — so
-that is checked by hand or not at all.
+shell history. The `mobile` job in `.github/workflows/ci.yml` runs `npm ci` and `npm run typecheck`
+in this folder on every pull request that touches it, so a lockfile that only installs behind a
+flag now goes red before it reaches `main`.
 
 `uuid` is pinned to `11.1.1` for a Dependabot advisory on `@expo/config-plugins → xcode →
 uuid@^7.0.3` (missing buffer bounds check generating v3/v5/v6 UUIDs, CVSS 7.5). `xcode` only runs

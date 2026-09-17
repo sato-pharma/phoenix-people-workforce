@@ -608,6 +608,90 @@ jobs:
         if: steps.detect.outputs.docs_only != 'true'
         run: pnpm run test
 
+  # THE ONE JOB THAT LOOKS AT mobile/ (added 2026-09-18). Nothing else in this file does, and that
+  # is structural rather than an oversight: the root project is pnpm, `mobile/` is npm with its own
+  # package-lock.json, and it is excluded from the root tsconfig.json and eslint.config.mjs because
+  # React Native's JSX and DOM-free type set are incompatible with the Next.js project's. So every
+  # gate above walks straight past it.
+  #
+  # Two defects reached `main` through that gap inside two days. #3962 committed a lockfile that
+  # strict peer resolution cannot produce — react-dom@19.3.0 wants react@^19.3.0, the app pins
+  # react@19.2.3, so `npm install` could only have been run with --legacy-peer-deps or --force.
+  # #3965 then regenerated the lockfile with that flag, which strips every peer-installed package
+  # out of it: `npm ci` failed outright (EUSAGE, 29 packages "missing from lock file") while a
+  # plain `npm install` silently rewrote 196 lines of lockfile on every machine that ran it.
+  # Neither was visible to anything here. #3970 fixed both; this job is what keeps them fixed.
+  #
+  # THE JOB ALWAYS RUNS AND ALWAYS REPORTS, for the reason spelled out in `validate` — a skipped
+  # job reports no status, and a required check with no status blocks a PR forever. Only the
+  # expensive steps are conditional. So this name can be added to branch protection's required
+  # checks safely, and it still costs seconds on a PR that never touches mobile/.
+  #
+  # The detect step FAILS TOWARDS DOING THE WORK: every path it cannot resolve answers `true`.
+  # That is the opposite direction from `docs_only` above, and for the same reason — each fails
+  # towards running more, never less.
+  #
+  # DELIBERATELY NOT in `full-e2e`'s `needs` list: that suite drives the web app through
+  # Playwright and has no mobile surface, so a broken mobile lockfile should not be able to block
+  # a manual E2E run.
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # depth 2, for the same reason as the jobs above: on a pull_request GitHub checks out
+          # the merge commit, so HEAD^1..HEAD is exactly this PR's changed files.
+          fetch-depth: 2
+
+      - name: Detect whether this change touches mobile/
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -u
+          answer() { echo "mobile_changed=$1" >> "$GITHUB_OUTPUT"; echo "mobile_changed=$1 ($2)"; exit 0; }
+
+          [ "$EVENT_NAME" = "pull_request" ] || answer true "not a pull_request - always check mobile/"
+          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer true "HEAD is not a merge commit; cannot identify the PR's files"
+
+          files="$(git diff --name-only HEAD^1 HEAD)" || answer true "git diff failed"
+          [ -n "$files" ] || answer true "no files resolved; refusing to assume mobile/ is untouched"
+
+          echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          if echo "$files" | grep -qE '^mobile/'; then
+            answer true "mobile/ changed"
+          fi
+          answer false "nothing under mobile/ changed"
+
+      # npm, NOT pnpm, and no corepack step: mobile/ keeps its own lockfile because React Native's
+      # Metro bundler resolves modules by walking node_modules directly and pnpm's symlinked store
+      # breaks that at runtime. mobile/README.md carries the account. Cache the npm store keyed on
+      # that lockfile, not the root pnpm-lock.yaml.
+      - name: Set up Node.js
+        if: steps.detect.outputs.mobile_changed == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # `npm ci`, not `npm install`, and with NO FLAGS — that is the whole assertion. It installs
+      # the lockfile exactly and exits 1 when package.json and package-lock.json disagree, which is
+      # both defects above in one command. If this step ever needs --legacy-peer-deps or --force to
+      # pass, the lockfile is wrong: fix the lockfile, never this line.
+      - name: Install mobile dependencies from the lockfile
+        if: steps.detect.outputs.mobile_changed == 'true'
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck the mobile app
+        if: steps.detect.outputs.mobile_changed == 'true'
+        working-directory: mobile
+        run: npm run typecheck
+
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
     runs-on: ubuntu-latest
