@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   DEFAULT_EXTRA_COST_OF_LIVING,
@@ -132,6 +133,95 @@ export function runEmployeeSalaryAutofillTests() {
   assert.ok(
     Math.abs(overridden.grossSalary - overridden.socialInsurance - overridden.taxes - 17000) < 0.005,
     "the round-trip still holds under an override",
+  );
+
+  // --- a box nobody typed in takes the default, never zero -----------------
+  // The Employee Master form sends null for an allowance box the owner has not
+  // typed into. Number(null) is 0, so reading null as a typed zero emptied both
+  // allowances on every edit of the net or the title, and the base swallowed
+  // them: a Medical Representative on net 18,500 was saved with base 18,500,
+  // and payroll adds its own 2,000 and 500 on top of the base.
+  const untouched = deriveSalaryFromNet({
+    extraCostOfLiving: null,
+    fuelAllowance: null,
+    jobTitle: "Medical Representative",
+    netSalary: 18500,
+  });
+  assert.ok(untouched);
+  assert.equal(
+    untouched.extraCostOfLiving,
+    2000,
+    "an allowance box nobody typed in takes the title's cost of living, not zero",
+  );
+  assert.equal(
+    untouched.fuelAllowance,
+    DEFAULT_FUEL_ALLOWANCE,
+    "an allowance box nobody typed in takes the standard fuel allowance, not zero",
+  );
+  assert.equal(untouched.baseSalary, 16000, "the base leaves both allowances out of the typed net");
+
+  // --- the allowances payroll sets for one named employee ------------------
+  // A fuel allowance the owner approved personally (2026-09-15: the standard 500
+  // plus a 1,500 car allowance). The form must fill the 2,000 payroll pays, or
+  // typing her net of 20,000 saves base 17,500, and payroll pays that base plus
+  // its own 2,000 cost of living and 2,000 fuel.
+  const personal = deriveSalaryFromNet({
+    employeeHrId: "PD-0013",
+    extraCostOfLiving: null,
+    fuelAllowance: null,
+    jobTitle: "Medical Representative",
+    netSalary: 20000,
+  });
+  assert.ok(personal);
+  assert.equal(personal.fuelAllowance, 2000, "the form fills the approved personal fuel allowance");
+  assert.equal(personal.baseSalary, 16000, "her base stays 16,000 when her net of 20,000 is typed");
+  assert.equal(personal.basicSalary, 11200, "and her basic stays 11,200");
+  const colleague = deriveSalaryFromNet({
+    employeeHrId: "T-001",
+    fuelAllowance: null,
+    jobTitle: "Medical Representative",
+    netSalary: 18500,
+  });
+  assert.ok(colleague);
+  assert.equal(
+    colleague.fuelAllowance,
+    DEFAULT_FUEL_ALLOWANCE,
+    "an employee without an approved allowance keeps the standard fuel allowance",
+  );
+  const typedFuel = deriveSalaryFromNet({
+    employeeHrId: "PD-0013",
+    fuelAllowance: 500,
+    jobTitle: "Medical Representative",
+    netSalary: 18500,
+  });
+  assert.ok(typedFuel);
+  assert.equal(typedFuel.fuelAllowance, 500, "a fuel figure the owner typed still wins");
+  // A-14 draws no allowances at all, so the form fills none and the whole net is the base.
+  const noAllowances = deriveSalaryFromNet({
+    employeeHrId: "A-14",
+    extraCostOfLiving: null,
+    fuelAllowance: null,
+    jobTitle: "Regulatory Affairs",
+    netSalary: 10000,
+  });
+  assert.ok(noAllowances);
+  assert.equal(
+    noAllowances.extraCostOfLiving,
+    0,
+    "the employee who draws no allowances gets no cost of living from the form",
+  );
+  assert.equal(noAllowances.fuelAllowance, 0, "the employee who draws no allowances gets no fuel from the form");
+  assert.equal(noAllowances.baseSalary, 10000, "the employee who draws no allowances keeps the whole net as base");
+
+  // The form has to hand the auto-fill the HR id, or none of the above reaches it.
+  const employeeFormSource = readFileSync(
+    new URL("../src/components/employees/employee-management.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    employeeFormSource,
+    /deriveSalaryFromNet\(\{[^}]*\bemployeeHrId: form\.hrId,/,
+    "the Employee Master form passes the HR id to the salary auto-fill",
   );
 
   // --- degenerate input must be quiet, never NaN ---------------------------

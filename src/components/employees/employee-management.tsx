@@ -571,6 +571,7 @@ function withSalaryAutofill(
   overridden: ReadonlySet<SalaryAutofillKey>,
 ): EmployeeFormState {
   const derived = deriveSalaryFromNet({
+    employeeHrId: form.hrId,
     extraCostOfLiving: overridden.has("extraCostOfLiving") ? Number(form.extraCostOfLiving) : null,
     fuelAllowance: overridden.has("fuelAllowance") ? Number(form.fuelAllowance) : null,
     jobTitle: form.jobTitle,

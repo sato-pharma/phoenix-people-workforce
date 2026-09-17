@@ -41,8 +41,9 @@ function isNoAllowanceEmployee(input: SalaryAllowanceInput) {
 
 // Personal fuel allowances the owner approved one employee at a time, keyed by the HR id's letters
 // and digits. Every reader of the standard goes through resolveStandardSalaryAllowances (the
-// Employee Master upload, the directory, the portal, the payroll template and both payroll salary
-// sources), so an entry here is what payroll pays and what an upload keeps.
+// Employee Master upload, the Employee Master form's salary auto-fill, the directory, the portal,
+// the payroll template and both payroll salary sources), so an entry here is what payroll pays, what
+// an upload keeps and what the form fills.
 const PERSONAL_FUEL_ALLOWANCES = new Map<string, number>([
   // PD-0013, Medical Representative hired 2026-09-12: the standard 500 plus a 1,500 car allowance,
   // paid inside Fuel Allowance (owner, 2026-09-15).
