@@ -413,6 +413,30 @@ export function parseSeenReleaseLines(value: unknown): { lines: SeenReleaseLine[
 }
 
 /**
+ * Which employee a release is for, from the request body (owner, 2026-09-17 — "every row has a release
+ * beside it … so I can release one employee and after release another"). Absent means the whole week:
+ * every employee waiting. Present, it must be a positive whole digest id; anything else is refused rather
+ * than read as "everyone", which would tell and clear people the Super Admin did not pick.
+ */
+export function parseReleaseDigestId(value: unknown): { digestId: number | null; error: null } | { digestId: null; error: string } {
+  if (value === undefined || value === null) return { digestId: null, error: null };
+  const digestId = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isInteger(digestId) || digestId <= 0) {
+    return { digestId: null, error: "Reload the page and release again: the employee you picked could not be read." };
+  }
+  return { digestId, error: null };
+}
+
+/**
+ * The waiting digests one release covers: every one in the week, or only the picked employee's. The
+ * others are not touched — their unticked days are not cleared and nobody else is told — so they keep
+ * waiting for their own release.
+ */
+export function releaseScope<T extends { id: number }>(waiting: readonly T[], digestId: number | null): T[] {
+  return digestId === null ? [...waiting] : waiting.filter((digest) => digest.id === digestId);
+}
+
+/**
  * The days waiting for release that the page did NOT show as they are now: added since it loaded, or
  * with different days (owner, 2026-09-17 — release any time, while the daily job keeps adding days). Any
  * one of them means the Super Admin would release something he never saw, so the release is refused.

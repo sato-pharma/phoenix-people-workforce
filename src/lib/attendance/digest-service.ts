@@ -68,9 +68,11 @@ import {
   isDeductionMethod,
   isOpenLineAction,
   parseMarkedDays,
+  parseReleaseDigestId,
   parseSeenReleaseLines,
   payrollDecisionBlocksBalance,
   releaseNoticeRange,
+  releaseScope,
   reviewWeekStage,
   staleReleaseLines,
   type DeductionMethod,
@@ -1281,11 +1283,16 @@ export type ReleaseResult = { released: number; notified: number; notNotified: n
  *
  * `seenLines` is every day waiting for release as the page showed it. When a day was added or changed
  * after the page loaded, nothing at all is released: the Super Admin reloads and looks again.
+ *
+ * `digestId` releases one employee only (owner, 2026-09-17 — "every row has a release beside it … so I
+ * can release one employee and after release another"). Every other employee keeps waiting, days and
+ * ticks untouched. Absent, the whole week is released.
  */
 export async function releaseWeek(input: {
   cycleKey: string;
   weekIndex: number;
   seenLines: unknown;
+  digestId?: unknown;
   actorHrId: string;
   actorRole: string | null;
 }): Promise<ReleaseResult> {
@@ -1293,6 +1300,8 @@ export async function releaseWeek(input: {
   const seen = parseSeenReleaseLines(input.seenLines);
   if (seen.error !== null) throw validationError(seen.error);
   const seenLines = seen.lines;
+  const scope = parseReleaseDigestId(input.digestId);
+  if (scope.error !== null) throw validationError(scope.error);
   // Under the same lock the daily job and Refresh take to bring the week up to date: one still running
   // finishes first, so the days checked below are the days that are released.
   return withWeekBuildLock(input.cycleKey, input.weekIndex, () => releaseWaitingDays({ ...input, seenLines }));
@@ -1302,6 +1311,7 @@ async function releaseWaitingDays(input: {
   cycleKey: string;
   weekIndex: number;
   seenLines: SeenReleaseLine[];
+  digestId?: unknown;
   actorHrId: string;
   actorRole: string | null;
 }): Promise<ReleaseResult> {
@@ -1316,7 +1326,12 @@ async function releaseWaitingDays(input: {
   const rows = (data ?? []) as Record<string, unknown>[];
   if (!rows.length) throw conflictError("Nothing in this week is waiting for release.");
 
-  const digests = rows.map((row) => mapDigest(row, []));
+  // One employee's release touches that employee only: the others are not checked, cleared or told.
+  const scope = parseReleaseDigestId(input.digestId);
+  if (scope.error !== null) throw validationError(scope.error);
+  const digestId = scope.digestId;
+  const digests = releaseScope(rows.map((row) => mapDigest(row, [])), digestId);
+  if (!digests.length) throw conflictError("This employee is no longer waiting for release. Reload the page.");
   const realDigests = digests.filter((digest) => !digest.dryRun);
   const skippedTrialRun = digests.length - realDigests.length;
   if (!realDigests.length) throw conflictError("This week was built as a trial run and can never be released.");
@@ -1413,8 +1428,21 @@ async function releaseWaitingDays(input: {
     actorLoginId: input.actorHrId,
     entityId: `${input.cycleKey}:w${input.weekIndex}`,
     entityType: "attendance_digest_release",
-    newValues: { released, notified, notNotified, skippedTrialRun, clearedDays, daysSeen: input.seenLines.length },
-    summary: `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s), ${clearedDays} unticked day(s) cleared`,
+    newValues: {
+      released,
+      notified,
+      notNotified,
+      skippedTrialRun,
+      clearedDays,
+      daysSeen: input.seenLines.length,
+      scope: digestId === null ? "week" : "employee",
+      digestId,
+      employeeHrId: digestId === null ? null : (realDigests[0]?.employeeHrId ?? null),
+    },
+    summary:
+      digestId === null
+        ? `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s), ${clearedDays} unticked day(s) cleared`
+        : `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released for one employee only, ${clearedDays} unticked day(s) cleared; the others keep waiting`,
   });
   return { released, notified, notNotified, skippedTrialRun, clearedDays };
 }

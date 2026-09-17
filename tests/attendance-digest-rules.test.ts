@@ -19,12 +19,14 @@ import {
   MAX_SEEN_RELEASE_LINES,
   editedDaysApplyToCandidate,
   parseMarkedDays,
+  parseReleaseDigestId,
   parseSeenReleaseLines,
   payrollDaysForSettledLine,
   payrollDecisionBlocksBalance,
   pickDefaultReviewWeek,
   releaseNoticeRange,
   releaseNoticeReached,
+  releaseScope,
   reviewWeekStage,
   staleReleaseLines,
 } from "../src/lib/attendance/digest-rules.ts";
@@ -327,6 +329,30 @@ export async function runAttendanceDigestRulesTests() {
     { weekStart: "2026-09-14", weekEnd: "2026-09-23" },
   );
 
+  // --- One employee at a time (owner, 2026-09-17 — "every row has a release beside it … so I can release
+  // one employee and after release another") ----------------------------------------------------------
+  assert.deepEqual(parseReleaseDigestId(undefined), { digestId: null, error: null }, "no employee picked means the whole week");
+  assert.deepEqual(parseReleaseDigestId(null), { digestId: null, error: null });
+  assert.deepEqual(parseReleaseDigestId(12), { digestId: 12, error: null });
+  assert.deepEqual(parseReleaseDigestId("12"), { digestId: 12, error: null });
+  for (const unreadable of [0, -3, 1.5, "abc", "", true, {}, [12], Number.NaN]) {
+    assert.match(
+      parseReleaseDigestId(unreadable).error ?? "",
+      /could not be read/,
+      `${String(unreadable)} must be refused, never read as "everyone": that would clear and tell people nobody picked`,
+    );
+  }
+  {
+    const waiting = [{ id: 7 }, { id: 8 }, { id: 9 }];
+    assert.deepEqual(releaseScope(waiting, null).map((digest) => digest.id), [7, 8, 9], "the week's Release covers everyone waiting");
+    assert.deepEqual(
+      releaseScope(waiting, 8).map((digest) => digest.id),
+      [8],
+      "an employee's Release covers that employee only: the others are not cleared or told, and keep waiting",
+    );
+    assert.deepEqual(releaseScope(waiting, 42), [], "an employee no longer waiting releases nobody, never the whole week");
+  }
+
   // --- The release notice -----------------------------------------------------
   const notice = buildWeekReleasedMessage({ weekStart: "2026-09-07", weekEnd: "2026-09-13", dayCount: 2, answerDueOn: "2026-09-17" });
   // en-GB abbreviates September as "Sept" on current ICU and "Sep" on older builds.
@@ -410,6 +436,11 @@ export async function runAttendanceDigestRulesTests() {
     assert.match(source, /if \(!canManageWeeklyReview\(access\)\) \{\s*return NextResponse\.json\([^)]*\{ status: 403 \}\)/, `${surface} must refuse anyone but the Super Admin with a 403`);
     assert.match(source, /actorRole: access\.role \?\? null/, `${surface} must hand the caller's role to the service, which checks it again`);
   }
+  assert.match(
+    readFileSync("app/api/attendance/weekly-review/release/route.ts", "utf8"),
+    /digestId: payload\.digestId,/,
+    "the release route hands the picked employee to the service, which releases that employee only",
+  );
   assert.equal(
     existsSync("app/api/attendance/weekly-review/lines/[lineId]/remove/route.ts"),
     false,
@@ -422,12 +453,22 @@ export async function runAttendanceDigestRulesTests() {
   }
   const reviewPage = readFileSync("src/components/attendance/weekly-attendance-review.tsx", "utf8");
   assert.match(reviewPage, /const canMark =\s+canManage && /, "a dispute reviewer must not see the ticks");
-  assert.match(reviewPage, /const releasable =\s+canManage && /, "a dispute reviewer must not see Release this week");
+  assert.match(reviewPage, /const releasable =\s+canManage && /, "a dispute reviewer must not see the week's Release");
   assert.match(reviewPage, /const canRefresh = canManage && /, "a dispute reviewer must not see Refresh");
   assert.match(
     reviewPage,
     /seenLines: seenLines\(current\)/,
     "Release sends the days the page shows, so the server can refuse a day that arrived after it loaded",
+  );
+  assert.match(
+    reviewPage,
+    /digestId: employee\.digestId,\s*seenLines: employeeSeenLines\(employee\),/,
+    "an employee's Release names that employee and sends only their days, so nobody else is cleared or told",
+  );
+  assert.match(
+    reviewPage,
+    /return canManage && current\.stage === "awaiting_release" && waitingForRelease\(employee\);/,
+    "a dispute reviewer must not see an employee's Release, and a released or trial-run employee has none",
   );
   assert.match(readFileSync("app/(admin)/attendance/weekly-review/page.tsx", "utf8"), /canManage=\{canManageWeeklyReview\(access\)\}/, "the page must pass the Super Admin check down");
 
@@ -454,6 +495,18 @@ export async function runAttendanceDigestRulesTests() {
   );
   assert.doesNotMatch(release, /from\("attendance_weekly_digests"\)\s*\.update\(\{ status: "open"/, "…never a plain status write that skips the clearing");
   assert.match(release, /if \(outcome\.status !== "open" \|\| dayCount === 0\) continue;/, "a week with nothing ticked is released to nobody");
+  {
+    const scopeAt = release.indexOf("releaseScope(");
+    assert.ok(
+      scopeAt > 0 && scopeAt < release.indexOf("loadLines(") && scopeAt < release.indexOf('.rpc("phx_attendance_release_digest"'),
+      "one employee's release narrows to that employee before any day is checked, cleared or told",
+    );
+    assert.match(
+      release,
+      /if \(!digests\.length\) throw conflictError\("This employee is no longer waiting for release\. Reload the page\."\);/,
+      "an employee who is no longer waiting releases nobody",
+    );
+  }
   {
     const staleCheckAt = release.indexOf("staleReleaseLines(pending, input.seenLines)");
     assert.ok(
