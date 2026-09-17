@@ -223,6 +223,8 @@ export type AuditEntityType =
   | "vacation_retention_purge"
   | "vacation_weekly_off_policy"
   | "weekly_plan"
+  // A weekly sales upload deleted or re-tagged: the only record of who did it and which upload it was.
+  | "weekly_sales_batch"
   | "weekly_sales_mapping"
   | "weekly_plan_day"
   // The WhatsApp Inbox (Super Admin only): a message sent from Phoenix on a company number, a chat

@@ -1,6 +1,7 @@
+import { hrIdForStorage } from "@/lib/hr-id";
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { deleteWeeklyBatch, listWeeklyBatches, retagWeeklyBatch } from "@/lib/sales/weekly/service";
@@ -38,7 +39,14 @@ export async function DELETE(request: Request) {
     if (!batchId) {
       return NextResponse.json({ success: false, error: "Missing batchId." }, { status: 400 });
     }
-    await deleteWeeklyBatch(batchId);
+    const actorLoginId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const deleted = await deleteWeeklyBatch({ actorLoginId, batchId });
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: "That weekly upload no longer exists. It may already have been deleted." },
+        { status: 404 },
+      );
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     return fail(error, "Failed to delete the weekly upload.");
@@ -56,6 +64,7 @@ export async function PATCH(request: Request) {
       weekNumber?: number | string;
     };
     await retagWeeklyBatch({
+      actorLoginId: hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
       batchId: String(body?.batchId ?? "").trim(),
       cycleMonth: String(body?.cycleMonth ?? "").trim(),
       weekNumber: Number(body?.weekNumber),

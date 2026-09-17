@@ -1,3 +1,6 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { writeAuditLog, type AuditLogInput } from "@/lib/admin/audit";
 import { normalizeRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
@@ -440,23 +443,103 @@ export async function listWeeklyBatches(limit = 100): Promise<WeeklyBatch[]> {
   return (data ?? []).map(mapBatch);
 }
 
-export async function deleteWeeklyBatch(batchId: string): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
+// What the audit row keeps of an upload. A delete leaves nothing to read afterwards — the batch goes,
+// and every row it stored goes with it (ON DELETE CASCADE) — so this is read BEFORE the change.
+const WEEKLY_BATCH_AUDIT_COLUMNS =
+  "id,distributor_code,distributor_name,file_name,week_start,cycle_month,week_number,status,total_rows,total_net_qty,total_sales_value,uploaded_by,created_at";
+
+/**
+ * Only tests pass these. The suite runs with production credentials, so a test hands in the fixture
+ * client and a recording audit writer, and neither function then builds a real client of its own.
+ */
+export type WeeklyBatchWriteDependencies = {
+  client?: SupabaseClient;
+  writeAudit?: (input: AuditLogInput) => Promise<void>;
+};
+
+function weeklyBatchAuditSnapshot(row: Record<string, unknown>) {
+  return {
+    distributorCode: row.distributor_code ?? null,
+    distributorName: row.distributor_name ?? null,
+    fileName: row.file_name ?? null,
+    weekStart: row.week_start ?? null,
+    cycleMonth: row.cycle_month ?? null,
+    weekNumber: row.week_number ?? null,
+    status: row.status ?? null,
+    totalRows: row.total_rows ?? null,
+    totalNetQty: row.total_net_qty ?? null,
+    totalSalesValue: row.total_sales_value ?? null,
+    uploadedBy: row.uploaded_by ?? null,
+    uploadedAt: row.created_at ?? null,
+  };
+}
+
+// "week 2 of September 2026". Built and read in UTC, so the server's own time zone can never move
+// the first of a month into the month before.
+function weeklyBatchWeekLabel(cycleMonth: unknown, weekNumber: unknown): string {
+  const match = typeof cycleMonth === "string" ? /^(\d{4})-(\d{2})/.exec(cycleMonth) : null;
+  if (!match || weekNumber == null) return "no week tag";
+  const month = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1)).toLocaleDateString("en-GB", {
+    month: "long",
+    timeZone: "UTC",
+    year: "numeric",
+  });
+  return `week ${weekNumber} of ${month}`;
+}
+
+/**
+ * Delete one weekly upload and every row it stored, and record who did it and which upload it was.
+ * Returns false, and records nothing, when there is no such batch.
+ *
+ * The audit row is best-effort (`writeAuditLog`), as for a Source of Sales sheet: it is written after
+ * the delete has landed, so failing it would report a finished delete as a failed one. A failed write
+ * is still logged as `audit_persistence_failed`.
+ */
+export async function deleteWeeklyBatch(
+  input: { actorLoginId: string; batchId: string },
+  dependencies: WeeklyBatchWriteDependencies = {},
+): Promise<boolean> {
+  const batchId = (input.batchId ?? "").trim();
+  if (!batchId) throw new SalesWorkflowError("invalid_request", "Missing batch id.", 400);
+  const supabase = dependencies.client ?? getSupabaseAdmin();
+  const writeAudit = dependencies.writeAudit ?? writeAuditLog;
+
+  const existing = await supabase
+    .from("weekly_sales_batches")
+    .select(WEEKLY_BATCH_AUDIT_COLUMNS)
+    .eq("id", batchId)
+    .maybeSingle();
+  if (existing.error) throw new SalesWorkflowError("delete_failed", existing.error.message, 500);
+  if (!existing.data) return false;
+  const before = weeklyBatchAuditSnapshot(existing.data as Record<string, unknown>);
+
   const { error } = await supabase.from("weekly_sales_batches").delete().eq("id", batchId);
   if (error) throw new SalesWorkflowError("delete_failed", error.message, 500);
+
+  await writeAudit({
+    actorLoginId: input.actorLoginId,
+    entityId: batchId,
+    entityType: "weekly_sales_batch",
+    oldValues: before,
+    summary: `Weekly sales upload deleted: ${before.distributorName ?? before.distributorCode}, ${before.fileName}, ${weeklyBatchWeekLabel(before.cycleMonth, before.weekNumber)}.`,
+  });
   return true;
 }
 
 /**
  * Re-tag a batch's month-cycle + week-of-month. Used to correct boundary sheets (e.g. a sheet dated
  * on the 1st that actually closes the prior month) so de-cumulation pairs them with the right cycle.
- * Updates the batch header and all of its rows together.
+ * Updates the batch header and all of its rows together, and records the week it moved from and to.
  */
-export async function retagWeeklyBatch(input: {
-  batchId: string;
-  cycleMonth: string;
-  weekNumber: number;
-}): Promise<boolean> {
+export async function retagWeeklyBatch(
+  input: {
+    actorLoginId: string;
+    batchId: string;
+    cycleMonth: string;
+    weekNumber: number;
+  },
+  dependencies: WeeklyBatchWriteDependencies = {},
+): Promise<boolean> {
   const batchId = (input.batchId ?? "").trim();
   if (!batchId) throw new SalesWorkflowError("invalid_request", "Missing batch id.", 400);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.cycleMonth)) {
@@ -465,7 +548,18 @@ export async function retagWeeklyBatch(input: {
   if (![1, 2, 3, 4].includes(input.weekNumber)) {
     throw new SalesWorkflowError("invalid_request", "weekNumber must be 1, 2, 3 or 4.", 400);
   }
-  const supabase = getSupabaseAdmin();
+  const supabase = dependencies.client ?? getSupabaseAdmin();
+  const writeAudit = dependencies.writeAudit ?? writeAuditLog;
+
+  const existing = await supabase
+    .from("weekly_sales_batches")
+    .select(WEEKLY_BATCH_AUDIT_COLUMNS)
+    .eq("id", batchId)
+    .maybeSingle();
+  if (existing.error) throw new SalesWorkflowError("update_failed", existing.error.message, 500);
+  if (!existing.data) throw new SalesWorkflowError("update_failed", "Batch not found.", 404);
+  const before = weeklyBatchAuditSnapshot(existing.data as Record<string, unknown>);
+
   const batchUpdate = await supabase
     .from("weekly_sales_batches")
     .update({ cycle_month: input.cycleMonth, week_number: input.weekNumber })
@@ -479,6 +573,21 @@ export async function retagWeeklyBatch(input: {
     .from("weekly_sales_rows")
     .update({ cycle_month: input.cycleMonth, week_number: input.weekNumber })
     .eq("batch_id", batchId);
+
+  // The header has moved by now whether or not its rows followed, so the audit row is written either
+  // way and says which: a header on one week with its rows still on another is otherwise invisible.
+  const from = weeklyBatchWeekLabel(before.cycleMonth, before.weekNumber);
+  const to = weeklyBatchWeekLabel(input.cycleMonth, input.weekNumber);
+  await writeAudit({
+    actorLoginId: input.actorLoginId,
+    entityId: batchId,
+    entityType: "weekly_sales_batch",
+    newValues: { cycleMonth: input.cycleMonth, rowsRetagged: !rowsUpdate.error, weekNumber: input.weekNumber },
+    oldValues: { cycleMonth: before.cycleMonth, weekNumber: before.weekNumber },
+    summary: rowsUpdate.error
+      ? `Weekly sales upload re-tagged: ${before.distributorName ?? before.distributorCode}, ${before.fileName}, moved from ${from} to ${to}, but its stored rows could not be moved with it.`
+      : `Weekly sales upload re-tagged: ${before.distributorName ?? before.distributorCode}, ${before.fileName}, moved from ${from} to ${to}.`,
+  });
   if (rowsUpdate.error) throw new SalesWorkflowError("update_failed", rowsUpdate.error.message, 500);
   return true;
 }
