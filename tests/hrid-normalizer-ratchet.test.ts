@@ -72,8 +72,12 @@ import path from "node:path";
  * Lowered 20 -> 19 (2026-09-13): deleting the weekly double-visit digest (owner decision) removed
  * its hand-rolled `cleanHrId` in src/lib/double-visit-analytics/weekly-digest.ts. The unfoldable
  * employee-normalizers.ts copy is still counted, so the folding floor is now 19.
+ *
+ * Lowered 19 -> 18 (2026-09-17): the field-capture nudge's hand-rolled `cleanHrId` in
+ * src/lib/marketing-requests/field-capture-backlog.ts now delegates to canonicalHrIdForDisplay, so a
+ * rep's id matches the active directory whatever its casing or alias.
  */
-const BASELINE = 19;
+const BASELINE = 18;
 
 const ROOTS = ["app", "src"];
 

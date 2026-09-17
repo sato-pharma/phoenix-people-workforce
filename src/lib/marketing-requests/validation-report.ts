@@ -10,7 +10,7 @@ import type {
 } from "@/lib/marketing-requests/types";
 
 /**
- * The narrow slice of a report row this module actually reasons about: two notes-derived flags and
+ * The narrow slice of a report row this module actually reasons about: three notes-derived flags and
  * the two evidence statuses, because they answer different questions and the badge needs both.
  *
  * The flags come from the LINK's `validation_notes`, a sentence written the day the link was
@@ -22,7 +22,7 @@ import type {
  */
 export type FieldEvidenceGapInput = Pick<
   MarketingValidationReportRow,
-  "deskValidated" | "inferredFromHistory"
+  "deskValidated" | "inferredFromHistory" | "secondCodeBackfill"
 > & {
   /** The CUSTOMER row's evidence as it stands NOW, not as it stood when the link was written. */
   customerEvidenceStatus: MarketingEvidenceStatus;
@@ -37,8 +37,12 @@ export type FieldEvidenceGapInput = Pick<
  * `mixed` exists because one customer really is both: `ROI-C-7986552D8DC1` carries a 2026-07-02
  * backfill link and two desk links after an owner merge on 2026-08-21. Calling that "inferred"
  * would be half wrong, and calling it "desk entry" wrong in the other half.
+ *
+ * `second_code` is reached only when EVERY unproven link in view is a 2026-09-08 second-code
+ * backfill. Such a link copied its status from the pairing's existing link, so wherever that link
+ * is in view its reason is the honest one and is used instead — see `customerFieldEvidenceGap`.
  */
-export type FieldEvidenceGap = "desk" | "inferred" | "mixed";
+export type FieldEvidenceGap = "desk" | "inferred" | "mixed" | "second_code";
 
 /**
  * Narrow a report row for the badge. Report rows carry the customer and the pharmacy whole, so
@@ -54,15 +58,20 @@ export function fieldEvidenceGapInput(row: MarketingValidationReportRow): FieldE
     deskValidated: row.deskValidated,
     inferredFromHistory: row.inferredFromHistory,
     pharmacyEvidenceStatus: row.pharmacy.evidenceStatus,
+    secondCodeBackfill: row.secondCodeBackfill,
   };
 }
 
 /**
  * Does a real field capture stand behind this ONE link, from EITHER side of it?
  *
- * A link carrying neither marker was written by a live capture and says so in its own notes; that
- * has always counted and still does. The interesting case is a marked link, where the marker
- * records what was true on the day it was written and evidence may have arrived since.
+ * A link carrying none of the three markers was written by a live capture and says so in its own
+ * notes; that has always counted and still does. The interesting case is a marked link, where the
+ * marker records what was true on the day it was written and evidence may have arrived since.
+ *
+ * Until 2026-09-17 there were two markers, and the 81 links of the 2026-09-08 second-code backfill
+ * carried neither — so each one counted as a live capture, and one of them beside an unproven
+ * inferred or desk link cleared the whole customer. That was 39 customers on the day it was fixed.
  *
  * **Either half counts, and `complete` is the bar.** Two reasons, and the second is the owner's.
  *
@@ -84,7 +93,7 @@ export function fieldEvidenceGapInput(row: MarketingValidationReportRow): FieldE
  * a desk validation leaves behind and the reason these rows are badged at all.
  */
 function linkHasFieldEvidence(row: FieldEvidenceGapInput): boolean {
-  if (!row.inferredFromHistory && !row.deskValidated) return true;
+  if (!row.inferredFromHistory && !row.deskValidated && !row.secondCodeBackfill) return true;
   return row.customerEvidenceStatus === "complete" || row.pharmacyEvidenceStatus === "complete";
 }
 
@@ -116,6 +125,12 @@ function linkHasFieldEvidence(row: FieldEvidenceGapInput): boolean {
  * fully captured, and 5 backfilled links on a customer photographed on site himself. The remaining
  * 299 marked links have nothing complete on either half and stay badged.
  *
+ * A 2026-09-08 second-code link never names the reason while another marked link is in view: it
+ * copied its status from the pairing's existing link, so that link's origin is its origin too.
+ * Production held no customer whose only unproven links were second-code ones on the day this was
+ * written, but one link read on its own — the Customer Database shows a card per link — still
+ * needs an answer, and "inferred" or "desk" would guess.
+ *
  * Zero links is `null`: there is no validation claim on screen for the badge to qualify.
  */
 export function customerFieldEvidenceGap(
@@ -126,5 +141,7 @@ export function customerFieldEvidenceGap(
   const anyInferred = rows.some((row) => row.inferredFromHistory);
   const anyDesk = rows.some((row) => row.deskValidated);
   if (anyInferred && anyDesk) return "mixed";
-  return anyInferred ? "inferred" : "desk";
+  if (anyInferred) return "inferred";
+  if (anyDesk) return "desk";
+  return "second_code";
 }

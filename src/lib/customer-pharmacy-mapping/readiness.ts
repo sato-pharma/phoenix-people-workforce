@@ -166,14 +166,38 @@ export function isDeskValidated(validationNotes: string | null | undefined): boo
 }
 
 /**
+ * The one-statement hand backfill of 2026-09-08 opened every note it wrote with this sentence. It
+ * added a SECOND distributor code onto customer↔pharmacy pairings that already existed, copying the
+ * status of the pairing's existing link — nobody went anywhere. A third origin with no field
+ * evidence, and caught by neither marker above, because it never had to say so: "nothing was
+ * elevated" was true of the status, and silent about the evidence.
+ *
+ * Production 2026-09-17: 81 active links across 52 customers, all written at 2026-09-08 16:19:14
+ * UTC. Reading them as field captures cleared the badge — and dropped the daily nudge — for 39
+ * customers whose other links are backfill-inferred or desk entries with nothing captured on either
+ * half. Six of the 81 were later held pending with a sentence APPENDED, so this is matched as a
+ * substring, like the other two, never as the whole note.
+ */
+export const SECOND_CODE_BACKFILL_MARKER = "Backfilled 2026-09-08 on the owner's instruction.";
+
+export function isSecondCodeBackfill(validationNotes: string | null | undefined): boolean {
+  return (validationNotes ?? "").includes(SECOND_CODE_BACKFILL_MARKER);
+}
+
+/**
  * The union the badges care about: this link carries NO field evidence, whatever put it there.
  *
  * Kept separate from `isInferredFromHistory`, which still means the 2026-07-02 backfill and nothing
  * else — the Customer Pharmacy Mapping page's "Inferred" filter and badge are about ORIGIN, and
- * widening them would silently relabel 11 desk links as backfill rows.
+ * widening them would silently relabel 11 desk links, and the 81 second-code links, as history
+ * rows.
  */
 export function isNotFieldValidated(validationNotes: string | null | undefined): boolean {
-  return isInferredFromHistory(validationNotes) || isDeskValidated(validationNotes);
+  return (
+    isInferredFromHistory(validationNotes) ||
+    isDeskValidated(validationNotes) ||
+    isSecondCodeBackfill(validationNotes)
+  );
 }
 
 function isValidatedStatus(status: CustomerPharmacyValidationStatus): boolean {

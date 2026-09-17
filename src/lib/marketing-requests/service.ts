@@ -25,7 +25,7 @@ import { parseCrmContactCode } from "@/lib/crm/contact-code";
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
 // into disagreeing about which links the backfill wrote.
-import { isDeskValidated, isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
+import { isDeskValidated, isInferredFromHistory, isSecondCodeBackfill } from "@/lib/customer-pharmacy-mapping/readiness";
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
@@ -5223,6 +5223,7 @@ function mapValidationReportRows(params: {
       id: link.id,
       inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
+      secondCodeBackfill: isSecondCodeBackfill(link.validationNotes),
       validationNotes: link.validationNotes,
       validationStatus: link.validationStatus,
     });
@@ -5730,6 +5731,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
       pharmacyId: pharmacy.id,
       pharmacyName: pharmacy.displayName,
       rowId: link.id,
+      secondCodeBackfill: isSecondCodeBackfill(link.validation_notes),
       validationStatus: link.validation_status ?? "pending",
       vendorPharmacyCode: distributorCode?.distributorPharmacyCode ?? null,
       venueType: pharmacy.venueType,
@@ -6554,6 +6556,8 @@ export async function createMarketingValidationRecord(
             // inferred validation into a field-validated one.
             inferredFromHistory: isInferredFromHistory(reusedLink.validationNotes),
             pharmacy,
+            // ...and so can the 2026-09-08 second-code backfill, for the same reason.
+            secondCodeBackfill: isSecondCodeBackfill(reusedLink.validationNotes),
             validationNotes: reusedLink.validationNotes,
             validationStatus: reusedLink.validationStatus,
           });
@@ -6748,6 +6752,7 @@ export async function createMarketingValidationRecord(
           // from the notes anyway so there is one rule, not one rule and one assumption.
           inferredFromHistory: isInferredFromHistory(link.validationNotes),
           pharmacy,
+          secondCodeBackfill: isSecondCodeBackfill(link.validationNotes),
           validationNotes: link.validationNotes,
           validationStatus: link.validationStatus,
         });

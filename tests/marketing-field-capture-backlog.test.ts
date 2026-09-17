@@ -17,6 +17,15 @@ import {
 const BACKFILL_NOTE = `Inferred from pending/rejected historical marketing requests — ${INFERRED_HISTORY_MARKER}. Backfill script 2026-07-02.`;
 const DESK_NOTE = `Location chosen from map search — ${DESK_VALIDATION_MARKER}`;
 
+// The active employee directory for the cases below: every rep and manager they name still works
+// here, and none of them holds an area. A name missing from this list is a LEAVER to the grouping,
+// so a case that means "this person is still here" must list them.
+const DIRECTORY = [
+  { areaId: null, hrId: "HR-100" },
+  { areaId: null, hrId: "HR-200" },
+  { areaId: null, hrId: "HR-900" },
+];
+
 function customer(overrides: Partial<FieldCaptureBacklogInput> = {}): FieldCaptureBacklogInput {
   return {
     areaId: null,
@@ -35,7 +44,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   // ── The nudge can never disagree with the badge ────────────────────────────────────────────
   // This is the whole design: the backlog delegates the WHETHER to `customerFieldEvidenceGap`,
   // the badge's own function. A rep must never be chased about a row showing no badge on screen.
-  const unproven = groupFieldCaptureBacklog([customer()]);
+  const unproven = groupFieldCaptureBacklog([customer()], DIRECTORY);
   assert.equal(unproven.totals.customers, 1, "a backfilled customer with no evidence is unproven");
 
   // Evidence on the VENUE half alone clears it — which is what #2352 made possible long after the
@@ -44,16 +53,16 @@ export function runMarketingFieldCaptureBacklogTests() {
     customer({
       links: [{ pharmacyEvidenceStatus: "complete", pharmacyName: "El Ezaby Nasr City", validationNotes: BACKFILL_NOTE }],
     }),
-  ]);
+  ], DIRECTORY);
   assert.equal(venueProven.totals.customers, 0, "a captured venue clears the customer");
   assert.deepEqual(venueProven.owners, [], "nobody is nudged about a proven customer");
 
   // Evidence on the CUSTOMER half alone clears it too.
-  const customerProven = groupFieldCaptureBacklog([customer({ customerEvidenceStatus: "complete" })]);
+  const customerProven = groupFieldCaptureBacklog([customer({ customerEvidenceStatus: "complete" })], DIRECTORY);
   assert.equal(customerProven.totals.customers, 0, "a captured customer clears itself");
 
   // "pending" is not "complete" — a half-finished capture proves nothing.
-  const pending = groupFieldCaptureBacklog([customer({ customerEvidenceStatus: "pending" })]);
+  const pending = groupFieldCaptureBacklog([customer({ customerEvidenceStatus: "pending" })], DIRECTORY);
   assert.equal(pending.totals.customers, 1, "a pending capture is not proof");
 
   // ── EVERY, never SOME ─────────────────────────────────────────────────────────────────────
@@ -65,7 +74,7 @@ export function runMarketingFieldCaptureBacklogTests() {
         { pharmacyEvidenceStatus: "missing", pharmacyName: "Seif Heliopolis", validationNotes: null },
       ],
     }),
-  ]);
+  ], DIRECTORY);
   assert.equal(oneRealVisit.totals.customers, 0, "one genuinely captured link clears the customer");
 
   // ── The reason survives the trip ──────────────────────────────────────────────────────────
@@ -74,7 +83,7 @@ export function runMarketingFieldCaptureBacklogTests() {
     customer({
       links: [{ pharmacyEvidenceStatus: "missing", pharmacyName: "Seif Heliopolis", validationNotes: DESK_NOTE }],
     }),
-  ]);
+  ], DIRECTORY);
   assert.equal(desk.owners[0].customers[0].gap, "desk", "a desk validation is its own reason, not backfill");
   const mixed = groupFieldCaptureBacklog([
     customer({
@@ -83,7 +92,7 @@ export function runMarketingFieldCaptureBacklogTests() {
         { pharmacyEvidenceStatus: "missing", pharmacyName: "Seif Heliopolis", validationNotes: DESK_NOTE },
       ],
     }),
-  ]);
+  ], DIRECTORY);
   assert.equal(mixed.owners[0].customers[0].gap, "mixed");
   assert.deepEqual(
     mixed.owners[0].customers[0].venueNames,
@@ -92,18 +101,18 @@ export function runMarketingFieldCaptureBacklogTests() {
   );
 
   // ── Who gets chased ───────────────────────────────────────────────────────────────────────
-  const owned = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "HR-100" })]);
+  const owned = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "HR-100" })], DIRECTORY);
   assert.equal(owned.owners[0].hrId, "HR-100", "the rep who owns it is chased, not their manager");
   assert.equal(owned.owners[0].routedVia, "owner");
   assert.equal(owned.owners[0].customers[0].routedVia, "owner", "the reason lives on the customer");
 
-  const managed = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: null })]);
+  const managed = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: null })], DIRECTORY);
   assert.equal(managed.owners[0].hrId, "HR-900", "with no rep named, the manager is chased");
   assert.equal(managed.owners[0].routedVia, "manager");
   assert.equal(managed.owners[0].customers[0].routedVia, "manager");
 
   // An empty string is not an owner — the column is free text, and a blank is not a person.
-  const blank = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "   " })]);
+  const blank = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "   " })], DIRECTORY);
   assert.equal(blank.owners[0].hrId, "HR-900", "a blank owner falls through to the manager");
 
   // ── Nobody is dropped ─────────────────────────────────────────────────────────────────────
@@ -112,7 +121,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   const orphaned = groupFieldCaptureBacklog([
     customer({ customerCode: "MKT-C-0002", customerId: "c2", managerHrId: null, ownerHrId: null }),
     customer(),
-  ]);
+  ], DIRECTORY);
   assert.equal(orphaned.totals.customers, 2, "an unassigned customer still counts as backlog");
   assert.equal(orphaned.totals.unassignedCustomers, 1, "the count of nudgeable-by-nobody customers is reported");
   assert.equal(orphaned.unassigned.length, 1, "it is returned, not dropped");
@@ -149,7 +158,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   // whole area about a customer that already names its rep is noise.
   const ownerBeatsArea = groupFieldCaptureBacklog(
     [customer({ areaId: 7, ownerHrId: "HR-100" })],
-    [{ areaId: 7, hrId: "HR-701" }],
+    [...DIRECTORY, { areaId: 7, hrId: "HR-701" }],
   );
   assert.deepEqual(ownerBeatsArea.owners.map((owner) => owner.hrId), ["HR-100"], "a named rep is not diluted");
 
@@ -174,7 +183,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   const mixedCase = groupFieldCaptureBacklog([
     customer({ customerCode: "MKT-C-0003", customerId: "c3", ownerHrId: "hr-100" }),
     customer(),
-  ]);
+  ], DIRECTORY);
   assert.equal(mixedCase.owners.length, 1, "one rep, one bucket, whatever the casing");
   assert.equal(mixedCase.owners[0].customers.length, 2);
 
@@ -183,7 +192,7 @@ export function runMarketingFieldCaptureBacklogTests() {
     customer({ customerCode: "MKT-C-0004", customerId: "c4", ownerHrId: "HR-200" }),
     customer({ customerCode: "MKT-C-0005", customerId: "c5", ownerHrId: "HR-100" }),
     customer(),
-  ]);
+  ], DIRECTORY);
   assert.deepEqual(
     ranked.owners.map((owner) => owner.hrId),
     ["HR-100", "HR-200"],
@@ -306,7 +315,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   assert.deepEqual([...FIELD_CAPTURE_CHANNELS], ["in_app", "telegram", "push"]);
 
   // An empty database is not an error.
-  assert.deepEqual(groupFieldCaptureBacklog([]), {
+  assert.deepEqual(groupFieldCaptureBacklog([], DIRECTORY), {
     owners: [],
     totals: { customers: 0, owners: 0, unassignedCustomers: 0 },
     unassigned: [],

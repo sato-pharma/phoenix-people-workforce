@@ -179,9 +179,9 @@ export async function runMarketingRequestServiceTests() {
   // the rule that decides the badge — in BOTH directions, because the "some" reading would call a
   // rep who really made the visit a liar.
   const noEvidence = { customerEvidenceStatus: "missing", pharmacyEvidenceStatus: "missing" } as const;
-  const inferredLink = { deskValidated: false, inferredFromHistory: true, ...noEvidence };
-  const deskLink = { deskValidated: true, inferredFromHistory: false, ...noEvidence };
-  const capturedLink = { deskValidated: false, inferredFromHistory: false, ...noEvidence };
+  const inferredLink = { deskValidated: false, inferredFromHistory: true, secondCodeBackfill: false, ...noEvidence };
+  const deskLink = { deskValidated: true, inferredFromHistory: false, secondCodeBackfill: false, ...noEvidence };
+  const capturedLink = { deskValidated: false, inferredFromHistory: false, secondCodeBackfill: false, ...noEvidence };
 
   assert.equal(
     customerFieldEvidenceGap([inferredLink, inferredLink, inferredLink]),

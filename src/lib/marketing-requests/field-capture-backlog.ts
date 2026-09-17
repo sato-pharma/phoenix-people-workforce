@@ -14,7 +14,12 @@
 
 import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { isDeskValidated, isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
+import {
+  isDeskValidated,
+  isInferredFromHistory,
+  isSecondCodeBackfill,
+} from "@/lib/customer-pharmacy-mapping/readiness";
+import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import type { MarketingEvidenceStatus } from "@/lib/marketing-requests/types";
 import { customerFieldEvidenceGap, type FieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
@@ -44,11 +49,12 @@ export const FIELD_CAPTURE_CHANNELS = ["in_app", "telegram", "push"] as const;
 /**
  * HR IDs are stored mixed-case across this schema, and an `.eq` on the wrong case silently returns
  * fewer rows rather than erroring — that trap cost 28% of a rep's own direct orders once. Every
- * comparison and every grouping key here goes through this first.
+ * comparison and every grouping key here goes through this first. The shared canonicaliser, not a
+ * local upper-case, because the same id is now looked up in the employee directory as well: a
+ * legacy alias that missed there would read as a leaver and route a working rep's customers away.
  */
 function cleanHrId(value: string | null | undefined): string | null {
-  const trimmed = String(value ?? "").trim();
-  return trimmed ? trimmed.toUpperCase() : null;
+  return canonicalHrIdForDisplay(value);
 }
 
 /**
@@ -74,9 +80,9 @@ export function countRoutes(
 }
 
 /**
- * How a customer reached the person being told about it: `owner` when the row names its own rep,
- * `manager` when it names only a manager, `area` when it names neither and the nudge fell through
- * to the territory.
+ * How a customer reached the person being told about it: `owner` when the row names its own rep and
+ * that rep still works here, `manager` when the row's manager was the first ACTIVE name on it, `area`
+ * when it names nobody still here and the nudge fell through to the territory.
  *
  * This is a property of the CUSTOMER, not of the person — the row names a rep or it does not, and
  * that answer is the same for everybody who receives it. It lives on the customer because the
@@ -128,12 +134,16 @@ export type MarketingFieldCaptureBacklog = {
     unassignedCustomers: number;
   };
   /**
-   * Customers nobody can be nudged about: no rep, no manager, and no colleague working their area.
-   * These are what a naive "group by owner" drops in silence, so they are returned and reported
-   * rather than vanishing. Production 2026-08-23 had 20 customers naming neither a rep nor a
-   * manager — but every one of them carried an `area_id`, so the territory fallback below reaches
-   * all of them and this list is expected to be EMPTY. A non-empty one means a customer sits in an
-   * area with no active employee in it, which is a staffing fact, not a notification bug.
+   * Customers nobody can be nudged about: no ACTIVE rep, no ACTIVE manager, and no active colleague
+   * working their area. These are what a naive "group by owner" drops in silence, so they are
+   * returned and reported rather than vanishing. Production 2026-08-23 had 20 customers naming
+   * neither a rep nor a manager — but every one of them carried an `area_id`, so the territory
+   * fallback below reaches all of them. A customer lands here when it sits in an area with no active
+   * employee in it, which is a staffing fact, not a notification bug.
+   *
+   * Since leavers stopped counting as owners (2026-09-17) this is no longer expected to be empty:
+   * that day it held the 6 unproven Qena 1 customers, whose rep and district manager had both
+   * resigned in an area where every rep seat is vacant.
    */
   unassigned: FieldCaptureBacklogCustomer[];
 };
@@ -163,23 +173,41 @@ export type FieldCaptureBacklogInput = {
  *
  * Pure. The "is this unproven" half is delegated wholesale to `customerFieldEvidenceGap` — the
  * badge's own function — so this file decides only WHO, never WHETHER.
+ *
+ * `activeEmployees` is the ACTIVE employee directory, whole — not just the people who hold an area.
+ * It answers two questions: who works each territory, and whether a rep or manager named on the row
+ * still works here at all. Required, with no default, because an empty list is not "no information":
+ * it would make every named person a leaver.
  */
 export function groupFieldCaptureBacklog(
   customers: readonly FieldCaptureBacklogInput[],
-  areaStaff: ReadonlyArray<{ areaId: number | null; hrId: string }> = [],
+  activeEmployees: ReadonlyArray<{ areaId: number | null; hrId: string }>,
 ): MarketingFieldCaptureBacklog {
   // Who works each territory. This mirrors `canSeeMarketingCustomer`'s area test exactly — a
   // non-null `employees.area_id` equal to the customer's — so anybody reached this way is
   // guaranteed to find the row on the page the nudge links to. An employee with no area (most of
   // head office) matches nothing, which is the same way the visibility rule treats them.
   const staffByArea = new Map<number, string[]>();
-  for (const employee of areaStaff) {
+  const activeHrIds = new Set<string>();
+  for (const employee of activeEmployees) {
     const hrId = cleanHrId(employee.hrId);
-    if (hrId === null || employee.areaId === null) continue;
+    if (hrId === null) continue;
+    activeHrIds.add(hrId);
+    if (employee.areaId === null) continue;
     const bucket = staffByArea.get(employee.areaId) ?? [];
     if (!bucket.includes(hrId)) bucket.push(hrId);
     staffByArea.set(employee.areaId, bucket);
   }
+
+  // A name on the row counts only while that person still works here. Nothing re-stamps
+  // `owner_hr_id` or `manager_hr_id` when somebody resigns — the territory ruling below is WHY — so
+  // until 2026-09-17 a leaver stayed first in line for ever: 23 unproven customers that day were
+  // nudged to a rep who had resigned and to nobody else, while an active manager or colleague who
+  // could close them heard nothing.
+  const stillHere = (value: string | null | undefined): string | null => {
+    const hrId = cleanHrId(value);
+    return hrId !== null && activeHrIds.has(hrId) ? hrId : null;
+  };
 
   const ownerBuckets = new Map<string, FieldCaptureBacklogCustomer[]>();
   const unassigned: FieldCaptureBacklogCustomer[] = [];
@@ -194,6 +222,7 @@ export function groupFieldCaptureBacklog(
         deskValidated: isDeskValidated(link.validationNotes),
         inferredFromHistory: isInferredFromHistory(link.validationNotes),
         pharmacyEvidenceStatus: link.pharmacyEvidenceStatus,
+        secondCodeBackfill: isSecondCodeBackfill(link.validationNotes),
       })),
     );
     if (!gap) continue;
@@ -203,9 +232,10 @@ export function groupFieldCaptureBacklog(
     // A customer belongs to a TERRITORY, not to a person (owner's ruling, 2026-08-19): nothing is
     // re-stamped when somebody resigns, because the new hire's area already matches the row. So
     // `owner_hr_id` is only the first answer to "who owes this", never the only one — falling
-    // straight to `unassigned` would abandon 20 live customers to nobody.
-    const ownerHrId = cleanHrId(customer.ownerHrId);
-    const managerHrId = cleanHrId(customer.managerHrId);
+    // straight to `unassigned` would abandon 20 live customers to nobody. And a name belonging to
+    // somebody who has LEFT is no answer at all: it falls through exactly as a blank does.
+    const ownerHrId = stillHere(customer.ownerHrId);
+    const managerHrId = stillHere(customer.managerHrId);
     const named = ownerHrId ?? managerHrId;
     const routedTo: string[] = named
       ? [named]
@@ -341,6 +371,12 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
 
   // Active employees only — chasing a leaver reaches nobody. Cached by the directory itself.
   const employees = await getEmployeeDirectoryRows();
+  // Refuse rather than route. The grouping treats everyone missing from this list as a leaver, so
+  // an empty read would silently turn every customer into "nobody can be nudged" and report a run
+  // that did nothing as a success. A failed cron is loud; a quiet zero is how a job stays broken.
+  if (employees.length === 0) {
+    throw new Error("The active employee directory came back empty, so nobody can be routed a field-capture nudge.");
+  }
   return groupFieldCaptureBacklog(
     inputs,
     employees.map((employee) => ({ areaId: employee.areaId, hrId: employee.hrId })),
@@ -455,10 +491,10 @@ export async function runMarketingFieldCaptureNudge(): Promise<MarketingFieldCap
   // Nobody can be nudged about these, so say so loudly rather than letting them sit at zero
   // attention for ever. A silent drop here is exactly how 53 links stayed invisible.
   if (backlog.unassigned.length > 0) {
-    logError("Marketing customers need field proof but name no rep or manager", {
+    logError("Marketing customers need field proof but no active rep, manager or area colleague can be nudged", {
       labels: { event: "marketing_field_capture_unassigned", job: "daily-marketing-field-capture" },
       error: new Error(
-        `${backlog.unassigned.length} marketing customers have no owner_hr_id and no manager_hr_id: ` +
+        `${backlog.unassigned.length} marketing customers name no active rep or manager, and nobody active works their area: ` +
           backlog.unassigned.map((customer) => customer.customerCode).join(", "),
       ),
     });
