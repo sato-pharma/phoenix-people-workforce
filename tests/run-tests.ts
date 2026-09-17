@@ -1705,6 +1705,7 @@ import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throt
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
+import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5768,6 +5769,11 @@ await runTest(
 await runTest(
   "the same workbook under another period is refused on its name AND figures, in the save step of every monthly upload screen: two months of a large all-Arabic workbook (both stored as .xlsx) and a distributor's fixed monthly file name load, the IS-S pair stays refused",
   runDuplicateUploadNameAndFiguresTests,
+);
+
+await runTest(
+  "a manager bound to one region reads its organogram name on the weekly scope line: Upper Egypt 1, Upper Egypt 2 and Delta (3) (which depot labels never carry) and every other region, alike on Depot Detail, Weekly Sales and Weekly Stock; an unreadable organogram reads 1 region, never a code, and only a one-region viewer costs the read",
+  runWeeklyScopeRegionNamesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
