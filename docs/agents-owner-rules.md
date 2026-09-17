@@ -2772,23 +2772,37 @@ Every Pedia target since February sits on Fayoum alone: September is 988 units a
 
 ⚠ **The September split between the two is HIS to give.** The two obvious bases disagree almost exactly in reverse — the last separately-set targets (January and February) put Fayoum at 69%, while sales since February put it at 32% — and the sales series is untrustworthy here because one rep has covered both areas throughout, swinging hard and twice going negative on returns. Do not derive it.
 
-## Every reply opens with its next step, even when nothing waits on him — owner rules, 2026-09-07 and 2026-09-15
+## Every reply opens with its next step, and always ends in words he can send — owner rules, 2026-09-07, 2026-09-15 and 2026-09-18
 
 The 2026-09-07 amendment moved the next step to the TOP of the reply (the account is in the §4 text
 below). The 2026-09-15 rule, *"it keeps me in a loop"*, changed what the line may say:
 
 - The work is finished first.
-- The line names only what needs him: a decision, an approval, a click only he can make, or
+- The line names what needs him: a decision, an approval, a click only he can make, or
   information only he has.
-- When nothing needs him, the line still appears and reads **"nothing waits on you — <what
-  finished>"**, with no quoted words.
+- **It ALWAYS ends in curly-quoted words he could send as-is.** When nothing needs him, it says
+  what finished and quotes the next REAL action, named with its real target.
 
-It has no quoted words because the words in curly quotes become his prompt suggestion. On 2026-09-16
-he typed a Claude-written line back because it had been offered as ghost text.
+The words in curly quotes become his prompt suggestion — the ghost text in his input box is exactly
+that span. On 2026-09-16 he typed a Claude-written line back because it had been offered as ghost
+text, and the 2026-09-15 answer to that was to leave the line unquoted whenever nothing needed him.
+
+**2026-09-18 retired that half.** The unquoted form meant an empty suggestion, so turn after turn his
+box rendered `<no suggestion>`; he raised it twice in one session and then ruled: *"always put
+something in the box"*. Only the EMPTY OUTCOME is retired. The loop ban was always about WHAT gets
+suggested and it stands in full — never a re-check, a re-run, a status read, "continue", "check other
+pending items", "polish again", or any closing word. When nothing needs him the quoted words name the
+next REAL action, never filler and never work invented to fill the box
+(`fix-means-fix-no-unrequested-work`).
+
+The same day showed why the distinction is load-bearing: a Stop-hook check read a merge claim the
+reply was QUOTING rather than making, and ordered a suggestion of `merge 3956 when green` for a PR
+that did not exist in that session. A wrong target in his box costs him a turn exactly as an empty
+one does.
 
 AGENTS.md §4 kept "A reply that asks nothing of him needs none" until 2026-09-17. That contradicted
 the user-level rule loaded into every session (`~/.claude/CLAUDE.md`), and a session reading §4 alone
-would drop the line. §4 now carries the 2026-09-15 form.
+would drop the line. §4 now carries the 2026-09-18 form.
 
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
