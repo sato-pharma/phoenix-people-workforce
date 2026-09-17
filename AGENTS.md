@@ -70,7 +70,7 @@ non-engineer: what happened, what it costs, what to do next.
 Why each exists: `docs/agents-incident-history.md` — read it before changing branch protection, CI
 cost, the deploy path or the region.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected with **4 required checks** — `validate`, `lint`, `typecheck`, `secret-scan`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected with **5 required checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval.
 - **Never commit directly onto local `main` in the primary checkout.** The push is then rejected (`enforce_admins: true`), and the commit strands on the one checkout every parallel session shares — where another session’s `git reset` destroys it. Branch first. If you already committed: `git branch <name> <sha>` then `git reset --keep origin/main` (**not** `--hard`, which would also wipe other sessions’ uncommitted work), then open a PR. Cost a real recovery on 2026-09-12 (#3728).
 - **Do NOT run `gh pr update-branch` reflexively** — "require branches up to date" is OFF (`strict: false`) and each run costs ~16 Actions minutes. Run it **only when the change depends on something newly on `main`**.
 - **`gh pr update-branch` acts on the SERVER** — `git fetch` and `git merge --ff-only origin/<branch>` before your next push; CI re-runs on the new head.
@@ -225,7 +225,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - 🔴 **A REJECTION NOTICE IS NEVER SENT AUTOMATICALLY**, in either channel, and already-rejected candidates are settled. **The planner built that day was removed the same day — do NOT rebuild it, and never read the two recipient sheets he was sent as a queue waiting for a send path.** Keep `isBatchActor` (`src/lib/recruitment/batch-actor.ts`).
 - 🔴 **THE SYSTEM NEVER AUTO-APPROVES A PLAN — a DM's weekly plan is submit → NSM (or RSM) → HR acknowledge, NO CEO stage.** No system-signed APPROVAL (`SYSTEM-AUTO-HR-ACK` on the acknowledgement stays); never skip a stage by writing a decision row for it. DM plans carry NO `ceo_approve` row by design — do not restore one, and never delete a human decision on a fabricated-row predicate. `the-system-never-auto-approves-a-plan`
 - 🔒 **A PHARMACY IS NOT A CONTACT — a CRM contact count is `PM` + `AM` only.** Pharmacies get their own tile; never name a pharmacy bag `contacts`. Row label **"Pharmacist"**, count **"Pharmacies"**. `a-pharmacy-is-not-a-contact`
-- 🔒 **THE CALL RATE IS NEVER AVERAGED — AM against 2, PM against 10, reported APART**, with no combined figure anywhere. Never join the pair with a slash; use ` AM · ` / ` PM`. Pinned by `runKpiAttainmentAndIdentityTests` in the required `validate` job.
+- 🔒 **THE CALL RATE IS NEVER AVERAGED — AM against 2, PM against 10, reported APART**, with no combined figure anywhere. Never join the pair with a slash; use ` AM · ` / ` PM`. Pinned by `runKpiAttainmentAndIdentityTests` in the required `test` job.
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - **SoS attribution is PERIOD-AWARE** — `au.f_monthly_attribution`/`au.f_monthly_achievement` resolve an area's region via `au.f_line_area_map_asof(period_end)`, never today's geography.
@@ -235,7 +235,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - 🔒 **THE AUGUST / UPPER EGYPT GOLDEN RULE — Pedia's Upper Egypt splits into UE-1/UE-2 on 2026-09-01, and August NEVER contains the split.** **UE-1** Fayoum, Beni Suef, Minia 1-2, Assuit 1-2. **UE-2** Sohag 1-2, Qena 1, Qena 2, and **LUXOR, which is NOT a separate area** — it rides in as `other_permanent` with no rep seat. Aswan stays in Others. **PEDIA ONLY** — do not "align" Anti Infective's `UE-1`/`UE-2`, whose membership DIFFERS (Assuit is UE-2 there, Fayoum is Giza); the DATE is the mechanism. 🔴 El Qema's divisor goes 37 → 39. Pinned by `tests/pedia-upper-egypt-split.test.ts`.
 - 🔒 **Delta (3) is ANTI-INFECTIVE ONLY.** On CNS and Pedia the five areas never move; "half-migrated" is the CORRECT state.
 - 🔒 **THE AUGUST / KAFR EL-SHEIKH GOLDEN RULE — Kafr El-Sheikh 1 joins Delta (1) on PEDIA from 2026-09-01, and August NEVER contains the move.** Anti Infective already filed it there; **CNS keeps it on Alex-BHR for good** — half-migrated across lines is CORRECT, never "align" CNS. 🔴 **Kafr El-Sheikh 2 STAYS in Others**, which is what holds El Qema's divisor at 39: unlike the Upper Egypt split this move shifts NO money, in EITHER month — a changed El Qema number is a DEFECT, not an effect. The DATE is the mechanism. Pinned by `tests/pedia-kafr-el-sheikh-delta-1.test.ts`.
-- 🔒 **THE CLOSING GOLDEN RULE — never RELEASE a closing during the month it covers** (publishable the first day of the next month, Cairo). Enforced by `src/lib/sales/closing-period-gate.ts` + `tests/closing-period-gate.test.ts` in the required `validate` check; `unpublishClosing` stays ungated. No override flag.
+- 🔒 **THE CLOSING GOLDEN RULE — never RELEASE a closing during the month it covers** (publishable the first day of the next month, Cairo). Enforced by `src/lib/sales/closing-period-gate.ts` + `tests/closing-period-gate.test.ts` in the required `test` check; `unpublishClosing` stays ungated. No override flag.
 - 🔴 **A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED, however justified the fix.** A late ruling is a rule for UPCOMING months. `monthly_closing_locks` is his decision — unlock only when he says so about that month. `never-fix-a-published-and-announced-month`
 - 🔒 **THE CITY RULE ALWAYS WINS — a wholesaler's sales split evenly over its OWN city's areas, even when its goods demonstrably LEFT the city**, except EZ (`evenSplitApplied`), Office, and El Qema's warehouses. **Never reintroduce a per-customer apportionment override.**
 - 🔒 **EL QEMA (`QM`), PEDIA ONLY — 3 bands, then the صعيد pass, then the lead ladder.** Per warehouse per product on the month total: **≤200** governorate only; **201–699** half governorate, half rest of country; **≥700** flat over the republic. Qalubeya = Qalubeya + Cairo, evenly — 🔴 **the 60/40, 75/25 and PRIORITY LADDER are GONE, so finding one missing is a DECISION, never a gap to repair.** The صعيد pass runs in EVERY band: Upper Egypt's credited sales pooled, half back across it, half over the republic. Then Qalubeya first, Tanta (D14) and Mahalla (D15) level behind, 2% per tier (`QEMA_LEAD_TIERS`), once per line and product, NOT in `splitTargetsFor`. 🔴 Upper Egypt membership is `UPPER_EGYPT_AREAS`, never August's region codes. `store-sales-city-split.ts`, pinned by `tests/qema-warehouse-split.test.ts`.
@@ -402,9 +402,11 @@ automatically; the local branch and worktree survive and still need approval to 
 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
-`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The four
-**required** checks — `validate`, `lint`, `typecheck`, `secret-scan` — run on the PR head commit and
-block the merge if any is red. `pnpm run ci` is opt-in: run it **only when the owner names it**.
+`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The five
+**required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan` — run on the PR head
+commit and block the merge if any is red. **The unit suite is `test`, not `validate`** (split out
+2026-09-17, #3950) — a doc naming `validate` as where a pinned test runs is stale by that much and
+no more; the gate is unchanged. `pnpm run ci` is opt-in: run it **only when the owner names it**.
 
 Two things are NOT covered by a PR's CI and still need a check immediately before the action:
 **migrations** and **production deploys**. Verifying a UI change in the browser is not validation at

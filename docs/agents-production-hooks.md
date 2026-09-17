@@ -522,7 +522,7 @@ tempt a future session into rebuilding it:
 - **Nothing is broken by the 255.** Every comparison in the application routes through
   `canonicalHrIdKey`, which lower-cases both sides, so `b-10` and `B-10` are already one identity.
 - **The one pattern that would be fooled** — a raw `.eq` against the column — is pinned by
-  `tests/hr-id-storage-casing.test.ts`, which runs in the required CI `validate` job.
+  `tests/hr-id-storage-casing.test.ts`, which runs in the required CI `test` job.
 - **The writer is fixed**, so the count cannot grow.
 - **The rows are not wrong.** They are an accurate record of what the system wrote at the time.
   Repairing them makes the table tidier, not truer.
