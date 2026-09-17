@@ -117,6 +117,26 @@ npm run typecheck      # tsc for this app only
 
 ## The `overrides` block in `package.json`
 
+`react-dom` is pinned to `$react` — npm's reference to whatever spec the `react` dependency
+carries, today `19.2.3`. Nothing in this app imports `react-dom`: it is Android and iOS, and
+`app.json` declares no web platform. It arrives as a peer dependency of Expo's web-support tooling
+(`@expo/metro-runtime`, `@expo/ui`, and `vaul` and the `@radix-ui` packages under `expo-router`),
+none of which name a version, so npm takes the newest release — and `react-dom@19.3.0`, published
+after this folder was set up, requires `react@^19.3.0`. Against this app's pinned `react@19.2.3`
+that is an `ERESOLVE` conflict, which is why a plain `npm install` here failed and why the lockfile
+had to be regenerated with `--legacy-peer-deps`. That flag strips every peer-installed package out
+of the lockfile, and the cost showed up one step later: `npm ci` refused to run at all (`EUSAGE`,
+29 packages "missing from lock file", `react-dom` and the whole `metro` set among them) and a plain
+`npm install` silently rewrote 196 lines of lockfile on every machine that ran it. Pinning the peer
+fixes both, and the `$react` form needs no maintenance — react and react-dom move together on the
+next Expo SDK bump. Peer checking stays on, which a blanket `legacy-peer-deps=true` in an `.npmrc`
+would have switched off for every future conflict as well.
+
+So: **install with a plain `npm install`.** If `--legacy-peer-deps` or `--force` ever looks
+necessary again, something real has changed and belongs in this section rather than in somebody's
+shell history. No CI job installs `mobile/` — nothing in `.github/workflows/` mentions it — so
+that is checked by hand or not at all.
+
 `uuid` is pinned to `11.1.1` for a Dependabot advisory on `@expo/config-plugins → xcode →
 uuid@^7.0.3` (missing buffer bounds check generating v3/v5/v6 UUIDs, CVSS 7.5). `xcode` only runs
 at `expo prebuild` time to edit iOS `.pbxproj` files, and this app is Android-only, so the
