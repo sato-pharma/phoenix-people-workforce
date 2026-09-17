@@ -1169,7 +1169,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
     const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
     if (attempts >= maxAttempts) continue;
     const telegram = row.metadata?.telegram as Partial<TelegramRetryPayload> | undefined;
-    if (!telegram?.chatId || !telegram?.title || !telegram?.message) continue;
+    if (!isResendableTelegramPayload(telegram)) continue;
 
     const recipientContext = {
       eventType: telegram.eventType ?? "telegram_retry",
@@ -1533,6 +1533,34 @@ type TelegramRetryPayload = {
   title: string;
 };
 
+/**
+ * What processTelegramDeliveryRetries needs before it will send a row: a chat, a title and a
+ * message. The worker passes over a row without them WITHOUT closing it, so that row stays
+ * `pending` for ever and takes a place in the worker's due window on every run.
+ */
+export function isResendableTelegramPayload(
+  telegram: Partial<TelegramRetryPayload> | null | undefined,
+): telegram is Partial<TelegramRetryPayload> & Pick<TelegramRetryPayload, "chatId" | "message" | "title"> {
+  return Boolean(telegram?.chatId && telegram.title && telegram.message);
+}
+
+export const DEFERRED_TELEGRAM_UNDELIVERABLE_REASON =
+  "Telegram is not deliverable for this recipient (disabled or not connected).";
+
+/**
+ * Quiet hours hold Telegram back by writing a `pending` row for the retry worker to send later. A
+ * payload that worker cannot send must be skipped at once instead — returns the skip reason, or
+ * null when the payload can safely wait. buildDeferredTelegramPayload returns null when Telegram
+ * is off by governance or preference, or the recipient has no connected chat.
+ */
+export function deferredTelegramSkipReason(payload: TelegramRetryPayload | null): string | null {
+  if (!payload) return DEFERRED_TELEGRAM_UNDELIVERABLE_REASON;
+  if (!isResendableTelegramPayload(payload)) {
+    return "Telegram payload is missing its chat, title or message, so nothing can be sent after quiet hours.";
+  }
+  return null;
+}
+
 type PushRetryPayload = {
   actionUrl?: string | null;
   eventType?: string | null;
@@ -1759,6 +1787,11 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           deliveries.push({ channel, idempotencyKey, reason: identity.reason, status: "skipped" });
           continue;
         }
+        // Deliberately still `pending` when emailInput.recipientAddressUnresolved is set, unlike
+        // Telegram and push. That flag alone is not GUARD 1 in resolveNotificationDelivery: GUARD 1
+        // also needs the stored policy's person modes (and candidateEmail, which the auth emails
+        // rely on) to resolve nobody, and it reads them when the email is sent. The deferred drain
+        // stores this payload and closes the row through that same guard, so it never sits pending.
         deferredMetadata.emailInput = emailInput;
       } else if (channel === "email") {
         // Email is disabled for this recipient — skip immediately rather than writing a
@@ -1772,12 +1805,9 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
       if (channel === "telegram") {
         // Mirror the live branch: a broken saved template must degrade to a skipped
         // delivery, never reject the whole notification after the domain DB write.
+        let telegramPayload: TelegramRetryPayload | null;
         try {
-          const telegramPayload = await buildDeferredTelegramPayload(input, recipient, preferences, emailAttempted);
-          if (telegramPayload) {
-            deferredMetadata.telegram = telegramPayload;
-            deferredMetadata.retry = true;
-          }
+          telegramPayload = await buildDeferredTelegramPayload(input, recipient, preferences, emailAttempted);
         } catch (error) {
           if (!(error instanceof TelegramTemplateError)) throw error;
           const message = error.message;
@@ -1786,6 +1816,18 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           deliveries.push({ channel, idempotencyKey, reason: message, status: "skipped" });
           continue;
         }
+        // Same reasoning as push below: Telegram off (governance or preference) or not connected
+        // leaves nothing to send, and processTelegramDeliveryRetries passes over a row with no
+        // payload without closing it. Written `pending`, it never drained, and callers that
+        // count `pending` as reached (releaseNoticeReached) believed someone had been told.
+        const telegramSkipReason = deferredTelegramSkipReason(telegramPayload);
+        if (telegramSkipReason) {
+          await upsertDelivery({ channel, eventId, idempotencyKey, lastError: telegramSkipReason, recipient, status: "skipped" });
+          deliveries.push({ channel, idempotencyKey, reason: telegramSkipReason, status: "skipped" });
+          continue;
+        }
+        deferredMetadata.telegram = telegramPayload;
+        deferredMetadata.retry = true;
       }
       if (channel === "push") {
         const pushPayload = await buildDeferredPushPayload(input, recipient, preferences);
