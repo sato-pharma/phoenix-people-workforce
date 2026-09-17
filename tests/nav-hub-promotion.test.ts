@@ -6,7 +6,6 @@ import {
   adminHubPromotions,
   adminNavigationSectionSeeds,
   adminNavigationSections,
-  salesAnalyticsPageItems,
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import {
@@ -413,19 +412,24 @@ export function runNavHubPromotionTests() {
   // ── 5. Sales Analytics stays off the rail ───────────────────────────────────
   //
   // Said twice on the day this shipped: "note that I don't want sales analytics module. Leave it
-  // archival for now and don't touch it", then "But without the sales analytics." The module is
-  // delisted under ruling 11, and `salesAnalyticsPageItems` is kept ONLY as a record of who could
-  // reach each dashboard, so the decision is reversible in one line.
+  // archival for now and don't touch it", then "But without the sales analytics." The owner then
+  // retired the module outright on 2026-09-17 ("drop and retire the sales analytics module"), and
+  // `salesAnalyticsPageItems`, kept until then as a record of who could reach each dashboard, went
+  // with it; next.config.ts redirects the old addresses.
   //
-  // tests/navigation-ruling-11-analytics.test.ts already pins it out of `hubPageItemGroups`, the
-  // Cmd+K route. This pins the LOUDER route the promotion opened: wiring that array into a
-  // promotion would put nine delisted dashboards on the rail itself, and it is one plausible line
-  // for a session tidying up "the hub that was missed".
-  assert.equal(
-    adminHubPromotions.some((hub) => hub.items === salesAnalyticsPageItems),
-    false,
-    "salesAnalyticsPageItems is wired into a hub promotion, which would put the delisted analytics " +
-      "dashboards on the rail as rows. The owner ruled it archival again on 2026-09-05 — leave it " +
-      "unwired; the array is retained as a record, not as a catalogue",
+  // tests/navigation-ruling-11-analytics.test.ts pins the analytics tree out of `hubPageItemGroups`,
+  // the Cmd+K route. This pins the LOUDER route the promotion opened: a promoted row into that tree
+  // would put a retired dashboard's redirect on the rail itself. The one page the retirement kept,
+  // the Finance Manager's export, is a Monthly Closing rail row, never a promoted one.
+  const analyticsRows = adminHubPromotions.flatMap((hub) =>
+    hub.items
+      .filter((item) => item.href === "/admin/analytics" || item.href.startsWith("/admin/analytics/"))
+      .map((item) => `${hub.heading}: ${item.href}`),
+  );
+  assert.deepEqual(
+    analyticsRows,
+    [],
+    "a hub promotion puts the retired Sales Analytics module back on the rail as rows. The owner " +
+      "retired it on 2026-09-17; these addresses only redirect now",
   );
 }

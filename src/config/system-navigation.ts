@@ -1371,13 +1371,15 @@ export const adminNavigationSectionSeeds = [
       //      hand him the ability to produce the closing he is only meant to consume.
       //
       // /admin/analytics/monthly-closing/details is the export-only surface built for exactly this
-      // in #2010: assertPermission(sales, "read") plus canViewAdminCoreAnalytics, both of which he
+      // in #2010: assertPermission(sales, "read") plus canOpenClosingDetailsPage, both of which he
       // passes, and its Export XLSX button posts to /api/sales/monthly-closing/export, whose
       // Branch A names Finance Manager — the full sheet set for any line, published or not.
       //
-      // Ruling 11 delisted the Sales Analytics module from navigation, which makes this the ONLY
+      // Ruling 11 delisted the Sales Analytics module from navigation, which made this the ONLY
       // remaining nav entry anywhere into the /admin/analytics tree. That is deliberate: the ruling
-      // removed the module, not this role's export, and the two were never the same thing.
+      // removed the module, not this role's export, and the two were never the same thing. The
+      // owner retired the module itself on 2026-09-17; this page is the one address it left behind
+      // (its gate is src/lib/sales/closing-details-page-access.ts), and next.config.ts redirects the rest.
       { href: "/admin/analytics/monthly-closing/details", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
     ],
     label: "Monthly Closing",
@@ -1388,9 +1390,9 @@ export const adminNavigationSectionSeeds = [
   // The page and its own role gate are untouched; only the door moved.
   //
   // Sales Analytics was a rail block here too, pointing at /admin/analytics. Ruling 11 — "no
-  // analytics module, no sales analytics", said three times — removed it. The page and the nine
-  // modules under it still ship and still work by URL; nothing in the rail or the command palette
-  // offers them any more. Do NOT re-add a row here: tests/navigation-ruling-11-analytics.test.ts
+  // analytics module, no sales analytics", said three times — removed it, and on 2026-09-17 the
+  // owner retired the module itself: its pages are deleted and next.config.ts redirects their
+  // addresses (tests/sales-analytics-retired.test.ts). Do NOT re-add a row here: tests/navigation-ruling-11-analytics.test.ts
   // fails the PR if any role's rail exposes /admin/analytics, or if a rail label is exactly
   // "Sales Analytics". It does NOT match the word "analytics" generally — "Attendance Analytics"
   // and the other in-module TAB labels are a wider reading of the ruling the owner has not been
@@ -1552,19 +1554,6 @@ const employeePortalNavigationSectionSeeds = [
       // Infective / Pedia / CNS through the line picker and exports the full workbook for each.
       // Medical Rep added 2026-09-16 (owner) — scoped to their OWN area(s), never their region.
       { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Sales Analytics (/employee-portals/sales-analytics) — hidden from every role, owner
-      // request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National Sales
-      // Manager, Product Manager, Group Product Manager, Marketing Manager. Kept in the catalog
-      // (not deleted) — tests/employee-portal-nav-catalog-sync.test.ts (M12) requires every href
-      // the portal layout renders to be either catalogued or in KNOWN_UNCURATABLE, and that
-      // allowlist is for permanently-VISIBLE pages, the opposite of this one. `roles: []` hides it
-      // from every role (roleAllowed reads an EMPTY array as "nobody", distinct from an absent
-      // one meaning "no constraint"); `excludedRoles: ["Super Admin"]` is what stops
-      // navigationItemVisible resurfacing it, since that helper waives the `roles` gate for the
-      // system administrator and honours excludedRoles for everybody. BOTH HALVES ARE REQUIRED —
-      // dropping either one puts this page back on somebody's rail. Same pattern as the Probation
-      // SFE-Manager row above.
-      { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: [], excludedRoles: ["Super Admin"] },
       // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
       // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
@@ -2584,103 +2573,6 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     // enforces the same boundary itself — this list is UX, that gate is the security boundary.
     excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
-  },
-] as const satisfies readonly AdminToolsPageItem[];
-
-// ── Sales Analytics cards — RETIRED, DELIBERATELY UNWIRED ──────────────────────────
-// ⚠️ This array is NOT referenced by hubPageItemGroups any more and NOTHING reads it.
-//
-// Ruling 11 ("no analytics module, no sales analytics", said three times) removed the module from
-// navigation. It is kept rather than deleted for one reason: it is the only record of who was
-// allowed to reach each dashboard, and re-deriving those five role lists from scratch if the owner
-// ever reverses the ruling would be guesswork. Re-wiring is one line in hubPageItemGroups.
-//
-// It is NOT a source of truth for anything today. The cards a user actually sees on
-// app/(admin)/admin/analytics/page.tsx come from that page's own MODULES array — the two lists were
-// always separate and have to move together, which is the trap the note below was written about.
-//
-// Roles reflect who can actually reach AND pass the analytics company-scope gate today: Super
-// Admin, CEO, SFE Manager (Exec/Recon stay CEO/Super-Admin-only). National Sales Manager /
-// Product Manager / Group Product Manager are the intended FUTURE audience but are portal-nav +
-// line-scoped, so they are gated out — do NOT re-add them here until per-viewer scoping + admin
-// routing land (see docs/analytics/role-security.md § Roadmap).
-export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
-  {
-    href: "/admin/analytics/source-sales",
-    icon: ChartColumnBig,
-    label: "SoS Analytics",
-    description: "Source of Sales analytics dashboard.",
-    permissions: [{ resource: "sales" }],
-    // Finance Manager added 2026-08-10 (owner) — command-palette parity with the hub tile. The two
-    // lists are separate (this one feeds Cmd+K, app/(admin)/admin/analytics/page.tsx feeds the hub
-    // cards), so they must move together or the module is reachable from one and not the other.
-    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"],
-  },
-  {
-    href: "/admin/analytics/monthly-closing",
-    icon: CalendarRange,
-    label: "Closing Analytics",
-    description: "Monthly closing analytics dashboard.",
-    permissions: [{ resource: "sales" }],
-    // Finance Manager added 2026-08-10 (owner). Weekly Analytics below is deliberately NOT widened:
-    // it gates on weekly_sales, which he does not hold, so offering it would be a guaranteed 403.
-    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"],
-  },
-  {
-    href: "/admin/analytics/weekly-sales",
-    icon: ChartNoAxesColumnIncreasing,
-    label: "Weekly Analytics",
-    description: "Weekly sales analytics dashboard.",
-    permissions: [{ resource: "weekly_sales" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
-  },
-  {
-    href: "/admin/analytics/executive-comparison",
-    icon: ChartColumnBig,
-    label: "Executive Comparison",
-    description: "Side-by-side executive KPI comparison.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
-  },
-  {
-    href: "/admin/analytics/reconciliation",
-    icon: ChartColumnBig,
-    label: "Reconciliation",
-    description: "Cross-source sales reconciliation.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
-  },
-  {
-    href: "/admin/field-sales/weekly-sales",
-    icon: ChartNoAxesColumnIncreasing,
-    label: "Field Weekly Sales",
-    description: "Company-scope re-host of the field weekly sales dashboard.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
-  },
-  {
-    href: "/admin/field-sales/source-of-sales",
-    icon: ChartColumnBig,
-    label: "Field Source of Sales",
-    description: "Company-scope re-host of the field Source of Sales dashboard.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO"],
-  },
-  {
-    href: "/admin/field-sales/dsm-performance",
-    icon: ChartColumnBig,
-    label: "DSM Performance",
-    description: "Company-scope DSM performance dashboard.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
-  },
-  {
-    href: "/admin/field-sales/med-reps-performance",
-    icon: ChartNoAxesColumnIncreasing,
-    label: "Med-Rep Performance",
-    description: "Company-scope Med-Rep performance dashboard.",
-    permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -4240,12 +4132,10 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: leaveManagementPageItems, label: "Leave Management" },
   { items: [...financeLeaveManagementVacationItems, ...financeLeaveManagementExcuseItems], label: "Leave Management" },
   { items: sourceOfSalesPageItems, label: "Source of Sales" },
-  // `salesAnalyticsPageItems` is deliberately ABSENT. Ruling 11 — "no analytics module, no sales
-  // analytics" — delisted the module, and this group was the last thing still offering its nine
-  // dashboards, via Cmd+K rather than the rail. Leaving it here would have made the ruling look
-  // done while the module stayed one keystroke away, which is the exact drift this restructure
-  // exists to end. The array itself is kept, unwired, so the decision is reversible in one line;
-  // tests/navigation-ruling-11-analytics.test.ts fails the PR if that line comes back.
+  // Sales Analytics has no group. Ruling 11 — "no analytics module, no sales analytics" — delisted
+  // the module, and a group here was the last thing still offering its dashboards, via Cmd+K. The
+  // owner then retired the module itself on 2026-09-17: its pages are deleted and next.config.ts
+  // redirects their addresses, pinned by tests/sales-analytics-retired.test.ts.
   { items: masterDataPageItems, label: "Master Data" },
   { items: adminToolsPageItems, label: "Admin Tools" },
   { items: accessCommunicationPageItems, label: "Access & Communication" },
@@ -4277,10 +4167,8 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
 // temporal-dead-zone ReferenceError at module load — and TypeScript does not model TDZ, so
 // typecheck stays green while the rail renders empty in production.
 //
-// `salesAnalyticsPageItems` is absent for the same reason it is absent from
-// `hubPageItemGroups` above: ruling 11, pinned by tests/navigation-ruling-11-analytics.test.ts.
-// Promoting it would put the delisted module back on the rail itself — louder than the Cmd+K
-// route that ruling already closed.
+// Sales Analytics has no promotion, for the same reason it has no group in `hubPageItemGroups`
+// above: ruling 11 delisted it, and the module was retired on 2026-09-17.
 type AdminHubPromotion = {
   /**
    * Heading rendered above the promoted rows, via a group in src/config/sidebar-domains.ts.

@@ -159,12 +159,7 @@ export function runSalesSourceOfTruthTests() {
     /closing_vs_sos_gap_pct/,
     "the tautological gap column is not reintroduced by this migration",
   );
-  const analyticsServiceSource = readFileSync("src/lib/analytics/service.ts", "utf8");
-  assert.doesNotMatch(
-    analyticsServiceSource,
-    /closingVsSosGapPct/,
-    "and no closing-vs-SoS gap survives on the row type the dashboard renders",
-  );
+  // (A third check kept the gap off the Sales Analytics row type; that module was retired 2026-09-17.)
 
   // The legacy closing-sheet import is closed to new writes. createSalesImport is the ONLY writer
   // of sales_records, and nothing reads that table any more — an accepted upload would validate a
@@ -234,8 +229,6 @@ export function runSalesSourceOfTruthTests() {
 
   const salesPageSource = readFileSync("app/(admin)/sales/page.tsx", "utf8");
   assert.match(salesPageSource, /getSosDashboard/);
-  const salesAnalyticsPageSource = readFileSync("src/components/analytics/dashboards/source-sales-dashboard.tsx", "utf8");
-  assert.match(salesAnalyticsPageSource, /loadSosByPeriod/);
   // The portal sales dashboards were consolidated into a single scope-aware Source of Sales page
   // that reuses the admin SoS engine via the getPortalSosDashboard wrapper.
   const portalSosPageSource = readFileSync("app/employee-portals/source-of-sales/page.tsx", "utf8");

@@ -189,10 +189,10 @@ export const SYSTEM_ADMINISTRATOR_ROLE: PhoenixRole = "Super Admin";
  * 0 of those 44 entries were permission-blocked, so nothing moved — but a grant removed tomorrow
  * now reaches the rail instead of being silently ignored there.
  *
- * `roles: []` still means NOBODY (roleAllowed distinguishes it from `undefined`), and the one
- * item using it — the delisted portal Sales Analytics — pairs it with `excludedRoles:
- * ["Super Admin"]`, so the waiver above cannot resurface it. That pairing is load-bearing: keep
- * both halves.
+ * `roles: []` still means NOBODY (roleAllowed distinguishes it from `undefined`). The one item
+ * that used it — the delisted portal Sales Analytics, retired with its module on 2026-09-17 —
+ * paired it with `excludedRoles: ["Super Admin"]`, so the waiver above could not resurface it.
+ * A page delisted that way again needs both halves.
  */
 export function navigationItemVisible(
   item: GatedNavigationItem,

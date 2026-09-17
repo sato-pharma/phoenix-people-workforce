@@ -11,12 +11,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext } from "@/lib/auth/permissions";
-import { loadLatestAnalyticsPeriod } from "@/lib/analytics/service";
 import { getSalesDashboard } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Region that holds the "Others" IMS residual at REGION level rather than per area. */
 const IMS_OTHERS_REGION = "OT";
+
+/**
+ * Newest period that actually carries data, from analytics.dim_periods (a dimension over the fact,
+ * so it contains only loaded periods). Returns null when nothing is loaded at all.
+ *
+ * Moved here from src/lib/analytics/service.ts when the Sales Analytics module was retired
+ * (2026-09-17): this file was its only reader outside the module. The database views stay.
+ */
+async function loadLatestAnalyticsPeriod(): Promise<string | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .schema("analytics")
+    .from("dim_periods" as never)
+    .select("period")
+    .order("period", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`Latest analytics period: ${error.message}`);
+  const rows = (data ?? []) as { period: string }[];
+  return rows[0]?.period ?? null;
+}
 
 export type SfeLineTarget = {
   line: string;

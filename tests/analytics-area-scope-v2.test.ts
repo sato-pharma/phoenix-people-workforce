@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // Two surfaces that could not honour an area bound, handled in the only honest ways available.
+// (The first, the Sales Analytics Reconciliation page, was retired with that module on 2026-09-17.)
 //
 // 1. RECONCILIATION. analytics_cross_source takes only p_lines; its view aggregates all three legs
 //    to (period, line), so there is nothing to push a bound into. (The closing leg does now carry a
@@ -20,30 +21,8 @@ function code(source: string): string {
 }
 
 export function runAnalyticsAreaScopeV2Tests() {
-  // ── 1. Reconciliation refuses an area-scoped viewer ─────────────────────────
-  {
-    const dash = code(
-      readFileSync(join(process.cwd(), "src/components/analytics/dashboards/reconciliation-dashboard.tsx"), "utf8"),
-    );
-    assert.match(
-      dash,
-      /if \(scope\.allowedAreaCodes != null\) \{/,
-      "an area-scoped viewer must be refused before any cross-source load",
-    );
-    assert.match(dash, /<AnalyticsErrorState/, "the refusal must be visible, not an empty page");
-
-    // The guard must come BEFORE the loaders, or the national query still runs.
-    const guardAt = dash.indexOf("scope.allowedAreaCodes != null");
-    const loadAt = dash.indexOf("loadCrossSource(");
-    assert.ok(guardAt > 0 && loadAt > guardAt, "the refusal must short-circuit ahead of loadCrossSource");
-
-    // It must key on the AREA bound specifically. allowedRegionCodes is deliberately widened to
-    // reach an owned out-of-region area, so gating on it would refuse the wrong people.
-    assert.ok(
-      !/if \(scope\.allowedRegionCodes != null\) \{/.test(dash),
-      "gate on the area bound, not the widened region set",
-    );
-  }
+  // (1 pinned that the Sales Analytics Reconciliation page refused an area-scoped viewer. That page
+  // went with the module the owner retired on 2026-09-17.)
 
   // ── 2. One active target per alias, enforced by the database ────────────────
   {

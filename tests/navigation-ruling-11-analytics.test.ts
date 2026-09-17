@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {
   adminNavigationSections,
   hubPageItemGroups,
-  salesAnalyticsPageItems,
   sourceOfSalesPageItems,
 } from "../src/config/system-navigation.ts";
 import { permissionMatrix, phoenixRoles, permissionActions, permissionResources } from "../src/lib/auth/permissions.ts";
@@ -25,15 +24,15 @@ import { getSections, permissionAllowed, roleAllowed, roleNotExcluded, type Perm
 //   - the SFE Manager's "Sales Analytics" entry (SFE_NAV_ITEMS, ceo-phase-b.tsx)
 //
 // WHAT WAS **NOT** REMOVED, DELIBERATELY
-//   - the pages. /admin/analytics and the nine modules under it still ship,
-//     still pass their own guards and still answer by direct URL. Ruling 11
-//     removed a MODULE FROM NAVIGATION; it did not ask for a deletion, and
-//     deleting them would take the Finance Manager's closing export with it.
+//   - the pages. Ruling 11 removed a MODULE FROM NAVIGATION; it did not ask for
+//     a deletion. (The owner did retire the whole module later, on 2026-09-17 —
+//     "drop and retire the sales analytics module" — so the pages and the unwired
+//     `salesAnalyticsPageItems` record are gone now, and next.config.ts redirects
+//     their addresses. tests/sales-analytics-retired.test.ts pins that.)
 //   - `finance-monthly-closing` -> /admin/analytics/monthly-closing/details.
-//     After this change it is the only nav entry anywhere into the analytics
-//     tree, and that is correct: it is one role's export surface, not the hub.
-//   - `salesAnalyticsPageItems` itself, kept but unwired — the only surviving
-//     record of who was allowed to open each dashboard.
+//     It is the only nav entry anywhere into the analytics tree, and that is
+//     correct: it is one role's export surface, not the hub, and it is the one
+//     page the retirement kept.
 //
 // ⚠️ THE WIDER READING IS **NOT** SETTLED AND IS **NOT** ASSERTED HERE.
 // "Attendance Analytics", "Probation Analytics", "Coaching Analytics" and
@@ -44,10 +43,9 @@ import { getSections, permissionAllowed, roleAllowed, roleNotExcluded, type Perm
 // their presence would block a decision he is entitled to make later, and
 // pinning their absence would invent one he never gave.
 //
-// The employee-portal module at /employee-portals/sales-analytics is likewise
-// untouched and out of scope — it is a separate surface with its own routing
-// tests (analytics-routing.test.ts), and the ruling was about the admin rail.
-// Every assertion below is therefore scoped to the ADMIN navigation.
+// The employee-portal module at /employee-portals/sales-analytics was out of
+// scope here — the ruling was about the admin rail — and it went with the
+// 2026-09-17 retirement. Every assertion below is scoped to the ADMIN navigation.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ANALYTICS_HUB = "/admin/analytics";
@@ -108,19 +106,8 @@ export function runNavigationRuling11AnalyticsTests() {
     );
   }
 
-  // ── 3. the retired array must stay unwired ─────────────────────────────────
-  // salesAnalyticsPageItems is kept on purpose (it records the per-dashboard
-  // role gates) but nothing may consume it. Re-adding one line to
-  // hubPageItemGroups would silently restore all nine modules, so that one line
-  // is what this asserts.
-  const wired = hubPageItemGroups.some((group) => group.items === salesAnalyticsPageItems);
-  assert.equal(
-    wired,
-    false,
-    `salesAnalyticsPageItems is wired into hubPageItemGroups again. It is retained ONLY as a record ` +
-      `of the old role gates — re-wiring it restores the whole module to Cmd+K and to the hub cards, ` +
-      `which ruling 11 removed.`,
-  );
+  // (3 pinned that the retained salesAnalyticsPageItems array stayed unwired. The array went with the
+  // module on 2026-09-17, so there is nothing left to wire.)
 
   // ── 4. no admin rail section may be LABELLED Sales Analytics ───────────────
   // Separate from 1: an href can be changed while the label survives, and the

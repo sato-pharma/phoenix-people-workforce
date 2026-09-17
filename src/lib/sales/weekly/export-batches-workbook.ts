@@ -85,15 +85,18 @@ export async function buildBatchesExportWorkbook(
       b.totalStockQty,
       b.totalRows,
     ]),
+    // Only Sales Value and Rows add up (owner, 2026-09-17). The unit TOTALs stay empty: each period's
+    // units already add different products, which are never added (unit-totals.ts), and its stock is a
+    // snapshot of that week, so adding the periods multiplies the stock on hand.
     totals:
       sorted.length > 0
         ? [
             "TOTAL",
             "",
             "",
-            sorted.reduce((s, b) => s + b.totalNetQty, 0),
+            "",
             sorted.reduce((s, b) => s + b.totalSalesValue, 0),
-            sorted.reduce((s, b) => s + b.totalStockQty, 0),
+            "",
             sorted.reduce((s, b) => s + b.totalRows, 0),
           ]
         : undefined,
@@ -127,13 +130,14 @@ export async function buildBatchesExportWorkbook(
         p.salesValue,
         p.stockQty,
       ]),
+      // The rows are different products, so only Sales Value adds up; the unit TOTALs stay empty.
       totals:
         products.length > 0
           ? [
               "TOTAL",
-              products.reduce((s, p) => s + p.netQty, 0),
+              "",
               products.reduce((s, p) => s + p.salesValue, 0),
-              products.reduce((s, p) => s + p.stockQty, 0),
+              "",
             ]
           : undefined,
     });

@@ -349,6 +349,23 @@ const nextConfig: NextConfig = {
       // measured in production 2026-08-28, every one of which 404'd when tapped.
       { source: "/contracts/renewals", destination: "/contracts", permanent: true },
       { source: "/admin/attendance/holiday-calendar", destination: "/attendance/holiday-calendar", permanent: true },
+      // Sales Analytics retirement (owner, 2026-09-17: "drop and retire the sales analytics module").
+      // An old address lands on the nearest page that stays: the weekly dashboards on Weekly Sales,
+      // everything else on Monthly Closing, in each shell. ONE page survives inside the admin module,
+      // /admin/analytics/monthly-closing/details (the Finance Manager's export), so the admin entries
+      // name each retired page instead of catching the whole folder. A `:path*` source also matches
+      // its bare folder, and the first match wins, so the portal's weekly entry must stay above its
+      // catch-all. Pinned by tests/sales-analytics-retired.test.ts.
+      { source: "/admin/analytics", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/weekly-sales/:path*", destination: "/sales/weekly/dashboard", permanent: true },
+      { source: "/admin/analytics/source-sales/:path*", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/monthly-closing", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/monthly-closing/by-line", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/monthly-closing/by-employee", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/executive-comparison", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/admin/analytics/reconciliation", destination: "/sales/monthly-closing", permanent: true },
+      { source: "/employee-portals/sales-analytics/weekly-sales/:path*", destination: "/employee-portals/weekly-sales", permanent: true },
+      { source: "/employee-portals/sales-analytics/:path*", destination: "/employee-portals/monthly-closing", permanent: true },
     ];
   },
 

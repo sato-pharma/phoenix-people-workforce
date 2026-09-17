@@ -729,7 +729,10 @@ function AttendanceWidget({
 const NAV_ITEMS = [
   { href: "/employees",                              icon: Users,        label: "Employees",         sub: "Directory & lifecycle" },
   { href: "/admin/m-payroll",                        icon: Wallet,       label: "Payroll",            sub: "Salary & flags" },
-  { href: "/admin/analytics/monthly-closing",        icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
+  // Monthly Closing Analytics until the Sales Analytics module was retired (owner, 2026-09-17). The
+  // owner chose the Monthly Closing page as the new target: he opened it to the CEO, read-only, on
+  // 2026-09-07, and the SFE Manager's card below goes to the same page.
+  { href: "/sales/monthly-closing",                  icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
   { href: "/sales/weekly/dashboard",                 icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/admin/outstation/expense-command",       icon: DollarSign,   label: "Expense Command",    sub: "Company-wide outstation spend" },
@@ -745,14 +748,14 @@ const NAV_ITEMS = [
 // /admin/outstation/expense-command are absent — each of those redirects him to
 // /employee-portals or renders a Forbidden card.
 const SFE_NAV_ITEMS = [
-  { href: "/admin/analytics/monthly-closing",        icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
+  // /sales/monthly-closing admits the SFE Manager (view and download only, owner 2026-08-05).
+  { href: "/sales/monthly-closing",                  icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
   { href: "/sales/weekly/dashboard",                 icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
   { href: "/sales/targets",                          icon: Target,       label: "Targets",            sub: "Line & area target setting" },
-  // "Sales Analytics" (/admin/analytics) removed by ruling 11 — "no analytics module, no sales
-  // analytics". This was the SFE Manager's shortcut into that hub; the CEO's equivalent card in
-  // ceo-command-center.tsx went in the same change. The "Source of Sales" row at the top of this
-  // list still opens /admin/analytics/monthly-closing, so the closing data he actually works from
-  // is untouched — only the hub door closed.
+  // "Sales Analytics" removed by ruling 11 — "no analytics module, no sales analytics". This was the
+  // SFE Manager's shortcut into that hub; the CEO's equivalent card in ceo-command-center.tsx went in
+  // the same change. The module itself was retired on 2026-09-17, and the "Source of Sales" row at
+  // the top of this list moved with it, from Monthly Closing Analytics to the Monthly Closing page.
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/coaching/analytics",                     icon: ShieldCheck,  label: "Coaching",           sub: "Rep performance & KPIs" },
   { href: "/employee-360",                           icon: Users,        label: "Employee 360",       sub: "Field-force performance profile" },
@@ -1019,7 +1022,7 @@ export async function CeoPhaseBWidgets({
         description="Company-wide source of sales — sortable by region or product."
         action={
           <Link
-            href="/admin/analytics/monthly-closing"
+            href="/sales/monthly-closing"
             className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-phx-2xs font-bold text-white hover:bg-white/20"
           >
             Full SoS <ArrowRight className="h-3 w-3" />

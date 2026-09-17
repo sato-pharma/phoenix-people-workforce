@@ -1,5 +1,9 @@
 # Sales Analytics Data Model
 
+> **The app's Sales Analytics pages were retired on 2026-09-17; this `analytics` schema was not.**
+> The views stay in the database, and the SFE Manager's IMS contribution
+> (`src/lib/sales/sfe-performance.ts`) still reads `analytics.dim_periods` and `analytics.sos_fact_all`.
+
 ## Schema verification checklist (read this before editing analytics SQL)
 
 Before assuming a table's schema from `supabase/migrations/`, also check the loose root scripts

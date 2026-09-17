@@ -162,8 +162,11 @@ import path from "node:path";
  * option label, so a long depot or distributor name ended in an ellipsis inside the one control that
  * picks it. `truncate` -> `min-w-0 break-words` on all four, and the trigger's fixed `h-[58px]` became
  * a `min-h-[58px]` floor so a wrapped line grows it. Pinned by tests/multi-select-filter-fits.test.ts.
+ *
+ * 197 -> 196 on 2026-09-17: the Sales Analytics module was retired, and its KPI card
+ * (analytics-kpi-card.tsx) went with it. No screen changed; the site left with the file.
  */
-const BASELINE = 197;
+const BASELINE = 196;
 
 const ROOTS = ["app", "src"];
 

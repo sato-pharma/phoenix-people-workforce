@@ -225,7 +225,7 @@ if (running.length > 0) {
 //     + --max-old-space-size=3072 4,835 MB          4,421 MB          62.1 s
 //
 // So the cap buys roughly 1.2 GB and costs 3-4x on the heaviest compiles: /admin/approvals-hub
-// went 14.1 s -> 62.1 s and /admin/analytics/source-sales 10.5 s -> 37.5 s. Nothing OOM'd; every
+// went 14.1 s -> 62.1 s and /admin/analytics/source-sales (since retired) 10.5 s -> 37.5 s. Nothing OOM'd; every
 // route still returned 200.
 //
 // NOT SHIPPED BY DEFAULT, deliberately. A minute-long page compile is paid on every edit, and the

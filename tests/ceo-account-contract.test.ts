@@ -130,9 +130,9 @@ export async function runCeoAccountContractTests() {
   // card in ceo-command-center.tsx went with it. The comment here used to say the CEO kept access
   // "via the dashboard shortcuts in ceo-phase-b.tsx"; that is no longer true of the hub itself.
   // What he keeps is the DATA, not the hub: the Source of Sales and Med-Rep Performance cards on
-  // his command center open their dashboards directly, and ceo-sos-tables.tsx still links
-  // /admin/analytics/monthly-closing. The pages under the hub also still answer by direct URL —
-  // nothing was deleted or re-gated, only delisted.
+  // his command center open their dashboards directly. The owner retired the module's pages on
+  // 2026-09-17, and the Source of Sales card and ceo-sos-tables.tsx's "Full SoS" link moved to the
+  // Monthly Closing page (/sales/monthly-closing), which he opened to the CEO read-only on 2026-09-07.
   assert.equal(
     visibleAdminHrefs.includes("/admin/analytics"),
     false,
@@ -298,13 +298,13 @@ export async function runCeoAccountContractTests() {
   );
   assert.match(ceoPhaseBSource, /href: "\/admin\/m-payroll"/);
   assert.match(ceoPhaseBSource, /href: "\/sales\/weekly\/dashboard"/);
-  assert.match(ceoPhaseBSource, /href: "\/admin\/analytics\/monthly-closing"/);
+  assert.match(ceoPhaseBSource, /href: "\/sales\/monthly-closing"/);
   assert.doesNotMatch(
     ceoSosTablesSource,
     /href="\/sales\/monthly-dashboard"/,
     "CEO SoS tables must not link to the redirecting monthly sales route",
   );
-  assert.match(ceoSosTablesSource, /href="\/admin\/analytics\/monthly-closing"/);
+  assert.match(ceoSosTablesSource, /href="\/sales\/monthly-closing"/);
   assert.match(
     payrollPageSource,
     /access\.role === "CEO"[\s\S]{0,220}redirect\(target\)/,

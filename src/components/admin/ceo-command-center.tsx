@@ -922,7 +922,8 @@ export function CeoCommandCenter({
             sales analytics". This was the CEO's last shortcut into that hub; the SFE Manager's
             equivalent in ceo-phase-b.tsx went in the same change. The Source of Sales and Med-Rep
             Performance cards around it still open their own dashboards directly, so no number the
-            CEO reads from this page moved — only the hub door closed.
+            CEO reads from this page moved — only the hub door closed. The owner retired the module
+            itself on 2026-09-17; its old addresses redirect.
           */}
           <QuickLinkCard
             title="Double-Visit Intelligence"

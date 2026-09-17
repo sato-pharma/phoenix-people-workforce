@@ -106,12 +106,6 @@ export type EmployeePortalNavVisibility = {
   // canAccessPortalClosing). Shown to the field-sales roles that own a line (DM/RM/NSM/PM/GPM), the
   // Marketing Manager for her oversight lines, and the Medical Rep for their own area(s) only.
   showMonthlyClosingTab?: boolean;
-  // Sales Analytics — the portal-native analytics module at /employee-portals/sales-analytics
-  // (Source of Sales + Monthly Closing for everyone, Weekly for everyone but a Medical Rep; + Executive
-  // Comparison + Reconciliation for RM and line managers). Every page enforces sales/weekly_sales read
-  // AND the per-viewer AnalyticsViewerScope server-side (the Weekly pages also the territory gate,
-  // territory-gate.ts); this flag only surfaces the sidebar link.
-  showSalesAnalyticsTab?: boolean;
   // Sales vs Target (/employee-portals/sales-vs-target) — Source of Sales + Direct Orders measured
   // against target, from July 2026 onwards. The FIRST sales surface a Medical Rep can open (owner
   // decision 2026-08-04, reversing the 2026-07-30 call that kept reps out of portal Targets); a rep
@@ -709,12 +703,6 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager,
-    // Portal Sales Analytics module (/employee-portals/sales-analytics) — hidden from every role,
-    // owner request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National
-    // Sales Manager, Product Manager, Group Product Manager, Marketing Manager (Medical Rep +
-    // District Manager got the 3 core dashboards; Regional Manager + the line managers additionally
-    // got Executive Comparison + Reconciliation — see canViewPortalDetailedAnalytics).
-    showSalesAnalyticsTab: false,
     showSalesVsTargetTab:
       isMedicalRep ||
       isDistrictManager ||

@@ -241,7 +241,6 @@ function buildEmployeePortalSections({
   showWeeklyTab = false,
   showWeeklyStockTab = false,
   showMonthlyClosingTab = false,
-  showSalesAnalyticsTab = false,
   showSalesVsTargetTab = false,
   showMakeItHappenTab = false,
   showTerritoryDrilldownTab = false,
@@ -324,7 +323,6 @@ function buildEmployeePortalSections({
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
         ...(showWeeklyStockTab ? [{ href: "/employee-portals/weekly-stock", label: "Weekly Stock", icon: Package }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
-        ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Sales Drilldown", icon: MapPinned }] : []),
         // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the

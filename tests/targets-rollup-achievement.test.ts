@@ -215,21 +215,8 @@ export function runTargetsRollupAchievementTests(): void {
     }
   }
 
-  // The Monthly Closing analytics dashboards roll the SAME engine up to (period, line, rep) in
-  // their own loader and must follow the same ruling. IO-bound, so pinned at source.
-  const analytics = flat(SRC("src/lib/analytics/service.ts"));
-  assert.ok(
-    analytics.includes("b.hasTarget && b.targetValue > 0 ? round2((b.salesValue / b.targetValue) * 100) : null"),
-    "the analytics rep rollup must divide ALL sales by target",
-  );
-  assert.ok(
-    !analytics.includes("round2((b.coveredSalesValue / b.targetValue) * 100)"),
-    "the analytics rep rollup must not go back to the covered numerator",
-  );
-  assert.ok(
-    analytics.includes("if (r.target_value != null) { bucket.coveredSalesValue += n(r.actual_value);"),
-    "coverage must still accumulate only inside the branch that found a target",
-  );
+  // (The Monthly Closing analytics dashboards' own rep rollup was pinned here too; the owner retired
+  // the Sales Analytics module on 2026-09-17, so that loader is gone.)
 
   // The workspace: the card must now DIVIDE. Actual over Target is the Achievement printed beside
   // them, so the division hint has to show that division and not the old covered one.
