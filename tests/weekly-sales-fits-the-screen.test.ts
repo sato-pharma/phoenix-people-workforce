@@ -7,9 +7,16 @@ import {
   branchComparisonColumns,
   breakdownColumns,
   completenessColumns,
+  excludedBranchColumns,
+  excludedItemColumns,
   fieldForceLeagueColumns,
   fieldForceProductColumns,
+  fileSelfCheckColumns,
   rankColumns,
+  rowIssueColumns,
+  uploadHistoryColumns,
+  uploadSummaryColumns,
+  uploadTrackerColumns,
   verifyColumns,
   weekComparisonColumns,
   zeroStockColumns,
@@ -17,15 +24,23 @@ import {
 
 // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), pinned for Weekly Sales: the
 // managers' dashboard (its Distribution tab and its Field Force tab, which the portal and the admin
-// shell render alike), the admin shell's own Weekly Sales Dashboard, and the verification panel on the
-// admin shell's upload page.
+// shell render alike), the admin shell's own Weekly Sales Dashboard, and the admin shell's upload page.
+//
+// THE REST OF THE UPLOAD PAGE. Later on 2026-09-17 the rest of weekly-upload-workspace.tsx still broke
+// both rules. The Recent weekly uploads table sat in an `overflow-x-auto` card, the file self-check and
+// the two excluded-on-purpose tables in `overflow-x-auto` boxes, the row issues in a `max-h-56
+// overflow-auto` box, the By product / branch / region summaries in `max-h-72 overflow-auto`, and the
+// month tracker in `overflow-x-auto` with its marks over `min-w-[2.2rem]`. The shared `card` was
+// `rounded-[6px]` and about fifty more `rounded*` classes sat on its chips, buttons, inputs and step
+// dots. Every table is now fixed with declared widths and becomes cards (or, for the row issues, a list)
+// below md; the uploads table merges Period with Week and Distributor with Status. The whole file is
+// scanned, and all eight of its tables are pinned.
 //
 // THE UPLOAD PAGE'S VERIFICATION PANEL. Also on 2026-09-17 the panel a distributor file's column check
 // opens (VerifyPanel in weekly-upload-workspace.tsx) still sat its six-column table in an
 // `overflow-x-auto` box, and its status pill, "AI checked" chip and header-hint chips were `rounded`.
 // File and Col are now one column, the table is fixed from md up and becomes cards below it, and nothing
-// in the panel is rounded. Only StatusPill and VerifyPanel are held here: the rest of that page is not
-// yet brought into line, so a scan of the whole file would fail on work this pin never claimed.
+// in the panel is rounded.
 //
 // THE ADMIN DASHBOARD. On 2026-09-17 the admin shell's dashboard (weekly-dashboard-view-impl.tsx) still
 // broke both rules after the managers' version was fixed: the Week-by-week comparison sat in an
@@ -47,13 +62,13 @@ import {
 // names wrap, and phones keep their cards.
 //
 // WHAT IT PINS.
-//   1. No class string in the three dashboard files or in the upload page's verification panel draws a
-//      round corner, a scroll box, a width floor or an ellipsis, and no label is cut by appending "..." to it.
-//   2. Every <table> is `w-full table-fixed` and opens with a <colgroup>. Its <col>s, its head row and a
-//      body row have the same shape: one entry per cell, under the same conditions, with the same
-//      per-week or per-month lists. Every colSpan spans exactly that shape, the widths come from the
-//      helper this test names, and the widths the shape draws total 100% for every count of weeks or
-//      months the data allows and every optional column.
+//   1. No class string in the three dashboard files or in the upload page draws a round corner, a scroll
+//      box, a width floor or an ellipsis, and no label is cut by appending "..." to it.
+//   2. Every <table> is `w-full table-fixed` and opens with a <colgroup>. Its <col>s, its head row (which
+//      a table pinned `headless` may lack) and a body row have the same shape: one entry per cell, under
+//      the same conditions, with the same per-week or per-month lists. Every colSpan spans exactly that
+//      shape, the widths come from the helper this test names, and the widths the shape draws total 100%
+//      for every count of weeks or months the data allows and every optional column.
 //
 // WHEN IT FIRES. Take the room from a column with slack, or merge two columns. Never shrink the type,
 // never add a min-width or overflow-x-auto, never cut text with an ellipsis (AGENTS.md §4).
@@ -68,7 +83,7 @@ const SCANS: { file: string; functions: string[] | null; minTokens: number }[] =
   { file: DASHBOARD, functions: null, minTokens: 200 },
   { file: FIELD_FORCE, functions: null, minTokens: 200 },
   { file: ADMIN_DASHBOARD, functions: null, minTokens: 200 },
-  { file: UPLOAD_WORKSPACE, functions: ["StatusPill", "VerifyPanel"], minTokens: 100 },
+  { file: UPLOAD_WORKSPACE, functions: null, minTokens: 200 },
 ];
 
 /** `weekly_sales_rows_week_number_chk`: a week number is 1 to 4, so no view has more than four weeks. */
@@ -158,6 +173,8 @@ type TableSpec = {
   bodyRowOwner: string;
   /** How the owner must obtain its widths, verbatim. */
   widthsCall: string;
+  /** The table has no head row (a list of messages), so only its <col>s and body row are compared. */
+  headless?: boolean;
   /** Every input the page can give the helper: `env` answers the shape's conditions and list lengths. */
   cases: { env: Env; widths: Record<string, number> }[];
 };
@@ -243,6 +260,63 @@ const TABLES: TableSpec[] = [
     bodyRowOwner: "VerifyPanel",
     widthsCall: "verifyColumns()",
     cases: [{ env: {}, widths: verifyColumns() }],
+  },
+  {
+    name: "Upload page Recent weekly uploads",
+    file: UPLOAD_WORKSPACE,
+    owner: "WeeklyUploadWorkspace",
+    bodyRowOwner: "WeeklyUploadWorkspace",
+    widthsCall: "uploadHistoryColumns()",
+    cases: [{ env: {}, widths: uploadHistoryColumns() }],
+  },
+  {
+    name: "Upload page items excluded on purpose",
+    file: UPLOAD_WORKSPACE,
+    owner: "ExcludedItemsPanel",
+    bodyRowOwner: "ExcludedItemsPanel",
+    widthsCall: "excludedItemColumns()",
+    cases: [{ env: {}, widths: excludedItemColumns() }],
+  },
+  {
+    name: "Upload page branches excluded on purpose",
+    file: UPLOAD_WORKSPACE,
+    owner: "ExcludedBranchesPanel",
+    bodyRowOwner: "ExcludedBranchesPanel",
+    widthsCall: "excludedBranchColumns()",
+    cases: [{ env: {}, widths: excludedBranchColumns() }],
+  },
+  {
+    name: "Upload page file self-check",
+    file: UPLOAD_WORKSPACE,
+    owner: "FileSelfCheckPanel",
+    bodyRowOwner: "FileSelfCheckPanel",
+    widthsCall: "fileSelfCheckColumns()",
+    cases: [{ env: {}, widths: fileSelfCheckColumns() }],
+  },
+  {
+    name: "Upload page row issues",
+    file: UPLOAD_WORKSPACE,
+    owner: "ValidationResultPanel",
+    bodyRowOwner: "ValidationResultPanel",
+    widthsCall: "rowIssueColumns()",
+    headless: true,
+    cases: [{ env: {}, widths: rowIssueColumns() }],
+  },
+  {
+    name: "Upload page By product / branch / region summary",
+    file: UPLOAD_WORKSPACE,
+    owner: "SummaryTable",
+    bodyRowOwner: "SummaryTable",
+    widthsCall: "uploadSummaryColumns()",
+    cases: [{ env: {}, widths: uploadSummaryColumns() }],
+  },
+  {
+    name: "Upload page month tracker",
+    file: UPLOAD_WORKSPACE,
+    owner: "MonthCompletenessTracker",
+    bodyRowOwner: "MonthCompletenessTracker",
+    widthsCall: "uploadTrackerColumns(weeks.length)",
+    cases: range(1, MAX_WEEKS).map((weeks) => ({ env: { weeks }, widths: uploadTrackerColumns(weeks) })),
   },
 ];
 
@@ -470,15 +544,16 @@ function tableProblems(sources: Map<string, ts.SourceFile>, roots: Map<string, t
     const headRow = thead ? firstElement(thead, "tr") : undefined;
     const tbody = spec.owner === spec.bodyRowOwner ? firstElement(table, "tbody") : bodyOwner;
     const bodyRow = tbody ? firstElement(tbody, "tr") : undefined;
-    if (!headRow || !bodyRow) {
+    if ((!headRow && !spec.headless) || !bodyRow) {
       problems.push(`${spec.name}: could not find the head row and a body row.`);
       continue;
     }
-    const heads = slotsOf(headRow, "th", `${spec.name} head row`, problems);
+    // A headless table's head row, should it gain one, is held like any other.
+    const heads = headRow ? slotsOf(headRow, "th", `${spec.name} head row`, problems) : null;
     const cells = slotsOf(bodyRow, "td", `${spec.name} body row`, problems);
-    if (shapeOf(heads) !== shapeOf(cols) || shapeOf(cells) !== shapeOf(cols)) {
+    if ((heads !== null && shapeOf(heads) !== shapeOf(cols)) || shapeOf(cells) !== shapeOf(cols)) {
       problems.push(
-        `${spec.name}: the columns are [${shapeOf(cols)}], the head row [${shapeOf(heads)}] and the body row ` +
+        `${spec.name}: the columns are [${shapeOf(cols)}], the head row [${heads === null ? "none" : shapeOf(heads)}] and the body row ` +
           `[${shapeOf(cells)}]. They must agree, or every column after the mismatch is sized by the wrong <col>.`,
       );
     }

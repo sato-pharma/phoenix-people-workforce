@@ -122,3 +122,56 @@ export function zeroStockColumns(showStock: boolean): { branch: number; region: 
 export function verifyColumns(): { data: number; file: number; found: number; expected: number; status: number } {
   return { data: 21, file: 16, found: 25, expected: 23, status: 15 };
 }
+
+// The rest of the upload page. Every table below is cards under md, so its narrowest table is at 768px or at
+// 1024px with the sidebar open. The widths hold a seven-figure unit count ("1,234,567") whole, and the
+// longest word of every label and name without breaking it.
+
+/** The Recent weekly uploads table: the select box, the period with its week beneath, the distributor with
+ * its status beneath, rows, net units, stock units and the row's actions. Net and stock units hold only a
+ * dash (a batch adds different products, unit-totals.ts), so they need room for their headers alone. */
+export function uploadHistoryColumns(): {
+  select: number;
+  period: number;
+  distributor: number;
+  rows: number;
+  net: number;
+  stock: number;
+  actions: number;
+} {
+  return { select: 6, period: 22, distributor: 21, rows: 14, net: 11, stock: 11, actions: 15 };
+}
+
+/** The items excluded on purpose: item code, item name, rows, net units and stock units. The code column holds a
+ * thirteen-digit barcode on one line, since a distributor may key its items that way. */
+export function excludedItemColumns(): { code: number; name: number; rows: number; net: number; stock: number } {
+  return { code: 22, name: 34, rows: 12, net: 16, stock: 16 };
+}
+
+/** The branches excluded on purpose: the branch as the file names it, its branch name, rows, net units and
+ * stock units. */
+export function excludedBranchColumns(): { branch: number; name: number; rows: number; net: number; stock: number } {
+  return { branch: 22, name: 30, rows: 14, net: 17, stock: 17 };
+}
+
+/** The file self-check: what the file states, where, the figure the file gives, the figure the import read,
+ * and the verdict. */
+export function fileSelfCheckColumns(): { label: number; where: number; declared: number; parsed: number; verdict: number } {
+  return { label: 24, where: 22, declared: 15, parsed: 15, verdict: 24 };
+}
+
+/** The row issues list: the row number, the severity and the message. */
+export function rowIssueColumns(): { row: number; severity: number; message: number } {
+  return { row: 13, severity: 12, message: 75 };
+}
+
+/** The By product, By branch and By region summaries: the name, then sales, return, net and stock units. */
+export function uploadSummaryColumns(): { name: number; sales: number; returns: number; net: number; stock: number } {
+  return { name: 28, sales: 18, returns: 18, net: 18, stock: 18 };
+}
+
+/** The month completeness tracker: the distributor, then one column per week holding its mark. */
+export function uploadTrackerColumns(weekCount: number): { distributor: number; week: number } {
+  const week = weekCount > 0 ? 48 / weekCount : 0;
+  return { distributor: 100 - week * weekCount, week };
+}

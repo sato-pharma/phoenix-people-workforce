@@ -21,14 +21,27 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
-import { verifyColumns } from "./weekly-table-widths";
+import {
+  excludedBranchColumns,
+  excludedItemColumns,
+  fileSelfCheckColumns,
+  rowIssueColumns,
+  uploadHistoryColumns,
+  uploadSummaryColumns,
+  uploadTrackerColumns,
+  verifyColumns,
+} from "./weekly-table-widths";
 
+// THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), for the whole page: every table is
+// `w-full table-fixed` with its column widths from weekly-table-widths.ts, it fits by merging columns and
+// wrapping text, it becomes cards below md, and nothing is rounded. Pinned by
+// tests/weekly-sales-fits-the-screen.test.ts.
 
 // No money formatter here on purpose: this whole screen — Validate preview AND the stored-upload
 // history — reports UNITS. Value belongs to the surfaces that own the price (dashboard, export).
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
+const card = "border border-phx-line bg-white shadow-sm";
 /** Hover text on a unit figure held back because it would add different products. */
 const UNITS_NOT_ADDED_TITLE = "Units of different products are never added";
 const darkHead = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white";
@@ -412,13 +425,112 @@ export function WeeklyUploadWorkspace({
   }
 
   const fileInputClass =
-    "h-10 w-full rounded-[6px] border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink file:mr-3 file:rounded file:border-0 file:bg-phx-paper-2 file:px-3 file:py-1.5 file:text-sm file:font-bold";
+    "h-10 w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink file:mr-3 file:border-0 file:bg-phx-paper-2 file:px-3 file:py-1.5 file:text-sm file:font-bold";
+
+  // Recent weekly uploads: a fixed table from md up, with the week under the period and the status under the
+  // distributor, and a card per upload below md. Both draw a batch's period, week, status and actions from here.
+  const columns = uploadHistoryColumns();
+
+  const renderBatchPeriod = (batch: WeeklyBatch) =>
+    retagId === batch.id ? (
+      <input
+        aria-label="Cycle month"
+        className="h-8 w-full min-w-0 border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+        onChange={(e) => setRetagMonth(e.target.value)}
+        type="month"
+        value={retagMonth}
+      />
+    ) : (
+      batch.weekStart ?? "—"
+    );
+
+  const renderBatchWeek = (batch: WeeklyBatch) =>
+    retagId === batch.id ? (
+      <select
+        aria-label="Week of month"
+        className="h-8 w-full min-w-0 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+        onChange={(e) => setRetagWeek(Number(e.target.value))}
+        value={retagWeek}
+      >
+        {[1, 2, 3, 4].map((w) => (
+          <option key={w} value={w}>Week {w}</option>
+        ))}
+      </select>
+    ) : (
+      <span className="inline-flex items-center bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
+        {batch.weekNumber ? `W${batch.weekNumber}` : "—"}
+      </span>
+    );
+
+  const renderBatchStatus = (batch: WeeklyBatch) => (
+    <span className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+      {batch.status}
+    </span>
+  );
+
+  const renderBatchActions = (batch: WeeklyBatch) => (
+    <div className="inline-flex flex-wrap items-center justify-end gap-2">
+      {retagId === batch.id ? (
+        <>
+          <button
+            className="inline-flex h-8 items-center gap-1 bg-phx-accent px-2.5 text-xs font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+            disabled={retagBusy}
+            onClick={handleRetag}
+            type="button"
+          >
+            {retagBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Save
+          </button>
+          <button
+            aria-label="Cancel re-tag"
+            className="inline-flex text-phx-ink-faint transition hover:text-phx-ink"
+            onClick={() => setRetagId(null)}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            aria-label="Download XLSX report"
+            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent disabled:opacity-40"
+            disabled={downloadingId === batch.id}
+            onClick={() => handleSingleDownload(batch)}
+            type="button"
+          >
+            {downloadingId === batch.id
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Download className="h-4 w-4" />}
+          </button>
+          <button
+            aria-label="Re-tag week / month"
+            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent"
+            onClick={() => startRetag(batch)}
+            type="button"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            aria-label="Delete upload"
+            className="inline-flex text-phx-ink-faint transition hover:text-rose-600"
+            onClick={() => handleDelete(batch.id)}
+            type="button"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const noUploadsMessage = batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters.";
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
+          <span className="h-2 w-2 bg-phx-accent" aria-hidden />
           <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
         <h1 className="mt-1 text-xl font-black text-phx-ink">Upload &amp; Validate</h1>
@@ -436,9 +548,9 @@ export function WeeklyUploadWorkspace({
       </header>
 
       {pageError && (
-        <div className="flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+        <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{pageError}</span>
+          <span className="min-w-0 break-words">{pageError}</span>
         </div>
       )}
 
@@ -451,10 +563,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: Week of month ── */}
         <div className="mb-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">1</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">1</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Week of month</span>
             {weekNumber && (
-              <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">Week {weekNumber}</span>
+              <span className="inline-flex items-center bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">Week {weekNumber}</span>
             )}
           </div>
           <p className="mt-1 text-xs font-medium text-phx-ink-soft">
@@ -464,7 +576,7 @@ export function WeeklyUploadWorkspace({
           <div className="mt-2 inline-flex flex-wrap gap-2">
             {[1, 2, 3, 4].map((w) => (
               <button
-                className={`h-10 min-w-[88px] rounded-[6px] border px-4 text-sm font-black transition disabled:opacity-60 ${
+                className={`h-10 w-[88px] border px-4 text-sm font-black transition disabled:opacity-60 ${
                   weekNumber === w
                     ? "border-phx-accent bg-phx-accent text-white"
                     : "border-phx-line bg-white text-phx-ink hover:border-phx-accent-line"
@@ -482,7 +594,7 @@ export function WeeklyUploadWorkspace({
 
         {/* ── Step 2: Distributor & file ── */}
         <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">2</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">2</span>
           <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Distributor &amp; file</span>
         </div>
 
@@ -491,7 +603,7 @@ export function WeeklyUploadWorkspace({
           <label className="block">
             <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-10 w-full rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-10 w-full border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               onChange={(event) => {
                 setDistributorCode(event.target.value);
@@ -533,7 +645,7 @@ export function WeeklyUploadWorkspace({
             <label className="block">
               <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Period date</span>
               <input
-                className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                className="h-10 border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                 disabled={busy}
                 onChange={(e) => { setPeriodDate(e.target.value); clearValidation(); }}
                 type="date"
@@ -551,10 +663,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: AI Verify ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">3</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">3</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Verify columns</span>
             {verified && (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
                 <ShieldCheck className="h-3.5 w-3.5" /> Verified
               </span>
             )}
@@ -564,7 +676,7 @@ export function WeeklyUploadWorkspace({
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 border border-[#020617] bg-white px-4 text-sm font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-60"
               disabled={busy || !filesReady}
               onClick={handleVerify}
               type="button"
@@ -576,7 +688,7 @@ export function WeeklyUploadWorkspace({
           </div>
 
           {verifyError && (
-            <div className="mt-3 flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+            <div className="mt-3 flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{verifyError}</span>
             </div>
@@ -588,10 +700,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 2: Validate (dry run) ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">4</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">4</span>
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Validate</span>
             {validateResult && !validateError && (
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+              <span className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                 {validateResult.status === "validated" ? "Ready to upload" : "Blocked"}
               </span>
             )}
@@ -601,7 +713,7 @@ export function WeeklyUploadWorkspace({
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-ink px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
+              className="inline-flex h-10 items-center gap-2 bg-phx-ink px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
               disabled={busy || !canProceed || !verified}
               onClick={handleValidate}
               type="button"
@@ -617,7 +729,7 @@ export function WeeklyUploadWorkspace({
           </div>
 
           {validateError && (
-            <div className="mt-3 flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+            <div className="mt-3 flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{validateError}</span>
             </div>
@@ -647,7 +759,7 @@ export function WeeklyUploadWorkspace({
           <div className="flex flex-wrap items-center gap-2">
             <SearchableSelect
               aria-label="Filter by distributor"
-              className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-8 border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
               onChange={(e) => setFilterDistributor(e.target.value)}
               value={filterDistributor}
             >
@@ -658,7 +770,7 @@ export function WeeklyUploadWorkspace({
             </SearchableSelect>
             <SearchableSelect
               aria-label="Filter by period"
-              className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
+              className="h-8 border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
               onChange={(e) => setFilterPeriod(e.target.value)}
               value={filterPeriod}
             >
@@ -669,7 +781,7 @@ export function WeeklyUploadWorkspace({
             </SearchableSelect>
             {filtersActive && (
               <button
-                className="inline-flex items-center gap-1 rounded-[6px] border border-phx-line bg-white px-2 py-1.5 text-xs font-semibold text-phx-ink-soft transition hover:bg-phx-paper"
+                className="inline-flex items-center gap-1 border border-phx-line bg-white px-2 py-1.5 text-xs font-semibold text-phx-ink-soft transition hover:bg-phx-paper"
                 onClick={() => { setFilterDistributor(""); setFilterPeriod(""); }}
                 type="button"
               >
@@ -684,9 +796,9 @@ export function WeeklyUploadWorkspace({
 
         {/* Multi-select action bar */}
         {selectedIds.size > 0 && (
-          <div className="mb-2 flex items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <button
-              className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#020617] px-3 py-1.5 text-phx-xs font-black uppercase tracking-wide text-white transition hover:bg-[#1E293B] disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 bg-[#020617] px-3 py-1.5 text-phx-xs font-black uppercase tracking-wide text-white transition hover:bg-[#1E293B] disabled:opacity-60"
               disabled={downloadingMulti}
               onClick={handleMultiDownload}
               type="button"
@@ -704,150 +816,118 @@ export function WeeklyUploadWorkspace({
           </div>
         )}
 
-        <div className={`overflow-x-auto ${card}`}>
-          <table className="w-full text-sm">
-            <thead className={darkHead}>
-              <tr>
-                <th className="px-3 py-2">
-                  <input
-                    aria-label="Select all"
-                    checked={allFilteredSelected}
-                    className="accent-phx-accent"
-                    onChange={toggleAll}
-                    type="checkbox"
-                  />
-                </th>
-                <th className="px-3 py-2">Period</th>
-                <th className="px-3 py-2">Week</th>
-                <th className="px-3 py-2">Distributor</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Rows</th>
-                <th className="px-3 py-2 text-right">Net units</th>
-                <th className="px-3 py-2 text-right">Stock units</th>
-                <th className="px-3 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {filteredBatches.length === 0 && (
+        <div className={card}>
+          <div className="hidden md:block">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col style={{ width: `${columns.select}%` }} />
+                <col style={{ width: `${columns.period}%` }} />
+                <col style={{ width: `${columns.distributor}%` }} />
+                <col style={{ width: `${columns.rows}%` }} />
+                <col style={{ width: `${columns.net}%` }} />
+                <col style={{ width: `${columns.stock}%` }} />
+                <col style={{ width: `${columns.actions}%` }} />
+              </colgroup>
+              <thead className={darkHead}>
                 <tr>
-                  <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={9}>
-                    {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
-                  </td>
-                </tr>
-              )}
-              {filteredBatches.map((batch) => (
-                <tr className="border-t border-[#FFE8D6]" key={batch.id}>
-                  <td className="px-3 py-2">
+                  <th className="px-3 py-2">
                     <input
-                      aria-label={`Select ${batch.distributorName} ${batch.weekStart ?? ""}`}
-                      checked={selectedIds.has(batch.id)}
+                      aria-label="Select all"
+                      checked={allFilteredSelected}
                       className="accent-phx-accent"
-                      onChange={() => toggleOne(batch.id)}
+                      onChange={toggleAll}
                       type="checkbox"
                     />
-                  </td>
-                  <td className="px-3 py-2 font-bold text-phx-ink">
-                    {retagId === batch.id ? (
-                      <input
-                        aria-label="Cycle month"
-                        className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
-                        onChange={(e) => setRetagMonth(e.target.value)}
-                        type="month"
-                        value={retagMonth}
-                      />
-                    ) : (
-                      batch.weekStart ?? "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {retagId === batch.id ? (
-                      <select
-                        aria-label="Week of month"
-                        className="h-8 rounded-[6px] border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
-                        onChange={(e) => setRetagWeek(Number(e.target.value))}
-                        value={retagWeek}
-                      >
-                        {[1, 2, 3, 4].map((w) => (
-                          <option key={w} value={w}>Week {w}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
-                        {batch.weekNumber ? `W${batch.weekNumber}` : "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">{batch.distributorName}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                      {batch.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
-                  {/* A batch's Net and Stock units add every product in its sheet, and this list does not
-                      know how many products a batch holds, so it never prints them (units of different
-                      products are never added, unit-totals.ts). The upload's own panel shows them for one. */}
-                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      {retagId === batch.id ? (
-                        <>
-                          <button
-                            className="inline-flex h-8 items-center gap-1 rounded-[6px] bg-phx-accent px-2.5 text-xs font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
-                            disabled={retagBusy}
-                            onClick={handleRetag}
-                            type="button"
-                          >
-                            {retagBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                            Save
-                          </button>
-                          <button
-                            aria-label="Cancel re-tag"
-                            className="inline-flex text-phx-ink-faint transition hover:text-phx-ink"
-                            onClick={() => setRetagId(null)}
-                            type="button"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            aria-label="Download XLSX report"
-                            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent disabled:opacity-40"
-                            disabled={downloadingId === batch.id}
-                            onClick={() => handleSingleDownload(batch)}
-                            type="button"
-                          >
-                            {downloadingId === batch.id
-                              ? <Loader2 className="h-4 w-4 animate-spin" />
-                              : <Download className="h-4 w-4" />}
-                          </button>
-                          <button
-                            aria-label="Re-tag week / month"
-                            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent"
-                            onClick={() => startRetag(batch)}
-                            type="button"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            aria-label="Delete upload"
-                            className="inline-flex text-phx-ink-faint transition hover:text-rose-600"
-                            onClick={() => handleDelete(batch.id)}
-                            type="button"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th className="break-words px-3 py-2">Period · Week</th>
+                  <th className="break-words px-3 py-2">Distributor · Status</th>
+                  <th className="break-words px-3 py-2 text-right">Rows</th>
+                  <th className="break-words px-3 py-2 text-right">Net units</th>
+                  <th className="break-words px-3 py-2 text-right">Stock units</th>
+                  <th className="px-3 py-2" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredBatches.map((batch) => (
+                  <tr className="border-t border-[#FFE8D6]" key={batch.id}>
+                    <td className="px-3 py-2">
+                      <input
+                        aria-label={`Select ${batch.distributorName} ${batch.weekStart ?? ""}`}
+                        checked={selectedIds.has(batch.id)}
+                        className="accent-phx-accent"
+                        onChange={() => toggleOne(batch.id)}
+                        type="checkbox"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="break-words font-bold text-phx-ink">{renderBatchPeriod(batch)}</div>
+                      <div className="mt-1">{renderBatchWeek(batch)}</div>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="break-words">{batch.distributorName}</div>
+                      <div className="mt-1">{renderBatchStatus(batch)}</div>
+                    </td>
+                    <td className="break-words px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
+                    {/* A batch's Net and Stock units add every product in its sheet, and this list does not
+                        know how many products a batch holds, so it never prints them (units of different
+                        products are never added, unit-totals.ts). The upload's own panel shows them for one. */}
+                    <td className="break-words px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
+                    <td className="break-words px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
+                    <td className="px-3 py-2 text-right">{renderBatchActions(batch)}</td>
+                  </tr>
+                ))}
+                {filteredBatches.length === 0 && (
+                  <tr>
+                    <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={7}>
+                      {noUploadsMessage}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-2 p-3 md:hidden">
+            {filteredBatches.length === 0 ? (
+              <p className="px-3 py-4 text-center text-sm text-phx-ink-faint">{noUploadsMessage}</p>
+            ) : (
+              <label className="flex items-center gap-2 px-1 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">
+                <input
+                  aria-label="Select all"
+                  checked={allFilteredSelected}
+                  className="accent-phx-accent"
+                  onChange={toggleAll}
+                  type="checkbox"
+                />
+                Select all
+              </label>
+            )}
+            {filteredBatches.map((batch) => (
+              <PhoneCard key={`card-${batch.id}`}>
+                <div className="flex items-start gap-2">
+                  <input
+                    aria-label={`Select ${batch.distributorName} ${batch.weekStart ?? ""}`}
+                    checked={selectedIds.has(batch.id)}
+                    className="mt-1 shrink-0 accent-phx-accent"
+                    onChange={() => toggleOne(batch.id)}
+                    type="checkbox"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm font-black text-phx-ink">{batch.distributorName}</p>
+                    <div className="mt-1">{renderBatchStatus(batch)}</div>
+                  </div>
+                  {renderBatchActions(batch)}
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <CardStat label="Period" value={renderBatchPeriod(batch)} />
+                  <CardStat label="Week" value={renderBatchWeek(batch)} />
+                  <CardStat label="Rows" value={num(batch.totalRows)} />
+                  <CardStat label="Net units" value={<span className="text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</span>} />
+                  <CardStat label="Stock units" value={<span className="text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</span>} />
+                </div>
+              </PhoneCard>
+            ))}
+          </div>
         </div>
       </section>
     </div>
@@ -953,13 +1033,13 @@ function MapNowModal({ children, onClose, title }: { children: React.ReactNode; 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
       <div
         aria-modal="true"
-        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[6px] border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
         role="dialog"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-phx-line bg-white px-5 py-3">
           <h2 className="text-sm font-black text-phx-ink">{title}</h2>
           <button
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-phx-line text-phx-ink-soft transition hover:border-phx-accent-line"
+            className="inline-flex h-8 w-8 items-center justify-center border border-phx-line text-phx-ink-soft transition hover:border-phx-accent-line"
             onClick={onClose}
             type="button"
           >
@@ -1047,7 +1127,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
   return (
     <>
       <button
-        className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
+        className="ml-auto inline-flex h-7 items-center gap-1 border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
         onClick={() => void toggle()}
         type="button"
       >
@@ -1061,7 +1141,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
             <div className="mt-1 flex flex-wrap gap-1.5">
               {regions.map((region) => (
                 <span
-                  className="rounded-[4px] border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2"
+                  className="break-words border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2"
                   key={region.regionCode}
                 >
                   {region.regionName} ({region.regionCode})
@@ -1091,18 +1171,18 @@ function UnresolvedItemRow({
   const showValidRegionCodes = group.field === "regionCode" && group.action === null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] border border-rose-200 bg-white px-3 py-2">
-      <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-rose-700">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border border-rose-200 bg-white px-3 py-2">
+      <span className="bg-rose-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-rose-700">
         {FIELD_LABELS[group.field] ?? group.field}
       </span>
-      <span className="text-sm font-semibold text-phx-ink-2">{group.message}</span>
+      <span className="min-w-0 break-words text-sm font-semibold text-phx-ink-2">{group.message}</span>
       <span className="text-xs font-medium text-phx-ink-faint">
         {group.rowNumbers.length} row{group.rowNumbers.length === 1 ? "" : "s"}
         {" "}(e.g. row {group.rowNumbers[0]})
       </span>
       {group.action && (
         <button
-          className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-phx-accent"
+          className="ml-auto inline-flex h-7 items-center gap-1 bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-phx-accent"
           onClick={() => onMap(group.action as MapAction)}
           type="button"
         >
@@ -1158,35 +1238,58 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
   const netQty = weeklyProductKeysAreOne(items.map((item) => `${item.itemCode}|${item.itemName}`))
     ? items.reduce((sum, item) => sum + item.netQty, 0)
     : null;
+  const columns = excludedItemColumns();
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
-      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
+      <h3 className="break-words text-xs font-black uppercase tracking-wide text-phx-ink-2">
         Excluded on purpose ({items.length}) — {num(rows)} rows{netQty === null ? "" : `, ${num(netQty)} net units`} kept out of the numbers
       </h3>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="mt-2 hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.code}%` }} />
+            <col style={{ width: `${columns.name}%` }} />
+            <col style={{ width: `${columns.rows}%` }} />
+            <col style={{ width: `${columns.net}%` }} />
+            <col style={{ width: `${columns.stock}%` }} />
+          </colgroup>
           <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
-              <th className="py-1 pr-4 whitespace-nowrap">Item code</th>
-              <th className="py-1 pr-4 whitespace-nowrap">Item name</th>
-              <th className="py-1 pr-4 text-right whitespace-nowrap">Rows</th>
-              <th className="py-1 pr-4 text-right whitespace-nowrap">Net units</th>
-              <th className="py-1 text-right whitespace-nowrap">Stock units</th>
+              <th className="break-words py-1 pr-4">Item code</th>
+              <th className="break-words py-1 pr-4">Item name</th>
+              <th className="break-words py-1 pr-4 text-right">Rows</th>
+              <th className="break-words py-1 pr-4 text-right">Net units</th>
+              <th className="break-words py-1 text-right">Stock units</th>
             </tr>
           </thead>
           <tbody>
             {items.map((item) => (
               <tr className="border-t border-phx-line" key={`${item.itemCode}|${item.itemName}`}>
-                <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{item.itemCode || "—"}</td>
-                <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{item.itemName || "—"}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.netQty)}</td>
-                <td className="py-1 text-right tabular-nums text-phx-ink-2">{num(item.stockQty)}</td>
+                <td className="break-words py-1 pr-4 font-semibold text-phx-ink">{item.itemCode || "—"}</td>
+                <td className="break-words py-1 pr-4 text-phx-ink-2">{item.itemName || "—"}</td>
+                <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.rows)}</td>
+                <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.netQty)}</td>
+                <td className="break-words py-1 text-right tabular-nums text-phx-ink-2">{num(item.stockQty)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="mt-2 space-y-2 md:hidden">
+        {items.map((item) => (
+          <PhoneCard key={`card-${item.itemCode}|${item.itemName}`}>
+            <p className="break-words text-sm font-black text-phx-ink">{item.itemName || "—"}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <CardStat label="Item code" value={item.itemCode || "—"} />
+              </div>
+              <CardStat label="Rows" value={num(item.rows)} />
+              <CardStat label="Net units" value={num(item.netQty)} />
+              <CardStat label="Stock units" value={num(item.stockQty)} />
+            </div>
+          </PhoneCard>
+        ))}
       </div>
       <p className="mt-2 text-xs font-medium text-phx-ink-faint">
         These items are mapped to IGNORE in Weekly Mapping — not Phoenix products. Re-point the mapping to a real product if any of them belongs to a line.
@@ -1203,39 +1306,62 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
   const netQty = branches.reduce((sum, branch) => sum + branch.netQty, 0);
   const stockQty = branches.reduce((sum, branch) => sum + branch.stockQty, 0);
   const heldOutUnits = sumIsOneItem ? `, ${num(netQty)} net and ${num(stockQty)} stock units` : "";
+  const branchUnits = (branch: WeeklyExcludedBranch, value: number) =>
+    weeklyProductKeysAreOne(branch.itemKeys) ? num(value) : "—";
+  const columns = excludedBranchColumns();
+  const branchLabel = (branch: WeeklyExcludedBranch) =>
+    branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—");
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
-      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
+      <h3 className="break-words text-xs font-black uppercase tracking-wide text-phx-ink-2">
         Branches excluded on purpose ({branches.length}) — {num(rows)} rows{heldOutUnits} kept out of the numbers
       </h3>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="mt-2 hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.branch}%` }} />
+            <col style={{ width: `${columns.name}%` }} />
+            <col style={{ width: `${columns.rows}%` }} />
+            <col style={{ width: `${columns.net}%` }} />
+            <col style={{ width: `${columns.stock}%` }} />
+          </colgroup>
           <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
-              <th className="py-1 pr-4 whitespace-nowrap">Branch</th>
-              <th className="py-1 pr-4 whitespace-nowrap">Branch name</th>
-              <th className="py-1 pr-4 text-right whitespace-nowrap">Rows</th>
-              <th className="py-1 pr-4 text-right whitespace-nowrap">Net units</th>
-              <th className="py-1 text-right whitespace-nowrap">Stock units</th>
+              <th className="break-words py-1 pr-4">Branch</th>
+              <th className="break-words py-1 pr-4">Branch name</th>
+              <th className="break-words py-1 pr-4 text-right">Rows</th>
+              <th className="break-words py-1 pr-4 text-right">Net units</th>
+              <th className="break-words py-1 text-right">Stock units</th>
             </tr>
           </thead>
           <tbody>
             {branches.map((branch) => (
               <tr className="border-t border-phx-line" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
-                <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
-                <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{branch.branchName || "—"}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">
-                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.netQty) : "—"}
-                </td>
-                <td className="py-1 text-right tabular-nums text-phx-ink-2">
-                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.stockQty) : "—"}
-                </td>
+                <td className="break-words py-1 pr-4 font-semibold text-phx-ink">{branchLabel(branch)}</td>
+                <td className="break-words py-1 pr-4 text-phx-ink-2">{branch.branchName || "—"}</td>
+                <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.rows)}</td>
+                <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{branchUnits(branch, branch.netQty)}</td>
+                <td className="break-words py-1 text-right tabular-nums text-phx-ink-2">{branchUnits(branch, branch.stockQty)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="mt-2 space-y-2 md:hidden">
+        {branches.map((branch) => (
+          <PhoneCard key={`card-${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
+            <p className="break-words text-sm font-black text-phx-ink">{branch.branchName || "—"}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="col-span-2">
+                <CardStat label="Branch" value={branchLabel(branch)} />
+              </div>
+              <CardStat label="Rows" value={num(branch.rows)} />
+              <CardStat label="Net units" value={branchUnits(branch, branch.netQty)} />
+              <CardStat label="Stock units" value={branchUnits(branch, branch.stockQty)} />
+            </div>
+          </PhoneCard>
+        ))}
       </div>
       <p className="mt-2 text-xs font-medium text-phx-ink-faint">
         These depots are ticked &quot;excluded&quot; in the Weekly Mapping branch list, so none of their volume reaches the dashboard. Untick a branch there if its sales should count.
@@ -1260,52 +1386,69 @@ function FileSelfCheckPanel({ fileTotals }: { fileTotals: WeeklyFileTotalsReport
       : mismatches > 0
         ? `File self-check — ${num(mismatches)} of ${num(fileTotals.checks.length)} disagree with the file`
         : `File self-check — all ${num(fileTotals.checks.length)} agree with the file`;
+  const columns = fileSelfCheckColumns();
+  const verdictOf = (check: WeeklyFileTotalsReport["checks"][number]) =>
+    check.status === "ok"
+      ? { cls: "text-emerald-700", text: "Agrees" }
+      : check.severity === "block"
+        ? { cls: "text-red-700", text: "Disagrees — import stopped" }
+        : { cls: "text-amber-700", text: "Disagrees — please check" };
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
-      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">{headline}</h3>
+      <h3 className="break-words text-xs font-black uppercase tracking-wide text-phx-ink-2">{headline}</h3>
 
       {fileTotals.absence !== null ? (
-        <p className="mt-2 text-sm font-medium text-phx-ink-2">{fileTotals.absence.reason}</p>
+        <p className="mt-2 break-words text-sm font-medium text-phx-ink-2">{fileTotals.absence.reason}</p>
       ) : (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
-              <tr>
-                <th className="py-1 pr-4 whitespace-nowrap">What the file states</th>
-                <th className="py-1 pr-4 whitespace-nowrap">Where</th>
-                <th className="py-1 pr-4 text-right whitespace-nowrap">File says</th>
-                <th className="py-1 pr-4 text-right whitespace-nowrap">Import read</th>
-                <th className="py-1 whitespace-nowrap">Verdict</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fileTotals.checks.map((check) => (
-                <tr className="border-t border-phx-line" key={`${check.label}|${check.where}`}>
-                  <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{check.label}</td>
-                  <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{check.where}</td>
-                  <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.declared)}</td>
-                  <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.parsed)}</td>
-                  <td
-                    className={`py-1 font-bold whitespace-nowrap ${
-                      check.status === "ok"
-                        ? "text-emerald-700"
-                        : check.severity === "block"
-                          ? "text-red-700"
-                          : "text-amber-700"
-                    }`}
-                  >
-                    {check.status === "ok"
-                      ? "Agrees"
-                      : check.severity === "block"
-                        ? "Disagrees — import stopped"
-                        : "Disagrees — please check"}
-                  </td>
+        <>
+          <div className="mt-2 hidden md:block">
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col style={{ width: `${columns.label}%` }} />
+                <col style={{ width: `${columns.where}%` }} />
+                <col style={{ width: `${columns.declared}%` }} />
+                <col style={{ width: `${columns.parsed}%` }} />
+                <col style={{ width: `${columns.verdict}%` }} />
+              </colgroup>
+              <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
+                <tr>
+                  <th className="break-words py-1 pr-4">What the file states</th>
+                  <th className="break-words py-1 pr-4">Where</th>
+                  <th className="break-words py-1 pr-4 text-right">File says</th>
+                  <th className="break-words py-1 pr-4 text-right">Import read</th>
+                  <th className="break-words py-1">Verdict</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {fileTotals.checks.map((check) => (
+                  <tr className="border-t border-phx-line" key={`${check.label}|${check.where}`}>
+                    <td className="break-words py-1 pr-4 font-semibold text-phx-ink">{check.label}</td>
+                    <td className="break-words py-1 pr-4 text-phx-ink-2">{check.where}</td>
+                    <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.declared)}</td>
+                    <td className="break-words py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(check.parsed)}</td>
+                    <td className={`break-words py-1 font-bold ${verdictOf(check).cls}`}>{verdictOf(check).text}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-2 space-y-2 md:hidden">
+            {fileTotals.checks.map((check) => (
+              <PhoneCard key={`card-${check.label}|${check.where}`}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="min-w-0 break-words text-sm font-black text-phx-ink">{check.label}</p>
+                  <p className={`min-w-0 break-words text-xs font-bold ${verdictOf(check).cls}`}>{verdictOf(check).text}</p>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <CardStat label="Where" value={check.where} />
+                  <CardStat label="File says" value={num(check.declared)} />
+                  <CardStat label="Import read" value={num(check.parsed)} />
+                </div>
+              </PhoneCard>
+            ))}
+          </div>
+        </>
       )}
 
       {fileTotals.absence === null && mismatches === 0 && (
@@ -1403,6 +1546,7 @@ function ValidationResultPanel({
   // upload holds ONE product (owner, 2026-09-17); otherwise a dash holds its place.
   const unitsAreOneProduct = weeklyProductKeysAreOne(result.byProduct.map((p) => p.productCode || p.productName));
   const units = (value: number) => (unitsAreOneProduct ? num(value) : "—");
+  const columns = rowIssueColumns();
   const weekMismatch =
     result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
 
@@ -1415,7 +1559,7 @@ function ValidationResultPanel({
         <span className="ml-auto text-xs font-bold text-phx-ink-soft">{result.distributor.name} · {result.weekStart ?? "no date"}</span>
         {hasFailures && (
           <button
-            className="inline-flex h-8 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
+            className="inline-flex h-8 items-center gap-1 border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
             onClick={() => downloadUnmapped(result)}
             type="button"
           >
@@ -1433,7 +1577,7 @@ function ValidationResultPanel({
             <b>Week {result.suggestedWeekNumber}</b>.
           </span>
           <button
-            className="ml-1 inline-flex h-7 items-center rounded-[6px] border border-amber-300 bg-white px-2 text-xs font-black text-amber-800 transition hover:bg-amber-100"
+            className="ml-1 inline-flex h-7 items-center border border-amber-300 bg-white px-2 text-xs font-black text-amber-800 transition hover:bg-amber-100"
             onClick={() => onPickWeek(result.suggestedWeekNumber as number)}
             type="button"
           >
@@ -1519,54 +1663,69 @@ function ValidationResultPanel({
         <Metric label="Stock units" value={units(t.stockQty)} />
       </div>
 
-      {/* Summary tables */}
-      <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+      {/* Summary tables. Two abreast only from 2xl: at 1024px with the sidebar open, two side by side left each
+          table about 300px, too narrow for a name and four unit counts. */}
+      <div className="grid grid-cols-1 gap-4 p-4 2xl:grid-cols-2">
         <SummaryTable
           title="By product"
-          head={["Product", "Sales", "Return", "Net", "Stock"]}
-          rows={result.byProduct.map((p) => [
-            p.productName || p.productCode,
-            num(p.salesQty), num(p.returnQty), num(p.netQty), num(p.stockQty),
-          ])}
+          nameLabel="Product"
+          rows={result.byProduct.map((p) => ({
+            name: p.productName || p.productCode,
+            sales: num(p.salesQty), returns: num(p.returnQty), net: num(p.netQty), stock: num(p.stockQty),
+          }))}
         />
         <SummaryTable
           title="By branch"
-          head={["Branch", "Sales", "Return", "Net", "Stock"]}
-          rows={result.byBranch.map((b) => [
-            b.branchName || b.branchCode,
-            units(b.salesQty), units(b.returnQty), units(b.netQty), units(b.stockQty),
-          ])}
+          nameLabel="Branch"
+          rows={result.byBranch.map((b) => ({
+            name: b.branchName || b.branchCode,
+            sales: units(b.salesQty), returns: units(b.returnQty), net: units(b.netQty), stock: units(b.stockQty),
+          }))}
         />
         <SummaryTable
           title="By region"
-          head={["Region", "Sales", "Return", "Net", "Stock"]}
-          rows={result.byRegion.map((r) => [
-            r.regionName || r.regionCode,
-            units(r.salesQty), units(r.returnQty), units(r.netQty), units(r.stockQty),
-          ])}
+          nameLabel="Region"
+          rows={result.byRegion.map((r) => ({
+            name: r.regionName || r.regionCode,
+            sales: units(r.salesQty), returns: units(r.returnQty), net: units(r.netQty), stock: units(r.stockQty),
+          }))}
         />
       </div>
 
-      {/* Row issues */}
+      {/* Row issues: a fixed table from md up, one line per issue below md. It scrolls down, never sideways. */}
       {result.issues.length > 0 && (
         <div className="border-t border-phx-line p-4">
           <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-phx-ink-soft">
             Row issues ({result.issues.length})
           </h3>
-          <div className="max-h-56 overflow-auto rounded-[6px] border border-[#FFE8D6]">
-            <table className="w-full text-xs">
+          <div className="max-h-56 overflow-y-auto border border-[#FFE8D6]">
+            <table className="hidden w-full table-fixed text-xs md:table">
+              <colgroup>
+                <col style={{ width: `${columns.row}%` }} />
+                <col style={{ width: `${columns.severity}%` }} />
+                <col style={{ width: `${columns.message}%` }} />
+              </colgroup>
               <tbody>
                 {result.issues.slice(0, 100).map((issue, i) => (
                   <tr className="border-t border-[#FFE8D6]" key={`${issue.rowNumber}-${i}`}>
-                    <td className="px-2 py-1 font-bold text-phx-ink-soft">Row {issue.rowNumber}</td>
-                    <td className="px-2 py-1">
+                    <td className="break-words px-2 py-1 font-bold text-phx-ink-soft">Row {issue.rowNumber}</td>
+                    <td className="break-words px-2 py-1">
                       <span className={issue.severity === "failure" ? "text-rose-600" : "text-amber-600"}>{issue.severity}</span>
                     </td>
-                    <td className="px-2 py-1 text-phx-ink-2">{issue.message}</td>
+                    <td className="break-words px-2 py-1 text-phx-ink-2">{issue.message}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <ul className="md:hidden">
+              {result.issues.slice(0, 100).map((issue, i) => (
+                <li className="border-t border-[#FFE8D6] px-2 py-1.5 text-xs first:border-t-0" key={`card-${issue.rowNumber}-${i}`}>
+                  <span className="font-bold text-phx-ink-soft">Row {issue.rowNumber}</span>{" "}
+                  <span className={issue.severity === "failure" ? "text-rose-600" : "text-amber-600"}>{issue.severity}</span>
+                  <p className="break-words text-phx-ink-2">{issue.message}</p>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
       )}
@@ -1574,12 +1733,12 @@ function ValidationResultPanel({
       {/* Step 3 — Confirm Upload */}
       <div className="border-t border-phx-line px-4 py-4">
         <div className="flex items-center gap-2 mb-3">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">5</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center bg-[#020617] text-phx-2xs font-black text-white">5</span>
           <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Confirm &amp; Upload</span>
         </div>
 
         {uploadDone ? (
-          <div className="flex items-center gap-2 rounded-[6px] bg-emerald-50 border border-emerald-200 px-4 py-3">
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-4 py-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>
               <p className="text-sm font-black text-emerald-700">Stored successfully — period {result.weekStart ?? "—"}</p>
@@ -1595,13 +1754,13 @@ function ValidationResultPanel({
               value={notifyLines}
             />
             {uploadError && (
-              <div className="w-full flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+              <div className="w-full flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{uploadError}</span>
               </div>
             )}
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
+              className="inline-flex h-10 items-center gap-2 bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
               disabled={uploadBusy}
               onClick={onUpload}
               type="button"
@@ -1848,12 +2007,14 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
     uploadedBy.set(t.distributorCode, existing);
   }
 
+  const weeks = [1, 2, 3, 4];
+  const columns = uploadTrackerColumns(weeks.length);
   const rows = WEEKLY_DISTRIBUTORS.map((dist) => {
-    const weeks = cadenceWeeks(dist.code);
+    const expectedWeeks = cadenceWeeks(dist.code);
     const up = uploadedBy.get(dist.code) ?? new Map<number, string | null>();
-    const cells = [1, 2, 3, 4].map((week) => {
+    const cells = weeks.map((week) => {
       const isUploaded = up.has(week);
-      const isExpected = weeks.includes(week);
+      const isExpected = expectedWeeks.includes(week);
       const due = today.day >= (WEEK_DUE_DAY[week] ?? 99);
       const state: "done" | "overdue" | "upcoming" | "na" = isUploaded
         ? "done"
@@ -1862,12 +2023,17 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
           : "na";
       return { week, state, date: up.get(week) ?? null, counted: isUploaded && isExpected };
     });
-    return { code: dist.code, name: dist.name, expectedCount: weeks.length, cells };
+    return { code: dist.code, name: dist.name, expectedCount: expectedWeeks.length, cells };
   });
   const expected = rows.reduce((acc, row) => acc + row.expectedCount, 0);
   const done = rows.reduce((acc, row) => acc + row.cells.filter((cell) => cell.counted).length, 0);
   const pctDone = expected > 0 ? Math.round((Math.min(done, expected) / expected) * 100) : 0;
   const allIn = done >= expected;
+
+  const cellTitle = (cell: (typeof rows)[number]["cells"][number]) =>
+    cell.date ? `Uploaded — ${cell.date}` : cell.state === "overdue" ? "Expected but not uploaded yet" : cell.state === "na" ? "Not expected for this distributor" : "Upcoming";
+  const cellMark = (cell: (typeof rows)[number]["cells"][number]) =>
+    cell.state === "done" ? "✓" : cell.state === "overdue" ? "!" : cell.state === "na" ? "·" : "–";
 
   const cellClass: Record<string, string> = {
     done: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -1883,7 +2049,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
           <div className="flex items-center gap-2">
             <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">This month — {trackerMonthLabel(focusMonth)}</span>
             {allIn && (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" /> All sheets in
               </span>
             )}
@@ -1895,39 +2061,72 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
         <span className="text-sm font-black tabular-nums text-phx-ink">{done} / {expected} sheets</span>
       </div>
 
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-phx-paper-2">
-        <div className={`h-full rounded-full ${allIn ? "bg-emerald-500" : "bg-phx-accent"}`} style={{ width: `${pctDone}%` }} />
+      <div className="mt-3 h-2 w-full overflow-hidden bg-phx-paper-2">
+        <div className={`h-full ${allIn ? "bg-emerald-500" : "bg-phx-accent"}`} style={{ width: `${pctDone}%` }} />
       </div>
 
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-sm">
+      {/* Desktop and tablet: the distributor, then one fixed column per week. */}
+      <div className="mt-4 hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.distributor}%` }} />
+            {weeks.map((week) => (
+              <col key={week} style={{ width: `${columns.week}%` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr className="text-left text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
               <th className="px-2 py-1">Distributor</th>
-              <th className="px-2 py-1 text-center">W1</th>
-              <th className="px-2 py-1 text-center">W2</th>
-              <th className="px-2 py-1 text-center">W3</th>
-              <th className="px-2 py-1 text-center">W4</th>
+              {weeks.map((week) => (
+                <th className="px-2 py-1 text-center" key={week}>W{week}</th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr key={row.code} className="border-t border-phx-paper-2">
-                <td className="px-2 py-1.5 font-bold text-phx-ink">{row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span></td>
-                {row.cells.map((cell) => (
-                  <td className="px-2 py-1.5 text-center" key={cell.week}>
-                    <span
-                      className={`inline-flex h-6 min-w-[2.2rem] items-center justify-center rounded-[4px] border text-phx-xs font-black ${cellClass[cell.state]}`}
-                      title={cell.date ? `Uploaded — ${cell.date}` : cell.state === "overdue" ? "Expected but not uploaded yet" : cell.state === "na" ? "Not expected for this distributor" : "Upcoming"}
-                    >
-                      {cell.state === "done" ? "✓" : cell.state === "overdue" ? "!" : cell.state === "na" ? "·" : "–"}
-                    </span>
-                  </td>
-                ))}
+                <td className="break-words px-2 py-1.5 font-bold text-phx-ink">{row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span></td>
+                {weeks.map((week, index) => {
+                  const cell = row.cells[index];
+                  return (
+                    <td className="px-2 py-1.5 text-center" key={week}>
+                      <span
+                        className={`inline-flex h-6 w-9 items-center justify-center border text-phx-xs font-black ${cellClass[cell.state]}`}
+                        title={cellTitle(cell)}
+                      >
+                        {cellMark(cell)}
+                      </span>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Phones: one card per distributor, its four week marks in a row. */}
+      <div className="mt-4 space-y-2 md:hidden">
+        {rows.map((row) => (
+          <PhoneCard key={`card-${row.code}`}>
+            <p className="break-words text-sm font-bold text-phx-ink">
+              {row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span>
+            </p>
+            <div className="mt-2 grid grid-cols-4 gap-1.5">
+              {row.cells.map((cell) => (
+                <div className="flex flex-col items-center gap-1" key={cell.week}>
+                  <span className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">W{cell.week}</span>
+                  <span
+                    className={`inline-flex h-6 w-9 items-center justify-center border text-phx-xs font-black ${cellClass[cell.state]}`}
+                    title={cellTitle(cell)}
+                  >
+                    {cellMark(cell)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </PhoneCard>
+        ))}
       </div>
 
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
@@ -1951,35 +2150,84 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
   );
 }
 
-function SummaryTable({ title, head, rows }: { title: string; head: string[]; rows: string[][] }) {
+type SummaryRow = { name: string; sales: string; returns: string; net: string; stock: string };
+
+// A By product, By branch or By region summary: a fixed table from md up and one card per row below md. Both
+// scroll down inside the box, never sideways.
+function SummaryTable({ title, nameLabel, rows }: { title: string; nameLabel: string; rows: SummaryRow[] }) {
+  const columns = uploadSummaryColumns();
   return (
-    <div className="overflow-hidden rounded-[6px] border border-phx-line">
+    <div className="overflow-hidden border border-phx-line">
       <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">{title}</div>
-      <div className="max-h-72 overflow-auto">
-        <table className="w-full text-sm">
+      <div className="hidden max-h-72 overflow-y-auto md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.name}%` }} />
+            <col style={{ width: `${columns.sales}%` }} />
+            <col style={{ width: `${columns.returns}%` }} />
+            <col style={{ width: `${columns.net}%` }} />
+            <col style={{ width: `${columns.stock}%` }} />
+          </colgroup>
           <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
-              {head.map((cell, i) => (
-                <th className={`px-3 py-1.5 ${i === 0 ? "" : "text-right"}`} key={cell}>{cell}</th>
-              ))}
+              <th className="break-words px-3 py-1.5">{nameLabel}</th>
+              <th className="break-words px-3 py-1.5 text-right">Sales</th>
+              <th className="break-words px-3 py-1.5 text-right">Return</th>
+              <th className="break-words px-3 py-1.5 text-right">Net</th>
+              <th className="break-words px-3 py-1.5 text-right">Stock</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={head.length}>—</td></tr>
-            )}
             {rows.map((row, ri) => (
               <tr className="border-t border-[#FFE8D6]" key={ri}>
-                {row.map((cell, ci) => (
-                  <td className={`px-3 py-1.5 ${ci === 0 ? "font-semibold text-phx-ink" : "text-right tabular-nums text-phx-ink-2"}`} key={ci}>
-                    {cell}
-                  </td>
-                ))}
+                <td className="break-words px-3 py-1.5 font-semibold text-phx-ink">{row.name}</td>
+                <td className="break-words px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{row.sales}</td>
+                <td className="break-words px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{row.returns}</td>
+                <td className="break-words px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{row.net}</td>
+                <td className="break-words px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{row.stock}</td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={5}>—</td></tr>
+            )}
           </tbody>
         </table>
       </div>
+      <div className="max-h-72 space-y-2 overflow-y-auto p-3 md:hidden">
+        {rows.length === 0 && <p className="py-1 text-center text-sm text-phx-ink-faint">—</p>}
+        {rows.map((row, ri) => (
+          <PhoneCard key={`card-${ri}`}>
+            <p className="break-words text-sm font-semibold text-phx-ink">{row.name}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <CardStat label="Sales" value={row.sales} />
+              <CardStat label="Return" value={row.returns} />
+              <CardStat label="Net" value={row.net} />
+              <CardStat label="Stock" value={row.stock} />
+            </div>
+          </PhoneCard>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A phone card: the accent rule down its left edge and the content beside it. The same card the admin
+// Weekly Sales Dashboard draws below md (weekly-dashboard-view-impl.tsx).
+function PhoneCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex overflow-hidden border border-phx-line bg-white">
+      <span className="w-[3px] shrink-0 bg-phx-accent" />
+      <div className="min-w-0 flex-1 p-3">{children}</div>
+    </div>
+  );
+}
+
+/** One labelled figure on a phone card. */
+function CardStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <div className="break-words text-sm font-black tabular-nums text-phx-ink">{value}</div>
     </div>
   );
 }
