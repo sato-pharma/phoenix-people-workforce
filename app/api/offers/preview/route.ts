@@ -69,8 +69,12 @@ export async function POST(request: Request) {
     };
 
     // The preview has to show the same mark the recipient will get, or the designer is lying about
-    // what it produces: the data URI for the document (as the PDF renderer uses) and the absolute
-    // public URL for the email (as the send path uses).
+    // what it produces: the data URI for the document, as the PDF renderer uses.
+    //
+    // The email preview keeps the absolute public URL even though a real send now carries the mark
+    // as a `cid:` part (2026-09-17). The two are the same PNG, and a browser cannot resolve a
+    // `cid:` at all — putting one here would leave the designer staring at the broken placeholder
+    // this change exists to remove.
     const logoUrl = typeof body.logoUrl === "string" ? body.logoUrl : undefined;
 
     if (body.mode === "email") {

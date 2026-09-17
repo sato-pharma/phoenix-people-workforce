@@ -28,8 +28,19 @@ export { parseRetryAfter, RetryableEmailError } from "@/lib/email/email-errors";
 export type SendPhoenixEmailAttachment = {
   /** Base64-encoded file content. */
   content: string;
+  /**
+   * Content-ID for a part the HTML draws inline with `<img src="cid:…">` — a letterhead mark, a
+   * seal. An inline part is carried BY the message, so it needs no permission to display: a remote
+   * `https://` image is withheld by default in Outlook, Yahoo/Turbify webmail and Gmail until the
+   * reader allows images for that sender, and that is what left the Sato mark as a torn-page
+   * placeholder on sent offer letters (2026-09-17). Set `remoteUrl` beside it so a provider that
+   * cannot carry a Content-ID still has somewhere to point the same `<img>`.
+   */
+  contentId?: string;
   contentType?: string;
   filename: string;
+  /** Public https copy of the same file, for providers with no Content-ID support (Brevo). */
+  remoteUrl?: string;
 };
 
 export type SendPhoenixEmailInput = {

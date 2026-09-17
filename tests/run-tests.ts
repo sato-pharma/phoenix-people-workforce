@@ -954,6 +954,7 @@ import { runHrFormsWorkerDataTests } from "./hr-forms-worker-data.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
 import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
+import { runOfferLetterheadInlineMarkTests } from "./offer-letterhead-inline-mark.test.ts";
 import { runOfferDatesTests } from "./offer-dates.test.ts";
 import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferOutstationClauseTests } from "./offer-outstation-clause.test.ts";
@@ -3459,6 +3460,13 @@ await runTest(
   "offer PDF runtime (the image's puppeteer pin matches package.json, and Chromium is found on "
     + "disk rather than assumed at the pre-Alpine-3.19 path)",
   runOfferPdfRuntimeTests,
+);
+await runTest(
+  "offer letterhead mark (the Sato mark travels inside the message as a cid: part rather than as "
+    + "a remote image the reader's client withholds; Resend is told content_id, and Brevo, which "
+    + "has no such field, points the same img back at the public asset instead of attaching a "
+    + "stray file)",
+  runOfferLetterheadInlineMarkTests,
 );
 await runTest(
   "offer built-in designs (both shipped letters use only block types the sanitizer keeps, so "
