@@ -1708,6 +1708,7 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
+import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
 import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
@@ -5239,7 +5240,8 @@ await runTest(
 await runTest(
   "a session lock is stale by AGE alone, and no shipped text teaches the PID rule (the lock stores "
     + "the hook's own short-lived parent shell, so EVERY lock names a dead PID — the weekly hygiene "
-    + "task believed that rule and had been deleting live sessions' locks)",
+    + "task believed that rule and had been deleting live sessions' locks); a live session's heartbeat "
+    + "keeps its lock fresh past two hours, never takes another's fresh lock, and the lock is per folder",
   runSessionLockStalenessIsAgeTests,
 );
 await runTest(
@@ -5799,8 +5801,13 @@ await runTest(
 );
 
 await runTest(
-  "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
+  "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, a file name like autorun-guard.mjs, or the word quoted, negated or asked about never arms it; a state file from an older guard is never re-stated; and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "every session-trap cluster is delivered by a real command (Parallel sessions had no rule and reached nobody), once per session, from the session's own worktree, by a hook registered once with a timeout",
+  runTrapInjectorClustersTests,
 );
 
 await runTest(

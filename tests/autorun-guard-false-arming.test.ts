@@ -16,6 +16,12 @@
 //      standalone AUTORUN that only cutting the envelope out can stop.
 //   2. THE TOKEN. `/\bautorun\b/i` matched inside "autorun-guard.mjs", because `\b` treats a hyphen as
 //      a word boundary. The cases isolating this are typed text with no envelope at all.
+//   3. THE MENTION (2026-09-17). The owner's own typed task — asking for this very fix — armed its
+//      session at 19:12, because it quoted the cases to refuse: `(e.g. "don't AUTORUN", "what does
+//      AUTORUN do")`. Clean, upper-case, standalone, typed by him. A quoted, negated or questioning
+//      mention is talk about the word, so each of those shapes is pinned on its own below.
+//   4. THE OLD STATE FILE. A file the older guard wrote was judged by rules that armed on all of the
+//      above, so it must never be re-stated — the fix has to reach sessions already falsely armed.
 //
 // THE REAL HOOK RUNS AS A SUBPROCESS, from a throwaway copy. The property is a runtime one: is a state
 // file written, and is the next turn told it is armed. The hook keeps its state beside itself
@@ -26,7 +32,7 @@
 
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -219,6 +225,101 @@ function testAFileNameOrPathNeverArms(sandbox: Sandbox) {
   }
 }
 
+function testAQuotedNegatedOrQuestioningMentionNeverArms(sandbox: Sandbox) {
+  // THE INCIDENT, as he typed it: the sixth item of a settings-review task, word for word.
+  const incident =
+    "6. Hooks under `.claude/hooks/` — investigate and fix what is real, with a regression test where the repo "
+    + "has a hook test pattern:\n"
+    + "   - autorun-guard.mjs armed a session falsely on 2026-09-15 23:23 (Cairo); its state files were moved "
+    + "out on 2026-09-17. Make sure the guard never arms on a negated or quoted mention of the word (e.g. "
+    + "\"don't AUTORUN\", \"what does AUTORUN do\") and does not re-state an arming from a state file written "
+    + "before the fix.";
+  submit(sandbox, "incident-2026-09-17", incident);
+  assert.equal(
+    isArmed(sandbox, "incident-2026-09-17"),
+    false,
+    "the owner's task quoting \"don't AUTORUN\" and \"what does AUTORUN do\" must NOT arm AUTORUN — it armed its "
+      + "own session on 2026-09-17 at 19:12",
+  );
+  assert.doesNotMatch(nextTurn(sandbox, "incident-2026-09-17"), /AUTORUN IS ARMED/, "and no later turn hears it is armed");
+
+  const mentions: Case[] = [
+    { session: "quoted-double", prompt: 'explain "AUTORUN" to me', why: "a double-quoted word is talk about it" },
+    { session: "quoted-curly", prompt: "what the owner types is “AUTORUN” and nothing else", why: "a curly-quoted word is talk about it" },
+    { session: "quoted-single", prompt: "the trigger is 'AUTORUN' in capitals", why: "a single quote touching the word is talk about it" },
+    { session: "possessive", prompt: "AUTORUN's rule says merges are pre-approved", why: "a possessive is talk about the word" },
+    { session: "inline-code", prompt: "the hook matches `AUTORUN` in capitals", why: "inline code is talk about the word" },
+    {
+      session: "fenced-block",
+      prompt: "this is what the doc says:\n```\nAUTORUN finish the plan\n```\nis that right",
+      why: "a fenced block is quoted text, not the owner's instruction",
+    },
+    { session: "quote-line", prompt: "> AUTORUN finish the plan\nwhy did that arm", why: "a '>' quote line is quoted text" },
+    { session: "negated-dont", prompt: "don't AUTORUN this one", why: "\"don't AUTORUN\" is a refusal, not an arming" },
+    { session: "negated-curly", prompt: "don’t AUTORUN the payroll plan", why: "a curly apostrophe is still a negation" },
+    { session: "negated-do-not", prompt: "do not use AUTORUN here", why: "a negation two words back still negates" },
+    { session: "negated-no-need", prompt: "no need for AUTORUN today", why: "\"no need for AUTORUN\" negates the word" },
+    { session: "negated-never", prompt: "never AUTORUN a payroll change", why: "\"never AUTORUN\" negates the word" },
+    { session: "negated-stop", prompt: "stop using AUTORUN for this", why: "\"stop using AUTORUN\" is not an arming" },
+    { session: "question-what", prompt: "what does AUTORUN do", why: "a question about the word, even with no '?', is not an arming" },
+    { session: "question-mark", prompt: "AUTORUN still armed in the other session?", why: "a sentence ending in '?' asks, it does not arm" },
+    { session: "question-is", prompt: "is AUTORUN on for this session", why: "a clause opening as a question asks, it does not arm" },
+    { session: "question-how", prompt: "how does AUTORUN survive compaction", why: "a how-question asks, it does not arm" },
+  ];
+  for (const c of mentions) {
+    submit(sandbox, c.session, c.prompt);
+    assert.equal(isArmed(sandbox, c.session), false, c.why);
+  }
+
+  // The refusals must not swallow a real arming beside them — each occurrence is judged on its own, and a
+  // negation in another clause is not a negation of the word.
+  const stillArms: Case[] = [
+    {
+      session: "question-then-instruction",
+      prompt: "what does AUTORUN do? never mind, AUTORUN the closing plan",
+      why: "a question first does not cancel the instruction after it",
+    },
+    { session: "dont-stop-dash", prompt: "don't stop — AUTORUN the whole plan", why: "a dash ends the negation's clause" },
+    { session: "dont-stop", prompt: "don't stop AUTORUN", why: "two negations cancel: \"don't stop\" means keep going" },
+    { session: "no-questions", prompt: "No questions. AUTORUN.", why: "a negation in the previous sentence does not reach the word" },
+    { session: "comma-then", prompt: "When CI is green, AUTORUN the merges", why: "a clause after a comma is an instruction" },
+    { session: "imperative-do", prompt: "do AUTORUN on phases 1-5", why: "\"do AUTORUN\" is an imperative, not a question" },
+    { session: "arming-then-quote", prompt: 'AUTORUN the plan named "payroll close"', why: "a quoted run after the word leaves the word itself alone" },
+  ];
+  for (const c of stillArms) {
+    submit(sandbox, c.session, c.prompt);
+    assert.equal(isArmed(sandbox, c.session), true, c.why);
+  }
+}
+
+function testAnOlderStateFileIsNeverRestated(sandbox: Sandbox) {
+  // Exactly what the older guard wrote at 19:12 on 2026-09-17: no version, no trigger.
+  mkdirSync(sandbox.stateDir, { recursive: true });
+  writeFileSync(
+    join(sandbox.stateDir, "older-guard.json"),
+    JSON.stringify({ armedAt: new Date(Date.now() - 600000).toISOString(), sessionId: "older-guard" }, null, 2),
+  );
+  assert.equal(
+    nextTurn(sandbox, "older-guard"),
+    "",
+    "a state file the older guard wrote must NOT be re-stated — it armed on quoted and negated mentions, so its "
+      + "armings cannot be trusted",
+  );
+
+  // And a file this guard writes records the owner's words, which the re-statement quotes back.
+  submit(sandbox, "records-trigger", "Run the whole closing plan. AUTORUN.");
+  const state = JSON.parse(readFileSync(join(sandbox.stateDir, "records-trigger.json"), "utf8")) as {
+    version?: number;
+    trigger?: string;
+  };
+  assert.equal(state.trigger, "Run the whole closing plan. AUTORUN.", "the state file records the line that armed it");
+  assert.match(
+    nextTurn(sandbox, "records-trigger"),
+    /AUTORUN IS ARMED[\s\S]*“Run the whole closing plan\. AUTORUN\.”/,
+    "the re-statement quotes the owner's words, so a session can see a false arming for itself",
+  );
+}
+
 function testTheOwnersWordStillArms(sandbox: Sandbox) {
   submit(sandbox, "owner", "AUTORUN finish the plan");
   assert.equal(isArmed(sandbox, "owner"), true, "the owner's typed AUTORUN must still arm the session — §6.1's trigger");
@@ -316,6 +417,8 @@ export function runAutorunGuardFalseArmingTests() {
 
     testANoticeNeverArms(sandbox);
     testAFileNameOrPathNeverArms(sandbox);
+    testAQuotedNegatedOrQuestioningMentionNeverArms(sandbox);
+    testAnOlderStateFileIsNeverRestated(sandbox);
     testTheOwnersWordStillArms(sandbox);
     testStandDown(sandbox);
   } finally {
