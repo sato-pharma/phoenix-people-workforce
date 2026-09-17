@@ -30,9 +30,11 @@ import { readFileSync } from "node:fs";
  * blanket ban would be a rule nobody could follow. So the check is per NODE, anchored on the
  * expression each one renders.
  *
- * The desktop `<table>` inside PortalDesktopTable is also left alone: the owner's rule is
- * desktop-tables / mobile-cards, and that primitive's own horizontal behaviour belongs to it, not
- * to this module.
+ * The rep table's DESKTOP half used to be left alone here, on the reasoning that PortalDesktopTable's
+ * horizontal behaviour belonged to that primitive rather than to this module. That was wrong, and
+ * section 7 now pins the correction: the primitive scrolls an `overflow-x-auto` wrapper over a
+ * 1100px `min-width` floor, which is the exact shape the golden rule names as the bug. Twelve
+ * nowrap columns became eight wrapping ones under a `table-fixed` colgroup.
  *
  * Pinned by SHAPE, not by a byte window, so an edit elsewhere in a file cannot false-fail it.
  * Comments are stripped first — every one of these files explains the banned utilities in prose,
@@ -44,8 +46,24 @@ const WINNER_PANEL = "src/components/early-birds/early-birds-winner-panel.tsx";
 const RACE_PANEL = "src/components/early-birds/early-birds-race-panel.tsx";
 const REP_TABLE = "src/components/early-birds/early-birds-rep-table.tsx";
 const SWITCHER = "src/components/early-birds/early-birds-district-switcher.tsx";
+const PERIOD_SWITCHER = "src/components/early-birds/early-birds-period-switcher.tsx";
+const REP_HISTORY = "src/components/early-birds/early-birds-rep-history-panel.tsx";
+const CONTROLS = "src/components/early-birds/early-birds-controls.tsx";
+const REP_LINK = "src/components/early-birds/early-birds-rep-link.tsx";
+/** Read on its own in section 9 - it is a composition file, not one of the wrapping surfaces. */
+const BOARD = "src/components/early-birds/early-birds-board.tsx";
 
-const BOARD_FILES = [HALL_OF_FAME, WINNER_PANEL, RACE_PANEL, REP_TABLE, SWITCHER];
+/** Files with enough markup in them for the token-count floor in section 0 to mean something. */
+const BOARD_FILES = [HALL_OF_FAME, WINNER_PANEL, RACE_PANEL, REP_TABLE, SWITCHER, PERIOD_SWITCHER, REP_HISTORY];
+
+/**
+ * Two files that are SHORT by design — a composition wrapper and a one-element link. A ten-token
+ * floor would be unpassable for either, so they are anchored by shape in sections 6 and 8 instead,
+ * and they still take the banned-utility and square-edge sweeps below.
+ */
+const SMALL_FILES = [CONTROLS, REP_LINK];
+
+const ALL_FILES = [...BOARD_FILES, ...SMALL_FILES];
 
 /** Drop block comments and whole-line `//` comments. Never touches a `//` inside a string. */
 function stripComments(source: string): string {
@@ -95,12 +113,13 @@ function classOfNodeRendering(code: string, expression: string): string | null {
 }
 
 export function runEarlyBirdsBoardWrapsTests() {
-  const sources = new Map(BOARD_FILES.map((file) => [file, stripComments(readFileSync(file, "utf8"))]));
+  const sources = new Map(ALL_FILES.map((file) => [file, stripComments(readFileSync(file, "utf8"))]));
 
   // ── 0. anti-vacuity ──────────────────────────────────────────────────────────
   // Every assertion below reads a className out of a file. If a file were renamed away or emptied,
   // the regexes would simply stop matching and this suite would pass on nothing.
-  for (const [file, code] of sources) {
+  for (const file of BOARD_FILES) {
+    const code = sources.get(file) ?? "";
     assert.ok(
       appliedTokens(code).size > 10,
       `${file}: fewer than ten class tokens found — the file is gone, empty, or no longer written ` +
@@ -143,14 +162,15 @@ export function runEarlyBirdsBoardWrapsTests() {
       why: "the winner's name at 20px/900 — the largest type on the board holding its longest string",
     },
     {
-      file: RACE_PANEL,
-      expression: "score.name",
-      why: "the rep's name in a race row, in a column ~150px wide on a phone",
+      file: REP_HISTORY,
+      expression: "name",
+      why: "the rep's name at 20px/900 on his own record panel — the largest type there, holding " +
+        "the longest string on it",
     },
     {
-      file: REP_TABLE,
-      expression: "score.name",
-      why: "the rep's name on the phone card (the desktop table is a separate, deliberate surface)",
+      file: REP_HISTORY,
+      expression: "entry.periodLabel",
+      why: "the fortnight label on a phone history card (\"September 1-15, 2026\")",
     },
   ];
 
@@ -227,6 +247,140 @@ export function runEarlyBirdsBoardWrapsTests() {
       [],
       `${file}: ${JSON.stringify(rounded)} — the owner's square-edge golden rule (AGENTS.md §4) is ` +
         `"no round or semi-round corners, anywhere". Drop the utility; do not soften it.`,
+    );
+  }
+
+  // ── 6. every rep name on the board now breaks in ONE place ──────────────────
+  // Since 2026-09-18 a name is a LINK into that rep's record, so the race row and the rep table no
+  // longer render `{score.name}` themselves — they hand it to EarlyBirdsRepLink. That makes this
+  // component the single node where the fix can live, and the single node where it can be lost.
+  {
+    const linkCode = sources.get(REP_LINK) ?? "";
+    const breaking = linkCode.split("break-words").length - 1;
+    assert.ok(
+      breaking >= 2,
+      `${REP_LINK}: "break-words" appears ${breaking} time(s). BOTH branches need it — the <Link> ` +
+        `and the plain <span> fallback — or a five-part Egyptian name runs off whichever surface ` +
+        `took the branch that lost it.`,
+    );
+    assert.ok(
+      !isApplied(appliedTokens(linkCode), "whitespace-nowrap"),
+      `${REP_LINK}: "whitespace-nowrap" is back on the one element that renders every rep name on ` +
+        `this board. That is exactly what produced the overlapping names in the 2026-09-18 screenshot.`,
+    );
+
+    for (const file of [RACE_PANEL, REP_TABLE]) {
+      const code = sources.get(file) ?? "";
+      assert.match(
+        code,
+        /<EarlyBirdsRepLink/,
+        `${file}: no <EarlyBirdsRepLink>. If the name is rendered some other way now, it is no ` +
+          `longer covered by the break-words assertion above — re-point this check, do not drop it.`,
+      );
+      assert.match(
+        code,
+        /name=\{score\.name\}/,
+        `${file}: the rep name is no longer passed as name={score.name}. A manager opens a rep by ` +
+          `clicking his name; if that stopped being the name, the record is unreachable.`,
+      );
+    }
+  }
+
+  // ── 7. the rep table's DESKTOP half has to fit too ─────────────────────────
+  // It was twelve `whitespace-nowrap` columns inside PortalDesktopTable, whose wrapper is
+  // `overflow-x-auto` over `min-width: 1100px`. AGENTS.md §4 names that shape as THE BUG, and
+  // inside the admin rail the content column is well under 1100px on a normal laptop — so the one
+  // table on this page a manager reads across was the one that pushed sideways.
+  {
+    const code = sources.get(REP_TABLE) ?? "";
+    assert.doesNotMatch(
+      code,
+      /PortalDesktopTable/,
+      `${REP_TABLE}: PortalDesktopTable is back. Its wrapper scrolls horizontally over a min-width ` +
+        `floor, which is the remedy the golden rule forbids. Fit by MERGING columns instead.`,
+    );
+    assert.doesNotMatch(
+      code,
+      /minWidth|min-w-\[/,
+      `${REP_TABLE}: a minimum width is back on the desktop table. A floor is what forces the ` +
+        `sideways scroll — the table must be free to be as narrow as its column.`,
+    );
+    assert.match(
+      code,
+      /table-fixed/,
+      `${REP_TABLE}: the desktop table is no longer "table-fixed". Without it the browser sizes ` +
+        `columns by content and one long name re-widens the whole table past its container.`,
+    );
+    assert.match(
+      code,
+      /<colgroup>/,
+      `${REP_TABLE}: the <colgroup> is gone. AGENTS.md §4 asks for w-full table-fixed WITH a ` +
+        `colgroup — table-fixed alone divides the width evenly and squeezes the name column.`,
+    );
+
+    // The table has to stay desktop-only, or the phone gets both the cards AND the table.
+    const tableAt = code.indexOf("<table");
+    assert.ok(tableAt > 0, `${REP_TABLE}: no <table> at all — the desktop view was dropped.`);
+    assert.match(
+      code.slice(Math.max(0, tableAt - 240), tableAt),
+      /\bmd:block\b/,
+      `${REP_TABLE}: the <table> is no longer inside a "hidden md:block" wrapper, so a phone renders ` +
+        `it under the cards. The owner's rule is desktop tables, mobile cards — never both.`,
+    );
+
+    // A colgroup that does not match the header row silently mis-sizes every column after the
+    // mismatch, which looks like a styling wobble rather than the structural bug it is.
+    const cols = code.split("<col ").length - 1;
+    const headers = code.split("<th ").length - 1;
+    assert.equal(
+      cols,
+      headers,
+      `${REP_TABLE}: ${cols} <col> against ${headers} <th>. Every column added or merged has to be ` +
+        `made in both places, or table-fixed sizes the wrong columns.`,
+    );
+
+    const td = code.match(/const TD = "([^"]*)"/);
+    assert.ok(td, `${REP_TABLE}: the shared TD class string was not found.`);
+    assert.ok(
+      td[1].includes("break-words") && !td[1].includes("whitespace-nowrap"),
+      `${REP_TABLE}: TD is "${td[1]}". Every desktop cell has to be able to break now that the ` +
+        `table can no longer grow sideways to fit its content.`,
+    );
+  }
+
+  // ── 8. the two controls stay ONE object ─────────────────────────────────
+  // A ranking only means something once BOTH questions are answered — whose reps, and which
+  // fortnight. Two floating bars invite reading the board having answered one of them.
+  {
+    const code = sources.get(CONTROLS) ?? "";
+    for (const child of ["EarlyBirdsDistrictSwitcher", "EarlyBirdsPeriodSwitcher"]) {
+      assert.match(
+        code,
+        new RegExp(`<${child}`),
+        `${CONTROLS}: <${child}> is no longer rendered here. Scope and fortnight belong in one ` +
+          `hairline-divided card; splitting them is what this file exists to prevent.`,
+      );
+    }
+  }
+
+  // ── 9. the heading tells the truth about WHICH fortnight ───────────
+  // The picker is what makes a closed fortnight reachable, so a hard-coded "This fortnight" now
+  // tells a manager reading August in September that August is the fortnight he is in. The
+  // wording lives in formatFortnightHeading, which tests/early-birds-period.test.ts pins; this
+  // asserts the board actually CALLS it, because a correct formatter nothing calls fixes nothing.
+  {
+    const code = stripComments(readFileSync(BOARD, "utf8"));
+    assert.match(
+      code,
+      /formatFortnightHeading\(/,
+      BOARD + ": the fortnight heading no longer goes through formatFortnightHeading. Whatever " +
+        "builds it must distinguish the live fortnight from a closed one.",
+    );
+    assert.doesNotMatch(
+      code,
+      /This fortnight/,
+      BOARD + ": \"This fortnight\" is hard-coded here again. It is a claim about WHEN, and the " +
+        "period picker can point this board at a fortnight that closed weeks ago.",
     );
   }
 }

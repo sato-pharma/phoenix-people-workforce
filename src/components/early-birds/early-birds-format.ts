@@ -47,6 +47,40 @@ export function formatPoints(totalScore: number): string {
 }
 
 /**
+ * "Sep 1-15" — the fortnight, short enough to sit in a picker chip.
+ *
+ * The full `period.label` ("September 1-15, 2026") is what every heading and history row carries;
+ * this is only for the switcher, where a dozen of them sit side by side. Derived from the period's
+ * own start and end dates rather than re-deriving 1-15 / 16-end, so a February fortnight ends on
+ * the 28th or 29th exactly as the period module computed it.
+ */
+export function formatPeriodChip(period: { startIso: string; endIso: string }): string {
+  const month = new Date(`${period.startIso}T00:00:00Z`);
+  if (Number.isNaN(month.getTime())) return `${period.startIso} - ${period.endIso}`;
+  const monthLabel = month.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+  return `${monthLabel} ${Number(period.startIso.slice(8, 10))}-${Number(period.endIso.slice(8, 10))}`;
+}
+
+/**
+ * How much earlier (or later) one median start is than another — "24 min earlier".
+ *
+ * Phrased in the EARLIER direction on purpose. This board rewards starting early, so an improving
+ * rep's delta is a negative number of minutes, and rendering a bare "-24" in front of a manager
+ * reads as a fall. Null when either side has no verified start: "no change" would be a claim, and
+ * a rep with no GPS check-in has not been measured rather than stayed the same.
+ */
+export function formatStartDelta(
+  current: number | null | undefined,
+  previous: number | null | undefined,
+): { text: string; earlier: boolean } | null {
+  if (typeof current !== "number" || typeof previous !== "number") return null;
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+  const delta = Math.round(previous - current);
+  if (delta === 0) return { text: "same start", earlier: false };
+  return { text: `${Math.abs(delta)} min ${delta > 0 ? "earlier" : "later"}`, earlier: delta > 0 };
+}
+
+/**
  * The start-time tiers used by both the timeline cells and the streak strip. Before 09:00 is the
  * target, 09:00-10:00 acceptable, after 10:00 late, and a day with no visit is inert rather than
  * red — a weekly off is not a failure.
@@ -63,4 +97,16 @@ export function startTierLabel(minutes: number | null, expectedWeight: number): 
   if (minutes < 9 * 60) return "Before 09:00";
   if (minutes < 10 * 60) return "09:00-10:00";
   return "After 10:00";
+}
+
+/**
+ * The board's heading for the fortnight on screen.
+ *
+ * "This fortnight · September 1-15, 2026" was hard-coded, which was true for as long as the board
+ * could only ever show the live half-month. The period picker (2026-09-18) makes a closed fortnight
+ * reachable, and that heading then tells a manager reading August in September that August is the
+ * fortnight he is in. The period is named either way - only the claim about WHEN it is changes.
+ */
+export function formatFortnightHeading(periodLabel: string, closed: boolean): string {
+  return `${closed ? "Fortnight" : "This fortnight"} · ${periodLabel}`;
 }

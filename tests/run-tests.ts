@@ -1429,6 +1429,7 @@ import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
 import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 import { runEarlyBirdsScopeTests } from "./early-birds-scope.test.ts";
 import { runEarlyBirdsLineStarsTests } from "./early-birds-line-stars.test.ts";
+import { runEarlyBirdsLinkTests } from "./early-birds-links.test.ts";
 import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
@@ -4655,6 +4656,10 @@ await runTest(
 await runTest(
   "early birds line stars (one star per LINE, never a company-wide best-of-the-best, so a rep always sees their own line)",
   runEarlyBirdsLineStarsTests,
+);
+await runTest(
+  "early birds board links carry every parameter (switching district keeps the fortnight and the open rep; an empty rep clears the panel)",
+  runEarlyBirdsLinkTests,
 );
 await runTest(
   "departed-agent CRM scan (one-statement distinct, page-walk fallback, no silent empty exclusion)",

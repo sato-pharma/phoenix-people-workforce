@@ -123,6 +123,67 @@ export function listRecentEarlyBirdsPeriods(todayIso: string, count: number): Ea
   return periods;
 }
 
+/**
+ * The first fortnight this module can answer for.
+ *
+ * Early Birds shipped on 2026-08-08 (20260808234500_early_birds_module.sql), part-way through the
+ * 1st-15th half, so August H1 is the earliest period that holds any snapshot at all. It is a
+ * constant and not a query because the alternative is offering a picker that reaches back to 2019
+ * and renders an empty board for every year of it — an empty ranking looks exactly like a real
+ * result of zero, which is the one thing this module refuses to show. Pinned by
+ * tests/early-birds-period.test.ts.
+ */
+export const EARLY_BIRDS_FIRST_PERIOD_KEY = "2026-08-H1";
+
+/**
+ * True when a period is one a viewer may actually ask for: not in the future, and not before the
+ * module existed. Lexical comparison is sound here because the key is fixed width (see periodKey).
+ */
+export function isEarlyBirdsPeriodSelectable(periodKey: string, todayIso: string): boolean {
+  if (!isEarlyBirdsPeriodKey(periodKey)) return false;
+  if (periodKey < EARLY_BIRDS_FIRST_PERIOD_KEY) return false;
+  return periodKey <= earlyBirdsPeriodForDate(todayIso).periodKey;
+}
+
+/**
+ * The fortnights a picker may offer: the current one first, then backwards, stopping at the
+ * module's first period rather than running off into fortnights that never had a board.
+ *
+ * Distinct from {@link listRecentEarlyBirdsPeriods}, which is the close job's self-heal
+ * enumerator and deliberately does NOT stop — a missed close must be catchable however far back
+ * it sits.
+ */
+export function listSelectableEarlyBirdsPeriods(todayIso: string, count = 12): EarlyBirdsPeriod[] {
+  const periods: EarlyBirdsPeriod[] = [];
+  let period = earlyBirdsPeriodForDate(todayIso);
+  for (let index = 0; index < Math.max(0, count); index += 1) {
+    if (period.periodKey < EARLY_BIRDS_FIRST_PERIOD_KEY) break;
+    periods.push(period);
+    period = previousEarlyBirdsPeriod(period);
+  }
+  return periods;
+}
+
+/**
+ * The period a `?period=` search param should resolve to.
+ *
+ * Out-of-range and malformed keys CLAMP to the current fortnight rather than erroring. Safe
+ * because every surface that renders a period names it on screen — the switcher marks the active
+ * chip and the board header carries `This fortnight · <label>` — so a clamp is visible rather than
+ * silent. That is the difference from the DISTRICT guard next door, which refuses instead: a
+ * district substitution would show one manager another manager's reps under a heading he has no
+ * reason to doubt.
+ */
+export function resolveEarlyBirdsPeriodParam(
+  periodKey: string | null | undefined,
+  todayIso: string,
+): EarlyBirdsPeriod {
+  if (typeof periodKey === "string" && isEarlyBirdsPeriodSelectable(periodKey, todayIso)) {
+    return earlyBirdsPeriodFromKey(periodKey);
+  }
+  return earlyBirdsPeriodForDate(todayIso);
+}
+
 /** Inclusive list of every calendar day in the period, clamped so a live preview has no future days. */
 export function earlyBirdsPeriodDays(period: EarlyBirdsPeriod, throughIso?: string): string[] {
   const last = throughIso && throughIso < period.endIso ? throughIso : period.endIso;

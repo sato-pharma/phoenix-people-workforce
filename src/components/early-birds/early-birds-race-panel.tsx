@@ -3,6 +3,7 @@ import { Sunrise } from "lucide-react";
 import { SectionHead, rankChipClass } from "@/components/employee-portal/portal-command-center";
 import type { EarlyBirdsRepScore } from "@/lib/early-birds/types";
 import { formatPoints, formatStartClock, startTierClass, startTierLabel } from "./early-birds-format";
+import { EarlyBirdsRepLink, type EarlyBirdsRepLinkContext } from "./early-birds-rep-link";
 
 // The centrepiece. Two things here are what make a rep open this daily rather than once a fortnight:
 //
@@ -35,12 +36,16 @@ function RaceRow({
   leaderScore,
   isViewer,
   winCount,
+  repLink,
+  openRepHrIdKey,
 }: {
   score: EarlyBirdsRepScore;
   index: number;
   leaderScore: number;
   isViewer: boolean;
   winCount: number;
+  repLink?: EarlyBirdsRepLinkContext | null;
+  openRepHrIdKey?: string | null;
 }) {
   const share = leaderScore > 0 ? Math.max(2, Math.round((score.totalScore / leaderScore) * 100)) : 2;
   const accent =
@@ -66,7 +71,12 @@ function RaceRow({
             The two chips keep their own nowrap: they are two characters each, and breaking "×4"
             across lines would read worse than the overflow it prevents. */}
         <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-bold text-slate-900" dir="auto">
-          <span className="min-w-0 break-words">{score.name}</span>
+          <EarlyBirdsRepLink
+            active={score.hrIdKey === openRepHrIdKey}
+            hrId={score.hrId}
+            link={repLink}
+            name={score.name}
+          />
           {isViewer && (
             <span className="shrink-0 whitespace-nowrap bg-orange-500 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-white">
               You
@@ -127,11 +137,16 @@ export function EarlyBirdsRacePanel({
   winCountByHrIdKey,
   viewerHrIdKey,
   mobileLimit = 10,
+  repLink,
+  openRepHrIdKey,
 }: {
   scores: EarlyBirdsRepScore[];
   winCountByHrIdKey: Map<string, number>;
   viewerHrIdKey?: string | null;
   mobileLimit?: number;
+  /** Where a name links to. Omitted on a surface with no board URL — the names go inert, not dead. */
+  repLink?: EarlyBirdsRepLinkContext | null;
+  openRepHrIdKey?: string | null;
 }) {
   if (scores.length === 0) {
     return (
@@ -168,6 +183,8 @@ export function EarlyBirdsRacePanel({
             index={index}
             isViewer={score.hrIdKey === viewerHrIdKey}
             leaderScore={leaderScore}
+            openRepHrIdKey={openRepHrIdKey}
+            repLink={repLink}
             score={score}
             winCount={winCountByHrIdKey.get(score.hrIdKey) ?? 0}
           />
@@ -182,6 +199,8 @@ export function EarlyBirdsRacePanel({
             index={index}
             isViewer={score.hrIdKey === viewerHrIdKey}
             leaderScore={leaderScore}
+            openRepHrIdKey={openRepHrIdKey}
+            repLink={repLink}
             score={score}
             winCount={winCountByHrIdKey.get(score.hrIdKey) ?? 0}
           />
@@ -195,6 +214,8 @@ export function EarlyBirdsRacePanel({
               index={viewerIndex}
               isViewer
               leaderScore={leaderScore}
+              openRepHrIdKey={openRepHrIdKey}
+              repLink={repLink}
               score={scores[viewerIndex]}
               winCount={winCountByHrIdKey.get(scores[viewerIndex].hrIdKey) ?? 0}
             />

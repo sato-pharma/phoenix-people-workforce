@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   assertDistrictInScope,
+  assertRepInRoster,
   resolveEarlyBirdsScopeFrom,
   type EarlyBirdsScopeRow,
 } from "../src/lib/early-birds/permissions.ts";
@@ -206,5 +207,55 @@ export function runEarlyBirdsScopeTests() {
       false,
       "an empty scope over a healthy directory is an ANSWER, and must not be reported as an outage",
     );
+  }
+
+  // ── The ?rep= guard ─────────────────────────────────────────────────────────────
+  // A second URL parameter reaching for a person, added 2026-09-18 with the rep record panel. The
+  // district gate above has already decided WHOSE reps this viewer may read; this narrows it to one
+  // of them, and it is checked against the ROSTER of the district and fortnight already on screen —
+  // data the viewer is authorised to see by construction — rather than against a second permission
+  // model that could drift out of step with the first.
+  {
+    const roster = [
+      { hrId: "B-100", hrIdKey: "b100", name: "Ahmed Mohamed" },
+      { hrId: "B-101", hrIdKey: "b101", name: "Mona Saleh" },
+    ];
+
+    assert.deepEqual(
+      assertRepInRoster(roster, "B-101"),
+      roster[1],
+      "a rep who IS in this district's ranking opens normally",
+    );
+
+    // ── HEADLINE: it REFUSES, it does not substitute ───────────────────────────────
+    // Unlike assertDistrictInScope, which defaults to the viewer's first district when nothing is
+    // named, an unknown rep must come back null. Falling back to roster[0] would open one man's
+    // start times under the name of another, on a board whose whole subject is who arrives first.
+    assert.equal(
+      assertRepInRoster(roster, "B-999"),
+      null,
+      "a rep outside this roster must REFUSE. Returning the first rep instead would show one " +
+        "person's start times while the URL names another.",
+    );
+
+    // Nor may it be used to probe for HR ids: outside the roster is indistinguishable from
+    // does-not-exist, because both answer null.
+    assert.equal(assertRepInRoster(roster, "B-102"), null);
+
+    assert.equal(assertRepInRoster(roster, undefined), null, "no ?rep= opens no panel");
+    assert.equal(assertRepInRoster(roster, null), null);
+    assert.equal(assertRepInRoster(roster, ""), null);
+    assert.equal(assertRepInRoster([], "B-100"), null, "an empty roster grants nothing");
+
+    // Same rep, four spellings. employee_hr_id_compact stores normalizeHrIdForAccess's output, and
+    // a link built from stored casing must still match the row it points at.
+    for (const spelling of ["B-100", "b100", "B100", " b-100 "]) {
+      assert.deepEqual(
+        assertRepInRoster(roster, spelling),
+        roster[0],
+        `"${spelling}" must resolve to the same rep as "B-100" — the ids on this board come from ` +
+          `three different sources and none of them agree on hyphens or case`,
+      );
+    }
   }
 }

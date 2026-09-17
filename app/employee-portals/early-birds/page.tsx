@@ -1,25 +1,42 @@
-// Early Birds — the fortnightly field-discipline board, portal shell.
+// Early Birds - the fortnightly field-discipline board, portal shell.
 //
 // Serves every portal-mode role in the module's audience: Medical Rep, District Manager, Regional
 // Manager, National Sales Manager, Marketing Manager, PM/GPM, Training Manager. The admin twin at
 // /admin/early-birds renders the SAME board for CEO / SFE Manager / Super Admin, who resolve to the
 // admin shell and can never reach this page.
 //
-// Scope is resolved server-side from the real reporting chain (resolveEarlyBirdsScope) and a
-// district passed in the URL is validated against it, so switching ?district= can never read a
-// district outside the viewer's own subtree.
+// THREE URL parameters, and three different guards, because they carry different risks:
+//
+//   ?district= REFUSES when it is outside the viewer's subtree (assertDistrictInScope). Substituting
+//              would show one manager another manager's reps under a heading he has no reason to
+//              doubt.
+//   ?period=   CLAMPS to the live fortnight (resolveEarlyBirdsPeriodParam). Safe only because every
+//              surface names the fortnight it is showing, so a clamp is visible.
+//   ?rep=      REFUSES when he is not in the district's roster (assertRepInRoster) - and the board
+//              still renders, because the board itself is authorised and correct; it is the one
+//              rep that is not available.
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { EarlyBirdsBoard } from "@/components/early-birds/early-birds-board";
-import { EarlyBirdsDistrictSwitcher } from "@/components/early-birds/early-birds-district-switcher";
+import { EarlyBirdsControls } from "@/components/early-birds/early-birds-controls";
+import { EarlyBirdsRepHistoryPanel } from "@/components/early-birds/early-birds-rep-history-panel";
 import { EarlyBirdsSyncAction } from "@/components/crm/early-birds-sync-action";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { cairoTodayIso } from "@/lib/crm/dates";
+import { getEarlyBirdsRepHistory } from "@/lib/early-birds/history";
+import {
+  currentEarlyBirdsPeriod,
+  listSelectableEarlyBirdsPeriods,
+  resolveEarlyBirdsPeriodParam,
+} from "@/lib/early-birds/period";
 import { getEarlyBirdsBoard } from "@/lib/early-birds/service";
-import { assertDistrictInScope, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
+import { assertDistrictInScope, assertRepInRoster, resolveEarlyBirdsScope } from "@/lib/early-birds/permissions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PageProps = { searchParams?: Promise<{ district?: string; period?: string }> };
+const BASE_PATH = "/employee-portals/early-birds";
+
+type PageProps = { searchParams?: Promise<{ district?: string; period?: string; rep?: string }> };
 
 /** Mirrors the role gate in app/api/crm/early-birds/sync/route.ts. */
 const SYNC_ROLES = new Set(["District Manager", "Regional Manager", "National Sales Manager"]);
@@ -70,12 +87,24 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
     );
   }
 
+  const todayIso = cairoTodayIso();
+  const period = resolveEarlyBirdsPeriodParam(params.period, todayIso);
+
   const data = await getEarlyBirdsBoard({
     managerHrId: district.hrId,
     managerName: district.name,
-    periodKey: params.period,
+    periodKey: period.periodKey,
     scopeLabel: scope.scopeLabel,
   });
+
+  // The roster of the district and fortnight actually on screen is the only thing `?rep=` is
+  // checked against, so the rep gate can never be wider than the district gate above it.
+  const requestedRep = params.rep?.trim() ?? "";
+  const rep = requestedRep ? assertRepInRoster(data.ranking.scores, requestedRep) : null;
+  const repRefused = requestedRep.length > 0 && rep === null;
+  const repScore = rep ? data.ranking.scores.find((score) => score.hrIdKey === rep.hrIdKey) ?? null : null;
+  // One extra round trip, and only when a rep is actually open.
+  const history = rep ? await getEarlyBirdsRepHistory({ hrId: rep.hrId }) : null;
 
   // Only the roles that may spend a vendor login see the button. A Medical Rep reads the board;
   // the route rejects him anyway, but offering a button that always fails is worse than no button.
@@ -83,14 +112,46 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
 
   return shell(
     <div className="space-y-3">
-      <EarlyBirdsDistrictSwitcher
-        basePath="/employee-portals/early-birds"
+      <EarlyBirdsControls
+        basePath={BASE_PATH}
         districts={scope.districts}
-        selectedHrIdKey={district.hrIdKey}
+        livePeriodKey={currentEarlyBirdsPeriod(todayIso).periodKey}
+        periods={listSelectableEarlyBirdsPeriods(todayIso)}
+        repHrId={rep?.hrId ?? null}
+        scopeLabel={scope.scopeLabel}
+        selectedDistrict={district}
+        selectedPeriodKey={period.periodKey}
       />
+
+      {repRefused ? (
+        <div className="border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="break-words text-sm font-bold text-amber-900">
+            That rep is not in this district&apos;s ranking for {period.label}.
+          </p>
+          <p className="mt-1 break-words text-sm text-amber-800">
+            He may have moved district, or he may not have been a medical rep in that fortnight. The
+            board below is unaffected.
+          </p>
+        </div>
+      ) : null}
+
+      {rep && history ? (
+        <EarlyBirdsRepHistoryPanel
+          basePath={BASE_PATH}
+          district={district.hrId}
+          history={history}
+          name={rep.name}
+          period={data.period}
+          profile={data.profiles.get(rep.hrIdKey) ?? null}
+          score={repScore}
+        />
+      ) : null}
+
       <EarlyBirdsBoard
         action={canSync ? <EarlyBirdsSyncAction /> : undefined}
         data={data}
+        openRepHrIdKey={rep?.hrIdKey ?? null}
+        repLink={{ basePath: BASE_PATH, district: district.hrId, period: period.periodKey }}
         viewerHrIdKey={scope.viewerHrIdKey}
       />
     </div>,

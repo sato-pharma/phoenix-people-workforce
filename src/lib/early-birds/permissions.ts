@@ -241,3 +241,31 @@ export function assertDistrictInScope(scope: EarlyBirdsScope, districtHrId: stri
   if (!requestedKey) return scope.districts[0];
   return scope.districts.find((district) => district.hrIdKey === requestedKey) ?? null;
 }
+
+/** A rep a viewer may open from the board — the roster row, not a directory lookup. */
+export type EarlyBirdsRepTarget = { hrId: string; hrIdKey: string; name: string };
+
+/**
+ * Guard for the `?rep=` parameter.
+ *
+ * The district gate above has already decided WHOSE reps this viewer may read; this narrows that
+ * to one of them. The roster passed in is the ranking of the district and fortnight actually on
+ * screen, so the guard is a membership test against data the viewer is already authorised to see
+ * rather than a second permission model that could drift out of step with the first.
+ *
+ * REFUSES rather than substitutes, exactly like assertDistrictInScope: quietly opening a different
+ * rep's record under a name the viewer typed would be a lie about whose start times these are. A
+ * `null` return therefore means "not in this roster", and the caller says so instead of guessing.
+ *
+ * Deliberately NOT a directory read. A manager must not be able to probe for an arbitrary HR id by
+ * watching which ones the page recognises: an id outside the roster is indistinguishable from one
+ * that does not exist at all.
+ */
+export function assertRepInRoster(
+  roster: readonly EarlyBirdsRepTarget[],
+  repHrId: string | null | undefined,
+): EarlyBirdsRepTarget | null {
+  const requestedKey = normalizeHrIdForAccess(repHrId);
+  if (!requestedKey) return null;
+  return roster.find((rep) => rep.hrIdKey === requestedKey) ?? null;
+}
