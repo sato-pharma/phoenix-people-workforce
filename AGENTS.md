@@ -247,7 +247,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - **Every weekly report and export MUST set `excludeUnmapped`, and an export must MATCH the screen** — label, never silently drop. The Weekly Summarized Report's LAYOUT AND SCOPE are locked; its ink is the house identity.
 - 🔴 **A typed payroll Addition (incentive, bonus, overtime) has NO ceiling** — owner, 2026-09-15: no refuse, no flag, no "large addition" warning; never re-propose one. `typed-payroll-additions-have-no-ceiling`
 - **The system FLAGS an expense; it NEVER auto-rejects one.** Never auto-publish a deductions month or approve a batch yourself; a same-day CRM check reads zero — never report it as measured.
-- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days.** `-4` is the only leave type, and only **FWC** reaches salary.
+- **CRM visit types `-5` (Public Holiday), `-6` (Casual Leave) and `-16` (Training, vendor-labelled "Unknown") are WORKING days.** `-4` is the only leave type, and only **FWC** reaches salary.
 - **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and inactive leavers stay prorated with zero allowances; a regional employee travelling TO Cairo earns no outstation per-diem; DSM and Medical Rep titles auto-provision their real role (the title-governance guard is DELIBERATELY relaxed for those two).
 - **Social-insurance Form 1 prints exactly as the Authority issues it** — nothing Phoenix wrote on page 2, duplex.
 - **The organogram XLSX keeps its Mobile column** (his override) — do not remove it.
