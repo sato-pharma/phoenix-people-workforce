@@ -83,6 +83,15 @@ export type PendingVisit = {
  */
 const REUSE_WINDOW_MS = 28 * 60 * 1000;
 
+/**
+ * Whether the validation photo can no longer stand for the visit, on the phone's clock. Save reads it;
+ * it sits outside the screen because the React Compiler counts a clock read inside a screen's
+ * handlers as a read during render.
+ */
+function reuseWindowOver(validatedAtMs: number): boolean {
+  return Date.now() - validatedAtMs > REUSE_WINDOW_MS;
+}
+
 /** The sentence describeDayWindows gives a place that does not receive on the day. */
 const NOT_RECEIVING = "Does not receive this day";
 
@@ -744,7 +753,7 @@ function AddVisit({
 
   async function save() {
     if (saving) return;
-    if (placePhoto && handoff && Date.now() - handoff.validatedAtMs > REUSE_WINDOW_MS) {
+    if (placePhoto && handoff && reuseWindowOver(handoff.validatedAtMs)) {
       setUsePlacePhoto(false);
       setProblem("The validation photo stands for a visit only in the first 30 minutes. Take a new photo of the clinic sign or door.");
       return;

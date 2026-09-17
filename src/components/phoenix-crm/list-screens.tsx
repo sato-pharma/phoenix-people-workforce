@@ -178,6 +178,14 @@ function savedAtOf(place: ListPlace): number {
   return Number.isFinite(captured) ? Math.min(now, captured) : now;
 }
 
+/**
+ * When a save landed, on the phone's clock. The save handlers read it; it sits outside the screens
+ * because the React Compiler counts a clock read inside a screen's handlers as a read during render.
+ */
+function savedNow(): number {
+  return Date.now();
+}
+
 /** Clears the draft's photo, unless the rep already took another one. */
 function withoutPhoto(photo: CapturedPhoto) {
   return (current: PlaceDraftState): PlaceDraftState => (current.photo?.path === photo.path ? { ...current, photo: null } : current);
@@ -395,7 +403,7 @@ export function ValidateScreen({
           customerName: result.customerName,
           listType: result.listType,
           gradeRequested: Boolean(result.gradeRequestId),
-          savedAtMs: Date.now(),
+          savedAtMs: savedNow(),
         },
         photo,
       );
@@ -739,7 +747,7 @@ export function AddPlaceScreen({
     setProblem(null);
     try {
       await crmPost<unknown>("/api/phoenix-crm/list/places", { seatId, test, customerId: customer.customerId, place: placePayload(photo, draft) }, "place");
-      onSaved(saved(Date.now()), photo);
+      onSaved(saved(savedNow()), photo);
     } catch (error) {
       const code = errorCodeOf(error);
       const lookup = code && MAY_HAVE_SAVED.has(code) ? await lookUpPhoto(seatId, test, photo.path) : null;

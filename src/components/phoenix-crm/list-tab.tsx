@@ -160,11 +160,9 @@ export function ListTab({
     go({ name: "saved", saved, photo });
   }
 
-  function customerChanged(customerId: string) {
-    return (next: ListNotice) => {
-      resource.reload();
-      openCustomer(customerId, next);
-    };
+  function customerChanged(customerId: string, next: ListNotice) {
+    resource.reload();
+    openCustomer(customerId, next);
   }
 
   function listChanged(next: ListNotice) {
@@ -279,7 +277,7 @@ export function ListTab({
             customerId={customerId}
             key={`edit-place-${placeId}`}
             onBack={() => openCustomer(customerId)}
-            onDone={customerChanged(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
             placeId={placeId}
           />
         );
@@ -293,7 +291,7 @@ export function ListTab({
             customerId={customerId}
             key={`grade-${customerId}`}
             onBack={() => openCustomer(customerId)}
-            onDone={customerChanged(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
           />
         );
         break;
@@ -307,7 +305,7 @@ export function ListTab({
             customerId={customerId}
             key={`drop-${customerId ?? contactCrmId}`}
             onBack={customerId ? () => openCustomer(customerId) : home}
-            onDone={customerId ? customerChanged(customerId) : listChanged}
+            onDone={customerId ? (next) => customerChanged(customerId, next) : listChanged}
           />
         );
         break;
