@@ -1,5 +1,5 @@
-// Column widths for the Weekly Sales tables — the managers' portal and the admin shell's dashboard — as
-// percentages of a fixed-layout table.
+// Column widths for the Weekly Sales tables — the managers' portal, the admin shell's dashboard and its
+// upload page — as percentages of a fixed-layout table.
 //
 // THE FITS-THE-SCREEN GOLDEN RULE (AGENTS.md §4): every table here is `w-full table-fixed` with each
 // column's width declared, so it cannot grow past its container at any screen size. It fits by
@@ -107,4 +107,18 @@ export function weekComparisonColumns(showUnits: boolean): {
 /** The Stock on hand watchlist: the branch with its stock bar beneath, its region and its stock units. */
 export function zeroStockColumns(showStock: boolean): { branch: number; region: number; stock: number } {
   return showStock ? { branch: 52, region: 24, stock: 24 } : { branch: 64, region: 36, stock: 0 };
+}
+
+// ── The admin shell's Weekly Sales upload page (weekly-upload-workspace.tsx) ──────────────────────
+//
+// The verification panel sits inside the upload card, which leaves its table 613px at 1024px with the
+// sidebar open and 629px at 768px (measured 2026-09-17). It had six columns in an `overflow-x-auto` box;
+// File and Col are now one column, the sheet role with its column number beneath it. At 613px that column
+// still holds the longest role ("combined") without breaking the word, and Status its widest pill
+// ("Missing") on one line. The header text columns take what is left and wrap.
+
+/** The verification panel's column table: the data field, the file with its column number, the header
+ * found in the file, the header expected there, and the status. */
+export function verifyColumns(): { data: number; file: number; found: number; expected: number; status: number } {
+  return { data: 21, file: 16, found: 25, expected: 23, status: 15 };
 }
