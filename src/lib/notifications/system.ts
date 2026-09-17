@@ -25,7 +25,7 @@ import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
 import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
-import { enforceAttendanceDigestEmailBlock } from "@/lib/notifications/attendance-digest-channel-guard";
+import { isAttendanceDigestModule, telegramKeepsParagraphs } from "@/lib/notifications/attendance-digest-channels";
 import { enforcePhoenixCrmEmailBlock } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
@@ -70,6 +70,11 @@ export type SystemNotificationDeliveryResult = {
   channel: SystemNotificationChannel;
   error?: string;
   idempotencyKey: string;
+  /**
+   * An email recorded "sent" that did not go out yet: it was handed to the outbox to retry. That
+   * covers blocks the outbox cannot tell from a passing fault, so it is no proof the person was told.
+   */
+  queuedForRetry?: boolean;
   reason?: string;
   status: "pending" | "sent" | "failed" | "skipped" | "retrying";
 };
@@ -383,14 +388,13 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // theirs. Chained after the CV block rather than replacing it: the two guard disjoint event sets,
   // and collapsing them would silently restore email for whichever one lost.
   const withoutCandidateAssignedEmail = enforceCandidateAssignedEmailBlock(withoutRecruitmentCvEmail, input.module, input.eventType);
-  // Same hard guarantee for the weekly attendance review (owner rule 2026-09-15): in-app and
-  // Telegram only, never email — see attendance-digest-channel-guard.ts. Its own module string, so
-  // the attendance.* notifications above keep their channels.
-  const withoutAttendanceDigestEmail = enforceAttendanceDigestEmailBlock(withoutCandidateAssignedEmail, input.module);
+  // The weekly attendance review is deliberately NOT blocked here any more (owner rule 2026-09-17,
+  // replacing 2026-09-15's "never email"): its notices go by email, Telegram and in-app — see
+  // attendance-digest-channels.ts.
   // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
   // replacing a block above, because each guards a disjoint set.
-  return enforcePhoenixCrmEmailBlock(withoutAttendanceDigestEmail, input.module);
+  return enforcePhoenixCrmEmailBlock(withoutCandidateAssignedEmail, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {
@@ -876,6 +880,9 @@ async function markTelegramConnectionNeedsRelink(recipient: RecipientProfile, re
 
 function telegramMessageFor(input: CreateSystemNotificationInput) {
   if (isSensitivePayroll(input)) return GENERIC_PAYSLIP_MESSAGE;
+  // The weekly attendance review's notice is a short letter to the employee (owner, 2026-09-17): no
+  // "Module:" line in front of it.
+  if (isAttendanceDigestModule(input.module)) return input.message;
   const moduleLabel = cleanText(input.module).replace(/_/g, " ");
   return [
     `Module: ${moduleLabel.charAt(0).toUpperCase()}${moduleLabel.slice(1)}`,
@@ -1226,6 +1233,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
         chatId: String(connection.telegram_chat_id),
         ctaLabel: governance.genericOnly ? null : telegram.ctaLabel ?? null,
         ctaUrl: governance.genericOnly ? null : telegram.ctaUrl ?? null,
+        keepParagraphs: !governance.genericOnly && telegramKeepsParagraphs(telegram.module),
         message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
         title: governance.genericOnly ? GENERIC_NOTIFICATION_TITLE : String(telegram.title),
       });
@@ -1477,6 +1485,7 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
         chatId: String(connection.telegram_chat_id),
         ctaLabel: governance.genericOnly ? null : telegram.ctaLabel ?? null,
         ctaUrl: governance.genericOnly ? null : telegram.ctaUrl ?? null,
+      keepParagraphs: !governance.genericOnly && telegramKeepsParagraphs(telegram.module),
       message: governance.genericOnly ? GENERIC_PAYSLIP_MESSAGE : String(telegram.message),
       title: governance.genericOnly ? GENERIC_NOTIFICATION_TITLE : String(telegram.title),
     });
@@ -1760,6 +1769,10 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           continue;
         }
         deferredMetadata.emailInput = emailInput;
+        // The held email is sent when quiet hours end. Without this the held Telegram message
+        // carries emailAttempted = false, and if its retries run out the fallback emails the
+        // person a second time.
+        emailAttempted = true;
       } else if (channel === "email") {
         // Email is disabled for this recipient — skip immediately rather than writing a
         // payload-less pending row that the deferred-drain cron can never re-dispatch.
@@ -1874,7 +1887,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
         status,
       });
       await audit(status === "sent" ? "delivery sent" : "delivery skipped", input, eventId, { channel, error });
-      deliveries.push({ channel, error, idempotencyKey, status });
+      deliveries.push({ channel, error, idempotencyKey, ...(handedOffToOutbox ? { queuedForRetry: true } : {}), status });
       continue;
     }
 
@@ -1928,6 +1941,7 @@ async function createSystemNotificationForRecipient(input: CreateSystemNotificat
           chatId: String(connection.telegram_chat_id),
           ctaLabel: genericTelegram ? null : input.telegram?.ctaLabel ?? telegramContent.ctaLabel ?? null,
           ctaUrl: genericTelegram ? null : input.telegram?.ctaUrl ?? telegramContent.ctaUrl ?? null,
+          keepParagraphs: !genericTelegram && telegramKeepsParagraphs(input.module),
           message: genericTelegram ? GENERIC_PAYSLIP_MESSAGE : telegramContent.message,
           title: genericTelegram ? GENERIC_NOTIFICATION_TITLE : telegramContent.title,
         });

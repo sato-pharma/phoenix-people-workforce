@@ -103,11 +103,12 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // step so a future caller relying on policy resolution cannot reintroduce the email.
   "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "push"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
   "attendance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
-  // Weekly attendance review (owner rule 2026-09-15): once the Super Admin releases a week, each
-  // employee is told in-app and by Telegram, never email. Recipients are passed explicitly (the
-  // employee the week describes), hence "cc". The hard guarantee is
-  // attendance-digest-channel-guard.ts — this row is the intent, that filter is the enforcement.
-  "attendance_digest.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["cc"], telegramAllowed: true },
+  // Weekly attendance review (owner rule 2026-09-17, replacing 2026-09-15's "never email"): once the
+  // Super Admin releases a week, and when a disputed day is decided, the employee is told by email to
+  // their own work address, by Telegram and in-app. Recipients are passed explicitly (the employee
+  // the week describes), hence "cc". Email is listed before Telegram: a permanent Telegram failure
+  // falls back to email only when email has not been tried yet — see attendance-digest-channels.ts.
+  "attendance_digest.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["cc"], telegramAllowed: true },
   "birthday.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },

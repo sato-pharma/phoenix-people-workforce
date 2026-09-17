@@ -356,6 +356,8 @@ export type SendTemplatedEmailInput = {
    * the sender supplies the live number.
    */
   heroStat?: PhoenixEmailHeroStat | null;
+  /** Show the line breaks inside a token's value as breaks in the HTML body. Off by default. */
+  lineBreaks?: boolean;
   overrides?: {
     bcc?: string[] | null;
     cc?: string[] | null;
@@ -2192,7 +2194,7 @@ export function renderEmailTemplate(
   // Generated layout content that is NOT wording, so it is not a token the admin can move or
   // edit — the sender supplies the live figure and the layout places it. Preview and Send Test
   // pass a sample so what they show still matches the shape of a real send.
-  options: { heroStat?: PhoenixEmailHeroStat | null } = {},
+  options: { heroStat?: PhoenixEmailHeroStat | null; lineBreaks?: boolean } = {},
 ) {
   // Admin-defined custom tokens are spread FIRST so a built-in of the same name always wins.
   // A custom token can therefore never shadow/hijack a system token (e.g. redefining
@@ -2221,7 +2223,9 @@ export function renderEmailTemplate(
   };
   const subject = interpolate(template.subject, inlineVariables, false) || template.templateName;
   const greeting = interpolate(template.greeting, inlineVariables, false);
-  const bodyHtml = sanitizeEmailTemplateHtml(interpolate(template.bodyHtml, variables, true, htmlBlockTokens));
+  const bodyHtml = sanitizeEmailTemplateHtml(
+    interpolate(template.bodyHtml, variables, true, htmlBlockTokens, { lineBreaks: options.lineBreaks }),
+  );
   const bodyText = interpolate(template.bodyText, bodyTextVariables, false);
   const closingText = interpolate(template.closingText, inlineVariables, false);
   const previewLine = interpolate(template.previewText, inlineVariables, false);
@@ -2579,7 +2583,7 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
   // recipient's) — the email is about that person, so a custom token must describe them
   // even when it lands in a manager's or HR's inbox.
   const customVariables = await resolveEmailCustomVariables(context.employeeHrId);
-  const rendered = renderEmailTemplate(template, context, to, customVariables, { heroStat: input.heroStat });
+  const rendered = renderEmailTemplate(template, context, to, customVariables, { heroStat: input.heroStat, lineBreaks: input.lineBreaks });
   const requestId = crypto
     .createHash("sha256")
     .update(JSON.stringify({ key, subject: rendered.subject, to: to.map((recipient) => recipient.email), context }))

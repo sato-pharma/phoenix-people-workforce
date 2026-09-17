@@ -299,17 +299,71 @@ export function deadlineApplies(input: { answerDueOn: string | null; notifiedAt:
   return Boolean(input.notifiedAt) && isAnswerOverdue(input.answerDueOn, input.todayCairoIso);
 }
 
+/** What decides whether a notice told the employee, beyond the deliveries themselves. */
+export type NoticeRecipientFacts = {
+  /** An active login that has signed in to Phoenix at least once. */
+  hasSignedIn: boolean;
+  /** On the employee file, and not resigned, terminated or otherwise gone. */
+  stillEmployed: boolean;
+};
+
+/** The facts behind NoticeRecipientFacts, as read from the employee file, the login and its sessions. */
+export function noticeRecipientFactsFrom(input: {
+  /** An employee row was found for the HR id. */
+  onEmployeeFile: boolean;
+  /** Payroll's leaver rule calls their employment status terminal. */
+  terminalStatus: boolean;
+  /** An active login exists for the HR id. */
+  activeLogin: boolean;
+  /** A sign-in session has been recorded for the HR id. */
+  hasSession: boolean;
+}): NoticeRecipientFacts {
+  return {
+    hasSignedIn: input.activeLogin && input.hasSession,
+    // No employee row at all is not proof they still work here.
+    stillEmployed: input.onEmployeeFile && !input.terminalStatus,
+  };
+}
+
+/** One channel's outcome, as the notification system reports it. */
+export type NoticeDelivery = { channel: string; status: string; queuedForRetry?: boolean };
+
 /**
- * Whether a release notice reached the employee on at least one of its two channels. A notice the
- * notification system skipped (in-app switched off, governance refusal, no Telegram link and no
- * in-app) did not tell anyone, and must not start the clock that ends in a salary deduction.
+ * Whether a notice reached the employee through a real channel (owner, 2026-09-17 — "Only a real
+ * channel"): the email or the Telegram message WENT OUT, or the in-app bell reached someone who has
+ * signed in before. Only a delivery that actually happened counts:
+ *   - a bell notice for a person who has never signed in tells nobody;
+ *   - a channel the notification system skipped or failed tells nobody;
+ *   - a message held for quiet hours or waiting for a retry ("pending", "retrying") has not gone out
+ *     yet, and some holds can never go out (no linked Telegram, no address);
+ *   - an email handed to the outbox to retry is recorded "sent" but did not go out, and the outbox
+ *     files permanent blocks (an inactive template, a refused address) under the same retry.
+ * Counting too few only leaves days waiting for HR; counting too many deducts salary from someone
+ * who was never told.
  */
-export function releaseNoticeReached(deliveries: ReadonlyArray<{ channel: string; status: string }>): boolean {
+export function noticeReachedEmployee(
+  deliveries: ReadonlyArray<NoticeDelivery>,
+  recipient: Pick<NoticeRecipientFacts, "hasSignedIn">,
+): boolean {
   return deliveries.some(
     (delivery) =>
-      (delivery.channel === "in_app" || delivery.channel === "telegram") &&
-      (delivery.status === "sent" || delivery.status === "pending" || delivery.status === "retrying"),
+      delivery.status === "sent" &&
+      !delivery.queuedForRetry &&
+      (delivery.channel === "email" || delivery.channel === "telegram" || (delivery.channel === "in_app" && recipient.hasSignedIn)),
   );
+}
+
+/**
+ * Whether a release notice starts the answer deadline that ends in a salary deduction. Only when it
+ * reached the employee through a real channel, and only while they still work here: a leaver still
+ * gets the notice, but HR decides their days in the final pay, never the deadline (owner,
+ * 2026-09-17, keeping the 2026-09-16 ruling). Anyone not told keeps their days waiting for HR.
+ */
+export function releaseNoticeReached(
+  deliveries: ReadonlyArray<NoticeDelivery>,
+  recipient: NoticeRecipientFacts,
+): boolean {
+  return recipient.stillEmployed && noticeReachedEmployee(deliveries, recipient);
 }
 
 /**
@@ -340,6 +394,19 @@ function formatLongDay(dateIso: string): string {
 }
 
 export function buildWeekReleasedMessage(input: { weekStart: string; weekEnd: string; dayCount: number; answerDueOn: string }) {
+  const deadline = `Please answer by the end of ${formatLongDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`;
+  // One day reads as that day, "Wednesday 9 September", never "9 Sept to 9 Sept" (owner, 2026-09-17).
+  if (input.weekStart === input.weekEnd) {
+    const day = formatLongDay(input.weekStart);
+    return {
+      title: `Attendance review — ${day}`,
+      message:
+        `Your attendance on ${day} has a deduction.\n\n` +
+        `Choose whether the day is deducted from your salary or from your annual vacation balance. ` +
+        `After choosing, you can dispute the day if you believe it is wrong.\n\n` +
+        deadline,
+    };
+  }
   const days = input.dayCount === 1 ? "1 day" : `${input.dayCount} days`;
   return {
     title: `Attendance review — ${formatShortDay(input.weekStart)} to ${formatShortDay(input.weekEnd)}`,
@@ -347,7 +414,7 @@ export function buildWeekReleasedMessage(input: { weekStart: string; weekEnd: st
       `Your attendance for ${formatShortDay(input.weekStart)} to ${formatShortDay(input.weekEnd)} has ${days} with a deduction.\n\n` +
       `For each day, choose whether it is deducted from your salary or from your annual vacation balance. ` +
       `After choosing, you can dispute the day if you believe it is wrong.\n\n` +
-      `Please answer by the end of ${formatLongDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`,
+      deadline,
   };
 }
 

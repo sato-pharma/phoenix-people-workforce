@@ -69,7 +69,7 @@ export function DisputeReviewInbox({ initialDisputes, initialError }: Props) {
       // assumes they were.
       if (payload?.notified === false) {
         notices.push(
-          `${dispute.employeeName} could not be told in the app or on Telegram. The decision is saved and shows on their weekly attendance page.`,
+          `${dispute.employeeName} could not be told by email, on Telegram or in the app. The decision is saved and shows on their weekly attendance page.`,
         );
       }
       if (notices.length) setNotice(notices.join(" "));

@@ -346,10 +346,10 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
       const notNotified = Number(payload.notNotified ?? 0);
       const cleared = Number(payload.clearedDays ?? 0);
       setNotice(
-        `Released. ${countText(notified, "employee was", "employees were")} notified in-app or on Telegram. ` +
+        `Released. ${countText(notified, "employee was", "employees were")} told by email, on Telegram or in the app. ` +
           `${countText(cleared, "unticked day was", "unticked days were")} cleared and will never be deducted.` +
           (notNotified > 0
-            ? ` ${countText(notNotified, "employee", "employees")} could not be notified: they still see the week on their page, and their days are never deducted automatically for going unanswered.`
+            ? ` ${countText(notNotified, "employee was", "employees were")} not counted as told (no email or Telegram reached them and they have never signed in, or they have left). Their days wait for HR and are never deducted automatically for going unanswered.`
             : ""),
       );
     } catch (caught) {
@@ -385,10 +385,10 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
       const cleared = Number(payload.clearedDays ?? 0);
       setNotice(
         `Released for ${name}.` +
-          (notified ? " They were notified in-app or on Telegram." : "") +
+          (notified ? " They were told by email, on Telegram or in the app." : "") +
           (cleared ? ` ${countText(cleared, "unticked day was", "unticked days were")} cleared and will never be deducted.` : "") +
           (notNotified
-            ? " They could not be notified: they still see the week on their page, and their days are never deducted automatically for going unanswered."
+            ? " They were not counted as told (no email or Telegram reached them and they have never signed in, or they have left): they still see the week on their page, and their days wait for HR and are never deducted automatically for going unanswered."
             : "") +
           (othersWaiting ? ` ${countText(othersWaiting, "other employee is", "other employees are")} still waiting for release.` : ""),
       );
@@ -553,7 +553,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
         <p className="text-sm font-semibold text-slate-800">
           {counts.ticked === 0
             ? `Nothing is ticked for ${name}. Releasing clears their ${countText(counts.unticked, "flagged day", "flagged days")}: none is deducted and ${name} is not told.`
-            : `Release ${countText(counts.ticked, "ticked day", "ticked days")} (${daysText(counts.tickedDays)}) to ${name}? They are told in-app and on Telegram and have ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
+            : `Release ${countText(counts.ticked, "ticked day", "ticked days")} (${daysText(counts.tickedDays)}) to ${name}? They are told by email, on Telegram and in the app, and have ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
               (counts.unticked ? ` The ${countText(counts.unticked, "unticked day", "unticked days")} will be cleared and never deducted.` : "")}
           {others ? ` The other ${countText(others, "employee keeps", "employees keep")} waiting.` : ""}
           {current.running ? " Days from later in this week wait for a second release." : ""}
@@ -609,8 +609,8 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
           afternoon, or when you press Refresh. Tick the flagged days to deduct and set how many days each one takes; a
           day you do not tick is cleared when you release and never deducted. Release one employee from their own row
           and the others keep waiting, or release everyone waiting at once. You can release the days so far at any
-          time, and days that arrive later wait for a second release. On release each employee is told in-app and on
-          Telegram, chooses salary or annual balance for each ticked day, and can dispute it. A day not answered within
+          time, and days that arrive later wait for a second release. On release each employee is told by email, on
+          Telegram and in the app, chooses salary or annual balance for each ticked day, and can dispute it. A day not answered within
           the deadline is deducted from salary.
         </p>
         {!canManage ? (
@@ -698,7 +698,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
               <p className="text-sm font-semibold text-slate-800">
                 {pick.ticked === 0
                   ? `Nothing is ticked. Releasing clears all ${countText(pick.unticked, "flagged day", "flagged days")} in this week: none is deducted and no employee is told.`
-                  : `Release ${countText(pick.ticked, "ticked day", "ticked days")} (${daysText(pick.tickedDays)}) to ${countText(pick.employeesTold, "employee", "employees")}? Each is told in-app and on Telegram and has ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
+                  : `Release ${countText(pick.ticked, "ticked day", "ticked days")} (${daysText(pick.tickedDays)}) to ${countText(pick.employeesTold, "employee", "employees")}? Each is told by email, on Telegram and in the app, and has ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
                     (pick.unticked ? ` The ${countText(pick.unticked, "unticked day", "unticked days")} will be cleared and never deducted.` : "")}
                 {week.running ? " Days from later in this week wait for a second release." : ""}
               </p>

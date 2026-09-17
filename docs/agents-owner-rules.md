@@ -1975,26 +1975,84 @@ bridge then leaves the deduction Pending, does not stamp the settlement, and ale
 person decides it (`editedDaysApplyToCandidate`). Ticking a day locks the week before the day, the
 same order release uses, so the two cannot deadlock.
 
-### 2. The notice: in-app and Telegram, never email
+### 2. The notice: by email, Telegram and in-app
 
-Module `attendance_digest` is blocked from email by
-`src/lib/notifications/attendance-digest-channel-guard.ts`, chained in `system.ts`. It has an
-explicit Telegram policy, because without one the unknown-module fail-safe would silently leave
-in-app as the only channel. The notice names the week, the number of days and the deadline. **It
-carries no amount**, because Telegram is a lock-screen channel. One notice per digest, ever
-(idempotency key `attendance_digest:<id>:released`).
+**Owner rule 2026-09-17, chosen from options ("Email the release and decision"), replacing
+2026-09-15's "never email".** When the Super Admin releases a week, and when a reviewer decides a
+disputed day, the employee is told by email to their own work address, by Telegram and in-app. The
+old email guard (`attendance-digest-channel-guard.ts`) is gone. `attendance-digest-channels.ts`
+now only names the module. Module `attendance_digest` keeps an explicit Telegram policy with full
+content, because without one the unknown-module fail-safe would silently turn Telegram off.
 
-**The dispute decision is told the same way** (owner, same day, chosen from options: "Yes, in-app
-and Telegram"). When a reviewer accepts or rejects a disputed day, `reviewDispute` saves the decision
-first and then calls `notifyAttendanceDisputeDecided`, in-app and Telegram, never email. The notice
-names the day and the outcome. For a rejected day it says where the deduction is taken from (salary
-or annual balance, as the employee chose), and when balance could no longer be used it gives the
-real cause (`disputeSalaryFallbackText`). It carries **no amount** and does **not quote the
+- **Email goes before Telegram in the channel list, on purpose.** A permanent Telegram failure falls
+  back to email only when email has not been tried yet. In the other order, an employee whose
+  Telegram fails would be emailed twice.
+- **The email goes to the employee's `work_email`, with their direct manager copied.** With no
+  work address the email is skipped, and never redirected to the HR inbox. It uses the "general"
+  email policy and template. The direct manager is CC'd because the notice names the employee as its
+  subject, as for every email addressed to an employee. **The owner chose to keep that copy
+  (2026-09-17, chosen from options: "Also CC direct manager")**, so a manager sees each deduction
+  notice and dispute decision for their team. Like every automated email, it is BCC'd to the admin
+  and mirrored to his Telegram.
+- **The Telegram message reads as a letter.** Its paragraphs are kept and it has no
+  "Module: Attendance digest" line in front (`telegramKeepsParagraphs`, this module only). Every
+  other module's Telegram text is unchanged.
+- **One day reads as that day** ("Attendance review — Wednesday 9 September", never "9 Sept to
+  9 Sept"). A range of days keeps its range wording.
+
+The release notice names the days, how many there are and the deadline. **It carries no amount**,
+because Telegram is a lock-screen channel. One notice per release round (idempotency key
+`attendance_digest:<id>:released`).
+
+**Who counts as told (owner, 2026-09-17, chosen from options: "Only a real channel").** The release
+stamps `notified_at`, which starts the answer deadline that ends in a salary deduction, only when
+the notice reached the employee through a real channel (`releaseNoticeReached`):
+
+- the email or the Telegram message actually went out, or
+- the in-app notice reached someone with an active login who has signed in before. That is read
+  from `app_sessions`, which only a real password or biometric sign-in writes. Supabase's own
+  last-sign-in time is not used, because an Employee login does not open a Supabase session.
+
+Anyone else keeps `notified_at` null: their days wait for HR and are never deducted for going
+unanswered.
+
+**Only a message that went out counts (risk review, 2026-09-17, before merge).** An email counts once
+the mail provider accepted it. None of these count:
+
+- **An email handed to the outbox to retry.** The notification system records it "sent", but it has
+  not gone out. The outbox also files permanent blocks under a retry, such as an inactive "general"
+  template or an address the recipient check refuses. `system.ts` flags the handoff
+  (`queuedForRetry`), and `noticeReachedEmployee` refuses it.
+- **A message held for quiet hours or waiting for a retry** ("pending", "retrying"). It has not gone
+  out yet. A held Telegram message for someone with no linked Telegram, or a held email with no
+  address, never goes out at all.
+
+The in-app notice is never held for quiet hours, so someone who has signed in is still counted as
+told at night. Counting too few only leaves days for HR; counting too many deducts salary from
+someone who was never told. A later email bounce is not tracked back.
+
+An email held for quiet hours counts as attempted (`emailAttempted`). Otherwise a held Telegram
+message whose retries run out would fall back to emailing the person a second time.
+
+**A leaver is never counted as told (owner, 2026-09-17, chosen from options: "HR decides, never
+automatic", keeping the 2026-09-16 ruling).** The notice still reaches them by any channel that
+works, but `releaseNoticeReached` returns false for anyone with no employee record or a terminal
+employment status (`isTerminalEmploymentStatus`). Their days wait for HR in the final pay. The
+recipient facts are read after sending. A failed read counts as not told, so the days wait for HR
+and are never deducted automatically.
+
+**The dispute decision is told the same way** (owner, 2026-09-15, chosen from options, and by email
+too since 2026-09-17). When a reviewer accepts or rejects a disputed day, `reviewDispute` saves the
+decision first and then calls `notifyAttendanceDisputeDecided`, by email, Telegram and in-app. The
+notice names the day and the outcome. For a rejected day it says where the deduction is taken from
+(salary or annual balance, as the employee chose), and when balance could no longer be used it gives
+the real cause (`disputeSalaryFallbackText`). It carries **no amount** and does **not quote the
 reviewer's note**, which is free text on a lock-screen channel; it only says a note is waiting on the
 employee's page. One notice per decided day (idempotency key
-`attendance_digest:line:<line id>:dispute_decided`). A notice that fails never undoes the decision:
-the reviewer's screen says the employee could not be told, and the decision still shows on the
-employee's weekly attendance page.
+`attendance_digest:line:<line id>:dispute_decided`). The decision deducts nothing on the answer,
+so a leaver it reached counts as told there (`noticeReachedEmployee`). A notice that fails never
+undoes the decision: the reviewer's screen says the employee could not be told by email, on Telegram
+or in the app, and the decision still shows on the employee's weekly attendance page.
 
 ### 3. Per day, the employee chooses salary or annual balance, and then may dispute
 
@@ -2048,7 +2106,7 @@ still pending in a real week:
   employee answers, because the daily job settles only days the employee was told about.
 
 **Except for somebody who has left** (owner, 2026-09-16, chosen from options: "HR decides"). A
-release notice only ever reaches current staff (`isActiveEmployee`), so a leaver is never told,
+leaver is never counted as told by a release notice (`releaseNoticeReached`, owner 2026-09-17), so
 their answer deadline never runs, and a released day of theirs would refuse approval in their
 **final** payroll for ever. So a day of a released week whose notice reached nobody
 (`notified_at` null) stops blocking once the employee record says they have left — any employment

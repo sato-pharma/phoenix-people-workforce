@@ -65,12 +65,12 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // Not genericOnly: the recommendation IS the content. A generic "you have a notification" ping
   // cannot be approved or rejected, which is the entire point of sending it.
   { enabled: true, genericOnly: false, module: "early_birds", notes: "In-app and Telegram only; email is permanently blocked for this module.", optional: false },
-  // Weekly attendance review (owner rules 2026-09-15): in-app + Telegram only, email hard-blocked in
-  // attendance-digest-channel-guard.ts. Same reasoning as early_birds: without this row the
-  // unknown-module fail-safe drops Telegram and the in-app bell is left alone. Two notices use it —
-  // a week released for an answer, and a dispute decided. Both name only the week or the day, the
-  // number of days, the deadline and the outcome, never an amount, so full content is safe to send.
-  { enabled: true, genericOnly: false, module: "attendance_digest", notes: "Weekly attendance review release and dispute-decision notices; in-app and Telegram only, email permanently blocked.", optional: false },
+  // Weekly attendance review (owner rule 2026-09-17): email, Telegram and in-app — see
+  // attendance-digest-channels.ts. Without this row the unknown-module fail-safe drops Telegram. Two
+  // notices use it — a week released for an answer, and a dispute decided. Both name only the week or
+  // the day, the number of days, the deadline and the outcome, never an amount, so full content is
+  // safe to send.
+  { enabled: true, genericOnly: false, module: "attendance_digest", notes: "Weekly attendance review release and dispute-decision notices; email, Telegram and in-app.", optional: false },
   // Phoenix CRM (owner rule 2026-09-16): in-app + Telegram only, email hard-blocked in
   // phoenix-crm-channel-guard.ts. Same reasoning as early_birds: without this row the unknown-module
   // fail-safe drops Telegram and a manager in the field is left with the in-app bell alone. Not

@@ -131,7 +131,7 @@ export function WeeklyDigestPortal({ initialDigests, initialError, showAmounts }
 
       {open.length === 0 && settled.length === 0 ? (
         <p className="border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">
-          Nothing to answer. You are notified here and on Telegram when a week needs your answer.
+          Nothing to answer. You are notified here, by email and on Telegram when a week needs your answer.
         </p>
       ) : null}
 
