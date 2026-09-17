@@ -214,7 +214,9 @@ export function PortalWeeklyFieldForceView({
         <div className="flex items-start gap-2.5 border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-xs font-semibold text-amber-900">
-            {`Week ${[...gapWeeks].join(", ")} follows a week that was never uploaded, so its figure spans the missing week(s) and reads high. Marked with a dot in the table below.`}
+            {`${gapWeeks.size === 1 ? "Week" : "Weeks"} ${[...gapWeeks].join(", ")} ${
+              gapWeeks.size === 1 ? "carries" : "carry"
+            } sales from a depot that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. Marked with a dot in the table below.`}
           </p>
         </div>
       ) : null}
@@ -291,7 +293,7 @@ export function PortalWeeklyFieldForceView({
                   <th
                     key={week}
                     className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
-                    title={gapWeeks.has(week) ? "Includes a week that was never uploaded" : undefined}
+                    title={gapWeeks.has(week) ? "Also holds a week a depot never uploaded" : undefined}
                   >
                     {`W${week}`}
                     {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}

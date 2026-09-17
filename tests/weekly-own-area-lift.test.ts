@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { AccessContext, PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { liftWeeklyGeography, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import { buildWeeklyAreaSplitIndex } from "../src/lib/sales/weekly/branch-area-split.ts";
-import { weekGapFlags } from "../src/lib/sales/weekly/decumulate.ts";
+import { depotWeekGaps } from "../src/lib/sales/weekly/decumulate.ts";
 import {
   admitWeeklyStockRows,
   mayLiftWeeklyGeography,
@@ -252,8 +252,10 @@ export async function runWeeklyOwnAreaLiftTests() {
     assert.equal(ue5?.allocatedValue, 500, "and a name-read share stays ALLOCATED");
     assert.equal(after.reps.find((rep) => rep.areaCode === "UE3")?.allocatedValue, 1000, "a lifted split share is an allocation");
 
-    // The column axis is the month's upload calendar, even for a week that holds none of his money.
-    assert.deepEqual(after.weekNumbers, [1, 2, 3], "weeks come from every loaded row, before the narrowing");
+    // A week is a column only where a row that counts for him carries it. Week 3 is carried by Minia 2's
+    // hand-mapped row alone, which the narrowing drops, so it is not his column.
+    assert.deepEqual(after.weekNumbers, [1, 2], "a week only another district's row carries is never a column on his grid");
+    assert.deepEqual(after.weekNumbers, before.weekNumbers, "the lift adds no week his own rows and shares do not carry");
   }
 
   // ── 2. a medical rep's own seat (the month-pace strip) ─────────────────────────────────────
@@ -429,28 +431,78 @@ export async function runWeeklyOwnAreaLiftTests() {
     );
   }
 
-  // ── 6. a lifted grain's upload-gap flags ───────────────────────────────────────────────────
+  // ── 6. a lifted grid's upload-gap flags are per depot, over the money that counts for him ─────
+  // Measured 2026-09-17 on Delta (3)'s Anti Infective August tab: Ibn Sina-Sato and Overseas sent no
+  // week-2 sheet, while a POS return landed in one of her areas in week 2. Pooled over the lifted load,
+  // every week looked uploaded, so week 3, which held two weeks of those two depots' sales, had no flag.
   {
+    const sheet = (distributorCode: string, weekNumber: number, overrides: Partial<WeeklyFactExportRow> = {}) =>
+      factRow({ distributorCode, weekNumber, weekStart: `2026-09-0${weekNumber}`, ...overrides });
+    const ownSohag = { regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: SOHAG };
+    const rows = [
+      // Ibn Sina-Sato and Overseas skipped week 2. Their UE Minia+Assiut books give each Assiut area a quarter.
+      sheet("IS-S", 1, { salesValue: 4000, salesUnits: 40 }),
+      sheet("IS-S", 3, { salesValue: 8000, salesUnits: 80 }),
+      sheet("IS-S", 4, { salesValue: 4000, salesUnits: 40 }),
+      sheet("PS", 1, { salesValue: 2000, salesUnits: 20 }),
+      sheet("PS", 3, { salesValue: 2000, salesUnits: 20 }),
+      // POS sent weeks 1 to 3. Its week 2 is a return, and a quarter of it lands in each Assiut area.
+      sheet("POS", 1, { salesValue: 800, salesUnits: 8 }),
+      sheet("POS", 2, { salesValue: -888, salesUnits: -8 }),
+      sheet("POS", 3, { salesValue: 800, salesUnits: 8 }),
+      // Ibn Sina's Sohag book is his own region's, admitted whole, and it skipped nothing.
+      sheet("IBS", 1, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
+      sheet("IBS", 2, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
+      sheet("IBS", 3, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
+      // EGD's first sheet of the month is week 5, so it holds weeks 1 to 5, but it reaches Minia 2 alone.
+      sheet("EG", 5, { areaCode: "UE2", branchName: "Minia hand-mapped", salesValue: 500, salesUnits: 5 }),
+    ];
+    const ownAreaKeys = weeklyScopeOwnAreaKeys(UE2_DM_SCOPE);
+    const grid = (loaded: WeeklyFactExportRow[]) =>
+      buildPortalWeeklyFieldForce({
+        rows: loaded,
+        areaSplit: SPLIT,
+        seatIndex: INDEX,
+        depotWeekGaps: depotWeekGaps(loaded),
+        geography: weeklyFieldForceGeography(loaded, UE2_DM_SCOPE, ownAreaKeys),
+      });
+    const flagsByArea = (built: PortalWeeklyFieldForce) =>
+      Object.fromEntries(built.reps.filter((rep) => rep.areaCode).map((rep) => [rep.areaCode as string, rep.gapWeekNumbers]));
+
     assert.deepEqual(
-      weekGapFlags([
-        { cycleMonth: "2026-09-01", weekNumber: 3 },
-        { cycleMonth: "2026-08-01", weekNumber: 2 },
-        { cycleMonth: "2026-09-01", weekNumber: 1 },
-        { cycleMonth: "2026-08-01", weekNumber: 4 },
-        { cycleMonth: "2026-08-01", weekNumber: 3 },
-        { cycleMonth: "2026-09-01", weekNumber: 1 },
-        { cycleMonth: "", weekNumber: 2 },
-        { cycleMonth: "2026-09-01", weekNumber: null },
-      ]),
-      [
-        { cycleMonth: "2026-08-01", weekNumber: 2, spansGap: false },
-        { cycleMonth: "2026-08-01", weekNumber: 3, spansGap: false },
-        { cycleMonth: "2026-08-01", weekNumber: 4, spansGap: false },
-        { cycleMonth: "2026-09-01", weekNumber: 1, spansGap: false },
-        { cycleMonth: "2026-09-01", weekNumber: 3, spansGap: true },
-      ],
-      "week 3 of September follows a missing week 2 and is flagged; a month's first present week never is",
+      depotWeekGaps(rows).map((gap) => `${gap.distributorCode} week ${gap.weekNumber}`),
+      ["EG week 5", "IS-S week 3", "PS week 3"],
+      "fixture: three depot weeks span a gap",
     );
+    const dm = grid(rows);
+
+    // HEADLINE: week 3 is flagged, although POS's sheet means some depot sent every week before it.
+    assert.deepEqual(dm.gapWeekNumbers, [3], "a week is flagged when a depot whose money counts for him skipped the week before");
+    assert.equal(dm.reps.find((rep) => rep.areaCode === "UE3")?.valueByWeek[2], -222, "fixture: POS's return is money in his area in week 2");
+
+    // HEADLINE: each row carries its own depots' flags, never the grid's.
+    assert.deepEqual(
+      flagsByArea(dm),
+      { UE3: [3], UE4: [3], UE5: [], UE6: [] },
+      "Assiut's week 3 holds the skipping depots' money; Sohag's depot skipped nothing, so Sohag is not flagged",
+    );
+
+    // HEADLINE: a week no counting row carries is not a column, and a gap there is not his.
+    assert.deepEqual(dm.weekNumbers, [1, 2, 3, 4], "EGD's week 5 reaches only Minia 2, so it is no column on his grid");
+
+    // A gapped depot row that moves no money cannot make a figure read high.
+    const stockOnly = sheet("RM", 4, { ...ownSohag, stockUnits: 60 });
+    assert.deepEqual(
+      depotWeekGaps([...rows, stockOnly]).filter((gap) => gap.distributorCode === "RM").map((gap) => gap.weekNumber),
+      [4],
+      "fixture: ramco's first sheet of the month is week 4",
+    );
+    assert.deepEqual(grid([...rows, stockOnly]).gapWeekNumbers, [3], "a stock-only row from a gapped depot week flags nothing");
+
+    // The same first sheet with sales in his areas holds weeks 1 to 4, and is flagged where it lands.
+    const sold = grid([...rows, { ...stockOnly, salesValue: 600, salesUnits: 6 }]);
+    assert.deepEqual(sold.gapWeekNumbers, [3, 4], "a depot's first sheet after week 1 is flagged once its money reaches him");
+    assert.deepEqual(flagsByArea(sold), { UE3: [3], UE4: [3], UE5: [4], UE6: [4] }, "on the rows it reached, and no others");
   }
 
   // ── 7. the wiring — each surface loads lifted and narrows before a figure is built ─────────
@@ -460,12 +512,19 @@ export async function runWeeklyOwnAreaLiftTests() {
     assert.match(tab, /liftRowGrainGeography:\s*liftGrain/, "the Field Force tab loads its row grain lifted");
     assert.match(tab, /mayLiftWeeklyGeography\(/, "only when there is a region bound to lift and own areas to narrow to");
     assert.match(tab, /geography:[\s\S]*?weeklyFieldForceGeography\(/, "and hands the narrowing to the grid");
-    assert.match(tab, /factRowWeekGaps:\s*_factRowWeekGaps/, "the lifted grain never reaches the browser");
+    assert.match(tab, /factRowDepotWeekGaps:\s*_factRowDepotWeekGaps/, "the depot gap list never reaches the browser");
+    assert.match(tab, /depotWeekGaps:\s*data\.factRowDepotWeekGaps \?\? \[\],/, "the grid is flagged per depot, lifted or not");
 
     const month = functionBody(portal, "getPortalWeeklyMonthFieldForce");
     assert.match(month, /resolveWeeklyOwnAreaKeys\(/, "the month grid resolves a medical rep's own seats");
     assert.match(month, /liftRowGrainGeography:\s*liftGrain/, "and loads lifted");
     assert.match(month, /geography:[\s\S]*?weeklyFieldForceGeography\(/, "and narrows");
+    assert.match(month, /depotWeekGaps:\s*data\.factRowDepotWeekGaps \?\? \[\],/, "and flags per depot");
+    assert.match(
+      readSource("../src/lib/sales/weekly/portal-weekly-rep.ts"),
+      /depotWeekGaps:\s*dashboard\.factRowDepotWeekGaps \?\? \[\],/,
+      "a medical rep's line-wide grid is flagged per depot too",
+    );
     assert.match(month, /excludeUnmapped:\s*true/, "owner rule: every weekly report leaves unmapped products out");
 
     const pace = readSource("../src/lib/sales/sos-month-pace-loader.ts");
@@ -496,6 +555,11 @@ export async function runWeeklyOwnAreaLiftTests() {
     const service = readSource("../src/lib/sales/weekly/service.ts");
     assert.match(service, /factRows: filters\?\.includeFactRows\s*\?\s*grainWeekRowsAdj\.map/, "factRows come from the grain the caller asked for");
     assert.match(service, /stockRows: filters\?\.includeStockRows\s*\?\s*grainScopedRows\.map/, "and so do stockRows");
+    assert.match(
+      service,
+      /const depotGaps = depotWeekGaps\(allRows\);[\s\S]*factRowDepotWeekGaps: filters\?\.includeFactRows \? depotGaps : undefined,/,
+      "depot calendars are read over every loaded row, the set de-cumulation subtracted from, never a scoped grain",
+    );
     assert.match(
       service,
       /applyWeeklyAccessScope\(realRows, grainScope\)[\s\S]{0,120}\.filter\(passesRowFilters\)/,

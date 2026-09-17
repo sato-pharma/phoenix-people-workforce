@@ -110,28 +110,67 @@ export function weekHasDecumulationGap(
   return currWeekNumber - prevWeekNumber > 1;
 }
 
-// The same M6 flag for every (cycle month, week number) present in a set of rows, ordered by month then
-// week — exactly what the dashboard's weekComparison computes, without its money. For a row grain that
-// is NOT the dashboard's own (a lifted load, service.ts liftRowGrainGeography), whose uploaded weeks can
-// differ from the viewer's region-bound ones. Pure.
-export function weekGapFlags(
-  rows: readonly { cycleMonth?: string | null; weekNumber?: number | null }[],
-): { cycleMonth: string; weekNumber: number; spansGap: boolean }[] {
-  const weeksByMonth = new Map<string, Set<number>>();
+// M6 PER DEPOT. The flag above is pooled: it asks whether ANY distributor uploaded the week before, so a
+// depot that skipped a week goes unflagged whenever another depot uploaded it, and that depot's next week
+// still holds two weeks of its sales. This asks the question of each (distributor, cycle month) on its
+// own, over the rows decumulateRows is given: a depot's week spans a gap when that depot sent no sheet
+// for the week before it in that month. Its first sheet of a month spans one too when it is not week 1,
+// because a month-to-date sheet then holds every week up to it (weeklySalesUploadCalendar in
+// sales-depot-detail.ts counts the same span). Untagged rows, rows with no week date, and a
+// non-cumulative distributor (Direct) never span a gap: decumulateRows subtracts nothing from them.
+//
+// Week numbers decide, where de-cumulation orders by date. The two agree whenever a depot's week numbers
+// rise with its dates, which every validated upload on production did when this was written. Pure.
+export type DepotWeekGap = { distributorCode: string; cycleMonth: string; weekNumber: number };
+
+/** The key a depot's week is looked up under. Case-blind on the distributor, as decumulateRows groups it. */
+export function depotWeekGapKey(
+  distributorCode: string | null | undefined,
+  cycleMonth: string | null | undefined,
+  weekNumber: number | null | undefined,
+): string {
+  return `${up(distributorCode)}||${cycleMonth ?? ""}||${weekNumber ?? ""}`;
+}
+
+export function depotWeekGaps(
+  rows: readonly Pick<DecumulableRow, "distributorCode" | "cycleMonth" | "weekNumber" | "weekStart">[],
+): DepotWeekGap[] {
+  const calendars = new Map<string, { distributorCode: string; cycleMonth: string; weeks: Set<number> }>();
   for (const row of rows) {
-    if (!row.cycleMonth || row.weekNumber == null) continue;
-    const weeks = weeksByMonth.get(row.cycleMonth) ?? new Set<number>();
-    weeks.add(row.weekNumber);
-    weeksByMonth.set(row.cycleMonth, weeks);
+    if (!row.cycleMonth || row.weekNumber == null || !row.weekStart) continue;
+    if (!weeklyDistributorIsCumulative(row.distributorCode)) continue;
+    const key = `${up(row.distributorCode)}||${row.cycleMonth}`;
+    const calendar = calendars.get(key) ?? { distributorCode: up(row.distributorCode), cycleMonth: row.cycleMonth, weeks: new Set<number>() };
+    calendar.weeks.add(row.weekNumber);
+    calendars.set(key, calendar);
   }
-  return [...weeksByMonth.keys()].sort().flatMap((cycleMonth) => {
-    const weeks = [...(weeksByMonth.get(cycleMonth) ?? [])].sort((a, b) => a - b);
-    return weeks.map((weekNumber, i) => ({
-      cycleMonth,
-      weekNumber,
-      spansGap: weekHasDecumulationGap(i > 0 ? weeks[i - 1] : null, weekNumber),
-    }));
-  });
+  const gaps: DepotWeekGap[] = [];
+  for (const { distributorCode, cycleMonth, weeks } of calendars.values()) {
+    for (const weekNumber of weeks) {
+      if (weekNumber > 1 && !weeks.has(weekNumber - 1)) gaps.push({ distributorCode, cycleMonth, weekNumber });
+    }
+  }
+  return gaps.sort(
+    (a, b) =>
+      a.cycleMonth.localeCompare(b.cycleMonth) || a.distributorCode.localeCompare(b.distributorCode) || a.weekNumber - b.weekNumber,
+  );
+}
+
+/** depotWeekGaps as a lookup set, for moneySpansDepotGap. */
+export function depotWeekGapKeys(gaps: readonly DepotWeekGap[]): Set<string> {
+  return new Set(gaps.map((gap) => depotWeekGapKey(gap.distributorCode, gap.cycleMonth, gap.weekNumber)));
+}
+
+// The one rule every screen flags a week by (owner, 2026-09-17): a week is marked where money that counts
+// on that screen came from a depot week that spans a gap. A row that moves no money cannot make a figure
+// read high, so a stock-only row never marks its week. Pure.
+export function moneySpansDepotGap(
+  row: { distributorCode?: string | null; cycleMonth?: string | null; weekNumber?: number | null },
+  money: { value: number; units: number },
+  gapKeys: ReadonlySet<string>,
+): boolean {
+  if (row.weekNumber == null || (money.value === 0 && money.units === 0)) return false;
+  return gapKeys.has(depotWeekGapKey(row.distributorCode, row.cycleMonth, row.weekNumber));
 }
 
 // M6 remediation (chosen fix: "suppress + flag"): when a week spans an upload gap its de-cumulated
