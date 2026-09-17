@@ -10,9 +10,12 @@
 --     on the spot, and at least one timing. Timings belong to a place; a doctor in two places has two.
 --   * A new customer's grade: the rep proposes, the district manager approves. A drop needs a reason
 --     and the district manager's approval. The list is ready (weekly plans start) when every reference
---     customer is validated or dropped — measured once; a seat stays ready.
+--     customer is validated or dropped — measured once; a seat stays ready. A seat with no reference
+--     list yet is ready without that stamp, so a list that reaches it later is finished first.
 --   * The weekly plan: the district manager approves, the SFE Manager can return one, the system
 --     never approves. At most 15 PM doctors and 5 AM accounts a plan day (settings, checked by the app).
+--     Plan against actual counts a day as planned when the plan stood sent at the end of that day, so
+--     reopening a plan or returning it never takes a finished day out of the report.
 --   * A visit records a location check, the products discussed, a live photo and a comment. A double
 --     visit (rep + district manager) and a chain visit (+ a regional or national manager) count for
 --     everyone on them straight away. A visit far from the place still saves, flagged.
@@ -21,7 +24,8 @@
 -- Photos never pass through the app: the server issues one upload path per photo
 -- (phoenix_crm_photo_uploads), the phone uploads straight to the private bucket, and a save refuses a
 -- path the server did not issue to that person for that territory, a path already used, a slot older
--- than 12 hours, or an object that never arrived. The capture time is the server's issue time.
+-- than 2 hours, or an object that never arrived. The capture time is the server's issue time, and the
+-- row's created_at is the server's time the save arrived.
 --
 -- Access is application-scoped: every table is service-role only (RLS on, nothing granted to anon or
 -- authenticated), and every function is SECURITY DEFINER, executable by service_role only. Who may do
@@ -68,6 +72,11 @@
 --   select * from public.phoenix_crm_settings;                                                    -- 1 row, 15 / 5
 
 begin;
+
+-- Replacing the photo policy (section 7) locks storage.objects until COMMIT, and every upload and
+-- download in the app waits behind that lock. No lock is waited on for more than 5 seconds: if a long
+-- query holds one, the migration stops, changes nothing, and is run again.
+set local lock_timeout = '5s';
 
 -- ── 1. Settings, line opening dates, Ramadan overrides ───────────────────────────────────────────
 
@@ -289,7 +298,8 @@ create index if not exists phoenix_crm_list_events_customer_idx
 
 -- Stamped once, the first time every reference customer of the seat is validated or dropped. The
 -- seat stays ready: reference customers the nightly scrape adds later show as "to validate" without
--- closing plans again.
+-- closing plans again. A seat with no reference list is never stamped: it is ready while its list is
+-- empty, and a list that reaches it later (a new rep's iReports360 list) is finished before planning.
 create table if not exists public.phoenix_crm_territory_readiness (
   seat_id text primary key,
   ready_at timestamptz not null default now(),
@@ -623,7 +633,8 @@ as $$
 $$;
 
 -- Readiness counts for many seats in one call (real entries only; the Super Admin's test mode skips
--- the gate). With p_mark_ready, a complete seat is stamped ready — once, and it stays ready.
+-- the gate). With p_mark_ready, a complete seat is stamped ready — once, and it stays ready. An empty
+-- reference list is complete but never stamped, so the list that reaches it later still counts.
 create or replace function public.phoenix_crm_seat_readiness(p_seat_ids text[], p_mark_ready boolean default false)
 returns table (
   seat_id text,
@@ -665,6 +676,7 @@ as $$
     select c.seat_id, c.reference_total, c.validated_count, c.dropped_count
     from counts c
     where p_mark_ready
+      and c.reference_total > 0
       and c.open_count = 0
       and c.drop_pending_count = 0
     on conflict (seat_id) do nothing
@@ -685,7 +697,9 @@ $$;
 
 -- ── 9. Photos and places (internal helpers) ──────────────────────────────────────────────────────
 
--- Consumes an issued upload path and returns the server time it was issued (the capture time).
+-- Consumes an issued upload path and returns the server time it was issued (the capture time). The
+-- phone asks for the slot right after the photo is taken, so a slot is good for 2 hours: enough to
+-- wait for the doctor and save, never enough to date the next morning's visits to the night before.
 create or replace function public.phoenix_crm_take_photo(
   p_path text,
   p_hr_id text,
@@ -716,7 +730,7 @@ begin
   if v_slot.used_at is not null then
     raise exception 'phoenix_crm:photo_used';
   end if;
-  if v_slot.issued_at < now() - interval '12 hours' then
+  if v_slot.issued_at < now() - interval '2 hours' then
     raise exception 'phoenix_crm:photo_expired';
   end if;
   if not exists (
@@ -1603,6 +1617,8 @@ $$;
 -- submit (rep: draft/returned → submitted) · reopen (rep: submitted/approved → draft) ·
 -- approve (reviewer: submitted → approved) · return (reviewer or SFE: submitted/approved → returned,
 -- with a note). Nothing here runs without a person's action: the system never approves a plan.
+-- Once the week is over (after its Thursday, Cairo) the plan stays as it stood: it can no longer be
+-- sent, reopened or returned, since the rep could not act on a return. A late approval still records.
 --   p: plan_id, action, actor_hr_id, actor_role, is_test, expected_version, note
 create or replace function public.phoenix_crm_plan_transition(p jsonb)
 returns jsonb
@@ -1618,6 +1634,7 @@ declare
   v_is_test boolean := coalesce((p ->> 'is_test')::boolean, false);
   v_expected integer := nullif(p ->> 'expected_version', '')::integer;
   v_note text := nullif(regexp_replace(trim(coalesce(p ->> 'note', '')), '\s+', ' ', 'g'), '');
+  v_today date := (now() at time zone 'Africa/Cairo')::date;
   v_seat text;
   v_week date;
   v_plan public.phoenix_crm_plans%rowtype;
@@ -1646,6 +1663,9 @@ begin
     raise exception 'phoenix_crm:version_conflict';
   end if;
   v_from := v_plan.status;
+  if v_action <> 'approve' and v_plan.week_start + 5 < v_today then
+    raise exception 'phoenix_crm:week_passed';
+  end if;
 
   if v_action = 'submit' then
     if v_from not in ('draft', 'returned') then
@@ -1927,8 +1947,12 @@ as $$
   ) t;
 $$;
 
--- Planned customers visited or missed, and visits off the plan, per territory and day. Only plans that
--- reached review (submitted or approved) count as a plan.
+-- Planned customers visited or missed, and visits off the plan, per territory and day. A plan day
+-- counts as planned when the plan stood sent at the END of that Cairo day — submitted, approved, or
+-- returned for changes — read from the plan's own events. A day's items cannot change once the day
+-- has passed, so a plan the rep reopens and never sends again keeps the days that ended while it was
+-- sent, and a return never takes out a day already worked. Today and later days read the plan as it
+-- stands. A plan the rep never sent counts for no day.
 create or replace function public.phoenix_crm_report_plan_vs_actual(
   p_seat_ids text[],
   p_from date,
@@ -1941,15 +1965,33 @@ stable
 security definer
 set search_path to 'public'
 as $$
-  with planned as (
-    select pl.seat_id, pl.is_test, i.plan_date, i.customer_id, i.list_type
+  with plan_days as (
+    select distinct pl.id as plan_id, i.plan_date
     from public.phoenix_crm_plans pl
     join public.phoenix_crm_plan_items i on i.plan_id = pl.id
     where pl.seat_id = any (p_seat_ids)
-      and pl.status in ('submitted', 'approved')
       and pl.week_start between p_from - 6 and p_to
       and i.plan_date between p_from and p_to
       and (p_include_test or not pl.is_test)
+  ),
+  sent_days as (
+    select d.plan_id, d.plan_date
+    from plan_days d
+    where (
+        select e.to_status
+        from public.phoenix_crm_plan_events e
+        where e.plan_id = d.plan_id
+          and e.to_status is not null
+          and e.created_at < ((d.plan_date + 1)::timestamp at time zone 'Africa/Cairo')
+        order by e.created_at desc, e.id desc
+        limit 1
+      ) in ('submitted', 'approved', 'returned')
+  ),
+  planned as (
+    select pl.seat_id, pl.is_test, i.plan_date, i.customer_id, i.list_type
+    from sent_days s
+    join public.phoenix_crm_plans pl on pl.id = s.plan_id
+    join public.phoenix_crm_plan_items i on i.plan_id = s.plan_id and i.plan_date = s.plan_date
   ),
   visited as (
     select v.seat_id, v.is_test, v.visit_date, v.customer_id, v.list_type

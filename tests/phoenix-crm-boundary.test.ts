@@ -21,7 +21,12 @@ import { accessRegistry, findAccessRegistryEntry } from "../src/lib/security/acc
  *   4. the rules the phone runs, and the screens, import no server code, so a service-role client can
  *      never be bundled for a phone;
  *   5. the migration: service-role-only tables and functions, writes to its own tables only, a private
- *      JPEG bucket, and the Cairo day always stated (never the database's `current_date`).
+ *      JPEG bucket, and the Cairo day always stated (never the database's `current_date`);
+ *   6. the risk review's fixes (2026-09-17), in the database and in the services: plan against actual
+ *      keeps a finished day when a plan is reopened or returned, a readiness gap never reads as ready, an
+ *      empty reference list is never stamped ready, a week that is over keeps its plan, a photo slot
+ *      lasts 2 hours, the migration never queues uploads behind a lock, the product list is paged, and
+ *      the paid street-address lookup is limited per person.
  */
 
 // ── 1. The permission grants ─────────────────────────────────────────────────────────────────────────
@@ -368,6 +373,7 @@ function runMigrationTests() {
   assert.doesNotMatch(sql, /\btruncate\b/i);
   assert.doesNotMatch(sql, /crm_native_|crm_cutover|crm_contact_list_changes/, "the migration touches nothing of the pilot's");
   assert.doesNotMatch(sql, /\bcurrent_date\b/i, "a day is always the Cairo day, stated — current_date is the database's UTC day");
+  runMigrationReviewFixTests(sql);
 
   // The photo bucket: private, JPEG only, 2 MB; a re-run makes it private again.
   assert.match(
@@ -411,10 +417,127 @@ function runMigrationTests() {
   assert.match(readFileSync("src/lib/phoenix-crm/server/photos.ts", "utf8"), /export const PHOENIX_CRM_PHOTO_BUCKET = "phoenix-crm-photos";/);
 }
 
+// ── 6. The risk review's fixes (2026-09-17) ─────────────────────────────────────────────────────────
+
+/** One function's text in the comment-free migration, from its header to its closing `$$;`. */
+function functionSql(sql: string, name: string): string {
+  const start = sql.indexOf(`create or replace function public.${name}(`);
+  assert.ok(start >= 0, `${name} is still in the migration`);
+  const end = sql.indexOf("\n$$;", start);
+  assert.ok(end > start, `${name} ends in "$$;"`);
+  return sql.slice(start, end);
+}
+
+function runMigrationReviewFixTests(sql: string) {
+  // Replacing the photo policy locks storage.objects until COMMIT, and every upload in the app waits
+  // behind it: the migration gives up after 5 seconds instead of queueing them.
+  const opening = sql.split("\n").map((line) => line.trim()).filter(Boolean);
+  assert.deepEqual(opening.slice(0, 2), ["begin;", "set local lock_timeout = '5s';"], "the migration waits at most 5 seconds for any lock");
+
+  // An empty reference list is ready but never stamped, so a list that reaches the territory later
+  // (a new rep's first iReports360 list) is finished before planning.
+  assert.match(
+    functionSql(sql, "phoenix_crm_seat_readiness"),
+    /where p_mark_ready\s+and c\.reference_total > 0\s+and c\.open_count = 0\s+and c\.drop_pending_count = 0\s+on conflict \(seat_id\) do nothing/,
+    "a territory is stamped ready only when it has a reference list and all of it is done",
+  );
+
+  // A slot is asked for right after the photo is taken: 2 hours covers the wait for the doctor, never
+  // the next morning's visits dated to the night before.
+  assert.match(
+    functionSql(sql, "phoenix_crm_take_photo"),
+    /if v_slot\.issued_at < now\(\) - interval '2 hours' then\s+raise exception 'phoenix_crm:photo_expired';/,
+    "a photo slot lasts 2 hours",
+  );
+  assert.equal((sql.match(/phoenix_crm:photo_expired/g) ?? []).length, 1, "one photo window");
+
+  // Once the week's Thursday has passed (Cairo), its plan stays as it stood; a late approval still records.
+  const transition = functionSql(sql, "phoenix_crm_plan_transition");
+  assert.match(transition, /\n\s*v_today date := \(now\(\) at time zone 'Africa\/Cairo'\)::date;\n/, "the transition reads the Cairo day");
+  const weekCheck = transition.search(
+    /if v_action <> 'approve' and v_plan\.week_start \+ 5 < v_today then\s+raise exception 'phoenix_crm:week_passed';/,
+  );
+  assert.ok(weekCheck >= 0, "a plan whose week is over cannot be sent, reopened or returned");
+  assert.ok(weekCheck < transition.indexOf("if v_action = 'submit' then"), "the week is checked before any action runs");
+
+  // Plan against actual counts a day when the plan stood sent at the END of that Cairo day, read from
+  // the plan's own events — never from the plan's status today, which a reopen or a return changes.
+  const planVsActual = functionSql(sql, "phoenix_crm_report_plan_vs_actual");
+  assert.match(
+    planVsActual,
+    /select e\.to_status\s+from public\.phoenix_crm_plan_events e\s+where e\.plan_id = d\.plan_id\s+and e\.to_status is not null\s+and e\.created_at < \(\(d\.plan_date \+ 1\)::timestamp at time zone 'Africa\/Cairo'\)\s+order by e\.created_at desc, e\.id desc\s+limit 1\s+\) in \('submitted', 'approved', 'returned'\)/,
+    "a plan day counts when the plan's last status before that Cairo day ended was sent, approved or returned",
+  );
+  assert.match(
+    planVsActual,
+    /from sent_days s\s+join public\.phoenix_crm_plans pl on pl\.id = s\.plan_id\s+join public\.phoenix_crm_plan_items i on i\.plan_id = s\.plan_id and i\.plan_date = s\.plan_date/,
+    "the planned customers are the items of those sent days only",
+  );
+  assert.doesNotMatch(planVsActual, /\bpl\.status\b/, "plan against actual never reads a plan's status today — a reopened or returned plan would take finished days out");
+  // The report trusts every plan event to carry the status it left the plan in.
+  const eventInserts = [...sql.matchAll(/insert into public\.phoenix_crm_plan_events \(([^)]*)\)/g)];
+  assert.equal(eventInserts.length, 3, "plans write their events in three places");
+  for (const insert of eventInserts) {
+    assert.ok(insert[1].split(",").map((column) => column.trim()).includes("to_status"), `a plan event is written without its status: (${insert[1]})`);
+  }
+}
+
+function runServiceReviewFixTests() {
+  const source = (file: string) => readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+
+  // A readiness answer missing for a territory is a fault: it throws, and never reads as ready.
+  const list = source("src/lib/phoenix-crm/server/list.ts");
+  assert.match(
+    list,
+    /const unanswered = asked\.filter\(\(seatId\) => !readiness\.has\(seatId\)\);\n\s*if \(unanswered\.length > 0\) \{\n\s*throw new Error\(/,
+    "loadReadiness throws when the database leaves a territory out",
+  );
+  const plans = source("src/lib/phoenix-crm/server/plans.ts");
+  assert.match(plans, /if \(!entry\) return \{ ready: false,/, "the planner stays closed for a territory with no readiness answer");
+  const team = source("src/lib/phoenix-crm/server/team.ts");
+  assert.doesNotMatch(team, /ready: true/, "the Team view never makes up a ready territory");
+  assert.doesNotMatch(`${plans}\n${team}`, /noReferenceList|if \(!entry\) return \{ ready: true/);
+
+  // A week that is over keeps its plan: no return is offered or accepted.
+  assert.match(plans, /canReturn: weekOpen && canReturnTerritoryPlan\(viewer, seat, isTest\)/, "the planner offers no return once the week is over");
+  assert.match(plans, /const weekOpen = editablePlanDays\(weekStart, viewer\.cairoToday\)\.length > 0;/, "the review list knows whether the week is over");
+  assert.match(plans, /canReturn: weekOpen && \(plan\?\.status === "submitted"/, "the review list offers no return once the week is over");
+  assert.match(
+    plans,
+    /decidedAs = assertCanReturnPlan\(viewer, seat, isTest\);[\s\S]{0,300}if \(editablePlanDays\(String\(planRow\.week_start\), today\)\.length === 0\) \{\n\s*throw conflictError\(/,
+    "returning a plan whose week is over is refused before the database is asked",
+  );
+  const db = source("src/lib/phoenix-crm/server/db.ts");
+  assert.match(db, /\n\s*week_passed: \{ status: 409, message: "[^"]+" \},\n/, "the database's week_passed refusal reads as a sentence");
+  assert.match(db, /photo_expired: \{ status: 409, message: "This photo was taken more than 2 hours ago\. Take a new photo\." \}/);
+
+  // The product list is paged on its key, never cut at the database's per-answer row cap.
+  const products = source("src/lib/phoenix-crm/server/products.ts");
+  assert.match(
+    products,
+    /fetchAllRowsKeyset<Record<string, unknown>>\(\s*\(\) => getSupabaseAdmin\(\)\.from\("source_of_sales_products"\)\.select\("product_code, family, line"\)\.eq\("active", true\),\s*\{ cursorColumn: "product_code",/,
+    "the product families come from every active product",
+  );
+  assert.doesNotMatch(products, /\.limit\(/, "no fixed cap on the product list");
+
+  // The street-address lookup (a paid call per photo) is limited per person, after the permission
+  // check and before the body is read; a refusal answers 429, not a server error.
+  const location = methodBlocks(source(`${API_ROOT}/location/route.ts`)).get("POST") ?? "";
+  const gateAt = location.indexOf('await assertPermission(access, "phoenix_crm", "create");');
+  const limitAt = location.search(/await assertApiRateLimit\(\{\n\s*identifier: rateLimitIdentity\(\{ actor: access\.hrId \|\| access\.loginId, request \}\),\n\s*limit: LOOKUPS_PER_HOUR,\n\s*scope: "phoenix_crm_location",\n\s*windowMs: 60 \* 60 \* 1000,\n\s*\}\);/);
+  assert.ok(gateAt >= 0 && limitAt > gateAt, "the location lookup is limited per person, after its permission check");
+  assert.ok(limitAt < location.indexOf("request.json("), "the limit is checked before the body is read");
+  assert.match(source(`${API_ROOT}/location/route.ts`), /const LOOKUPS_PER_HOUR = \d+;/);
+  const http = source("src/lib/phoenix-crm/server/http.ts");
+  const limited = http.search(/if \(isApiRateLimitError\(error\)\) \{\n\s*return NextResponse\.json\([\s\S]{0,400}\{ headers: \{ "Retry-After": String\(error\.retryAfterSeconds\) \}, status: 429 \}/);
+  assert.ok(limited >= 0 && limited < http.indexOf("toApiError(error, fallback)"), "a rate-limit refusal answers 429 with Retry-After, before the generic mapping turns it into a 500");
+}
+
 export function runPhoenixCrmBoundaryTests() {
   runPermissionTests();
   runRouteTests();
   runIsolationTests();
   runImportTests();
   runMigrationTests();
+  runServiceReviewFixTests();
 }

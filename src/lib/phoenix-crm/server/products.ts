@@ -9,8 +9,8 @@
 
 import { unstable_cache } from "next/cache";
 
-import { throwIfError } from "@/lib/phoenix-crm/server/db";
 import { normalizeLineKey, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/confidential-products";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const RESTRICTED = new Set<string>(RESTRICTED_PRODUCT_CODES);
@@ -18,14 +18,13 @@ const RESTRICTED = new Set<string>(RESTRICTED_PRODUCT_CODES);
 /** Family names by normalized line key, each list sorted by name. Plain objects: the cache serializes. */
 const loadFamiliesByLine = unstable_cache(
   async (): Promise<Record<string, string[]>> => {
-    const { data, error } = await getSupabaseAdmin()
-      .from("source_of_sales_products")
-      .select("product_code, family, line")
-      .eq("active", true)
-      .limit(2000);
-    throwIfError(error);
+    // Paged on the product code, so the list never stops at the database's per-answer row cap.
+    const rows = await fetchAllRowsKeyset<Record<string, unknown>>(
+      () => getSupabaseAdmin().from("source_of_sales_products").select("product_code, family, line").eq("active", true),
+      { cursorColumn: "product_code", cursorOf: (row) => (typeof row.product_code === "string" ? row.product_code : null) },
+    );
     const byLine = new Map<string, Set<string>>();
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of rows) {
       const code = typeof row.product_code === "string" ? row.product_code.trim().toUpperCase() : "";
       const family = typeof row.family === "string" ? row.family.trim() : "";
       const line = normalizeLineKey(typeof row.line === "string" ? row.line : null);

@@ -7,8 +7,10 @@
  * path (who, which territory, what for, test or real) and returns a signed upload URL for that one
  * path; the phone uploads the JPEG straight to the private bucket.
  * A save then consumes the slot in the database (phoenix_crm_take_photo): it refuses a path the server
- * did not issue to that person for that territory, a path already used, a slot older than 12 hours,
- * or an object that never arrived. The slot's issue time is the capture time a visit is dated by.
+ * did not issue to that person for that territory, a path already used, a slot older than 2 hours
+ * (enough to wait for the doctor and save; never enough to date the next morning's visit to the night
+ * before), or an object that never arrived. The slot's issue time is the capture time a visit is
+ * dated by.
  *
  * Display is batch-signed for ten minutes, for people who can read the territory.
  */

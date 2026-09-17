@@ -46,11 +46,6 @@ export type TeamView = {
   };
 };
 
-function noReferenceList(seatId: string): SeatReadiness {
-  // A territory with no reference list (a new territory, or a rep with no iReports360 list) is ready at once.
-  return { seatId, total: 0, validated: 0, dropped: 0, dropPending: 0, open: 0, ready: true, readyAt: null };
-}
-
 export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknown }): Promise<TeamView> {
   const isTest = readTestFlag(raw.test);
   if (isTest && !viewer.isSuperAdmin) throw forbiddenError("Test entries are the Super Admin's.");
@@ -78,7 +73,8 @@ export async function loadTeamView(viewer: PhoenixCrmViewer, raw: { test: unknow
   const territories = rowSeats.map(
     (seat): TeamTerritoryRow => ({
       territory: summaries.get(seat.seatId) as TerritorySummary,
-      readiness: isTest ? null : (readiness.get(seat.seatId) ?? noReferenceList(seat.seatId)),
+      // loadReadiness answers for every territory asked, or throws; nothing here reads a gap as ready.
+      readiness: isTest ? null : (readiness.get(seat.seatId) as SeatReadiness),
       pendingRequests: pendingBySeat.get(seat.seatId) ?? 0,
       canReview: canReviewTerritory(viewer, seat, isTest),
     }),

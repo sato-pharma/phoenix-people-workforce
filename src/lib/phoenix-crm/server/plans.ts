@@ -3,7 +3,9 @@
  *
  * Owner, 2026-09-16:
  *   - a rep is asked for a weekly plan only once the list is ready: every reference customer validated,
- *     or dropped with the district manager's approval (a territory stamped ready stays ready);
+ *     or dropped with the district manager's approval (a territory stamped ready stays ready; a
+ *     territory with no reference list is ready but never stamped, so a list that reaches it later is
+ *     finished first);
  *   - the rep places the customers and the system only assists: each customer's timings show, the
  *     day's suggestions put uncovered customers first (suggestions.ts, run on the phone from the
  *     planner data), a customer placed on a day the customer does not receive asks for a reason, and customers
@@ -13,7 +15,9 @@
  *     never approves a plan.
  *
  * The database function saves only the days that have not passed and checks the plan's version, so
- * two screens never overwrite each other (supabase/migrations/20260916150000_phoenix_crm.sql).
+ * two screens never overwrite each other (supabase/migrations/20260916150000_phoenix_crm.sql). Once a
+ * week is over (after its Thursday, Cairo) its plan stays as it stood: it cannot be sent, reopened or
+ * returned, since the rep could no longer act on a return; a late approval still records.
  */
 
 import { ApiError, conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
@@ -156,7 +160,9 @@ async function territoryReadiness(seatId: string, isTest: boolean, markReady: bo
     return { ready: summary.ready, total: summary.total, open: summary.open, dropPending: summary.dropPending };
   }
   const entry = (await loadReadiness([seatId], markReady)).get(seatId);
-  if (!entry) return { ready: true, total: 0, open: 0, dropPending: 0 };
+  // The readiness function answers for every seat it is asked about, so a missing answer is a fault:
+  // it keeps the planner closed rather than opening a territory whose list was never measured.
+  if (!entry) return { ready: false, total: 0, open: 0, dropPending: 0 };
   return { ready: entry.ready, total: entry.total, open: entry.open, dropPending: entry.dropPending };
 }
 
@@ -398,7 +404,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
     canSubmit: viewerIsRep && blockedReason === null && status !== null && isPlanEditable(status) && itemCount > 0 && !staleOnOpenDays,
     canReopen: viewerIsRep && weekOpen && (status === "submitted" || status === "approved"),
     canApprove: viewerIsReviewer && status === "submitted",
-    canReturn: canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
+    canReturn: weekOpen && canReturnTerritoryPlan(viewer, seat, isTest) && (status === "submitted" || status === "approved"),
     blockedReason,
   };
 }
@@ -551,6 +557,10 @@ export async function transitionPlan(
   } else {
     decidedAs = assertCanReturnPlan(viewer, seat, isTest);
     actorRole = decidedAs === "sfe" ? "sfe_manager" : "reviewer";
+    // A plan returned after its week could never be changed by the rep; the database refuses it too.
+    if (editablePlanDays(String(planRow.week_start), today).length === 0) {
+      throw conflictError("This week is over, so its plan can no longer be returned. Reload the page.");
+    }
     if (!note) throw validationError("Write a note for the rep on what to change.");
   }
 
@@ -684,6 +694,7 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
   }
 
   const farApartKm = viewer.config.settings.farApartKm;
+  const weekOpen = editablePlanDays(weekStart, viewer.cairoToday).length > 0;
   const rows = rowSeats.map((seat): PlanReviewRow => {
     const planRow = planBySeat.get(seat.seatId) ?? null;
     const items = planRow ? itemsByPlan.get(String(planRow.id)) ?? [] : [];
@@ -720,7 +731,7 @@ export async function loadPlanReviews(viewer: PhoenixCrmViewer, raw: { test: unk
       staleItems,
       farApartDays,
       canApprove: plan?.status === "submitted" && canReviewTerritory(viewer, seat, isTest),
-      canReturn: (plan?.status === "submitted" || plan?.status === "approved") && canReturnTerritoryPlan(viewer, seat, isTest),
+      canReturn: weekOpen && (plan?.status === "submitted" || plan?.status === "approved") && canReturnTerritoryPlan(viewer, seat, isTest),
     };
   });
   rows.sort(

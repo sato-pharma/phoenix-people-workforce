@@ -12,8 +12,16 @@ import { NextResponse } from "next/server";
 import { isForbiddenError } from "@/lib/auth/server";
 import { ApiError, toApiError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
+import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export function phoenixCrmFailure(error: unknown, fallback: string): NextResponse {
+  // A per-person limit (toApiError does not know it, and would answer 500).
+  if (isApiRateLimitError(error)) {
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many requests in the last hour. Wait a few minutes and try again.", success: false },
+      { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
+    );
+  }
   const apiError = toApiError(error, fallback);
   const status = isForbiddenError(error) ? 403 : apiError.status;
   const written = error instanceof ApiError || status < 500;

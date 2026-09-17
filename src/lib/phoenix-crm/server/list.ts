@@ -283,10 +283,15 @@ export async function loadReference(seatId: string, isTest: boolean): Promise<Re
 
 export type SeatReadiness = ReadinessSummary & { seatId: string; readyAt: string | null };
 
-/** Real readiness for many territories in one call. With markReady, a complete territory is stamped ready once. */
+/**
+ * Real readiness for many territories in one call. With markReady, a complete territory is stamped ready once.
+ * The answer holds every territory asked about, or the call throws: a territory the database did not
+ * answer for is never read as ready (or as anything else).
+ */
 export async function loadReadiness(seatIds: string[], markReady = false): Promise<Map<string, SeatReadiness>> {
   const readiness = new Map<string, SeatReadiness>();
-  for (const part of chunk([...new Set(seatIds)], 150)) {
+  const asked = [...new Set(seatIds)];
+  for (const part of chunk(asked, 150)) {
     const { data, error } = await getSupabaseAdmin().rpc("phoenix_crm_seat_readiness", { p_seat_ids: part, p_mark_ready: markReady });
     throwIfError(error);
     for (const row of (data ?? []) as Row[]) {
@@ -303,10 +308,16 @@ export async function loadReadiness(seatIds: string[], markReady = false): Promi
         dropPending,
         open,
         // Measured once: a territory stamped ready stays ready when new reference customers appear later.
+        // A territory with no reference list is ready but never stamped, so a list that reaches it later
+        // (a new rep's first iReports360 list) is finished before planning.
         ready: Boolean(text(row.ready_at)) || (open === 0 && dropPending === 0),
         readyAt: text(row.ready_at),
       });
     }
+  }
+  const unanswered = asked.filter((seatId) => !readiness.has(seatId));
+  if (unanswered.length > 0) {
+    throw new Error(`phoenix_crm_seat_readiness answered no row for ${unanswered.length} of ${asked.length} territories`);
   }
   return readiness;
 }
