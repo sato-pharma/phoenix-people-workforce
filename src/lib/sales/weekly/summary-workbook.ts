@@ -76,11 +76,12 @@ function sumRows(rows: WeeklyFactExportRow[]): SummaryTotals {
 /**
  * THE YTD STOCK REDUCTION — the one genuinely dangerous calculation in this file.
  *
- * factRows arrive already latestStockOnly-adjusted by the engine: stock is zeroed on every week
- * except the latest in-scope week of each (distributor, cycle_month). That is exactly right for a
- * single month. Across a YEAR it is not: it leaves one non-zero stock week per distributor PER
- * MONTH, so a naive sum yields "sum of N month-end snapshots" — the inventory multiplication the
- * engine's own comment warns about. Four months of data would report roughly 4x the real stock.
+ * factRows arrive already latestStockOnly-adjusted by the engine (latest-stock.ts). Until 2026-09-17
+ * that kept stock on the latest in-scope week of each (distributor, cycle_month): exactly right for a
+ * single month, but across a YEAR it left one non-zero stock week per distributor PER MONTH, so a
+ * naive sum yielded "sum of N month-end snapshots" — four months of data reported roughly 4x the real
+ * stock. The engine now keeps each distributor's latest week in scope, in the same order as below
+ * (latest cycle month first), so over its rows this reduction changes nothing. It stays as the guard.
  *
  * Stock is a point-in-time snapshot and can only ever be reported "as of" a moment. So for a
  * multi-month scope, keep stock only from each distributor's LATEST cycle month in scope and zero
