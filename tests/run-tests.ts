@@ -507,6 +507,7 @@ import { runWeeklyFileTotalsSelfCheckTests } from "./weekly-file-totals-self-che
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
+import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -963,6 +964,7 @@ import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
+import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
@@ -1704,7 +1706,7 @@ import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throt
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
-import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
+import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2726,6 +2728,10 @@ await runTest(
   "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
   runWeeklyStockWorkbookTotalsTests,
 );
+await runTest(
+  "weekly sales export Week Comparison: the TOTAL row never adds stock across weeks (Stock Units TOTAL is empty; Sales Value and Sales Units still SUM)",
+  runWeeklyWeekComparisonStockTotalTests,
+);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
 await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProductsTests);
@@ -3484,6 +3490,7 @@ await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests)
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
+await runTest("the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money", runSosMonthPaceAreaNamesTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
 await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
@@ -5767,8 +5774,8 @@ await runTest(
 );
 
 await runTest(
-  "the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money",
-  runSosMonthPaceAreaNamesTests,
+  "a manager bound to one region reads its organogram name on the weekly scope line: Upper Egypt 1, Upper Egypt 2 and Delta (3) (which depot labels never carry) and every other region, alike on Depot Detail, Weekly Sales and Weekly Stock; an unreadable organogram reads 1 region, never a code, and only a one-region viewer costs the read",
+  runWeeklyScopeRegionNamesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -16,6 +16,12 @@ export type ExportColumn = {
   /** Right-align + include in the SUM() totals row. */
   numeric?: boolean;
   /**
+   * Keep a `numeric` column out of addPhoenixTableSheet's TOTAL row: it stays right-aligned, and its
+   * TOTAL cell is left empty instead of SUMmed. For a figure that must never be added down the rows —
+   * a stock snapshot taken each week, where adding the weeks multiplies the stock on hand.
+   */
+  excludeFromTotal?: boolean;
+  /**
    * Force the cell to Excel's text format (`@`).
    *
    * A JS string already lands as a text cell, so the value is correct on open without
@@ -221,9 +227,10 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
     });
   });
 
-  // TOTAL row with SUM() formulas for numeric columns (formulas if available)
-  const numericColumns = input.columns.filter((col) => col.numeric);
-  if (numericColumns.length > 0 && input.rows.length > 0) {
+  // TOTAL row with SUM() formulas for numeric columns (formulas if available). A numeric column marked
+  // `excludeFromTotal` gets an empty TOTAL cell, never a SUM.
+  const summed = input.columns.map((col) => Boolean(col.numeric && !col.excludeFromTotal));
+  if (summed.includes(true) && input.rows.length > 0) {
     const totalRowIndex = firstDataRow + input.rows.length;
     const totalRow = sheet.getRow(totalRowIndex);
     input.columns.forEach((col, i) => {
@@ -241,7 +248,7 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
       if (i === 0) {
         cell.value = "TOTAL";
         cell.alignment = { vertical: "middle", horizontal: "left" };
-      } else if (col.numeric) {
+      } else if (summed[i]) {
         const letter = sheet.getColumn(i + 1).letter;
         cell.value = { formula: `SUM(${letter}${firstDataRow}:${letter}${firstDataRow + input.rows.length - 1})` };
         cell.alignment = { vertical: "middle", horizontal: "right" };

@@ -29,6 +29,7 @@ import {
   loadFieldForceSeatIndex,
   type PortalWeeklyFieldForce,
 } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { loadWeeklyScopeRegionNames, weeklyScopeRegionPart } from "@/lib/sales/weekly/scope-region-names";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import type {
   WeeklyDashboard,
@@ -125,9 +126,19 @@ type PortalWeeklyScope = {
   isSingleRegion: boolean;
   visibility: PortalWeeklyFilterVisibility;
   scopeSummary: string;
+  /**
+   * The organogram's region names (scope-region-names.ts), read only when the scope line names a region. The
+   * Depot Detail tab builds its own scope line from these same names, so the two never disagree.
+   */
+  regionNames: ReadonlyMap<string, string>;
 };
 
-function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): string {
+/** The scope line, in names: a single bound region is named from the organogram, never printed as its code. Pure. */
+export function buildWeeklyScopeSummary(
+  scope: WeeklyAccessScope,
+  role: PhoenixRole,
+  regionNames: ReadonlyMap<string, string>,
+): string {
   const parts: string[] = [];
 
   switch (scope.tier) {
@@ -146,15 +157,7 @@ function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): s
       } else {
         parts.push("All lines");
       }
-      if (scope.allowedRegionCodes) {
-        if (scope.allowedRegionCodes.size === 1) {
-          parts.push(`${[...scope.allowedRegionCodes][0]} region`);
-        } else {
-          parts.push(`${scope.allowedRegionCodes.size} regions`);
-        }
-      } else {
-        parts.push("all regions");
-      }
+      parts.push(weeklyScopeRegionPart(scope.allowedRegionCodes, regionNames));
       break;
     }
     case "none":
@@ -171,6 +174,9 @@ function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): s
 export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<PortalWeeklyScope> {
   const role = ctx.role;
   const accessScope = await resolveWeeklyAccessScope(ctx);
+  // Depot rows keep the region label they were mapped with, so the dashboard's own region options never name
+  // Upper Egypt 1, Upper Egypt 2 or Delta (3). The scope line names the region from the organogram instead.
+  const regionNames = await loadWeeklyScopeRegionNames(accessScope);
 
   let allowedRegionCodes: Set<string> | null = null;
   let allowedProductCodes: Set<string> | null = null;
@@ -183,7 +189,7 @@ export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<Port
 
   const isSingleRegion = allowedRegionCodes !== null && allowedRegionCodes.size === 1;
   const visibility = computePortalWeeklyVisibility(role, allowedRegionCodes, accessScope.tier === "full");
-  const scopeSummary = buildWeeklyScopeSummary(accessScope, role);
+  const scopeSummary = buildWeeklyScopeSummary(accessScope, role, regionNames);
 
   return {
     accessScope,
@@ -193,6 +199,7 @@ export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<Port
     isSingleRegion,
     visibility,
     scopeSummary,
+    regionNames,
   };
 }
 
