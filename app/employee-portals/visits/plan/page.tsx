@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-// Weekly planning moved into Phoenix CRM (the owner, 2026-09-14). Old links and notices land on its
-// Planning tab, which decides who may see it.
+// Weekly planning lives in Phoenix CRM, the clean module that replaced the 2026-09-14 pilot (the owner,
+// 2026-09-16). Old links and notices land on its Plan tab, which decides who may see it.
 export default function NativeWeeklyPlanPage() {
-  redirect("/employee-portals/phoenix-crm?tab=planning");
+  redirect("/employee-portals/field-crm?tab=plan");
 }

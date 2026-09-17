@@ -34,7 +34,7 @@ import { cairoWallClock, isCairoZone } from "@/lib/format/cairo-zone";
  * exactly what current ICU produces, so nothing on screen changes for a reader on an up-to-date
  * browser; an old engine simply converges on the same string the server sent.
  */
-const CAIRO_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"] as const;
+export const CAIRO_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"] as const;
 
 /**
  * Every field NUMERIC, so the parts themselves carry no locale opinion — digits are digits on every

@@ -180,7 +180,11 @@ export async function runPhoenixCrmTests() {
   for (const page of ["app/employee-portals/phoenix-crm/page.tsx", "app/(admin)/admin/phoenix-crm/page.tsx"]) {
     assert.match(read(page), /const \{ seat \} = await getPhoenixCrmAccess\(access\);\s*if \(!seat\) \{?\s*redirect\(/, `${page} turns away anyone with no seat`);
   }
-  assert.match(read("app/employee-portals/visits/page.tsx"), /phoenixCrm\.seat \? \(\s*<Link[^>]*href="\/employee-portals\/phoenix-crm"/, "My Visits links Phoenix CRM");
+  // The owner hid the pilot's links when the clean Phoenix CRM shipped (2026-09-16): My Visits and the
+  // admin rail open the new module, and nothing offers the pilot any more. Its pages still serve by
+  // typed address until the pilot is removed after go-live.
+  assert.doesNotMatch(read("app/employee-portals/visits/page.tsx"), /href="\/employee-portals\/phoenix-crm"/, "My Visits no longer links the pilot");
+  assert.doesNotMatch(read("src/config/system-navigation.ts"), /href: "\/admin\/phoenix-crm"/, "the admin rail no longer links the pilot");
   for (const component of ["phoenix-crm-kpi-board", "phoenix-crm-pilot-roster-workspace", "phoenix-crm-plans-overview", "phoenix-crm-team-visits"]) {
     const source = read(`src/components/employee-portal/${component}.tsx`);
     assert.match(source, /<table className="w-full table-fixed[^"]*">\s*<colgroup>/, `${component} fits the screen: a fixed table with a colgroup`);

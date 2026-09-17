@@ -354,11 +354,12 @@ export function runCrmNativePlansTests() {
     "only src/lib/crm/native-visits/ may name the native plan tables until cutover — the pilot line still plans in iReports360",
   );
 
-  // ── 14. Reachability: planning lives in Phoenix CRM, and the old pages land in it ─────────────
+  // ── 14. Reachability: planning lives in the pilot space; the old pages land in the new Phoenix CRM ──
   const space = read("src/components/employee-portal/phoenix-crm-space.tsx");
   assert.match(space, /<NativePlanWorkspace \/>/);
   assert.match(space, /<NativePlanReviewsWorkspace \/>/);
-  for (const page of ["plan", "plan-reviews"]) {
-    assert.match(read(`app/employee-portals/visits/${page}/page.tsx`), /redirect\("\/employee-portals\/phoenix-crm\?tab=planning"\)/);
-  }
+  // The owner hid the pilot when the clean module shipped (2026-09-16): a rep's weekly plan is its Plan tab,
+  // and a manager's plan reviews its Team tab.
+  assert.match(read("app/employee-portals/visits/plan/page.tsx"), /redirect\("\/employee-portals\/field-crm\?tab=plan"\)/);
+  assert.match(read("app/employee-portals/visits/plan-reviews/page.tsx"), /redirect\("\/employee-portals\/field-crm\?tab=team"\)/);
 }

@@ -52,6 +52,10 @@ export const PERSONAL_BELL_CATEGORIES = [
   // attendance review has, so leaving it off would leave most employees — the ones with no Telegram
   // linked — with no notice at all.
   "attendance_digest",
+  // Emitted by notifyPhoenixCrm (src/lib/phoenix-crm/server/notifications.ts): requests and weekly
+  // plans waiting for a manager, and the decisions back to the rep. Leave it off and the bell stays
+  // empty while the delivery audit reports "sent".
+  "phoenix_crm",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);

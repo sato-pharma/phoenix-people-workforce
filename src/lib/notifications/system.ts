@@ -26,6 +26,7 @@ import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-gu
 import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { enforceAttendanceDigestEmailBlock } from "@/lib/notifications/attendance-digest-channel-guard";
+import { enforcePhoenixCrmEmailBlock } from "@/lib/notifications/phoenix-crm-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
@@ -385,7 +386,11 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // Same hard guarantee for the weekly attendance review (owner rule 2026-09-15): in-app and
   // Telegram only, never email — see attendance-digest-channel-guard.ts. Its own module string, so
   // the attendance.* notifications above keep their channels.
-  return enforceAttendanceDigestEmailBlock(withoutCandidateAssignedEmail, input.module);
+  const withoutAttendanceDigestEmail = enforceAttendanceDigestEmailBlock(withoutCandidateAssignedEmail, input.module);
+  // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
+  // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
+  // replacing a block above, because each guards a disjoint set.
+  return enforcePhoenixCrmEmailBlock(withoutAttendanceDigestEmail, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

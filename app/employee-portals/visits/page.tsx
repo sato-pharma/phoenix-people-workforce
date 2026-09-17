@@ -8,9 +8,9 @@ import { canAccess, normalizeHrIdForAccess, type AccessContext } from "@/lib/aut
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getContactListAvailability } from "@/lib/crm/contact-lists/service";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
-import { getPhoenixCrmAccess } from "@/lib/crm/native-visits/phoenix-crm";
 import { getVacationDayRequestAvailability } from "@/lib/crm/native-visits/vacation-days";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
 import { isWithinManagerHierarchy, reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { fetchMyCheckins, fetchMyDoubleVisits, fetchMyVisits, fetchTeamVisits } from "@/lib/employee-portal/my-crm-visits";
 import type {
@@ -102,19 +102,19 @@ export default async function MyVisitsPage() {
     teamVisits = [];
   }
 
-  // Native visit entry and weekly plans (the pilot). Offered to a pilot-line rep, and to a manager a
-  // rep has named on a visit or sent a plan to. Neither throws, so the viewer's own visits always render.
+  // None of these three throws, so the viewer's own visits always render.
   // The vacation-day requests link (CRM phase 6, rule 9) appears only once the cutover date is set.
   // The doctor-list link (CRM phase 7) likewise appears only once the cutover date is set.
-  // The Super Admin enters visits for reps and reads every rep's saved visits (the owner, 2026-09-14).
-  // Phoenix CRM (the owner, 2026-09-14) now holds visit entry, weekly plans, confirmations, plan reviews
-  // and entry for reps in its own space: one button, for the Super Admin, the pilot reps and their managers.
+  // Phoenix CRM (the owner, 2026-09-16) holds customer lists, weekly plans, visits and reports, built
+  // clean in Phoenix: one button, for the reps and managers of a line that has opened. It replaced the
+  // 2026-09-14 pilot's button, which the owner asked to hide when this module shipped; the old visit and
+  // plan addresses now land in it too.
   const [phoenixCrm, vacationDays, doctorList] = await Promise.all([
-    getPhoenixCrmAccess(access),
+    phoenixCrmEntryAvailable(access),
     getVacationDayRequestAvailability(access),
     getContactListAvailability(access),
   ]);
-  const showNativeLinks = phoenixCrm.seat != null || vacationDays.show || doctorList.show;
+  const showNativeLinks = phoenixCrm || vacationDays.show || doctorList.show;
 
   return (
     <EmployeePortalPageShell
@@ -128,9 +128,9 @@ export default async function MyVisitsPage() {
     >
       {showNativeLinks ? (
         <div className="mb-4 flex flex-wrap gap-2">
-          {phoenixCrm.seat ? (
-            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/phoenix-crm">
-              {phoenixCrm.waiting > 0 ? `Phoenix CRM (${phoenixCrm.waiting} waiting)` : "Phoenix CRM"}
+          {phoenixCrm ? (
+            <Link className={buttonVariants({ variant: "default" })} href="/employee-portals/field-crm">
+              Phoenix CRM
             </Link>
           ) : null}
           {vacationDays.show ? (

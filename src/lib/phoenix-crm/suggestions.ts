@@ -1,0 +1,174 @@
+/**
+ * Phoenix CRM — who to plan on a day, with no I/O.
+ *
+ * Owner, 2026-09-16: the rep places the doctors; the system only assists. Picking a day shows the
+ * customers who receive that day, uncovered first, and helps with "all doctors in a given place" and
+ * "all doctors who can fit in the same day". Customers who do not receive that day can still be placed
+ * — the planner then asks for an exception reason (plan-rules.ts).
+ *
+ * Order (decision 2026-09-16): receives that day → uncovered first (not visited this month, then
+ * behind its grade) → same brick, then same zone, as the customers already placed that day → the time
+ * window fits around the ones already placed → nearest → earliest window → name.
+ */
+
+import { coverageTier, gradeTarget, type CoverageTier } from "@/lib/phoenix-crm/coverage";
+import { distanceMeters } from "@/lib/phoenix-crm/geo";
+import { windowsForWeekday } from "@/lib/phoenix-crm/timings";
+import type { PhoenixCrmGrade, PhoenixCrmListType, PhoenixCrmSettings, PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
+
+export type PlannerPlace = {
+  placeId: string;
+  label: string | null;
+  lat: number;
+  lon: number;
+  brick: string | null;
+  zone: string | null;
+  timings: PhoenixCrmTiming[];
+};
+
+export type PlannerCustomer = {
+  customerId: string;
+  name: string;
+  listType: PhoenixCrmListType;
+  grade: PhoenixCrmGrade | null;
+  speciality: string | null;
+  visitsThisMonth: number;
+  places: PlannerPlace[];
+};
+
+export type PlacedOnDay = {
+  customerId: string;
+  placeId: string;
+};
+
+export type DaySuggestion = {
+  customerId: string;
+  placeId: string;
+  placeLabel: string | null;
+  name: string;
+  listType: PhoenixCrmListType;
+  grade: PhoenixCrmGrade | null;
+  speciality: string | null;
+  brick: string | null;
+  zone: string | null;
+  receives: boolean;
+  windows: PhoenixCrmTiming[];
+  noRamadanTime: boolean;
+  tier: CoverageTier;
+  visitsThisMonth: number;
+  target: number | null;
+  sameBrick: boolean;
+  sameZone: boolean;
+  fitsTime: boolean;
+  nearestPlacedKm: number | null;
+  alreadyOnDay: boolean;
+};
+
+/** A window counts as fitting when it overlaps the day's planned hours widened by this much. */
+const FIT_MARGIN_MINUTES = 90;
+
+/** A brick or zone as compared: case, outer spaces and repeated spaces ignored. Null when empty. */
+export function normalizeArea(value: string | null): string | null {
+  const text = String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return text || null;
+}
+
+function windowSpan(windows: PhoenixCrmTiming[]): { start: number; end: number } | null {
+  if (windows.length === 0) return null;
+  return {
+    start: Math.min(...windows.map((window) => window.startMinute)),
+    end: Math.max(...windows.map((window) => window.endMinute ?? window.startMinute + 60)),
+  };
+}
+
+export function suggestForDay(input: {
+  weekday: number;
+  ramadan: boolean;
+  customers: ReadonlyArray<PlannerCustomer>;
+  placed: ReadonlyArray<PlacedOnDay>;
+  settings: Pick<PhoenixCrmSettings, "gradeTargets">;
+}): DaySuggestion[] {
+  const placesById = new Map<string, PlannerPlace>();
+  for (const customer of input.customers) for (const place of customer.places) placesById.set(place.placeId, place);
+
+  const placedCustomerIds = new Set(input.placed.map((item) => item.customerId));
+  const placedPlaces = input.placed.map((item) => placesById.get(item.placeId)).filter((place): place is PlannerPlace => Boolean(place));
+  const placedBricks = new Set(placedPlaces.map((place) => normalizeArea(place.brick)).filter(Boolean));
+  const placedZones = new Set(placedPlaces.map((place) => normalizeArea(place.zone)).filter(Boolean));
+
+  let daySpan: { start: number; end: number } | null = null;
+  for (const place of placedPlaces) {
+    const span = windowSpan(windowsForWeekday(place.timings, input.weekday, input.ramadan).windows);
+    if (!span) continue;
+    daySpan = daySpan ? { start: Math.min(daySpan.start, span.start), end: Math.max(daySpan.end, span.end) } : span;
+  }
+
+  const suggestions: DaySuggestion[] = [];
+  for (const customer of input.customers) {
+    if (customer.places.length === 0) continue;
+    const target = gradeTarget(input.settings, customer.listType, customer.grade);
+    const tier = coverageTier(customer.visitsThisMonth, target);
+    const receivingPlaces = customer.places.filter(
+      (place) => windowsForWeekday(place.timings, input.weekday, input.ramadan).windows.length > 0,
+    );
+    // One row per place that receives that day; a customer who receives nowhere that day gets one row.
+    const candidates = receivingPlaces.length > 0 ? receivingPlaces : customer.places.slice(0, 1);
+    for (const place of candidates) {
+      const seasonal = windowsForWeekday(place.timings, input.weekday, input.ramadan);
+      const span = windowSpan(seasonal.windows);
+      const fitsTime =
+        span !== null &&
+        (daySpan === null || (span.start <= daySpan.end + FIT_MARGIN_MINUTES && span.end >= daySpan.start - FIT_MARGIN_MINUTES));
+      let nearestPlacedKm: number | null = null;
+      for (const other of placedPlaces) {
+        if (other.placeId === place.placeId) continue;
+        const km = distanceMeters(place, other) / 1000;
+        nearestPlacedKm = nearestPlacedKm === null ? km : Math.min(nearestPlacedKm, km);
+      }
+      const brick = normalizeArea(place.brick);
+      const zone = normalizeArea(place.zone);
+      suggestions.push({
+        customerId: customer.customerId,
+        placeId: place.placeId,
+        placeLabel: place.label,
+        name: customer.name,
+        listType: customer.listType,
+        grade: customer.grade,
+        speciality: customer.speciality,
+        brick: place.brick,
+        zone: place.zone,
+        receives: seasonal.windows.length > 0,
+        windows: seasonal.windows,
+        noRamadanTime: seasonal.noRamadanTime,
+        tier,
+        visitsThisMonth: customer.visitsThisMonth,
+        target,
+        sameBrick: brick !== null && placedBricks.has(brick),
+        sameZone: zone !== null && placedZones.has(zone),
+        fitsTime,
+        nearestPlacedKm: nearestPlacedKm === null ? null : Math.round(nearestPlacedKm * 10) / 10,
+        alreadyOnDay: placedCustomerIds.has(customer.customerId),
+      });
+    }
+  }
+
+  return suggestions.sort(compareSuggestions);
+}
+
+function flag(value: boolean): number {
+  return value ? 0 : 1;
+}
+
+export function compareSuggestions(left: DaySuggestion, right: DaySuggestion): number {
+  return (
+    flag(!left.alreadyOnDay) - flag(!right.alreadyOnDay) ||
+    flag(left.receives) - flag(right.receives) ||
+    left.tier - right.tier ||
+    flag(left.sameBrick) - flag(right.sameBrick) ||
+    flag(left.sameZone) - flag(right.sameZone) ||
+    flag(left.fitsTime) - flag(right.fitsTime) ||
+    (left.nearestPlacedKm ?? Number.POSITIVE_INFINITY) - (right.nearestPlacedKm ?? Number.POSITIVE_INFINITY) ||
+    (left.windows[0]?.startMinute ?? 9999) - (right.windows[0]?.startMinute ?? 9999) ||
+    left.name.localeCompare(right.name)
+  );
+}

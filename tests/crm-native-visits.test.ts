@@ -388,10 +388,13 @@ export function runCrmNativeVisitsTests() {
   for (const page of ["app/(admin)/admin/phoenix-crm/page.tsx", "app/employee-portals/phoenix-crm/page.tsx"]) {
     assert.match(read(page), /const \{ seat \} = await getPhoenixCrmAccess\(access\);\s*if \(!seat\) \{?\s*redirect\(/, `${page} turns away anyone with no seat`);
   }
-  assert.match(read("app/(admin)/admin/visit-entry/page.tsx"), /redirect\("\/admin\/phoenix-crm"\)/, "Visits for Reps lands on Phoenix CRM, whose default tab is Visits");
-  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /\?\? "visits";/, "Visits stays the default tab the old Visits for Reps address relies on");
-  assert.match(read("app/employee-portals/visits/for-reps/page.tsx"), /redirect\("\/employee-portals\/phoenix-crm\?tab=visits"\)/);
-  assert.match(read("src/config/system-navigation.ts"), /href: "\/admin\/phoenix-crm"/);
+  assert.match(read("src/components/employee-portal/phoenix-crm-space.tsx"), /\?\? "visits";/, "Visits stays the pilot space's default tab");
+  // The old Visits for Reps addresses and the rail link moved to the clean Phoenix CRM when it shipped
+  // (the owner, 2026-09-16: the pilot's link is hidden then, and the pilot removed after go-live).
+  assert.match(read("app/(admin)/admin/visit-entry/page.tsx"), /redirect\("\/admin\/field-crm"\)/, "Visits for Reps lands on the new Phoenix CRM");
+  assert.match(read("app/employee-portals/visits/for-reps/page.tsx"), /redirect\("\/employee-portals\/field-crm\?tab=visits"\)/);
+  assert.doesNotMatch(read("src/config/system-navigation.ts"), /href: "\/admin\/phoenix-crm"/, "the pilot has no rail link");
+  assert.match(read("src/config/system-navigation.ts"), /href: "\/admin\/field-crm"/, "the Phoenix CRM rail link opens the new module");
 
   // ── 10. The service and the routes ───────────────────────────────────────────────────────────
   const service = read("src/lib/crm/native-visits/service.ts");
@@ -427,10 +430,12 @@ export function runCrmNativeVisitsTests() {
     "only src/lib/crm/native-visits/ may name the native visit tables until cutover — a native row read by a report double-counts the iReports360 feed",
   );
 
-  // ── 12. Reachability: Phoenix CRM is linked from My Visits, and the old pages land in it ──────
+  // ── 12. Reachability: My Visits opens the new Phoenix CRM, and the old pages land in it ───────
+  // The owner hid the pilot's link when the clean module shipped (2026-09-16).
   const myVisits = read("app/employee-portals/visits/page.tsx");
-  assert.match(myVisits, /phoenixCrm\.seat \? \(\s*<Link[^>]*href="\/employee-portals\/phoenix-crm"/);
+  assert.match(myVisits, /phoenixCrm \? \(\s*<Link[^>]*href="\/employee-portals\/field-crm"/);
+  assert.doesNotMatch(myVisits, /href="\/employee-portals\/phoenix-crm"/, "My Visits no longer links the pilot");
   for (const page of ["log", "confirmations"]) {
-    assert.match(read(`app/employee-portals/visits/${page}/page.tsx`), /redirect\("\/employee-portals\/phoenix-crm\?tab=visits"\)/);
+    assert.match(read(`app/employee-portals/visits/${page}/page.tsx`), /redirect\("\/employee-portals\/field-crm\?tab=visits"\)/);
   }
 }

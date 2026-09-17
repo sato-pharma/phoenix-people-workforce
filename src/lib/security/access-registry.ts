@@ -656,6 +656,41 @@ export const accessRegistry = [
   // re-checks its own permission inside the service. Changes open on the CRM cutover date.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/contact-lists", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Phoenix CRM — the field force's own module, built clean (the owner, 2026-09-16). Its own resource,
+  // `phoenix_crm`, and its own tables; none of these routes touches the pilot above or iReports360.
+  // Every permission is narrowed AGAIN inside src/lib/phoenix-crm/server by the organogram: a
+  // territory's list, plan and photos are written by that territory's rep only; a visit by its rep or
+  // a manager above it; a grade, drop or plan decision by its reviewing manager only (the SFE Manager
+  // may only return a plan); scope runs downward only; the Super Admin's writes are test entries.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/overview", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/visits", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/visits/form", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/list", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/validate", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/places/update", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests/withdraw", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/list/requests/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // A plan's own moves are split by who makes them: the rep sends or takes back (`create`), a manager
+  // approves or returns (`approve`). Each route refuses the other's actions before the service runs.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/submit", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/plans/decide", permission: { resource: "phoenix_crm", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans/reviews", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/team", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/reports", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // A read sent as a POST (a batch of photo paths does not belong in a URL); it writes nothing.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // The place stamp burned into a live photo (address, brick, area, coordinates). Same gate as taking
+  // the photo; it resolves and returns, persisting nothing, so audit is classified but not required.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/phoenix-crm/location", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
+  // The module's settings: the Super Admin's only (`update`, narrowed again by assertSettingsWriter).
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/settings", permission: { resource: "phoenix_crm", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by
