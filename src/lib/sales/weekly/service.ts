@@ -53,6 +53,7 @@ import type {
   WeeklyThisWeekOnly,
   WeeklyTotals,
 } from "@/lib/sales/weekly/types";
+import { weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
@@ -1336,29 +1337,9 @@ export async function loadWeeklyDashboard(filters?: {
 
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
-  // Zero-sales branches: stock on hand this week but no sales.
-  const branchAgg = new Map<string, { branchName: string; regionName: string; salesValue: number; salesUnits: number; stockUnits: number }>();
-  for (const row of weekRowsAdj) {
-    const key = row.branchCode || row.branchName;
-    // Skip branchless rows so the zero-sales list never shows a "—" branch.
-    if (!key) continue;
-    const current = branchAgg.get(key) ?? { branchName: row.branchName || key, regionName: row.regionName, salesValue: 0, salesUnits: 0, stockUnits: 0 };
-    current.salesValue += row.salesValue;
-    current.salesUnits += row.netQty;
-    current.stockUnits += row.stockQty;
-    branchAgg.set(key, current);
-  }
-  const zeroSalesBranches = [...branchAgg.entries()]
-    .filter(([, branch]) => branch.salesUnits === 0 && branch.stockUnits > 0)
-    .map(([branchCode, branch]) => ({
-      branchCode,
-      branchName: branch.branchName,
-      regionName: branch.regionName,
-      salesValue: Number(branch.salesValue.toFixed(2)),
-      salesUnits: Number(branch.salesUnits.toFixed(2)),
-      stockUnits: Number(branch.stockUnits.toFixed(2)),
-    }))
-    .sort((left, right) => right.stockUnits - left.stockUnits);
+  // Zero-sales branches: stock on hand this week but no sales, each product checked on its own and
+  // ranked by stock value at the Product Master price (weeklyZeroSalesBranches).
+  const zeroSalesBranches = weeklyZeroSalesBranches(weekRowsAdj, (productCode) => priceMap.get(normalizeCode(productCode)));
 
   const trendWeeks = [...rawAvailableWeeks].sort();
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.

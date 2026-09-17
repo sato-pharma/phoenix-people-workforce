@@ -34,6 +34,10 @@ import {
 import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
 import type { WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
+import {
+  weeklyMonthVsTargetUnitsAreOneProduct,
+  weeklyProductKeysAreOne,
+} from "@/lib/sales/weekly/unit-totals";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
 // Weekly periods are cycle months (first-of-month), not calendar ranges — the pipeline cannot
@@ -503,6 +507,7 @@ function buildTabSet(
       label,
       generatedAt,
       ctx.vsTarget.dataNote,
+      weeklyMonthVsTargetUnitsAreOneProduct(ctx.vsTarget.months),
     );
   }
   buildDistributorSheet(workbook, name("YTD by Distributor"), split(ytdRows), managerIndex, {
@@ -561,8 +566,8 @@ function buildBranchSheet(
   // manager owns all of them.
   const linesPresent = [...new Set(rows.map((r) => normalizeLine(r.line)).filter(Boolean))].sort(
     (a, z) =>
-      rows.filter((r) => sameLine(r.line, z)).reduce((s, r) => s + r.salesUnits, 0) -
-      rows.filter((r) => sameLine(r.line, a)).reduce((s, r) => s + r.salesUnits, 0),
+      rows.filter((r) => sameLine(r.line, z)).reduce((s, r) => s + r.salesValue, 0) -
+      rows.filter((r) => sameLine(r.line, a)).reduce((s, r) => s + r.salesValue, 0),
   );
   const unlined = rows.filter((r) => !normalizeLine(r.line));
   const blocks = [
@@ -835,6 +840,13 @@ function paint(cell: ExcelJS.Cell, argb: string) {
 const UNITS_DASH_FMT = '#,##0;-#,##0;"–"';
 
 /**
+ * A total that would add units of different products. UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED
+ * (owner rule, 2026-08-27), so the cell keeps its place and its formula shape and holds the same
+ * en-dash a zero prints as. A fresh object per cell: ExcelJS keeps the value it is handed.
+ */
+const unitsNotAdded = (): ExcelJS.CellFormulaValue => ({ formula: '"–"', result: "–" });
+
+/**
  * A sparkline drawn with block characters.
  *
  * ExcelJS cannot write native sparklines — they are an Excel 2010 `x14` extension — and hand-rolling
@@ -963,7 +975,7 @@ export function splitLineIntoFamilyBlocks(
       });
     }
   }
-  chunks.sort((a, z) => z.size - a.size || sumRows(z.rows).salesUnits - sumRows(a.rows).salesUnits);
+  chunks.sort((a, z) => z.size - a.size || sumRows(z.rows).salesValue - sumRows(a.rows).salesValue);
 
   const bins: Array<{ labels: string[]; width: number; rows: WeeklyFactExportRow[] }> = [];
   const openBin = () => {
@@ -1160,7 +1172,7 @@ function writeRegionProductBlock(
             normalizeRegion(r.regionCode) === region.key &&
             productCodes.has(r.productCode),
         )
-        .reduce((sum, r) => sum + r.salesUnits, 0),
+        .reduce((sum, r) => sum + r.salesValue, 0),
     );
     const trendCell = excelRow.getCell(PAGE_COLS);
     trendCell.value = sparkline(series);
@@ -1401,14 +1413,14 @@ function buildManagerSheet(
 
   // Rank lines the way Tab 1 does — biggest first — so a manager's line does not jump around
   // between the two sheets. Within a line, geography decides.
-  const unitsByLine = new Map<string, number>();
+  const valueByLine = new Map<string, number>();
   for (const r of rows) {
     const key = normalizeLine(r.line).toLowerCase();
-    unitsByLine.set(key, (unitsByLine.get(key) ?? 0) + r.salesUnits);
+    valueByLine.set(key, (valueByLine.get(key) ?? 0) + r.salesValue);
   }
   const lineRank = (group: ManagerGroup) => {
     const line = normalizeLine(group.rows[0]?.line).toLowerCase();
-    return -(unitsByLine.get(line) ?? 0);
+    return -(valueByLine.get(line) ?? 0);
   };
 
   const groups = groupRowsByManager(rows, index).sort(
@@ -1625,7 +1637,7 @@ function writeManagerAreaBlock(
         return a.key.localeCompare(z.key, undefined, { numeric: true });
       })
     : [...buckets].sort(
-        (a, z) => z.salesUnits - a.salesUnits || z.stockUnits - a.stockUnits || a.label.localeCompare(z.label),
+        (a, z) => z.salesValue - a.salesValue || a.label.localeCompare(z.label),
       );
 
   const cell = new Map<string, SummaryTotals>();
@@ -1756,7 +1768,7 @@ function writeManagerAreaBlock(
     const series = weeksInScope.map((week) =>
       trendRows
         .filter((r) => r.weekStart === week && rowKey(r) === bucket.key && productCodes.has(r.productCode))
-        .reduce((sum, r) => sum + r.salesUnits, 0),
+        .reduce((sum, r) => sum + r.salesValue, 0),
     );
     const trendCell = excelRow.getCell(MGR_PAGE_COLS);
     trendCell.value = sparkline(series);
@@ -1881,14 +1893,14 @@ function buildDistributorSheet(
   const sheet = workbook.addWorksheet(sheetName);
 
   // Sheet-wide distributor axis, biggest first. Capped so one stray code cannot stretch the page.
-  const unitsByDistributor = new Map<string, number>();
+  const valueByDistributor = new Map<string, number>();
   const nameByDistributor = new Map<string, string>();
   for (const r of rows) {
-    unitsByDistributor.set(r.distributorCode, (unitsByDistributor.get(r.distributorCode) ?? 0) + r.salesUnits);
+    valueByDistributor.set(r.distributorCode, (valueByDistributor.get(r.distributorCode) ?? 0) + r.salesValue);
     if (!nameByDistributor.has(r.distributorCode)) nameByDistributor.set(r.distributorCode, r.distributorName || r.distributorCode);
   }
-  const axis = [...unitsByDistributor.keys()]
-    .sort((a, z) => (unitsByDistributor.get(z) ?? 0) - (unitsByDistributor.get(a) ?? 0) || a.localeCompare(z))
+  const axis = [...valueByDistributor.keys()]
+    .sort((a, z) => (valueByDistributor.get(z) ?? 0) - (valueByDistributor.get(a) ?? 0) || a.localeCompare(z))
     .slice(0, DIST_AXIS_CAP)
     .map((key) => ({ key, label: nameByDistributor.get(key) ?? key }));
 
@@ -2125,7 +2137,11 @@ function writeProductDistributorBlock(
   totalLabelCell.alignment = { horizontal: "center", vertical: "middle" };
   totalLabelCell.border = { top: rule(ACCENT, "medium") };
 
-  // Live SUMs over this manager's own product rows and nothing else.
+  // Live SUMs over this manager's own product rows and nothing else — while those rows are ONE
+  // product's. UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED (owner rule): every cell on this row adds a
+  // column down every product above it, so with more than one product the row keeps its place and
+  // each cell holds the sheet's own dash instead of a sum.
+  const totalsAreOneProduct = weeklyProductKeysAreOne(products.map((product) => product.key));
   axis.forEach((dist, i) => {
     [0, 1].forEach((offset) => {
       const c = 2 + i * 2 + offset;
@@ -2134,8 +2150,9 @@ function writeProductDistributorBlock(
         .filter((r) => r.distributorCode === dist.key)
         .reduce((sum, r) => sum + (offset === 0 ? r.salesUnits : r.stockUnits), 0);
       const target = totalRow.getCell(c);
-      target.value =
-        lastDataRow >= firstDataRow
+      target.value = !totalsAreOneProduct
+        ? unitsNotAdded()
+        : lastDataRow >= firstDataRow
           ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
           : cached;
       target.numFmt = UNITS_DASH_FMT;
@@ -2152,8 +2169,9 @@ function writeProductDistributorBlock(
     const letter = sheet.getColumn(c).letter;
     const cached = rows.reduce((sum, r) => sum + (offset === 0 ? r.salesUnits : r.stockUnits), 0);
     const target = totalRow.getCell(c);
-    target.value =
-      lastDataRow >= firstDataRow
+    target.value = !totalsAreOneProduct
+      ? unitsNotAdded()
+      : lastDataRow >= firstDataRow
         ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
         : cached;
     target.numFmt = UNITS_DASH_FMT;
@@ -2193,6 +2211,7 @@ function buildLowSalesSheet(
       distributorName: string;
       branchName: string;
       areaName: string;
+      productCode: string;
       productName: string;
       regionCode: string;
     } & SummaryTotals
@@ -2209,6 +2228,7 @@ function buildLowSalesSheet(
         // Short form here: the full Tab 2 wording would not fit a narrow column, and on this tab the
         // point is simply "no area owns this branch" — it is a key account, chain or wholesale depot.
         areaName: areaCode ? (areaNames.get(areaCode) ?? areaCode) : "Not area-mapped",
+        productCode: row.productCode || row.productName,
         productName: row.productName || row.productCode,
         regionCode: row.regionCode,
         ...ZERO,
@@ -2224,10 +2244,8 @@ function buildLowSalesSheet(
   );
   const flagged = matching.filter((entry) => entry.stockUnits > LOW_SALES_STOCK_FLOOR);
   // Never silently drop a row. What the floor held back is counted and stated on the sheet.
+  // The count only: the rows held back are different products, and their units are never added.
   const belowFloor = matching.length - flagged.length;
-  const belowFloorStock = matching
-    .filter((entry) => entry.stockUnits <= LOW_SALES_STOCK_FLOOR)
-    .reduce((sum, entry) => sum + entry.stockUnits, 0);
 
   premiumMasthead(
     sheet,
@@ -2369,12 +2387,16 @@ function buildLowSalesSheet(
     label.border = { ...(label.border ?? {}), bottom: rule(ACCENT, "medium"), top: rule(ACCENT, "medium") };
     label.alignment = { horizontal: "center", vertical: "middle" };
     label.border = { top: rule(ACCENT, "medium") };
+    // A manager's rows are branch × PRODUCT, so the two sums add one product's units only while every
+    // row is the same product. Otherwise both cells keep their place and hold the sheet's own dash.
+    const totalsAreOneProduct = weeklyProductKeysAreOne(entries.map((e) => e.productCode));
     ([5, 6] as const).forEach((c, offset) => {
       const letter = sheet.getColumn(c).letter;
       const cached = entries.reduce((sum, e) => sum + (offset === 0 ? e.salesUnits : e.stockUnits), 0);
       const cell = totalRow.getCell(c);
-      cell.value =
-        lastDataRow >= firstDataRow
+      cell.value = !totalsAreOneProduct
+        ? unitsNotAdded()
+        : lastDataRow >= firstDataRow
           ? { formula: `SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, result: cached }
           : cached;
       cell.numFmt = UNITS_DASH_FMT;
@@ -2394,7 +2416,7 @@ function buildLowSalesSheet(
     "so a slow product is not hidden behind a healthy branch total. " +
     (belowFloor > 0
       ? `A further ${belowFloor} met the rule but hold ${LOW_SALES_STOCK_FLOOR} units or fewer ` +
-        `(${Math.round(belowFloorStock).toLocaleString()} units in total) and are held back as too small to chase — they are not lost, ` +
+        "and are held back as too small to chase — they are not lost, " +
         "just below the line. "
       : "") +
     "Sorted worst-first: fewest units sold, then most stock held. Head Office is excluded here (no " +
@@ -2432,9 +2454,14 @@ function buildLowSalesSheet(
 //      would not add up to the region row above them — and a vs-target sheet whose subtotals do not
 //      reconcile is worse than no sheet. Only rows with no area at all fall back to the branch's own
 //      weekly region.
+//
+//   4. Units for ONE product only (owner, 2026-09-17). Sales and targets are both added up the tree,
+//      and units of different products are never added, so every figure on the tab — sales, target,
+//      achievement and gap — shows a dash unless the month's sales and targets name one product
+//      between them. Every row keeps its place, and rows are ranked by sales VALUE, which adds.
 
 /**
- * One (line, area) field target for the month, in units.
+ * One (line, area, product) field target for the month, in units.
  *
  * The line arrives as its OFFICIAL NAME ("CNS", "Pedia", "Anti Infective"), already resolved from
  * the engine's line_code by the caller. That keeps this module free of the targets domain — and of
@@ -2443,13 +2470,20 @@ function buildLowSalesSheet(
 export type MonthTargetInput = {
   lineLabel: string;
   areaCode: string;
+  /** Which product the units are of — how the tab tells one product's target from several. */
+  productCode: string;
   targetUnits: number;
+  /** Ranks rows that sold nothing yet. Never printed: this workbook carries no value column. */
+  targetValue: number;
 };
 
 export type VsTargetRow = {
   label: string;
   salesUnits: number;
   targetUnits: number;
+  /** The ranking key: value adds across products where units never do. Never printed. */
+  salesValue: number;
+  targetValue: number;
   /** null when there is no target to divide by. NEVER 0, which a reader takes for a collapse. */
   achievement: number | null;
   /** The not-area-mapped bucket: real sales that no single area owns, so no target can exist. */
@@ -2497,7 +2531,7 @@ export function buildVsTargetModel(
   /** region_code -> region name. Owner's rule: never print a code. */
   regionNames: Map<string, string>,
 ): VsTargetSection[] {
-  type Cell = { salesUnits: number; targetUnits: number };
+  type Cell = { salesUnits: number; targetUnits: number; salesValue: number; targetValue: number };
   // line -> region -> areaCode -> cell. An empty areaCode key is the not-area-mapped bucket.
   const tree = new Map<string, Map<string, Map<string, Cell>>>();
   // Preserve each label as written on the data rather than as normalised for lookup.
@@ -2510,7 +2544,7 @@ export function buildVsTargetModel(
     let areas = regions.get(region);
     if (!areas) regions.set(region, (areas = new Map()));
     let cell = areas.get(areaCode);
-    if (!cell) areas.set(areaCode, (cell = { salesUnits: 0, targetUnits: 0 }));
+    if (!cell) areas.set(areaCode, (cell = { salesUnits: 0, targetUnits: 0, salesValue: 0, targetValue: 0 }));
     return cell;
   };
 
@@ -2524,7 +2558,9 @@ export function buildVsTargetModel(
     // branch's weekly region is the fallback only where the area map cannot answer.
     const region = normalizeRegion(mapped?.regionCode) || normalizeRegion(row.regionCode) || "";
     if (region && !rowRegionNames.has(region)) rowRegionNames.set(region, (row.regionName ?? "").trim());
-    cellOf(lineKey, region, areaCode).salesUnits += row.salesUnits;
+    const cell = cellOf(lineKey, region, areaCode);
+    cell.salesUnits += row.salesUnits;
+    cell.salesValue += row.salesValue;
   }
 
   for (const target of targets) {
@@ -2535,7 +2571,9 @@ export function buildVsTargetModel(
     const areaCode = target.areaCode.trim().toUpperCase();
     if (!areaCode) continue;
     const region = normalizeRegion(areaIndex.get(areaCode)?.regionCode) || "";
-    cellOf(lineKey, region, areaCode).targetUnits += target.targetUnits;
+    const cell = cellOf(lineKey, region, areaCode);
+    cell.targetUnits += target.targetUnits;
+    cell.targetValue += target.targetValue;
   }
 
   const targeted = new Set(targetedLines.map((line) => normalizeLine(line).toLowerCase()).filter(Boolean));
@@ -2560,6 +2598,8 @@ export function buildVsTargetModel(
             : VS_TARGET_NO_AREA_LABEL,
           salesUnits: cell.salesUnits,
           targetUnits: cell.targetUnits,
+          salesValue: cell.salesValue,
+          targetValue: cell.targetValue,
           achievement: achievementOf(cell.salesUnits, cell.targetUnits),
           unmapped: areaCode === "",
         });
@@ -2570,8 +2610,8 @@ export function buildVsTargetModel(
       areaRows.sort(
         (a, z) =>
           Number(a.unmapped) - Number(z.unmapped) ||
-          z.salesUnits - a.salesUnits ||
-          z.targetUnits - a.targetUnits ||
+          z.salesValue - a.salesValue ||
+          z.targetValue - a.targetValue ||
           a.label.localeCompare(z.label),
       );
       const salesUnits = areaRows.reduce((sum, area) => sum + area.salesUnits, 0);
@@ -2581,6 +2621,8 @@ export function buildVsTargetModel(
         label: nameOfRegion(regionCode),
         salesUnits,
         targetUnits,
+        salesValue: areaRows.reduce((sum, area) => sum + area.salesValue, 0),
+        targetValue: areaRows.reduce((sum, area) => sum + area.targetValue, 0),
         achievement: achievementOf(salesUnits, targetUnits),
         unmapped: false,
         areas: areaRows,
@@ -2598,6 +2640,8 @@ export function buildVsTargetModel(
       hasTarget: targeted.has(lineKey),
       salesUnits,
       targetUnits,
+      salesValue: regionRows.reduce((sum, region) => sum + region.salesValue, 0),
+      targetValue: regionRows.reduce((sum, region) => sum + region.targetValue, 0),
       achievement: achievementOf(salesUnits, targetUnits),
       unmapped: false,
       regions: regionRows,
@@ -2606,7 +2650,7 @@ export function buildVsTargetModel(
 
   // Lines that are actually being measured come first; an untargeted line is context, not the point.
   return sections.sort(
-    (a, z) => Number(z.hasTarget) - Number(a.hasTarget) || z.salesUnits - a.salesUnits || a.label.localeCompare(z.label),
+    (a, z) => Number(z.hasTarget) - Number(a.hasTarget) || z.salesValue - a.salesValue || a.label.localeCompare(z.label),
   );
 }
 
@@ -2675,6 +2719,12 @@ function buildVsTargetSheet(
   generatedAt: string,
   /** Mapping faults found while scoping. Empty when clean — never a caveat about a wrong number. */
   dataNote: string,
+  /**
+   * Whether the sales and targets on this sheet name ONE product (weeklyMonthVsTargetUnitsAreOneProduct).
+   * When they do not, every figure — sales, target, achievement, gap, the headline and the footnote's
+   * totals — is a dash, and every row, column and formula cell keeps its place.
+   */
+  unitsAreOneProduct: boolean,
 ): void {
   const sheet = workbook.addWorksheet(name);
 
@@ -2696,7 +2746,11 @@ function buildVsTargetSheet(
     sheet,
     VS_TARGET_COLS,
     `${lineLabel} — Month vs Target`,
-    overall == null ? "No target uploaded" : `${Math.round(overall * 100)}% of the month's target`,
+    !unitsAreOneProduct
+      ? "Figures shown for one product at a time"
+      : overall == null
+        ? "No target uploaded"
+        : `${Math.round(overall * 100)}% of the month's target`,
     multiMonth
       ? `${periodLabel} · each month against its OWN full-month target · units only`
       : `Uploaded sales for ${periodLabel} against the FULL month target · units only`,
@@ -2749,10 +2803,14 @@ function buildVsTargetSheet(
 
     sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
     const caption = sheet.getCell(row, 1);
+    const regionCount = `${section.regions.length} region${section.regions.length === 1 ? "" : "s"}`;
     caption.value = section.hasTarget
-      ? `Target for ${period}: ${Math.round(section.targetUnits).toLocaleString("en-US")} units` +
-        `   ·   ${section.regions.length} region${section.regions.length === 1 ? "" : "s"}`
-      : `No target uploaded for ${period} — sales are shown, achievement cannot be calculated`;
+      ? unitsAreOneProduct
+        ? `Target for ${period}: ${Math.round(section.targetUnits).toLocaleString("en-US")} units   ·   ${regionCount}`
+        : `Target uploaded for ${period}   ·   ${regionCount}`
+      : unitsAreOneProduct
+        ? `No target uploaded for ${period} — sales are shown, achievement cannot be calculated`
+        : `No target uploaded for ${period} — achievement cannot be calculated`;
     caption.font = {
       color: { argb: section.hasTarget ? MUTED_WARM : CLAY },
       italic: !section.hasTarget,
@@ -2803,12 +2861,12 @@ function buildVsTargetSheet(
       label.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
 
       const sales = excelRow.getCell(2);
-      sales.value = entry.salesUnits;
+      sales.value = unitsAreOneProduct ? entry.salesUnits : "–";
       sales.numFmt = UNITS_DASH_FMT;
       sales.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
 
       const target = excelRow.getCell(3);
-      target.value = entry.targetUnits;
+      target.value = unitsAreOneProduct ? entry.targetUnits : "–";
       target.numFmt = UNITS_DASH_FMT;
       target.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: HOUSE_XLSX_FONT, size: 10.5 };
 
@@ -2817,26 +2875,43 @@ function buildVsTargetSheet(
       // the zero-target case in the sheet itself, so an area with no target reads as a dash instead
       // of as 0% (a collapse) or as a surplus equal to its whole sales figure.
       const achievement = excelRow.getCell(4);
-      achievement.value = { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: entry.achievement ?? "–" };
+      achievement.value = unitsAreOneProduct
+        ? { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: entry.achievement ?? "–" }
+        : unitsNotAdded();
       achievement.numFmt = '0.0%;-0.0%;"–"';
       achievement.font = {
         bold: true,
         color: {
           argb:
-            entry.achievement == null ? MUTED_WARM : entry.achievement >= 1 ? GOOD : entry.achievement < 0.8 ? CLAY : INK_SOFT,
+            !unitsAreOneProduct || entry.achievement == null
+              ? MUTED_WARM
+              : entry.achievement >= 1
+                ? GOOD
+                : entry.achievement < 0.8
+                  ? CLAY
+                  : INK_SOFT,
         },
         name: HOUSE_XLSX_FONT,
         size: 10.5,
       };
 
       const gap = excelRow.getCell(5);
-      gap.value = {
-        formula: `IF(C${row}=0,"–",B${row}-C${row})`,
-        result: entry.targetUnits > 0 ? entry.salesUnits - entry.targetUnits : "–",
-      };
+      gap.value = unitsAreOneProduct
+        ? {
+            formula: `IF(C${row}=0,"–",B${row}-C${row})`,
+            result: entry.targetUnits > 0 ? entry.salesUnits - entry.targetUnits : "–",
+          }
+        : unitsNotAdded();
       gap.numFmt = UNITS_DASH_FMT;
       gap.font = {
-        color: { argb: entry.targetUnits === 0 ? MUTED_WARM : entry.salesUnits >= entry.targetUnits ? GOOD : CLAY },
+        color: {
+          argb:
+            !unitsAreOneProduct || entry.targetUnits === 0
+              ? MUTED_WARM
+              : entry.salesUnits >= entry.targetUnits
+                ? GOOD
+                : CLAY,
+        },
         name: HOUSE_XLSX_FONT,
         size: 10.5,
       };
@@ -2864,7 +2939,7 @@ function buildVsTargetSheet(
 
     // One bar per section over its achievement column, capped at 100% so a 300% outlier does not
     // flatten every other area to a sliver. Cosmetic only — never fail an export over it.
-    if (section.hasTarget && achievementRows.length >= 2) {
+    if (unitsAreOneProduct && section.hasTarget && achievementRows.length >= 2) {
       const first = achievementRows[0];
       const last = achievementRows[achievementRows.length - 1];
       // Built as a variable, not inlined: ExcelJS's DataBarRuleType omits `color`, which Excel and
@@ -2890,13 +2965,17 @@ function buildVsTargetSheet(
     const totalLabel = totalRow.getCell(1);
     totalLabel.value = `${section.label} — TOTAL`;
     totalLabel.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-    totalRow.getCell(2).value = section.salesUnits;
-    totalRow.getCell(3).value = section.targetUnits;
-    totalRow.getCell(4).value = { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: section.achievement ?? "–" };
-    totalRow.getCell(5).value = {
-      formula: `IF(C${row}=0,"–",B${row}-C${row})`,
-      result: section.targetUnits > 0 ? section.salesUnits - section.targetUnits : "–",
-    };
+    totalRow.getCell(2).value = unitsAreOneProduct ? section.salesUnits : "–";
+    totalRow.getCell(3).value = unitsAreOneProduct ? section.targetUnits : "–";
+    totalRow.getCell(4).value = unitsAreOneProduct
+      ? { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: section.achievement ?? "–" }
+      : unitsNotAdded();
+    totalRow.getCell(5).value = unitsAreOneProduct
+      ? {
+          formula: `IF(C${row}=0,"–",B${row}-C${row})`,
+          result: section.targetUnits > 0 ? section.salesUnits - section.targetUnits : "–",
+        }
+      : unitsNotAdded();
     for (let c = 1; c <= VS_TARGET_COLS; c += 1) {
       const cell = totalRow.getCell(c);
       if (c === 4) cell.numFmt = '0.0%;-0.0%;"–"';
@@ -2923,13 +3002,19 @@ function buildVsTargetSheet(
     (multiMonth ? "Each month above is measured against its OWN month's target, never a shared one. " : "") +
     "A region row is the sum of the area rows beneath it, and an area is counted under the region " +
     "that carries its target, so the two always reconcile. " +
-    `Total across every line: ${units(totalSales)} units sold against ${units(totalTarget)} units of target. ` +
+    (unitsAreOneProduct
+      ? `Total across every line: ${units(totalSales)} units sold against ${units(totalTarget)} units of target. `
+      : "These sales and targets cover more than one product, and units of different products are never " +
+        "added, so every figure here is a dash. Filter the report to one product to see its units, target, " +
+        "achievement and gap. Rows are ranked by sales value. ") +
     (unmeasuredNames.length > 0
       ? `${unmeasuredNames.join(", ")} ` +
         `${unmeasuredNames.length === 1 ? "has" : "have"} no uploaded target for ${periodLabel} — ` +
-        `their ${units(unmeasured.reduce((sum, s) => sum + s.salesUnits, 0))} units are shown ` +
-        "in full but are excluded from the headline percentage, which would otherwise be diluted by sales " +
-        "nobody set a number for. "
+        (unitsAreOneProduct
+          ? `their ${units(unmeasured.reduce((sum, s) => sum + s.salesUnits, 0))} units are shown ` +
+            "in full but are excluded from the headline percentage, which would otherwise be diluted by sales " +
+            "nobody set a number for. "
+          : "they carry no achievement. ")
       : "") +
     "Sales that no single area owns — key accounts, chains, wholesale depots — sit in their region's " +
     "own named row and carry no target, so they are never hidden and never inflate an area's " +

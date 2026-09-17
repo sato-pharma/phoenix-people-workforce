@@ -507,8 +507,8 @@ export async function runWeeklySummaryReportTests() {
       areaSplit: null,
     };
     const julyTargets = [
-      { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
-      { lineLabel: "CNS", areaCode: "CA2", targetUnits: 60 },
+      { lineLabel: "CNS", areaCode: "CA1", productCode: "P1", targetUnits: 40, targetValue: 400 },
+      { lineLabel: "CNS", areaCode: "CA2", productCode: "P1", targetUnits: 60, targetValue: 600 },
     ];
 
     const buffer = await buildWeeklySummaryWorkbook({
@@ -647,9 +647,9 @@ export async function runWeeklySummaryReportTests() {
         factRow({ areaCode: "GZ1", regionCode: "GZ", salesUnits: 90 }),
       ],
       [
-        { lineLabel: "CNS", areaCode: "CA1", targetUnits: 60 },
-        { lineLabel: "CNS", areaCode: "CA2", targetUnits: 40 },
-        { lineLabel: "CNS", areaCode: "GZ1", targetUnits: 90 },
+        { lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 60, targetValue: 600 },
+        { lineLabel: "CNS", areaCode: "CA2", productCode: "LA001", targetUnits: 40, targetValue: 400 },
+        { lineLabel: "CNS", areaCode: "GZ1", productCode: "LA001", targetUnits: 90, targetValue: 900 },
       ],
       AREA_INDEX,
       ["CNS"],
@@ -683,7 +683,7 @@ export async function runWeeklySummaryReportTests() {
   {
     const sections = buildVsTargetModel(
       [factRow({ areaCode: "CA1", regionCode: "GZ", regionName: "Giza", salesUnits: 25 })],
-      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 50 }],
+      [{ lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 50, targetValue: 500 }],
       AREA_INDEX,
       ["CNS"],
       REGION_NAMES,
@@ -698,8 +698,8 @@ export async function runWeeklySummaryReportTests() {
     const sections = buildVsTargetModel(
       [factRow({ areaCode: "CA1", regionCode: "CA", salesUnits: 10 })],
       [
-        { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
-        { lineLabel: "CNS", areaCode: "CA2", targetUnits: 80 },
+        { lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 40, targetValue: 400 },
+        { lineLabel: "CNS", areaCode: "CA2", productCode: "LA001", targetUnits: 80, targetValue: 800 },
       ],
       AREA_INDEX,
       ["CNS"],
@@ -720,7 +720,7 @@ export async function runWeeklySummaryReportTests() {
         factRow({ areaCode: "CA1", regionCode: "CA", salesUnits: 40 }),
         factRow({ areaCode: null, regionCode: "CA", regionName: "Cairo", salesUnits: 500 }),
       ],
-      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      [{ lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 40, targetValue: 400 }],
       AREA_INDEX,
       ["CNS"],
       REGION_NAMES,
@@ -747,7 +747,7 @@ export async function runWeeklySummaryReportTests() {
         factRow({ line: "CNS", areaCode: "CA1", regionCode: "CA", salesUnits: 10 }),
         factRow({ line: "Anti Infective", areaCode: "CA1", regionCode: "CA", salesUnits: 700 }),
       ],
-      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      [{ lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 40, targetValue: 400 }],
       AREA_INDEX,
       ["CNS"],
       REGION_NAMES,
@@ -766,7 +766,7 @@ export async function runWeeklySummaryReportTests() {
   {
     const sections = buildVsTargetModel(
       [factRow({ line: "Head Office", areaCode: null, regionCode: "CA", regionName: "Cairo", salesUnits: 12 })],
-      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      [{ lineLabel: "CNS", areaCode: "CA1", productCode: "LA001", targetUnits: 40, targetValue: 400 }],
       AREA_INDEX,
       ["CNS"],
       REGION_NAMES,
