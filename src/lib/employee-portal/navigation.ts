@@ -148,6 +148,20 @@ export type EmployeePortalNavVisibility = {
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
+  // Early Birds — the fortnightly field-discipline board at /employee-portals/early-birds.
+  //
+  // The page shipped with NO portal sidebar row at all. Its only catalog entry sits in
+  // `employeePortalNavigationSectionSeeds` (system-navigation.ts), which drives the command
+  // palette and Modules Control but NOT the portal rail — that rail is built by hand in
+  // buildEmployeePortalSections — so for every role below the board was reachable only by typing
+  // the URL, or by catching the "View board" link on the landing-page stars card, which renders
+  // nothing at all in a fortnight with no stars.
+  //
+  // The role set mirrors that catalog row exactly, and is deliberately WIDER than the scope
+  // resolver: resolveEarlyBirdsScope (src/lib/early-birds/permissions.ts) is the enforcing gate and
+  // answers "which districts", so a viewer with an empty subtree gets the page's own named empty
+  // state rather than a missing row, which reads as a permission fault.
+  showEarlyBirdsTab?: boolean;
   showActionsTab?: boolean;
   // Direct Orders — submit/report are the same requester-role set the module itself
   // enforces server-side (DIRECT_ORDER_REQUESTER_ROLES); approvals is only the two
@@ -773,6 +787,21 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Training Manager",
+    // Early Birds — mirrors the module's own catalog row in employeePortalNavigationSectionSeeds
+    // (system-navigation.ts) exactly: every portal-mode role in its audience. `isDistrictManager`
+    // deliberately, NOT the exact match used by the sales boards above — the Head-Office "Manager"
+    // rung reaches the page too, and resolveEarlyBirdsScope answers it with an honest "no district
+    // reports to you" rather than an empty grid. CEO / SFE Manager / Super Admin resolve to the
+    // ADMIN shell and get /admin/early-birds from the admin rail instead.
+    showEarlyBirdsTab:
+      isMedicalRep ||
+      isDistrictManager ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager ||
+      isTrainingManager,
     // Other Approvals ("Approvals Hub") — Talent Acquisition has no approval authority
     // (governance restricts that to Super Admin / HR Manager, see hard-boundary notes in
     // permissions.ts), so the whole hub is hidden for her even though the other flags

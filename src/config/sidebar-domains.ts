@@ -153,12 +153,21 @@ export const adminSidebarDomains: readonly SidebarDomain[] = [
       // Five calendars in one place, which is the point: two of them read almost alike and used to
       // sit in different domains. See the rename at `ceo-company-calendar` in system-navigation.ts.
       { heading: "Calendars", sectionIds: ["attendance-management-calendars", "ceo-company-calendar"] },
-      { heading: "Attendance Setup", sectionIds: ["attendance-management-setup", "early-birds"] },
+      { heading: "Attendance Setup", sectionIds: ["attendance-management-setup"] },
       // "Leave", not "Leave Management": `finance-leave-management` carries a row called exactly
       // "Leave Management", and groupAdminSections blanks a heading that repeats one of its own
       // rows — which tests/sidebar-domains.test.ts fails on.
       { heading: "Leave", sectionIds: ["leave-management", "finance-leave-management", "vacation-sources"] },
-      { heading: "Field Coaching", sectionIds: ["field-coaching"] },
+      // `early-birds` moved here from "Attendance Setup" on 2026-09-18. Owner Ruling 6
+      // (2026-08-28) is "Early Birds with Field Force", and system-navigation.ts's own note on the
+      // section says it in as many words: "Early Birds is field-force recognition and Field
+      // Coaching is the row it belongs beside." The domain map had it filed under a heading that
+      // reads as a settings screen, which is where the owner could not find it. Nothing about
+      // visibility changes — this layer runs after getSections and can only decide where a
+      // surviving row is drawn. The heading does not blank: field-coaching's four rows are
+      // Coaching Evaluations / Coaching Analytics / Import History / Resigned Evaluations, and
+      // "Early Birds" is the fifth — none of them repeats the words "Field Coaching".
+      { heading: "Field Coaching", sectionIds: ["field-coaching", "early-birds"] },
     ],
   },
   {

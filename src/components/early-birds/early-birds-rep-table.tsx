@@ -63,7 +63,7 @@ export function EarlyBirdsRepTable({
       <SectionHead
         title="Every rep, in detail"
         right={
-          <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
+          <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
             {scores.length} rows
           </span>
         }
@@ -77,13 +77,16 @@ export function EarlyBirdsRepTable({
               const badge = SOURCE_BADGE[dominantSource(score)];
               return (
                 <div className="bg-white px-4 py-3" key={score.hrIdKey}>
-              <div className="flex items-center gap-2">
-                <span className="text-phx-xs font-black text-slate-400">{index + 1}</span>
-                <p className="whitespace-nowrap text-sm font-bold text-slate-900" dir="auto">
+              {/* The phone card. The name wraps (a five-part Egyptian name is the normal case here)
+                  and the source badge is square — the owner's square-edge golden rule; it carried
+                  `rounded` from the day it shipped. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="shrink-0 text-phx-xs font-black text-slate-400">{index + 1}</span>
+                <p className="min-w-0 flex-1 break-words text-sm font-bold text-slate-900" dir="auto">
                   {score.name}
                 </p>
                 <span
-                  className={`ml-auto rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${badge.className}`}
+                  className={`ml-auto shrink-0 px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${badge.className}`}
                   title={badge.title}
                 >
                   {badge.label}
@@ -99,14 +102,16 @@ export function EarlyBirdsRepTable({
                   ["First places", String(score.dailyWins)],
                   ["Points", score.eligible ? formatPoints(score.totalScore) : "—"],
                 ].map(([label, value]) => (
-                  <div key={label} className="border border-slate-200 px-2 py-1.5">
-                    <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wider text-slate-400">{label}</p>
-                    <p className="whitespace-nowrap text-xs font-bold tabular-nums text-slate-900">{value}</p>
+                  <div key={label} className="min-w-0 border border-slate-200 px-2 py-1.5">
+                    <p className="break-words text-phx-3xs font-black uppercase tracking-wider text-slate-400">{label}</p>
+                    <p className="break-words text-xs font-bold tabular-nums text-slate-900">{value}</p>
                   </div>
                 ))}
               </div>
                   {!score.eligible && (
-                    <p className="mt-2 whitespace-nowrap text-phx-xs font-semibold text-amber-700">
+                    // A sentence ("Joined mid-fortnight · No start time recorded"), not a token —
+                    // it wraps. On `whitespace-nowrap` two joined reasons ran off a 375px card.
+                    <p className="mt-2 break-words text-phx-xs font-semibold text-amber-700">
                       {reasonText(score.ineligibleReasons)}
                     </p>
                   )}
