@@ -1,4 +1,6 @@
 import { strict as assert } from "node:assert";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   bracketDeductionDays,
@@ -7,6 +9,36 @@ import {
   type DeductionBracket,
   type FlexibleHoursConfig,
 } from "../src/lib/attendance/flexible-hours.ts";
+
+/**
+ * The reason text is stored on every weekly digest line and deduction candidate, and the
+ * policy card and reports print it. The owner ruled (2026-09-17) that the words
+ * "the worse of the two" are never shown, so no attendance or deductions source may carry
+ * them again — in a string, a label or a comment someone copies into one.
+ */
+function assertNoComparativeWordingInAttendanceSource() {
+  const roots = [
+    "src/lib/attendance",
+    "src/lib/deductions",
+    "src/components/attendance",
+    "app/(admin)/attendance",
+    "app/(admin)/admin/deductions",
+    "app/(admin)/workspace/deductions",
+    "app/employee-portals/attendance",
+    "app/employee-portals/deductions",
+    "app/api/admin/deductions",
+  ];
+  const offenders: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.tsx?$/.test(name) && /worse of the two/i.test(readFileSync(path, "utf8"))) offenders.push(path);
+    }
+  };
+  for (const dir of roots) walk(dir);
+  assert.deepEqual(offenders, [], `"the worse of the two" must never be shown: ${offenders.join(", ")}`);
+}
 
 // Standard config from the confirmed spec: 09:00 start, 09:30 flex ceiling, 7h50m required.
 const CONFIG: FlexibleHoursConfig = {
@@ -73,13 +105,26 @@ export function runAttendanceFlexibleHoursTests() {
   assert.equal(r3.halved, true);
   assert.equal(r3.deductionDays, 0.25, "half-day (0.5) halved because hours completed → 0.25");
 
-  // 4. 10:00 → 17:00 : 30 min late AND ~50 min short → worse of the two = full day.
+  // 4. 10:00 → 17:00 : 30 min late AND ~50 min short → the larger penalty = full day.
   const r4 = evaluate(at(10, 0), at(17, 0));
   assert.equal(r4.status, "Short hours");
   assert.equal(r4.lateMinutes, 30);
   assert.equal(r4.shortMinutes, 50);
   assert.equal(r4.halved, false, "no halving when hours were not completed");
-  assert.equal(r4.deductionDays, 1, "short-hours penalty (1.0) is worse than late (0.5) → 1.0");
+  assert.equal(r4.deductionDays, 1, "short-hours penalty (1.0) is larger than late (0.5) → 1.0");
+
+  // Owner rule (2026-09-17): the reason names only the penalty that applies. The old
+  // comparative wording is never shown to anyone, whichever side wins — the rule itself stays.
+  assert.equal(r4.reason, "Late 30 min and short 50 min — short-hours penalty applies.");
+  // 10:30 → 18:10 : 60 min late (1.0) and 10 min short (0.25) → the lateness penalty applies.
+  const lateWins = evaluate(at(10, 30), at(18, 10));
+  assert.equal(lateWins.status, "Late");
+  assert.equal(lateWins.deductionDays, 1, "only the larger penalty applies, never both");
+  assert.equal(lateWins.reason, "Late 60 min and short 10 min — lateness penalty applies.");
+  for (const reason of [r4.reason, lateWins.reason]) {
+    assert.ok(!/worse/i.test(reason), `a late-and-short reason must never say "worse": ${reason}`);
+  }
+  assertNoComparativeWordingInAttendanceSource();
 
   // 5. 9:20 → 16:50 : within flex, but 20 min short → quarter-day.
   const r5 = evaluate(at(9, 20), at(16, 50));

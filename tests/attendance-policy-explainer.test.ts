@@ -133,12 +133,12 @@ export function runAttendancePolicyExplainerTests() {
   assert.equal(flex.rows[2].deduction, "1/16 day");
   assert.equal(flex.rows[2].deductionNote, "1/8 day halved");
 
-  // Row 4: both late and short — the WORSE of the two applies, never both.
+  // Row 4: both late and short — only the larger penalty applies, never both.
   // Short 50 min -> 0.50; late 30 min -> 0.125. The short penalty wins.
   assert.equal(flex.rows[3].late, "30 min");
   assert.equal(flex.rows[3].short, "50 min");
   assert.equal(flex.rows[3].deduction, "1/2 day");
-  assert.equal(flex.rows[3].deductionNote, "worse of the two");
+  assert.equal(flex.rows[3].deductionNote, "larger penalty only");
 
   // Row 5: short only, and NOT late — 9:20 is inside the flex window.
   assert.equal(flex.rows[4].clockIn, "9:20");
@@ -152,6 +152,16 @@ export function runAttendancePolicyExplainerTests() {
     flex.rules.some((text) => text.includes("first 15 minutes")),
     "the free-minutes window must be stated in the rules",
   );
+
+  // Owner rule (2026-09-17): the late-and-short rule is still stated, but the card never
+  // uses the old comparative wording — not in the rules and not in a row's note.
+  assert.ok(
+    flex.rules.includes("When a day is both late and short, only the larger penalty applies — never both."),
+    "the late-and-short rule must still be stated on the card",
+  );
+  for (const text of [...flex.rules, ...flex.rows.map((row) => row.deductionNote)]) {
+    assert.ok(!/worse/i.test(text), `the policy card must never say "worse": ${text}`);
+  }
 
   // The scale shown is the policy's own.
   assert.deepEqual(

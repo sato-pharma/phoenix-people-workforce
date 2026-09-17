@@ -266,7 +266,7 @@ export function runAttendanceDeductionCancelMatrixTests() {
     ["a single punch on a half day is a missing punch, never a deduction", () => {
       assert.equal(judge(SHIFTED, SHIFTED, SHIFTED, 1).deductionDays, 0);
     }],
-    ["late AND short on the half takes the worse of the two, unhalved", () => {
+    ["late AND short on the half takes the larger penalty, unhalved", () => {
       const r = judge(SHIFTED + 120, SHIFTED + 120 + 60, SHIFTED);
       assert.equal(r.halved, false);
       assert.ok(r.deductionDays > 0);
