@@ -172,8 +172,11 @@ function renderEmailBlock(
 
     case "letterhead": {
       const logo = String(p.logo || options.logoUrl || "");
-      // Only an https URL: Gmail and Outlook both strip `data:` image sources.
-      const img = /^https:\/\//i.test(logo)
+      // An https URL or a `cid:` part of this message, and nothing else. A `data:` source is the
+      // one form Gmail and Outlook really do strip, so it must never reach here — and `cid:` is
+      // what the real send uses, because a remote image the reader's client declines to fetch
+      // leaves a torn-page placeholder on the letterhead of a binding offer (2026-09-17).
+      const img = /^(?:https:\/\/|cid:)/i.test(logo)
         ? `<img src="${escapeHtml(logo)}" alt="${escapeHtml(textOf(f(p.name)))}" height="34" style="height:34px;display:block;border:0">`
         : `<div style="font-size:15px;font-weight:bold;letter-spacing:1.5px;color:${theme.brand}">${f(p.name)}</div>`;
       return (

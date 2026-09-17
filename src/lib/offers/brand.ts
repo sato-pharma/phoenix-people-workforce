@@ -105,6 +105,59 @@ export function satoLogoUrl(baseUrl: string): string {
 }
 
 /**
+ * The Content-ID the offer email's letterhead `<img src="cid:…">` points at.
+ *
+ * ── Why the email stopped linking to the mark, 2026-09-17 ──
+ * It used to carry `satoLogoUrl(...)`, an absolute https link to the same PNG the site serves.
+ * The asset was never the problem — it answers 200 with a valid 401x158 PNG — but a REMOTE image
+ * is only drawn if the reader's mail client agrees to go and fetch it, and Outlook, Yahoo/Turbify
+ * webmail and Gmail all withhold that by default for a sender nobody has whitelisted. What the
+ * owner saw in his BCC copy of SP-HR-MR-2026-005 was the browser's torn-page placeholder and the
+ * alt text where the Sato mark belongs — on the letterhead of a legally binding offer.
+ *
+ * A `cid:` reference is resolved from a part of the message itself, so there is nothing to fetch
+ * and nothing to block: the mark draws on first open, offline, in every client that has handled
+ * MIME since 1996. It is NOT the `data:` URI the PDF uses — that is the one form Gmail and Outlook
+ * really do strip, which is what the note at the top of this file is about.
+ */
+export const SATO_LOGO_CONTENT_ID = "sato-pharma-mark";
+
+/** `src` value for the letterhead image when the mark travels inside the message. */
+export const SATO_LOGO_CID_SRC = `cid:${SATO_LOGO_CONTENT_ID}`;
+
+export type SatoLogoAttachment = {
+  content: string;
+  contentId: string;
+  contentType: string;
+  filename: string;
+  /** Where a provider with no Content-ID support can point the same `<img>` instead. */
+  remoteUrl: string;
+};
+
+/**
+ * The mark as an inline message part, or null when the file cannot be read.
+ *
+ * Deliberately derived from `satoLogoDataUri()` rather than reading the PNG a second time: that
+ * reader's literal `join(process.cwd(), …)` is what keeps Turbopack's tracer from over-bundling
+ * this route (see above), and a second `readFileSync` here would be a second thing to keep exactly
+ * right. Null flows through to the https URL, i.e. to exactly today's behaviour — never to a
+ * letterhead with no mark at all.
+ */
+export function satoLogoAttachment(baseUrl: string): SatoLogoAttachment | null {
+  const dataUri = satoLogoDataUri();
+  if (!dataUri) return null;
+  const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
+  if (!base64) return null;
+  return {
+    content: base64,
+    contentId: SATO_LOGO_CONTENT_ID,
+    contentType: "image/png",
+    filename: "sato-pharma-logo.png",
+    remoteUrl: satoLogoUrl(baseUrl),
+  };
+}
+
+/**
  * The authorised signatory's signature as a `data:` URI, for the PDF.
  *
  * There is deliberately no URL form of this. See the note above: the signature belongs in the

@@ -2,9 +2,10 @@ import { defaultOfferTemplate, getOffer, getOfferTemplate, markOfferSent } from 
 import { isOfferPdfAvailable, offerPdfFilename, renderOfferPdf } from "@/lib/offers/pdf";
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { resolveOfferSender } from "@/lib/offers/identity";
-import { satoLogoUrl } from "@/lib/offers/brand";
+import { SATO_LOGO_CID_SRC, satoLogoAttachment, satoLogoUrl } from "@/lib/offers/brand";
 import { systemDeployment } from "@/config/system-settings";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import type { SendPhoenixEmailAttachment } from "@/lib/email/send-phoenix-email";
 import type { OfferFields, OfferRecord, OfferTemplate } from "@/lib/offers/types";
 
 /**
@@ -93,22 +94,35 @@ export async function sendOfferEmail(
   const sender = resolveOfferSender();
   const subject = offerSubject(offer);
 
-  // The email gets the mark as an absolute URL, not the data URI the PDF uses: Gmail and Outlook
-  // both drop `data:` images, and it has to be absolute because the message is read far away from
-  // this server. The production host is correct even when sending from staging — the asset is
-  // public, and a candidate's mail client must be able to fetch it.
+  // ── The mark travels INSIDE the message (2026-09-17) ──
+  // Not the data URI the PDF uses — Gmail and Outlook really do strip those — and no longer the
+  // absolute https URL either. A remote image is drawn only if the reader's client agrees to go
+  // and fetch it, and Outlook, Yahoo/Turbify webmail and Gmail all withhold that by default for a
+  // sender nobody has whitelisted; the owner's BCC copy of SP-HR-MR-2026-005 showed the torn-page
+  // placeholder and the alt text where the Sato mark belongs. An inline `cid:` part is carried by
+  // the message itself, so there is nothing to fetch and nothing to withhold.
+  //
+  // The https URL stays as the fallback, for the one case where the PNG cannot be read off disk
+  // (and for Brevo, which has no Content-ID field — see `brevoInlineFallback`). The production
+  // host is correct even when sending from staging: the asset is public.
+  const mark = satoLogoAttachment(systemDeployment.productionUrl);
   const { html, text } = renderOfferEmail(
     { blocks: template.blocks, theme: template.theme },
     fields,
-    { logoUrl: options.logoUrl ?? satoLogoUrl(systemDeployment.productionUrl) },
+    { logoUrl: options.logoUrl ?? (mark ? SATO_LOGO_CID_SRC : satoLogoUrl(systemDeployment.productionUrl)) },
   );
+
+  // The letterhead part rides along only when the body actually points at it — an override in
+  // `options.logoUrl` means the caller chose its own mark and this one would arrive as a stray
+  // file on an offer letter.
+  const inlineMark = !options.logoUrl && mark ? [mark] : [];
 
   // ── The attachment, and what happens when Chromium is not there ──
   // Degrade rather than fail. A missing Chromium in some environment must not stop HR sending an
   // offer — the whole letter is already in the email body. But it is never silent: the caller
   // gets a warning to show, because an email that says "see the attached PDF" with nothing
   // attached is worse than one that never mentioned an attachment.
-  let attachments: { content: string; contentType: string; filename: string }[] | undefined;
+  let pdfAttachment: SendPhoenixEmailAttachment | undefined;
   let attachmentWarning: string | null = null;
 
   if (await isOfferPdfAvailable()) {
@@ -124,13 +138,11 @@ export async function sendOfferEmail(
         fields,
         { logoUrl: options.logoUrl },
       );
-      attachments = [
-        {
-          content: Buffer.from(pdf).toString("base64"),
-          contentType: "application/pdf",
-          filename: offerPdfFilename(offer),
-        },
-      ];
+      pdfAttachment = {
+        content: Buffer.from(pdf).toString("base64"),
+        contentType: "application/pdf",
+        filename: offerPdfFilename(offer),
+      };
     } catch (error) {
       attachmentWarning =
         "The offer PDF could not be rendered, so the email was sent with the letter in the body only.";
@@ -145,8 +157,12 @@ export async function sendOfferEmail(
       "Headless Chromium is not available in this environment, so the email was sent with the letter in the body only.";
   }
 
+  // The letterhead part first, the letter second — the order a reader's client uses to decide
+  // which parts are decoration and which are the attachment it lists.
+  const attachments = [...inlineMark, ...(pdfAttachment ? [pdfAttachment] : [])];
+
   const result = await sendPhoenixEmail({
-    attachments,
+    attachments: attachments.length > 0 ? attachments : undefined,
     // A candidate has no employee record, so their address is unknown to the Recipient Assurance
     // Guard by definition. Without this declaration every offer would be blocked as an
     // unrecognised recipient.
@@ -188,7 +204,10 @@ export async function sendOfferEmail(
       );
 
   return {
-    attachmentIncluded: Boolean(attachments),
+    // The PDF, and only the PDF. The letterhead mark is an inline part, not something HR should
+    // ever be told "was attached" — reporting it here would turn a failed PDF render into a
+    // silently reassuring "attachment included".
+    attachmentIncluded: Boolean(pdfAttachment),
     attachmentWarning,
     from: sender.from,
     offer: stamped,

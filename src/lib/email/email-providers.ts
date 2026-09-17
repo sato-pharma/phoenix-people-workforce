@@ -15,8 +15,18 @@
 
 import { RetryableEmailError, parseRetryAfter } from "@/lib/email/email-errors";
 
+export type PreparedEmailAttachment = {
+  content: string;
+  /** Set when the HTML draws this part inline with `<img src="cid:…">`. */
+  contentId?: string;
+  contentType?: string;
+  filename: string;
+  /** Public https copy, used by a provider that cannot carry a Content-ID. */
+  remoteUrl?: string;
+};
+
 export type PreparedEmail = {
-  attachments?: { content: string; contentType?: string; filename: string }[];
+  attachments?: PreparedEmailAttachment[];
   bcc?: string[];
   cc?: string[];
   from: string;
@@ -61,6 +71,44 @@ function classifyErrorStatus(status: number): "failover" | "retry" | "error" {
   return "error";
 }
 
+/**
+ * Resend's attachment shape. `content_id` is what turns a part into an INLINE image the HTML can
+ * reach with `<img src="cid:…">`; without it Resend sends the same bytes as a plain file, and the
+ * `cid:` reference in the body resolves to nothing.
+ */
+function resendAttachments(email: PreparedEmail) {
+  return email.attachments?.map((att) => ({
+    content: att.content,
+    content_id: att.contentId,
+    content_type: att.contentType,
+    filename: att.filename,
+  }));
+}
+
+/**
+ * Brevo has no Content-ID field on `attachment`, so an inline part would arrive as a stray file
+ * beside an offer letter whose letterhead still pointed at nothing. Degrade instead of breaking:
+ * point the `<img>` back at the public https copy — i.e. exactly the behaviour before inlining —
+ * and leave the bytes out of the message. Only the FAILOVER provider is affected; Resend, which
+ * sends every offer in practice, carries the real inline part.
+ */
+export function brevoInlineFallback(email: PreparedEmail): {
+  attachments: PreparedEmailAttachment[] | undefined;
+  html: string;
+} {
+  const inline = email.attachments?.filter((att) => att.contentId) ?? [];
+  if (inline.length === 0) return { attachments: email.attachments, html: email.html };
+
+  let html = email.html;
+  for (const att of inline) {
+    // `cid:` values are our own slugs, so a literal split/join is safer here than building a
+    // RegExp out of one.
+    html = html.split(`cid:${att.contentId}`).join(att.remoteUrl ?? "");
+  }
+  const rest = email.attachments?.filter((att) => !att.contentId);
+  return { attachments: rest && rest.length > 0 ? rest : undefined, html };
+}
+
 // Parse a "Name <email@x>" (or bare "email@x") sender into Brevo's structured shape.
 function parseSender(from: string): { email: string; name?: string } {
   const match = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
@@ -81,7 +129,7 @@ export const resendProvider: EmailProvider = {
     try {
       response = await fetch(resendEndpoint, {
         body: JSON.stringify({
-          attachments: email.attachments,
+          attachments: resendAttachments(email),
           bcc: email.bcc,
           cc: email.cc,
           from: email.from,
@@ -138,6 +186,9 @@ export const brevoProvider: EmailProvider = {
     // BREVO_EMAIL_FROM override, else reuse the primary from-address.
     const sender = parseSender(process.env.BREVO_EMAIL_FROM?.trim() || email.from);
 
+    // Brevo cannot carry a Content-ID, so an inline image goes back to its public https copy here.
+    const { attachments: brevoAttachments, html: brevoHtml } = brevoInlineFallback(email);
+
     let response: Response;
     try {
       response = await fetch(brevoEndpoint, {
@@ -147,13 +198,13 @@ export const brevoProvider: EmailProvider = {
           cc: email.cc && email.cc.length > 0 ? email.cc.map((address) => ({ email: address })) : undefined,
           bcc: email.bcc && email.bcc.length > 0 ? email.bcc.map((address) => ({ email: address })) : undefined,
           subject: email.subject,
-          htmlContent: email.html,
+          htmlContent: brevoHtml,
           textContent: email.text,
           replyTo: email.replyTo ? { email: email.replyTo } : undefined,
           headers: email.headers,
           attachment:
-            email.attachments && email.attachments.length > 0
-              ? email.attachments.map((att) => ({ content: att.content, name: att.filename }))
+            brevoAttachments && brevoAttachments.length > 0
+              ? brevoAttachments.map((att) => ({ content: att.content, name: att.filename }))
               : undefined,
         }),
         headers: {

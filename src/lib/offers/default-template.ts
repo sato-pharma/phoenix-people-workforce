@@ -81,7 +81,19 @@ export function defaultOfferBlocks(): OfferBlock[] {
     { id: id("rail"), props: {}, type: "rail" },
     {
       id: id("letterhead"),
-      props: { logo: "", name: "SATO PHARMACEUTICALS", unit: "Human Resources" },
+      props: {
+        // No `logo` key at all, exactly as the executive design does it (2026-09-17, owner's
+        // instruction). `letterheadLogo` treats an EMPTY STRING as "the designer cleared this
+        // field on purpose" and prints the reserved gap instead of the mark — so the `logo: ""`
+        // this shipped with since #2432 meant every classic offer PDF, the document a candidate
+        // signs, went out with 40px of white space where the Sato mark belongs. Only an ABSENT
+        // prop lets the renderer supply the mark.
+        //
+        // The gap and the mark are the same 40px high (`.letterhead img` / `.letterhead .logo-gap`),
+        // so this fills the space the letter already reserved and moves nothing else.
+        name: "SATO PHARMACEUTICALS",
+        unit: "Human Resources",
+      },
       type: "letterhead",
     },
     {
