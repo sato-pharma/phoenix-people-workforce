@@ -42,6 +42,10 @@ const MAX_CLUSTERS_PER_CALL = 2;
  */
 const RULES = [
   // most specific first
+  // Parallel sessions had NO rule until 2026-09-17, so that cluster was never delivered to anyone —
+  // including its "one approval can reach several sessions" trap, which matters most at a merge.
+  // `tests/trap-injector-clusters.test.ts` now fails on any cluster no rule reaches.
+  [/\bgh\s+pr\s+merge\b|session\.lock|\.autorun\b|list_sessions|session-census|claude-hygiene|find-worktree-holder|--strip-idle/i, 'Parallel sessions'],
   [/\bgh\s+(pr|run|workflow|api\s+repos)\b|\bactions\b|\bcheck-runs\b|secret-scan/i, 'CI and PRs'],
   [/\bgit\s|\bgh\s|rev-parse|cherry-pick|rerere|\bstash\b/i, 'Git'],
   [/worktree|_wt-|new-session\.mjs|repo-doctor|repo:doctor/i, 'Worktrees'],

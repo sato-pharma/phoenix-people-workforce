@@ -144,6 +144,43 @@ the load-bearing half: **if a session cannot tell whether it is armed, it is not
 the other direction means an unattended session merging to production on an authorisation nobody
 gave.
 
+## The guard armed on talk ABOUT the word — fixed 2026-09-17
+
+On 2026-09-17 at 19:12 Cairo, a session was armed by the task message that asked for this very fix.
+Its words were *autorun-guard must never arm on a negated or quoted mention (e.g. "don't AUTORUN",
+"what does AUTORUN do")*. The guard matched the upper-case word standing alone, wrote an arming, and
+re-stated it on every later turn. Nobody had armed anything. The session did not act as armed. Its
+state file was moved, with every other file written before the fix, to
+`F:\Claude Config Backups\2026-09-17_1842 settings review\autorun-stand-down\`.
+
+The guard now passes over a mention that is:
+
+- **Quoted:** in straight or curly quotes, `«»`, backticks, a fenced block, or a `>` quote line.
+- **Negated:** an odd number of negations (don't, not, no, never, stop, skip, avoid, disable…) among
+  the three words before it in its clause. "don't stop, AUTORUN" still arms, because the comma ends
+  the clause. "don't stop AUTORUN" is two negations and arms as well.
+- **Asked about:** the clause opens as a question (what, how, is it…), or the sentence ends in `?`.
+
+A state file now carries `version: 2` and the words that armed it. A file with no version, which
+means every one written before the fix, is never re-stated. The re-statement quotes the trigger, so a
+false arming shows itself in one line. Pinned by `tests/autorun-guard-false-arming.test.ts`: 17
+mentions that must not arm, 7 instructions that must, and the old-state-file case.
+
+## §6 and §8 disagreed about production migrations — aligned 2026-09-17
+
+§6 named "applying any database migration against production" as a protected action. Its
+pre-approved list allowed only Supabase CLI commands "that do NOT modify production". §8 pre-authorizes
+Supabase writes end to end: staging and production, `apply_migration`, bulk and destructive SQL. Its
+one condition is announcing a destructive or bulk production change first. §8 is the owner's settled
+grant, so §6 moved, not §8. The pre-approved list now names §8, protected action 2 excepts the Supabase
+MCP servers and CLI, and §6.1 notes that its migration half is already granted through Supabase. What
+is left of protected action 2 is a production migration run some other way, such as a raw `psql`
+connection.
+
+The user-level prompt-suggestion text had the same mismatch: it listed "apply a migration" as a stage
+that needs his approval. It lives outside the repository, in `~/.claude/hooks/suggestion-context.mjs`
+and `~/.claude/skills/next-step/SKILL.md`, and was aligned the same day.
+
 ## `AGENTS.md` §6 Approval rules and §6.1 AUTORUN — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
