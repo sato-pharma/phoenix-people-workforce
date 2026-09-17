@@ -290,7 +290,7 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 - **Start a session with `node scripts/new-session.mjs <task>`** (fetch, `_wt-<task>` on `codex/<task>`, `node_modules` junction, env files; refuses below 6 GB free commit). `--status`, `--repair`, `--from <ref>`. A bare `git worktree add` has no `.env.local` and no `node_modules`.
 - **A sibling `_wt-<task>` is a NEW project to Claude Code** — `node scripts/sync-worktree-env.mjs` copies `.claude/settings.local.json` and points `autoMemoryDirectory` at the primary's memory.
 - **Never `pnpm install`, `pnpm run` or `pnpm exec` inside a worktree** — they purge the `node_modules` junction, and `pnpm exec` fails silent-shaped. Invoke `node scripts/…`; dev server: `node node_modules/next/dist/bin/next dev --webpack --port 3000`. **Mechanical since 2026-09-16:** `bash-guard.mjs` C6 DENIES every pnpm form here and names the node equivalent — a deny because `Bash(pnpm run *)` and `Bash(pnpm exec *)` auto-approve it, so no prompt was ever coming.
-- **Stop a dev server by PORT, not by task:** `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. Only a curl of `000` proves the port is free.
+- **A dev server a SESSION opened dies with it** (`dev-server-reaper.mjs`, that one only); one you started yourself is nobody's child — **stop it by PORT, not by task:** `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. Only a curl of `000` proves the port is free.
 - In-repo worktree folders must start with `_wt-` (or sit under `.codex-worktrees/` or `.claude/worktrees/`). Locked `.claude/worktrees/` belong to live sessions — never remove them.
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`, only after approval** — its gate asks the merged PR, because **a squash-merged branch legitimately holds commits `main` does not.**
 - **`git worktree remove` leaves a HUSK nothing in git can see** — run `pnpm run repo:doctor` after any removal; `--fix` deletes only zero-file husks.
@@ -302,11 +302,11 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 locally — parallel validation belongs to CI. 🔴 **FREE RAM is what binds, not the commit charge** — the
 pagefile is FIXED at 64 GB (commit limit ~80 GB), so commit headroom stays GREEN while physical RAM
 runs out. Read free RAM live, never a remembered figure or the session count. 🔴 **NOTHING GATES A
-HEAVY JOB ANY MORE — the heavy-job gate and its queue were REMOVED on 2026-09-17 at the owner's
-instruction, and are never to be rebuilt** (they burned 33.3 h of waiting in their last 2½ days and
-ran nothing for 20.1 h of it; their 5,000 MB floor was unreachable here). Starting a typecheck, build
-or dev server is now YOUR judgement from live free RAM. Under **1,800 MB** `mem-watchdog.ps1` reaps
-idle dev servers; under **500 MB** any node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
+HEAVY JOB ANY MORE — the heavy-job gate and its queue were RETIRED on 2026-09-17 at the owner's
+instruction, and are never to be rebuilt** (`docs/agents-worktree-and-machine-limits.md`); a
+typecheck, build or dev server is now YOUR judgement from live free RAM. 🔴 **`mem-watchdog.ps1`
+reaps NODE JOBS, never a dev server** — under **1,800 MB** a typecheck, build or test run, under
+**500 MB** any node job.
 
 Route work by tier:
 

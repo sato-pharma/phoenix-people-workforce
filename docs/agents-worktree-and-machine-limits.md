@@ -470,7 +470,7 @@ above current free RAM fired the floor branch; disabling only the floor fired *"
 lowering `STOP_AT` to 2 fired the runaway branch. The floor branch also fired for real, unprompted,
 at 975 MB free while these tests were running.
 
-## The watchdog reaches BUSY node jobs, and a gate refuses to start one — 2026-09-09 and 2026-09-11
+## The watchdog reached BUSY node jobs, and a gate refused to start one — 2026-09-09 and 2026-09-11
 
 **What went stale.** Until 2026-09-11 §5's physical-RAM hook ended its floor sentence with:
 
@@ -479,8 +479,8 @@ at 975 MB free while these tests were running.
 
 It was true when written — it is the 2026-09-04 reading above, *"no IDLE dev server to reclaim"* —
 and two changes to `~/.claude/scripts/mem-watchdog.ps1` plus one new hook have made it false since. A
-session that believed it would treat the floor as a place where nothing intervenes, when the watchdog
-now reaps busy dev servers and, under a lower floor, any node job. The hook now reads:
+session that believed it would treat the floor as a place where nothing intervenes, when by then the
+watchdog reached busy dev servers too and, under a lower floor, any node job. The hook then read:
 
 > Under **2,600 MB** a dev server or cold typecheck crosses `mem-watchdog.ps1`'s floor and
 > `~/.claude/hooks/heavy-job-gate.mjs` refuses to START one; under **1,800 MB** the watchdog reaps
@@ -490,9 +490,18 @@ now reaps busy dev servers and, under a lower floor, any node job. The hook now 
 The list is deliberately **not exclusive** — it never says "only" — so rules added later (rules 8
 and 9 below) extend it without making it false again.
 
-🔴 **That quoted hook text is itself now history: the gate it names was removed on 2026-09-17** (see
-*The heavy-job gate — RETIRED 2026-09-17* below). Nothing refuses a heavy job any more; the watchdog
-floors below are all that remain.
+🔴 **That quoted hook text is itself now history, in BOTH halves.** The gate it names was retired on
+2026-09-17 (see *The heavy-job gate — RETIRED 2026-09-17* below), so nothing refuses a heavy job any
+more. And the watchdog stopped reaching dev servers on **2026-09-12**: rules 0 through 9 all skip
+one, and `mem-watchdog.ps1`'s own header now says so in as many words —
+
+> A NEXT DEV SERVER IS THEREFORE TOUCHED BY NOTHING IN THIS SCRIPT AT ALL
+
+The exemption is reversible only by `PHX_DEV_KILL_EXEMPT=0` or the script's `$DevServerKillExempt`
+switch, and re-arming it is the owner's call, not a session's. **So read every "reaps idle/busy dev
+servers" line in the rules below as what the script did between 2026-09-09 and 2026-09-12.** Under
+its floors today it reclaims NODE JOBS — a typecheck, a build, a test run — and what stops a dev
+server is `~/.claude/hooks/dev-server-reaper.mjs` (see the retirement subsection below).
 
 ### 2026-09-09 — rule 5: concurrent dev servers, all of them BUSY
 
@@ -591,8 +600,9 @@ not as what the machine is doing; a restarted watchdog's START line printing `ba
   batch work should lose that contest before the compositor does. It kills nothing.
 - **Poll order in the file:** rule 4, then 5, then 8, then 9, then 7.
 
-The §5 hook stays true once they run: it lists what the watchdog reaps without claiming the list is
-complete, and rule 9 reaps nothing.
+The §5 hook of that day stayed true once they ran: it listed what the watchdog reaps without claiming
+the list was complete, and rule 9 reaps nothing. (§5 has been rewritten twice since — see the
+2026-09-12 dev-server exemption above and the retirement below.)
 
 ### The heavy-job gate — RETIRED 2026-09-17, never to be rebuilt
 
@@ -628,37 +638,50 @@ What changed, on 2026-09-17:
 floors. **Prevention is now a human judgement: read live free RAM before starting a heavy job, and
 prefer pushing the branch and letting CI answer (§7).**
 
+**What replaced it, the same day.** Nothing gates a heavy job, and nothing needs to — the command the
+gate was mostly refusing (`tsc`, 15 of its 23 refusals) belongs on CI anyway (§7). For dev servers
+there is now `~/.claude/hooks/dev-server-reaper.mjs`, live 2026-09-17. It is not a floor and reads no
+RAM: it notes the port and the exact process a session opens, and when that session ends it stops
+that one process, proving ownership by an unbroken parent chain back to the session's own engine
+(SessionEnd also scans for a server it never saw start). Another session's server is left alone, and
+a port another open session is still using is handed to that session rather than stopped.
+`node ~/.claude/hooks/dev-server-reaper.mjs status` lists what it holds, and `PHX_DEV_REAPER_OFF=1`
+turns it off for one session. **It is the only thing on this machine that stops a dev server** —
+`mem-watchdog.ps1` no longer does. A server you started in your own terminal is no session's child,
+so that one is still yours to stop by port (§5).
+
 The rest of this subsection records how the gate worked, for the record only.
 
 `~/.claude/hooks/heavy-job-gate.mjs` was a user-level **PreToolUse** hook (matcher `Bash|PowerShell`,
-timeout 15 s). It refuses a Bash or PowerShell call that would START a dev server, typecheck, build,
-lint or test run the machine cannot hold. The admission rule lives in
-`~/.claude/hooks/heavy-jobs-lib.mjs`, shared with the queue so the two can never disagree, and it
-decides under a lock file:
+timeout 15 s). It refused a Bash or PowerShell call that would START a dev server, typecheck, build,
+lint or test run the machine could not hold. The admission rule lived in
+`~/.claude/hooks/heavy-jobs-lib.mjs`, shared with the queue so the two could never disagree, and it
+decided under a lock file:
 
 1. available physical RAM is at least `MIN_AVAIL_MB` (**2,600**);
 2. no other `node.exe` already holds `HEAVY_MB` (**1,200**) of private memory;
 3. no other heavy job was started in the last `STAGGER_SEC` (**90 s**) — a job does not reach its
    real size at once.
 
-A refused command is pointed at `~/.claude/scripts/heavy-queue.mjs`, which waits for a safe moment and
-runs the command unchanged — up to `--max-wait-min` (default 20), then exits **75** having run
-nothing. The refusal text also says not to retry or re-spell the command, to stop your own idle dev
-server by port, and that for typecheck, lint or tests the PR's CI is usually the better answer (§7).
+A refused command was pointed at `~/.claude/scripts/heavy-queue.mjs`, which waited for a safe moment
+and ran the command unchanged — up to `--max-wait-min` (default 20), then exited **75** having run
+nothing. (That script still exists, as the passthrough described above: same flags, no waiting.) The
+refusal text also said not to retry or re-spell the command, to stop your own idle dev server by
+port, and that for typecheck, lint or tests the PR's CI is usually the better answer (§7).
 
-- **It FAILS OPEN**, always: any error, timeout or unreadable reading allows the command, because a
-  gate that can wedge every shell call is worse than the crash. A non-heavy command returns before
-  anything is spawned — measured 306 ms median against 233 ms for bare node.
-- **It binds only sessions started after it was installed**, because hooks load at session start.
+- **It FAILED OPEN**, always: any error, timeout or unreadable reading allowed the command, because a
+  gate that can wedge every shell call is worse than the crash. A non-heavy command returned before
+  anything was spawned — measured 306 ms median against 233 ms for bare node.
+- **It bound only sessions started after it was installed**, because hooks load at session start.
   The 23:24 two-typecheck case above is exactly that gap.
 - **Its first refusals, 23:24 Cairo:** `pnpm run typecheck` at 1,986 MB and again at 2,215 MB with
   one heavy job running, and `next dev` at 2,853 MB — above the RAM line, refused because four heavy
   jobs were already running. No ALLOW or QUEUE line had been logged by 23:57.
-- **Proof:** a 31-case classifier self-test (`node heavy-job-gate.mjs --selftest`), and a live probe
-  — **any** Bash or PowerShell command containing the probe marker named in the hook's header is
-  refused, starting nothing. That includes a commit message or `gh --body` argument that merely
-  quotes the marker, so write such text to a file and pass it with `-F` / `--body-file`.
-- **The off switch (`PHX_HEAVY_GATE_OFF`) is the owner's**, not a session's.
+- **Proof, while it ran:** a 31-case classifier self-test (`node heavy-job-gate.mjs --selftest`), and
+  a live probe — **any** Bash or PowerShell command containing the probe marker named in the hook's
+  header was refused, starting nothing. That included a commit message or `gh --body` argument that
+  merely quoted the marker. **Nothing reads that marker now**, so the trap went with the hook.
+- **The off switch (`PHX_HEAVY_GATE_OFF`) was the owner's**, not a session's.
 
 ### Keep the thresholds in step
 
@@ -918,8 +941,10 @@ limit FLOATS and told sessions to budget against commit. Re-read at 19:35 Cairo 
 moment **26.3 GB** was committed while physical RAM was down to **2,193 MB free**, with 15 sessions open.
 So commit headroom reads green long after RAM has gone, and RAM is the thing that runs out.
 
-§5 now leads with FREE RAM. The thresholds did not move: the heavy-job gate refuses at 5,000 MB and
-2,600 MB, `mem-watchdog.ps1` reaps idle dev servers at 1,800 MB, and any node job is refused at 500 MB.
+§5 now leads with FREE RAM. The thresholds themselves did not move — what stands behind them did:
+later that same day the heavy-job gate and its 5,000 MB / 2,600 MB floors were retired, and since
+2026-09-12 `mem-watchdog.ps1` has not touched a dev server at all. What is left is the watchdog
+reclaiming a typecheck, build or test run at 1,800 MB, and any node job at 500 MB.
 **Not changed:** `scripts/new-session.mjs --status` still prints only the commit charge, and its
 header comment still says commit, not RAM, is what freezes the machine. Its 6 GB free-commit refusal
 is still a valid guard. It is just no longer the one that bites.
@@ -1015,9 +1040,9 @@ HEAVY jobs.
 🔴 **COMMIT headroom and PHYSICAL RAM are two ceilings; the one above stays GREEN while the machine
 dies. Read FREE RAM, never the session count** — a session is ~269 MB while ONE `next dev` held
 3,454 MB, more than eleven sessions. Under **2,600 MB** a dev server or cold typecheck crosses
-`mem-watchdog.ps1`'s floor. 🔴 **The heavy-job gate that used to REFUSE such a job was removed on
-2026-09-17 (owner instruction) — the watchdog is now the only floor for every job, not just a dev
-server.** Under
+`mem-watchdog.ps1`'s floor. 🔴 **The heavy-job gate that used to REFUSE such a job was retired on
+2026-09-17 (owner instruction), and since 2026-09-12 the watchdog reaches NODE JOBS only, never a dev
+server — one a session opened now dies with that session (`dev-server-reaper.mjs`).** Under
 **500 MB** ANY node job, most RAM first. **Stop a dev server before closing a session, and kill it
 by PORT.** `~/.claude/hooks/session-census.mjs` is deliberately SILENT until 13/16 sessions — **a
 statusline count is not a guard.** Account:
