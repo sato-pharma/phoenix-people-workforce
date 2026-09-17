@@ -249,18 +249,32 @@ May. `repo:doctor` now reports them (and pointers whose file is gone) in a MEMOR
 whether an orphan earns a line in `MEMORY.md`, a line in `MEMORY-ARCHIVE.md`, or retirement is a
 judgement about what is still true.
 
-## Worktree payload is what makes this checkout feel slow
+## Worktree payload slows tree-walking commands — not the machine
 
 Measured **2026-08-04**: **1,887,882 file paths, 67 s to walk**, against **4,107 tracked files** — a
-**460x amplification, ~99% of it worktrees**.
+**460x amplification, ~99% of it worktrees**. Still true, and still worth the hygiene: the repo's own
+Bash guard refuses a recursive grep here because ~346k path entries take 10–40 s to scan.
 
 Tools that honour `.gitignore` never see any of it, which is why validation looks perfectly healthy
-while the session crawls. What actually pays the cost is agent file search, `grep -r`, `dir /s`, and
-naive watchers.
+while a tree-walking command crawls. What pays the cost is agent file search, `grep -r`, `dir /s`,
+and naive watchers — **those commands, and nothing else.**
 
-**Do not tune `tsconfig`/`eslint` for this — those excludes are already correct.** Retire merged
-worktrees and clear husks instead. The cost is path **COUNT**, not gigabytes: pnpm hardlinks, so the
-disk figure badly understates the damage.
+🔴 **CORRECTED 2026-09-17 — this section used to claim payload is what makes the CHECKOUT slow, and
+sessions read that as the cause of the MACHINE being slow and retired worktrees over it.** It is not.
+Measured on this box the same evening, while it was slow: **PhysicalDisk 99.6–99.9% idle with a
+current queue length of 0.00** across repeated samples — an idle disk cannot be the bottleneck for
+path walking. In the same 20 s window the **desktop app's own 39 UI processes took 6.4% of the whole
+box against 1.5% for all 13 Claude Code session processes combined**, and held **3,623 MB of RAM
+against 3,928 MB for every session together**, with **1,977 MB free of 16,174 MB**. A parallel
+session sampling under load saw the same shape wider apart — 26.1% against 1.8%.
+
+So: **free RAM is the binding resource, and the number of open SESSIONS is the only real lever —
+which is the owner's call and nobody else's.** Retire a merged worktree because your own commands
+will be faster, or because it is finished; never tell him it will make the machine quicker, and
+never retire someone else's tree on performance grounds.
+
+**Do not tune `tsconfig`/`eslint` for this — those excludes are already correct.** The cost is path
+**COUNT**, not gigabytes: pnpm hardlinks, so the disk figure badly understates the path damage.
 
 ## Why `--strip-idle` no longer takes the session census
 
@@ -1025,7 +1039,7 @@ are in [docs/agents-worktree-and-machine-limits.md](agents-worktree-and-machine-
 - **`git worktree remove` leaves a HUSK, and nothing built into git can see it.** It leaves the gitignored payload — `node_modules/`, `.next/` — with no `.git` file and no registry entry, so `git worktree prune` cannot find it. **Run `pnpm run repo:doctor`** after any removal: it reports by default, and `--fix` deletes only husks proven to hold zero files.
 - **A memory file with no index line is invisible, not merely hard to find.** `pnpm run repo:doctor` reports them (and pointers whose file is gone) in a MEMORY INDEX section; `--deep` lists every one. Its report never WRITES — **`--snapshot-xlsx` is the one flag in it that writes anything, and it writes only outside the repo** (next bullet) — but **read-only is not the same as local: by default it reads `.env.local` and pages the PRODUCTION GoTrue admin API** (`/auth/v1/admin/users`, `per_page=1000`, up to 50 pages) plus paged PostgREST reads, to list orphan auth users. That is the **large-page shape** §2.3's `banned_until = 'infinity'` GoTrue 500 takes, so this "local hygiene" command is the tool most exposed to it. `--no-auth` skips that leg and leaves every other section intact.
 - **`xlsx/` is the one folder git cannot recover for you — `.gitignore` matches `*.xlsx`, so ~103 working spreadsheets sit in NO commit, branch or archive ref.** On 2026-09-05 an unidentified sweep deleted every **tracked** PDF there from all seven checkouts at once; those came back from git and the sheets beside them would not have — and the DR copy was 11 days stale, missing 74 of them, with nothing measuring that. 🔴 **THE HOURLY COPY AND ITS ALERT WERE RETIRED 2026-09-09 at the owner's word — these sheets have NO automatic backup.** Never tell him they are covered. `repo:doctor` still grades by CONTENT, never by name, and calls no not-knowing state clean, but prints it ONLY under `--deep`/`--snapshot-xlsx`, which copies by hand. Account: `scripts/repo-doctor-xlsx-snapshot.mjs`.
-- **Worktree payload — not git, not tsc — is what makes this checkout feel slow.** Roughly 99% of the path count is worktrees, and tools honouring `.gitignore` never see it, so validation looks healthy while the session crawls. **Do not tune `tsconfig`/`eslint` — those excludes are already correct.** Retire merged worktrees and clear husks. Cost is path COUNT, not gigabytes.
+- **Worktree payload — not git, not tsc — is what makes a TREE-WALKING COMMAND slow, and only that.** Roughly 99% of the path count is worktrees, and tools honouring `.gitignore` never see it, so validation looks healthy while `grep -r` crawls. **Do not tune `tsconfig`/`eslint` — those excludes are already correct.** Cost is path COUNT, not gigabytes. 🔴 **It is NOT why the machine feels slow — corrected 2026-09-17 on a measured idle disk (99.6–99.9% idle, 0.00 queue); free RAM binds, and fewer open sessions is the lever.** Retire merged worktrees for your own command speed, never on machine-performance grounds.
 
 **Machine limits.** RAM is soldered at 16 GB. One dev server at a time, ever; one typecheck/build at a
 time locally — parallel validation belongs to CI.
