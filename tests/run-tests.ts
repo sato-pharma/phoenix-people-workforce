@@ -1558,6 +1558,7 @@ import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
+import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
@@ -5082,6 +5083,10 @@ await runTest(
 await runTest(
   "shell chrome fits outside main (the portal icon rail's nav fits its 58px rail and keeps the active marker inside the clip; the admin search placeholder wraps, never an ellipsis)",
   runShellChromeOverflowsTests,
+);
+await runTest(
+  "portal icon rail scrolls on a short window, never squashes (every section link keeps its 40px height with shrink-0, the 28px active marker fits its link, the nav scrolls with its bar hidden)",
+  runPortalRailScrollsNeverSquashesTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
