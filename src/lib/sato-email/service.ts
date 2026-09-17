@@ -517,12 +517,17 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
 
   // Every composer mail goes out as the HR Business Partner's mailbox, whoever presses Send.
   const from = satoEmailFrom(systemEmail.satoComposerFromEmail);
-  // 🔴 Reply-To is the SAME mailbox, for every sender, and it is not cosmetic: with more than one
-  // recipient the fan-out puts the batch in Bcc and writes the Reply-To into the visible To. Keyed on
-  // the seat, a Super Admin send fell through to phoenix@satopharma.com — an inbox Resend suppresses
-  // for hard bounces — so every composer mail showed a suppressed To and its replies bounced (owner's
-  // test send, 2026-09-13). The composer is hrbp@'s mail end to end: From, visible To and replies.
-  const replyTo = systemEmail.satoComposerFromEmail;
+  // 🔴 Replies reach the OWNER's mailbox, for every sender — owner 2026-09-17, "i want reply to
+  // reach omar.anwar@satopharma.com". ONE address for everyone on purpose: keyed on the seat, a
+  // Super Admin send fell through to phoenix@satopharma.com — an inbox Resend suppresses for hard
+  // bounces — so every composer mail showed a suppressed To and its replies bounced (owner's test
+  // send, 2026-09-13). Never key this on the sender, and never point it at an untested inbox.
+  const replyTo = systemEmail.satoComposerReplyToEmail;
+  // What a recipient READS in the To line of a fan-out stays the HR Business Partner's mailbox — the
+  // same address the mail is From — so the Reply-To above changes where a reply goes and nothing
+  // else. Without this, the fan-out would put the owner's own address in the visible To of every
+  // multi-recipient send.
+  const fanoutVisibleTo = systemEmail.satoComposerFromEmail;
   const senderId = access.loginId ?? access.hrId ?? "unknown";
 
   const outcomes: SatoEmailSendOutcome[] = [];
@@ -551,6 +556,7 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
         // Hidden from each other: the owner chose "keep them hidden". With more than one recipient
         // the fan-out moves the batch into Bcc behind a neutral visible To.
         fanoutToBcc: true,
+        fanoutVisibleTo,
         externalRecipients: policy.externalRecipients,
         from,
         html,

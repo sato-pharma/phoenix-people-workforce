@@ -240,8 +240,9 @@ different email from the one that goes out (preview and send parse the draft thr
 
 | | |
 |---|---|
-| **From** | `Sato Pharma <…>` — the display name is the company; the address stays on the verified sending subdomain, because an apex-domain From is rejected or filed as spam. |
-| **Reply-To** | the sender's own seat address — HR Advisory replies land on `hrbp@satopharma.com`. |
+| **From** | `Sato Pharma <hrbp@satopharma.com>` — the display name is the company, and the address is the HR Business Partner's mailbox whoever pressed Send (owner 2026-09-12). It is the one apex-domain From in the system, and it delivers only because `satopharma.com` is itself verified in Resend. |
+| **Reply-To** | `omar.anwar@satopharma.com`, the owner's mailbox, for every sender (owner 2026-09-17). Never keyed on the sender's seat: a seat with no entry fell through to the suppressed `phoenix@satopharma.com` and its replies bounced (2026-09-13). |
+| **Visible To** | with more than one recipient everyone real is on Bcc, and the To line reads `hrbp@satopharma.com` — the From mailbox, passed as `fanoutVisibleTo`, *not* the Reply-To that `sendPhoenixEmail` otherwise puts there. So a reply reaches the owner while the To line a recipient reads stays HR's. |
 | **Batching** | at most **25 recipients per email** (`SATO_EMAIL_MAX_PER_EMAIL`). Not an arbitrary number: it is what `validateManualEmailRecipientPolicy` already caps a hand-written email at, so every message this composer sends passes that existing check unchanged. The alternative — raising the cap for this screen — would have raised it for the older HR reply composer too, and nobody asked to widen that one. |
 | **Audit** | one best-effort `sato_email_send` audit row plus a `sato_email_sends` table row, both written *after* the mail has gone. Deliberately not `writeRequiredAuditLog`: the mail is already out, and throwing at that point would report a failure for a send that succeeded. |
 
