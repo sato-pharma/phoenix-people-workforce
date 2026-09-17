@@ -301,10 +301,12 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 **Machine limits.** RAM is 16 GB. One dev server at a time, ever; one typecheck/build at a time
 locally — parallel validation belongs to CI. 🔴 **FREE RAM is what binds, not the commit charge** — the
 pagefile is FIXED at 64 GB (commit limit ~80 GB), so commit headroom stays GREEN while physical RAM
-runs out. Read free RAM live, never a remembered figure or the session count.
-`~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or `ci` under
-**5,000 MB** and lint or tests under **2,600 MB** — it does NOT gate a dev server (since 2026-09-12);
-under **1,800 MB** `mem-watchdog.ps1` reaps idle dev servers; under **500 MB** any node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
+runs out. Read free RAM live, never a remembered figure or the session count. 🔴 **NOTHING GATES A
+HEAVY JOB ANY MORE — the heavy-job gate and its queue were REMOVED on 2026-09-17 at the owner's
+instruction, and are never to be rebuilt** (they burned 33.3 h of waiting in their last 2½ days and
+ran nothing for 20.1 h of it; their 5,000 MB floor was unreachable here). Starting a typecheck, build
+or dev server is now YOUR judgement from live free RAM. Under **1,800 MB** `mem-watchdog.ps1` reaps
+idle dev servers; under **500 MB** any node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
 
 Route work by tier:
 
