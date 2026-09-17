@@ -1,131 +1,151 @@
-// Settlement-week tiling for the weekly attendance digest.
+// The weeks of the weekly attendance review.
 //
-// The cycle arithmetic itself is NOT here. When the 2026-07 digest module was torn
-// out (PR #1253), the day-24 -> day-24 window maths was deliberately split into
-// src/lib/payroll/copilot/cycle-window.ts so Payroll Copilot kept working, and it
-// has been the single definition ever since. This module adds only the part that
-// left with the digest: cutting one cycle into the four weeks a digest is sent for.
-// Re-deriving the window here instead of importing it is how the report and the
-// digest would come to disagree about which month a day belongs to.
+// OWNER DECISION 2026-09-17 — replaces the day-24 payroll cycle this module tiled until then.
 //
-// Owner-confirmed model (2026-07-03, unchanged on the 2026-09-08 rebuild):
-//   • The payroll/fingerprint month runs day-24 -> day-24.
-//   • Each cycle is tiled into EXACTLY four settlement weeks. Weeks 1-3 are seven
-//     days; week 4 absorbs the remaining days up to the cycle end, so all four
-//     digests land and settle before the cut-off.
+//   "1–30 September. Keep payroll as it is. From October the weekly review's weeks start on the 1st
+//    to match."
 //
-// Pure calendar arithmetic — no timezone, no clock, no database — so it is
-// deterministic and testable.
+// Month-end payroll collects fingerprint deductions by CALENDAR month, and the review's answers reach
+// those deductions by the calendar month of the day (digest-bridge.ts). A review month that ran 24th to
+// 23rd put the last week of every month into the next month's review, so the two never agreed about
+// which month a day belongs to. From October 2026 a review month is the calendar month, cut into
+// 1–7, 8–14, 15–21 and 22 to the month end. The key stays `YYYY-MM` (the `cycle_key` column).
+//
+// SEPTEMBER 2026 is the one month in between. Week 3 (7–13 Sep) had already been built on the old
+// cycle, so its dates stay exactly as they are; week 4 keeps the old cycle's 14–23 Sep; and a fifth week,
+// 24–30 Sep, closes the month so no day is lost before October. The old cycle's week 1 (24–30 Aug) and
+// the 31 August day of its week 2 are August's: those days are already in August's month-end
+// deductions, so September's review starts on 1 September. Nothing before September 2026 is reviewed.
+//
+// "Show live, release any time" (owner, 2026-09-17). A week is listed from its first day, while it is
+// still running, and holds the days up to YESTERDAY: today has not finished being worked, and its
+// punches have not arrived. So the review month is the month of yesterday — on 1 October, September.
+//
+// Pure calendar arithmetic — no timezone, no clock, no database — so it is deterministic and testable.
 
-import { addDays, resolveCycleWindow, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
+import { addDays } from "@/lib/payroll/copilot/cycle-window.ts";
 
 export type SettlementWeek = {
-  /** 1..4 */
+  /** 1..5. Calendar months use 1..4; September 2026 uses 2..5. */
   index: number;
   startIso: string;
   endIso: string;
 };
 
-/**
- * Tile a cycle into exactly four settlement weeks. Weeks 1-3 are seven days each;
- * week 4 runs from day 22 of the cycle to the cycle end, absorbing the extra one or
- * two days a 29-31 day cycle carries.
- */
-export function tileSettlementWeeks(cycle: CycleWindow): SettlementWeek[] {
-  const weeks: SettlementWeek[] = [];
-  let weekStart = cycle.startIso;
+/** A week as the review sees it on a given day. */
+export type ReviewWeekWindow = SettlementWeek & {
+  /** The review month, `YYYY-MM`. Stored as `cycle_key`. */
+  monthKey: string;
+  /** The week has not ended yet: its later days are still to come. */
+  running: boolean;
+  /** The last day the review holds for this week: the week end, or yesterday while it runs. */
+  throughIso: string;
+};
 
-  for (let index = 1; index <= 3; index += 1) {
-    const weekEnd = addDays(weekStart, 6);
-    // Never run a fixed week past the cycle end (defensive; real 24->24 cycles are
-    // ~30 days so this clamp does not trigger in practice).
-    const clampedEnd = weekEnd > cycle.endIso ? cycle.endIso : weekEnd;
-    weeks.push({ index, startIso: weekStart, endIso: clampedEnd });
-    weekStart = addDays(clampedEnd, 1);
-    if (weekStart > cycle.endIso) break;
-  }
+/** The first month the review covers. */
+export const FIRST_REVIEW_MONTH = "2026-09";
 
-  if (weeks.length < 4 && weekStart <= cycle.endIso) {
-    weeks.push({ index: 4, startIso: weekStart, endIso: cycle.endIso });
-  }
+/** September 2026, the month between the old day-24 cycle and calendar months. */
+export const SEPTEMBER_2026_WEEKS: readonly SettlementWeek[] = Object.freeze([
+  { index: 2, startIso: "2026-09-01", endIso: "2026-09-06" },
+  { index: 3, startIso: "2026-09-07", endIso: "2026-09-13" },
+  { index: 4, startIso: "2026-09-14", endIso: "2026-09-23" },
+  { index: 5, startIso: "2026-09-24", endIso: "2026-09-30" },
+]);
 
-  return weeks;
-}
-
-/** The 1..4 settlement-week index containing `dateIso`, or null if outside the cycle. */
-export function settlementWeekForDate(dateIso: string, cycle: CycleWindow): number | null {
-  if (dateIso < cycle.startIso || dateIso > cycle.endIso) return null;
-  const week = tileSettlementWeeks(cycle).find(
-    (candidate) => dateIso >= candidate.startIso && dateIso <= candidate.endIso,
-  );
-  return week ? week.index : null;
-}
-
-/**
- * The month key before `monthKey` ("2026-01" -> "2025-12").
- *
- * Here rather than inline in the cron route because the January boundary is the whole
- * reason it exists: `month - 1` in January is 0, and a key built from that without
- * rolling the year reads "2026-00" — a month the deductions collector has never heard
- * of. Every answer given about December would then be silently stranded, on the one
- * day of the year nobody is watching for it.
- */
-export function previousMonthKey(monthKey: string): string {
+function parseMonthKey(monthKey: string): { year: number; month: number } {
   const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
   if (!match) throw new Error(`Validation: monthKey must be YYYY-MM, received "${monthKey}".`);
   const year = Number(match[1]);
   const month = Number(match[2]);
   if (month < 1 || month > 12) throw new Error(`Validation: month out of range in "${monthKey}".`);
+  return { year, month };
+}
+
+/**
+ * The weeks of one review month. A month before September 2026 has none. September 2026 is the
+ * transition table above; every later month is 1–7, 8–14, 15–21 and 22 to its last day.
+ */
+export function tileReviewMonth(monthKey: string): SettlementWeek[] {
+  const { year, month } = parseMonthKey(monthKey);
+  if (monthKey < FIRST_REVIEW_MONTH) return [];
+  if (monthKey === FIRST_REVIEW_MONTH) return SEPTEMBER_2026_WEEKS.map((week) => ({ ...week }));
+  const prefix = `${year}-${String(month).padStart(2, "0")}`;
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return [
+    { index: 1, startIso: `${prefix}-01`, endIso: `${prefix}-07` },
+    { index: 2, startIso: `${prefix}-08`, endIso: `${prefix}-14` },
+    { index: 3, startIso: `${prefix}-15`, endIso: `${prefix}-21` },
+    { index: 4, startIso: `${prefix}-22`, endIso: `${prefix}-${String(lastDay).padStart(2, "0")}` },
+  ];
+}
+
+/** One week of a review month, or null when the month has no such week. */
+export function reviewWeekOf(monthKey: string, weekIndex: number): SettlementWeek | null {
+  return tileReviewMonth(monthKey).find((week) => week.index === weekIndex) ?? null;
+}
+
+/**
+ * The month key before `monthKey` ("2026-01" -> "2025-12").
+ *
+ * The January boundary is the whole reason it exists: `month - 1` in January is 0, and a key built
+ * from that without rolling the year reads "2026-00" — a month the deductions collector has never
+ * heard of. Every answer given about December would then be silently stranded, on the one day of the
+ * year nobody is watching for it.
+ */
+export function previousMonthKey(monthKey: string): string {
+  const { year, month } = parseMonthKey(monthKey);
   const previous = month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
   return `${previous.year}-${String(previous.month).padStart(2, "0")}`;
 }
 
-/**
- * The week that has just ENDED as of `todayIso`, i.e. the one a digest is due for.
- * Returns null until the first week of a cycle has closed — a digest is never sent
- * for days that have not happened yet, which is the same reasoning that makes the
- * deductions collector refuse an in-progress month.
- */
-export function completedSettlementWeek(
-  todayIso: string,
-  cycle: CycleWindow,
-): SettlementWeek | null {
-  const closed = tileSettlementWeeks(cycle).filter((week) => week.endIso < todayIso);
-  return closed.length ? closed[closed.length - 1]! : null;
+/** The review month on `todayIso`: the month of yesterday, the last day with a full day of punches. */
+export function currentReviewMonth(todayIso: string): string {
+  return addDays(todayIso, -1).slice(0, 7);
+}
+
+/** A week as it stands on `todayIso`, or null when it has not started by yesterday. */
+export function reviewWeekWindow(monthKey: string, week: SettlementWeek, todayIso: string): ReviewWeekWindow | null {
+  const yesterday = addDays(todayIso, -1);
+  if (week.startIso > yesterday) return null;
+  return {
+    ...week,
+    monthKey,
+    running: week.endIso >= todayIso,
+    throughIso: week.endIso < yesterday ? week.endIso : yesterday,
+  };
+}
+
+/** Every week of a review month that has started by yesterday, in order. */
+export function startedReviewWeeks(monthKey: string, todayIso: string): ReviewWeekWindow[] {
+  return tileReviewMonth(monthKey)
+    .map((week) => reviewWeekWindow(monthKey, week, todayIso))
+    .filter((window): window is ReviewWeekWindow => window !== null);
 }
 
 /**
- * The most recently CLOSED settlement week as of `todayIso`, and the cycle it belongs to — which is
- * not always today's cycle.
- *
- * Week 4 ends on the cycle's last day (the 23rd). The first day it has closed is the 24th, and on
- * the 24th today's cycle is already the NEXT one, whose first week has not closed yet. Asking only
- * today's cycle therefore never built a week 4 at all: every cycle lost its last 9-10 days. Until
- * the new cycle has a closed week of its own, the week due is the previous cycle's last one.
+ * A week the Super Admin may refresh from the review page: a started week of the current review month
+ * or of the month before it. Older weeks are closed; their days are in month-end payroll by then.
  */
-export function latestClosedSettlementWeek(
-  todayIso: string,
-  anchorDay?: number,
-): { cycle: CycleWindow; week: SettlementWeek } | null {
-  const cycle = resolveCycleWindow(todayIso, anchorDay);
-  const current = completedSettlementWeek(todayIso, cycle);
-  if (current) return { cycle, week: current };
-  const previousCycle = resolveCycleWindow(addDays(cycle.startIso, -1), anchorDay);
-  const previous = completedSettlementWeek(todayIso, previousCycle);
-  return previous ? { cycle: previousCycle, week: previous } : null;
+export function refreshableReviewWeek(monthKey: string, weekIndex: number, todayIso: string): ReviewWeekWindow | null {
+  const current = currentReviewMonth(todayIso);
+  if (monthKey !== current && monthKey !== previousMonthKey(current)) return null;
+  const week = reviewWeekOf(monthKey, weekIndex);
+  return week ? reviewWeekWindow(monthKey, week, todayIso) : null;
 }
 
 /**
- * The weeks the Super Admin can pick on the review page: every CLOSED week of the current payroll
- * month (owner, 2026-09-15 — "current payroll month"; a paid month stays closed). The current month
- * is the one the latest closed week belongs to, so on the 24th, before the new month has a closed
- * week of its own, it is still the month that just ended.
+ * The weeks the daily job brings up to date on `todayIso`: every started week of the current review
+ * month, and — for the first three days of a month — the previous month's last week too, so a late
+ * punch, excuse or leave for the month's last days still reaches the review.
  */
-export function closedWeeksOfCurrentCycle(
-  todayIso: string,
-  anchorDay?: number,
-): { cycle: CycleWindow; weeks: SettlementWeek[] } | null {
-  const due = latestClosedSettlementWeek(todayIso, anchorDay);
-  if (!due) return null;
-  return { cycle: due.cycle, weeks: tileSettlementWeeks(due.cycle).filter((week) => week.index <= due.week.index) };
+export function reviewWeeksToSync(todayIso: string): ReviewWeekWindow[] {
+  const current = currentReviewMonth(todayIso);
+  const weeks = startedReviewWeeks(current, todayIso);
+  if (Number(addDays(todayIso, -1).slice(8, 10)) <= 3) {
+    const previous = previousMonthKey(current);
+    const last = startedReviewWeeks(previous, todayIso).at(-1);
+    if (last) weeks.unshift(last);
+  }
+  return weeks;
 }

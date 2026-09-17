@@ -5,11 +5,15 @@ import { useState } from "react";
 import { MAX_MARKED_DAYS, type ReviewWeekStage } from "@/lib/attendance/digest-rules.ts";
 import type { DigestLineRow, ReviewEmployee, ReviewWeek, ReviewWeekOption } from "@/lib/attendance/digest-service.ts";
 
-// The owner's gate, 2026-09-15: every closed week lands here first, and nothing reaches an employee
-// until the week is released from this page. The same day: "I want to be able to select the week I
-// want … I can mark on the days that I want them to be deducted … I want full control." So he picks
-// a week, ticks the flagged days to deduct (every day starts unticked), may change a ticked day's
-// days up or down, and an unticked day is cleared on release.
+// The owner's gate, 2026-09-15: every week lands here first, and nothing reaches an employee until it
+// is released from this page. The same day: "I want to be able to select the week I want … I can mark
+// on the days that I want them to be deducted … I want full control." So he picks a week, ticks the
+// flagged days to deduct (every day starts unticked), may change a ticked day's days up or down, and an
+// unticked day is cleared on release.
+//
+// 2026-09-17 — "Show live, release any time". A week is here from its first day and holds the days up
+// to yesterday; the daily job, or Refresh, brings it up to date. He can release the days so far in the
+// middle of the week, and later days go out in a second release of the same week.
 //
 // House rules this is built to:
 //   • Square edges — no rounded-* classes.
@@ -23,7 +27,7 @@ type Props = {
   initialWeek: ReviewWeek | null;
   initialError: string | null;
   answerWorkingDays: number;
-  /** Super Admin only: tick days, build a week, release it. A dispute reviewer sees the page read-only. */
+  /** Super Admin only: tick days, refresh a week, release it. A dispute reviewer sees the page read-only. */
   canManage: boolean;
 };
 
@@ -41,7 +45,7 @@ type MarkPayload = {
 };
 
 const STAGE_LABEL: Record<ReviewWeekStage, string> = {
-  not_built: "Not built yet",
+  not_built: "No flagged days yet",
   trial: "Trial run, read-only",
   awaiting_release: "Waiting for release",
   released: "Released",
@@ -104,9 +108,28 @@ function weekKey(week: { cycleKey: string; weekIndex: number }): string {
   return `${week.cycleKey}:${week.weekIndex}`;
 }
 
+function runningText(option: Pick<ReviewWeekOption, "running" | "throughIso">): string {
+  return option.running ? `Running, days through ${formatDay(option.throughIso, false)}` : "";
+}
+
 function weekLabel(option: ReviewWeekOption): string {
   const people = option.employeeCount ? ` · ${countText(option.employeeCount, "employee", "employees")}` : "";
-  return `${formatDay(option.weekStart, false)} to ${formatDay(option.weekEnd, false)} · ${STAGE_LABEL[option.stage]}${people}`;
+  const running = option.running ? ` · ${runningText(option)}` : "";
+  return `${formatDay(option.weekStart, false)} to ${formatDay(option.weekEnd, false)}${running} · ${STAGE_LABEL[option.stage]}${people}`;
+}
+
+/** The release an employee's days belong to, when a week has been released more than once. */
+function roundLabel(round: number): string {
+  if (round === 2) return "Second release";
+  if (round === 3) return "Third release";
+  return `Release ${round}`;
+}
+
+/** Every day waiting for release, as this page shows it. The release is refused if the server holds any other. */
+function seenLines(week: ReviewWeek): Array<{ id: number; days: number }> {
+  return week.employees
+    .filter((employee) => !employee.dryRun && employee.status === "awaiting_release")
+    .flatMap((employee) => employee.lines.filter((line) => line.action === "pending").map((line) => ({ id: line.id, days: line.deductionDays })));
 }
 
 function answerText(line: DigestLineRow): string {
@@ -263,8 +286,8 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
     void mark(line, true, value);
   }
 
-  async function build(current: ReviewWeek) {
-    setBusy("build");
+  async function refresh(current: ReviewWeek) {
+    setBusy("refresh");
     setError(null);
     setNotice(null);
     try {
@@ -274,15 +297,20 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
         body: JSON.stringify({ cycleKey: current.cycleKey, weekIndex: current.weekIndex }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.message ?? "The week could not be built.");
-      const created = Number(payload.digestsCreated ?? 0);
-      setNotice(
-        created > 0
-          ? `Built: ${countText(created, "employee", "employees")} with flagged days. Nothing was sent. Tick the days to deduct.`
-          : "No flagged days were found in this week, so there is nothing to review.",
-      );
+      if (!response.ok) throw new Error(payload?.message ?? "The week could not be brought up to date.");
+      const added = Number(payload.daysAdded ?? 0);
+      const updated = Number(payload.daysUpdated ?? 0);
+      const cleared = Number(payload.daysCleared ?? 0);
+      const through = typeof payload.throughIso === "string" ? ` through ${formatDay(payload.throughIso, false)}` : "";
+      const changes =
+        added || updated || cleared
+          ? `${countText(added, "new day", "new days")}, ${countText(updated, "day", "days")} with new figures, ${countText(cleared, "day", "days")} taken off because the report no longer flags ${cleared === 1 ? "it" : "them"}.`
+          : "Nothing changed.";
+      setNotice(`Up to date${through}. ${changes} Nothing was sent.${added ? " New days start unticked." : ""}`);
+      const failures = Array.isArray(payload.failures) ? (payload.failures as string[]) : [];
+      if (failures.length) setError(`These employees could not be brought up to date: ${failures.join("; ")}. Press Refresh again.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The week could not be built.");
+      setError(caught instanceof Error ? caught.message : "The week could not be brought up to date.");
     } finally {
       await load(current);
       setBusy(null);
@@ -297,7 +325,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
       const response = await fetch("/api/attendance/weekly-review/release", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cycleKey: current.cycleKey, weekIndex: current.weekIndex }),
+        body: JSON.stringify({ cycleKey: current.cycleKey, weekIndex: current.weekIndex, seenLines: seenLines(current) }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.message ?? "The week could not be released.");
@@ -440,23 +468,26 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
   const pick = week ? selection(week) : null;
   const releasable =
     canManage && week !== null && week.stage === "awaiting_release" && week.employees.some((employee) => !employee.dryRun && employee.status === "awaiting_release");
-  const canBuild = canManage && week !== null && week.stage === "not_built";
+  const canRefresh = canManage && week !== null && week.canRefresh;
+  const releaseLabel = week?.releasedAt ? "Release the new days" : week?.running ? "Release the days so far" : "Release this week";
 
   function weekSummary(current: ReviewWeek): string {
+    const running = current.running ? `${runningText(current)} · ` : "";
     switch (current.stage) {
       case "awaiting_release": {
         const counts = selection(current);
-        return `Waiting for release · ${countText(current.employeeCount, "employee", "employees")} · ${counts.ticked} of ${counts.ticked + counts.unticked} days ticked · ${daysText(counts.tickedDays)} to deduct`;
+        const earlier = current.releasedAt ? ` · earlier days released ${formatCairoMoment(current.releasedAt)}` : "";
+        return `${running}Waiting for release · ${countText(current.employeeCount, "employee", "employees")} · ${counts.ticked} of ${counts.ticked + counts.unticked} days ticked · ${daysText(counts.tickedDays)} to deduct${earlier}`;
       }
       case "released":
       case "closed": {
         const { open, answered } = progress(current);
-        return `Released${current.releasedAt ? ` ${formatCairoMoment(current.releasedAt)}` : ""} · ${answered} answered · ${open} still open`;
+        return `${running}Released${current.releasedAt ? ` ${formatCairoMoment(current.releasedAt)}` : ""} · ${answered} answered · ${open} still open`;
       }
       case "trial":
         return "Trial run · read-only";
       default:
-        return "Not built yet";
+        return `${running}No flagged days yet`;
     }
   }
 
@@ -465,14 +496,16 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
       <header>
         <h1 className="text-lg font-black uppercase tracking-[0.12em] text-slate-800">Weekly attendance review</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Pick a week. Tick the flagged days to deduct and set how many days each one takes; a day you do not tick is
-          cleared when the week is released and never deducted. Then release the week: each employee is told in-app and
-          on Telegram, chooses salary or annual balance for each ticked day, and can dispute it. A day not answered within
+          Pick a week. A week shows its flagged days up to yesterday and is brought up to date every morning and
+          afternoon, or when you press Refresh. Tick the flagged days to deduct and set how many days each one takes; a
+          day you do not tick is cleared when you release and never deducted. You can release the days so far at any
+          time, and days that arrive later wait for a second release. On release each employee is told in-app and on
+          Telegram, chooses salary or annual balance for each ticked day, and can dispute it. A day not answered within
           the deadline is deducted from salary.
         </p>
         {!canManage ? (
           <p className="mt-2 border-l-2 border-slate-400 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
-            Only the Super Admin can tick days, build a week or release it. You can see the weeks here and decide disputes.
+            Only the Super Admin can tick days, refresh a week or release it. You can see the weeks here and decide disputes.
           </p>
         ) : null}
       </header>
@@ -507,7 +540,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
       ) : null}
 
       {!weeks.length && !error ? (
-        <p className="border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">No closed week in this payroll month yet.</p>
+        <p className="border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">No week of this month has started yet.</p>
       ) : null}
 
       {week ? (
@@ -535,17 +568,17 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 onClick={() => setConfirming(true)}
                 type="button"
               >
-                Release this week
+                {releaseLabel}
               </button>
             ) : null}
-            {canBuild ? (
+            {canRefresh ? (
               <button
-                className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+                className="border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50"
                 disabled={busy !== null}
-                onClick={() => void build(week)}
+                onClick={() => void refresh(week)}
                 type="button"
               >
-                Build this week
+                {busy === "refresh" ? "Refreshing" : "Refresh"}
               </button>
             ) : null}
           </header>
@@ -557,6 +590,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                   ? `Nothing is ticked. Releasing clears all ${countText(pick.unticked, "flagged day", "flagged days")} in this week: none is deducted and no employee is told.`
                   : `Release ${countText(pick.ticked, "ticked day", "ticked days")} (${daysText(pick.tickedDays)}) to ${countText(pick.employeesTold, "employee", "employees")}? Each is told in-app and on Telegram and has ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
                     (pick.unticked ? ` The ${countText(pick.unticked, "unticked day", "unticked days")} will be cleared and never deducted.` : "")}
+                {week.running ? " Days from later in this week wait for a second release." : ""}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
@@ -582,8 +616,8 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
           {week.stage === "not_built" ? (
             <p className="px-4 py-6 text-sm text-slate-600">
               {canManage
-                ? "The daily job did not build this week. Build it to see its flagged days. Nothing is sent to anyone until you release it."
-                : "This week has not been built yet."}
+                ? "No flagged day in this week so far. Press Refresh to check the latest punches. Nothing is sent to anyone until you release it."
+                : "No flagged day in this week so far."}
             </p>
           ) : null}
 
@@ -609,6 +643,9 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                       <td className="break-words border-b border-slate-100 px-4 py-3">
                         <p className="text-sm font-bold text-slate-800">{employee.employeeName}</p>
                         {employee.jobTitle ? <p className="text-xs text-slate-500">{employee.jobTitle}</p> : null}
+                        {employee.releaseRound >= 2 ? (
+                          <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{roundLabel(employee.releaseRound)}</p>
+                        ) : null}
                       </td>
                       <td className="break-words border-b border-slate-100 px-4 py-3">
                         <div className="divide-y divide-slate-100">{employee.lines.map((line) => dayBlock(week, employee, line, "table"))}</div>
@@ -633,6 +670,9 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                   <li className="px-4 py-3" key={employee.digestId}>
                     <p className="text-sm font-bold text-slate-800">{employee.employeeName}</p>
                     {employee.jobTitle ? <p className="text-xs text-slate-500">{employee.jobTitle}</p> : null}
+                    {employee.releaseRound >= 2 ? (
+                      <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{roundLabel(employee.releaseRound)}</p>
+                    ) : null}
                     <p className="mt-1 text-xs text-slate-500">
                       {employee.status === "awaiting_release" && !employee.dryRun
                         ? `To deduct ${daysText(employee.totalDeductionDays)} · ${money(employee.totalDeductionValue, employee.currency)} · `

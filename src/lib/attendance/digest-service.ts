@@ -1,12 +1,17 @@
-// Weekly attendance review: build a closed week, let the Super Admin review and release it, and
-// record what each employee chooses for every flagged day.
+// Weekly attendance review: keep each week's flagged days up to date, let the Super Admin review and
+// release them, and record what each employee chooses for every flagged day.
 //
-// OWNER DECISION 2026-09-15 — replaces the 2026-09-08 "permanently silent" ruling.
+// OWNER DECISION 2026-09-15 — replaces the 2026-09-08 "permanently silent" ruling — and 2026-09-17.
 //
-//   1. BUILT, NOT SENT. The daily job builds a closed week as `awaiting_release`. It is visible
-//      only on the admin review page, where a day can be removed before anybody sees it.
-//   2. RELEASED BY THE SUPER ADMIN. Release opens the week and tells each employee in-app and by
-//      Telegram (never email). A trial-run week (dry_run) can never be released.
+//   1. LIVE, NOT SENT. A week is on the admin review page from its first day and holds the days up to
+//      yesterday (owner, 2026-09-17 — "Show live, release any time"). The daily job brings every week
+//      of the review month up to date from the fingerprint report: new flagged days are added unticked,
+//      a waiting day's figures follow the report, and a waiting day the report has since cleared is
+//      removed. Nothing reaches an employee from here. The weeks follow the calendar month
+//      (digest-weeks.ts).
+//   2. RELEASED BY THE SUPER ADMIN, AS OFTEN AS HE LIKES. Release opens the days waiting now and tells
+//      each employee in-app and by Telegram (never email). Days that arrive after a release wait for a
+//      second release of the same week. A trial-run week (dry_run) can never be released.
 //   3. SALARY OR ANNUAL BALANCE. The employee does not confirm or deny the day — they choose how
 //      it is paid: from salary, or from annual vacation balance (the same number of days, only
 //      when the balance covers them).
@@ -27,16 +32,27 @@
 // ATOMICITY. Every settlement goes through phx_attendance_settle_digest_line, which writes the
 // settlement, the balance charge, the line and the digest status in one transaction, guarded on
 // the line's current action. A day paid from balance also re-checks, under the same per-employee
-// lock leave approval takes, that nothing spent the balance between the read and the write.
+// lock leave approval takes, that nothing spent the balance between the read and the write. Bringing a
+// week up to date goes through phx_attendance_sync_digest_days, one transaction per employee under the
+// week's row lock, so a tick, a release and an update never interleave.
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id.ts";
 import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report.ts";
-import { resolveCycleWindow, type CycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
-import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek, tileSettlementWeeks, type SettlementWeek } from "@/lib/attendance/digest-weeks.ts";
-import { buildWeekDigests, type BuiltDigest } from "@/lib/attendance/digest-generator.ts";
+import {
+  currentReviewMonth,
+  previousMonthKey,
+  refreshableReviewWeek,
+  reviewWeekOf,
+  reviewWeeksToSync,
+  reviewWeekWindow,
+  startedReviewWeeks,
+  type ReviewWeekWindow,
+  type SettlementWeek,
+} from "@/lib/attendance/digest-weeks.ts";
+import { planWeekSync, type BuiltDigest } from "@/lib/attendance/digest-generator.ts";
 import { withWeekBuildLock } from "@/lib/attendance/week-build-lock.ts";
 import {
   ANSWER_WINDOW_LEAVE_STATUSES,
@@ -52,12 +68,16 @@ import {
   isDeductionMethod,
   isOpenLineAction,
   parseMarkedDays,
+  parseSeenReleaseLines,
   payrollDecisionBlocksBalance,
+  releaseNoticeRange,
   reviewWeekStage,
+  staleReleaseLines,
   type DeductionMethod,
   type DigestLineAction,
   type DigestStatus,
   type ReviewWeekStage,
+  type SeenReleaseLine,
 } from "@/lib/attendance/digest-rules.ts";
 import { notifyAttendanceDisputeDecided, notifyAttendanceWeekReleased } from "@/lib/attendance/digest-notify.ts";
 import { buildAttendanceCalendarContext, cairoTodayIso, getLeaveDayMap } from "@/lib/attendance/working-days.ts";
@@ -69,11 +89,10 @@ import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 import { getVacationBalancePeriod } from "@/lib/vacation/calculations";
 
-export type { DigestLineAction, DeductionMethod, DigestStatus, ReviewWeekStage };
+export type { DigestLineAction, DeductionMethod, DigestStatus, ReviewWeekStage, SeenReleaseLine };
 
 export type DigestSettings = {
   disputeReviewerHrIds: string[];
-  cycleAnchorDay: number;
   showEstimatedAmount: boolean;
   dryRun: boolean;
   enabled: boolean;
@@ -82,7 +101,6 @@ export type DigestSettings = {
 
 const SETTINGS_DEFAULTS: DigestSettings = {
   disputeReviewerHrIds: [],
-  cycleAnchorDay: 24,
   showEstimatedAmount: true,
   dryRun: true,
   enabled: false,
@@ -93,7 +111,7 @@ export async function getDigestSettings(): Promise<DigestSettings> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_digest_settings")
-    .select("dispute_reviewer_hr_ids,cycle_anchor_day,show_estimated_amount,dry_run,enabled,answer_working_days")
+    .select("dispute_reviewer_hr_ids,show_estimated_amount,dry_run,enabled,answer_working_days")
     .eq("id", 1)
     .maybeSingle();
   if (error) throw error;
@@ -102,7 +120,6 @@ export async function getDigestSettings(): Promise<DigestSettings> {
   const answerWorkingDays = Number(row.answer_working_days);
   return {
     disputeReviewerHrIds: Array.isArray(row.dispute_reviewer_hr_ids) ? (row.dispute_reviewer_hr_ids as string[]) : [],
-    cycleAnchorDay: Number(row.cycle_anchor_day) || SETTINGS_DEFAULTS.cycleAnchorDay,
     showEstimatedAmount: row.show_estimated_amount !== false,
     // Both flags FAIL SAFE: a missing or unreadable value keeps the module quiet and keeps money
     // out of it, rather than defaulting to "live".
@@ -113,189 +130,199 @@ export async function getDigestSettings(): Promise<DigestSettings> {
 }
 
 // ---------------------------------------------------------------------------
-// Generation
+// Keeping a week up to date
 // ---------------------------------------------------------------------------
 
-export type GenerateResult = {
-  cycleKey: string;
-  week: SettlementWeek | null;
+export type WeekSyncResult = {
+  monthKey: string;
+  weekIndex: number;
+  weekStart: string;
+  weekEnd: string;
+  /** The last day read from the fingerprint report: the week end, or yesterday while the week runs. */
+  throughIso: string;
+  running: boolean;
+  /** Employees with a flagged day, or a waiting day to check, in this week. */
+  employeesChecked: number;
   digestsCreated: number;
-  linesCreated: number;
-  skippedExisting: number;
-  employeesClean: number;
+  daysAdded: number;
+  daysUpdated: number;
+  daysCleared: number;
+  digestsRemoved: number;
+  /** Flagged days already in an earlier release of the week, left with it. */
+  daysAlreadyReleased: number;
+  /** Employees whose update failed, by name. Every other employee in the week was still brought up to date. */
+  failures: string[];
   dryRun: boolean;
 };
 
+export type SyncRunResult = { todayIso: string; weeks: WeekSyncResult[]; failures: string[]; dryRun: boolean };
+
+/** What one call of phx_attendance_sync_digest_days did for one employee. */
+type EmployeeSyncOutcome = {
+  created: boolean;
+  added: number;
+  updated: number;
+  cleared: number;
+  alreadyElsewhere: number;
+  removedDigest: boolean;
+};
+
 /**
- * Build the digests for the settlement week that has just CLOSED, waiting for release.
+ * The daily job: bring every started week of the current review month up to date — and, for the first
+ * three days of a month, the previous month's last week — waiting for release. Nothing is sent here —
+ * ever. The notice goes out when the Super Admin releases a week.
  *
- * Only a closed week, for the same reason the deductions collector refuses an in-progress month:
- * a day that has not ended cannot be judged. Nothing is sent here — ever. The notice goes out
- * when the Super Admin releases the week.
+ * The report runs ONCE, over every week's days together, and each week takes its own days from it: one
+ * report per week would multiply the run's time by the number of weeks. Each week is then brought up to
+ * date under its build lock, and a week that fails does not stop the others: its failure is returned,
+ * so the scheduler sees a 500 rather than a quiet zero.
  */
-export async function generateDigestsForCompletedWeek(input: {
-  todayIso: string;
-  createdBy: string;
-}): Promise<GenerateResult> {
+export async function syncOpenReviewWeeks(input: { todayIso: string; createdBy: string }): Promise<SyncRunResult> {
   const settings = await getDigestSettings();
-  // Not simply today's cycle: on the 24th that is already the next cycle, and the week that has
-  // just closed is the previous cycle's week 4. See latestClosedSettlementWeek.
-  const due = latestClosedSettlementWeek(input.todayIso, settings.cycleAnchorDay);
-  const cycle = due?.cycle ?? resolveCycleWindow(input.todayIso, settings.cycleAnchorDay);
-  const week = due?.week ?? null;
-  if (!week) {
-    return {
-      cycleKey: cycle.cycleKey,
-      week: null,
-      digestsCreated: 0,
-      linesCreated: 0,
-      skippedExisting: 0,
-      employeesClean: 0,
-      dryRun: settings.dryRun,
-    };
+  const windows = reviewWeeksToSync(input.todayIso);
+  const weeks: WeekSyncResult[] = [];
+  const failures: string[] = [];
+  if (!windows.length) return { todayIso: input.todayIso, weeks, failures, dryRun: settings.dryRun };
+  const dateFrom = windows.reduce((earliest, window) => (window.startIso < earliest ? window.startIso : earliest), windows[0]!.startIso);
+  const dateTo = windows.reduce((latest, window) => (window.throughIso > latest ? window.throughIso : latest), windows[0]!.throughIso);
+  const report = await getFingerprintAttendanceReport({ dateFrom, dateTo });
+  for (const window of windows) {
+    try {
+      const result = await withWeekBuildLock(window.monthKey, window.index, () =>
+        syncReviewWeekDays({ window, createdBy: input.createdBy, settings, rows: report.rows }),
+      );
+      weeks.push(result);
+      for (const failure of result.failures) failures.push(`${window.monthKey} week ${window.index}: ${failure}`);
+    } catch (error) {
+      failures.push(`${window.monthKey} week ${window.index}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  return withWeekBuildLock(cycle.cycleKey, week.index, () => generateDigestsForWeek({ cycle, week, createdBy: input.createdBy, settings }));
+  return { todayIso: input.todayIso, weeks, failures, dryRun: settings.dryRun };
 }
 
 /**
- * Build one closed week's digests, waiting for release. An employee who already has a digest for the
- * week is left alone. Used by the daily job for the week that has just closed, and by the Super Admin
- * for an earlier closed week of the current payroll month that was never built.
+ * Bring one week up to date from the fingerprint report, over its days up to `throughIso`. Callers hold
+ * withWeekBuildLock for the week.
  *
- * If a write fails, every digest this run created is deleted again (its days go with it) and the
- * error is thrown. A half-built week looks built: Build this week refuses it for good, and an
- * employee whose digest lost its days would be released with nothing on it. Callers hold
- * withWeekBuildLock, so no other build of this week runs in this server at the same time: one that
- * did could skip the employees this run creates, and this run's undo would then leave them with no
- * digest at all. A build on another server getting there first is not a failure: the unique key
- * answers 23505, and its digest stands. A build killed mid-run (a deploy restart) is not undone.
+ * `rows` is a report already read over these days (the daily job reads one for all its weeks); without
+ * it the report runs for this week. An employee is sent to the database function when they have a
+ * flagged day, or a day waiting for release that the report now clears. The function adds, refreshes
+ * and removes only days still waiting — a released, answered or cleared day is never touched — and a day
+ * the report does not return at all is left alone: a missing row is not proof the day is clean.
  */
-async function generateDigestsForWeek(input: {
-  cycle: CycleWindow;
-  week: SettlementWeek;
+async function syncReviewWeekDays(input: {
+  window: ReviewWeekWindow;
   createdBy: string;
   settings: DigestSettings;
-}): Promise<GenerateResult> {
-  const { cycle, week, settings } = input;
-  const report = await getFingerprintAttendanceReport({ dateFrom: week.startIso, dateTo: week.endIso });
-  const built = buildWeekDigests(report.rows);
-  const employeesSeen = new Set(report.rows.map((row) => row.employeeHrId)).size;
+  rows?: Awaited<ReturnType<typeof getFingerprintAttendanceReport>>["rows"];
+}): Promise<WeekSyncResult> {
+  const { window, settings } = input;
+  const rows = input.rows ?? (await getFingerprintAttendanceReport({ dateFrom: window.startIso, dateTo: window.throughIso })).rows;
+  // planWeekSync keeps only this week's days, so a report read over several weeks is safe to pass.
+  const plan = planWeekSync(rows, window);
 
-  const supabase = getSupabaseAdmin();
-  let digestsCreated = 0;
-  let linesCreated = 0;
-  let skippedExisting = 0;
-  const createdDigestIds: number[] = [];
+  // A cleared day matters only to an employee with days waiting in this week; everyone else with
+  // nothing flagged is left out, so a clean employee never reaches the database at all.
+  const { data: waiting, error: waitingError } = await getSupabaseAdmin()
+    .from("attendance_weekly_digests")
+    .select("employee_hr_id")
+    .eq("cycle_key", window.monthKey)
+    .eq("week_index", window.index)
+    .eq("status", "awaiting_release")
+    .eq("dry_run", settings.dryRun);
+  if (waitingError) throw waitingError;
+  const waitingKeys = new Set(
+    ((waiting ?? []) as Array<{ employee_hr_id: string }>).map((row) => canonicalHrIdKey(row.employee_hr_id)).filter(Boolean),
+  );
+  const targets = [...plan.entries()]
+    .filter(([key, entry]) => entry.lines.length > 0 || waitingKeys.has(key))
+    .map(([, entry]) => entry);
 
-  try {
-    for (const digest of built) {
-      const { data: existing, error: existingError } = await supabase
-        .from("attendance_weekly_digests")
-        .select("id")
-        .eq("employee_hr_id", hrIdForStorage(digest.employeeHrId))
-        .eq("cycle_key", cycle.cycleKey)
-        .eq("week_index", week.index)
-        .maybeSingle();
-      if (existingError) throw existingError;
-      if (existing) {
-        skippedExisting += 1;
-        continue;
-      }
-
-      const { data: created, error: createError } = await supabase
-        .from("attendance_weekly_digests")
-        .insert({
-          employee_hr_id: hrIdForStorage(digest.employeeHrId),
-          cycle_key: cycle.cycleKey,
-          week_index: week.index,
-          week_start: week.startIso,
-          week_end: week.endIso,
-          status: "awaiting_release",
-          total_deduction_days: digest.totalDeductionDays,
-          // NULL, not 0, when any day could not be priced. See digest-generator.ts.
-          total_deduction_value: digest.totalDeductionValue,
-          has_unpriced_day: digest.hasUnpricedDay,
-          dry_run: settings.dryRun,
-        })
-        .select("id")
-        .single();
-      if (createError) {
-        // The daily job and a Build click (or two clicks) raced, and the other one created this
-        // employee's digest between the check above and this insert. Theirs stands.
-        if ((createError as { code?: string }).code === "23505") {
-          skippedExisting += 1;
-          continue;
-        }
-        throw createError;
-      }
-      const digestId = (created as { id: number }).id;
-      createdDigestIds.push(digestId);
-      digestsCreated += 1;
-
-      const { error: linesError } = await supabase.from("attendance_digest_lines").insert(
-        digest.lines.map((line) => ({
-          digest_id: digestId,
-          work_date: line.workDate,
-          status: line.status,
-          late_minutes: Math.round(line.lateMinutes),
-          short_minutes: Math.round(line.shortMinutes),
-          worked_minutes: Math.round(line.workedMinutes),
-          deduction_days: line.deductionDays,
-          deduction_value: line.deductionValue,
-          // What was detected, kept apart from deduction_days, which the Super Admin may change before release.
-          detected_days: line.deductionDays,
-          detected_value: line.deductionValue,
-          reason: line.reason,
-          evidence: line.evidence,
-        })),
-      );
-      if (linesError) throw linesError;
-      linesCreated += digest.lines.length;
-    }
-  } catch (buildError) {
-    await undoPartialBuild({ createdDigestIds, label: `${cycle.cycleKey} week ${week.index}`, cause: buildError });
-    throw buildError;
-  }
-
-  await writeAuditLog({
-    actorLoginId: input.createdBy,
-    entityId: `${cycle.cycleKey}:w${week.index}`,
-    entityType: "attendance_weekly_digest_run",
-    newValues: { digestsCreated, linesCreated, skippedExisting, dryRun: settings.dryRun },
-    summary: `Weekly attendance digests generated for ${cycle.cycleKey} week ${week.index}`,
-  });
-
-  return {
-    cycleKey: cycle.cycleKey,
-    week,
-    digestsCreated,
-    linesCreated,
-    skippedExisting,
-    employeesClean: Math.max(0, employeesSeen - built.length),
+  const result: WeekSyncResult = {
+    monthKey: window.monthKey,
+    weekIndex: window.index,
+    weekStart: window.startIso,
+    weekEnd: window.endIso,
+    throughIso: window.throughIso,
+    running: window.running,
+    employeesChecked: targets.length,
+    digestsCreated: 0,
+    daysAdded: 0,
+    daysUpdated: 0,
+    daysCleared: 0,
+    digestsRemoved: 0,
+    daysAlreadyReleased: 0,
+    failures: [],
     dryRun: settings.dryRun,
   };
-}
+  const failedHrIds: Array<{ hrId: string; message: string }> = [];
 
-/**
- * Delete what a failed build created, so the week is not left half-built. Only digests this run
- * created that are still waiting for release and were never released — one a Release click reached
- * first is kept. Their days go with them (the lines cascade), and nothing is settled on a day of a
- * week nobody has released. If the undo fails too, the error names the week and how many employees
- * were left, because that week then needs a person.
- */
-async function undoPartialBuild(input: { createdDigestIds: number[]; label: string; cause: unknown }): Promise<void> {
-  if (!input.createdDigestIds.length) return;
-  const { error } = await getSupabaseAdmin()
-    .from("attendance_weekly_digests")
-    .delete()
-    .in("id", input.createdDigestIds)
-    .eq("status", "awaiting_release")
-    .is("released_at", null);
-  if (!error) return;
-  const cause = String((input.cause as { message?: unknown } | null)?.message ?? input.cause);
-  throw new Error(
-    `Building ${input.label} failed (${cause}), and undoing it failed too (${error.message}). ${input.createdDigestIds.length} employee(s) in that week are left without all their days, waiting for release. Nothing was sent.`,
-  );
+  for (const target of targets) {
+    const days = target.lines.map((line) => ({
+      work_date: line.workDate,
+      status: line.status,
+      late_minutes: Math.round(line.lateMinutes),
+      short_minutes: Math.round(line.shortMinutes),
+      worked_minutes: Math.round(line.workedMinutes),
+      // What was detected. The function keeps the Super Admin's own figure on a day he changed.
+      deduction_days: line.deductionDays,
+      // NULL, not 0, when the day could not be priced. See digest-generator.ts.
+      deduction_value: line.deductionValue,
+      reason: line.reason,
+      evidence: line.evidence,
+    }));
+    const { data, error } = await getSupabaseAdmin().rpc("phx_attendance_sync_digest_days", {
+      p_employee_hr_id: hrIdForStorage(target.employeeHrId),
+      p_cycle_key: window.monthKey,
+      p_week_index: window.index,
+      p_week_start: window.startIso,
+      p_week_end: window.endIso,
+      p_dry_run: settings.dryRun,
+      p_days: days,
+      // Only a day with nothing waiting is ever taken off: the function leaves released days alone.
+      p_cleared_dates: waitingKeys.has(canonicalHrIdKey(target.employeeHrId)) ? target.clearedDates : [],
+    });
+    if (error) {
+      failedHrIds.push({ hrId: target.employeeHrId, message: (error as { message?: string }).message ?? "unknown error" });
+      continue;
+    }
+    const outcome = (data ?? {}) as Partial<EmployeeSyncOutcome>;
+    if (outcome.created === true) result.digestsCreated += 1;
+    if (outcome.removedDigest === true) result.digestsRemoved += 1;
+    result.daysAdded += Number(outcome.added) || 0;
+    result.daysUpdated += Number(outcome.updated) || 0;
+    result.daysCleared += Number(outcome.cleared) || 0;
+    result.daysAlreadyReleased += Number(outcome.alreadyElsewhere) || 0;
+  }
+
+  if (failedHrIds.length) {
+    const directory = await loadDirectoryByKey().catch(() => null);
+    result.failures = failedHrIds.map((failure) => {
+      const person = directory ? directoryRowFor(directory, failure.hrId) : null;
+      return `${person?.displayName || person?.fullName || "An employee whose name is not on file"} (${failure.message})`;
+    });
+  }
+
+  if (result.digestsCreated || result.daysAdded || result.daysUpdated || result.daysCleared || result.digestsRemoved) {
+    await writeAuditLog({
+      actorLoginId: input.createdBy,
+      entityId: `${window.monthKey}:w${window.index}`,
+      entityType: "attendance_weekly_digest_run",
+      newValues: {
+        throughIso: window.throughIso,
+        digestsCreated: result.digestsCreated,
+        daysAdded: result.daysAdded,
+        daysUpdated: result.daysUpdated,
+        daysCleared: result.daysCleared,
+        digestsRemoved: result.digestsRemoved,
+        failures: result.failures.length,
+        dryRun: settings.dryRun,
+      },
+      summary: `Weekly attendance review ${window.monthKey} week ${window.index} brought up to date through ${window.throughIso}`,
+    });
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +359,8 @@ export type DigestRow = {
   employeeHrId: string;
   cycleKey: string;
   weekIndex: number;
+  /** 1 for a week's first release; 2 and up for days that arrived after an earlier release of the week. */
+  releaseRound: number;
   weekStart: string;
   weekEnd: string;
   status: DigestStatus;
@@ -425,6 +454,7 @@ function mapDigest(row: Record<string, unknown>, lines: DigestLineRow[]): Digest
     employeeHrId: String(row.employee_hr_id),
     cycleKey: String(row.cycle_key),
     weekIndex: Number(row.week_index),
+    releaseRound: Number(row.release_round) || 1,
     weekStart: String(row.week_start),
     weekEnd: String(row.week_end),
     status: String(row.status) as DigestStatus,
@@ -441,7 +471,7 @@ function mapDigest(row: Record<string, unknown>, lines: DigestLineRow[]): Digest
 }
 
 const DIGEST_COLUMNS =
-  "id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,total_deduction_days,total_deduction_value,has_unpriced_day,currency,dry_run,released_at,answer_due_on,notified_at";
+  "id,employee_hr_id,cycle_key,week_index,release_round,week_start,week_end,status,total_deduction_days,total_deduction_value,has_unpriced_day,currency,dry_run,released_at,answer_due_on,notified_at";
 
 async function loadDigestOrThrow(digestId: number): Promise<DigestRow> {
   const supabase = getSupabaseAdmin();
@@ -747,6 +777,8 @@ export type ReviewEmployee = {
   employeeHrId: string;
   employeeName: string;
   jobTitle: string | null;
+  /** 1 for the week's first release; 2 and up for days that arrived after an earlier release. */
+  releaseRound: number;
   status: DigestStatus;
   totalDeductionDays: number;
   totalDeductionValue: number | null;
@@ -767,6 +799,12 @@ export type ReviewWeekOption = {
   weekEnd: string;
   stage: ReviewWeekStage;
   employeeCount: number;
+  /** The week has not ended: days keep arriving until it does. */
+  running: boolean;
+  /** The last day the week holds so far: yesterday while it runs, else its last day. */
+  throughIso: string;
+  /** The Super Admin may bring this week up to date now: a started week of this month or last month. */
+  canRefresh: boolean;
 };
 
 export type ReviewWeek = ReviewWeekOption & {
@@ -774,21 +812,30 @@ export type ReviewWeek = ReviewWeekOption & {
   employees: ReviewEmployee[];
 };
 
-type DigestHead = { cycleKey: string; weekIndex: number; weekStart: string; weekEnd: string; status: string; dryRun: boolean };
+type DigestHead = {
+  employeeHrId: string;
+  cycleKey: string;
+  weekIndex: number;
+  weekStart: string;
+  weekEnd: string;
+  status: string;
+  dryRun: boolean;
+};
 
-/** Every digest of one payroll month, or every digest still waiting for release or answers. Paged. */
-async function readDigestHeads(scope: { cycleKey: string } | { unfinished: true }): Promise<DigestHead[]> {
+/** Every digest of the given review months, or every digest still waiting for release or answers. Paged. */
+async function readDigestHeads(scope: { cycleKeys: string[] } | { unfinished: true }): Promise<DigestHead[]> {
   const supabase = getSupabaseAdmin();
   const PAGE = 1000;
   const heads: DigestHead[] = [];
   for (let from = 0; ; from += PAGE) {
-    const base = supabase.from("attendance_weekly_digests").select("id,cycle_key,week_index,week_start,week_end,status,dry_run");
-    const scoped = "cycleKey" in scope ? base.eq("cycle_key", scope.cycleKey) : base.in("status", ["awaiting_release", "open"]);
+    const base = supabase.from("attendance_weekly_digests").select("id,employee_hr_id,cycle_key,week_index,week_start,week_end,status,dry_run");
+    const scoped = "cycleKeys" in scope ? base.in("cycle_key", scope.cycleKeys) : base.in("status", ["awaiting_release", "open"]);
     const { data, error } = await scoped.order("id", { ascending: true }).range(from, from + PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
     for (const row of rows) {
       heads.push({
+        employeeHrId: String(row.employee_hr_id),
         cycleKey: String(row.cycle_key),
         weekIndex: Number(row.week_index),
         weekStart: String(row.week_start),
@@ -802,71 +849,106 @@ async function readDigestHeads(scope: { cycleKey: string } | { unfinished: true 
   return heads;
 }
 
+/** Employees, not digests: an employee released twice in one week is still one person. */
+function distinctEmployees(digests: ReadonlyArray<{ employeeHrId: string }>): number {
+  return new Set(digests.map((digest) => canonicalHrIdKey(digest.employeeHrId) ?? digest.employeeHrId)).size;
+}
+
 /**
- * The weeks the Super Admin can pick (owner, 2026-09-15 — "select the week I want"): every CLOSED
- * week of the current payroll month, built or not, plus any older week still waiting for release or
- * answers, so a week is never stranded when the month turns. Newest first.
+ * How a week reads on `todayIso`. A week of the review calendar gets its own dates, whether it is still
+ * running, and whether it may be refreshed; a week from before September 2026 (the old payroll cycle)
+ * keeps the dates stored on its digests and is never refreshed.
+ */
+function weekTiming(
+  cycleKey: string,
+  weekIndex: number,
+  stored: { weekStart: string; weekEnd: string } | null,
+  todayIso: string,
+): { weekStart: string; weekEnd: string; running: boolean; throughIso: string; canRefresh: boolean } | null {
+  const week = reviewWeekOf(cycleKey, weekIndex);
+  const window = week ? reviewWeekWindow(cycleKey, week, todayIso) : null;
+  if (week && window) {
+    return {
+      weekStart: week.startIso,
+      weekEnd: week.endIso,
+      running: window.running,
+      throughIso: window.throughIso,
+      canRefresh: refreshableReviewWeek(cycleKey, weekIndex, todayIso) !== null,
+    };
+  }
+  if (!stored) return null;
+  return { weekStart: stored.weekStart, weekEnd: stored.weekEnd, running: false, throughIso: stored.weekEnd, canRefresh: false };
+}
+
+/**
+ * The weeks the Super Admin can pick (owner, 2026-09-15 — "select the week I want"; 2026-09-17 — "Show
+ * live, release any time"): every week of the current review month that has started, running or not,
+ * with or without flagged days; every week of the month before it that has any; and any older week still
+ * waiting for release or answers, so a week is never stranded when the month turns. Newest first.
  */
 export async function listReviewWeeks(todayIso: string = cairoTodayIso()): Promise<ReviewWeekOption[]> {
-  const settings = await getDigestSettings();
-  const current = closedWeeksOfCurrentCycle(todayIso, settings.cycleAnchorDay);
-  const currentKey = current?.cycle.cycleKey ?? null;
-  const [inCycle, unfinished] = await Promise.all([
-    currentKey ? readDigestHeads({ cycleKey: currentKey }) : Promise.resolve([] as DigestHead[]),
+  const currentKey = currentReviewMonth(todayIso);
+  const previousKey = previousMonthKey(currentKey);
+  const [recent, unfinished] = await Promise.all([
+    readDigestHeads({ cycleKeys: [currentKey, previousKey] }),
     readDigestHeads({ unfinished: true }),
   ]);
 
-  const groups = new Map<string, { option: Omit<ReviewWeekOption, "stage" | "employeeCount">; digests: DigestHead[] }>();
-  if (current) {
-    for (const week of current.weeks) {
-      groups.set(`${current.cycle.cycleKey}:${week.index}`, {
-        option: { cycleKey: current.cycle.cycleKey, weekIndex: week.index, weekStart: week.startIso, weekEnd: week.endIso },
-        digests: [],
-      });
-    }
+  type Group = { cycleKey: string; weekIndex: number; stored: { weekStart: string; weekEnd: string } | null; digests: DigestHead[] };
+  const groups = new Map<string, Group>();
+  for (const week of startedReviewWeeks(currentKey, todayIso)) {
+    groups.set(`${currentKey}:${week.index}`, { cycleKey: currentKey, weekIndex: week.index, stored: null, digests: [] });
   }
-  for (const digest of [...inCycle, ...unfinished.filter((row) => row.cycleKey !== currentKey)]) {
+  const recentKeys = new Set([currentKey, previousKey]);
+  for (const digest of [...recent, ...unfinished.filter((row) => !recentKeys.has(row.cycleKey))]) {
     const key = `${digest.cycleKey}:${digest.weekIndex}`;
-    const group = groups.get(key) ?? {
-      option: { cycleKey: digest.cycleKey, weekIndex: digest.weekIndex, weekStart: digest.weekStart, weekEnd: digest.weekEnd },
-      digests: [],
-    };
+    const group: Group = groups.get(key) ?? { cycleKey: digest.cycleKey, weekIndex: digest.weekIndex, stored: null, digests: [] };
+    group.stored ??= { weekStart: digest.weekStart, weekEnd: digest.weekEnd };
     group.digests.push(digest);
     groups.set(key, group);
   }
 
-  return Array.from(groups.values())
-    .map(({ option, digests }) => ({ ...option, stage: reviewWeekStage(digests), employeeCount: digests.length }))
-    .sort((left, right) => right.weekStart.localeCompare(left.weekStart));
+  const options: ReviewWeekOption[] = [];
+  for (const group of groups.values()) {
+    const timing = weekTiming(group.cycleKey, group.weekIndex, group.stored, todayIso);
+    if (!timing) continue;
+    options.push({
+      cycleKey: group.cycleKey,
+      weekIndex: group.weekIndex,
+      ...timing,
+      stage: reviewWeekStage(group.digests),
+      employeeCount: distinctEmployees(group.digests),
+    });
+  }
+  return options.sort((left, right) => right.weekStart.localeCompare(left.weekStart));
 }
 
 /**
  * One week in full: every employee and every flagged day, whatever their state — cleared days
- * included, so the Super Admin can see what he did not deduct. A closed week of the current payroll
- * month that was never built comes back empty, as `not_built`; any other unknown week is null.
+ * included, so the Super Admin can see what he did not deduct — across every release of the week. A
+ * started week with no flagged day yet comes back empty, as `not_built`; any other unknown week is null.
  */
 export async function loadReviewWeek(input: { cycleKey: string; weekIndex: number; todayIso?: string }): Promise<ReviewWeek | null> {
+  const todayIso = input.todayIso ?? cairoTodayIso();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
     .select(DIGEST_COLUMNS)
     .eq("cycle_key", input.cycleKey)
     .eq("week_index", input.weekIndex)
+    .order("release_round", { ascending: true })
     .order("id", { ascending: true })
     .limit(1000);
   if (error) throw error;
   const rows = (data ?? []) as Record<string, unknown>[];
 
   if (!rows.length) {
-    const settings = await getDigestSettings();
-    const current = closedWeeksOfCurrentCycle(input.todayIso ?? cairoTodayIso(), settings.cycleAnchorDay);
-    const week = current && current.cycle.cycleKey === input.cycleKey ? current.weeks.find((candidate) => candidate.index === input.weekIndex) : undefined;
-    if (!week) return null;
+    const timing = weekTiming(input.cycleKey, input.weekIndex, null, todayIso);
+    if (!timing) return null;
     return {
       cycleKey: input.cycleKey,
-      weekIndex: week.index,
-      weekStart: week.startIso,
-      weekEnd: week.endIso,
+      weekIndex: input.weekIndex,
+      ...timing,
       stage: "not_built",
       employeeCount: 0,
       releasedAt: null,
@@ -887,6 +969,7 @@ export async function loadReviewWeek(input: { cycleKey: string; weekIndex: numbe
       employeeHrId: digest.employeeHrId,
       employeeName: person?.displayName || person?.fullName || "Name not on file",
       jobTitle: person?.jobTitle ?? null,
+      releaseRound: digest.releaseRound,
       status: digest.status,
       totalDeductionDays: digest.totalDeductionDays,
       totalDeductionValue: digest.totalDeductionValue,
@@ -898,15 +981,15 @@ export async function loadReviewWeek(input: { cycleKey: string; weekIndex: numbe
       lines: digest.lines,
     });
   }
-  employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+  employees.sort((left, right) => left.employeeName.localeCompare(right.employeeName) || left.releaseRound - right.releaseRound);
   const first = digests[0]!;
+  const timing = weekTiming(first.cycleKey, first.weekIndex, { weekStart: first.weekStart, weekEnd: first.weekEnd }, todayIso)!;
   return {
     cycleKey: first.cycleKey,
     weekIndex: first.weekIndex,
-    weekStart: first.weekStart,
-    weekEnd: first.weekEnd,
+    ...timing,
     stage: reviewWeekStage(digests),
-    employeeCount: digests.length,
+    employeeCount: distinctEmployees(digests),
     releasedAt,
     employees,
   };
@@ -982,37 +1065,26 @@ export async function markDigestLine(input: {
 }
 
 /**
- * Build a closed week of the current payroll month that the daily job never built — it builds only
- * the week that has just closed. Nothing is sent: the week waits for release like any other. A week
- * with any digest at all, a trial run included, is never built again.
+ * Bring one week up to date now, from the review page — the daily job does the same for this month's
+ * weeks every morning and afternoon, but punches, excuses and leave keep arriving between runs. Any
+ * started week of this review month or the month before may be refreshed. Nothing is sent: new days wait
+ * for release like any other, unticked, and a day already released is never touched.
  */
 export async function buildReviewWeek(input: {
   cycleKey: string;
   weekIndex: number;
   actorHrId: string;
   actorRole: string | null;
-}): Promise<GenerateResult> {
+}): Promise<WeekSyncResult> {
   assertCanManageWeeklyReview(input.actorRole);
+  const window = refreshableReviewWeek(input.cycleKey, input.weekIndex, cairoTodayIso());
+  if (!window) throw conflictError("Only a week of this month or last month that has started can be brought up to date.");
   const settings = await getDigestSettings();
-  const current = closedWeeksOfCurrentCycle(cairoTodayIso(), settings.cycleAnchorDay);
-  const week = current && current.cycle.cycleKey === input.cycleKey ? current.weeks.find((candidate) => candidate.index === input.weekIndex) : undefined;
-  if (!current || !week) throw conflictError("Only a closed week of the current payroll month can be built.");
-
-  // Checked inside the lock: a build of this week still running (the daily job, or another click)
-  // finishes first, so this sees what it left — its digests when it succeeded, none when it failed
-  // and undid itself.
-  return withWeekBuildLock(current.cycle.cycleKey, week.index, async () => {
-    const { data: existing, error: existingError } = await getSupabaseAdmin()
-      .from("attendance_weekly_digests")
-      .select("id")
-      .eq("cycle_key", input.cycleKey)
-      .eq("week_index", input.weekIndex)
-      .limit(1);
-    if (existingError) throw existingError;
-    if ((existing ?? []).length) throw conflictError("This week has already been built.");
-
-    return generateDigestsForWeek({ cycle: current.cycle, week, createdBy: input.actorHrId, settings });
-  });
+  // Under the week's lock: the daily job refreshing the same week, a second click, or a release of it
+  // finishes first.
+  return withWeekBuildLock(window.monthKey, window.index, () =>
+    syncReviewWeekDays({ window, createdBy: input.actorHrId, settings }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1200,21 +1272,39 @@ async function saveLaterAnswerDeadlines(
 export type ReleaseResult = { released: number; notified: number; notNotified: number; skippedTrialRun: number; clearedDays: number };
 
 /**
- * Release one week to its employees. Every day the Super Admin did not tick is cleared first — never
- * deducted — and only the ticked days are asked about. Sets each employee's answer deadline — N
- * working days after today, on THEIR weekly-off pattern, the holiday calendar and their leave,
- * approved or still waiting for approval — and tells them in-app and by Telegram. A trial-run week
- * is refused outright (owner, 2026-09-15).
+ * Release the days of one week waiting now (owner, 2026-09-17 — "Show live, release any time"). A week
+ * may be released while it is still running; days that arrive afterwards wait for a second release of
+ * the same week. Every day the Super Admin did not tick is cleared first — never deducted — and only the
+ * ticked days are asked about. Sets each employee's answer deadline — N working days after today, on
+ * THEIR weekly-off pattern, the holiday calendar and their leave, approved or still waiting for approval
+ * — and tells them in-app and by Telegram. A trial-run week is refused outright (owner, 2026-09-15).
+ *
+ * `seenLines` is every day waiting for release as the page showed it. When a day was added or changed
+ * after the page loaded, nothing at all is released: the Super Admin reloads and looks again.
  */
-export async function releaseWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
+export async function releaseWeek(input: {
+  cycleKey: string;
+  weekIndex: number;
+  seenLines: unknown;
+  actorHrId: string;
+  actorRole: string | null;
+}): Promise<ReleaseResult> {
   assertCanManageWeeklyReview(input.actorRole);
-  // Under the same lock a build takes: a build of this week still running — the daily job, or a
-  // Build this week click — finishes first, so a release can never open half of a week and leave the
-  // rest of its employees in a week no later click will ever release.
-  return withWeekBuildLock(input.cycleKey, input.weekIndex, () => releaseBuiltWeek(input));
+  const seen = parseSeenReleaseLines(input.seenLines);
+  if (seen.error !== null) throw validationError(seen.error);
+  const seenLines = seen.lines;
+  // Under the same lock the daily job and Refresh take to bring the week up to date: one still running
+  // finishes first, so the days checked below are the days that are released.
+  return withWeekBuildLock(input.cycleKey, input.weekIndex, () => releaseWaitingDays({ ...input, seenLines }));
 }
 
-async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; actorHrId: string; actorRole: string | null }): Promise<ReleaseResult> {
+async function releaseWaitingDays(input: {
+  cycleKey: string;
+  weekIndex: number;
+  seenLines: SeenReleaseLine[];
+  actorHrId: string;
+  actorRole: string | null;
+}): Promise<ReleaseResult> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("attendance_weekly_digests")
@@ -1230,6 +1320,16 @@ async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; ac
   const realDigests = digests.filter((digest) => !digest.dryRun);
   const skippedTrialRun = digests.length - realDigests.length;
   if (!realDigests.length) throw conflictError("This week was built as a trial run and can never be released.");
+
+  // Every employee is checked before anyone is released, so a stale page releases nobody rather than
+  // some. The database function checks each employee again under the week's row lock.
+  const waitingLines = await loadLines(realDigests.map((digest) => digest.id));
+  const pending = realDigests.flatMap((digest) => (waitingLines.get(digest.id) ?? []).filter((line) => line.action === "pending"));
+  if (staleReleaseLines(pending, input.seenLines).length) {
+    throw conflictError("New or changed days arrived in this week after the page was loaded. Reload the page, check the days, then release again.");
+  }
+  const seenIds = input.seenLines.map((line) => line.id);
+  const seenDays = input.seenLines.map((line) => line.days);
 
   const settings = await getDigestSettings();
   const todayIso = cairoTodayIso();
@@ -1258,14 +1358,17 @@ async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; ac
       releasedOnIso: todayIso,
       workingDays: settings.answerWorkingDays,
     });
-    // One transaction per employee, under the week's row lock: clear every unticked day (a `removed`
-    // settlement, which the bridge turns into Do Not Take Action), then open the week — or void it
-    // when nothing is left, or settle it when only days answered before the release step remain. It
-    // refuses a trial-run digest and one another click already released.
+    // One transaction per employee, under the week's row lock: refuse when a waiting day is not one the
+    // page showed, clear every unticked day (a `removed` settlement, which the bridge turns into Do Not
+    // Take Action), then open the week — or void it when nothing is left, or settle it when only days
+    // answered before the release step remain. It refuses a trial-run digest and one another click
+    // already released.
     const { data: releasedRow, error: releaseError } = await supabase.rpc("phx_attendance_release_digest", {
       p_digest_id: digest.id,
       p_actor_hr_id: hrIdForStorage(input.actorHrId),
       p_answer_due_on: answerDueOn,
+      p_seen_line_ids: seenIds,
+      p_seen_days: seenDays,
     });
     if (releaseError) rethrowSettleError(releaseError as { code?: string; message?: string });
     const outcome = (releasedRow ?? {}) as { released?: unknown; status?: unknown; pendingDays?: unknown; clearedDays?: unknown };
@@ -1276,11 +1379,15 @@ async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; ac
     // Only the ticked days are asked about. None pending: nobody is told.
     const dayCount = Number(outcome.pendingDays) || 0;
     if (outcome.status !== "open" || dayCount === 0) continue;
+    // The notice names the days asked about, not the whole week: a second release of a week holds
+    // only the days that arrived after the first.
+    const asked = (waitingLines.get(digest.id) ?? []).filter((line) => line.action === "pending" && line.deduct);
+    const range = releaseNoticeRange(asked, digest);
     const sent = await notifyAttendanceWeekReleased({
       digestId: digest.id,
       employeeHrId: digest.employeeHrId,
-      weekStart: digest.weekStart,
-      weekEnd: digest.weekEnd,
+      weekStart: range.weekStart,
+      weekEnd: range.weekEnd,
       dayCount,
       answerDueOn,
     });
@@ -1306,7 +1413,7 @@ async function releaseBuiltWeek(input: { cycleKey: string; weekIndex: number; ac
     actorLoginId: input.actorHrId,
     entityId: `${input.cycleKey}:w${input.weekIndex}`,
     entityType: "attendance_digest_release",
-    newValues: { released, notified, notNotified, skippedTrialRun, clearedDays },
+    newValues: { released, notified, notNotified, skippedTrialRun, clearedDays, daysSeen: input.seenLines.length },
     summary: `Weekly attendance ${input.cycleKey} week ${input.weekIndex} released to ${released} employee(s), ${clearedDays} unticked day(s) cleared`,
   });
   return { released, notified, notNotified, skippedTrialRun, clearedDays };
@@ -1791,5 +1898,5 @@ export async function settleOverdueAnswers(input: { todayIso: string; actor: str
   return { digestsChecked: pastStoredDate.length, daysSettledToSalary, deadlinesMoved, failures, failureMessages: failureMessages.slice(0, 20) };
 }
 
-export { isOpenLineAction, tileSettlementWeeks };
+export { isOpenLineAction };
 export type { SettlementWeek, BuiltDigest };
