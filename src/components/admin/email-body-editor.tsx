@@ -22,7 +22,7 @@ import {
   Undo2,
 } from "lucide-react";
 import type { ClipboardEvent, DragEvent } from "react";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -38,6 +38,56 @@ export type EmailBodyEditorHandle = {
 };
 
 const tokenPattern = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
+
+/**
+ * The house table cell.
+ *
+ * Declared once because a row or column added later has to look exactly like the ones the Insert
+ * table button drew — an unstyled `<td>` renders with no rule around it, and email clients do not
+ * apply a stylesheet, so a single bare cell is visible to every recipient.
+ */
+const TABLE_CELL_STYLE = "border: 1px solid #cbd5e1; padding: 8px";
+const TABLE_HEADER_STYLE = `${TABLE_CELL_STYLE}; background-color: #f8fafc; text-align: left`;
+/** The size grid the Insert table button opens — Word and Gmail both stop around here. */
+const TABLE_PICK_MAX_COLUMNS = 8;
+const TABLE_PICK_MAX_ROWS = 6;
+
+/** One toolbar button's look, shared by the icon buttons and the Insert table popover's trigger. */
+const TOOLBAR_BUTTON_CLASS =
+  "flex h-8 w-8 items-center justify-center border border-transparent text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press";
+
+/** A fresh cell, styled like the ones already in the table so a recipient cannot tell them apart. */
+function newCell(header: boolean) {
+  const cell = document.createElement(header ? "th" : "td");
+  cell.setAttribute("style", header ? TABLE_HEADER_STYLE : TABLE_CELL_STYLE);
+  cell.innerHTML = header ? "Column" : "&nbsp;";
+  return cell;
+}
+
+/** A table with nothing left in it becomes an empty paragraph, so the caret still has a home. */
+function replaceTableWithParagraph(table: HTMLTableElement) {
+  const paragraph = document.createElement("p");
+  paragraph.innerHTML = "<br>";
+  table.replaceWith(paragraph);
+  return paragraph;
+}
+
+/**
+ * A table of any shape, with the first row as its header.
+ *
+ * Owner 2026-09-17: "the table now is obligatory three columns. What if I want to add or delete a
+ * column or a row?" — the size is chosen on the grid before the table is inserted, and changed
+ * afterwards with the row and column controls.
+ */
+function tableHtml(rows: number, columns: number) {
+  const header = `<th style="${TABLE_HEADER_STYLE}">Column</th>`.repeat(columns);
+  const bodyRow = `<tr>${`<td style="${TABLE_CELL_STYLE}">&nbsp;</td>`.repeat(columns)}</tr>`;
+  return (
+    `<table style="border-collapse: collapse; width: 100%"><tbody>` +
+    `<tr>${header}</tr>${bodyRow.repeat(Math.max(0, rows - 1))}` +
+    `</tbody></table><p><br /></p>`
+  );
+}
 
 function escapeHtml(value: string) {
   return value
@@ -463,14 +513,135 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     [emit, rememberSelection, restoreSelection],
   );
 
-  const addTable = useCallback(() => {
-    const headerCell = `<th style="border: 1px solid #cbd5e1; padding: 8px; background-color: #f8fafc; text-align: left">Column</th>`;
-    const bodyCell = `<td style="border: 1px solid #cbd5e1; padding: 8px">&nbsp;</td>`;
-    const bodyRow = `<tr>${bodyCell.repeat(3)}</tr>`;
-    insertHtmlAtCaret(
-      `<table style="border-collapse: collapse; width: 100%"><tbody><tr>${headerCell.repeat(3)}</tr>${bodyRow.repeat(2)}</tbody></table><p><br /></p>`,
-    );
-  }, [insertHtmlAtCaret]);
+  /**
+   * Whether the row and column controls are showing.
+   *
+   * Kept in state rather than read during render: the editor's content is not React's to own (it is
+   * a contentEditable the effect fills by hand), so nothing re-renders when the caret moves and a
+   * value read inline would be whatever it was at the last unrelated render.
+   */
+  const [inTable, setInTable] = useState(false);
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [tableHover, setTableHover] = useState({ columns: 0, rows: 0 });
+
+  const addTable = useCallback(
+    (rows: number, columns: number) => {
+      insertHtmlAtCaret(tableHtml(rows, columns));
+      setTablePickerOpen(false);
+      setInTable(true);
+    },
+    [insertHtmlAtCaret],
+  );
+
+  /** The cell the caret is in, or null when the caret is not in a table at all. */
+  const currentCell = useCallback((): HTMLTableCellElement | null => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const node = selection && selection.rangeCount > 0 ? selection.getRangeAt(0).startContainer : null;
+    const element = node instanceof HTMLElement ? node : (node?.parentElement ?? null);
+    const cell = element?.closest("td, th") ?? null;
+    return cell instanceof HTMLTableCellElement && editor?.contains(cell) ? cell : null;
+  }, []);
+
+  const syncSelection = useCallback(() => {
+    rememberSelection();
+    setInTable(currentCell() !== null);
+  }, [currentCell, rememberSelection]);
+
+  const placeCaretIn = useCallback((node: Node) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
+
+  /**
+   * Every row/column control runs through here: restore the caret the toolbar click moved away
+   * from, change the table, then leave the caret somewhere sensible and tell the host.
+   */
+  const editTable = useCallback(
+    (apply: (cell: HTMLTableCellElement, table: HTMLTableElement) => Node | null) => {
+      restoreSelection();
+      const cell = currentCell();
+      const table = cell?.closest("table");
+      if (!cell || !(table instanceof HTMLTableElement)) return;
+      const caretTarget = apply(cell, table);
+      if (caretTarget) placeCaretIn(caretTarget);
+      syncSelection();
+      emit();
+    },
+    [currentCell, emit, placeCaretIn, restoreSelection, syncSelection],
+  );
+
+  const addRow = useCallback(
+    (below: boolean) => {
+      editTable((cell) => {
+        const row = cell.parentElement;
+        if (!(row instanceof HTMLTableRowElement)) return null;
+        const fresh = document.createElement("tr");
+        // Always body cells: a second header row is never what "add a row" means, even when the
+        // caret happens to be sitting in the header.
+        for (let index = 0; index < row.children.length; index += 1) fresh.appendChild(newCell(false));
+        row.parentElement?.insertBefore(fresh, below ? row.nextSibling : row);
+        return fresh.firstElementChild;
+      });
+    },
+    [editTable],
+  );
+
+  const addColumn = useCallback(
+    (after: boolean) => {
+      editTable((cell, table) => {
+        const index = Array.from(cell.parentElement?.children ?? []).indexOf(cell);
+        if (index < 0) return null;
+        let caretTarget: Node | null = null;
+        for (const row of Array.from(table.rows)) {
+          const reference = row.children[index] ?? null;
+          const header = reference ? reference.tagName === "TH" : row.querySelector("th") !== null;
+          const fresh = newCell(header);
+          row.insertBefore(fresh, after ? (reference?.nextSibling ?? null) : reference);
+          if (!caretTarget) caretTarget = fresh;
+        }
+        return caretTarget;
+      });
+    },
+    [editTable],
+  );
+
+  const deleteRow = useCallback(() => {
+    editTable((cell, table) => {
+      const row = cell.parentElement;
+      if (!(row instanceof HTMLTableRowElement)) return null;
+      if (table.rows.length <= 1) return replaceTableWithParagraph(table);
+      const neighbour = (row.nextElementSibling ?? row.previousElementSibling) as HTMLElement | null;
+      row.remove();
+      return neighbour?.firstElementChild ?? table;
+    });
+  }, [editTable]);
+
+  const deleteColumn = useCallback(() => {
+    editTable((cell, table) => {
+      const index = Array.from(cell.parentElement?.children ?? []).indexOf(cell);
+      if (index < 0) return null;
+      const columns = table.rows[0]?.children.length ?? 0;
+      if (columns <= 1) return replaceTableWithParagraph(table);
+      let caretTarget: Node | null = null;
+      for (const row of Array.from(table.rows)) {
+        const target = row.children[index];
+        const neighbour = (target?.nextElementSibling ?? target?.previousElementSibling) ?? null;
+        target?.remove();
+        if (!caretTarget) caretTarget = neighbour;
+      }
+      return caretTarget;
+    });
+  }, [editTable]);
+
+  const deleteTable = useCallback(() => {
+    editTable((_cell, table) => replaceTableWithParagraph(table));
+  }, [editTable]);
 
   const addQuote = useCallback(() => {
     runCommand("formatBlock", "<blockquote>");
@@ -551,13 +722,56 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
     { icon: Link2, label: "Link", run: addLink },
     { icon: Link2Off, label: "Remove link", run: () => runCommand("unlink") },
     { icon: SquareMousePointer, label: "Action button", run: addCtaButton },
-    { icon: Table, label: "Insert table", run: addTable },
+    // "Insert table" is not here: it opens a size grid, so it renders as its own control below,
+    // in this same position. `hiddenActions` still governs it.
     { icon: ImageIcon, label: "Insert image", run: addImage },
     { icon: Minus, label: "Divider line", run: () => insertHtmlAtCaret("<hr />") },
     { icon: Eraser, label: "Clear formatting", run: () => runCommand("removeFormat") },
     { icon: Undo2, label: "Undo", run: () => runCommand("undo") },
     { icon: Redo2, label: "Redo", run: () => runCommand("redo") },
   ].filter((action) => !hiddenActions?.includes(action.label));
+
+  /**
+   * Insert table keeps the place it has always had — between the action button and the image — but
+   * it opens a size grid rather than running a command, so it cannot sit in `actions` with the
+   * plain buttons. When a host hides Insert image it lands last among them instead of jumping
+   * somewhere the sender would have to hunt for.
+   */
+  const imageAt = actions.findIndex((action) => action.label === "Insert image");
+  const beforeTable = imageAt < 0 ? actions : actions.slice(0, imageAt);
+  const afterTable = imageAt < 0 ? [] : actions.slice(imageAt);
+  const tableShown = !hiddenActions?.includes("Insert table");
+
+  /**
+   * The row and column controls, shown only while the caret is inside a table.
+   *
+   * Owner 2026-09-17: "what if I want to add or delete a column or a row? I want to be able to do
+   * this manual" — so these are words, not icons: there is no icon for "column left" a sender
+   * would read correctly the first time.
+   */
+  const tableControls: { label: string; run: () => void }[] = [
+    { label: "Row above", run: () => addRow(false) },
+    { label: "Row below", run: () => addRow(true) },
+    { label: "Column left", run: () => addColumn(false) },
+    { label: "Column right", run: () => addColumn(true) },
+    { label: "Delete row", run: deleteRow },
+    { label: "Delete column", run: deleteColumn },
+    { label: "Delete table", run: deleteTable },
+  ];
+
+  const toolbarButton = (action: ToolbarAction) => (
+    <button
+      aria-label={action.label}
+      className={TOOLBAR_BUTTON_CLASS}
+      key={action.label}
+      onClick={action.run}
+      onMouseDown={(event) => event.preventDefault()}
+      title={action.label}
+      type="button"
+    >
+      <action.icon className="h-4 w-4" />
+    </button>
+  );
 
   return (
     <div className="border-y border-phx-line">
@@ -705,19 +919,58 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
             type="color"
           />
         </label>
-        {actions.map((action) => (
-          <button
-            aria-label={action.label}
-            className="flex h-8 w-8 items-center justify-center border border-transparent text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
-            key={action.label}
-            onClick={action.run}
-            onMouseDown={(event) => event.preventDefault()}
-            title={action.label}
-            type="button"
-          >
-            <action.icon className="h-4 w-4" />
-          </button>
-        ))}
+        {beforeTable.map(toolbarButton)}
+        {tableShown ? (
+          <div className="relative">
+            <button
+              aria-label="Insert table"
+              className={TOOLBAR_BUTTON_CLASS}
+              onClick={() => {
+                rememberSelection();
+                setTablePickerOpen((open) => !open);
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              title="Insert table"
+              type="button"
+            >
+              <Table className="h-4 w-4" />
+            </button>
+            {tablePickerOpen ? (
+              <div className="absolute left-0 top-9 z-20 border border-phx-line bg-white p-2 shadow-md">
+                <div className="mb-1 text-phx-2xs font-bold text-phx-ink-2">
+                  {tableHover.rows > 0
+                    ? `${tableHover.rows} rows by ${tableHover.columns} columns`
+                    : "Pick the size"}
+                </div>
+                <div
+                  className="flex flex-col gap-0.5"
+                  onMouseLeave={() => setTableHover({ columns: 0, rows: 0 })}
+                >
+                  {Array.from({ length: TABLE_PICK_MAX_ROWS }, (_unused, row) => (
+                    <div className="flex gap-0.5" key={row}>
+                      {Array.from({ length: TABLE_PICK_MAX_COLUMNS }, (_cell, column) => (
+                        <button
+                          className={`h-4 w-4 border ${
+                            row < tableHover.rows && column < tableHover.columns
+                              ? "border-[#FED7AA] bg-phx-accent-soft"
+                              : "border-phx-line bg-white"
+                          }`}
+                          key={column}
+                          onClick={() => addTable(row + 1, column + 1)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setTableHover({ columns: column + 1, rows: row + 1 })}
+                          title={`${row + 1} rows by ${column + 1} columns`}
+                          type="button"
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {afterTable.map(toolbarButton)}
         {uploadImage ? (
           <input
             accept={imageAccept ?? "image/jpeg,image/png,image/gif,image/webp"}
@@ -737,6 +990,23 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           Write here like Gmail - check the Preview for the exact employee view.
         </span>
       </div>
+      {inTable && tableShown ? (
+        <div className="flex flex-wrap items-center gap-1 border-b border-phx-line bg-phx-accent-soft px-3 py-1.5">
+          <span className="mr-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-2">Table</span>
+          {tableControls.map((control) => (
+            <button
+              className="h-7 border border-phx-line bg-white px-2 text-phx-2xs font-bold text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
+              key={control.label}
+              onClick={control.run}
+              onMouseDown={(event) => event.preventDefault()}
+              title={control.label}
+              type="button"
+            >
+              {control.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div
         className="phx-email-editor min-h-[320px] w-full bg-white px-5 py-4 text-phx-lg leading-[1.75] text-[#111827] outline-none"
         contentEditable
@@ -745,9 +1015,15 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         onDragOver={(event) => event.preventDefault()}
         onDrop={handleDrop}
         onFocus={() => onFocusBody?.()}
-        onInput={emit}
-        onKeyUp={rememberSelection}
-        onMouseUp={rememberSelection}
+        onInput={() => {
+          emit();
+          syncSelection();
+        }}
+        onKeyUp={syncSelection}
+        onMouseUp={() => {
+          syncSelection();
+          setTablePickerOpen(false);
+        }}
         onPaste={handlePaste}
         ref={editorRef}
         role="textbox"

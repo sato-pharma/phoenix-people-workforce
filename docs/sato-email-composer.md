@@ -90,23 +90,53 @@ The same test sanitizes every taught markup string and asserts it survives. A to
 the sanitizer throws away would look to the sender like the model ignoring him, which is worse than
 a missing feature because nothing reports it.
 
-**Restraint is the instruction.** Colour, highlight, font and font size are used only when the
-sender asks for them; a heading only when the announcement genuinely has two sections; a table only
-when the draft already holds something with two dimensions. Left alone, a rewrite comes back as
-plain paragraphs, one list, and bold on the single thing that must not be missed.
+**Restraint is the instruction, but an instruction always wins.** Colour, highlight, font and font
+size are used only when the sender asks for them; a heading only when the announcement genuinely has
+two sections. Left alone, a draft comes back as plain paragraphs, one list, and bold on the single
+thing that must not be missed.
 
-## Rewrite it — the draft in the company's voice
+### The table is whatever shape he says it is
+
+Owner 2026-09-17: *"the table now is obligatory three columns. What if I want to add or delete a
+column of a, or a row? I want to be able to do this manual, and I want the AI assist to be able to
+do this. For example, I told him make a table which is two columns."*
+
+Both halves of that, one mechanism each:
+
+- **By hand.** **Insert table** opens a size grid — up to 6 rows by 8 columns — and draws exactly
+  the table picked. The moment the caret is inside one, a second toolbar strip appears under the
+  first with **Row above**, **Row below**, **Column left**, **Column right**, **Delete row**,
+  **Delete column** and **Delete table**. Deleting the last row or the last column turns the table
+  back into an empty paragraph rather than leaving a husk. Every cell a control adds carries the
+  house border and padding inline, because an unstyled `<td>` renders unruled in every email client.
+- **By asking.** `Table shape` in the toolbox catalogue teaches the model that a table has however
+  many rows and columns the sender names, and that a cell whose value nobody gave it takes a
+  `[square bracket]` gap rather than a guess. The sentence it replaced — *reach for a table only
+  when the content already has two dimensions, and never add a column the draft cannot fill* — is
+  precisely why *"make it a table of two columns"* used to come back as a paragraph.
+  `tests/sato-email-toolbox.test.ts` fails if it returns.
+
+## The assistant — Write it, and Rewrite what I wrote
 
 Owner 2026-09-12: *"add ai tool is the new sato composer in which i write what i want and it enhance
-rephrase more to the point more corporate"*.
+rephrase more to the point more corporate"*. Owner 2026-09-17: *"I want to be able to tell it write
+a job offer to someone whose area will be like this ... I wanted a real assistant, a real AI assist,
+not a fucking do nothing."*
 
-Under the body there is one button. The sender writes the email however it comes out — rough,
-half-Arabic, three paragraphs where one would do — presses **Rewrite it**, and gets the same email
-back shorter, plainer and in a formal corporate register. An optional one-line nudge beside the
-button ("shorter", "lead with the deadline") is passed through on top of the house voice.
+Under the body there is a box to type what he wants, and two buttons.
 
-It is not a draft generator. There is no "write me an email about X" on this screen, and that is
-deliberate: the sender owns what the email says, and the button only owns how it reads.
+- **Write it** composes the whole email from that instruction, and works on an empty page. A job
+  offer reads as a job offer, a warning letter as a warning letter. It uses every button in the
+  toolbar above, including a table of the shape he names.
+- **Rewrite what I wrote** is the older behaviour, unchanged: his draft comes back shorter, plainer
+  and in a formal corporate register, with the facts exactly as he left them.
+
+🔴 **The instruction box is his own writing, in both modes.** He typed it, on this screen, seconds
+ago — so a figure in it ("basic 9000, starting 1 October") is his, not an invention. Leaving it out
+of that reckoning is what made the old one feel like a do-nothing: *"say we close at 2 PM"* typed
+into the nudge box came back refused as a figure nobody wrote. The box holds a briefing now
+(`SATO_ASSIST_MAX_INSTRUCTION_CHARS`, 4,000 characters), not the old 200-character nudge, because
+an offer's terms do not fit in one line.
 
 - **Code:** [src/lib/sato-email/polish.ts](../src/lib/sato-email/polish.ts) — the pure guards at the
   top, the one model call at the bottom. The toolbox it is allowed to use is
@@ -122,7 +152,7 @@ deliberate: the sender owns what the email says, and the button only owns how it
   bold paragraph that `render.ts` converts into a rule plus a small uppercase label, so a rewrite
   that finds two real sections in the draft gets the journey paper's section device for free.
 
-### It rewrites and formats. It never adds a fact.
+### It never invents a fact — but only Rewrite refuses over one
 
 🔴 **This is the whole safety story, and it fails closed.** A model asked to make a thin note sound
 corporate will reach for the effective date, the policy number, the deadline and the link. On the
@@ -143,13 +173,22 @@ when any of these is true:
 A refusal names what it caught and tells the sender to press it again or send his own words. He is
 standing in front of the button; nothing is lost.
 
+**Write mode keeps three of those six and reports the other two.** An email composed from an
+instruction is, by definition, full of words that are not in a body he never typed, so refusing over
+a figure would hand him back nothing — the exact complaint this mode answers. The three that stay
+are the three no amount of reading makes safe: **a minted link or image address, any mention of AI,
+and an empty subject or body.** The prompt's own rule is that a fact nobody gave it is written as a
+`[start date]`, `[basic salary]`, `[line manager]` gap for him to fill. Where it states a figure
+anyway, `unverifiedFigures` lists it under **Check these before you send**, one line each, above the
+draft — named rather than thrown away.
+
 Two more things are cleaned rather than refused, because neither changes meaning: a sign-off the
 **sender did not write** is stripped (the composer has its own Signed field and the house frame
 prints it, so a second one signs the email twice), and the body goes through
 `sanitizeEmailTemplateHtml` like every other body, so a rewrite can only ever carry markup the
 design knows how to render.
 
-**Nothing is saved and nothing is sent.** The rewritten wording lands back in the same two fields
+**Nothing is saved and nothing is sent.** The wording it produces lands back in the same two fields
 the sender was already editing, the preview is invalidated with it — so a recipient count on screen
 can never belong to the older draft — and **Put my words back** restores his own text exactly,
 because it never left the browser. The panel closes the moment he edits anything, since undoing

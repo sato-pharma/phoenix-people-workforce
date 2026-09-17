@@ -181,9 +181,41 @@ export const EMAIL_TOOLBAR_TOOLS: readonly EmailToolbarTool[] = [
       `<table style="border-collapse: collapse; width: 100%"><tbody>` +
       `<tr><th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Column</th></tr>` +
       `<tr><td style="border: 1px solid #cbd5e1; padding: 8px">Cell</td></tr></tbody></table>`,
-    note: "only when the draft already has something with two dimensions; never an empty cell",
+    note: "every cell carries that border and padding, or it renders unruled",
     survivesAs: "<td",
   },
+  {
+    // 🔴 THE ENTRY THE OWNER ASKED FOR, 2026-09-17: "the table now is obligatory three columns …
+    // I told him make a table which is two columns". Insert table above draws one table; this is
+    // the one that says the SHAPE is his to name, and that it can still change afterwards.
+    asks: [
+      "make it a table of two columns",
+      "add a column for the area",
+      "delete the last row",
+      "one row per branch",
+    ],
+    label: "Table shape",
+    markup:
+      `<table style="border-collapse: collapse; width: 100%"><tbody>` +
+      `<tr><th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Item</th>` +
+      `<th style="border: 1px solid #cbd5e1; padding: 8px; text-align: left">Detail</th></tr>` +
+      `<tr><td style="border: 1px solid #cbd5e1; padding: 8px">Name</td>` +
+      `<td style="border: 1px solid #cbd5e1; padding: 8px">[value]</td></tr></tbody></table>`,
+    note:
+      "however many rows and columns the sender names — rewrite the whole table to the shape he " +
+      "asked for, and put a [square bracket] gap in any cell whose value nobody has given you",
+    survivesAs: "<th",
+  },
+  // The row and column controls the sender presses. The model reaches the same result by rewriting
+  // the table to the shape he named, which is what Table shape above teaches, so these carry no
+  // markup of their own — they are listed so the coverage test sees them considered, not forgotten.
+  { asks: ["add a row above this one"], label: "Row above", markup: null },
+  { asks: ["add a row", "one more row"], label: "Row below", markup: null },
+  { asks: ["add a column before this one"], label: "Column left", markup: null },
+  { asks: ["add a column", "one more column"], label: "Column right", markup: null },
+  { asks: ["delete this row", "drop the last row"], label: "Delete row", markup: null },
+  { asks: ["delete this column", "take the area column out"], label: "Delete column", markup: null },
+  { asks: ["remove the table", "no table"], label: "Delete table", markup: null },
   {
     asks: ["add the picture", "put the poster in"],
     label: "Insert image",

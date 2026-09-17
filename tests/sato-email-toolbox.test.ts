@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { EMAIL_TOOLBAR_TOOLS, toolboxPromptLines } from "@/lib/email/toolbar-tools";
 import { sanitizeEmailTemplateHtml } from "@/lib/email/email-safety";
-import { SATO_POLISH_INSTRUCTIONS } from "@/lib/sato-email/polish";
+import { SATO_POLISH_INSTRUCTIONS, SATO_WRITE_INSTRUCTIONS } from "@/lib/sato-email/polish";
 
 const EDITOR_SOURCE = "src/components/admin/email-body-editor.tsx";
 
@@ -82,11 +82,49 @@ export function runSatoEmailToolboxTests() {
   );
   for (const line of lines) {
     assert.ok(SATO_POLISH_INSTRUCTIONS.includes(line), `the rewrite prompt is missing a toolbox line: ${line}`);
+    // 🔴 BOTH PROMPTS, not just the rewrite one. An assistant that can write a whole job offer but
+    // cannot bold a line inside it is the same do-nothing in a new shape (owner, 2026-09-17).
+    assert.ok(SATO_WRITE_INSTRUCTIONS.includes(line), `the write prompt is missing a toolbox line: ${line}`);
   }
-  assert.ok(
-    SATO_POLISH_INSTRUCTIONS.includes('"bold the deadline"'),
-    "the prompt must carry the sender's own phrasing, not just the tool's formal label",
-  );
+  for (const instructions of [SATO_POLISH_INSTRUCTIONS, SATO_WRITE_INSTRUCTIONS]) {
+    assert.ok(
+      instructions.includes('"bold the deadline"'),
+      "the prompt must carry the sender's own phrasing, not just the tool's formal label",
+    );
+  }
+
+  // 4 — the table is the sender's to shape, in both directions.
+  //
+  // Owner 2026-09-17: "the table now is obligatory three columns. What if I want to add or delete a
+  // column or a row? I want to be able to do this manual, and I want the AI assist to be able to do
+  // this. For example, I told him make a table which is two columns."
+  //
+  // Two halves, one assertion each: the seven controls he presses himself, and the sentence that
+  // tells the model a shape he names wins. The old prompt said a table was only for a draft that
+  // already had two dimensions, which is exactly why "make it two columns" came back as a paragraph.
+  for (const control of [
+    "Insert table",
+    "Row above",
+    "Row below",
+    "Column left",
+    "Column right",
+    "Delete row",
+    "Delete column",
+    "Delete table",
+  ]) {
+    assert.ok(controls.includes(control), `the editor must offer ${control} — he asked to do this by hand`);
+  }
+  for (const instructions of [SATO_POLISH_INSTRUCTIONS, SATO_WRITE_INSTRUCTIONS]) {
+    assert.match(
+      instructions,
+      /a table with two columns/,
+      "🔴 the prompt must say that a shape the sender NAMES is built exactly as named",
+    );
+    assert.ok(
+      !instructions.includes("never add a column the draft cannot fill"),
+      "the sentence that made the model refuse his own table shape must not come back",
+    );
+  }
 
   // The tools that were previously forbidden outright. The old prompt told the model to write no
   // style attribute at all; if that sentence ever comes back it silently disables the toolbox.
