@@ -194,7 +194,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - Show **human-readable names**, never raw codes or IDs, in both UI and chat.
 - **Never truncate text with an ellipsis.** Where it collides with the no-horizontal-scroll rule, wrapping wins.
 - Give only recommendations grounded in a real confirmed need. **Never pad a list to hit a number.**
-- **Open EVERY reply with one `Next step:` line — FIRST, not last, and not repeated at the end.** It names only what needs him; when nothing does, it reads "nothing waits on you — <what finished>", with no quoted words. `recommendation-goes-first-not-last`
+- **Open EVERY reply with one `Next step:` line — FIRST, not last, and not repeated at the end**, and it **ALWAYS ends in curly-quoted words he could send as-is** (owner, 2026-09-18 — "always put something in the box"). It names what needs him; when nothing does, it says what finished and quotes the next REAL action, named with its real target — never filler, never invented work. 🔴 **The no-quotes "nothing waits on you" form is RETIRED** — it left his box reading `<no suggestion>`. The 2026-09-15 loop ban is untouched: never quote a re-check, a re-run, a status read, "continue", "check other pending items" or a closing word. `recommendation-goes-first-not-last`
 
 **How to take work**
 
