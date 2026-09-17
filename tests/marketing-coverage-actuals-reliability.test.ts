@@ -37,6 +37,7 @@ function scope(overrides: Partial<MarketingRoiScope>): MarketingRoiScope {
     visibleRsmHrIds: new Set<string>(),
     visibleLineNames: null,
     visibleProductCodes: null,
+    visibleAreaIds: new Set<number>(),
     canRevealRestricted: false,
     ...overrides,
   };

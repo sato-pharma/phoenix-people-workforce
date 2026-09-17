@@ -51,9 +51,38 @@ function emptyScope(
     visibleRsmHrIds: new Set<string>(),
     visibleLineNames: null,
     visibleProductCodes: null,
+    visibleAreaIds: new Set<number>(),
     canRevealRestricted: canViewRestrictedProducts(access.role),
     ...overrides,
   };
+}
+
+/**
+ * The territory route, Medical-Rep only — owner instruction 2026-09-18.
+ *
+ * A rep no longer raises marketing requests (the drafts workspace and the Approval Inbox went dark
+ * for them the same day), so the requester route leaves their ROI Tracker empty. He asked for the
+ * page to stay "to be able to track roi of requests his manager did in his area", so a rep also
+ * sees every request whose TARGET CUSTOMER sits in their own `employees.area_id` — which is their
+ * DM's spend on their patch, and not the DM's spend on a sibling rep's patch.
+ *
+ * Deliberately narrow: no other seat gets an area route. A DM, RM or NSM already reaches everything
+ * their subtree raised through the requester route, which is wider than one area.
+ */
+function viewerAreaScope(
+  access: AccessContext,
+  employeeRows: EmployeeDirectoryRow[],
+  viewerHrId: string | null,
+): Set<number> {
+  const areaIds = new Set<number>();
+  if (access.role !== "Medical Rep" || !viewerHrId) return areaIds;
+  for (const row of employeeRows) {
+    if (normalizeHrId(row.hrId) !== viewerHrId) continue;
+    if (row.areaId === null || row.areaId === undefined) continue;
+    const areaId = Number(row.areaId);
+    if (Number.isFinite(areaId)) areaIds.add(areaId);
+  }
+  return areaIds;
 }
 
 /**
@@ -69,6 +98,9 @@ function emptyScope(
  *    requests are visible (exactly `canSeeMarketingRequest`'s decision) and
  *    classifies the visible seats into DM/NSM/RSM buckets (excluding the viewer's
  *    own seat) so the per-DM / per-NSM / per-RSM filters can be offered.
+ *  - A Medical Rep additionally gets a TERRITORY route (`visibleAreaIds`, owner
+ *    2026-09-18): every request whose target customer sits in their own area,
+ *    whoever raised it. See `viewerAreaScope` below.
  */
 export function resolveMarketingRoiScope(
   access: AccessContext,
@@ -140,6 +172,7 @@ export function resolveMarketingRoiScope(
     visibleRsmHrIds,
     visibleLineNames: visibleLineNames.size > 0 ? visibleLineNames : new Set<string>(),
     visibleProductCodes: null,
+    visibleAreaIds: viewerAreaScope(access, employeeRows, viewerHrId),
     canRevealRestricted,
   });
 }
