@@ -1009,6 +1009,10 @@ export async function runWeeklySalesImportTests() {
       assert.equal(depot.rows, 2, "both source rows of the depot are counted");
       assert.equal(depot.netQty, 7, "excluded net units counted = 10 sold − 3 returned");
       assert.equal(depot.stockQty, 30, "excluded stock units counted");
+      // Its units add every item it held out, so the Upload screen prints them only for ONE item (units of
+      // different products are never added). Both source rows are the one Saginkgo item.
+      assert.equal(depot.itemKeys?.length, 1, `the depot names the one item its units are of; got ${JSON.stringify(depot.itemKeys)}`);
+      assert.match(depot.itemKeys[0], /SAG.*\|.*saginkgo/i, "keyed by the item's code and name");
     }
 
     // IGNORE alias ("we don't sell this") → kept out of the numbers, listed, and NEVER blocking.

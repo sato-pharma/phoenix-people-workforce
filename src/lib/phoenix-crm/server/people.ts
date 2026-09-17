@@ -1,0 +1,45 @@
+/**
+ * Phoenix CRM — people's names for the screens (names, never HR codes).
+ *
+ * A light read of `employees` (hr id, full name, nickname) rather than the employee directory, which
+ * carries salary columns this module never needs. Names follow the company's display rule
+ * (resolveEmployeeDisplayName: the nickname when there is one).
+ */
+
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { hrIdLookupKeys } from "@/lib/hr-id";
+import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { personKey } from "@/lib/phoenix-crm/scope";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+export type PeopleNames = ReadonlyMap<string, string>;
+
+/** Display names keyed by upper-case HR id. A person with no employee row is left out. */
+export async function loadPeopleNames(hrIds: Iterable<string | null | undefined>): Promise<PeopleNames> {
+  const wanted = new Set<string>();
+  for (const hrId of hrIds) {
+    const key = personKey(hrId);
+    if (key) wanted.add(key);
+  }
+  const names = new Map<string, string>();
+  if (wanted.size === 0) return names;
+
+  const lookup = [...new Set([...wanted].flatMap((key) => hrIdLookupKeys(key)))];
+  const supabase = getSupabaseAdmin();
+  for (const part of chunk(lookup, 200)) {
+    const { data, error } = await supabase.from("employees").select("hr_id, full_name, nickname").in("hr_id", part);
+    throwIfError(error);
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const key = personKey(typeof row.hr_id === "string" ? row.hr_id : null);
+      if (!key || !wanted.has(key) || names.has(key)) continue;
+      const fullName = typeof row.full_name === "string" ? row.full_name.trim() : "";
+      names.set(key, resolveEmployeeDisplayName(fullName || "Unnamed employee", typeof row.nickname === "string" ? row.nickname : null, key));
+    }
+  }
+  return names;
+}
+
+export function nameOf(names: PeopleNames, hrId: string | null | undefined, fallback = "Unknown person"): string {
+  const key = personKey(hrId);
+  return (key && names.get(key)) || fallback;
+}

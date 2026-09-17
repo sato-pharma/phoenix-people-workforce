@@ -5,7 +5,6 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
-import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
 import { removeSalesUploadObject, resolveSalesUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -22,24 +21,15 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
 
-    const resolved = await resolveSalesUploadRequest(request);
+    const resolved = await resolveSalesUploadRequest(request, access);
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.error, success: false, ...(resolved.code ? { code: resolved.code } : {}) }, { status: resolved.status });
     }
     cleanupStoragePath = resolved.storagePath;
 
-    // Refuse a workbook that has already been committed for this distributor under a DIFFERENT
-    // period. IS-S loaded the identical file as both 2026-04 and 2026-05 — 1,141 rows and
-    // 349,266.46 EGP each — so one month is double-counted and the other was never loaded.
-    // This is the confirm step and `resolved.period` is the period the user actually chose, which
-    // is why the check belongs here: earlier in the pipeline the period is not yet known, and a
-    // null period would make the legitimate same-period replace flow look like a duplicate.
-    await assertNotADuplicateUpload({
-      distributorCode: resolved.distributorCode,
-      fileName: resolved.file.name,
-      period: resolved.period,
-    });
-
+    // The same-workbook-under-another-period refusal is NOT made here. Only the file name is known
+    // at this point, and a name alone refuses real months (import-duplicate-guard.ts); the save step
+    // inside importSourceOfSalesFile makes it with the name and the figures.
     const uploadedBy = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
     const result = await importSourceOfSalesFile({
       distributorCode: resolved.distributorCode,

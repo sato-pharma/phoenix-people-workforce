@@ -131,6 +131,11 @@ export type WeeklyExcludedBranch = {
   branchName: string;
   /** PS stock matrix only — the 1-based column this depot sat in */
   branchColumnIndex: number | null;
+  /**
+   * The distinct items (normalised code | name) this depot's held-out rows carried. Its units add them,
+   * so the screen shows those units only while they are one item's (unit-totals.ts).
+   */
+  itemKeys: string[];
   /** distinct source sheet rows dropped */
   rows: number;
   /** net units (sales − returns) that did NOT enter the totals */
@@ -236,7 +241,8 @@ export type WeeklySalesValidationResult = {
 // (never sales numbers) and compares it against the per-distributor column contract. Advisory only —
 // it never persists and the server /validate step remains the real validation boundary.
 
-export type WeeklyVerifyColumnStatus = "match" | "drift" | "uncertain" | "empty";
+/** "missing" = the file has no sheet the import would read for this column (sheet-match.ts). */
+export type WeeklyVerifyColumnStatus = "match" | "drift" | "uncertain" | "empty" | "missing";
 
 export type WeeklyVerifyColumn = {
   /** which file/sheet this column belongs to ("sales" | "stock" | "returns" | "combined") */
@@ -356,6 +362,14 @@ export type WeeklyBranchRow = {
 };
 
 /**
+ * How a row reached a manager whose load follows his own areas (own-area-share.ts):
+ *   mapped    — a depot mapped to one of his areas by hand: the depot's own sale there;
+ *   allocated — the part of a depot the owner's split rule places in one of his areas;
+ *   whole     — a depot no rule places in any area (a warehouse, a tender), which his own scope admits.
+ */
+export type WeeklyAreaBasis = "mapped" | "allocated" | "whole";
+
+/**
  * A single de-cumulated, access-scoped, filter-applied fact row — the row-level grain that powers the
  * interactive BI export (its hidden Data sheet, pivots, charts and SUMIFS formulas). Only populated
  * when `includeFactRows` is requested (the export path), so the on-screen dashboard payload stays lean.
@@ -393,6 +407,11 @@ export type WeeklyFactExportRow = {
   salesValue: number;
   salesUnits: number;
   stockUnits: number;
+  /**
+   * Set only on a load that followed the viewer's own areas (ownAreaShare): how the row reached him.
+   * Absent everywhere else, where a row carrying an area is hand-mapped and any other row is not placed.
+   */
+  areaBasis?: WeeklyAreaBasis;
 };
 
 export type WeeklyDashboard = {
@@ -493,6 +512,13 @@ export type WeeklyDashboard = {
      * never shown as a true single-week value.
      */
     spansGap: boolean;
+    /**
+     * True when money in this week came from a depot that sent no sheet for the week before
+     * (depotWeekGaps in decumulate.ts), so that depot's part of the figure also holds the week it
+     * skipped. The figure is kept and the week is marked (owner, 2026-09-17); only spansGap suppresses.
+     * One depot's sheet cannot hide another depot's missing week here, as it can for spansGap.
+     */
+    depotSpansGap: boolean;
   }[];
   /** the validated source sheets this report was built from (powers the export's "Report Sources" block) */
   sources: {
@@ -525,6 +551,14 @@ export type WeeklyDashboard = {
    * with the live master price. Only present when `includeStockRows` is requested.
    */
   stockRows?: import("./stock-dashboard").WeeklyStockSourceRow[];
+  /**
+   * Every depot week that spans an upload gap (depotWeekGaps in decumulate.ts): the depot sent no sheet
+   * for the week before it in that cycle month, so its de-cumulated figures hold more than one week.
+   * Read over every loaded row, whatever the viewer's scope, so it names depots and weeks the viewer may
+   * not see: server-only, stripped before any payload reaches the browser. Flags only, no money. Only
+   * present when `includeFactRows` is requested.
+   */
+  factRowDepotWeekGaps?: import("./decumulate").DepotWeekGap[];
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

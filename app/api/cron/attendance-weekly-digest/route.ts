@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { applyDigestAnswersForMonth } from "@/lib/attendance/digest-bridge.ts";
-import { generateDigestsForCompletedWeek, getDigestSettings, settleOverdueAnswers } from "@/lib/attendance/digest-service.ts";
+import { getDigestSettings, settleOverdueAnswers, syncOpenReviewWeeks } from "@/lib/attendance/digest-service.ts";
 import { previousMonthKey } from "@/lib/attendance/digest-weeks.ts";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
@@ -15,9 +15,12 @@ export const maxDuration = 300;
 /**
  * The weekly attendance review's scheduled work, in three steps.
  *
- *   1. GENERATE — build the digests for the settlement week that has just CLOSED, as
- *      `awaiting_release`. This step SENDS NOTHING: a week reaches its employees only when
- *      the Super Admin releases it from the admin review page (owner, 2026-09-15).
+ *   1. SYNC — bring every started week of the review month up to date from the fingerprint
+ *      report, through yesterday (owner, 2026-09-17 — "Show live, release any time"): new
+ *      flagged days are added unticked, waiting days follow the report, and a waiting day the
+ *      report has since cleared is taken off. This step SENDS NOTHING: a day reaches its
+ *      employee only when the Super Admin releases it from the admin review page (owner,
+ *      2026-09-15). It runs twice a day, because punches arrive late morning.
  *   2. DEADLINE — settle every day still unanswered after its answer deadline (2 working
  *      days from release; days on leave, approved or still waiting for approval, do not
  *      count, so leave filed since the release moves it later) to salary. Owner decisions
@@ -40,12 +43,13 @@ export const maxDuration = 300;
  * be applied span the current month and the one before it, and asking for only the
  * current month would strand every answer given about the previous one.
  *
- * Safe to call daily. Generation skips a week it has already built; the bridge no-ops
+ * Safe to call any number of times. The sync changes nothing a second time and never touches
+ * a released day; the bridge no-ops
  * three ways — a settlement already applied, a candidate a person has already decided,
  * and a day with no candidate yet — so the six extra calls a week do nothing at all.
  *
  * `enabled` is checked first and reported honestly: a disabled module returns
- * `skipped: "disabled"` rather than a cheerful zero, because "0 generated" and
+ * `skipped: "disabled"` rather than a cheerful zero, because "0 days added" and
  * "switched off" are indistinguishable otherwise — which is exactly how the outbox
  * drain ran perfectly and did nothing for 13 days.
  */
@@ -65,12 +69,19 @@ export async function GET(request: Request) {
     const { year, month, day } = currentCairoDateParts();
     const todayIso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 
-    const generated = await generateDigestsForCompletedWeek({
+    // A week that fails to sync does not stop the other weeks or the steps below; its failure is
+    // returned and turns the run red.
+    const synced = await syncOpenReviewWeeks({
       todayIso,
       createdBy: "system:attendance-weekly-digest-cron",
     });
+    if (synced.failures.length) {
+      logError("Weekly attendance review sync failed for some employees", {
+        labels: { event: "cron_partial", job: "attendance-weekly-digest", syncFailures: String(synced.failures.length) },
+      });
+    }
 
-    // Generation has already committed by this point, so a failure below must not be
+    // The sync has already committed by this point, so a failure below must not be
     // reported as though the whole run failed — but it must not be swallowed either.
     // Every result is returned, and the status goes 500 so a broken step is loud
     // rather than a quiet zero that reads exactly like "nothing to do".
@@ -108,7 +119,8 @@ export async function GET(request: Request) {
     // had already approved (taken twice). Each is retried or needs a person, and a 200 would hide it.
     const deadlineFailures = deadline?.failures ?? 0;
     const balanceAlerts = applied.flatMap((result) => result.alerts);
-    const failed = Boolean(bridgeError || deadlineError || deadlineFailures > 0 || balanceAlerts.length > 0);
+    const syncFailures = synced.failures.length;
+    const failed = Boolean(bridgeError || deadlineError || deadlineFailures > 0 || balanceAlerts.length > 0 || syncFailures > 0);
     if (deadlineFailures > 0 || balanceAlerts.length > 0) {
       logError("Weekly attendance run needs attention", {
         labels: { event: "cron_partial", job: "attendance-weekly-digest", deadlineFailures: String(deadlineFailures), balanceAlerts: String(balanceAlerts.length) },
@@ -116,7 +128,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json(
       // `notified: 0` stays literal: this job never notifies — the release does.
-      { success: !failed, dryRun: settings.dryRun, todayIso, generated, deadline, deadlineError, applied, bridgeError, notified: 0 },
+      { success: !failed, dryRun: settings.dryRun, todayIso, synced, deadline, deadlineError, applied, bridgeError, notified: 0 },
       { status: failed ? 500 : 200 },
     );
   } catch (error) {

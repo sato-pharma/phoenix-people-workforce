@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
 
-    const resolved = await resolveSalesUploadRequest(request);
+    const resolved = await resolveSalesUploadRequest(request, access);
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.error, success: false, ...(resolved.code ? { code: resolved.code } : {}) }, { status: resolved.status });
     }

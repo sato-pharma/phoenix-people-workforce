@@ -74,11 +74,33 @@ const BADGE = 18 + 4 * 2 + 6;
  */
 export const PORTAL_SIDEBAR_WIDTH = 324;
 
+/** The collapsed aside, `w-[78px]`. The icon rail is then the whole card: 76px inside its borders. */
+export const PORTAL_COLLAPSED_SIDEBAR_WIDTH = 78;
+
 /** The card inside the aside is `w-full` with a 1px `border` on each side. */
-const PORTAL_CARD_BORDER = 1 * 2;
+export const PORTAL_CARD_BORDER = 1 * 2;
 
 /** The dark icon-rail column beside the labels, `w-[58px] shrink-0`. */
-const PORTAL_ICON_RAIL = 58;
+export const PORTAL_ICON_RAIL = 58;
+
+/**
+ * The one thing the icon rail holds across its width: a section link, `h-10 w-[52px]`. Its nav
+ * therefore pays for nothing else — no side padding, no scrollbar track (it keeps `overflow-y-auto`,
+ * with the bar hidden) — which leaves 3px a side at 58px and 12px a side collapsed.
+ *
+ * The bar stays hidden when the nav does scroll — the owner's decision, 2026-09-16. Each link is
+ * `shrink-0`, so a window too short for every section scrolls the nav instead of squashing the links
+ * toward their 16px icons, and a visible classic bar would cost 15px this rail cannot pay.
+ * tests/portal-rail-scrolls-never-squashes.test.ts holds both.
+ *
+ * Until 2026-09-16 the nav also carried `px-2` and `.phoenix-employee-sidebar-scroll`, whose
+ * `scrollbar-gutter: stable` Chromium counts in the nav's OWN width: 52 + 16 + 10 = 78px, centred
+ * in a 58px column. Every portal page from 1024px read scrollWidth 68 > clientWidth 58 on the rail,
+ * and the active section's marker, placed 8px left of its link, sat past the card's clip.
+ * tests/shell-chrome-overflows.test.ts derives the nav's width from the classes and holds it to
+ * both rail widths.
+ */
+export const PORTAL_RAIL_LINK = 52;
 
 /** The label column's `px-4`. */
 const PORTAL_COLUMN_PADDING = 16 * 2;

@@ -200,6 +200,7 @@ export function HeadOfficeAttendancePanel() {
   }, [month, year]);
 
   const employees = useMemo(() => result?.employees ?? [], [result]);
+  const holidayCalendarReachable = result?.holidayCalendarReachable ?? true;
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return employees;
@@ -254,6 +255,14 @@ export function HeadOfficeAttendancePanel() {
       </Card>
 
       <HeadOfficeLegend />
+
+      {holidayCalendarReachable ? null : (
+        <Card className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          The public holiday calendar could not be read for this month. Company and fixed-date public holidays still apply,
+          but the moving Islamic and Coptic holidays — both Eids, Islamic New Year, the Prophet&apos;s Birthday and Coptic
+          Easter — are missing, so such a day shows below as a missing day rather than a holiday.
+        </Card>
+      )}
 
       {loading ? (
         <Card className="rounded-xl border border-slate-200 bg-white p-6 text-sm font-semibold text-slate-500">Loading Head Office attendance…</Card>

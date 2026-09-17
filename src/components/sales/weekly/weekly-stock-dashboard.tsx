@@ -107,6 +107,10 @@ function formatAvgUnits(value: number): string {
 function formatCover(value: number | null): string {
   return value == null ? "—" : `${value.toFixed(1)} wks`;
 }
+/** Weeks of cover as the line under the average in the desktop tables, labelled because it has no column of its own. */
+function formatCoverLine(value: number | null): string {
+  return `Cover ${formatCover(value)}`;
+}
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -594,7 +598,7 @@ function Kpi({
           <Icon className="h-3.5 w-3.5" />
         </span>
         <p className="mt-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
+        <p className="mt-0.5 text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
         <p className="mt-0.5 text-phx-2xs font-semibold text-slate-400">{sub}</p>
       </div>
     </>
@@ -622,11 +626,14 @@ function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
       <p className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
+      <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
 
+// The desktop tables open at 1024 px, where the portal's main column leaves them about 620 px. They fit it
+// by merging columns, never by shrinking type: the status badge sits under the name, the weeks of cover
+// under the average, and no figure column is narrower than its widest figure.
 const TH = "px-3 py-2.5 font-black";
 const TH_NUM = "px-3 py-2.5 text-right font-black";
 const TD_NUM = "px-3 py-2.5 text-right tabular-nums text-slate-700";
@@ -637,13 +644,11 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col className="w-[27%]" />
-            <col className="w-[23%]" />
-            <col className="w-[9%]" />
-            <col className="w-[12%]" />
-            <col className="w-[9%]" />
-            <col className="w-[9%]" />
-            <col className="w-[11%]" />
+            <col className="w-[26%]" />
+            <col className="w-[24%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
@@ -652,8 +657,6 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
               <th className={TH_NUM}>Stock units</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg / week</th>
-              <th className={TH_NUM}>Cover</th>
-              <th className={TH}>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -668,13 +671,15 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
                 <td className="px-3 py-2.5">
                   <p className="break-words font-bold text-slate-900">{cell.productName}</p>
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">{cell.line}</p>
+                  <div className="mt-1.5">
+                    <StatusBadge status={cell.status} />
+                  </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(cell.stockUnits)}</td>
                 <td className={TD_NUM}>{cell.priceMissing ? <span className="text-phx-2xs font-bold text-slate-400">No price</span> : formatEgpFull(cell.stockValue)}</td>
-                <td className={TD_NUM}>{formatAvgUnits(cell.avgWeeklyUnits)}</td>
-                <td className={TD_NUM}>{formatCover(cell.coverWeeks)}</td>
-                <td className="px-3 py-2.5">
-                  <StatusBadge status={cell.status} />
+                <td className={TD_NUM}>
+                  <p>{formatAvgUnits(cell.avgWeeklyUnits)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(cell.coverWeeks)}</p>
                 </td>
               </tr>
             ))}
@@ -727,12 +732,10 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
             <col className="w-[28%]" />
-            <col className="w-[11%]" />
-            <col className="w-[14%]" />
-            <col className="w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[11%]" />
-            <col className="w-[15%]" />
+            <col className="w-[16%]" />
+            <col className="w-[18%]" />
+            <col className="w-[16%]" />
+            <col className="w-[22%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
@@ -740,8 +743,6 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
               <th className={TH_NUM}>Stock units</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg / week</th>
-              <th className={TH_NUM}>Cover</th>
-              <th className={TH}>Status</th>
               <th className={TH}>Depots</th>
             </tr>
           </thead>
@@ -751,13 +752,15 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
                 <td className="px-3 py-2.5">
                   <DrillName name={row.productName} onClick={() => onDrill(row.productCode)} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">{row.line}</p>
+                  <div className="mt-1.5">
+                    <StatusBadge status={row.status} />
+                  </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(row.stockUnits)}</td>
                 <td className={TD_NUM}>{formatEgpFull(row.stockValue)}</td>
-                <td className={TD_NUM}>{formatAvgUnits(row.avgWeeklyUnits)}</td>
-                <td className={TD_NUM}>{formatCover(row.coverWeeks)}</td>
-                <td className="px-3 py-2.5">
-                  <StatusBadge status={row.status} />
+                <td className={TD_NUM}>
+                  <p>{formatAvgUnits(row.avgWeeklyUnits)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
                 </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.depotCount)}</p>
@@ -817,20 +820,16 @@ function GroupTable({
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[15%]" />
-            <col className="w-[15%]" />
-            <col className="w-[10%]" />
-            <col className="w-[11%]" />
-            <col className="w-[21%]" />
+            <col className="w-[34%]" />
+            <col className="w-[20%]" />
+            <col className="w-[20%]" />
+            <col className="w-[26%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>{nameLabel}</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg weekly sales</th>
-              <th className={TH_NUM}>Cover</th>
-              <th className={TH}>Status</th>
               <th className={TH}>Products</th>
             </tr>
           </thead>
@@ -840,17 +839,19 @@ function GroupTable({
                 <td className="px-3 py-2.5">
                   <DrillName name={row.name} onClick={onDrill ? () => onDrill(row.code) : undefined} />
                   {groupSubline(row) ? <p className="break-words text-phx-2xs font-semibold text-slate-500">{groupSubline(row)}</p> : null}
-                  {"stale" in row && row.stale ? (
-                    <span className="mt-1 inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-800">
-                      Old stock file
-                    </span>
-                  ) : null}
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <StatusBadge status={row.status} />
+                    {"stale" in row && row.stale ? (
+                      <span className="inline-flex rounded-sm border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-800">
+                        Old stock file
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatEgpFull(row.stockValue)}</td>
-                <td className={TD_NUM}>{formatEgpFull(row.avgWeeklyValue)}</td>
-                <td className={TD_NUM}>{formatCover(row.coverWeeks)}</td>
-                <td className="px-3 py-2.5">
-                  <StatusBadge status={row.status} />
+                <td className={TD_NUM}>
+                  <p>{formatEgpFull(row.avgWeeklyValue)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
                 </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.productCount)}</p>

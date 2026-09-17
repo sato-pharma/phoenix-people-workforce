@@ -497,8 +497,9 @@ export async function getReproTrail(hrId: string | null | undefined, beforeIso: 
 }
 
 // ── Login security lens (Tab 2) ─────────────────────────────────────────────────
-// Thresholds aligned to the real lockout policy in src/lib/auth/audit.ts:
-//   account ≥5 failures / 15min → lockout; IP ≥15 failures / 15min → blocked; 30min lock.
+// Thresholds aligned to the real lockout policy in src/lib/auth/login-throttle-policy.ts:
+//   account ≥10 failures / 15min → 30min lock; IP ≥15 failures / 15min → blocked, except that an IP
+//   different accounts signed in from in the last 24h (a shared office) gets 10 per account, capped at 150.
 // Over a 7-day window we surface cumulative "notable" activity, not the per-15min gate.
 const SECURITY_WINDOW_FETCH_CAP = 20_000;
 const BRUTE_FORCE_IP_MIN_FAILS = 10;

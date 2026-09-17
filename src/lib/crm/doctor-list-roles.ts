@@ -85,7 +85,7 @@ export const DOCTOR_LIST_ACCESS_ROLES: readonly PhoenixRole[] = Array.from(
  * redirects. Every other admitted role is portal-mode.
  *
  * Medical Rep is absent from the list above entirely, unlike on KPIs: this board is about the reps
- * who report to you, so a rep would reach it and see nobody.
+ * who report to you, so a rep would reach it and see nobody. A rep's door is My List, below.
  */
 export const DOCTOR_LIST_PORTAL_ROLES: readonly PhoenixRole[] = [
   "National Sales Manager",
@@ -96,6 +96,31 @@ export const DOCTOR_LIST_PORTAL_ROLES: readonly PhoenixRole[] = [
   "Regional Manager",
   "District Manager",
 ] as unknown as readonly PhoenixRole[];
+
+/**
+ * My List — the same board, opened on the viewer's OWN list. A separate door, not a widening of
+ * the one above.
+ *
+ * The owner's instruction, 2026-09-16: "show in medical reps accounts the reps-list scoped to
+ * everyone scope and call is My List". Every seat reads the board at its own reach, and a rep's
+ * reach is the rep alone — so a rep gets their own contact list, under a name that says so, and
+ * managers keep Reps List.
+ *
+ * KEPT OUT OF `BASIS_BY_ROLE` ON PURPOSE. Adding Medical Rep there would admit a rep to Reps List
+ * itself (`canAccessDoctorList` is that page's gate) and change the answer for every other caller
+ * of `doctorListBasisForRole`, the direct-order venue picker among them. A rep reads one list and
+ * picks nobody, so a rep's door is its own page with its own gate, and the manager board's role
+ * list stays exactly as reviewed.
+ *
+ * No server-only import, for the same two callers as the list above: the portal sidebar flag and
+ * the nav catalog entry both mirror this list.
+ */
+export const MY_LIST_PORTAL_ROLES: readonly PhoenixRole[] = ["Medical Rep"] as unknown as readonly PhoenixRole[];
+
+/** Whether this seat's door onto the board is My List. The role-list half only — `crm_visits:read` is still asserted. */
+export function canAccessMyList(context: { role: string }): boolean {
+  return (MY_LIST_PORTAL_ROLES as readonly string[]).includes(context.role);
+}
 
 /** `null` → this role has no access to the reps list at all. */
 export function doctorListBasisForRole(role: string): DoctorListScopeBasis | null {

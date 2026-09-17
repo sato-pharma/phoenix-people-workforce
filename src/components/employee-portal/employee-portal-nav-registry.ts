@@ -125,7 +125,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"], permission: { resource: "sales", action: "read" } },
   { label: "Stock", fullLabel: "Weekly Stock", href: "/employee-portals/weekly-stock", icon: Package, flags: ["showWeeklyStockTab"], permission: { resource: "sales", action: "read" } },
   { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"], permission: { resource: "sales", action: "read" } },
-  { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"], permission: { resource: "sales", action: "read" } },
   { label: "Review", fullLabel: "Business Review", href: "/employee-portals/business-review", icon: ChartColumnBig, flags: ["showBusinessReviewTab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
@@ -136,6 +135,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // is the one page on it a manager reads standing in a pharmacy. Reachable from the phone by the
   // owner's golden rule for it — "must be mobile friendly", never desktop-only.
   { label: "Reps", fullLabel: "Reps List", href: "/employee-portals/reps-list", icon: BookUser, flags: ["showRepsListTab"], permission: { resource: "crm_visits", action: "read" } },
+  // My List is Reps List at a Medical Rep's reach — their own contact list (owner, 2026-09-16). Its
+  // own href rather than a second label on the one above: this registry holds one entry per href.
+  { label: "My List", fullLabel: "My List", href: "/employee-portals/my-list", icon: BookUser, flags: ["showMyListTab"], permission: { resource: "crm_visits", action: "read" } },
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
@@ -209,16 +211,17 @@ export const MAX_BOTTOM_NAV_CUSTOM = 4;
 /**
  * Default priority of middle bottom-nav items when the user hasn't customized.
  *
- * Source of Sales and Sales Analytics sit high on purpose: this list is filtered by visibility and
- * then truncated to MAX_BOTTOM_NAV_CUSTOM, and before they were added it contained NO sales
- * destination at all — so a District/Regional/National Sales Manager's default mobile bar was
- * plans + planning + marketing + expenses, with nothing from the job they actually do all day.
+ * Source of Sales sits high on purpose: this list is filtered by visibility and then truncated to
+ * MAX_BOTTOM_NAV_CUSTOM, and before it was added it contained NO sales destination at all — so a
+ * District/Regional/National Sales Manager's default mobile bar was plans + planning + marketing +
+ * expenses, with nothing from the job they actually do all day. (Sales Analytics sat beside it until
+ * the owner retired that module on 2026-09-17; a bar someone saved with it simply drops the link,
+ * because the bottom nav keeps only the saved links that are still visible.)
  */
 export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/plans",
   "/employee-portals/plans/calendar",
   "/employee-portals/source-of-sales",
-  "/employee-portals/sales-analytics",
   "/employee-portals/report-it",
   "/employee-portals/team-performance",
   "/employee-portals/marketing-requests",

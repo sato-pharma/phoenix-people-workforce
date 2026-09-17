@@ -9,8 +9,10 @@
 //   PM/GPM — product tier or territory (no explicit assignment) → Line HIDDEN, Region SHOWN
 //   MM   — product tier or territory (3 lines)           → Line filter SHOWN, Region SHOWN
 //
-// The access scope is enforced inside loadWeeklyDashboard via applyWeeklyAccessScope.
-// This wrapper only computes filter visibility, trims option lists, and runs the comparison.
+// The access scope is enforced inside loadWeeklyDashboard via applyWeeklyAccessScope — or, for a
+// district or regional manager, via his own areas' share of every depot (own-area-share.ts), which
+// every figure on his screen follows (owner, 2026-09-17). This wrapper computes filter visibility,
+// trims option lists, and runs the comparison.
 
 import { type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import {
@@ -18,11 +20,15 @@ import {
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
 import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import { resolveWeeklyOwnAreaKeys, weeklyScopeOwnAreaKeys } from "@/lib/sales/weekly/own-area-scope";
+import { mayLiftWeeklyGeography, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import {
   buildPortalWeeklyFieldForce,
   loadFieldForceSeatIndex,
+  type FieldForceSeatIndex,
   type PortalWeeklyFieldForce,
 } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { loadWeeklyScopeRegionNames, weeklyScopeRegionPart } from "@/lib/sales/weekly/scope-region-names";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import type {
   WeeklyDashboard,
@@ -30,7 +36,11 @@ import type {
   WeeklyRanked,
 } from "@/lib/sales/weekly/types";
 
-/** Roles allowed to open the portal Weekly Sales dashboard. Medical Reps intentionally excluded. */
+/**
+ * Roles allowed to open the portal Weekly Sales dashboard, its API and its export. Medical Reps stay
+ * excluded: the same page gives a rep his own area's screen instead (PORTAL_WEEKLY_REP_ROLES in
+ * portal-weekly-rep.ts), never this territory dashboard.
+ */
 export const PORTAL_WEEKLY_ROLES = [
   "District Manager",
   "Regional Manager",
@@ -115,9 +125,19 @@ type PortalWeeklyScope = {
   isSingleRegion: boolean;
   visibility: PortalWeeklyFilterVisibility;
   scopeSummary: string;
+  /**
+   * The organogram's region names (scope-region-names.ts), read only when the scope line names a region. The
+   * Depot Detail tab builds its own scope line from these same names, so the two never disagree.
+   */
+  regionNames: ReadonlyMap<string, string>;
 };
 
-function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): string {
+/** The scope line, in names: a single bound region is named from the organogram, never printed as its code. Pure. */
+export function buildWeeklyScopeSummary(
+  scope: WeeklyAccessScope,
+  role: PhoenixRole,
+  regionNames: ReadonlyMap<string, string>,
+): string {
   const parts: string[] = [];
 
   switch (scope.tier) {
@@ -136,15 +156,7 @@ function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): s
       } else {
         parts.push("All lines");
       }
-      if (scope.allowedRegionCodes) {
-        if (scope.allowedRegionCodes.size === 1) {
-          parts.push(`${[...scope.allowedRegionCodes][0]} region`);
-        } else {
-          parts.push(`${scope.allowedRegionCodes.size} regions`);
-        }
-      } else {
-        parts.push("all regions");
-      }
+      parts.push(weeklyScopeRegionPart(scope.allowedRegionCodes, regionNames));
       break;
     }
     case "none":
@@ -161,6 +173,9 @@ function buildWeeklyScopeSummary(scope: WeeklyAccessScope, role: PhoenixRole): s
 export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<PortalWeeklyScope> {
   const role = ctx.role;
   const accessScope = await resolveWeeklyAccessScope(ctx);
+  // Depot rows keep the region label they were mapped with, so the dashboard's own region options never name
+  // Upper Egypt 1, Upper Egypt 2 or Delta (3). The scope line names the region from the organogram instead.
+  const regionNames = await loadWeeklyScopeRegionNames(accessScope);
 
   let allowedRegionCodes: Set<string> | null = null;
   let allowedProductCodes: Set<string> | null = null;
@@ -173,7 +188,7 @@ export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<Port
 
   const isSingleRegion = allowedRegionCodes !== null && allowedRegionCodes.size === 1;
   const visibility = computePortalWeeklyVisibility(role, allowedRegionCodes, accessScope.tier === "full");
-  const scopeSummary = buildWeeklyScopeSummary(accessScope, role);
+  const scopeSummary = buildWeeklyScopeSummary(accessScope, role, regionNames);
 
   return {
     accessScope,
@@ -183,13 +198,19 @@ export async function resolvePortalWeeklyScope(ctx: AccessContext): Promise<Port
     isSingleRegion,
     visibility,
     scopeSummary,
+    regionNames,
   };
 }
 
-/** Trim option arrays to the viewer's in-scope universe. */
+/**
+ * Trim option arrays to the viewer's in-scope universe. A manager whose rows follow his own areas keeps
+ * every region those rows carry: his areas are filed under the organogram's regions, which his depot-label
+ * region bound does not name, and the rows are already his.
+ */
 function trimWeeklyFilterOptions(
   data: WeeklyDashboard,
   scope: PortalWeeklyScope,
+  followsOwnAreas = false,
 ): WeeklyDashboard {
   const { allowedRegionCodes, allowedProductCodes } = scope;
 
@@ -197,7 +218,7 @@ function trimWeeklyFilterOptions(
   let availableProducts = data.availableProducts;
   let availableLines = data.availableLines;
 
-  if (allowedRegionCodes !== null) {
+  if (allowedRegionCodes !== null && !followsOwnAreas) {
     availableRegions = data.availableRegions.filter((r) =>
       allowedRegionCodes.has(r.code.toUpperCase()),
     );
@@ -257,6 +278,8 @@ async function computeWeeklyComparison(
   filters: PortalWeeklyFilters,
   scope: PortalWeeklyScope,
   currentData: WeeklyDashboard,
+  // The current month's own-area share, so last month is measured over the same areas.
+  ownAreaShare: Promise<WeeklyOwnAreaShare> | null,
 ): Promise<PortalWeeklyComparison | null> {
   const currentCycleMonth =
     filters.cycleMonths && filters.cycleMonths.length === 1
@@ -289,6 +312,7 @@ async function computeWeeklyComparison(
       lineFilterMode: filters.lineFilterMode,
       accessScope: scope.accessScope,
       allWeeks: true,
+      ownAreaShare,
     });
   } catch {
     return null;
@@ -350,10 +374,26 @@ export async function getPortalWeeklyDashboard(
 }> {
   const scope = await resolvePortalWeeklyScope(ctx);
   const includeFieldForce = options?.includeFieldForce === true;
+  // A district or regional manager's EVERY figure follows his own areas (owner, 2026-09-17): the KPIs,
+  // movers, trend, week comparison, rankings, breakdowns, the export and the Field Force tab all read his
+  // areas' share of each depot, and money placed in another manager's area leaves. Depot rows keep the
+  // region label they were mapped with, so a region-bound load both missed the "UE" rows the split
+  // shares with an Upper Egypt 2 manager and counted Qalubeya whole for Delta (1) after it became
+  // Delta (3)'s. Everyone else (an NSM, a product manager, a company viewer) loads as before.
+  const ownAreaKeys = weeklyScopeOwnAreaKeys(scope.accessScope);
+  const followsOwnAreas = mayLiftWeeklyGeography(scope.accessScope, ownAreaKeys);
+  const needsIndexes = includeFieldForce || followsOwnAreas;
 
-  // The two supporting indexes the Field Force tab needs are independent of the dashboard load, so
-  // they are fetched ALONGSIDE it rather than after it — the tab costs one round trip of latency,
-  // not three. Both fail soft on their own, which is why neither can take the page down.
+  // The two supporting indexes are independent of the rows, so they are fetched ALONGSIDE the load
+  // rather than after it. Both fail soft on their own, which is why neither can take the page down.
+  const areaSplitLoad = needsIndexes ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null);
+  const seatIndexLoad: Promise<FieldForceSeatIndex | null> = needsIndexes
+    ? loadFieldForceSeatIndex()
+    : Promise.resolve(null);
+  const ownAreaShare = followsOwnAreas
+    ? Promise.all([areaSplitLoad, seatIndexLoad]).then(([areaSplit, seatIndex]) => ({ ownAreaKeys, areaSplit, seatIndex }))
+    : null;
+
   const [data, areaSplit, seatIndex] = await Promise.all([
     loadWeeklyDashboard({
       cycleMonths: filters.cycleMonths,
@@ -376,15 +416,18 @@ export async function getPortalWeeklyDashboard(
       // read SHORT against the same page's own total, which is the one discrepancy a reader cannot
       // explain. Unmapped products surface on the Completeness tracker instead, where they belong.
       includeFactRows: includeFieldForce,
+      // Unrounded, as Depot Detail reads them: the tab totals these rows under the Sales Value tile, and a
+      // manager's rows are many small split shares, so cents rounded row by row add up to a visible pound
+      // (Sally Saied, September: 285,878 against 285,879). The rows never leave the server.
+      factRowsFullPrecision: includeFieldForce,
+      ownAreaShare,
     }),
-    // The owner's depot-split rule. Fails soft to an empty index, which simply means no branch is
-    // split and only hand-mapped branches reach a rep.
-    includeFieldForce ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
-    includeFieldForce ? loadFieldForceSeatIndex() : Promise.resolve(null),
+    areaSplitLoad,
+    includeFieldForce ? seatIndexLoad : Promise.resolve(null),
   ]);
 
-  const trimmed = trimWeeklyFilterOptions(data, scope);
-  const comparison = await computeWeeklyComparison(filters, scope, trimmed);
+  const trimmed = trimWeeklyFilterOptions(data, scope, followsOwnAreas);
+  const comparison = await computeWeeklyComparison(filters, scope, trimmed, ownAreaShare);
 
   const fieldForce = seatIndex
     ? buildPortalWeeklyFieldForce({
@@ -394,14 +437,65 @@ export async function getPortalWeeklyDashboard(
         // The dashboard's stable product universe, so column N is the same product on every rep's
         // row and in every scope — the same reason the NSM/DSM workbook takes a productAxis.
         productAxis: trimmed.availableProducts.map((option) => ({ code: option.code, name: option.name })),
-        weekComparison: trimmed.weekComparison,
+        // Flagged per depot, over the rows that count on this grid (owner, 2026-09-17): a pooled flag lets
+        // one depot's sheet hide another depot's missing week.
+        depotWeekGaps: data.factRowDepotWeekGaps ?? [],
         seatIndexUnavailable: seatIndex.seats.length === 0,
       })
     : null;
 
   // Never ship the row grain to the browser. It is thousands of rows per month and the client has no
-  // use for it — everything the screen renders is already aggregated into `fieldForce`.
-  const { factRows: _factRows, ...clientSafe } = trimmed;
+  // use for it — everything the screen renders is already aggregated into `fieldForce`. The depot gap
+  // list goes with it: it is read over every loaded row, so it names depots and weeks beyond his scope.
+  const { factRows: _factRows, factRowDepotWeekGaps: _factRowDepotWeekGaps, ...clientSafe } = trimmed;
 
   return { data: clientSafe, scope, comparison, fieldForce };
+}
+
+/**
+ * One month's Field Force grid and nothing else, for the month-pace strip on the portal Source of Sales
+ * page. Lighter than getPortalWeeklyDashboard — the strip reads only the grid, so there is no
+ * comparison month and no option trimming — and, like every weekly report, it leaves unmapped products
+ * out (excludeUnmapped), which is also how the medical rep's own Weekly Sales page reads a month.
+ *
+ * The load follows the viewer's own areas (own-area-share.ts), exactly as his Weekly Sales screen does.
+ * A medical rep needs that as much as a manager: an Upper Egypt 2 rep's region-bound load never fetched
+ * the "UE" depot rows at all, so his strip read about zero. His own areas are his filled rep seats, from
+ * the same seat index the grid is keyed by. null when the viewer has no weekly access.
+ */
+export async function getPortalWeeklyMonthFieldForce(
+  ctx: AccessContext,
+  cycleMonth: string,
+): Promise<PortalWeeklyFieldForce | null> {
+  const [accessScope, seatIndex] = await Promise.all([resolveWeeklyAccessScope(ctx), loadFieldForceSeatIndex()]);
+  if (accessScope.tier === "none") return null;
+
+  const areaSplitLoad = loadWeeklyAreaSplitIndex().catch(() => null);
+  const ownAreaKeys = await resolveWeeklyOwnAreaKeys(ctx, accessScope, seatIndex.seats);
+  const ownAreaShare = mayLiftWeeklyGeography(accessScope, ownAreaKeys)
+    ? areaSplitLoad.then((areaSplit) => ({ ownAreaKeys, areaSplit, seatIndex }))
+    : null;
+
+  const [data, areaSplit] = await Promise.all([
+    loadWeeklyDashboard({
+      cycleMonths: [cycleMonth],
+      cycleMonthMode: "include",
+      // Only the grid is read, never the option lists, which is the precondition for narrowing the fetch.
+      narrowRowsToCycleMonths: [cycleMonth],
+      accessScope,
+      allWeeks: true,
+      excludeUnmapped: true,
+      includeFactRows: true,
+      ownAreaShare,
+    }),
+    areaSplitLoad,
+  ]);
+
+  return buildPortalWeeklyFieldForce({
+    rows: data.factRows ?? [],
+    areaSplit,
+    seatIndex,
+    depotWeekGaps: data.factRowDepotWeekGaps ?? [],
+    seatIndexUnavailable: seatIndex.seats.length === 0,
+  });
 }

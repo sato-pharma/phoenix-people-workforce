@@ -42,9 +42,10 @@
 
 import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
 import { type WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import { depotWeekGapKeys, moneySpansDepotGap, type DepotWeekGap } from "@/lib/sales/weekly/decumulate";
 import { normalizeHrId } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
+import type { WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 
 // ── seat index ───────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/ty
 export type FieldForceSeat = {
   seatId: string;
   lineCode: string;
+  /** The line's NAME as the org tree spells it, for a screen that must name a seat with no sales row. */
+  lineName: string;
   areaCode: string;
   areaName: string;
   regionCode: string;
@@ -69,6 +72,21 @@ export type FieldForceSeatIndex = {
   byLineArea: Map<string, FieldForceSeat>;
   /** Every rep seat, so a rep who sold nothing this month is still listed rather than vanishing. */
   seats: FieldForceSeat[];
+  /**
+   * Every `${normalizedLine}|${AREA}` a real district manager's seat owns on the current line-to-area map,
+   * vacant seats included. An area has no rep seat more often than it has no manager: a manager can own
+   * one (Delta (3)'s Anti Infective OT9, Upper Egypt 2's Pedia OT6), so rep seats cannot answer this. An
+   * area missing from the set, such as a line's "Others" areas under its pseudo-DM, belongs to no district
+   * manager. Absent when the map was not read, and then no area may be treated as ownerless.
+   */
+  managedAreaKeys?: Set<string>;
+};
+
+/** One current `au_v_line_area_map` row, narrowed to what the index reads. */
+export type FieldForceLineAreaRow = {
+  line_code?: string | null;
+  area_code?: string | null;
+  dm_seat_id?: string | null;
 };
 
 const norm = (value: unknown) => String(value ?? "").trim();
@@ -113,10 +131,14 @@ export type FieldForceSeatRow = {
  *
  * Each seat is registered under BOTH its line_name and its line_code key, so either spelling on a
  * weekly row finds the rep. The per-line "Others" pseudo-DM is excluded — it holds no real people.
+ *
+ * Given the current line-to-area map, it also records which areas a real district manager owns
+ * (managedAreaKeys); without it that set is absent.
  */
 export function selectFieldForceSeats(
   rows: FieldForceSeatRow[],
   nameOf: (hrId: string | null) => string | null,
+  lineAreas?: FieldForceLineAreaRow[],
 ): FieldForceSeatIndex {
   const managerNameBySeatId = new Map<string, string | null>();
   for (const row of rows) {
@@ -144,6 +166,7 @@ export function selectFieldForceSeats(
     const seat: FieldForceSeat = {
       seatId: norm(row.seat_id),
       lineCode: norm(row.line_code),
+      lineName: norm(row.line_name) || norm(row.line_code),
       areaCode,
       areaName: norm(row.area_name) || areaCode,
       regionCode: upper(row.region_code),
@@ -164,7 +187,36 @@ export function selectFieldForceSeats(
     }
   }
 
-  return { byLineArea, seats };
+  if (!lineAreas) return { byLineArea, seats };
+  return { byLineArea, seats, managedAreaKeys: selectManagedAreaKeys(rows, lineAreas) };
+}
+
+/**
+ * Pure: every (line, area) a real district manager's seat owns. The line's "Others" pseudo-DM owns
+ * nobody's areas, and a map row naming a seat the org tree does not hold is no manager's either. Each
+ * area is registered under its line code and, when the seat is on the same line, the seat's line name.
+ */
+function selectManagedAreaKeys(rows: FieldForceSeatRow[], lineAreas: FieldForceLineAreaRow[]): Set<string> {
+  const managerSeats = new Map<string, FieldForceSeatRow>();
+  for (const row of rows) {
+    const tier = upper(row.seat_tier);
+    if (tier !== "DM" && tier !== "ACTING_DM") continue;
+    if (row.is_other_pseudo_dm === true || !norm(row.seat_id)) continue;
+    managerSeats.set(norm(row.seat_id), row);
+  }
+
+  const keys = new Set<string>();
+  for (const area of lineAreas) {
+    const seat = managerSeats.get(norm(area.dm_seat_id));
+    if (!seat) continue;
+    const lineKeys = [area.line_code];
+    if (fieldForceLineKey(seat.line_code) === fieldForceLineKey(area.line_code)) lineKeys.push(seat.line_name);
+    for (const line of lineKeys) {
+      const key = fieldForceKey(line, area.area_code);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
 }
 
 /**
@@ -177,13 +229,15 @@ export function selectFieldForceSeats(
 export async function loadFieldForceSeatIndex(): Promise<FieldForceSeatIndex> {
   const supabase = getSupabaseAdmin();
   try {
-    const [treeResult, employeesResult] = await Promise.all([
+    const [treeResult, employeesResult, lineAreaResult] = await Promise.all([
       supabase
         .from("au_v_org_tree")
         .select(
           "seat_id,seat_tier,line_code,line_name,region_code,region_name,area_code,area_name,occupant_hr_id,is_vacant,is_other_pseudo_dm,parent_seat_id",
         ),
       supabase.from("employees").select("hr_id, full_name, nickname"),
+      // Current rows only, as the seat area scope reads them: which manager owns an area today.
+      supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
     ]);
     if (treeResult.error) throw treeResult.error;
     if (employeesResult.error) throw employeesResult.error;
@@ -202,6 +256,8 @@ export async function loadFieldForceSeatIndex(): Promise<FieldForceSeatIndex> {
     return selectFieldForceSeats(
       (treeResult.data ?? []) as FieldForceSeatRow[],
       (hrId) => (hrId ? (nameByHrId.get(hrId) ?? null) : null),
+      // An unreadable map leaves the ownership unknown rather than blanking the reps.
+      lineAreaResult.error ? undefined : ((lineAreaResult.data ?? []) as FieldForceLineAreaRow[]),
     );
   } catch {
     return { byLineArea: new Map(), seats: [] };
@@ -244,6 +300,11 @@ export type FieldForceRep = {
   value: number;
   /** week-of-month -> EGP. Money is addable across products, so a week column is safe here. */
   valueByWeek: Record<number, number>;
+  /**
+   * This row's weeks whose figure reads high: money on THIS row came from a depot that sent no sheet for
+   * the week before. The rep's own screen reads it, so his flags are his depots' and no one else's.
+   */
+  gapWeekNumbers: number[];
   /** Value credited from a branch the owner mapped BY HAND. Exact, not allocated. */
   exactValue: number;
   /** Value placed by reading the branch name and spreading it. An allocation — label it. */
@@ -253,9 +314,12 @@ export type FieldForceRep = {
 };
 
 export type PortalWeeklyFieldForce = {
-  /** Week-of-month numbers present, ascending — the column axis. */
+  /** Week-of-month numbers carried by a row that counts on this grid, ascending — the column axis. */
   weekNumbers: number[];
-  /** Weeks whose de-cumulated figure silently spans a missing upload; the screen must flag these. */
+  /**
+   * Weeks where money that counts on this grid came from a depot that sent no sheet for the week before,
+   * so the de-cumulated figure silently holds the week it skipped; the screen must flag these.
+   */
   gapWeekNumbers: number[];
   /** Rows: real reps first (by value), then vacant areas, then the residue bucket. */
   reps: FieldForceRep[];
@@ -290,21 +354,33 @@ export function buildPortalWeeklyFieldForce(input: {
   seatIndex: FieldForceSeatIndex;
   /** The dashboard's stable product universe, so the axis does not change with the view. */
   productAxis?: { code: string; name: string }[];
-  /** weekComparison, read only for its spansGap flags. */
-  weekComparison?: WeeklyDashboard["weekComparison"];
+  /**
+   * Every depot week that spans an upload gap (the dashboard's factRowDepotWeekGaps). A week is flagged
+   * where money that counts on this grid came from one of them, so a depot that skipped a week is caught
+   * even when another depot sent that week (owner, 2026-09-17: one rule on every Field Force tab). Absent
+   * = nothing is flagged, so every screen passes it.
+   */
+  depotWeekGaps?: readonly DepotWeekGap[];
   seatIndexUnavailable?: boolean;
 }): PortalWeeklyFieldForce {
   const { rows, areaSplit, seatIndex } = input;
 
   // Tag BEFORE the split: a row carrying an area came from a branch the owner mapped by hand, and
   // splitWeeklyRowsByBranch leaves exactly those rows alone. After the split the two are
-  // indistinguishable, and the exact/allocated mix is the whole honesty story of this screen.
-  const tagged: TaggedRow[] = rows.map((row) => ({ ...row, exactArea: Boolean(norm(row.areaCode)) }));
+  // indistinguishable, and the exact/allocated mix is the whole honesty story of this screen. A load
+  // that followed the viewer's own areas (own-area-share.ts) has already split its depots, and says so
+  // on each row: its placed parts carry an area and are still allocations.
+  const tagged: TaggedRow[] = rows.map((row) => ({
+    ...row,
+    exactArea: row.areaBasis ? row.areaBasis === "mapped" : Boolean(norm(row.areaCode)),
+  }));
   const { rows: split } = splitWeeklyRowsByBranch(tagged, areaSplit);
 
   const weekNumbers = new Set<number>();
   const byKey = new Map<string, FieldForceRep>();
   const productsByKey = new Map<string, Map<string, FieldForceProduct>>();
+  const depotGapKeys = depotWeekGapKeys(input.depotWeekGaps ?? []);
+  const depotGapWeeksByKey = new Map<string, Set<number>>();
 
   let unattributedValue = 0;
 
@@ -321,7 +397,13 @@ export function buildPortalWeeklyFieldForce(input: {
     const value = Number(row.salesValue) || 0;
     const units = Number(row.salesUnits) || 0;
     const week = row.weekNumber;
+
+    // Every row here already counts for the viewer: a load that follows his own areas narrowed it first
+    // (own-area-share.ts). So a week is a column exactly where one of his rows carries it.
     if (week !== null && week !== undefined) weekNumbers.add(week);
+
+    // Money from a depot week that spans an upload gap reads high. A row that moves no money cannot.
+    const spansDepotGap = moneySpansDepotGap(row, { value, units }, depotGapKeys);
 
     const areaCode = upper(row.areaCode);
     const seat = areaCode ? seatIndex.byLineArea.get(fieldForceKey(row.line, areaCode)) : undefined;
@@ -349,11 +431,13 @@ export function buildPortalWeeklyFieldForce(input: {
         managerName: null,
         value: 0,
         valueByWeek: {},
+        gapWeekNumbers: [],
         exactValue: 0,
         allocatedValue: 0,
         products: [],
       }));
       accumulate(rep, productsByKey.get(key)!, row, value, units, week);
+      if (spansDepotGap) addGapWeek(depotGapWeeksByKey, key, week);
       continue;
     }
 
@@ -373,11 +457,13 @@ export function buildPortalWeeklyFieldForce(input: {
       managerName: seat.managerName,
       value: 0,
       valueByWeek: {},
+      gapWeekNumbers: [],
       exactValue: 0,
       allocatedValue: 0,
       products: [],
     }));
     accumulate(rep, productsByKey.get(key)!, row, value, units, week);
+    if (spansDepotGap) addGapWeek(depotGapWeeksByKey, key, week);
   }
 
   // Rank each rep's products by value, then attach.
@@ -414,18 +500,13 @@ export function buildPortalWeeklyFieldForce(input: {
 
   const orderedWeeks = [...weekNumbers].sort((a, b) => a - b);
 
-  // A week whose immediately-preceding upload is missing carries a de-cumulated figure that silently
-  // spans the gap. The dashboard already suppresses it in weekComparison; here the per-rep cell
-  // cannot be suppressed without breaking the row's own arithmetic, so the week is FLAGGED instead
-  // and the screen marks the column.
-  const gapWeekNumbers = [
-    ...new Set(
-      (input.weekComparison ?? [])
-        .filter((entry) => entry.spansGap)
-        .map((entry) => entry.weekNumber)
-        .filter((week) => orderedWeeks.includes(week)),
-    ),
-  ].sort((a, b) => a - b);
+  // A depot week whose previous week that depot never uploaded carries a de-cumulated figure that
+  // silently spans the gap. A per-rep cell cannot be suppressed without breaking the row's own
+  // arithmetic, so the week is FLAGGED instead and the screen marks the column. Per depot, so one depot's
+  // missing week is not hidden by another depot's sheet, and per row, so a rep carries only his own.
+  const byWeek = (a: number, b: number) => a - b;
+  const gapWeekNumbers = [...new Set([...depotGapWeeksByKey.values()].flatMap((weeks) => [...weeks]))].sort(byWeek);
+  for (const rep of reps) rep.gapWeekNumbers = [...(depotGapWeeksByKey.get(rep.key) ?? [])].sort(byWeek);
 
   // The axis is the dashboard's stable universe where one was supplied, narrowed to products that
   // actually appear — so column N is the same product on every rep's row, in every scope.
@@ -451,6 +532,13 @@ export function buildPortalWeeklyFieldForce(input: {
     totals,
     seatIndexUnavailable: input.seatIndexUnavailable ?? seatIndex.seats.length === 0,
   };
+}
+
+function addGapWeek(weeksByKey: Map<string, Set<number>>, key: string, week: number | null | undefined): void {
+  if (week === null || week === undefined) return;
+  const weeks = weeksByKey.get(key) ?? new Set<number>();
+  weeks.add(week);
+  weeksByKey.set(key, weeks);
 }
 
 function accumulate(

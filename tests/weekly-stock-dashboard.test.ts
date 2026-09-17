@@ -181,13 +181,24 @@ export function runWeeklyStockDashboardTests() {
   // ── Wiring: scope and Head Office are enforced on the server, never by the screen.
   const service = readSource("../src/lib/sales/weekly/stock-dashboard-service.ts");
   assert.match(service, /resolveWeeklyAccessScope\(ctx\)/, "stock resolves the same per-viewer scope as Weekly Sales");
-  assert.match(service, /accessScope,\n\s+\}\),/, "the scope is handed to the weekly engine, which enforces it");
+  // The load may lift a territory viewer's region bound for its row grain (own-area-scope.ts), so the flag
+  // travels beside the scope, and weekly-own-area-lift.test.ts pins the narrowing back to his own depots.
+  assert.match(
+    service,
+    /accessScope,\n\s+liftRowGrainGeography: liftGrain,\n\s+\}\),/,
+    "the scope is handed to the weekly engine, which enforces it",
+  );
   assert.match(service, /excludeUnmapped: true/, "unmapped products never reach a stock total");
   const engine = readSource("../src/lib/sales/weekly/service.ts");
   assert.match(
     engine,
-    /stockRows: filters\?\.includeStockRows\s+\? scopedRows\.map/,
+    /stockRows: filters\?\.includeStockRows\s+\? grainScopedRows\.map/,
     "stock rows come from the scoped rows — after the access scope and the Head Office rule, never before",
+  );
+  assert.match(
+    engine,
+    /const grainScopedRows = grainLifted\s+\? applyWeeklyTrackedLineScope\(applyWeeklyAccessScope\(realRows, grainScope\), \{\s+includeUntracked: lineNamedExplicitly,\s+\}\)\.filter\(passesRowFilters\)\s+: scopedRows;/,
+    "a lifted grain passes the same access scope, Head Office rule, tracked-line rule and filters — never raw rows",
   );
   for (const route of ["../app/api/sales/weekly/stock/route.ts", "../app/api/sales/weekly/stock/export/route.ts"]) {
     const source = readSource(route);
@@ -218,8 +229,40 @@ export function runWeeklyStockDashboardTests() {
   assert.equal(resolvePortalNav("Employee").showWeeklyStockTab, false, "a plain employee does not see it");
   const flags = resolvePortalNav("Medical Rep");
   assert.equal(flags.showWeeklyStockTab, true, "the Medical Rep sidebar shows Weekly Stock");
-  assert.equal(flags.showWeeklyTab, false, "and still does not show Weekly Sales");
+  assert.equal(flags.showWeeklyTab, true, "and Weekly Sales too — his own area's screen (owner, 2026-09-16)");
   for (const role of PORTAL_WEEKLY_STOCK_ROLES) {
     assert.equal(resolvePortalNav(role).showWeeklyStockTab, true, `${role}: nav flag matches the server role list`);
   }
+
+  // ── Layout: the desktop tables open at 1024 px, where the portal leaves them about 620 px. They fit by
+  // MERGING columns, never by shrinking type or scrolling (owner golden rules): the status badge sits under
+  // the name and the weeks of cover under the average — moved, never dropped, since the export has both.
+  const dashboard = readSource("../src/components/sales/weekly/weekly-stock-dashboard.tsx");
+  assert.doesNotMatch(dashboard, /overflow-x-auto|min-w-\[/, "never a horizontal scroll (owner golden rule)");
+  assert.doesNotMatch(dashboard, /\btruncate\b/, "long names wrap, never an ellipsis");
+  assert.equal((dashboard.match(/<table className="w-full table-fixed/g) ?? []).length, 3, "every table is fixed-layout");
+  assert.equal((dashboard.match(/<colgroup>/g) ?? []).length, 3, "and sized by its colgroup");
+  const desktopTables = dashboard
+    .split('<table className="w-full table-fixed')
+    .slice(1)
+    .map((chunk) => chunk.slice(0, chunk.indexOf("</table>")));
+  for (const table of desktopTables) {
+    const widths = [...table.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
+    const headers = [...table.matchAll(/<th className=\{(TH|TH_NUM)\}>/g)].map((match) => match[1]);
+    assert.equal(widths.length, headers.length, "every column header has its own col");
+    assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "every colgroup adds up to the table's width");
+    headers.forEach((kind, index) => {
+      if (kind === "TH_NUM") assert.ok(widths[index] >= 16, `a figure column is at least 16% wide, never a sliver its figure spills out of`);
+    });
+    assert.doesNotMatch(table, />(?:Cover|Status)<\/th>/, "the status badge sits under the name and the cover under the average");
+    assert.match(table, /<StatusBadge status=\{(?:cell|row)\.status\} \/>/, "every desktop row still shows its status");
+    assert.match(table, /formatCoverLine\((?:cell|row)\.coverWeeks\)/, "every desktop row still shows its weeks of cover, labelled");
+  }
+  // A figure on a headline tile or a phone card wraps inside its box rather than running out of it: three across
+  // at 375 px, the depot cards could not hold "EGP 512.5K" on one line (Depot Detail's figures wrap the same way).
+  const figures = [...dashboard.matchAll(/<p className="([^"]*)">\{value\}<\/p>/g)].map((match) => match[1]);
+  assert.equal(figures.length, 2, "the headline tile and the phone card each print one figure");
+  for (const figure of figures) assert.doesNotMatch(figure, /\bwhitespace-nowrap\b/, "a figure wraps inside its box, never runs out of it");
+  assert.match(dashboard, /hidden lg:block/, "desktop reads full tables");
+  assert.match(dashboard, /lg:hidden/, "a phone reads cards");
 }

@@ -211,6 +211,7 @@ function buildEmployeePortalSections({
   showTeamPerformanceTab = false,
   showMedRepsPerformanceTab = false,
   showRepsListTab = false,
+  showMyListTab = false,
   showRepsPlansTab = false,
   showKpisTab = false,
   showMedicalRepExpensesTab = false,
@@ -240,7 +241,6 @@ function buildEmployeePortalSections({
   showWeeklyTab = false,
   showWeeklyStockTab = false,
   showMonthlyClosingTab = false,
-  showSalesAnalyticsTab = false,
   showSalesVsTargetTab = false,
   showMakeItHappenTab = false,
   showTerritoryDrilldownTab = false,
@@ -323,7 +323,6 @@ function buildEmployeePortalSections({
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
         ...(showWeeklyStockTab ? [{ href: "/employee-portals/weekly-stock", label: "Weekly Stock", icon: Package }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
-        ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewTab ? [{ href: "/employee-portals/business-review", label: "Business Review", icon: ChartColumnBig }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Sales Drilldown", icon: MapPinned }] : []),
         // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the
@@ -331,7 +330,8 @@ function buildEmployeePortalSections({
         // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
         ...(showTerritoryManagementTab ? [{ href: "/employee-portals/territory-management", label: "Territory Management", icon: Waypoints }] : []),
         // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away,
-        // so without this twin a DM/RM/NSM had no targets surface at all.
+        // so without this twin a DM/RM/NSM had no targets surface at all. A Medical Rep gets the same
+        // link and is served their own targets only (owner, 2026-09-16).
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
       ],
@@ -372,10 +372,14 @@ function buildEmployeePortalSections({
         // the team's activity rows, this is the team's assignment — each rep's own CRM contact list,
         // grouped by brick. The admin twin is /admin/reps-list.
         ...(showRepsListTab ? [{ href: "/employee-portals/reps-list", label: "Reps List", icon: BookUser }] : []),
+        // The same board at a Medical Rep's reach: their own contact list and nobody else's. It takes
+        // Reps List's place in the order, because the two never appear together — Reps List is for
+        // the seats reps report to, and My List for the rep (owner, 2026-09-16).
+        ...(showMyListTab ? [{ href: "/employee-portals/my-list", label: "My List", icon: BookUser }] : []),
         // KPIs sits directly under Reps List because it answers the next question about the same
         // people: that board is who is on the list, this one is how well the list is being worked.
-        // Its role reach is WIDER — a Medical Rep sees his own three KPIs here, and correctly sees
-        // no Reps List above, because that board is about the reps who report to you.
+        // Its role reach is WIDER — a Medical Rep sees their own three KPIs here, and sees My List
+        // above instead of Reps List, because that board is about the reps who report to you.
         ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
         // Reps Plans sits under KPIs because it is the same question one level in: KPIs is how well
         // the list is being worked, this is how much of that work anything can PROVE. Manager seats
@@ -1060,7 +1064,18 @@ export function EmployeePortalSidebar({
             >
               {collapsed ? <ChevronsRight className="h-[17px] w-[17px]" /> : <ChartColumnBig className="h-[17px] w-[17px]" />}
             </button>
-            <nav className="phoenix-employee-sidebar-scroll mt-5 flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto px-2 pb-3">
+            {/* A 52px link leaves this nav no room for side padding or a scrollbar track in the 58px
+                rail: `px-2` plus the sidebar scroller's reserved gutter made it wider than the rail,
+                so it hung past the card's clip and hid the active marker. The nav is the marker's
+                positioning context, which keeps it on the rail's edge at 58px and collapsed alike.
+                Budget: src/config/sidebar-metrics.ts; pinned by tests/shell-chrome-overflows.test.ts.
+
+                Each link is `shrink-0`. The nav is a column flexbox, and a flex item shrinks before its
+                container overflows, so on a short window the links squashed toward their 16px icons,
+                shorter than the 28px marker, before the nav scrolled at all. It scrolls with its bar
+                hidden, by the owner's decision (2026-09-16); pinned by
+                tests/portal-rail-scrolls-never-squashes.test.ts. */}
+            <nav className="relative mt-5 flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {sections.map((section) => {
                 const Icon = sectionRailIcon(section.title);
                 const active = section.title === activeSectionTitle;
@@ -1068,7 +1083,7 @@ export function EmployeePortalSidebar({
                 return (
                   <Link
                     aria-label={section.title}
-                    className={`relative flex h-10 w-[52px] items-center justify-center rounded transition ${
+                    className={`flex h-10 w-[52px] shrink-0 items-center justify-center rounded transition ${
                       active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
                     }`}
                     href={firstItem.href}
@@ -1077,7 +1092,7 @@ export function EmployeePortalSidebar({
                     prefetch
                     title={section.title}
                   >
-                    {active ? <span className="absolute left-[-8px] h-7 w-[3px] rounded-r-sm bg-[#F05A1A]" /> : null}
+                    {active ? <span className="absolute left-0 h-7 w-[3px] rounded-r-sm bg-[#F05A1A]" /> : null}
                     <Icon className="h-[16px] w-[16px]" />
                   </Link>
                 );

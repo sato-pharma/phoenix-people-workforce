@@ -220,7 +220,9 @@ export function scopeMonthTargets(input: MonthTargetScopeInput): ScopedMonthTarg
   const monthTargets: MonthTargetInput[] = filtered.map((row) => ({
     lineLabel: lineName(row.lineCode),
     areaCode: row.areaCode,
+    productCode: upper(row.productCode),
     targetUnits: row.targetUnits ?? 0,
+    targetValue: row.targetValue ?? 0,
   }));
 
   // "Has a target" means a real number was uploaded for that line. A line present only with null or

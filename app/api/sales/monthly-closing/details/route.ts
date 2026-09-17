@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { gateClosingDetailsPeriod } from "@/lib/sales/closing-details-publication-gate";
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import {
   listMonthlyClosingLines,
@@ -45,14 +46,27 @@ export async function GET(request: Request) {
     const period = requestedPeriod && availablePeriods.includes(requestedPeriod)
       ? requestedPeriod
       : availablePeriods[0] ?? null;
+    const includeConfidential = searchParams.get("includeConfidential") === "true";
+
+    // A month reaches a portal viewer only once the owner publishes it — the rule the portal screen
+    // already keeps. Without this gate a scoped viewer opened any VALIDATED month, and a request
+    // naming no month (the standalone Details page's first load) opened the newest one, usually the
+    // month still being uploaded. The full-scope readers keep every validated month.
+    // See closing-details-publication-gate.ts.
+    const gate = await gateClosingDetailsPeriod({ access, line, requestedPeriod, availableLines, includeConfidential });
+    if (gate.kind === "refused") {
+      return NextResponse.json({ success: false, error: gate.error }, { status: 403 });
+    }
 
     const data = await loadMonthlyClosingDetails({
       access,
       line,
-      period,
+      period: gate.kind === "published" ? gate.period : period,
       availableLines,
-      availablePeriods,
-      includeConfidential: searchParams.get("includeConfidential") === "true",
+      // A gated viewer is offered only the months they may open, so the month picker never lists
+      // one that answers "not published".
+      availablePeriods: gate.kind === "published" ? gate.publishedPeriods : availablePeriods,
+      includeConfidential,
       page: Number(searchParams.get("page") ?? 1),
       pageSize: Number(searchParams.get("pageSize") ?? 200),
       filters: {

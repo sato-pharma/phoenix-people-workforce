@@ -21,6 +21,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isPayslipEventType } from "@/lib/notifications/payslip-channel-guard";
+import { emailKeepsLineBreaks } from "@/lib/notifications/attendance-digest-channels";
 
 export const emailNotificationTypes = [
   "probation",
@@ -1879,6 +1880,9 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
       employeeHrId: input.employeeHrId,
       fallbackTo: dispatchTo,
       from,
+      // The weekly attendance review's email keeps its paragraphs (owner, 2026-09-17); every other
+      // module's body renders as before.
+      lineBreaks: emailKeepsLineBreaks(input.module),
       origin,
       overrides,
       templateKey: migratedTemplateKey,

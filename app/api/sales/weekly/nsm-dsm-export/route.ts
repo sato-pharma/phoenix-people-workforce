@@ -12,6 +12,7 @@ import { listMasterAreas } from "@/lib/sales/weekly/branch-region-map";
 import { loadWeeklyManagerIndex } from "@/lib/sales/weekly/manager-attribution";
 import { buildNsmDsmWorkbook } from "@/lib/sales/weekly/nsm-dsm-workbook";
 import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +22,10 @@ export const maxDuration = 60;
 //
 // A THIRD export alongside the analyst BI workbook (/api/sales/weekly/export) and the Summarized
 // Report (/api/sales/weekly/summary-export), both untouched. Same auth posture as those two:
-// weekly_sales:read plus the viewer's weekly access scope, so a product- or territory-scoped viewer
-// gets exactly the redaction they get on screen. Its own rate-limit scope, so downloading this
-// cannot consume either sibling's budget.
+// weekly_sales:read, the territory-viewer role gate (a Medical Rep holds the grant but never gets a
+// territory workbook — territory-gate.ts), and the viewer's weekly access scope, so a product- or
+// territory-scoped viewer gets exactly the redaction they get on screen. Its own rate-limit scope,
+// so downloading this cannot consume either sibling's budget.
 //
 // It sends the SAME filter query the other two buttons send, and reads ONE dashboard load — the
 // viewer's current filters — so the workbook reconciles to what is on screen. It deliberately does
@@ -33,6 +35,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "read");
+    assertWeeklyTerritoryViewer(access);
     await assertExportRateLimit({
       actor: access.loginId ?? access.hrId,
       request,

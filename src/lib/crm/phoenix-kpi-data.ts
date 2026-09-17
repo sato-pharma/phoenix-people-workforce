@@ -13,9 +13,12 @@ import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import {
+  computePhoenixCoverageDoctors,
   computePhoenixRepKpis,
+  type PhoenixCoverageDoctor,
   type PhoenixPanelContact,
   type PhoenixPlanEntry,
+  type PhoenixRepInput,
   type PhoenixRepKpis,
   type PhoenixVisit,
 } from "@/lib/crm/phoenix-kpi-rules";
@@ -35,6 +38,8 @@ export type PhoenixEmployeeDates = { hrId: string; hireDate: string | null; last
 export type PhoenixKpiLoad = {
   /** Every rep's Phoenix KPIs, by canonical hr id. A rep with nothing loaded scores zeroes. */
   kpisFor: (hrKey: string | null) => PhoenixRepKpis;
+  /** One rep's planned doctors for the Coverage tab, from the same inputs as `kpisFor`. */
+  coverageDoctorsFor: (hrKey: string | null) => PhoenixCoverageDoctor[];
   holidaysComplete: boolean;
 };
 
@@ -85,7 +90,13 @@ export async function loadPhoenixRepKpis(input: {
     const key = keyOf(row.agent_hr_id, row.agent_crm_id);
     if (!key || !isAgentInScope(input.scope, key)) continue;
     const bucket = plansByRep.get(key) ?? [];
-    bucket.push({ contactCrmId: row.contact_crm_id, planDate: row.plan_date, grade: row.contact_grade, speciality: row.speciality });
+    bucket.push({
+      contactCrmId: row.contact_crm_id,
+      planDate: row.plan_date,
+      grade: row.contact_grade,
+      speciality: row.speciality,
+      contactName: row.contact_name,
+    });
     plansByRep.set(key, bucket);
   }
 
@@ -104,13 +115,10 @@ export async function loadPhoenixRepKpis(input: {
     if (key) datesByRep.set(key, employee);
   }
 
-  const cache = new Map<string, PhoenixRepKpis>();
-  const kpisFor = (hrKey: string | null): PhoenixRepKpis => {
-    const key = canonicalHrIdKey(hrKey) ?? "";
-    const cached = cache.get(key);
-    if (cached) return cached;
+  // ONE input per rep for both readers, so the doctor list and the KPIs are scored from the same rows.
+  const inputFor = (key: string): PhoenixRepInput => {
     const dates = datesByRep.get(key);
-    const computed = computePhoenixRepKpis({
+    return {
       window: input.window,
       month: input.month,
       today: input.today,
@@ -121,10 +129,22 @@ export async function loadPhoenixRepKpis(input: {
       planEntries: plansByRep.get(key) ?? [],
       visits: visitsByRep.get(key) ?? [],
       standards: input.standards,
-    });
+    };
+  };
+
+  const cache = new Map<string, PhoenixRepKpis>();
+  const kpisFor = (hrKey: string | null): PhoenixRepKpis => {
+    const key = canonicalHrIdKey(hrKey) ?? "";
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const computed = computePhoenixRepKpis(inputFor(key));
     cache.set(key, computed);
     return computed;
   };
 
-  return { kpisFor, holidaysComplete: holidays.complete };
+  // Not cached: the Coverage tab asks for one rep per page load.
+  const coverageDoctorsFor = (hrKey: string | null): PhoenixCoverageDoctor[] =>
+    computePhoenixCoverageDoctors(inputFor(canonicalHrIdKey(hrKey) ?? ""));
+
+  return { kpisFor, coverageDoctorsFor, holidaysComplete: holidays.complete };
 }

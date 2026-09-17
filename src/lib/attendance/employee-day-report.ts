@@ -199,6 +199,10 @@ export type EmployeeDayByDayReport = {
   dateFromIso: string;
   dateToIso: string;
   days: EmployeeDayReportRow[];
+  /** False when Google's holiday calendar could not be read for a month in the range: the moving
+   * Islamic and Coptic holidays are missing, so an Eid day reads here as an ordinary working day.
+   * Approving a deduction is refused while it is false (owner, 2026-09-16). */
+  holidayCalendarReachable: boolean;
 };
 
 type EmployeeRow = { hr_id: string; full_name: string | null; job_title: string | null; base_salary: number | null };
@@ -420,6 +424,7 @@ export async function getEmployeeDayByDayReport(input: {
     days,
     employeeHrId: hrId,
     employeeName,
+    holidayCalendarReachable: context.holidayCalendarReachable,
     jobTitle,
     tier: reportTier,
   };
@@ -614,6 +619,17 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
           year,
         }) ?? null)
       : null;
+
+  // A Google Calendar outage hides the moving Islamic and Coptic holidays, so this day could be an
+  // Eid that reads here as an ordinary working day — and approving writes a deduction marked
+  // "Approved for Payroll". Refuse the approval while the calendar cannot be read. Rejecting a day
+  // ("Do Not Take Action") stays open: that is the direction that costs nobody money (owner,
+  // 2026-09-16).
+  if (input.decisionStatus === "Approved for Payroll" && !dayReport.holidayCalendarReachable) {
+    throw validationError(
+      "The public holiday calendar could not be read, so this day cannot be told apart from a public holiday. Nothing was charged — try again shortly.",
+    );
+  }
 
   // The weekly attendance review's own checks, BEFORE anything is written. recordDecision runs them
   // too, but only after the candidate below has been created or its stored ceiling raised — and a

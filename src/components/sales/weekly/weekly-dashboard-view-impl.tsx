@@ -19,7 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ReferenceLine, ResponsiveContainer, Text, Tooltip, XAxis, YAxis } from "recharts";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -32,13 +32,38 @@ import type {
 } from "@/lib/sales/weekly/types";
 import { MultiSelectFilter } from "@/components/ui/multi-select-filter";
 import {
+  SortButton,
   SortableTh,
   TableNoResults,
   TableSearchInput,
   useSortableTable,
   visibleMax,
+  type SortState,
 } from "@/components/ui/sortable-table";
+import {
+  branchComparisonColumns,
+  rankColumns,
+  weekComparisonColumns,
+  zeroStockColumns,
+} from "@/components/sales/weekly/weekly-table-widths";
+import {
+  weeklyBreakdownUnitsAreOneProduct,
+  weeklyKpiUnitDeltaIsOneProduct,
+  weeklyKpiUnitsAreOneProduct,
+  weeklyWeekComparisonUnitsAreOneProduct,
+} from "@/lib/sales/weekly/unit-totals";
 
+// THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4). Every table here is `w-full
+// table-fixed` with its column widths declared in weekly-table-widths.ts, so none can grow past the
+// screen; a long name wraps, and nothing is cut with an ellipsis — the chart labels included. Below md
+// each table becomes a list of cards with its own sort row. No corner is rounded. Pinned by
+// tests/weekly-sales-fits-the-screen.test.ts, the same test that holds the managers' portal version.
+//
+// UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED (owner rule, 2026-08-27; this page, 2026-09-17). Every unit
+// or stock figure here adds rows, so each appears only while the rows it adds are one product's — the
+// tiles and their changes, the Units and Stock columns and cards, the two unit charts and the watchlist's
+// stock. Each asks unit-totals.ts, and the Export Excel follows the same rule. A product row is always one
+// product's, so By product keeps its units. Pinned by tests/weekly-admin-units-one-product.test.ts.
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -49,7 +74,6 @@ const compactNumber = (value: number) => {
   if (abs >= 1_000) return `${Math.round(value / 1_000)}K`;
   return `${Math.round(value)}`;
 };
-const truncateLabel = (value: string, max = 18) => (value.length > max ? `${value.slice(0, max - 1)}...` : value);
 const CHART_COLORS = ["#F97316", "#2563EB", "#0F766E", "#7C3AED", "#DC2626", "#64748B", "#CA8A04"];
 
 const MONTH_NAMES = [
@@ -272,7 +296,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   if (!data) {
     return (
       <div className="p-6">
-        <div className="flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 shadow-sm">
+        <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700 shadow-sm">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
           <span>{error ?? "No weekly data available yet. Upload a weekly file to get started."}</span>
         </div>
@@ -283,15 +307,23 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const noData = data.availableWeeks.length === 0;
   const branchRows = data.branchBreakdown ?? [];
   const zeroStockRows = data.zeroSalesBranches ?? [];
-  const zeroStockTotal = zeroStockRows.reduce((total, branch) => total + branch.stockUnits, 0);
+  // Which unit figures are one product's (unit-totals.ts). A table whose unit columns come or go is keyed
+  // on it, so it starts again from its own sort rather than staying ordered by a column no longer shown.
+  const showUnitTiles = weeklyKpiUnitsAreOneProduct(data);
+  const showUnitDeltas = weeklyKpiUnitDeltaIsOneProduct(data);
+  const regionUnits = weeklyBreakdownUnitsAreOneProduct(data, "region");
+  const productUnits = weeklyBreakdownUnitsAreOneProduct(data, "product");
+  const distributorUnits = weeklyBreakdownUnitsAreOneProduct(data, "distributor");
+  const branchUnits = weeklyBreakdownUnitsAreOneProduct(data, "branch");
+  const weekUnits = weeklyWeekComparisonUnitsAreOneProduct(data);
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <header className="rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
+      <header className="border border-phx-line bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="mb-1 flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
-              <span className="h-2 w-2 rounded-full bg-phx-accent" />
+              <span className="h-2 w-2 bg-phx-accent" />
               Weekly Sales
             </div>
             <h1 className="text-xl font-black text-phx-ink">Weekly Sales Dashboard</h1>
@@ -299,12 +331,13 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               Consolidated by region, product, branch, and distributor. Stock shown as units only.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          {/* Wraps: the three exports side by side are wider than a phone. */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleExport}
               disabled={downloading || loading}
-              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-phx-accent px-3 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="flex items-center gap-1.5 border border-phx-accent bg-phx-accent px-3 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
               title="Download Excel report with current filters applied"
             >
               {downloading ? (
@@ -320,7 +353,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               type="button"
               onClick={handleSummaryExport}
               disabled={downloadingSummary || loading}
-              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
+              className="flex items-center gap-1.5 border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
               title="Download the 5-tab management summary: weekly by branch and manager, month-to-date, year-to-date, and low-sales branches holding stock"
             >
               {downloadingSummary ? (
@@ -337,7 +370,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               type="button"
               onClick={handleNsmDsmExport}
               disabled={downloadingNsmDsm || loading}
-              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
+              className="flex items-center gap-1.5 border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
               title="Download the field-manager workbook: sales by area, branch and distributor week by week in units, branches ranked, stock with no sales, and full details — with the current filters applied"
             >
               {downloadingNsmDsm ? (
@@ -351,7 +384,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         </div>
       </header>
 
-      <div className="rounded-[6px] border border-phx-line bg-white p-2 shadow-sm">
+      <div className="border border-phx-line bg-white p-2 shadow-sm">
         <div className="mb-2 flex items-center justify-between px-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
           <span className="flex items-center gap-1.5">
             <Filter className="h-3.5 w-3.5" />
@@ -361,7 +394,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               screen. A faint "Updating" was too easy to miss, so a stale unfiltered total read as
               "the period filter did nothing" — make the pending state unmissable instead. */}
           {loading ? (
-            <span className="flex items-center gap-1.5 rounded-[4px] bg-phx-accent px-2 py-0.5 text-white">
+            <span className="flex items-center gap-1.5 bg-phx-accent px-2 py-0.5 text-white">
               <Loader2 className="h-3 w-3 animate-spin" />
               Updating…
             </span>
@@ -457,15 +490,24 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         <p className="text-xs font-semibold text-phx-ink-soft">{data.trackedScope.note}</p>
       )}
 
+      {/* Said on the screen, so a missing Units column never reads as a fault: the strictest test on the
+          page is the week-by-week comparison's, and only a product filter passes it. */}
+      {!noData && !weekUnits && (
+        <p className="text-xs font-semibold text-phx-ink-soft">
+          Units and stock appear only where every figure is one product&apos;s, because units of different
+          products are never added together. Choose one product in the Product filter to see them throughout.
+        </p>
+      )}
+
       {error && (
-        <div className="flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 shadow-sm">
+        <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 shadow-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {noData ? (
-        <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-white p-8 text-center text-sm font-semibold text-phx-ink-soft shadow-sm">
+        <div className="border border-dashed border-phx-line-strong bg-white p-8 text-center text-sm font-semibold text-phx-ink-soft shadow-sm">
           No validated weekly uploads yet. Upload a weekly file from <span className="font-black">Weekly Sales Upload</span>.
         </div>
       ) : (
@@ -473,29 +515,54 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         // below carry the same about-to-be-replaced numbers, and leaving them crisp is what made a
         // pending filter look like an applied one.
         <div className={cn("space-y-4 transition-opacity", loading && "opacity-40")} aria-busy={loading}>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {/* Four tiles, or two while the unit tiles are hidden — laid out for the count actually there. */}
+          <div className={`grid grid-cols-2 gap-3 ${showUnitTiles ? "lg:grid-cols-4" : ""}`}>
             <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Sales value" value={money(data.kpis.salesValue)} delta={data.compare.salesValue} format={money} />
-            <Kpi icon={<Package className="h-4 w-4" />} label="Sales units" value={num(data.kpis.salesUnits)} delta={data.compare.salesUnits} format={num} />
-            <Kpi icon={<Store className="h-4 w-4" />} label="Stock units" value={num(data.kpis.stockUnits)} delta={data.compare.stockUnits} format={num} />
+            {showUnitTiles ? (
+              <Kpi
+                icon={<Package className="h-4 w-4" />}
+                label="Sales units"
+                value={num(data.kpis.salesUnits)}
+                delta={showUnitDeltas ? data.compare.salesUnits : undefined}
+                format={num}
+              />
+            ) : null}
+            {showUnitTiles ? (
+              <Kpi
+                icon={<Store className="h-4 w-4" />}
+                label="Stock units"
+                value={num(data.kpis.stockUnits)}
+                delta={showUnitDeltas ? data.compare.stockUnits : undefined}
+                format={num}
+              />
+            ) : null}
             <Kpi icon={<Store className="h-4 w-4" />} label="Branches" value={num(data.kpis.branchCount)} sub={`${data.kpis.regionCount} regions - ${data.kpis.productCount} products`} />
           </div>
 
-          <DashboardCharts data={data} />
+          <DashboardCharts data={data} showBranchUnits={branchUnits} />
 
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-            <RankTable title="By region (all distributors)" rows={data.regions} />
-            <RankTable title="By product" rows={data.products} />
+            <RankTable key={`region-${regionUnits}`} title="By region (all distributors)" rows={data.regions} showUnits={regionUnits} />
+            <RankTable key={`product-${productUnits}`} title="By product" rows={data.products} showUnits={productUnits} />
           </div>
 
-          <BranchComparisonTable rows={branchRows} />
+          <BranchComparisonTable key={`branch-${branchUnits}`} rows={branchRows} showUnits={branchUnits} />
 
-          {data.distributors.length > 1 && <RankTable maxHeight="max-h-64" title="By distributor" rows={data.distributorBreakdown} />}
+          {data.distributors.length > 1 && (
+            <RankTable
+              key={`distributor-${distributorUnits}`}
+              maxHeight="max-h-64"
+              title="By distributor"
+              rows={data.distributorBreakdown}
+              showUnits={distributorUnits}
+            />
+          )}
 
-          <WeekComparisonTable rows={data.weekComparison} />
+          <WeekComparisonTable rows={data.weekComparison} showUnits={weekUnits} />
 
           <TrendStrip trend={data.trend} selected={[]} />
 
-          <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
+          <ZeroStockTable key={`stock-${branchUnits}`} rows={zeroStockRows} showStock={branchUnits} />
         </div>
       )}
     </div>
@@ -513,59 +580,64 @@ function DeltaPct({ value }: { value: number }) {
 }
 
 // Week-by-week comparison of REAL (de-cumulated) sales: each week minus the previous week of its
-// month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week.
-function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"] }) {
+// month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week. Its units
+// and stock add every week in scope, so they are there only while a product filter pins one product.
+function WeekComparisonTable({ rows, showUnits }: { rows: WeeklyDashboard["weekComparison"]; showUnits: boolean }) {
   if (!rows || rows.length === 0) return null;
+  const columns = weekComparisonColumns(showUnits);
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="border-b border-phx-line px-4 py-3">
         <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Week-by-week comparison</h2>
         <p className="mt-0.5 text-xs font-medium text-phx-ink-soft">
-          Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …). Stock is the
-          week&apos;s snapshot, never subtracted.
+          Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …).
+          {showUnits ? " Stock is the week's snapshot, never subtracted." : null}
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      {/* DESKTOP — fixed to its container with every column width declared. This was the page's one
+          sideways scroll box until 2026-09-17; the gap chips now wrap under the week mark instead. */}
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.month}%` }} />
+            <col style={{ width: `${columns.week}%` }} />
+            <col style={{ width: `${columns.date}%` }} />
+            <col style={{ width: `${columns.value}%` }} />
+            {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+            {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
+            <col style={{ width: `${columns.delta}%` }} />
+          </colgroup>
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Month</th>
-              <th className="px-3 py-2">Week</th>
-              <th className="px-3 py-2">Period date</th>
-              <th className="px-3 py-2 text-right">Sales value</th>
-              <th className="px-3 py-2 text-right">Sales units</th>
-              <th className="px-3 py-2 text-right">Stock units</th>
-              <th className="px-3 py-2 text-right">vs prev week</th>
+              <th className="px-2 py-2">Week</th>
+              <th className="px-2 py-2">Period date</th>
+              <th className="px-2 py-2 text-right">Sales value</th>
+              {showUnits ? <th className="px-2 py-2 text-right">Sales units</th> : null}
+              {showUnits ? <th className="px-2 py-2 text-right">Stock units</th> : null}
+              <th className="px-2 py-2 text-right">vs prev week</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
               <tr className="border-t border-[#FFE8D6]" key={`${row.cycleMonth}-${row.weekNumber}`}>
-                <td className="px-3 py-2 font-semibold text-phx-ink">{monthLabelClient(row.cycleMonth)}</td>
-                <td className="px-3 py-2">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
-                      W{row.weekNumber}
-                    </span>
-                    {row.spansGap ? (
-                      <span
-                        className="inline-flex items-center rounded bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
-                        title="An earlier week of this month was never uploaded, so this week's figure spans the missing week(s) — it is not a true single-week value."
-                      >
-                        Spans gap
-                      </span>
-                    ) : null}
-                  </span>
+                <td className="break-words px-3 py-2 font-semibold text-phx-ink">{monthLabelClient(row.cycleMonth)}</td>
+                <td className="px-2 py-2">
+                  <WeekMarks row={row} />
                 </td>
-                <td className="px-3 py-2 text-phx-ink-soft tabular-nums">{row.weekStart ?? "—"}</td>
-                <td className="px-3 py-2 text-right font-bold tabular-nums text-phx-ink">
+                <td className="break-words px-2 py-2 text-phx-ink-soft tabular-nums">{row.weekStart ?? "—"}</td>
+                <td className="break-words px-2 py-2 text-right font-bold tabular-nums text-phx-ink">
                   {row.salesValue == null ? <span className="text-phx-ink-faint">—</span> : money(row.salesValue)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">
-                  {row.salesUnits == null ? <span className="text-phx-ink-faint">—</span> : num(row.salesUnits)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
+                {showUnits ? (
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">
+                    {row.salesUnits == null ? <span className="text-phx-ink-faint">—</span> : num(row.salesUnits)}
+                  </td>
+                ) : null}
+                {showUnits ? (
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                ) : null}
+                <td className="px-2 py-2 text-right tabular-nums">
                   {row.deltaValuePct == null ? <span className="text-phx-ink-faint">—</span> : <DeltaPct value={row.deltaValuePct} />}
                 </td>
               </tr>
@@ -573,7 +645,114 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
           </tbody>
         </table>
       </div>
+      {/* PHONE — one card per week, the same figures under the same labels. */}
+      <div className="space-y-2 p-3 md:hidden">
+        {rows.map((row) => (
+          <PhoneCard key={`card-${row.cycleMonth}-${row.weekNumber}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="min-w-0 break-words text-sm font-black text-phx-ink">{monthLabelClient(row.cycleMonth)}</p>
+              <WeekMarks row={row} />
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <CardStat label="Period date" value={row.weekStart ?? "—"} />
+              <CardStat label="Sales value" value={row.salesValue == null ? "—" : money(row.salesValue)} />
+              {showUnits ? <CardStat label="Sales units" value={row.salesUnits == null ? "—" : num(row.salesUnits)} /> : null}
+              {showUnits ? <CardStat label="Stock units" value={num(row.stockUnits)} /> : null}
+              <CardStat
+                label="vs prev week"
+                value={row.deltaValuePct == null ? "—" : <DeltaPct value={row.deltaValuePct} />}
+              />
+            </div>
+          </PhoneCard>
+        ))}
+      </div>
     </section>
+  );
+}
+
+/** The week mark and its gap chips. They wrap under the mark when the column is narrow. */
+function WeekMarks({ row }: { row: WeeklyDashboard["weekComparison"][number] }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span className="inline-flex items-center bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
+        W{row.weekNumber}
+      </span>
+      {row.spansGap ? (
+        <span
+          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
+          title="An earlier week of this month was never uploaded, so this week's figure spans the missing week(s) — it is not a true single-week value."
+        >
+          Spans gap
+        </span>
+      ) : null}
+      {/* Kept, marked: one depot skipped the week before, the other depots' figures are real. */}
+      {row.depotSpansGap && !row.spansGap ? (
+        <span
+          className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
+          title="A depot whose sales are in this week sent no sheet for the week before, so this figure also holds the week it skipped and reads high."
+        >
+          Depot gap
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+// ── Phone cards ──────────────────────────────────────────────────────────────────────────────────────
+// Below md a table is a list of cards (AGENTS.md §4: desktop shows full tables, phones get cards).
+
+function PhoneCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex overflow-hidden border border-phx-line bg-white">
+      <span className="w-[3px] shrink-0 bg-phx-accent" />
+      <div className="min-w-0 flex-1 p-3">{children}</div>
+    </div>
+  );
+}
+
+function CardStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <div className="break-words text-sm font-black tabular-nums text-phx-ink">{value}</div>
+    </div>
+  );
+}
+
+/** The value bar under a name, square-ended. */
+function ValueBar({ value, max, floor, thick = false }: { value: number; max: number; floor: number; thick?: boolean }) {
+  return (
+    <div className={cn("mt-1 w-full bg-phx-paper-2", thick ? "h-1.5" : "h-1")}>
+      <div className={cn("bg-phx-accent", thick ? "h-1.5" : "h-1")} style={{ width: `${Math.max(floor, (value / max) * 100)}%` }} />
+    </div>
+  );
+}
+
+/** A table's sort controls for the phone cards, which have no header row to click. */
+function PhoneSortRow({
+  sort,
+  onSort,
+  options,
+}: {
+  sort: SortState | null;
+  onSort: (key: string) => void;
+  options: { key: string; label: string }[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-phx-line px-3 py-2 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft md:hidden">
+      <span className="text-phx-ink-faint">Sort</span>
+      {options.map((option) => (
+        <SortButton key={option.key} label={option.label} onSort={onSort} sort={sort} sortKey={option.key} />
+      ))}
+    </div>
+  );
+}
+
+function CardsNoResults({ filtered, label = "rows" }: { filtered: boolean; label?: string }) {
+  return (
+    <p className="px-3 py-5 text-center text-sm text-phx-ink-faint">
+      {filtered ? `No ${label} match your search.` : `No ${label}.`}
+    </p>
   );
 }
 
@@ -593,9 +772,9 @@ function Kpi({
   format?: (value: number) => string;
 }) {
   return (
-    <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
+    <div className="border border-phx-line bg-white p-3 shadow-sm">
       <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">
-        <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-phx-line bg-phx-paper text-phx-ink-soft">{icon}</span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center border border-phx-line bg-phx-paper text-phx-ink-soft">{icon}</span>
         {label}
       </div>
       <div className="mt-2 text-lg font-black tabular-nums text-phx-ink">{value}</div>
@@ -623,15 +802,17 @@ function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: nu
   );
 }
 
-function DashboardCharts({ data }: { data: WeeklyDashboard }) {
+/** The two unit charts draw a branch's units and stock, which add its products, so they are there only
+ * while the selection is one product. The value charts always are. */
+function DashboardCharts({ data, showBranchUnits }: { data: WeeklyDashboard; showBranchUnits: boolean }) {
   const branchRows = data.branchBreakdown.slice(0, 10);
   const stockRiskRows = data.zeroSalesBranches.slice(0, 8);
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <HorizontalValueChart rows={data.regions.slice(0, 8)} title="Regional sales value" />
       <ProductMixChart rows={data.products} />
-      <BranchSalesStockChart rows={branchRows} />
-      <ZeroSalesStockChart rows={stockRiskRows} />
+      {showBranchUnits ? <BranchSalesStockChart rows={branchRows} /> : null}
+      {showBranchUnits ? <ZeroSalesStockChart rows={stockRiskRows} /> : null}
     </section>
   );
 }
@@ -646,7 +827,7 @@ function ChartPanel({
   title: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <div className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
         {meta ? <span className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
@@ -665,9 +846,10 @@ function EmptyChart({ label }: { label: string }) {
 }
 
 function HorizontalValueChart({ rows, title }: { rows: WeeklyRanked[]; title: string }) {
+  // The whole name: the axis wraps it onto a second line rather than cutting it with an ellipsis.
   const chartRows = rows.map((row) => ({
     ...row,
-    label: truncateLabel(row.name || row.code, 22),
+    label: row.name || row.code,
   }));
   return (
     <ChartPanel meta={`${chartRows.length} rows`} title={title}>
@@ -716,8 +898,8 @@ function ProductMixChart({ rows }: { rows: WeeklyRanked[] }) {
             {chartRows.map((row, index) => (
               <div className="flex items-center justify-between gap-2 text-xs" key={row.code}>
                 <span className="flex min-w-0 items-center gap-2 font-bold text-phx-ink-2">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
-                  <span className="truncate">{row.name}</span>
+                  <span className="h-2 w-2 shrink-0" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
+                  <span className="min-w-0 break-words">{row.name}</span>
                 </span>
                 <span className="shrink-0 tabular-nums font-black text-phx-ink">{compactNumber(row.salesValue)}</span>
               </div>
@@ -732,7 +914,7 @@ function ProductMixChart({ rows }: { rows: WeeklyRanked[] }) {
 function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
   const chartRows = rows.map((row) => ({
     ...row,
-    label: truncateLabel(row.name || row.code, 18),
+    label: row.name || row.code,
   }));
   return (
     <ChartPanel meta={`${chartRows.length} branches`} title="Branch sales vs stock">
@@ -741,9 +923,11 @@ function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
       ) : (
         <div className="h-[300px] min-w-0 px-2 py-3">
           <ResponsiveContainer height="100%" width="100%">
-            <BarChart data={chartRows} margin={{ bottom: 22, left: -8, right: 14, top: 8 }}>
+            {/* The axis is taller and the bottom margin smaller by the same amount, so the plot keeps
+                its height while a whole branch name wraps inside its own slot. */}
+            <BarChart data={chartRows} margin={{ bottom: 4, left: -8, right: 14, top: 8 }}>
               <CartesianGrid stroke="#E2E8F0" strokeDasharray="4 8" vertical={false} />
-              <XAxis axisLine={false} dataKey="label" interval={0} tick={{ fill: "#64748B", fontSize: 9, fontWeight: 700 }} tickLine={false} />
+              <XAxis axisLine={false} dataKey="label" height={48} interval={0} tick={<SlotWrappedTick />} tickLine={false} />
               <YAxis axisLine={false} tick={{ fill: "#94A3B8", fontSize: 10, fontWeight: 700 }} tickFormatter={(value) => compactNumber(Number(value))} tickLine={false} width={46} />
               <Tooltip formatter={(value, name) => [num(Number(value)), name === "salesUnits" ? "Sales units" : "Stock units"]} labelFormatter={(_, payload) => payload?.[0]?.payload?.name ?? ""} />
               <Bar dataKey="salesUnits" fill="#F97316" radius={[0, 0, 0, 0]} />
@@ -756,10 +940,45 @@ function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
   );
 }
 
+/**
+ * A category tick that wraps its whole label inside its own slot. The default tick is handed the WHOLE
+ * axis width, so long names under neighbouring bars ran into each other — which is why they used to be
+ * cut with an ellipsis instead.
+ */
+function SlotWrappedTick({
+  x,
+  y,
+  width,
+  visibleTicksCount,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  width?: number;
+  visibleTicksCount?: number;
+  payload?: { value?: string | number };
+}) {
+  const slot = width && visibleTicksCount ? width / visibleTicksCount : undefined;
+  return (
+    <Text
+      fill="#64748B"
+      fontSize={9}
+      fontWeight={700}
+      textAnchor="middle"
+      verticalAnchor="start"
+      width={slot}
+      x={x}
+      y={y}
+    >
+      {String(payload?.value ?? "")}
+    </Text>
+  );
+}
+
 function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
   const chartRows = rows.map((row) => ({
     ...row,
-    label: truncateLabel(row.branchName || row.branchCode, 22),
+    label: row.branchName || row.branchCode,
   }));
   return (
     <ChartPanel meta={`${chartRows.length} branches`} title="Stock with zero sales">
@@ -782,14 +1001,17 @@ function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
   );
 }
 
+/** A ranked table. `showUnits` is the rule's answer for its cut: a hidden figure neither shows nor sorts. */
 function RankTable({
   title,
   rows,
+  showUnits,
   className,
   maxHeight = "max-h-80",
 }: {
   title: string;
   rows: WeeklyRanked[];
+  showUnits: boolean;
   className?: string;
   maxHeight?: string;
 }) {
@@ -797,8 +1019,12 @@ function RankTable({
     columns: [
       { key: "name", accessor: (row) => row.name, type: "string" },
       { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
-      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showUnits
+        ? [
+            { key: "salesUnits", accessor: (row: WeeklyRanked) => row.salesUnits, type: "number" as const },
+            { key: "stockUnits", accessor: (row: WeeklyRanked) => row.stockUnits, type: "number" as const },
+          ]
+        : []),
       { key: "share", accessor: (row) => row.share, type: "number" },
     ],
     searchAccessors: [(row) => row.name, (row) => row.code],
@@ -806,8 +1032,9 @@ function RankTable({
     secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
+  const columns = rankColumns(showUnits);
   return (
-    <section className={cn("overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm", className)}>
+    <section className={cn("overflow-hidden border border-phx-line bg-white shadow-sm", className)}>
       <PanelTitle
         count={table.visible}
         total={table.total}
@@ -817,48 +1044,99 @@ function RankTable({
           <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter…" />
         }
       />
-      <div className={cn("overflow-auto", maxHeight)}>
-        <table className="w-full min-w-[620px] text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
-            <tr>
-              <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
-              <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" />
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.length === 0 && <TableNoResults colSpan={5} filtered={table.isFiltered} />}
-            {table.rows.map((row) => (
-              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
-                <td className="px-3 py-2">
-                  <div className="font-semibold text-phx-ink">{row.name}</div>
-                  <div className="mt-1 h-1 w-full rounded-full bg-phx-paper-2">
-                    <div className="h-1 rounded-full bg-phx-accent" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
+      <PhoneSortRow
+        sort={table.sort}
+        onSort={table.toggleSort}
+        options={[
+          { key: "name", label: "Name" },
+          { key: "salesValue", label: "Sales value" },
+          ...(showUnits
+            ? [
+                { key: "salesUnits", label: "Units" },
+                { key: "stockUnits", label: "Stock" },
+              ]
+            : []),
+          { key: "share", label: "Share" },
+        ]}
+      />
+      {/* Scrolls DOWN only, inside its height cap; the table itself is fixed to the card's width. */}
+      <div className={cn("overflow-y-auto", maxHeight)}>
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: `${columns.name}%` }} />
+              <col style={{ width: `${columns.value}%` }} />
+              {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+              {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
+              <col style={{ width: `${columns.share}%` }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+              <tr>
+                <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
+                <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                {showUnits ? (
+                  <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                {showUnits ? (
+                  <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {table.rows.length === 0 && <TableNoResults colSpan={3 + (showUnits ? 2 : 0)} filtered={table.isFiltered} />}
+              {table.rows.map((row) => (
+                <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
+                  <td className="px-3 py-2">
+                    <div className="break-words font-semibold text-phx-ink">{row.name}</div>
+                    <ValueBar value={row.salesValue} max={max} floor={2} />
+                  </td>
+                  <td className="break-words px-2 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                  ) : null}
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  ) : null}
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-2 p-3 md:hidden">
+          {table.rows.length === 0 && <CardsNoResults filtered={table.isFiltered} />}
+          {table.rows.map((row) => (
+            <PhoneCard key={`card-${row.code}`}>
+              <p className="break-words text-sm font-black text-phx-ink">{row.name}</p>
+              <ValueBar value={row.salesValue} max={max} floor={2} />
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <CardStat label="Sales value" value={money(row.salesValue)} />
+                {showUnits ? <CardStat label="Units" value={num(row.salesUnits)} /> : null}
+                {showUnits ? <CardStat label="Stock" value={num(row.stockUnits)} /> : null}
+                <CardStat label="Share" value={`${(row.share * 100).toFixed(1)}%`} />
+              </div>
+            </PhoneCard>
+          ))}
+        </div>
       </div>
     </section>
   );
 }
 
-function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
+/** The Branches comparison. A branch row adds its products, so units and stock follow the rule for it. */
+function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparisonRow[]; showUnits: boolean }) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "name", accessor: (row) => row.name, type: "string" },
       { key: "regionName", accessor: (row) => row.regionName, type: "string" },
       { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
-      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showUnits
+        ? [
+            { key: "salesUnits", accessor: (row: WeeklyBranchComparisonRow) => row.salesUnits, type: "number" as const },
+            { key: "stockUnits", accessor: (row: WeeklyBranchComparisonRow) => row.stockUnits, type: "number" as const },
+          ]
+        : []),
       { key: "share", accessor: (row) => row.share, type: "number" },
     ],
     searchAccessors: [(row) => row.name, (row) => row.regionName, (row) => row.code],
@@ -866,8 +1144,9 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
     secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
+  const columns = branchComparisonColumns(showUnits);
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <PanelTitle
         count={table.visible}
         total={table.total}
@@ -877,57 +1156,116 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
           <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
         }
       />
-      <div className="max-h-96 overflow-auto">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
-            <tr>
-              <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
-              <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
-              <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
-              <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" />
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="branch rows" />}
-            {table.rows.map((row) => (
-              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
-                <td className="px-3 py-2">
-                  <div className="font-semibold text-phx-ink">{row.name}</div>
-                  <div className="mt-1 h-1 w-full rounded-full bg-phx-paper-2">
-                    <div className="h-1 rounded-full bg-phx-accent" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
-                  </div>
-                </td>
-                <td className="px-3 py-2 font-semibold text-phx-ink-2">{row.regionName}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
+      <PhoneSortRow
+        sort={table.sort}
+        onSort={table.toggleSort}
+        options={[
+          { key: "name", label: "Branch" },
+          { key: "regionName", label: "Region" },
+          { key: "salesValue", label: "Sales value" },
+          ...(showUnits
+            ? [
+                { key: "salesUnits", label: "Units" },
+                { key: "stockUnits", label: "Stock" },
+              ]
+            : []),
+          { key: "share", label: "Share" },
+        ]}
+      />
+      <div className="max-h-96 overflow-y-auto">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: `${columns.branch}%` }} />
+              <col style={{ width: `${columns.region}%` }} />
+              <col style={{ width: `${columns.value}%` }} />
+              {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+              {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
+              <col style={{ width: `${columns.share}%` }} />
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+              <tr>
+                <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
+                <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="px-2" />
+                <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                {showUnits ? (
+                  <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                {showUnits ? (
+                  <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {table.rows.length === 0 && (
+                <TableNoResults colSpan={4 + (showUnits ? 2 : 0)} filtered={table.isFiltered} label="branch rows" />
+              )}
+              {table.rows.map((row) => (
+                <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
+                  <td className="px-3 py-2">
+                    <div className="break-words font-semibold text-phx-ink">{row.name}</div>
+                    <ValueBar value={row.salesValue} max={max} floor={2} />
+                  </td>
+                  <td className="break-words px-2 py-2 font-semibold text-phx-ink-2">{row.regionName}</td>
+                  <td className="break-words px-2 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                  ) : null}
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  ) : null}
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-2 p-3 md:hidden">
+          {table.rows.length === 0 && <CardsNoResults filtered={table.isFiltered} label="branch rows" />}
+          {table.rows.map((row) => (
+            <PhoneCard key={`card-${row.code}`}>
+              <p className="break-words text-sm font-black text-phx-ink">{row.name}</p>
+              <p className="break-words text-phx-xs font-semibold text-phx-ink-2">{row.regionName}</p>
+              <ValueBar value={row.salesValue} max={max} floor={2} />
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <CardStat label="Sales value" value={money(row.salesValue)} />
+                {showUnits ? <CardStat label="Units" value={num(row.salesUnits)} /> : null}
+                {showUnits ? <CardStat label="Stock" value={num(row.stockUnits)} /> : null}
+                <CardStat label="Share" value={`${(row.share * 100).toFixed(1)}%`} />
+              </div>
+            </PhoneCard>
+          ))}
+        </div>
       </div>
     </section>
   );
 }
 
-function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalStock: number }) {
+/**
+ * The Stock on hand watchlist. A branch's stock adds its products, so the stock column, its bars and the
+ * header total are there only while the selection is one product; without them the branches keep the
+ * order they arrive in, biggest stock VALUE first (weeklyZeroSalesBranches).
+ */
+function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStock: boolean }) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "branchName", accessor: (row) => row.branchName, type: "string" },
       { key: "regionName", accessor: (row) => row.regionName, type: "string" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showStock
+        ? [{ key: "stockUnits", accessor: (row: WeeklyBranchRow) => row.stockUnits, type: "number" as const }]
+        : []),
     ],
     searchAccessors: [(row) => row.branchName, (row) => row.regionName],
-    initialSort: { key: "stockUnits", dir: "desc" },
+    initialSort: showStock ? { key: "stockUnits", dir: "desc" } : null,
     secondarySort: { key: "branchName", accessor: (row) => row.branchName, type: "string" },
   });
-  const max = visibleMax(table.rows, (row) => row.stockUnits);
-  const shownStock = table.isFiltered ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : totalStock;
+  const max = showStock ? visibleMax(table.rows, (row) => row.stockUnits) : 1;
+  // The rows shown: every row until a search narrows them.
+  const shownStock = showStock ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : null;
+  const columns = zeroStockColumns(showStock);
   return (
-    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <div>
           <div className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Stock on hand watchlist</div>
@@ -938,38 +1276,75 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
             <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
           </div>
           <div className="text-right">
-            <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div>
+            {shownStock !== null ? <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div> : null}
             <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
               {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
             </div>
           </div>
         </div>
       </div>
-      <div className="max-h-80 overflow-auto">
-        <table className="w-full table-fixed text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
-            <tr>
-              <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} className="w-[52%]" />
-              <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="w-[24%]" />
-              <SortableTh label="Stock units" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="w-[24%]" />
-            </tr>
-          </thead>
-          <tbody>
-            {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="stock-on-hand branches with zero sales" />}
-            {table.rows.map((branch) => (
-              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={`${branch.branchCode}-${branch.regionName}`}>
-                <td className="px-3 py-2">
-                  <div className="font-semibold text-phx-ink">{branch.branchName}</div>
-                  <div className="mt-1 h-1.5 w-full rounded-full bg-phx-paper-2">
-                    <div className="h-1.5 rounded-full bg-phx-accent" style={{ width: `${Math.max(4, (branch.stockUnits / max) * 100)}%` }} />
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-phx-ink-2">{branch.regionName}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink-2">{num(branch.stockUnits)}</td>
+      <PhoneSortRow
+        sort={table.sort}
+        onSort={table.toggleSort}
+        options={[
+          { key: "branchName", label: "Branch" },
+          { key: "regionName", label: "Region" },
+          ...(showStock ? [{ key: "stockUnits", label: "Stock units" }] : []),
+        ]}
+      />
+      <div className="max-h-80 overflow-y-auto">
+        <div className="hidden md:block">
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: `${columns.branch}%` }} />
+              <col style={{ width: `${columns.region}%` }} />
+              {showStock ? <col style={{ width: `${columns.stock}%` }} /> : null}
+            </colgroup>
+            <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
+              <tr>
+                <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} />
+                <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
+                {showStock ? (
+                  <SortableTh label="Stock units" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+                ) : null}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {table.rows.length === 0 && (
+                <TableNoResults
+                  colSpan={2 + (showStock ? 1 : 0)}
+                  filtered={table.isFiltered}
+                  label="stock-on-hand branches with zero sales"
+                />
+              )}
+              {table.rows.map((branch) => (
+                <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={`${branch.branchCode}-${branch.regionName}`}>
+                  <td className="px-3 py-2">
+                    <div className="break-words font-semibold text-phx-ink">{branch.branchName}</div>
+                    {showStock ? <ValueBar value={branch.stockUnits} max={max} floor={4} thick /> : null}
+                  </td>
+                  <td className="break-words px-3 py-2 text-phx-ink-2">{branch.regionName}</td>
+                  {showStock ? (
+                    <td className="break-words px-3 py-2 text-right tabular-nums font-bold text-phx-ink-2">{num(branch.stockUnits)}</td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-2 p-3 md:hidden">
+          {table.rows.length === 0 && <CardsNoResults filtered={table.isFiltered} label="stock-on-hand branches with zero sales" />}
+          {table.rows.map((branch) => (
+            <PhoneCard key={`card-${branch.branchCode}-${branch.regionName}`}>
+              <p className="break-words text-sm font-black text-phx-ink">{branch.branchName}</p>
+              {showStock ? <ValueBar value={branch.stockUnits} max={max} floor={4} thick /> : null}
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <CardStat label="Region" value={branch.regionName} />
+                {showStock ? <CardStat label="Stock units" value={num(branch.stockUnits)} /> : null}
+              </div>
+            </PhoneCard>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -994,7 +1369,7 @@ function PanelTitle({
       <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
       <div className="flex items-center gap-2">
         {actions ? <div className="w-40 sm:w-48">{actions}</div> : null}
-        <span className="shrink-0 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
+        <span className="shrink-0 border border-phx-line bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
           {showSplit ? `${count} / ${total}` : count} rows
         </span>
       </div>
@@ -1100,14 +1475,14 @@ function TrendTooltip({
   const up = (datum.wow ?? 0) >= 0;
 
   return (
-    <div className="pointer-events-none min-w-[200px] max-w-[270px] rounded-[6px] border border-phx-line bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
+    <div className="pointer-events-none w-max max-w-[270px] border border-phx-line bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-1.5 text-phx-xs font-bold tabular-nums text-phx-ink-soft">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
+          <span className="inline-block h-2 w-2" style={{ background: color }} />
           {datum.label}
         </span>
         {datum.selected && (
-          <span className="rounded-[4px] bg-phx-accent-soft px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-accent-hover">
+          <span className="bg-phx-accent-soft px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-accent-hover">
             Selected
           </span>
         )}
@@ -1117,7 +1492,7 @@ function TrendTooltip({
         {datum.wow !== null && (
           <span
             className={cn(
-              "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-phx-md font-black tabular-nums",
+              "inline-flex items-center gap-1 px-1.5 py-1 text-phx-md font-black tabular-nums",
               up ? "bg-[#ECFDF5] text-[#047857]" : "bg-[#FEF2F2] text-[#B91C1C]",
             )}
           >
@@ -1134,8 +1509,8 @@ function TrendTooltip({
             return (
               <div className="flex items-center justify-between gap-3" key={row.distributorCode}>
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, opacity: 0.45 }} />
-                  <span className="truncate text-phx-2xs font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
+                  <span className="inline-block h-1.5 w-1.5 shrink-0" style={{ background: color, opacity: 0.45 }} />
+                  <span className="min-w-0 break-words text-phx-2xs font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
                 </span>
                 <span className="shrink-0 text-phx-2xs font-black tabular-nums text-phx-ink-2">
                   {(share * 100).toFixed(0)}% · {compactEgp(row.salesValue)}
@@ -1216,9 +1591,9 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
   // vanishing silently, so the user knows the section exists and why it is empty.
   if (trend.length < 2) {
     return (
-      <section className="w-full overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <section className="w-full overflow-hidden border border-phx-line bg-white shadow-sm">
         <div className="flex items-center gap-1.5 border-b border-phx-line bg-phx-paper px-4 py-3">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-phx-accent" />
+          <span className="inline-block h-1.5 w-1.5 bg-phx-accent" />
           <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Weekly sales-value trend</span>
           <span className="ml-2 text-phx-xs font-semibold text-phx-ink-faint">
             {trend.length === 0 ? "No data for current filter" : "1 week — need at least 2 to draw a trend"}
@@ -1237,11 +1612,11 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
   const labelByWeekStart = new Map(chartData.map((d) => [d.weekStart, d.label]));
 
   return (
-    <section className="w-full overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+    <section className="w-full overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-phx-line bg-phx-paper px-4 py-3">
         <div>
           <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-phx-ink-soft">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-phx-accent" />
+            <span className="inline-block h-1.5 w-1.5 bg-phx-accent" />
             Weekly sales-value trend
           </div>
           <div className="mt-1 flex items-center gap-2.5">
@@ -1250,7 +1625,7 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
               <span className="flex items-center gap-2 border-l border-phx-line pl-2.5">
                 {years.map((year) => (
                   <span className="flex items-center gap-1" key={year}>
-                    <span className="inline-block h-1.5 w-3 rounded-full" style={{ background: trendYearColor(year) }} />
+                    <span className="inline-block h-1.5 w-3" style={{ background: trendYearColor(year) }} />
                     <span className="text-phx-2xs font-bold tabular-nums text-phx-ink-faint">{year}</span>
                   </span>
                 ))}

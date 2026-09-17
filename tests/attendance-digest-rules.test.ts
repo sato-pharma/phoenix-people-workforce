@@ -16,16 +16,25 @@ import {
   heldAnswerDueDate,
   isAnswerOverdue,
   MAX_MARKED_DAYS,
+  MAX_SEEN_RELEASE_LINES,
   editedDaysApplyToCandidate,
   parseMarkedDays,
+  parseReleaseDigestId,
+  parseSeenReleaseLines,
   payrollDaysForSettledLine,
   payrollDecisionBlocksBalance,
   pickDefaultReviewWeek,
+  releaseNoticeRange,
+  noticeReachedEmployee,
+  noticeRecipientFactsFrom,
   releaseNoticeReached,
+  releaseScope,
   reviewWeekStage,
+  staleReleaseLines,
 } from "../src/lib/attendance/digest-rules.ts";
-import { closedWeeksOfCurrentCycle, latestClosedSettlementWeek } from "../src/lib/attendance/digest-weeks.ts";
+import { refreshableReviewWeek, reviewWeeksToSync, startedReviewWeeks } from "../src/lib/attendance/digest-weeks.ts";
 import { withWeekBuildLock } from "../src/lib/attendance/week-build-lock.ts";
+import { buildAttendanceCalendarContext } from "../src/lib/attendance/working-days.ts";
 
 // The weekly attendance review, owner decisions 2026-09-15 and 2026-09-16:
 //   release gate → employee chooses salary or annual balance → may then dispute →
@@ -237,34 +246,211 @@ export async function runAttendanceDigestRulesTests() {
   );
   assert.equal(deadlineApplies({ answerDueOn: "2026-09-17", notifiedAt: "2026-09-15T09:00:00Z", todayCairoIso: "2026-09-17" }), false);
 
-  assert.equal(releaseNoticeReached([{ channel: "in_app", status: "sent" }]), true);
-  assert.equal(releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "pending" }]), true);
-  assert.equal(
-    releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "failed" }]),
-    false,
-    "a notice every channel skipped or failed told nobody, and must not start the clock",
-  );
-  assert.equal(releaseNoticeReached([]), false, "no delivery at all is not a notice");
-  assert.equal(releaseNoticeReached([{ channel: "email", status: "sent" }]), false, "email is not one of this notice's channels");
-
-  // --- Week 4 is built ---------------------------------------------------------------------
-  // Cycle 2026-09 runs 24 Aug to 23 Sep; its week 4 is 14-23 Sep.
+  // Owner, 2026-09-17 — "Only a real channel" and "HR decides, never automatic": an employee counts as
+  // told only when email or Telegram went out, or the in-app notice reached someone who has signed in
+  // before; and a leaver is never counted as told, so their days wait for HR.
   {
-    const on24th = latestClosedSettlementWeek("2026-09-24", 24);
-    assert.equal(on24th?.cycle.cycleKey, "2026-09", "on the 24th the week that just closed belongs to the PREVIOUS cycle");
-    assert.equal(on24th?.week.index, 4, "…and it is week 4 — asking only today's cycle never built it");
-    assert.equal(on24th?.week.startIso, "2026-09-14");
-    assert.equal(on24th?.week.endIso, "2026-09-23");
-    const on30th = latestClosedSettlementWeek("2026-09-30", 24);
-    assert.equal(on30th?.cycle.cycleKey, "2026-09", "until the new cycle's week 1 closes, week 4 stays the one due");
-    assert.equal(on30th?.week.index, 4);
-    const onOct1 = latestClosedSettlementWeek("2026-10-01", 24);
-    assert.equal(onOct1?.cycle.cycleKey, "2026-10");
-    assert.equal(onOct1?.week.index, 1);
-    const onSep15 = latestClosedSettlementWeek("2026-09-15", 24);
-    assert.equal(onSep15?.cycle.cycleKey, "2026-09");
-    assert.equal(onSep15?.week.index, 3);
-    assert.equal(onSep15?.week.startIso, "2026-09-07");
+    const signedIn = { hasSignedIn: true, stillEmployed: true };
+    const neverSignedIn = { hasSignedIn: false, stillEmployed: true };
+    const leaver = { hasSignedIn: true, stillEmployed: false };
+
+    assert.equal(releaseNoticeReached([{ channel: "email", status: "sent" }], neverSignedIn), true, "an email that went out tells the employee");
+    assert.equal(releaseNoticeReached([{ channel: "telegram", status: "sent" }], neverSignedIn), true, "so does a Telegram message");
+
+    // Only what went out counts. A hold can never go out when there is no linked Telegram or no
+    // address, and the outbox files permanent email blocks under "retry" — so none of these starts
+    // the clock (risk review, 2026-09-17).
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "telegram", status: "pending" }], neverSignedIn),
+      false,
+      "a Telegram message held for quiet hours has not gone out yet, and may never",
+    );
+    assert.equal(releaseNoticeReached([{ channel: "email", status: "pending" }], neverSignedIn), false, "an email held for quiet hours has not gone out yet");
+    assert.equal(releaseNoticeReached([{ channel: "telegram", status: "retrying" }], neverSignedIn), false, "a Telegram message waiting for a retry has not gone out");
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "sent" }, { channel: "email", status: "sent", queuedForRetry: true }], neverSignedIn),
+      false,
+      "an email handed to the outbox to retry did not go out — it may be a permanent block recorded as a retry",
+    );
+    assert.equal(
+      releaseNoticeReached([{ channel: "email", status: "sent", queuedForRetry: true }, { channel: "telegram", status: "sent" }], neverSignedIn),
+      true,
+      "another channel that did go out still tells them",
+    );
+    assert.equal(
+      releaseNoticeReached([{ channel: "email", status: "pending" }, { channel: "in_app", status: "sent" }], signedIn),
+      true,
+      "during quiet hours the in-app notice still tells someone who uses the app",
+    );
+
+    assert.equal(releaseNoticeReached([{ channel: "in_app", status: "sent" }], signedIn), true, "the app tells someone who uses it");
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "sent" }], neverSignedIn),
+      false,
+      "an in-app notice nobody can open tells nobody — the days wait for HR, never deducted for going unanswered",
+    );
+
+    for (const deliveries of [
+      [{ channel: "email", status: "sent" }],
+      [{ channel: "telegram", status: "sent" }],
+      [{ channel: "in_app", status: "sent" }, { channel: "email", status: "sent" }, { channel: "telegram", status: "sent" }],
+    ]) {
+      assert.equal(
+        releaseNoticeReached(deliveries, leaver),
+        false,
+        `a leaver is never counted as told, even when ${deliveries.map((d) => d.channel).join(" and ")} reached them — HR decides their days in the final pay`,
+      );
+    }
+
+    assert.equal(
+      releaseNoticeReached([{ channel: "in_app", status: "skipped" }, { channel: "email", status: "skipped" }, { channel: "telegram", status: "failed" }], signedIn),
+      false,
+      "a notice every channel skipped or failed told nobody, and must not start the clock",
+    );
+    assert.equal(releaseNoticeReached([], signedIn), false, "no delivery at all is not a notice");
+    assert.equal(releaseNoticeReached([{ channel: "push", status: "sent" }], neverSignedIn), false, "push is not one of this notice's channels");
+
+    // The dispute decision deducts nothing on the answer, so a reached leaver counts there.
+    assert.equal(noticeReachedEmployee([{ channel: "email", status: "sent" }], { hasSignedIn: false }), true);
+    assert.equal(noticeReachedEmployee([{ channel: "in_app", status: "sent" }], { hasSignedIn: false }), false);
+    assert.equal(noticeReachedEmployee([{ channel: "in_app", status: "sent" }], { hasSignedIn: true }), true);
+    assert.equal(noticeReachedEmployee([{ channel: "email", status: "sent", queuedForRetry: true }], { hasSignedIn: false }), false);
+    assert.equal(noticeReachedEmployee([{ channel: "telegram", status: "pending" }], { hasSignedIn: true }), false);
+  }
+
+  {
+    // "Signed in" needs BOTH an active login and a recorded sign-in; "still works here" needs BOTH an
+    // employee row and a status that is not a leaver's.
+    const facts = (onEmployeeFile: boolean, terminalStatus: boolean, activeLogin: boolean, hasSession: boolean) =>
+      noticeRecipientFactsFrom({ onEmployeeFile, terminalStatus, activeLogin, hasSession });
+    assert.deepEqual(facts(true, false, true, true), { hasSignedIn: true, stillEmployed: true });
+    assert.equal(facts(true, false, true, false).hasSignedIn, false, "an active login that never signed in has not seen the app");
+    assert.equal(facts(true, false, false, true).hasSignedIn, false, "a deactivated login cannot open the app, whatever it did before");
+    assert.equal(facts(true, false, false, false).hasSignedIn, false);
+    assert.equal(facts(true, true, true, true).stillEmployed, false, "a leaver's status is a leaver");
+    assert.equal(facts(false, false, true, true).stillEmployed, false, "no employee row is no proof they still work here");
+  }
+
+  {
+    // The facts behind "signed in" and "still works here" are read from the tables that hold them.
+    const notify = readFileSync("src/lib/attendance/digest-notify.ts", "utf8");
+    assert.match(notify, /from\("app_sessions"\)/, "a sign-in is read from app_sessions, which every real password or biometric sign-in writes");
+    assert.match(notify, /from\("app_auth_users"\)[^\n]*\.eq\("is_active", true\)/, "only an active login counts");
+    assert.match(
+      notify,
+      /return noticeRecipientFactsFrom\(\{\s*onEmployeeFile: Boolean\(employee\.data\),\s*terminalStatus: isTerminalEmploymentStatus\(status\),\s*activeLogin: \(login\.data \?\? \[\]\)\.length > 0,\s*hasSession: \(session\.data \?\? \[\]\)\.length > 0,\s*\}\);/,
+      "the facts come from the employee row, payroll's leaver rule, the active login and its sessions",
+    );
+    assert.match(notify, /return releaseNoticeReached\(result\.deliveries, await loadNoticeRecipientFacts\(input\.employeeHrId\)\);/, "the release notice applies the leaver rule");
+    assert.match(notify, /return noticeReachedEmployee\(result\.deliveries, await loadNoticeRecipientFacts\(input\.employeeHrId\)\);/, "the dispute decision deducts nothing, so it does not");
+    assert.match(notify, /catch \(error\) \{\s*logError\("Weekly attendance release notification failed"[\s\S]*?return false;/, "a failed read counts as not told");
+
+    // The notification system has to say when an email was only handed to the outbox.
+    const system = readFileSync("src/lib/notifications/system.ts", "utf8");
+    assert.match(
+      system,
+      /const handedOffToOutbox = result\.skipped && result\.reason\.startsWith\("Queued for retry:"\);[\s\S]{0,1200}?deliveries\.push\(\{ channel, error, idempotencyKey, \.\.\.\(handedOffToOutbox \? \{ queuedForRetry: true \} : \{\}\), status \}\);/,
+      "an email handed to the outbox is reported as queued for retry, so it is not counted as told",
+    );
+  }
+
+  // --- Releasing while the week runs: only the days the page showed ----------------------------
+  // Owner, 2026-09-17: "Show live, release any time". The daily job keeps adding days to a waiting week,
+  // so a Release click must not clear, unticked, a day that arrived after the page loaded.
+  assert.deepEqual(
+    parseSeenReleaseLines([{ id: 7, days: 0.5 }, { id: "8", days: "0.25" }]),
+    { lines: [{ id: 7, days: 0.5 }, { id: 8, days: 0.25 }], error: null },
+  );
+  assert.deepEqual(parseSeenReleaseLines([]), { lines: [], error: null }, "a page with nothing waiting sends an empty list");
+  for (const notAList of [undefined, null, "7", { id: 7, days: 0.5 }]) {
+    assert.match(
+      parseSeenReleaseLines(notAList).error ?? "",
+      /the days you saw were not sent/,
+      `${JSON.stringify(notAList)} is not a list of days, so nothing may be released`,
+    );
+  }
+  for (const unreadable of [[{ id: 0, days: 0.5 }], [{ id: 1.5, days: 0.5 }], [{ id: 7 }], [{ id: 7, days: -1 }], [{ id: 7, days: "half" }], [null]]) {
+    assert.match(
+      parseSeenReleaseLines(unreadable).error ?? "",
+      /a day you saw could not be read/,
+      `${JSON.stringify(unreadable)} is refused, never skipped — a skipped day is one the release would treat as unseen`,
+    );
+  }
+  assert.match(
+    parseSeenReleaseLines(Array.from({ length: MAX_SEEN_RELEASE_LINES + 1 }, (_, index) => ({ id: index + 1, days: 1 }))).error ?? "",
+    /Too many days/,
+  );
+
+  {
+    const waitingNow = [
+      { id: 1, deductionDays: 0.5 },
+      { id: 2, deductionDays: 0.25 },
+      { id: 3, deductionDays: 0.125 },
+    ];
+    assert.deepEqual(
+      staleReleaseLines(waitingNow, [{ id: 1, days: 0.5 }, { id: 2, days: 0.25 }, { id: 3, days: 0.125 }]),
+      [],
+      "every waiting day as the page showed it: the release goes ahead",
+    );
+    assert.deepEqual(
+      staleReleaseLines(waitingNow, [{ id: 1, days: 0.5 }, { id: 2, days: 0.25 }]),
+      [3],
+      "a day the daily job added after the page loaded stops the release — it would be cleared without being seen",
+    );
+    assert.deepEqual(
+      staleReleaseLines(waitingNow, [{ id: 1, days: 0.5 }, { id: 2, days: 0.5 }, { id: 3, days: 0.125 }]),
+      [2],
+      "a day whose figure changed since the page loaded stops it too",
+    );
+    assert.deepEqual(
+      staleReleaseLines(waitingNow, [{ id: 1, days: 0.5 }, { id: 2, days: 0.25 }, { id: 3, days: 0.1254 }]),
+      [],
+      "days are compared at 3 decimals, as the database stores them",
+    );
+    assert.deepEqual(
+      staleReleaseLines([{ id: 1, deductionDays: 0.5 }], [{ id: 1, days: 0.5 }, { id: 9, days: 1 }]),
+      [],
+      "a day the page showed that a refresh has since taken off is simply not released",
+    );
+  }
+
+  assert.deepEqual(
+    releaseNoticeRange([{ workDate: "2026-09-16" }, { workDate: "2026-09-14" }, { workDate: "2026-09-15" }], { weekStart: "2026-09-14", weekEnd: "2026-09-23" }),
+    { weekStart: "2026-09-14", weekEnd: "2026-09-16" },
+    "a release in the middle of the week names the days asked about, not days still to come",
+  );
+  assert.deepEqual(
+    releaseNoticeRange([{ workDate: "2026-09-21" }], { weekStart: "2026-09-14", weekEnd: "2026-09-23" }),
+    { weekStart: "2026-09-21", weekEnd: "2026-09-21" },
+    "a second release names only its own days, never the days the first release already asked about",
+  );
+  assert.deepEqual(
+    releaseNoticeRange([], { weekStart: "2026-09-14", weekEnd: "2026-09-23" }),
+    { weekStart: "2026-09-14", weekEnd: "2026-09-23" },
+  );
+
+  // --- One employee at a time (owner, 2026-09-17 — "every row has a release beside it … so I can release
+  // one employee and after release another") ----------------------------------------------------------
+  assert.deepEqual(parseReleaseDigestId(undefined), { digestId: null, error: null }, "no employee picked means the whole week");
+  assert.deepEqual(parseReleaseDigestId(null), { digestId: null, error: null });
+  assert.deepEqual(parseReleaseDigestId(12), { digestId: 12, error: null });
+  assert.deepEqual(parseReleaseDigestId("12"), { digestId: 12, error: null });
+  for (const unreadable of [0, -3, 1.5, "abc", "", true, {}, [12], Number.NaN]) {
+    assert.match(
+      parseReleaseDigestId(unreadable).error ?? "",
+      /could not be read/,
+      `${String(unreadable)} must be refused, never read as "everyone": that would clear and tell people nobody picked`,
+    );
+  }
+  {
+    const waiting = [{ id: 7 }, { id: 8 }, { id: 9 }];
+    assert.deepEqual(releaseScope(waiting, null).map((digest) => digest.id), [7, 8, 9], "the week's Release covers everyone waiting");
+    assert.deepEqual(
+      releaseScope(waiting, 8).map((digest) => digest.id),
+      [8],
+      "an employee's Release covers that employee only: the others are not cleared or told, and keep waiting",
+    );
+    assert.deepEqual(releaseScope(waiting, 42), [], "an employee no longer waiting releases nobody, never the whole week");
   }
 
   // --- The release notice -----------------------------------------------------
@@ -276,6 +462,18 @@ export async function runAttendanceDigestRulesTests() {
   assert.match(notice.message, /dispute/i, "and says a dispute is possible after choosing");
   assert.match(notice.message, /Thursday 17 September/, "and gives the deadline");
   assert.doesNotMatch(notice.message, /EGP|\d+\.\d{2}/, "no amount on a lock-screen channel");
+  assert.match(notice.message, /has 2 days with a deduction\.\n\nFor each day, choose/, "the notice keeps its paragraphs");
+
+  // One day reads as that day (owner, 2026-09-17). 2026-09-09 is a Wednesday.
+  {
+    const oneDay = buildWeekReleasedMessage({ weekStart: "2026-09-09", weekEnd: "2026-09-09", dayCount: 1, answerDueOn: "2026-09-11" });
+    assert.equal(oneDay.title, "Attendance review — Wednesday 9 September", "a single day's title names that day, never \"9 Sept to 9 Sept\"");
+    assert.doesNotMatch(`${oneDay.title}\n${oneDay.message}`, / to \d/, "no range when there is one day");
+    assert.match(oneDay.message, /^Your attendance on Wednesday 9 September has a deduction\.\n\n/);
+    assert.match(oneDay.message, /salary or from your annual vacation balance/);
+    assert.match(oneDay.message, /dispute/);
+    assert.match(oneDay.message, /\n\nPlease answer by the end of Friday 11 September\. Any day not answered by then is deducted from salary\.$/);
+  }
 
   // --- The dispute decision notice (owner, 2026-09-15 — "Yes, in-app and Telegram") ------------------
   // 2026-09-10 is a Thursday.
@@ -336,10 +534,10 @@ export async function runAttendanceDigestRulesTests() {
     );
   }
 
-  // --- Choosing days, building a week and releasing it: the Super Admin only ---------------------
-  assert.equal(canManageWeeklyReview({ role: "Super Admin" }), true, "the Super Admin ticks days, builds and releases");
+  // --- Choosing days, refreshing a week and releasing it: the Super Admin only -------------------
+  assert.equal(canManageWeeklyReview({ role: "Super Admin" }), true, "the Super Admin ticks days, refreshes and releases");
   for (const role of ["HR Advisory", "HR Operations", "CEO", "Employee", null, undefined]) {
-    assert.equal(canManageWeeklyReview({ role }), false, `${String(role)} must not tick a day, build or release a week, even as a named dispute reviewer`);
+    assert.equal(canManageWeeklyReview({ role }), false, `${String(role)} must not tick a day, refresh or release a week, even as a named dispute reviewer`);
   }
   for (const surface of [
     "app/api/attendance/weekly-review/release/route.ts",
@@ -350,6 +548,11 @@ export async function runAttendanceDigestRulesTests() {
     assert.match(source, /if \(!canManageWeeklyReview\(access\)\) \{\s*return NextResponse\.json\([^)]*\{ status: 403 \}\)/, `${surface} must refuse anyone but the Super Admin with a 403`);
     assert.match(source, /actorRole: access\.role \?\? null/, `${surface} must hand the caller's role to the service, which checks it again`);
   }
+  assert.match(
+    readFileSync("app/api/attendance/weekly-review/release/route.ts", "utf8"),
+    /digestId: payload\.digestId,/,
+    "the release route hands the picked employee to the service, which releases that employee only",
+  );
   assert.equal(
     existsSync("app/api/attendance/weekly-review/lines/[lineId]/remove/route.ts"),
     false,
@@ -362,8 +565,23 @@ export async function runAttendanceDigestRulesTests() {
   }
   const reviewPage = readFileSync("src/components/attendance/weekly-attendance-review.tsx", "utf8");
   assert.match(reviewPage, /const canMark =\s+canManage && /, "a dispute reviewer must not see the ticks");
-  assert.match(reviewPage, /const releasable =\s+canManage && /, "a dispute reviewer must not see Release this week");
-  assert.match(reviewPage, /const canBuild = canManage && /, "a dispute reviewer must not see Build this week");
+  assert.match(reviewPage, /const releasable =\s+canManage && /, "a dispute reviewer must not see the week's Release");
+  assert.match(reviewPage, /const canRefresh = canManage && /, "a dispute reviewer must not see Refresh");
+  assert.match(
+    reviewPage,
+    /seenLines: seenLines\(current\)/,
+    "Release sends the days the page shows, so the server can refuse a day that arrived after it loaded",
+  );
+  assert.match(
+    reviewPage,
+    /digestId: employee\.digestId,\s*seenLines: employeeSeenLines\(employee\),/,
+    "an employee's Release names that employee and sends only their days, so nobody else is cleared or told",
+  );
+  assert.match(
+    reviewPage,
+    /return canManage && current\.stage === "awaiting_release" && waitingForRelease\(employee\);/,
+    "a dispute reviewer must not see an employee's Release, and a released or trial-run employee has none",
+  );
   assert.match(readFileSync("app/(admin)/attendance/weekly-review/page.tsx", "utf8"), /canManage=\{canManageWeeklyReview\(access\)\}/, "the page must pass the Super Admin check down");
 
   // --- A rejected dispute that falls back to salary says why ----------------------------------
@@ -389,13 +607,48 @@ export async function runAttendanceDigestRulesTests() {
   );
   assert.doesNotMatch(release, /from\("attendance_weekly_digests"\)\s*\.update\(\{ status: "open"/, "…never a plain status write that skips the clearing");
   assert.match(release, /if \(outcome\.status !== "open" \|\| dayCount === 0\) continue;/, "a week with nothing ticked is released to nobody");
+  {
+    const scopeAt = release.indexOf("releaseScope(");
+    assert.ok(
+      scopeAt > 0 && scopeAt < release.indexOf("loadLines(") && scopeAt < release.indexOf('.rpc("phx_attendance_release_digest"'),
+      "one employee's release narrows to that employee before any day is checked, cleared or told",
+    );
+    assert.match(
+      release,
+      /if \(!digests\.length\) throw conflictError\("This employee is no longer waiting for release\. Reload the page\."\);/,
+      "an employee who is no longer waiting releases nobody",
+    );
+  }
+  {
+    const staleCheckAt = release.indexOf("staleReleaseLines(pending, input.seenLines)");
+    assert.ok(
+      staleCheckAt > 0 && staleCheckAt < release.indexOf('.rpc("phx_attendance_release_digest"'),
+      "every employee's days are checked against the page before anyone is released, so a stale page releases nobody rather than some",
+    );
+  }
+  assert.match(
+    release,
+    /p_seen_line_ids: seenIds,\s*p_seen_days: seenDays,/,
+    "…and the database function checks them again under the week's row lock",
+  );
+  assert.match(
+    release,
+    /const range = releaseNoticeRange\(asked, digest\);/,
+    "the notice names the days asked about, so a second release does not repeat the first one's dates",
+  );
 
   const cron = readFileSync("app/api/cron/attendance-weekly-digest/route.ts", "utf8");
   assert.doesNotMatch(cron, /notifyAttendanceWeekReleased|releaseWeek/, "the daily job must never release or notify — only the owner's click does");
   assert.match(
     cron,
-    /const failed = Boolean\(bridgeError \|\| deadlineError \|\| deadlineFailures > 0 \|\| balanceAlerts\.length > 0\);/,
-    "a day the sweep could not settle, or money taken twice, must make the daily job fail loudly",
+    /const failed = Boolean\(bridgeError \|\| deadlineError \|\| deadlineFailures > 0 \|\| balanceAlerts\.length > 0 \|\| syncFailures > 0\);/,
+    "a day the sweep could not settle, money taken twice, or a week that could not be brought up to date must make the daily job fail loudly",
+  );
+  assert.match(cron, /await syncOpenReviewWeeks\(\{/, "the daily job brings every started week up to date, the running one included");
+  assert.match(
+    readFileSync(".github/workflows/attendance-weekly-digest.yml", "utf8"),
+    /- cron: "23 10 \* \* \*"/,
+    "an afternoon run picks up yesterday's punches, which reach the fingerprint table after the morning run",
   );
   assert.match(cron, /\{ status: failed \? 500 : 200 \}/, "…and fail loudly means a 500 the scheduler sees");
 
@@ -469,6 +722,101 @@ export async function runAttendanceDigestRulesTests() {
   assert.match(releaseFn, /when v_kept = 0 then 'void'/, "a week with nothing ticked is voided, never opened to the employee");
   assert.match(selection, /grant execute on function public\.phx_attendance_release_digest\([^)]*\) to service_role;/);
 
+  // Live weeks, released in rounds (owner, 2026-09-17 — "Show live, release any time").
+  const live = readFileSync("supabase/migrations/20260917120000_weekly_review_live_weeks.sql", "utf8");
+  const syncFn = live.slice(
+    live.indexOf("create or replace function public.phx_attendance_sync_digest_days"),
+    live.indexOf("revoke execute on function public.phx_attendance_sync_digest_days"),
+  );
+  assert.ok(syncFn.length > 0 && syncFn.length < live.length / 2, "the sync function slice must find both of its markers");
+  assert.match(
+    syncFn,
+    /pg_advisory_xact_lock\(hashtextextended\('attendance_digest_sync:'/,
+    "one sync of one employee-week at a time, whichever server runs it",
+  );
+  assert.match(
+    syncFn,
+    /and status = 'awaiting_release'\s+and dry_run = p_dry_run\s+order by id\s+limit 1\s+for update;/,
+    "the sync locks the waiting digest the way a tick and a release lock it",
+  );
+  assert.match(syncFn, /if v_line\.action <> 'pending' then\s+continue;/, "a day already answered or cleared is never refreshed");
+  assert.match(
+    syncFn,
+    /and g\.id is distinct from v_digest\.id\s+\) then\s+v_elsewhere := v_elsewhere \+ 1;\s+continue;/,
+    "a day already in another digest — released, answered or cleared there — is never asked about twice",
+  );
+  assert.match(syncFn, /if v_line\.adjusted_by_hr_id is not null then\s+v_days := v_line\.deduction_days;/, "a day whose days the Super Admin changed keeps his figure");
+  assert.match(syncFn, /coalesce\(v_day\.evidence, '\{\}'::jsonb\), false\s*\);/, "a new day starts unticked");
+  assert.match(
+    syncFn,
+    /l\.action = 'pending'\s+and l\.work_date = any\(v_cleared_dates\)\s+and not exists \(select 1 from public\.attendance_settlements s where s\.digest_line_id = l\.id\)/,
+    "only a waiting day the report cleared is taken off, never one with a settlement",
+  );
+  assert.match(
+    live,
+    /create unique index if not exists attendance_weekly_digests_one_awaiting_idx\s+on public\.attendance_weekly_digests \(employee_hr_id, cycle_key, week_index\)\s+where status = 'awaiting_release' and dry_run = false;/,
+    "one real digest per employee-week waits for release at a time, so a second release can never open days the first one holds",
+  );
+
+  const liveReleaseFn = live.slice(
+    live.indexOf("create or replace function public.phx_attendance_release_digest"),
+    live.indexOf("revoke execute on function public.phx_attendance_release_digest"),
+  );
+  assert.ok(liveReleaseFn.length > 0 && liveReleaseFn.length < live.length / 2, "the new release function slice must find both of its markers");
+  assert.match(
+    liveReleaseFn,
+    /where seen\.line_id = l\.id\s+and round\(seen\.days, 3\) = round\(l\.deduction_days, 3\)/,
+    "the release refuses a waiting day the page did not show at its current figure",
+  );
+  {
+    const refusedAt = liveReleaseFn.indexOf("using errcode = '40001'");
+    assert.ok(
+      refusedAt > liveReleaseFn.indexOf("for update") && liveReleaseFn.indexOf("for update") > 0,
+      "the page check runs under the week's row lock",
+    );
+    assert.ok(
+      refusedAt < liveReleaseFn.indexOf("where digest_id = v_digest.id and action = 'pending' and deduct = false"),
+      "…and before any unticked day is cleared",
+    );
+  }
+  assert.match(
+    liveReleaseFn,
+    /where digest_id = v_digest\.id and action = 'pending' and deduct = false/,
+    "release must clear exactly the unticked days that are still pending",
+  );
+  assert.match(
+    liveReleaseFn,
+    /insert into public\.attendance_settlements \([^;]*'removed'[^;]*;/,
+    "an unticked day must leave a 'removed' settlement, or payroll could still approve it",
+  );
+  assert.match(liveReleaseFn, /v_digest\.status <> 'awaiting_release' or v_digest\.dry_run is distinct from false/, "release refuses a trial run or a week already released");
+  assert.match(liveReleaseFn, /when v_kept = 0 then 'void'/, "a week with nothing ticked is voided, never opened to the employee");
+  assert.match(
+    live,
+    /drop function if exists public\.phx_attendance_release_digest\(bigint, text, date\);/,
+    "the release that checked nothing against the page is dropped, so no caller can go around the check",
+  );
+  assert.match(live, /grant execute on function public\.phx_attendance_release_digest\(bigint, text, date, bigint\[\], numeric\[\]\) to service_role;/);
+  assert.match(live, /grant execute on function public\.phx_attendance_sync_digest_days\([^)]*\) to service_role;/);
+  assert.doesNotMatch(live, /\bto (public|anon|authenticated)\b/, "nothing in this migration is granted to a browser role");
+  assert.match(
+    live,
+    /where d\.dry_run = true\s+and d\.status = 'void'\s+and d\.released_at is null\s+and not exists \(/,
+    "only a void, never-released trial digest with no settlement is deleted",
+  );
+  assert.match(
+    live,
+    /create schema if not exists attendance_backup_20260917;\s+revoke all on schema attendance_backup_20260917 from public, anon, authenticated;/,
+    "the trial copy goes in a dated schema no browser role can reach, never in public",
+  );
+  assert.doesNotMatch(live, /public\.\w*backup/, "…and no backup table lands in public");
+  assert.ok(
+    live.indexOf("insert into attendance_backup_20260917.trial_digests") > 0 &&
+      live.indexOf("insert into attendance_backup_20260917.trial_digests") <
+        live.indexOf("delete from public.attendance_weekly_digests\nwhere id in (select id from weekly_review_trial_ids);"),
+    "the trial copy is backed up before it is deleted — production has no point-in-time recovery",
+  );
+
   assert.match(
     release,
     /if \(!answerWindow\.context\) \{\s*throw conflictError/,
@@ -487,6 +835,32 @@ export async function runAttendanceDigestRulesTests() {
     /if \(!calendar\.holidaySourceConnected\) \{\s*return \{ context: null/,
     "an unreadable holiday calendar gives no deadline — a holiday would count as a working day to answer in",
   );
+  assert.match(
+    answerWindowSource,
+    /if \(!calendar\.holidayCalendarReachable\) \{\s*return \{ context: null, unreadable: "The public holiday calendar"/,
+    "a Google Calendar outage gives no deadline either — a fixed-date holiday keeps the month connected while both Eids are missing",
+  );
+  // The outage itself, through the real holiday lookup. Google unreachable in May: Labour Day (a fixed
+  // date) still loads, so the month reads as connected, the flag release trusted before, while Eid
+  // al-Adha is missing. 2099 keeps this month out of the holiday cache a real lookup fills.
+  {
+    const savedFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async () => {
+        throw new TypeError("fetch failed");
+      }) as typeof fetch;
+      const outage = await buildAttendanceCalendarContext({ dateFromIso: "2099-05-01", dateToIso: "2099-05-31" });
+      assert.equal(outage.holidaysByDate.get("2099-05-01"), "Labour Day", "a fixed-date holiday still loads during an outage");
+      assert.equal(outage.holidaySourceConnected, true, "…so the month still reads as connected, which is why that flag cannot be the gate");
+      assert.equal(
+        outage.holidayCalendarReachable,
+        false,
+        "a Google Calendar outage must read as unreachable even in a month a fixed-date holiday keeps connected",
+      );
+    } finally {
+      globalThis.fetch = savedFetch;
+    }
+  }
   assert.match(
     answerWindowSource,
     /if \(leave instanceof Error\) \{\s*return \{ context: null/,
@@ -761,17 +1135,51 @@ export async function runAttendanceDigestRulesTests() {
   assert.match(bridge, /\.range\(from, from \+ PAGE - 1\);[\s\S]*if \(page\.length < PAGE\) break;/, "settlements are read page by page, so skipped rows cannot hide newer answers");
 
   // --- Choosing the days (owner, 2026-09-15 — "I want full control") -------------------------------
-  // The week picker: every closed week of the current payroll month. Cycle 2026-09 runs 24 Aug–23 Sep.
+  // The week picker (owner, 2026-09-17 — "Show live, release any time"): every started week of the review
+  // month, the running one included. It used to list only closed weeks, so on 17 September the week of
+  // 14–23 September was invisible until the 24th.
   {
-    const sep15 = closedWeeksOfCurrentCycle("2026-09-15", 24);
-    assert.equal(sep15?.cycle.cycleKey, "2026-09");
-    assert.deepEqual(sep15?.weeks.map((week) => week.index), [1, 2, 3], "on the 15th weeks 1-3 are closed; week 4 is still running and cannot be judged");
-    const sep24 = closedWeeksOfCurrentCycle("2026-09-24", 24);
-    assert.equal(sep24?.cycle.cycleKey, "2026-09", "on the 24th the month that just ended is still the one to review");
-    assert.deepEqual(sep24?.weeks.map((week) => week.index), [1, 2, 3, 4]);
-    const oct1 = closedWeeksOfCurrentCycle("2026-10-01", 24);
-    assert.equal(oct1?.cycle.cycleKey, "2026-10");
-    assert.deepEqual(oct1?.weeks.map((week) => week.index), [1], "once the new month's week 1 closes, the previous month drops out of the picker");
+    const sep17 = startedReviewWeeks("2026-09", "2026-09-17");
+    assert.deepEqual(sep17.map((week) => week.index), [2, 3, 4], "on 17 September weeks 2 and 3 are complete and week 4 is listed while it runs");
+    assert.deepEqual(sep17.map((week) => week.running), [false, false, true]);
+    assert.equal(sep17[2]!.throughIso, "2026-09-16", "the running week holds its days up to yesterday");
+    assert.deepEqual(startedReviewWeeks("2026-10", "2026-10-01"), [], "on 1 October no day of October has finished yet");
+
+    const syncedWeeks = (todayIso: string) =>
+      reviewWeeksToSync(todayIso).map((week) => `${week.monthKey} week ${week.index} through ${week.throughIso}`);
+    assert.deepEqual(
+      syncedWeeks("2026-09-17"),
+      ["2026-09 week 2 through 2026-09-06", "2026-09 week 3 through 2026-09-13", "2026-09 week 4 through 2026-09-16"],
+      "the daily job brings every started week of the month up to date, the running one included",
+    );
+    assert.deepEqual(
+      syncedWeeks("2026-10-01"),
+      [
+        "2026-09 week 2 through 2026-09-06",
+        "2026-09 week 3 through 2026-09-13",
+        "2026-09 week 4 through 2026-09-23",
+        "2026-09 week 5 through 2026-09-30",
+      ],
+      "on 1 October September is still the month under review, through 30 September",
+    );
+    assert.deepEqual(
+      syncedWeeks("2026-10-02"),
+      ["2026-09 week 5 through 2026-09-30", "2026-10 week 1 through 2026-10-01"],
+      "for the first days of October September's last week is still brought up to date, so a late excuse for 30 September reaches it",
+    );
+    assert.deepEqual(syncedWeeks("2026-10-04"), ["2026-09 week 5 through 2026-09-30", "2026-10 week 1 through 2026-10-03"]);
+    assert.deepEqual(syncedWeeks("2026-10-05"), ["2026-10 week 1 through 2026-10-04"], "after that, September is left alone");
+    assert.deepEqual(
+      syncedWeeks("2026-09-02"),
+      ["2026-08 week 4 through 2026-08-31", "2026-09 week 2 through 2026-09-01"],
+      "August is reviewed (owner, 2026-09-17: \"build starting from 1 august\"), so its last week follows the same first-days rule as every month",
+    );
+    assert.deepEqual(syncedWeeks("2026-08-02"), ["2026-08 week 1 through 2026-08-01"], "nothing before August 2026 is reviewed: July has no weeks");
+
+    assert.equal(refreshableReviewWeek("2026-09", 5, "2026-10-20")?.throughIso, "2026-09-30", "the page may still refresh last month's weeks");
+    assert.equal(refreshableReviewWeek("2026-09", 5, "2026-11-02"), null, "…but not an older month's: its days are in month-end payroll by then");
+    assert.equal(refreshableReviewWeek("2026-10", 4, "2026-10-10"), null, "a week that has not started cannot be refreshed");
+    assert.equal(refreshableReviewWeek("2026-09", 1, "2026-09-17"), null, "September 2026 has no week 1: its days before the 1st are August's");
   }
 
   assert.equal(reviewWeekStage([]), "not_built");
@@ -841,27 +1249,43 @@ export async function runAttendanceDigestRulesTests() {
     /input\.appliedValue === undefined && appliedValueInput != null && appliedValueInput > Number\(candidateRow\.raw_value\)/,
     "a raised figure already on the decision must carry forward on a later Decide instead of throwing",
   );
-  assert.match(service, /detected_days: line\.deductionDays,/, "a built week must keep the detected days apart from the figure he may change");
-
-  // --- A week is built whole or not at all ----------------------------------------------------------
-  const build = service.slice(service.indexOf("async function generateDigestsForWeek"), service.indexOf("async function undoPartialBuild"));
-  assert.ok(build.length > 0 && build.length < service.length / 4, "the build slice must find both of its markers");
   assert.match(
-    build,
-    /\.code === "23505"\) \{\s*skippedExisting \+= 1;\s*continue;/,
-    "another build of the same week getting there first is skipped, not a failure that undoes this one",
+    syncFn,
+    /deduction_days, deduction_value, detected_days, detected_value, reason, evidence, deduct\s+\) values \(\s+v_digest\.id, v_day\.work_date, v_day\.status, coalesce\(v_day\.late_minutes, 0\), coalesce\(v_day\.short_minutes, 0\),\s+coalesce\(v_day\.worked_minutes, 0\), round\(v_day\.deduction_days, 3\), round\(v_day\.deduction_value, 2\),\s+round\(v_day\.deduction_days, 3\), round\(v_day\.deduction_value, 2\),/,
+    "a new day keeps the detected days apart from the figure he may change",
   );
-  assert.match(build, /await undoPartialBuild\(\{/, "a build that fails removes what it created, so the week is never left half-built");
-  assert.match(build, /throw buildError;/, "…and still fails loudly");
-  const undoStart = service.indexOf("async function undoPartialBuild");
-  const undo = service.slice(undoStart, service.indexOf("\n}\n", undoStart));
-  assert.match(undo, /\.eq\("status", "awaiting_release"\)/, "the undo only deletes a digest still waiting for release");
-  assert.match(undo, /\.is\("released_at", null\)/, "…and never one a Release click already reached");
 
-  // --- Only one build of a week runs at a time (risk review, 2026-09-16) ------------------------------
-  // The daily job and a Build this week click on the same week would otherwise interleave: the click
-  // skips the employees the job has just created, the job fails and undoes them, and nobody builds
-  // them again.
+  // --- Bringing a week up to date (owner, 2026-09-17 — "Show live, release any time") ------------------
+  {
+    const syncStart = service.indexOf("async function syncReviewWeekDays");
+    const syncBody = service.slice(syncStart, service.indexOf("\n}\n", syncStart));
+    assert.ok(syncStart > 0 && syncBody.length < service.length / 4, "the sync slice must find its function");
+    assert.match(
+      syncBody,
+      /\.rpc\("phx_attendance_sync_digest_days", \{/,
+      "each employee's week is brought up to date in one database transaction that keeps his ticks, never a delete-and-rebuild",
+    );
+    assert.match(
+      syncBody,
+      /p_cleared_dates: waitingKeys\.has\(canonicalHrIdKey\(target\.employeeHrId\)\) \? target\.clearedDates : \[\],/,
+      "cleared days are sent only for an employee with days waiting in the week",
+    );
+    assert.match(syncBody, /if \(error\) \{\s*failedHrIds\.push\(/, "one employee who cannot be brought up to date does not stop the others…");
+    assert.match(
+      service,
+      /for \(const failure of result\.failures\) failures\.push\(/,
+      "…and still reaches the daily job's failures, so the scheduler sees a 500",
+    );
+    assert.doesNotMatch(
+      service,
+      /from\("attendance_(weekly_digests|digest_lines)"\)\s*\.delete\(/,
+      "the service never deletes a digest or a day itself: only the database function takes a cleared day off",
+    );
+  }
+
+  // --- One piece of work on a week at a time (risk review, 2026-09-16; refresh and release, 2026-09-17) --
+  // A release checks that the days waiting are the days the page showed, then releases them; a refresh
+  // of the same week running in between would add a day after the check.
   {
     const events: string[] = [];
     let finishFirst: () => void = () => undefined;
@@ -905,17 +1329,22 @@ export async function runAttendanceDigestRulesTests() {
     );
     assert.equal(await otherWeek, "other week built");
   }
-  assert.match(
-    service,
-    /return withWeekBuildLock\(cycle\.cycleKey, week\.index, \(\) => generateDigestsForWeek\(/,
-    "the daily job builds a week only while holding that week's build lock",
-  );
+  {
+    const dailyStart = service.indexOf("export async function syncOpenReviewWeeks");
+    const daily = service.slice(dailyStart, service.indexOf("\n}\n", dailyStart));
+    assert.ok(dailyStart > 0 && daily.length < service.length / 4, "the daily sync slice must find its function");
+    assert.match(
+      daily,
+      /withWeekBuildLock\(window\.monthKey, window\.index, \(\) =>\s*syncReviewWeekDays\(/,
+      "the daily job brings a week up to date only while holding that week's lock",
+    );
+  }
   const releaseStart = service.indexOf("export async function releaseWeek");
   const releaseGate = service.slice(releaseStart, service.indexOf("\n}\n", releaseStart));
   assert.match(
     releaseGate,
-    /return withWeekBuildLock\(input\.cycleKey, input\.weekIndex, \(\) => releaseBuiltWeek\(input\)\);/,
-    "a release takes the week's build lock too, so it can never open half a week a build is still writing",
+    /return withWeekBuildLock\(input\.cycleKey, input\.weekIndex, \(\) => releaseWaitingDays\(\{ \.\.\.input, seenLines \}\)\);/,
+    "a release takes the week's lock too, so a refresh can never add a day between the page check and the release",
   );
   assert.ok(
     releaseGate.includes("assertCanManageWeeklyReview(input.actorRole)") &&
@@ -923,11 +1352,16 @@ export async function runAttendanceDigestRulesTests() {
     "…and the role check still refuses before any lock is taken",
   );
 
-  const buildClickStart = service.indexOf("export async function buildReviewWeek");
-  const buildClick = service.slice(buildClickStart, service.indexOf("\n}\n", buildClickStart));
-  const lockAt = buildClick.indexOf("withWeekBuildLock(");
+  const refreshStart = service.indexOf("export async function buildReviewWeek");
+  const refreshClick = service.slice(refreshStart, service.indexOf("\n}\n", refreshStart));
+  const refreshableAt = refreshClick.indexOf("refreshableReviewWeek(");
   assert.ok(
-    lockAt > 0 && lockAt < buildClick.indexOf("This week has already been built."),
-    "a Build click checks whether the week is built only inside the lock, after any build of it still running has finished",
+    refreshableAt > 0 && refreshableAt < refreshClick.indexOf("withWeekBuildLock("),
+    "a Refresh click reaches only a started week of this month or last month — an older week's days are in month-end payroll",
+  );
+  assert.match(
+    refreshClick,
+    /withWeekBuildLock\(window\.monthKey, window\.index, \(\) =>\s*syncReviewWeekDays\(/,
+    "…and brings it up to date under the week's lock, after any refresh or release of it still running",
   );
 }

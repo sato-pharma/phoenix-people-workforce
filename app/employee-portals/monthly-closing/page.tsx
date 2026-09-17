@@ -19,8 +19,9 @@ export const maxDuration = 60;
 
 // Portal mount of the admin /sales/monthly-closing Closing Matrix + Details, scoped per viewer and
 // PUBLISHED-gated (owner decision 2026-07-30). Every field-sales management role reaches their OWN
-// closing here — never through an /admin URL. Access is enforced server-side three ways: the portal
-// role gate (canAccessPortalClosing), assertPermission(sales, read), and the per-viewer scope inside
+// closing here — never through an /admin URL — and so does a Medical Rep (owner, 2026-09-16), bounded
+// to their own area(s) only. Access is enforced server-side three ways: the portal role gate
+// (canAccessPortalClosing), assertPermission(sales, read), and the per-viewer scope inside
 // loadPortalMonthlyClosing (line/region/area/product narrowing + confidential-column strip). A month
 // only appears once the admin has published that (line, period).
 export default async function PortalMonthlyClosingPage({
@@ -65,6 +66,9 @@ export default async function PortalMonthlyClosingPage({
           message={loadError ?? "Monthly Closing is unavailable right now — refresh to try again."}
           title="Monthly Closing unavailable"
         />
+      ) : result.scopeMessage ? (
+        // A Medical Rep whose own area is not on file. They are never shown their region instead.
+        <EmployeePortalEmptyState message={result.scopeMessage} title="No area on file" />
       ) : !result.line ? (
         <EmployeePortalEmptyState
           message="We couldn't resolve a product line for your account, so there is no closing to show. Ask HR to confirm your line assignment."

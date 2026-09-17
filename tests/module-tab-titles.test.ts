@@ -28,12 +28,9 @@ const BRAND = systemIdentity.appName;
  * here is the bug this file exists to catch, because two tabs reading the same words is
  * precisely the state the owner asked to be rid of.
  *
- * "Monthly Closing" and "Weekly Sales" are the live portal page against its
- * `/employee-portals/sales-analytics/…` twin. Ruling 11 ("no analytics module, no sales
- * analytics") delisted that module from navigation — its row is still in the config but gated
- * to nobody (`roles: []` plus `excludedRoles: ["Super Admin"]`), so the twin ships and works by
- * URL and is reachable from no rail at all. Only one of each pair can be opened without typing
- * the address.
+ * ("Monthly Closing" and "Weekly Sales" were accepted here too, as the live portal page against its
+ * `/employee-portals/sales-analytics/…` twin. The owner retired that module on 2026-09-17 and its
+ * pages were deleted, so neither name is shared any more and both came off this list.)
  *
  * "Probation", "Payslips" and "Vacancies" are the admin module against the viewer's OWN copy of
  * it under `/workspace` (the "My Workspace" section). Both are genuinely that module, so the
@@ -43,8 +40,6 @@ const BRAND = systemIdentity.appName;
  * three is the wrong trade.
  */
 const ACCEPTED_DUPLICATE_TITLES: readonly string[] = [
-  "Monthly Closing",
-  "Weekly Sales",
   "Probation",
   "Payslips",
   "Vacancies",

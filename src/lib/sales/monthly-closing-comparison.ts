@@ -1,7 +1,19 @@
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { foldAreaCodeForLine } from "@/lib/sales/closing-area-merges";
+import { isMainStoresRow } from "@/lib/sales/closing-main-stores";
+import {
+  loadLineOperationalRegions,
+  type OperationalRegion,
+  usesOrganogramRegions,
+} from "@/lib/sales/closing-organogram-regions";
 import { closingAreaOf } from "@/lib/sales/closing-row-area";
-import { maskComparisonLeaves, type SourceMaskViewer } from "@/lib/sales/closing-source-mask";
+import {
+  MASKED_SOURCE_LABEL,
+  maskComparisonLeaves,
+  type SourceMaskViewer,
+} from "@/lib/sales/closing-source-mask";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 
 // Distributor comparison + insights for the Monthly Closing report. The on-screen matrix
 // MERGES all distributors; here we split them (PS / IS / IS-S) and derive rankings, mix,
@@ -544,6 +556,113 @@ export function scopeRegionNames(
   return new Map([...regionName].filter(([code]) => kept.has(code)));
 }
 
+/**
+ * Which region a comparison files an area's money under.
+ *
+ * `geographic` (the default) is the map region the closing RPCs stamp on every leaf. `organogram`
+ * is the region the Closing Matrix itself groups by: the district manager territory that owns the
+ * area on this line in this month. They differ wherever the organogram re-owns an area — on Anti
+ * Infective the map says Upper Egypt while the matrix says Upper Egypt 1 and Upper Egypt 2.
+ *
+ * The black closing export asks for `organogram`, so its Comparison, Rankings, Gaps, Summary and
+ * Calc sheets name the same region as the matrix beside them (owner, 2026-09-16). Every other caller
+ * keeps the default.
+ */
+export type ComparisonRegionBasis = "geographic" | "organogram";
+
+export type ComparisonLoadOptions = { regionBasis?: ComparisonRegionBasis };
+
+/** The region the Closing Matrix shows an area under, or undefined when the organogram has none. */
+export type ComparisonRegionOfArea = (areaCode: string) => OperationalRegion | undefined;
+
+/**
+ * Re-files the comparison under the Closing Matrix's regions. Pure; it moves no money.
+ *
+ * Every leaf and both masters take the region `regionOfArea` gives their area, and `areaRegion`
+ * follows. An area it does not know keeps the region it arrived with, the same rule
+ * `applyOperationalRegions` gives the matrix: a missing mapping must never re-home anything.
+ *
+ * The region NAME map is then narrowed to the regions that are left. productGaps reads that map as
+ * "every region that exists", so a whole-country map kept listing Upper Egypt as a gap on Anti
+ * Infective, where no area sits in it any more. Names the map lacks (Upper Egypt 1 and 2 on a
+ * project whose region master predates them) come from the organogram.
+ *
+ * `leaves: false` re-files the masters only. The from-rows loader passes it because its leaves
+ * already carry each row's own month's region, which a consolidated span needs: one area can sit in
+ * a different region in each month.
+ */
+export function relabelComparisonRegions(
+  input: AssembleComparisonInput,
+  regionOfArea: ComparisonRegionOfArea,
+  options: { leaves?: boolean } = {},
+): AssembleComparisonInput {
+  const names = new Map(input.maps.regionName);
+  const regionFor = (areaCode: string, current: string): string => {
+    const owner = areaCode.trim() ? regionOfArea(areaCode) : undefined;
+    if (!owner?.regionCode) return current;
+    if (!names.has(owner.regionCode)) names.set(owner.regionCode, owner.regionName || owner.regionCode);
+    return owner.regionCode;
+  };
+  const refile = <T extends { areaCode: string; regionCode: string }>(row: T): T => {
+    const regionCode = regionFor(row.areaCode, row.regionCode);
+    return regionCode === row.regionCode ? row : { ...row, regionCode };
+  };
+  const leaves = options.leaves !== false;
+  const brickRows = leaves ? input.brickRows.map(refile) : input.brickRows;
+  const customerRows = leaves ? input.customerRows.map(refile) : input.customerRows;
+  const distProductRows = leaves ? input.distProductRows.map(refile) : input.distProductRows;
+  const masterAreas = input.masterAreas.map(refile);
+  const masterBricks = input.masterBricks.map(refile);
+  const areaRegion = new Map(
+    [...input.maps.areaRegion].map(([areaCode, regionCode]) => [areaCode, regionFor(areaCode, regionCode)]),
+  );
+
+  const present = new Set<string>([
+    ...masterAreas.map((area) => area.regionCode),
+    ...masterBricks.map((brick) => brick.regionCode),
+    ...distProductRows.map((row) => row.regionCode),
+    ...brickRows.map((row) => row.regionCode),
+    ...customerRows.map((row) => row.regionCode),
+  ]);
+  const regionName = new Map([...names].filter(([code]) => present.has(code)));
+
+  return {
+    ...input,
+    brickRows,
+    customerRows,
+    distProductRows,
+    maps: { ...input.maps, areaRegion, regionName },
+    masterAreas,
+    masterBricks,
+  };
+}
+
+/**
+ * The Closing Matrix's own area -> region lookup, from a line's organogram map for one month. The
+ * matrix groups the MERGED area (Beni Suef folded into Fayoum where closing-area-merges.ts says so),
+ * so an area is folded the same way before it is looked up.
+ */
+export function organogramRegionOfArea(
+  lineCode: string | null,
+  period: string,
+  map: { regionByArea: Map<string, OperationalRegion> },
+): ComparisonRegionOfArea {
+  return (areaCode) => map.regionByArea.get(foldAreaCodeForLine(lineCode, areaCode, period));
+}
+
+/**
+ * The same organogram read the matrix loader makes. Null for a line that keeps geographic regions,
+ * and when the org chart cannot be read — the comparison then stays on geography rather than
+ * failing, exactly as the matrix does.
+ */
+async function loadOrganogramRegionOfArea(line: string, period: string): Promise<ComparisonRegionOfArea | null> {
+  const lineCode = resolveTargetLineCode(line);
+  if (!usesOrganogramRegions(lineCode)) return null;
+  const map = await loadLineOperationalRegions(lineCode, period);
+  if (!map || map.regionByArea.size === 0) return null;
+  return organogramRegionOfArea(lineCode, period, map);
+}
+
 // Turns the mapped leaf rows + masters into the full comparison. Shared by the Monthly Closing
 // loader (one line) and the Executive Report loader (all lines, line label "All Lines"). Every
 // higher-level number is DERIVED from the leaf rows the RPCs return — never by summing
@@ -718,17 +837,20 @@ export async function loadMonthlyClosingComparison(
   // REQUIRED, not optional: every sheet this feeds names distributors, and El Qema's name must not
   // reach anyone but Super Admin (owner, 2026-09-14). See maskComparisonLeaves.
   viewer: SourceMaskViewer,
+  options: ComparisonLoadOptions = {},
 ): Promise<MonthlyClosingComparison> {
   if (!line || !period) return emptyComparison(line, period);
 
   const supabase = getSupabaseAdmin();
+  const organogram = options.regionBasis === "organogram";
   // Paginated reads — these aggregates can exceed PostgREST's 1000-row cap (e.g. a line with
   // thousands of customers), which would otherwise truncate the comparison.
-  const [masters, distProductData, brickData, customerData] = await Promise.all([
+  const [masters, distProductData, brickData, customerData, regionOfArea] = await Promise.all([
     loadComparisonMasters(),
     rpcAll(supabase, "phx_closing_distributor_product", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "product_code"]),
     rpcAll(supabase, "phx_closing_brick", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]),
     rpcAll(supabase, "phx_closing_customers", { p_line: line, p_period: period }, ["client_code", "distributor_code"]),
+    organogram ? loadOrganogramRegionOfArea(line, period) : Promise.resolve(null),
   ]);
 
   const distProductRows: DistProductRow[] = (distProductData as Array<Record<string, unknown>>).map((row) => ({
@@ -746,10 +868,7 @@ export async function loadMonthlyClosingComparison(
     regionCode: String(row.region_code ?? ""), units: Number(row.units ?? 0), value: Number(row.value ?? 0),
   }));
 
-  // Scope BEFORE assembling: every ranking, mix, gap and insight is derived inside
-  // assembleComparison, so narrowing the leaves here narrows all of them at once — including the
-  // hidden Calc sheet the report formulas read from.
-  const scoped = scopeComparisonInput({
+  const input: AssembleComparisonInput = {
     brickRows,
     customerRows,
     distProductRows,
@@ -758,7 +877,17 @@ export async function loadMonthlyClosingComparison(
     masterAreas: masters.masterAreas,
     masterBricks: masters.masterBricks,
     period,
-  }, scope);
+  };
+  // Scope BEFORE assembling: every ranking, mix, gap and insight is derived inside
+  // assembleComparison, so narrowing the leaves here narrows all of them at once — including the
+  // hidden Calc sheet the report formulas read from.
+  //
+  // Re-filed BEFORE the scope, so a region filter matches the region the reader picked it by —
+  // the matrix's. With no organogram map the comparison stays exactly as it was.
+  const scoped = scopeComparisonInput(
+    regionOfArea ? relabelComparisonRegions(input, regionOfArea) : input,
+    scope,
+  );
 
   // The region NAME map is scoped separately because productGaps treats its keys as "every region
   // that exists" — left whole, a Delta-only export names every other region as a gap.
@@ -789,6 +918,12 @@ export type ComparisonSourceRow = {
   productName: string;
   qty: number;
   regionCode: string;
+  /**
+   * The Closing Matrix's region for this row — the organogram territory that owns its closing area
+   * in its own month. Optional; read only under the `organogram` region basis, falling back to
+   * `regionCode` when blank.
+   */
+  operationalRegionCode?: string;
   salesValue: number;
 };
 
@@ -803,6 +938,7 @@ export type ComparisonSourceRow = {
  */
 export function comparisonLeavesFromRows(
   rows: ComparisonSourceRow[],
+  regionBasis: ComparisonRegionBasis = "geographic",
 ): Pick<AssembleComparisonInput, "brickRows" | "customerRows" | "distProductRows"> {
   const distProduct = new Map<string, DistProductRow>();
   const bricks = new Map<string, BrickRow>();
@@ -819,21 +955,33 @@ export function comparisonLeavesFromRows(
     // filtered comparison dropped it from the area the Matrix credits. Identical to `areaCode` on
     // every row in production except a re-booked one.
     const areaCode = closingAreaOf(row);
+    // 🔒 A MAIN STORES ROW IS FILED UNDER THE UNNAMED `—`, where El Qema's own leaves go for every
+    // reader who may not see the name (owner, 2026-09-14: a distributor breakdown keeps the money
+    // and drops the name). Its distributor is blank by design, and a blank code falls between two
+    // chairs here: `distinctDistributors` skips it, so no per-distributor grid carries the money,
+    // while `rollupByDistributor` still lists it as a row with no name. It has no brick and no
+    // client code either, so the two leaves below never see it.
+    const distributorCode = isMainStoresRow(row) ? MASKED_SOURCE_LABEL : row.distributorCode;
+    // The row's own month's matrix region under the organogram basis, so a span of months files an
+    // area that changed territory under each month's region, exactly as the merged matrix does.
+    const regionCode = regionBasis === "organogram"
+      ? (row.operationalRegionCode || row.regionCode)
+      : row.regionCode;
 
-    const dpKey = `${row.distributorCode}|${row.regionCode}|${areaCode}|${row.productCode}`;
+    const dpKey = `${distributorCode}|${regionCode}|${areaCode}|${row.productCode}`;
     const dp = distProduct.get(dpKey) ?? {
-      areaCode, distributorCode: row.distributorCode, productCode: row.productCode,
-      productName: row.productName || row.productCode, regionCode: row.regionCode, units: 0, value: 0,
+      areaCode, distributorCode, productCode: row.productCode,
+      productName: row.productName || row.productCode, regionCode, units: 0, value: 0,
     };
     dp.units += row.qty;
     dp.value += row.salesValue;
     distProduct.set(dpKey, dp);
 
     if (row.brickId.trim()) {
-      const brickKey = `${row.distributorCode}|${row.regionCode}|${areaCode}|${row.brickId}`;
+      const brickKey = `${row.distributorCode}|${regionCode}|${areaCode}|${row.brickId}`;
       const brick = bricks.get(brickKey) ?? {
         areaCode, brickId: row.brickId, distributorCode: row.distributorCode,
-        regionCode: row.regionCode, units: 0, value: 0,
+        regionCode, units: 0, value: 0,
       };
       brick.units += row.qty;
       brick.value += row.salesValue;
@@ -854,7 +1002,7 @@ export function comparisonLeavesFromRows(
       const customer = customers.get(customerKey) ?? {
         areaCode, brickId: row.brickId, clientCode: row.clientCode,
         clientName: row.clientName || row.clientCode, distributorCode: row.distributorCode,
-        regionCode: row.regionCode, units: 0, value: 0,
+        regionCode, units: 0, value: 0,
       };
       customer.units += row.qty;
       customer.value += row.salesValue;
@@ -887,16 +1035,27 @@ export async function loadMonthlyClosingComparisonFromRows(
   scope: ComparisonScope | undefined,
   // REQUIRED for the same reason as the aggregate loader above.
   viewer: SourceMaskViewer,
+  options: ComparisonLoadOptions = {},
 ): Promise<MonthlyClosingComparison> {
   if (!line || !period) return emptyComparison(line, period);
-  const masters = await loadComparisonMasters();
-  // 🔒 Scope, then mask, then assemble — the same order as the aggregate loader, for the same reason.
-  return assembleComparison(maskComparisonLeaves(scopeComparisonInput({
-    ...comparisonLeavesFromRows(rows),
+  const organogram = options.regionBasis === "organogram";
+  const [masters, regionOfArea] = await Promise.all([
+    loadComparisonMasters(),
+    organogram ? loadOrganogramRegionOfArea(line, period) : Promise.resolve(null),
+  ]);
+  const input: AssembleComparisonInput = {
+    ...comparisonLeavesFromRows(rows, options.regionBasis),
     line,
     maps: masters.maps,
     masterAreas: masters.masterAreas,
     masterBricks: masters.masterBricks,
     period,
-  }, scope), viewer));
+  };
+  // The leaves already carry each row's own matrix region, so only the masters are re-filed here —
+  // under `period`'s organogram, the month the span is labelled with.
+  // 🔒 Re-file, then scope, then mask, then assemble — the same order as the aggregate loader, for the same reason.
+  return assembleComparison(maskComparisonLeaves(scopeComparisonInput(
+    regionOfArea ? relabelComparisonRegions(input, regionOfArea, { leaves: false }) : input,
+    scope,
+  ), viewer));
 }

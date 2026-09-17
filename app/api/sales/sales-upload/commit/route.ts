@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    const resolved = await resolveUploadedSpreadsheet(request);
+    const resolved = await resolveUploadedSpreadsheet(request, access);
     if (!resolved.ok) return NextResponse.json({ success: false, error: resolved.error }, { status: resolved.status });
     cleanupStoragePath = resolved.storagePath;
     const file = resolved.file;

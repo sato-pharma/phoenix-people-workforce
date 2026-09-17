@@ -38,6 +38,9 @@ export type MonthlyAttendanceSummaryData = {
   dateTo: string;
   generatedAt: string;
   holidaySourceConnected: boolean;
+  /** False when Google's holiday calendar could not be read for this month: a Google Calendar outage keeps holidaySourceConnected true for any month holding a company or fixed-date public holiday (1 May, say) while both Eids, Islamic New Year, the Prophet's Birthday and Coptic Easter are missing (owner, 2026-09-16). The
+   * month's absences are then overcounted by exactly those days. */
+  holidayCalendarReachable: boolean;
   /** Working days in this window with zero punches company-wide (ascending). Non-empty means the
    * attendance agent stopped delivering and the month is INCOMPLETE — surface it, never let the
    * absence figures read as final. */
@@ -131,6 +134,7 @@ export async function getMonthlyAttendanceSummary(
       dateFrom,
       dateTo: monthEnd,
       generatedAt: new Date().toISOString(),
+      holidayCalendarReachable: true,
       holidaySourceConnected: true,
       missingDataDates: [],
       month,
@@ -294,6 +298,7 @@ export async function getMonthlyAttendanceSummary(
     dateFrom,
     dateTo,
     generatedAt: new Date().toISOString(),
+    holidayCalendarReachable: context.holidayCalendarReachable,
     holidaySourceConnected: context.holidaySourceConnected,
     missingDataDates: Array.from(missingDataDates).sort(),
     month,

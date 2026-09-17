@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
+import {
+  decumulateRows,
+  depotWeekGapKey,
+  depotWeekGapKeys,
+  depotWeekGaps,
+  moneySpansDepotGap,
+  suppressGapSpannedValue,
+  weekHasDecumulationGap,
+  type DecumulableRow,
+} from "../src/lib/sales/weekly/decumulate.ts";
 import { weeklyDistributorIsCumulative } from "../src/lib/sales/weekly/distributors.ts";
 
 // Build a cumulative row with sensible defaults.
@@ -153,6 +162,85 @@ export function runWeeklyDecumulationTests() {
   // A two-week gap (only W1 then W4) also flags.
   assert.equal(weekHasDecumulationGap(1, 4), true, "W4 after missing W2+W3 spans the gap");
 
+  // ── M6 per depot: a week spans a gap when THAT depot sent no sheet for the week before ──
+  // The flag above is pooled: it asks whether ANY depot uploaded the week before. On a region's Field
+  // Force tab that hid a real gap. In August 2026 Ibn Sina-Sato and Overseas sent no week 2 while POS sent
+  // one, so every week looked uploaded, and week 3, which held two weeks of those two depots' sales,
+  // carried no warning.
+  {
+    const sheet = (distributorCode: string, weekNumber: number, extra: Partial<DecumulableRow> = {}) =>
+      row({ cycleMonth: "2026-08-01", distributorCode, weekNumber, weekStart: `2026-08-0${weekNumber}`, ...extra });
+    const rows = [
+      // Ibn Sina-Sato and Overseas skipped week 2; POS sent it.
+      sheet("IS-S", 1), sheet("IS-S", 3), sheet("IS-S", 4),
+      sheet("PS", 1), sheet("PS", 3), sheet("PS", 3, { productCode: "LA002" }),
+      sheet("POS", 1), sheet("POS", 2), sheet("POS", 3),
+      // A code in another casing is the same depot, as decumulateRows groups it: POS then skipped week 4.
+      sheet(" pos ", 5),
+      // EGD's first sheet of the month is week 3. A month-to-date sheet then holds weeks 1 to 3.
+      sheet("EG", 3), sheet("EG", 4),
+      // Direct is invoice-keyed and never de-cumulated, so a missing Direct week is only a missing week.
+      sheet("Direct", 1), sheet("Direct", 3),
+      // Untagged rows and a row with no week date are never de-cumulated as weeks.
+      row({ cycleMonth: "", weekNumber: 3, weekStart: "2026-08-03", distributorCode: "RM" }),
+      row({ cycleMonth: "2026-08-01", weekNumber: null, weekStart: "2026-08-03", distributorCode: "RM" }),
+      row({ cycleMonth: "2026-08-01", weekNumber: 4, weekStart: "", distributorCode: "RM" }),
+      // Another month is its own calendar, whatever order the rows arrive in.
+      row({ cycleMonth: "2026-07-01", weekNumber: 2, weekStart: "2026-07-08", distributorCode: "IS-S" }),
+      row({ cycleMonth: "2026-07-01", weekNumber: 1, weekStart: "2026-07-01", distributorCode: "IS-S" }),
+    ];
+    const august = [1, 2, 3, 4, 5];
+    assert.deepEqual(
+      august.filter((week, i) => weekHasDecumulationGap(i > 0 ? august[i - 1] : null, week)),
+      [],
+      "fixture: pooled over every depot, no August week follows a missing one",
+    );
+    assert.deepEqual(
+      depotWeekGaps(rows),
+      [
+        { distributorCode: "EG", cycleMonth: "2026-08-01", weekNumber: 3 },
+        { distributorCode: "IS-S", cycleMonth: "2026-08-01", weekNumber: 3 },
+        { distributorCode: "POS", cycleMonth: "2026-08-01", weekNumber: 5 },
+        { distributorCode: "PS", cycleMonth: "2026-08-01", weekNumber: 3 },
+      ],
+      "each depot is judged on its own calendar: a skipped week flags that depot's next sheet, and so does a first sheet after week 1; Direct, untagged rows and undated rows never flag",
+    );
+
+    // The flag names exactly the figure de-cumulation could not isolate.
+    const real = decumulateRows([
+      sheet("IS-S", 1, { salesValue: 100 }),
+      sheet("IS-S", 3, { salesValue: 300 }),
+      sheet("POS", 1, { salesValue: 10 }),
+      sheet("POS", 2, { salesValue: 20 }),
+      sheet("POS", 3, { salesValue: 30 }),
+    ]);
+    const week3 = (code: string) => real.find((r) => r.distributorCode === code && r.weekNumber === 3)?.salesValue;
+    assert.equal(week3("IS-S"), 200, "Ibn Sina-Sato's week 3 is its week-3 sheet minus its week-1 sheet: weeks 2 and 3 together");
+    assert.equal(week3("POS"), 10, "POS's week 3 is one week, whatever Ibn Sina-Sato skipped");
+
+    assert.equal(
+      depotWeekGapKey(" is-s ", "2026-08-01", 3),
+      depotWeekGapKey("IS-S", "2026-08-01", 3),
+      "a depot's week is looked up case-blind and space-blind",
+    );
+    assert.notEqual(depotWeekGapKey("IS-S", "2026-08-01", 3), depotWeekGapKey("IS-S", "2026-09-01", 3), "another month is another key");
+    assert.notEqual(depotWeekGapKey("IS-S", "2026-08-01", 3), depotWeekGapKey("PS", "2026-08-01", 3), "another depot is another key");
+
+    // The one rule every screen marks a week by: money from a depot week that spans a gap.
+    const keys = depotWeekGapKeys(depotWeekGaps(rows));
+    const august3 = (distributorCode: string) => ({ distributorCode, cycleMonth: "2026-08-01", weekNumber: 3 });
+    assert.equal(moneySpansDepotGap(august3("is-s"), { value: 500, units: 5 }, keys), true, "Ibn Sina-Sato's week-3 sales read high");
+    assert.equal(moneySpansDepotGap(august3("IS-S"), { value: -40, units: 0 }, keys), true, "and so does a return: it is money");
+    assert.equal(moneySpansDepotGap(august3("IS-S"), { value: 0, units: 3 }, keys), true, "and units sold at no recorded value");
+    assert.equal(moneySpansDepotGap(august3("IS-S"), { value: 0, units: 0 }, keys), false, "a stock-only row moves no money, so it never marks its week");
+    assert.equal(moneySpansDepotGap(august3("POS"), { value: 500, units: 5 }, keys), false, "POS sent week 2, so its week 3 is one week");
+    assert.equal(
+      moneySpansDepotGap({ ...august3("IS-S"), weekNumber: null }, { value: 500, units: 5 }, keys),
+      false,
+      "an untagged row is no week at all",
+    );
+  }
+
   // ── M6 remediation: suppress the inflated single-week figure for a gap-spanning week ──
   // Non-gap weeks keep their real value; gap weeks are nulled (suppressed), never shown as a true
   // single-week number. Works for any value type, including an already-null delta.
@@ -176,6 +264,30 @@ export function runWeeklyDecumulationTests() {
   assert.match(serviceSource, /salesValue: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesValue on a gap week");
   assert.match(serviceSource, /salesUnits: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesUnits on a gap week");
   assert.match(serviceSource, /deltaValuePct: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses the WoW delta on a gap week");
+
+  // The Overview marks a week one depot skipped the week before, and keeps its figure (owner, 2026-09-17).
+  assert.match(
+    serviceSource,
+    /const realRows = decumulateRows\(allRows\);\s*(?:\/\/[^\n]*\n\s*)*const depotGaps = depotWeekGaps\(allRows\);/,
+    "depot calendars are read over the rows de-cumulation subtracted from, before any scope or filter",
+  );
+  assert.match(
+    serviceSource,
+    /for \(const row of scopedRows\) \{[\s\S]{0,900}if \(moneySpansDepotGap\(row, \{ value: row\.salesValue, units: row\.netQty \}, depotGapKeys\)\) cur\.depotSpansGap = true;/,
+    "a week is marked where the viewer's own week-comparison money came from a depot week that spans a gap",
+  );
+  assert.match(serviceSource, /\n\s*depotSpansGap: w\.depotSpansGap,\n/, "and the mark is returned, with no suppression of its own");
+  assert.doesNotMatch(serviceSource, /suppressGapSpannedValue\([^)]*depotSpansGap/, "a depot mark never blanks a figure");
+
+  const adminOverview = readFileSync("src/components/sales/weekly/weekly-dashboard-view-impl.tsx", "utf8");
+  assert.match(adminOverview, /\{row\.depotSpansGap && !row\.spansGap \? \(/, "the admin week table marks a depot gap beside a real figure");
+  const portalOverview = readFileSync("src/components/sales/weekly/portal-weekly-dashboard-impl.tsx", "utf8");
+  assert.match(
+    portalOverview,
+    /<WeekCrossMonthChart weekComparison=\{data\.weekComparison\} \/>\s*<\/div>\s*<WeekGapNote weekComparison=\{data\.weekComparison\} \/>/,
+    "the portal week chart is followed by the note naming the weeks that read high or are left at zero",
+  );
+  assert.match(portalOverview, /const high = shown\.filter\(\(r\) => r\.depotSpansGap && !r\.spansGap\)/, "the note reads the depot mark");
 
   // ── M7: logical-week (cycle_month + week_number + template) duplicate guard ──
   // persistWeeklyUpload adds a second SELECT pre-check on the logical week slot and maps the unique

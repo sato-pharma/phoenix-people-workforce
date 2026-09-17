@@ -14,7 +14,7 @@ function readSource(rel: string): string {
 
 // The Head Office product line is confidential — only CEO / Super Admin may ever see it or its
 // products. This pins the central helpers plus that every line-bearing sales surface applies the
-// strip (Source of Sales engine, Weekly, Analytics, Sales-Marketing Intelligence).
+// strip (Source of Sales engine, Weekly, Sales-Marketing Intelligence).
 export function runSalesHeadOfficeLockTests() {
   // ── Role gate ───────────────────────────────────────────────────────────────
   for (const role of ["CEO", "Super Admin"] as const) {
@@ -62,101 +62,8 @@ export function runSalesHeadOfficeLockTests() {
   );
 
   // ── Surface source-pins ──────────────────────────────────────────────────────
-  const analytics = readSource("../src/lib/analytics/service.ts");
-  for (const fn of ["loadSosByLine", "loadSosByProduct", "loadSosByCustomer", "loadClosingByEmployee", "loadCrossSource", "loadWeeklyFact"]) {
-    assert.ok(analytics.includes(fn), `analytics still defines ${fn}`);
-  }
-  assert.ok(
-    (analytics.match(/stripHeadOfficeRows\(/g) ?? []).length >= 6,
-    "every line-bearing analytics loader (incl. weekly) applies stripHeadOfficeRows",
-  );
-
-  // analytics_sos_by_period / analytics_sos_by_area aggregate the line dimension AWAY, so their
-  // result rows have no line to strip in TS. They must instead push the Head Office exclusion into
-  // the RPC via p_exclude_head_office (fail-closed: absent canViewHeadOffice ⇒ exclude). Pin both.
-  assert.ok(
-    (analytics.match(/p_exclude_head_office:\s*!filters\.canViewHeadOffice/g) ?? []).length >= 2,
-    "loadSosByPeriod and loadSosByArea pass p_exclude_head_office to the RPC",
-  );
-
-  // The by-area analytics dashboard must resolve canViewHeadOffice from the role so CEO/Super Admin
-  // still see Head Office while everyone else (the RPC default) fails closed. The logic lives in the
-  // shared dashboard component (rendered at both the admin and portal mounts).
-  const byAreaDashboard = readSource("../src/components/analytics/dashboards/source-sales-by-area-dashboard.tsx");
-  assert.ok(
-    byAreaDashboard.includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
-    "by-area dashboard passes canViewHeadOffice resolved from the role",
-  );
-
-  // ── Confidential-product reveal (LA003/LA004/SS001) ──────────────────────────
-  // The exclusion used to be baked into analytics.sos_fact, so Analytics could never reveal while
-  // the SoS dashboard could — the same month read 5.76x smaller on one screen than the other for a
-  // CEO. Migration 20260801114237 moved it to a per-call argument; these pins stop a call site or a
-  // dashboard silently dropping back to the hidden default.
-  assert.equal(
-    (analytics.match(/\.\.\.confidentialRevealArg\(filters\)/g) ?? []).length,
-    4,
-    "all four money RPCs (period/area/line/product) carry the confidential reveal argument",
-  );
-
-  // Reveal must be expressed as an EMPTY exclusion list. Passing the codes explicitly would hide
-  // them, which is the exact inversion this lock exists to catch.
-  assert.ok(
-    /p_exclude_codes: \[\]/.test(analytics),
-    "reveal is p_exclude_codes: [] (exclude nothing), never the code list",
-  );
-
-  // Hiding must OMIT the key rather than pass the codes: the RPC default is the fail-closed answer,
-  // and an omitted key keeps the argument set compatible with the pre-migration signature.
-  assert.ok(
-    /return filters\.canViewRestrictedProducts \? \{ p_exclude_codes: \[\] \} : \{\};/.test(analytics),
-    "non-privileged viewers omit p_exclude_codes entirely and inherit the RPC's hidden default",
-  );
-
-  // analytics_sos_by_customer measures active_batches (a COUNT) off a different view and has no
-  // value column, so it must NOT gain the argument — its signature never grew one.
-  // Bounded by the next top-level declaration, not 900 bytes. The loader is 892 bytes of code —
-  // eight bytes of headroom on a NEGATIVE check, which stops seeing the loader rather than
-  // failing when it runs out, so a `confidentialRevealArg` added below the cut ships green.
-  const byCustomerAt = analytics.indexOf("loadSosByCustomerUncached");
-  const byCustomerRest = analytics.slice(byCustomerAt + 1);
-  const byCustomerNext = byCustomerRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
-  const byCustomerLoader = analytics.slice(
-    byCustomerAt,
-    byCustomerNext >= 0 ? byCustomerAt + 1 + byCustomerNext : analytics.length,
-  );
-  assert.ok(
-    !byCustomerLoader.includes("confidentialRevealArg"),
-    "by_customer is a count view with no value column — it must not take the confidential argument",
-  );
-
-  // Every money dashboard must resolve the reveal from the role, or the RPC default hides it.
-  for (const name of [
-    "source-sales-dashboard",
-    "source-sales-by-area-dashboard",
-    "source-sales-by-line-dashboard",
-    "source-sales-by-product-dashboard",
-  ]) {
-    const source = readSource(`../src/components/analytics/dashboards/${name}.tsx`);
-    assert.ok(
-      source.includes("canViewRestrictedProducts: canViewRestrictedProducts(role)"),
-      `${name} passes canViewRestrictedProducts resolved from the role`,
-    );
-  }
-
-  // The weekly analytics dashboards (overview, detail, by-distributor) carry the Head Office strip
-  // ENTIRELY in TS: the analytics_weekly_fact RPC and analytics.weekly_fact view have no Head
-  // Office exclusion, so loadWeeklyFact strips it and each dashboard must thread the role's flag.
-  for (const rel of [
-    "../src/components/analytics/dashboards/weekly-sales-dashboard.tsx",
-    "../src/components/analytics/dashboards/weekly-sales-detail-dashboard.tsx",
-    "../src/components/analytics/dashboards/weekly-sales-by-distributor-dashboard.tsx",
-  ]) {
-    assert.ok(
-      readSource(rel).includes("canViewHeadOffice: canViewHeadOfficeLine(role)"),
-      `weekly analytics dashboard ${rel} passes canViewHeadOffice resolved from the role`,
-    );
-  }
+  // The Sales Analytics loaders and dashboards carried their own strip and confidential-reveal pins
+  // here. The owner retired that module on 2026-09-17, so the surfaces below are every one left.
 
   const weekly = readSource("../src/lib/sales/weekly/access.ts");
   assert.ok(

@@ -1,12 +1,20 @@
 // Employee-portal Weekly Sales — simple 3-tab XLSX export.
 // Tabs: Summary KPIs, Week Comparison, Report Sources.
 // Uses addPhoenixTableSheet on the HOUSE theme — SATO-DIS-2026-01 v1.0 — on every tab.
+//
+// Unit totals are printed only where every row behind them is ONE product (owner rule: units of
+// different products are never added; see unit-totals.ts). The dashboard's tiles follow the same
+// test, so the file never shows a unit total the screen does not.
 
 import ExcelJS from "exceljs";
 
 import { addPhoenixTableSheet } from "@/lib/export/table-workbook";
 import type { PortalWeeklyScopeView } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
+import {
+  weeklyKpiUnitsAreOneProduct,
+  weeklyWeekComparisonUnitsAreOneProduct,
+} from "@/lib/sales/weekly/unit-totals";
 
 function formatEgp(value: number): string {
   const abs = Math.abs(value);
@@ -49,8 +57,12 @@ export function buildPortalWeeklyWorkbook(
   // KPI rows + separator + Top 10 Regions + Top 10 Products
   const summaryRows = [
     { metric: "Total Sales Value", value: formatEgp(data.kpis.salesValue) },
-    { metric: "Total Sales Units", value: String(data.kpis.salesUnits) },
-    { metric: "Total Stock Units", value: String(data.kpis.stockUnits) },
+    ...(weeklyKpiUnitsAreOneProduct(data)
+      ? [
+          { metric: "Total Sales Units", value: String(data.kpis.salesUnits) },
+          { metric: "Total Stock Units", value: String(data.kpis.stockUnits) },
+        ]
+      : []),
     { metric: "Distributors", value: String(data.kpis.distributorCount) },
     { metric: "Regions", value: String(data.kpis.regionCount) },
     { metric: "Products", value: String(data.kpis.productCount) },
@@ -81,6 +93,11 @@ export function buildPortalWeeklyWorkbook(
   });
 
   // ── Tab 2: Week Comparison ──────────────────────────────────────────────────
+  // Its units add every week in scope, so they need the stricter one-product test (unit-totals.ts).
+  // Stock Units stays out of the TOTAL row: each week's stock is a snapshot of what is on hand, not a
+  // flow, so adding the weeks multiplies it (the same reason service.ts's latestStockOnly keeps one week
+  // for the tiles). Its TOTAL cell is empty, because a row labelled TOTAL must not show one week's stock.
+  const weekCompUnits = weeklyWeekComparisonUnitsAreOneProduct(data);
   const weekCompRows = data.weekComparison.map((row) => ({
     month: formatCycleMonth(row.cycleMonth),
     week: row.weekNumber != null ? `W${row.weekNumber}` : "—",
@@ -103,8 +120,12 @@ export function buildPortalWeeklyWorkbook(
       { key: "week", label: "Week", width: 8 },
       { key: "weekStart", label: "Week Start", width: 14 },
       { key: "salesValue", label: "Sales Value (EGP)", numeric: true, width: 22 },
-      { key: "salesUnits", label: "Sales Units", numeric: true, width: 16 },
-      { key: "stockUnits", label: "Stock Units", numeric: true, width: 16 },
+      ...(weekCompUnits
+        ? [
+            { key: "salesUnits", label: "Sales Units", numeric: true, width: 16 },
+            { key: "stockUnits", label: "Stock Units", numeric: true, excludeFromTotal: true, width: 16 },
+          ]
+        : []),
       { key: "deltaPct", label: "Δ% vs Prior Week", width: 18 },
     ],
     rows: weekCompRows,

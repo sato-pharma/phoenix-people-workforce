@@ -1,19 +1,14 @@
-import {
-  resolveEmployeeIdentityId,
-  type AccessContext,
-  type PhoenixRole,
-} from "@/lib/auth/permissions";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
+import {
+  MEDICAL_REP_AREA_UNRESOLVED_MESSAGE,
+  resolveMedicalRepSosAreaCodes,
+} from "@/lib/sales/medical-rep-area-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { TerritoryDiagnosticCode, TerritoryRootScope } from "./types";
 
-const AREA_UNRESOLVED_MESSAGE =
-  "We don't have your area on file yet. Contact HR/your admin to get your territory assigned.";
 const REGION_UNRESOLVED_MESSAGE = "We couldn't determine your region. Contact HR/your admin.";
 const LINE_UNRESOLVED_MESSAGE = "We couldn't determine your product line. Contact HR/your admin.";
 
@@ -34,41 +29,11 @@ export function deriveOfficialLine(allowedLineNames: Set<string> | null): string
 }
 
 async function resolveMedicalRepAreaScope(ctx: AccessContext, officialLine: string): Promise<TerritoryRootScope> {
-  const currentHrId = resolveEmployeeIdentityId(ctx);
-  if (!currentHrId) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-
-  const viewerKey = canonicalHrIdKey(currentHrId);
-  const directory = await getEmployeeDirectory();
-  const viewer = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === viewerKey);
-  const areaId = viewer?.areaId ?? null;
-  if (areaId == null) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-
-  const supabase = getSupabaseAdmin();
-  const { data: areaRow } = await supabase
-    .from("areas")
-    .select("code, is_active")
-    .eq("id", areaId)
-    .maybeSingle();
-  const typedAreaRow = areaRow as { code?: string | null; is_active?: boolean | null } | null;
-  const canonicalAreaCode = typedAreaRow?.is_active ? String(typedAreaRow.code ?? "").trim() : "";
-  if (!canonicalAreaCode) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-
-  const { data: crosswalkRows, error: crosswalkError } = await supabase.rpc(
-    "phx_territory_resolve_sos_area_codes",
-    { p_canonical_area_code: canonicalAreaCode },
-  );
-  if (crosswalkError) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-  const sosAreaCodes = ((crosswalkRows ?? []) as Array<{ sos_area_code: string }>)
-    .map((row) => String(row.sos_area_code ?? "").trim().toUpperCase())
-    .filter(Boolean);
-  if (sosAreaCodes.length === 0) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-
-  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const knownAreaCodes = new Set((references.areas ?? []).map((area) => area.areaCode.toUpperCase()));
-  const confirmedAreaCodes = sosAreaCodes.filter((code) => knownAreaCodes.has(code));
-  if (confirmedAreaCodes.length === 0) return denied("area_unresolved", AREA_UNRESOLVED_MESSAGE);
-
-  return { level: "area", sosAreaCodes: confirmedAreaCodes, officialLine };
+  // The chain lives in medical-rep-area-scope.ts, shared with the portal Monthly Closing, so the
+  // drilldown and the closing can never disagree about which areas are a rep's own.
+  const sosAreaCodes = await resolveMedicalRepSosAreaCodes(ctx);
+  if (!sosAreaCodes) return denied("area_unresolved", MEDICAL_REP_AREA_UNRESOLVED_MESSAGE);
+  return { level: "area", sosAreaCodes, officialLine };
 }
 
 async function resolveDistrictManagerRegionScope(

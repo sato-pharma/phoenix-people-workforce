@@ -44,8 +44,8 @@ import {
   renderContractRenewalHtml,
 } from "@/lib/hiring-pack/render-renewal";
 import {
-  HR_PAPER_ABSENCE_WARNING_V1,
-  HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_ABSENCE_WARNING_V2,
+  HR_PAPER_DEEMED_RESIGNATION_V2,
   HR_PAPER_DISCIPLINARY_PENALTY_V1,
   HR_PAPER_DISCIPLINARY_WARNING_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
@@ -147,11 +147,11 @@ const RENDERERS: Record<
     copies: systemContractDefaults.socialStatusSheetCopies,
   },
   absenceWarning: {
-    render: housePaper(HR_PAPER_ABSENCE_WARNING_V1),
+    render: housePaper(HR_PAPER_ABSENCE_WARNING_V2),
     copies: systemContractDefaults.absenceWarningCopies,
   },
   deemedResignation: {
-    render: housePaper(HR_PAPER_DEEMED_RESIGNATION_V1),
+    render: housePaper(HR_PAPER_DEEMED_RESIGNATION_V2),
     copies: systemContractDefaults.deemedResignationCopies,
   },
   appointmentDocsReturn: {

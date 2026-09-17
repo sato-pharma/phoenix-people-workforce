@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * The admin review: the weeks to pick from, and one week in full — the one asked for
- * (`?cycleKey=YYYY-MM&weekIndex=1..4`), or the newest waiting for release. Super Admin or a named
+ * (`?cycleKey=YYYY-MM&weekIndex=1..5`), or the newest waiting for release. Super Admin or a named
  * reviewer only — this lists every employee's flagged days.
  */
 export async function GET(request: Request) {
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     let chosen: { cycleKey: string; weekIndex: number } | null = pickDefaultReviewWeek(weeks);
     if (rawCycleKey !== null || rawWeekIndex !== null) {
       const weekIndex = Number(rawWeekIndex);
-      if (!/^\d{4}-\d{2}$/.test(rawCycleKey ?? "") || !Number.isInteger(weekIndex) || weekIndex < 1 || weekIndex > 4) {
+      if (!/^\d{4}-\d{2}$/.test(rawCycleKey ?? "") || !Number.isInteger(weekIndex) || weekIndex < 1 || weekIndex > 5) {
         throw validationError("Invalid week.");
       }
       chosen = { cycleKey: String(rawCycleKey), weekIndex };

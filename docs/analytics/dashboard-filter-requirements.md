@@ -1,5 +1,11 @@
 # Dashboard Filter Requirements
 
+> **Retired 2026-09-17.** The owner retired the Sales Analytics module ("drop and retire the sales
+> analytics module"). The pages, `src/lib/analytics/` and the dashboards this file describes are
+> deleted, and next.config.ts redirects their addresses: the weekly pages to Weekly Sales, the rest
+> to Monthly Closing. The one page left under `/admin/analytics` is the Finance Manager's closing
+> export. This file stays as the record of what the module did.
+
 This documents the filter model that actually drives the analytics dashboards under
 `app/(analytics)/admin/analytics/**` — what filter types the registry supports, which
 concrete filters are wired into each page today, and how to add a new one. It

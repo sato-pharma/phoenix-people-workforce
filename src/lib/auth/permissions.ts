@@ -161,7 +161,16 @@ export type PermissionResource =
   // who run it are HR Operations, at a joiner's desk and again at an exit, and handing somebody a
   // laptop must not require the personnel file — riding on `employees` would have meant either
   // opening that file to do it, or the register being unusable by the only seat that needs it.
-  | "company_devices";
+  | "company_devices"
+  // Phoenix CRM, the field force's own module built clean on 2026-09-16 (customer lists validated with
+  // a live photo, the spot's location and the doctor's timings; weekly plans; visits; native reports).
+  // SEPARATE from the pilot's `crm_visit_entry`, `crm_contact_lists` and `crm_plans` on purpose: the
+  // pilot is retired after go-live and its grants go with it, and this module's authority is narrowed
+  // again below the matrix by the organogram (src/lib/phoenix-crm/server/access.ts). `create` is a
+  // rep's list, plan and visits and a district manager's own visits; `approve` is the territory's
+  // reviewing manager deciding a grade or a drop and approving a plan (the SFE Manager only returns a
+  // plan); `update` is the settings. The Super Admin's entries are always test entries.
+  | "phoenix_crm";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -259,6 +268,9 @@ export const permissionResources: PermissionResource[] = [
   // serial and IMEI of the machine he is carrying and what the company values it at. That is a
   // shopping list, and it would be readable by the whole company.
   "company_devices",
+  // Phoenix CRM. Omitting this would offer every territory's customer list, its doctors' timings and
+  // clinic photos, and the plan and visit screens to every role. Mechanism at the head of this array.
+  "phoenix_crm",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -824,6 +836,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // mirror itself stays read-only everywhere, since it is a vendor mirror nothing may write.
     crm_visits: ["read", "update"],
     crm_plans: ["read", "approve"],
+    // Phoenix CRM (owner, 2026-09-16: Add Visit and the report are tried from day one). Every entry
+    // this seat makes is a TEST entry, excluded from every report; the service refuses a real one.
+    // `update` is the Settings tab. No `delete`: nothing in the module is deleted.
+    phoenix_crm: ["read", "create", "update", "approve"],
     early_birds: ["read", "approve"],
     communication: allActions,
     overview: ["read"],
@@ -891,6 +907,8 @@ const defaultPermissionMatrix: PermissionMap = {
     // workflow and this account stays observational on it. The Plans board opens; the button does
     // not render and the route refuses it.
     crm_plans: ["read"],
+    // Phoenix CRM: reads the company's lists, plans, visits and reports; decides nothing.
+    phoenix_crm: ["read"],
     early_birds: ["read"],
     overview: ["read"],
     imports: ["read"], // Bulk user-admin preview only — see Super Admin's `imports` note above.
@@ -1128,6 +1146,9 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visit_entry: ["read", "create", "delete"],
     // Asks for a change to his OWN doctor list; his manager decides it.
     crm_contact_lists: ["read", "create"],
+    // Phoenix CRM: validates the territory's customers, files the weekly plan and enters its visits —
+    // the rep's OWN territory only, from the day the line opens (narrowed below the matrix).
+    phoenix_crm: ["read", "create"],
     early_birds: ["read"],
     overview: [],
     coaching: ["read"],
@@ -1162,6 +1183,10 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visit_entry: ["read", "create", "delete", "approve"],
     // Answers a doctor-list request — only one sent to HIM, for a rep beneath him.
     crm_contact_lists: ["read", "approve"],
+    // Phoenix CRM: `approve` decides the grade and drop requests and approves the weekly plans of the
+    // territories this seat reviews; `create` is a visit to a customer of a territory beneath it (the
+    // rep enters a double visit as a rule). Both narrowed below the matrix by the organogram.
+    phoenix_crm: ["read", "create", "approve"],
     early_birds: ["read", "approve"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1197,6 +1222,9 @@ const defaultPermissionMatrix: PermissionMap = {
     // A request goes to the rep's NEAREST active manager, so this seat answers one only while the
     // district seat above that rep is vacant.
     crm_contact_lists: ["read", "approve"],
+    // Phoenix CRM: reads the region; decides and approves only as the nearest manager above the rep
+    // (a vacant district seat). Enters no visits: the rep enters a chain visit.
+    phoenix_crm: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
@@ -1254,6 +1282,8 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visit_entry: ["read", "approve"],
     // Same as the Regional Manager: a request reaches him only when he is the rep's nearest manager.
     crm_contact_lists: ["read", "approve"],
+    // Phoenix CRM: the same as the Regional Manager, on the line.
+    phoenix_crm: ["read", "approve"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
@@ -1351,6 +1381,10 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read", "update"],
     // Owns the doctor lists once iReports360 stops: changes any rep's list directly.
     crm_contact_lists: ["read", "update"],
+    // Phoenix CRM (owner, 2026-09-16: "the SFE sees every plan and can return one"). Reads the
+    // company; `approve` is narrowed below the matrix to RETURNING a plan — the district manager
+    // approves, and grade and drop requests stay the district manager's.
+    phoenix_crm: ["read", "approve"],
     early_birds: ["read"],
     overview: ["read"],
     // Read-only org structure (2026-08-02): needed for /organogram. Grants no write anywhere —

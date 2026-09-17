@@ -1849,8 +1849,8 @@ He set the new rules on 2026-09-15, first in his own words and then by choosing 
 
 ### 1. Nothing reaches an employee until he releases the week
 
-The daily job (`app/api/cron/attendance-weekly-digest`) builds each closed week as
-**`awaiting_release`** and **sends nothing**. The week then waits on the admin page
+The daily job (`app/api/cron/attendance-weekly-digest`, 06:23 and 13:23 Cairo) brings every started
+week of the review month up to date as **`awaiting_release`** and **sends nothing** (section 5). The week then waits on the admin page
 **Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
 employee's flagged days by name.
 
@@ -1858,11 +1858,11 @@ employee's flagged days by name.
 week I want. And in the week I select … I can mark on the days that I want them to be deducted. … I
 want full control." His answers, chosen from options:
 
-- **The week picker** lists every closed week of the **current payroll month** (a paid month stays
-  closed), plus any older week still waiting for release or answers so none is stranded
-  (`listReviewWeeks`). A closed week the daily job never built shows **Build this week**
-  (`buildReviewWeek`), which builds it waiting for release and sends nothing. A trial-run week is
-  read-only.
+- **The week picker** lists every started week of the **review month**, the running one included,
+  with its days up to yesterday. Last month's weeks, and any older week still waiting for release or
+  answers, stay listed so none is stranded (`listReviewWeeks`). **Refresh** (`buildReviewWeek`, route
+  `build`) brings a started week of this month or last month up to date at once and sends nothing. A
+  trial-run week is read-only.
 - **Only the flagged days can be ticked, and every day starts UNTICKED.** An unticked day is
   **cleared at release and never deducted**.
 - **A ticked day's days can be edited, down or UP** ("Raise too"), more than 0 and at most 3 per day
@@ -1875,6 +1875,12 @@ refuses once it is released, in a trial run, or on a day already answered. Relea
 settlement for every unticked day, then opens the week, or voids it when nothing is left (nobody is
 told), or settles it when only days answered before the release step remain. Releasing with nothing
 ticked therefore clears the whole week and notifies nobody. "Remove this day" is gone.
+
+**Release refuses a stale page** (2026-09-17). The page sends the days it shows (`seenLines`). When a
+day waiting now is not among them at the same figure, nobody at all is released: `staleReleaseLines`
+checks every employee first, and `phx_attendance_release_digest` checks again under the row lock
+(errcode `40001`). The daily job adds days to a waiting week, and without this check a day that
+arrived after the page loaded would be cleared on release, unticked, without him ever seeing it.
 
 **A cleared day is never charged, and that needs a record.** The `removed` settlement is what the
 month-end bridge turns into **Do Not Take Action** on that day's fingerprint deduction, and
@@ -1889,27 +1895,30 @@ carries a raised figure forward on a later plain Decide instead of throwing.
 **Release refuses when the public holiday calendar or leave requests cannot be read**
 (`loadAnswerWindow`). Without them a holiday, or a day the employee is on leave, would count as a
 working day inside the answer window, and the deadline would come early. Nothing is released in
-that case. The deadline is counted on the employee's own attendance policy's weekly days off
-(`resolveActiveAttendancePolicy`), not a company-wide default.
+that case. **A Google Calendar outage counts as unreadable** (owner, 2026-09-16,
+`holidayCalendarReachable`). Company and fixed-date public holidays still load during an outage,
+so a month with 1 May, for example, used to read as connected while both Eids, Islamic New Year,
+the Prophet's Birthday and Coptic Easter were missing. The deadline is counted on the employee's
+own attendance policy's weekly days off (`resolveActiveAttendancePolicy`), not a company-wide
+default.
 
-**A build that fails is undone.** If a write fails partway through a build, by the daily job or by
-Build this week, `undoPartialBuild` deletes every digest that run created, and their days with them,
-and the error is thrown. A half-built week would look built: Build this week refuses it for good,
-and an employee whose digest lost its days would be released with nothing on it. The undo deletes
-only a digest still waiting for release with no release stamp, so one a Release click reached first
-is kept. If the undo fails too, the error names the week and how many employees were left, because
-that week then needs a person. Checked on production on 2026-09-15, read-only: the digests table has
-no triggers of its own, a digest's days are deleted with it (`on delete cascade`), and a settlement
-or annual-balance charge pointing at it would block the delete rather than be orphaned. A digest the
-failed run has just created has neither.
+**Bringing a week up to date keeps his work** (2026-09-17, replacing the one-shot build and its
+undo). `phx_attendance_sync_digest_days` runs once per employee, in one transaction, under the digest
+row lock that a tick and a release take, plus an advisory lock per employee-week. It adds a new
+flagged day **unticked**. It refreshes the figures of a day still waiting: a day whose days he changed
+keeps his figure, and the tick is kept either way. It takes off a waiting day the report now clears,
+such as an approved excuse, leave or a corrected punch. It never touches a released, answered or
+cleared day, and never adds a day already in another digest of that employee. A day the report does
+not return at all is left alone, because a missing row is not proof the day is clean. When every
+waiting day of an employee is cleared, the digest goes too. An employee who fails does not stop the
+others: the failure is named, and the daily job returns 500.
 
-**Only one build of a week runs at a time** (`withWeekBuildLock`, found by the risk review on
-2026-09-16). Without it, the daily job and a Build this week click on the same week interleave: the
-click skips the employees the job has just created, the job then fails and deletes them, and nobody
-builds them again. The click now checks whether the week is built only after any build of it still
-running has finished. The lock lives in the server process, and production runs one replica. A build
-on a second server (two overlap briefly during a deploy) is caught by the unique key instead: its
-insert answers `23505`, that employee is skipped, and theirs stands.
+**One piece of work on a week at a time** (`withWeekBuildLock`, risk review 2026-09-16, widened
+2026-09-17). The daily job, a Refresh click and a Release of the same week queue in the server
+process. A release checks the days against the page and then releases them, and a refresh running in
+between would add a day after the check. Production runs one replica. Across two (briefly, during a
+deploy) the database is the guard: both functions lock the employee's week, and the release refuses a
+day the page did not show.
 
 **A week mixing trial and real employees** releases the real ones only. The page says how many trial
 employees are skipped.
@@ -1918,10 +1927,10 @@ Only the Release click notifies anyone, and only `releaseWeek` in
 `src/lib/attendance/digest-service.ts` sets `released_at`. The employee page and API return released
 weeks only (`listMyDigests` filters `released_at is not null`). The review page, its list API and
 the dispute inbox are gated by `canReviewDisputes` (Super Admin or the reviewer list), failing
-closed. **Ticking days, building a week and releasing it are the Super Admin's alone**
-(`canManageWeeklyReview`), checked in the mark, build and release routes (403) and again inside
+closed. **Ticking days, refreshing a week and releasing it are the Super Admin's alone**
+(`canManageWeeklyReview`), checked in the mark, refresh (`build`) and release routes (403) and again inside
 `markDigestLine`, `buildReviewWeek` and `releaseWeek`. A named dispute reviewer sees the page
-read-only, with no ticks, Build or Release button, and decides disputes. The reason: leaving a day
+read-only, with no ticks, Refresh or Release button, and decides disputes. The reason: leaving a day
 unticked waives a colleague's deduction with nobody else looking, and a release notifies
 every employee, and "i must approve this" names him. The employee page is self-scoped: any employee
 sees their **own** released weeks, and nobody else's.
@@ -1952,6 +1961,12 @@ The migration is additive: the old code ignores the new columns, so the migratio
 safely. Its backfill copies each line's days into `detected_days` (25 lines on production on
 2026-09-15), and every line starts unticked.
 
+**Deploy order for live weeks:** apply `20260917120000_weekly_review_live_weeks.sql` to production
+immediately before merging its PR. It drops the 3-argument `phx_attendance_release_digest`, so the old
+code's Release fails between the two steps: do not release a week in that gap. The daily job never
+releases, and the new code calls `phx_attendance_sync_digest_days` and reads `release_round`, which do
+not exist until the migration runs.
+
 **A changed day reaches payroll only when month-end detected the same days** (risk review,
 2026-09-15). The Super Admin's figure is a count of the days the weekly review detected. If the
 month-end fingerprint deduction for that day detected a different number (`raw_value`, 2 decimals),
@@ -1960,26 +1975,84 @@ bridge then leaves the deduction Pending, does not stamp the settlement, and ale
 person decides it (`editedDaysApplyToCandidate`). Ticking a day locks the week before the day, the
 same order release uses, so the two cannot deadlock.
 
-### 2. The notice: in-app and Telegram, never email
+### 2. The notice: by email, Telegram and in-app
 
-Module `attendance_digest` is blocked from email by
-`src/lib/notifications/attendance-digest-channel-guard.ts`, chained in `system.ts`. It has an
-explicit Telegram policy, because without one the unknown-module fail-safe would silently leave
-in-app as the only channel. The notice names the week, the number of days and the deadline. **It
-carries no amount**, because Telegram is a lock-screen channel. One notice per digest, ever
-(idempotency key `attendance_digest:<id>:released`).
+**Owner rule 2026-09-17, chosen from options ("Email the release and decision"), replacing
+2026-09-15's "never email".** When the Super Admin releases a week, and when a reviewer decides a
+disputed day, the employee is told by email to their own work address, by Telegram and in-app. The
+old email guard (`attendance-digest-channel-guard.ts`) is gone. `attendance-digest-channels.ts`
+now only names the module. Module `attendance_digest` keeps an explicit Telegram policy with full
+content, because without one the unknown-module fail-safe would silently turn Telegram off.
 
-**The dispute decision is told the same way** (owner, same day, chosen from options: "Yes, in-app
-and Telegram"). When a reviewer accepts or rejects a disputed day, `reviewDispute` saves the decision
-first and then calls `notifyAttendanceDisputeDecided`, in-app and Telegram, never email. The notice
-names the day and the outcome. For a rejected day it says where the deduction is taken from (salary
-or annual balance, as the employee chose), and when balance could no longer be used it gives the
-real cause (`disputeSalaryFallbackText`). It carries **no amount** and does **not quote the
+- **Email goes before Telegram in the channel list, on purpose.** A permanent Telegram failure falls
+  back to email only when email has not been tried yet. In the other order, an employee whose
+  Telegram fails would be emailed twice.
+- **The email goes to the employee's `work_email`, with their direct manager copied.** With no
+  work address the email is skipped, and never redirected to the HR inbox. It uses the "general"
+  email policy and template. The direct manager is CC'd because the notice names the employee as its
+  subject, as for every email addressed to an employee. **The owner chose to keep that copy
+  (2026-09-17, chosen from options: "Also CC direct manager")**, so a manager sees each deduction
+  notice and dispute decision for their team. Like every automated email, it is BCC'd to the admin
+  and mirrored to his Telegram.
+- **The Telegram message reads as a letter.** Its paragraphs are kept and it has no
+  "Module: Attendance digest" line in front (`telegramKeepsParagraphs`, this module only). Every
+  other module's Telegram text is unchanged.
+- **One day reads as that day** ("Attendance review — Wednesday 9 September", never "9 Sept to
+  9 Sept"). A range of days keeps its range wording.
+
+The release notice names the days, how many there are and the deadline. **It carries no amount**,
+because Telegram is a lock-screen channel. One notice per release round (idempotency key
+`attendance_digest:<id>:released`).
+
+**Who counts as told (owner, 2026-09-17, chosen from options: "Only a real channel").** The release
+stamps `notified_at`, which starts the answer deadline that ends in a salary deduction, only when
+the notice reached the employee through a real channel (`releaseNoticeReached`):
+
+- the email or the Telegram message actually went out, or
+- the in-app notice reached someone with an active login who has signed in before. That is read
+  from `app_sessions`, which only a real password or biometric sign-in writes. Supabase's own
+  last-sign-in time is not used, because an Employee login does not open a Supabase session.
+
+Anyone else keeps `notified_at` null: their days wait for HR and are never deducted for going
+unanswered.
+
+**Only a message that went out counts (risk review, 2026-09-17, before merge).** An email counts once
+the mail provider accepted it. None of these count:
+
+- **An email handed to the outbox to retry.** The notification system records it "sent", but it has
+  not gone out. The outbox also files permanent blocks under a retry, such as an inactive "general"
+  template or an address the recipient check refuses. `system.ts` flags the handoff
+  (`queuedForRetry`), and `noticeReachedEmployee` refuses it.
+- **A message held for quiet hours or waiting for a retry** ("pending", "retrying"). It has not gone
+  out yet. A held Telegram message for someone with no linked Telegram, or a held email with no
+  address, never goes out at all.
+
+The in-app notice is never held for quiet hours, so someone who has signed in is still counted as
+told at night. Counting too few only leaves days for HR; counting too many deducts salary from
+someone who was never told. A later email bounce is not tracked back.
+
+An email held for quiet hours counts as attempted (`emailAttempted`). Otherwise a held Telegram
+message whose retries run out would fall back to emailing the person a second time.
+
+**A leaver is never counted as told (owner, 2026-09-17, chosen from options: "HR decides, never
+automatic", keeping the 2026-09-16 ruling).** The notice still reaches them by any channel that
+works, but `releaseNoticeReached` returns false for anyone with no employee record or a terminal
+employment status (`isTerminalEmploymentStatus`). Their days wait for HR in the final pay. The
+recipient facts are read after sending. A failed read counts as not told, so the days wait for HR
+and are never deducted automatically.
+
+**The dispute decision is told the same way** (owner, 2026-09-15, chosen from options, and by email
+too since 2026-09-17). When a reviewer accepts or rejects a disputed day, `reviewDispute` saves the
+decision first and then calls `notifyAttendanceDisputeDecided`, by email, Telegram and in-app. The
+notice names the day and the outcome. For a rejected day it says where the deduction is taken from
+(salary or annual balance, as the employee chose), and when balance could no longer be used it gives
+the real cause (`disputeSalaryFallbackText`). It carries **no amount** and does **not quote the
 reviewer's note**, which is free text on a lock-screen channel; it only says a note is waiting on the
 employee's page. One notice per decided day (idempotency key
-`attendance_digest:line:<line id>:dispute_decided`). A notice that fails never undoes the decision:
-the reviewer's screen says the employee could not be told, and the decision still shows on the
-employee's weekly attendance page.
+`attendance_digest:line:<line id>:dispute_decided`). The decision deducts nothing on the answer,
+so a leaver it reached counts as told there (`noticeReachedEmployee`). A notice that fails never
+undoes the decision: the reviewer's screen says the employee could not be told by email, on Telegram
+or in the app, and the decision still shows on the employee's weekly attendance page.
 
 ### 3. Per day, the employee chooses salary or annual balance, and then may dispute
 
@@ -2033,7 +2106,7 @@ still pending in a real week:
   employee answers, because the daily job settles only days the employee was told about.
 
 **Except for somebody who has left** (owner, 2026-09-16, chosen from options: "HR decides"). A
-release notice only ever reaches current staff (`isActiveEmployee`), so a leaver is never told,
+leaver is never counted as told by a release notice (`releaseNoticeReached`, owner 2026-09-17), so
 their answer deadline never runs, and a released day of theirs would refuse approval in their
 **final** payroll for ever. So a day of a released week whose notice reached nobody
 (`notified_at` null) stops blocking once the employee record says they have left — any employment
@@ -2088,8 +2161,9 @@ days wait (`deadlinesMoved` in the job's result). **A deadline is never brought 
 of the date the employee was told and the date worked out now holds (`heldAnswerDueDate`), and the
 save only ever moves a stored date later, so a rejected or cancelled leave request, or a lowered
 `answer_working_days`, never takes salary sooner. When the holiday calendar or leave requests
-cannot be read, the daily job settles **nothing** and returns 500, and an employee answering after
-the stored date is told to try again shortly. A calendar that never yields a working day cannot hang
+cannot be read, a Google Calendar outage included, the daily job settles **nothing** and returns
+500, and an employee answering after the stored date is told to try again shortly. A calendar
+that never yields a working day cannot hang
 the count: after 1,000 days it returns the last day walked, later than any date a real count could
 give. Measured on production, read-only, the night of 15–16 September 2026: all 551 leave requests,
 whatever their status, and all 7 employees with a real digest store their HR ID upper-case and
@@ -2117,12 +2191,60 @@ deduction candidate exists only after its month closes, and a dispute on a late-
 decided well into the month after next. The bridge reads settlements page by page, so days skipped
 as already decided or not yet built can never fill a capped read and hide newer answers.
 
-### 5. Week 4 of every cycle is built
+### 5. Live weeks, calendar months and releases in rounds — owner, 2026-09-17
 
-A cycle runs from the 24th to the 23rd. Its last week closes on the 23rd, so on the 24th the
-calendar is already in the **next** cycle. The builder used to ask only today's cycle, found no
-closed week there, and never built week 4. `latestClosedSettlementWeek` falls back to the previous
-cycle, so week 4 is built on the 24th.
+He reported the review as "not calculating deduction correct and not up to date", and asked for Nahed
+Hattab's fingerprint deduction from 1 September. The per-day figures were right; the weeks were not.
+There were four causes:
+
+- A week was built once, at 06:23 Cairo on the morning after it closed. That is hours before that
+  day's punches arrive, and the week was never looked at again, so a later punch, excuse or leave
+  never reached it.
+- The running week did not exist until it closed.
+- The 31 Aug–6 Sep week was a void trial copy that could never be released.
+- The review ran from the 24th to the 23rd, while month-end payroll runs by calendar month.
+
+His answers, chosen from options:
+
+- **"Show live, release any time."** A week is listed from its first day and holds the days up to
+  **yesterday** (`reviewWeekWindow`). The review month is the month of yesterday
+  (`currentReviewMonth`). He can release the days so far in the middle of the week. Days that arrive
+  later wait for a **second release** of the same week (`release_round` 2, 3 and so on), and at most
+  one real digest per employee-week waits at a time (`attendance_weekly_digests_one_awaiting_idx`).
+  The notice names only the days asked about (`releaseNoticeRange`). The daily job runs at **06:23 and
+  13:23 Cairo** (`.github/workflows/attendance-weekly-digest.yml`), and the afternoon run is the one
+  that sees yesterday's punches. It covers every started week of the month, plus, for the first three
+  days of a month, the last week of the month before (`reviewWeeksToSync`). It reads the fingerprint
+  report once per run.
+- **"Rebuild it as a real week."** Migration `20260917120000_weekly_review_live_weeks.sql` copies the
+  trial digests (void, dry run, never released, with no settlement) and their days into
+  `attendance_backup_20260917.trial_digests` (a dated schema of its own, never `public`), then deletes
+  them. Refresh or the daily job fills the week again, waiting for release. Nothing is sent.
+- **"1–30 September. Keep payroll as it is. From October the weekly review's weeks start on the 1st
+  to match."** `digest-weeks.ts` cuts a calendar month into 1–7, 8–14, 15–21 and the 22nd to the month
+  end. September 2026 is the one transition month: week 2 is 1–6 Sep, week 3 keeps 7–13 Sep because
+  its real digests were already built on those dates, week 4 is 14–23 Sep and week 5 is 24–30 Sep.
+- **"build starting from 1 august"** (same day, after the live weeks shipped). August 2026 is
+  reviewed as an ordinary calendar month: 1–7, 8–14, 15–21 and 22–31 Aug (`FIRST_REVIEW_MONTH`). When
+  he asked, August's 50 fingerprint days were all still Pending in month-end deductions and nothing
+  was published, so an answer reaches the same candidate through the bridge and never charges twice.
+  The daily job does not refresh August (it is not the review month): its weeks were built once on
+  request. Refresh works on them through 1 October, while August is last month, and after that they
+  stay listed while any day waits for release or an answer. Nothing before August 2026 is reviewed.
+- **"Yes, keep ½ day."** The deduction rule itself is unchanged.
+- **"i want every row to has a release beside it not only the full week but only every single
+  employee so i can realse one employee and after release another"** (same day). Every employee
+  waiting for release has their own **Release** on their row, with a confirmation that names them. It
+  sends `digestId` and only that employee's days. `releaseScope` narrows the release to that one
+  digest before any day is checked, cleared or told. The other employees keep waiting, and their
+  ticks stay as they were. The week's button stays and releases **everyone waiting**. No migration was
+  needed, because `phx_attendance_release_digest` already works one digest at a time. Asked the same
+  day after a whole-week release cleared 12 unticked days he had meant to keep. Those days were
+  restored by hand from `attendance_backup_20260917.w3_release_*`.
+
+**Do not restore** the day-24 weeks (`latestClosedSettlementWeek`, `closedWeeksOfCurrentCycle`), the
+one-shot build with its undo, or a week that appears only once it has closed. They are the superseded
+design, not unfinished work.
 
 ### Known limitations (documented, not fixed)
 
@@ -2144,12 +2266,12 @@ cycle, so week 4 is built on the 24th.
 - **Leave filed after a day was settled does not reopen it.** Once the daily job has settled a day
   to salary, a leave request for that window filed later changes nothing. Leave filed before the
   settlement pauses the window even while it still waits for approval.
-- **A build killed mid-run is not undone.** The undo runs only when a write fails. A server stopped
-  in the middle of a build (a deploy restart) can leave a digest without its days, and Build this
-  week then refuses the week. The daily job adds an employee it finds with no digest, while that
-  week is still the latest closed one, but never the days of a digest that exists. The undo also
-  deletes a day the Super Admin ticked in the seconds between a digest appearing and its build
-  failing; rebuilt, that day comes back unticked.
+- **A day the report stops returning stays as it is.** Only a day the report returns as cleared is
+  taken off. A day missing from the report keeps waiting, and a person unticks it.
+- **A released day is never refreshed.** A later excuse, leave or corrected punch does not change
+  what the employee was asked; the employee can dispute the day.
+- **A stale page releases nobody.** When the daily job adds a day while the page is open, Release is
+  refused for everyone until the page is reloaded.
 - **The review page shows the stored deadline.** The employee's page and the answer path work a
   passed date out again and save it, and the daily job saves every date it moves, so the review page
   is at most one page load or one daily run behind — and never shows a date earlier than the one the
@@ -2163,12 +2285,13 @@ cycle, so week 4 is built on the 24th.
   can decide anything.
 - **Raising `answer_working_days` also lengthens deadlines already running,** once their stored
   date passes. Lowering it never shortens one.
-- **The holiday calendar can read as connected during a Google Calendar outage.** For a month with
-  a company or fixed-date public holiday, `connected` stays true while the moving Islamic and
-  Coptic holidays, such as the two Eids, are missing, so a release in such a month could set a
-  deadline too early. This predates the follow-ups: release trusted the same flag before. A
-  deadline worked out again never comes earlier than the one given, so the daily job cannot make
-  it worse.
+- **A Google Calendar outage holds release and the deadline until it passes.** While Google's
+  holiday calendar cannot be read, release refuses, the daily job settles nothing, returns 500 and
+  tries again on its next run, and an employee answering after the stored date is told to try again
+  shortly, even when leave has moved their deadline later. A failed read is remembered for up to 10
+  minutes (the holiday cache), so this can last that long after Google answers again. Until
+  2026-09-16 an outage in a month with a company or fixed-date public holiday read as connected, so
+  a release could count an Eid day.
 
 ### Settled later
 
@@ -2187,6 +2310,54 @@ by the risk review of those follow-ups later that day. He chose the recommended 
 - **"HR decides"** (2026-09-16): a day of a released week whose notice reached nobody stops blocking
   month-end approval once that employee has left, so a final payroll is never held up by a question
   they were never asked (§3).
+
+## A Google Calendar outage is not "no holidays" — owner decisions, 2026-09-16
+
+Egypt's moving holidays — both Eids, Islamic New Year, the Prophet's Birthday, Coptic Easter /
+Sham Ennessim — cannot be derived from a Gregorian rule. They exist only in Google's calendar. So
+when that feed cannot be read, `national-holidays.ts` falls back to the company list plus the seven
+fixed-date public holidays (7 Jan, 25 Jan, 25 Apr, 1 May, 30 Jun, 23 Jul, 6 Oct), and a month
+holding one of those comes back **`connected: true` with a non-empty list** while every moving
+holiday is simply absent and reads as an ordinary working day.
+
+Every gate written against `connected` therefore passed straight through the outage. **`calendarReachable`
+is the flag that tells the truth**, and a failed read is cached for 10 minutes, so an outage
+outlives itself by that long.
+
+**Checked read-only against production on 16 September 2026** (Railway DNS and network logs,
+deployment `e2cfc46b`, nothing triggered): `calendar.google.com` resolved NOERROR at 01:21, 01:31
+and 01:34 Cairo, each followed by real TLS traffic out on 443 that closed cleanly — the calendar was
+reachable that day. Railway's log feeds are short-retention, so a later re-probe returning nothing
+is a quiet feed, not an outage.
+
+### The rule
+
+**A path that can take money, or a day off a leave balance, REFUSES while `calendarReachable` is
+false. A path that only shows something keeps working and says the calendar is degraded.** The
+owner chose all four recommended options on 2026-09-16 ("1A 2A 3A 4A").
+
+| Reader | Answer | Why |
+| --- | --- | --- |
+| Weekly attendance review — release, the daily deadline sweep, the employee's late answer | **Refuses** | An Eid counted as a working day inside the answer window brings the deadline early, and the day settles to salary. |
+| Employee Day-by-Day report — **"Approved for Payroll"** | **Refuses** (1A/2A) | The day cannot be told apart from a public holiday and approving charges it. **Rejecting ("Do Not Take Action") stays open** — that direction costs nobody money. |
+| Automated Payroll part 2 — CRM leave (`loadCrmLeaveDatesByCompact`) | **Refuses** (1A) | CRM leave raised on an unconfirmed Eid is written into the leave-balance ledger for good, and settles to salary once the balance runs out. |
+| Payroll Copilot — holiday bridging | **Refuses** (1A) | Bridging *deducts* a day beside a holiday; computing the windows from half a calendar deducts the wrong day. |
+| Live deductions connectors — CRM, DSM no-record, holiday bridge | **Refuses** (already did) | Same money, already gated on `calendarReachable`. |
+| Leave filed next to a holiday (`validateOfficialHolidayAdjacency`) | **Refuses** (3A) | It would otherwise clear a request sitting right beside a holiday it cannot see. Its wording deliberately avoids the phrase *national holiday*, which the company-report approve route maps to its own adjacency message. |
+| Company Vacation Report — the approve click | **Refuses** (2A) | Approving takes the day off the employee's annual balance for good, with no correction path once a later month is published. 409 `holiday_calendar_unreadable`. |
+| Attendance analytics banner · monthly attendance summary · Company Activity Report (screen **and** workbook) · Head Office attendance calendar · the deductions/attendance reconciliation line | **Degraded, and says so** (4A) | Reading a month is not charging for it. Each now names what is missing rather than implying every holiday was lost. |
+| The T-3 holiday confirmation reminder | **Records the outage** (4A) | It used to return an empty list, which reads as *nothing to confirm*. The moving holidays are exactly what needs confirming **and** exactly what an outage hides, and only a confirmed holiday survives the next outage as an override — so silence loses that holiday twice. It writes an error log; **it sends no notification and no email.** |
+
+**Still deliberately degraded:** the vacation report's overlap *warnings* (`fetchHolidaysForRows`
+in `src/lib/vacation/service.ts`) under-warn during an outage. They only weaken a nudge — no money
+and no balance moves through them — so they were left alone rather than widen this change.
+
+### The shape to reuse
+
+`getConfirmedNationalHolidaysForPeriods(periods)` gathers several months at once, dedupes by
+holiday id, and reports **both** flags as ALL-of: one unreadable month makes the whole span
+unreadable. Each caller words its own refusal, because what it is refusing to do differs. Pinned by
+`tests/holiday-calendar-outage-gates.test.ts`.
 
 ## The premium Monthly Closing wears its own executive look — owner decision, 2026-09-08
 

@@ -15,11 +15,13 @@ import type {
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
+import { weeklyProductKeysAreOne } from "@/lib/sales/weekly/unit-totals";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
+import { verifyColumns } from "./weekly-table-widths";
 
 
 // No money formatter here on purpose: this whole screen — Validate preview AND the stored-upload
@@ -27,6 +29,8 @@ import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
+/** Hover text on a unit figure held back because it would add different products. */
+const UNITS_NOT_ADDED_TITLE = "Units of different products are never added";
 const darkHead = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white";
 
 // Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
@@ -780,8 +784,11 @@ export function WeeklyUploadWorkspace({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalNetQty)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
+                  {/* A batch's Net and Stock units add every product in its sheet, and this list does not
+                      know how many products a batch holds, so it never prints them (units of different
+                      products are never added, unit-totals.ts). The upload's own panel shows them for one. */}
+                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
                       {retagId === batch.id ? (
@@ -1147,12 +1154,15 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
 
 function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
   const rows = items.reduce((sum, item) => sum + item.rows, 0);
-  const netQty = items.reduce((sum, item) => sum + item.netQty, 0);
+  // Each row is one item's own units. Their sum adds different items, so it is printed only for one.
+  const netQty = weeklyProductKeysAreOne(items.map((item) => `${item.itemCode}|${item.itemName}`))
+    ? items.reduce((sum, item) => sum + item.netQty, 0)
+    : null;
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
       <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
-        Excluded on purpose ({items.length}) — {num(rows)} rows, {num(netQty)} net units kept out of the numbers
+        Excluded on purpose ({items.length}) — {num(rows)} rows{netQty === null ? "" : `, ${num(netQty)} net units`} kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
@@ -1187,13 +1197,17 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
 
 function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] }) {
   const rows = branches.reduce((sum, branch) => sum + branch.rows, 0);
+  // A depot's units add every item it held out, so they print only while those are one item's: per row
+  // for that row, and across every depot for the sum in the heading.
+  const sumIsOneItem = weeklyProductKeysAreOne(branches.flatMap((branch) => branch.itemKeys));
   const netQty = branches.reduce((sum, branch) => sum + branch.netQty, 0);
   const stockQty = branches.reduce((sum, branch) => sum + branch.stockQty, 0);
+  const heldOutUnits = sumIsOneItem ? `, ${num(netQty)} net and ${num(stockQty)} stock units` : "";
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
       <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
-        Branches excluded on purpose ({branches.length}) — {num(rows)} rows, {num(netQty)} net and {num(stockQty)} stock units kept out of the numbers
+        Branches excluded on purpose ({branches.length}) — {num(rows)} rows{heldOutUnits} kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
@@ -1212,8 +1226,12 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
                 <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
                 <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{branch.branchName || "—"}</td>
                 <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.netQty)}</td>
-                <td className="py-1 text-right tabular-nums text-phx-ink-2">{num(branch.stockQty)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">
+                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.netQty) : "—"}
+                </td>
+                <td className="py-1 text-right tabular-nums text-phx-ink-2">
+                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.stockQty) : "—"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1381,6 +1399,10 @@ function ValidationResultPanel({
   const hasFailures = result.failedRows > 0;
   const t = result.totals;
   const tw = result.thisWeekOnly;
+  // Every unit figure below except By product adds the upload's products, so it prints only while the
+  // upload holds ONE product (owner, 2026-09-17); otherwise a dash holds its place.
+  const unitsAreOneProduct = weeklyProductKeysAreOne(result.byProduct.map((p) => p.productCode || p.productName));
+  const units = (value: number) => (unitsAreOneProduct ? num(value) : "—");
   const weekMismatch =
     result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
 
@@ -1427,15 +1449,19 @@ function ValidationResultPanel({
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-phx-ink">
-            <span>Net units: <span className="text-phx-accent">{num(tw.netQty)}</span></span>
+            <span>Net units: <span className="text-phx-accent">{units(tw.netQty)}</span></span>
             <span className="text-xs font-medium text-phx-ink-soft">
               {tw.priorWeekStart
-                ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
+                ? unitsAreOneProduct
+                  ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
+                  : `= this sheet − previous sheet of the month (${tw.priorWeekStart})`
                 : "first sheet of the month — equals the full cumulative figure"}
             </span>
           </div>
           <div className="mt-1 text-xs font-medium text-phx-ink-faint">
-            Stock {num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.
+            {unitsAreOneProduct
+              ? `Stock ${num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.`
+              : `This sheet holds ${result.byProduct.length} products, and units of different products are never added — each product's own units are under By product.`}
           </div>
         </div>
       )}
@@ -1487,10 +1513,10 @@ function ValidationResultPanel({
       <div className="grid grid-cols-2 gap-px bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
-        <Metric label="Sales units" value={num(t.salesQty)} />
-        <Metric label="Return units" value={num(t.returnQty)} />
-        <Metric label="Net units" value={num(t.netQty)} accent />
-        <Metric label="Stock units" value={num(t.stockQty)} />
+        <Metric label="Sales units" value={units(t.salesQty)} />
+        <Metric label="Return units" value={units(t.returnQty)} />
+        <Metric label="Net units" value={units(t.netQty)} accent />
+        <Metric label="Stock units" value={units(t.stockQty)} />
       </div>
 
       {/* Summary tables */}
@@ -1508,7 +1534,7 @@ function ValidationResultPanel({
           head={["Branch", "Sales", "Return", "Net", "Stock"]}
           rows={result.byBranch.map((b) => [
             b.branchName || b.branchCode,
-            num(b.salesQty), num(b.returnQty), num(b.netQty), num(b.stockQty),
+            units(b.salesQty), units(b.returnQty), units(b.netQty), units(b.stockQty),
           ])}
         />
         <SummaryTable
@@ -1516,7 +1542,7 @@ function ValidationResultPanel({
           head={["Region", "Sales", "Return", "Net", "Stock"]}
           rows={result.byRegion.map((r) => [
             r.regionName || r.regionCode,
-            num(r.salesQty), num(r.returnQty), num(r.netQty), num(r.stockQty),
+            units(r.salesQty), units(r.returnQty), units(r.netQty), units(r.stockQty),
           ])}
         />
       </div>
@@ -1605,10 +1631,11 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
     drift: { label: "Drift", cls: "bg-rose-50 text-rose-700" },
     uncertain: { label: "Check", cls: "bg-slate-100 text-slate-600" },
     empty: { label: "Empty", cls: "bg-rose-50 text-rose-700" },
+    missing: { label: "Missing", cls: "bg-rose-50 text-rose-700" },
   };
   const pill = map[status] ?? map.uncertain;
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${pill.cls}`} title={note || undefined}>
+    <span className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-black ${pill.cls}`} title={note || undefined}>
       {pill.label}
     </span>
   );
@@ -1616,59 +1643,102 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
 
 function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResult; verified: boolean; onConfirm: () => void }) {
   const drift = result.verdict === "drift";
+  const missingSheet = result.columns.some((col) => col.status === "missing");
+  // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4): a fixed table from md up, with File
+  // and Col merged into one column, and cards below md. Pinned by tests/weekly-sales-fits-the-screen.test.ts.
+  const columns = verifyColumns();
   return (
-    <div className={`mt-3 ${card}`}>
+    <div className="mt-3 border border-phx-line bg-white shadow-sm">
       <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-        {drift ? "Possible column drift — review carefully" : "Columns look consistent"}
-        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
+        {missingSheet ? "A sheet the import reads is missing from this file — review carefully" : drift ? "Possible column drift — review carefully" : "Columns look consistent"}
+        <span className={`ml-auto inline-flex items-center px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
           {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
         </span>
       </div>
 
       {result.aiNote && (
-        <p className="border-b border-phx-line bg-phx-paper px-4 py-2 text-xs font-semibold text-phx-ink-2">{result.aiNote}</p>
+        <p className="break-words border-b border-phx-line bg-phx-paper px-4 py-2 text-xs font-semibold text-phx-ink-2">{result.aiNote}</p>
       )}
 
       {result.files.length > 0 && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-phx-line px-4 py-2 text-xs text-phx-ink-soft">
           {result.files.map((f) => (
-            <span key={`${f.role}-${f.fileName}`}>
+            <span className="min-w-0 break-words" key={`${f.role}-${f.fileName}`}>
               <span className="font-black uppercase tracking-wide text-phx-ink-faint">{f.role}</span> · {f.fileName} → &quot;{f.sheetName}&quot;
             </span>
           ))}
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.data}%` }} />
+            <col style={{ width: `${columns.file}%` }} />
+            <col style={{ width: `${columns.found}%` }} />
+            <col style={{ width: `${columns.expected}%` }} />
+            <col style={{ width: `${columns.status}%` }} />
+          </colgroup>
           <thead className={darkHead}>
             <tr>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">File</th>
-              <th className="px-3 py-2 text-center">Col</th>
-              <th className="px-3 py-2">Found in your file</th>
-              <th className="px-3 py-2">Expected</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="break-words px-3 py-2">Data</th>
+              <th className="break-words px-3 py-2">File · Col</th>
+              <th className="break-words px-3 py-2">Found in your file</th>
+              <th className="break-words px-3 py-2">Expected</th>
+              <th className="break-words px-3 py-2">Status</th>
             </tr>
           </thead>
           <tbody>
             {result.columns.map((col, i) => (
               <tr className="border-t border-[#FFE8D6]" key={`${col.sheetRole}-${col.field}-${i}`}>
-                <td className="px-3 py-1.5 font-bold text-phx-ink">
+                <td className="break-words px-3 py-1.5 font-bold text-phx-ink">
                   {col.label}{col.critical && <span className="ml-1 text-phx-accent">*</span>}
                 </td>
-                <td className="px-3 py-1.5 text-phx-ink-soft">{col.sheetRole}</td>
-                <td className="px-3 py-1.5 text-center tabular-nums text-phx-ink-2">{col.columnIndex}</td>
-                <td className="px-3 py-1.5 text-phx-ink">
+                <td className="break-words px-3 py-1.5 text-phx-ink-soft">
+                  <div>{col.sheetRole}</div>
+                  <div className="tabular-nums text-phx-ink-2">Col {col.columnIndex}</div>
+                </td>
+                <td className="break-words px-3 py-1.5 text-phx-ink">
                   {col.observedHeader || <span className="text-rose-600">— empty —</span>}
                 </td>
-                <td className="px-3 py-1.5 text-phx-ink-faint">{col.expectedHeaderHint}</td>
+                <td className="break-words px-3 py-1.5 text-phx-ink-faint">{col.expectedHeaderHint}</td>
                 <td className="px-3 py-1.5"><StatusPill note={col.note} status={col.status} /></td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-2 p-3 md:hidden">
+        {result.columns.map((col, i) => (
+          <div className="flex overflow-hidden border border-phx-line bg-white" key={`card-${col.sheetRole}-${col.field}-${i}`}>
+            <span className="w-[3px] shrink-0 bg-phx-accent" />
+            <div className="min-w-0 flex-1 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="min-w-0 break-words text-sm font-black text-phx-ink">
+                  {col.label}{col.critical && <span className="ml-1 text-phx-accent">*</span>}
+                </p>
+                <StatusPill note={col.note} status={col.status} />
+              </div>
+              <p className="mt-0.5 break-words text-xs text-phx-ink-soft">
+                {col.sheetRole} · <span className="tabular-nums text-phx-ink-2">Col {col.columnIndex}</span>
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-1.5">
+                <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Found in your file</p>
+                  <p className="break-words text-sm text-phx-ink">
+                    {col.observedHeader || <span className="text-rose-600">— empty —</span>}
+                  </p>
+                </div>
+                <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Expected</p>
+                  <p className="break-words text-sm text-phx-ink-faint">{col.expectedHeaderHint}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {result.matrices.length > 0 && (
@@ -1682,7 +1752,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
               {matrix.sampleHeaders.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {matrix.sampleHeaders.map((h, hi) => (
-                    <span className="rounded bg-phx-paper-2 px-1.5 py-0.5 font-medium text-phx-ink-2" key={hi}>{h}</span>
+                    <span className="min-w-0 break-words bg-phx-paper-2 px-1.5 py-0.5 font-medium text-phx-ink-2" key={hi}>{h}</span>
                   ))}
                   {matrix.detectedCount > matrix.sampleHeaders.length && (
                     <span className="px-1 py-0.5 text-phx-ink-faint">+{matrix.detectedCount - matrix.sampleHeaders.length} more</span>
@@ -1708,7 +1778,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
         ) : (
           <>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
+              className="inline-flex h-10 items-center gap-2 bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
               onClick={onConfirm}
               type="button"
             >

@@ -5,6 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import {
   applyWeeklyAccessScope,
+  liftWeeklyGeography,
   listWeeklyProductScopeAssignments,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
@@ -18,7 +19,16 @@ import {
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
-import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
+import {
+  decumulateRows,
+  depotWeekGapKeys,
+  depotWeekGaps,
+  moneySpansDepotGap,
+  suppressGapSpannedValue,
+  weekHasDecumulationGap,
+} from "@/lib/sales/weekly/decumulate";
+import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
+import { narrowWeeklyRowsToOwnAreaShare, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -29,6 +39,7 @@ import {
   WEEKLY_TRACKED_SCOPE_NOTE,
 } from "@/lib/sales/weekly/tracked-lines";
 import type {
+  WeeklyAreaBasis,
   WeeklyBatch,
   WeeklyBranchComparisonRow,
   WeeklyDashboard,
@@ -42,6 +53,7 @@ import type {
   WeeklyThisWeekOnly,
   WeeklyTotals,
 } from "@/lib/sales/weekly/types";
+import { weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
@@ -533,6 +545,8 @@ type FactRow = {
   /** net units = gross - returns; this is what the dashboard reports as "units" */
   netQty: number;
   stockQty: number;
+  /** How the row reached the viewer, on a load that follows his own areas (ownAreaShare) only. */
+  areaBasis?: WeeklyAreaBasis;
 };
 
 const delta = (current: number, prior: number | null): WeeklyDelta => ({
@@ -799,11 +813,35 @@ export async function loadWeeklyDashboard(filters?: {
   /** Export only: also return the row-level fact grain (factRows) for the BI workbook's Data sheet. */
   includeFactRows?: boolean;
   /**
+   * Depot Detail only: factRows keep their sales value and units unrounded. Every other caller gets them
+   * rounded to 2 decimals, as the BI workbook always has. Rows rounded one by one add up to a different
+   * figure from `kpis` (EGP 8 over every month), so a screen that totals these rows needs them unrounded.
+   */
+  factRowsFullPrecision?: boolean;
+  /**
    * Weekly Stock only: also return `stockRows` — every scoped row across the fetched weeks, de-cumulated
    * but NOT narrowed to the selected week and NOT latest-stock-adjusted, because the stock builder picks
    * each distributor's own snapshot and sales window itself.
    */
   includeStockRows?: boolean;
+  /**
+   * Weekly Stock only: build `stockRows` with a territory viewer's REGION and AREA bounds lifted
+   * (liftWeeklyGeography) — his line bound, the confidential products and the Head Office strip all
+   * stay, and every filter above still applies. Nothing else on the payload moves.
+   *
+   * The row grain is then WIDER than the viewer may see, so a caller that sets this MUST narrow those
+   * rows to his own areas before building any figure from them (admitWeeklyStockRows). No effect on a
+   * full, product or none tier, and none alongside `ownAreaShare`, whose rows are already his.
+   */
+  liftRowGrainGeography?: boolean;
+  /**
+   * A manager's screens: EVERY figure follows his own areas (owner, 2026-09-17). His rows are read with
+   * his region bound lifted and narrowed at once to his own areas' share of each depot, plus the unplaced
+   * residue his own scope admits (own-area-share.ts), so the KPIs, trend, rankings, option lists,
+   * weekComparison and factRows all agree. A promise, so the caller can read the split and seat indexes
+   * alongside the rows; it must not reject. No effect on a viewer who may not lift (mayLiftWeeklyGeography).
+   */
+  ownAreaShare?: WeeklyOwnAreaShare | Promise<WeeklyOwnAreaShare | null> | null;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -1152,11 +1190,21 @@ export async function loadWeeklyDashboard(filters?: {
   // De-cumulate the cumulative sheets into real per-week rows BEFORE anything else, so every number
   // downstream (KPIs, trend, rankings, week-over-week) reflects true weekly sales — not running totals.
   const realRows = decumulateRows(allRows);
+  // Read over every loaded row, before any scope or filter, because that is the set decumulateRows
+  // subtracted from: a depot's week spans a gap only when the depot sent no sheet at all for the week
+  // before it, whatever lines or regions this viewer may see.
+  const depotGaps = depotWeekGaps(allRows);
+  const depotGapKeys = depotWeekGapKeys(depotGaps);
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true, canViewHeadOffice: false };
-  const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
+  // A manager's own areas' share, when the caller asked for it: the one place his rows are chosen, so
+  // every aggregate and option list below is built from the same rows.
+  const ownAreaShare = filters?.ownAreaShare ? await filters.ownAreaShare : null;
+  const visibleRows = ownAreaShare
+    ? narrowWeeklyRowsToOwnAreaShare(realRows, accessScope, ownAreaShare)
+    : applyWeeklyAccessScope(realRows, accessScope);
   // Metadata scope: full tier already sees every distributor/batch; every other tier (product /
   // territory / none) is bounded to the distributor codes that actually have at least one row
   // visible after the scope redaction above — so the distributor dropdown and report "sources"
@@ -1178,7 +1226,8 @@ export async function loadWeeklyDashboard(filters?: {
   // is that no screen can select it, which is the whole point — before this, one click on a dropdown
   // entry turned a 4M report into a 41M one with nothing on the page saying which had happened.
   const trackedRows = applyWeeklyTrackedLineScope(visibleRows, { includeUntracked: lineNamedExplicitly });
-  const scopedRows = trackedRows.filter((row) => {
+  // Named, because the lifted row grain below must pass exactly the same filters.
+  const passesRowFilters = (row: FactRow): boolean => {
     if (dropUnmapped && !mappedCodes.has(normalizeCode(row.productCode))) return false;
     if (!passesMultiFilter(distributor, normalizeCode(row.distributorCode))) return false;
     if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
@@ -1192,7 +1241,8 @@ export async function loadWeeklyDashboard(filters?: {
     // week's own sale (Royafloxacin June W3 would read 945 rather than 428).
     if (batchIdFilter.size > 0 && !batchIdFilter.has(row.batchId)) return false;
     return true;
-  });
+  };
+  const scopedRows = trackedRows.filter(passesRowFilters);
   // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
   // NOT by region/product/line — so selecting one value never removes the others from their own
   // dropdown (which would make multi-select impossible). Distributor options come from the batch list.
@@ -1256,52 +1306,40 @@ export async function loadWeeklyDashboard(filters?: {
   const weekRows = timeFilterActive ? scopedRows : scopedRows.filter((row) => selectedWeekSet.has(row.weekStart));
   const priorRows = !timeFilterActive && priorCanonical ? scopedRows.filter((row) => priorWeekSet.has(row.weekStart)) : [];
 
-  // Stock is a point-in-time snapshot, NOT cumulative — summing it across the weeks of a month would
-  // multiply on-hand inventory. For the KPI / compare / ranking aggregates, keep stock only from the
-  // LATEST in-scope week of each (distributor, cycle_month) and zero it on earlier weeks; sales/units
-  // still sum across all weeks. (The trend + week-comparison read each week's own snapshot directly.)
-  const latestStockOnly = (rows: FactRow[]): FactRow[] => {
-    const latest = new Map<string, string>();
-    for (const row of rows) {
-      if (!row.cycleMonth) continue;
-      const key = `${row.distributorCode}||${row.cycleMonth}`;
-      const cur = latest.get(key);
-      if (!cur || row.weekStart > cur) latest.set(key, row.weekStart);
-    }
-    return rows.map((row) =>
-      !row.cycleMonth || row.weekStart === latest.get(`${row.distributorCode}||${row.cycleMonth}`)
-        ? row
-        : { ...row, stockQty: 0 },
-    );
-  };
+  // Stock is a point-in-time snapshot, NOT cumulative — summing it across weeks would multiply on-hand
+  // inventory. For the KPI / compare / ranking aggregates (and the factRows both Excel books total),
+  // latestStockOnly (latest-stock.ts) keeps stock only on each distributor's LATEST in-scope week — its
+  // latest cycle month, then that month's latest week — and zeroes it on every other week, so a scope
+  // spanning months reads what is on hand rather than one month-end per month. Sales/units still sum
+  // across all weeks. (The trend + week-comparison read each week's own snapshot directly.)
   const weekRowsAdj = latestStockOnly(weekRows);
   const priorRowsAdj = latestStockOnly(priorRows);
 
+  // The row grain factRows / stockRows are built from. The viewer's own rows unless the caller lifted
+  // the geography (liftRowGrainGeography, Weekly Stock), in which case the same filters and the same time
+  // scope run over rows scoped WITHOUT the region and area bounds. Only the returned grain differs: every
+  // aggregate above and below stays on the viewer's own scope, and the caller narrows this grain back to
+  // his own areas. Never alongside ownAreaShare: that viewer's rows are already his own areas' share, and
+  // re-reading them without the bound would hand back other managers' money.
+  const grainScope =
+    filters?.liftRowGrainGeography && !ownAreaShare ? liftWeeklyGeography(accessScope) : accessScope;
+  const grainLifted = grainScope !== accessScope && Boolean(filters?.includeFactRows || filters?.includeStockRows);
+  const grainScopedRows = grainLifted
+    ? applyWeeklyTrackedLineScope(applyWeeklyAccessScope(realRows, grainScope), {
+        includeUntracked: lineNamedExplicitly,
+      }).filter(passesRowFilters)
+    : scopedRows;
+  const grainWeekRowsAdj = grainLifted
+    ? latestStockOnly(
+        timeFilterActive ? grainScopedRows : grainScopedRows.filter((row) => selectedWeekSet.has(row.weekStart)),
+      )
+    : weekRowsAdj;
+
   const sum = (rows: FactRow[], pick: (row: FactRow) => number) => rows.reduce((acc, row) => acc + pick(row), 0);
 
-  // Zero-sales branches: stock on hand this week but no sales.
-  const branchAgg = new Map<string, { branchName: string; regionName: string; salesValue: number; salesUnits: number; stockUnits: number }>();
-  for (const row of weekRowsAdj) {
-    const key = row.branchCode || row.branchName;
-    // Skip branchless rows so the zero-sales list never shows a "—" branch.
-    if (!key) continue;
-    const current = branchAgg.get(key) ?? { branchName: row.branchName || key, regionName: row.regionName, salesValue: 0, salesUnits: 0, stockUnits: 0 };
-    current.salesValue += row.salesValue;
-    current.salesUnits += row.netQty;
-    current.stockUnits += row.stockQty;
-    branchAgg.set(key, current);
-  }
-  const zeroSalesBranches = [...branchAgg.entries()]
-    .filter(([, branch]) => branch.salesUnits === 0 && branch.stockUnits > 0)
-    .map(([branchCode, branch]) => ({
-      branchCode,
-      branchName: branch.branchName,
-      regionName: branch.regionName,
-      salesValue: Number(branch.salesValue.toFixed(2)),
-      salesUnits: Number(branch.salesUnits.toFixed(2)),
-      stockUnits: Number(branch.stockUnits.toFixed(2)),
-    }))
-    .sort((left, right) => right.stockUnits - left.stockUnits);
+  // Zero-sales branches: stock on hand this week but no sales, each product checked on its own and
+  // ranked by stock value at the Product Master price (weeklyZeroSalesBranches).
+  const zeroSalesBranches = weeklyZeroSalesBranches(weekRowsAdj, (productCode) => priceMap.get(normalizeCode(productCode)));
 
   const trendWeeks = [...rawAvailableWeeks].sort();
   // flatMap: return [] for weeks with no loaded rows (empty historical batches), [point] otherwise.
@@ -1338,7 +1376,15 @@ export async function loadWeeklyDashboard(filters?: {
   // delta is vs the previous week number within the SAME month-cycle (W2−W1, W3−W2, …).
   const wcMap = new Map<
     string,
-    { cycleMonth: string; weekNumber: number; weekStart: string; salesValue: number; salesUnits: number; stockUnits: number }
+    {
+      cycleMonth: string;
+      weekNumber: number;
+      weekStart: string;
+      salesValue: number;
+      salesUnits: number;
+      stockUnits: number;
+      depotSpansGap: boolean;
+    }
   >();
   for (const row of scopedRows) {
     if (!row.cycleMonth || row.weekNumber == null) continue;
@@ -1350,10 +1396,12 @@ export async function loadWeeklyDashboard(filters?: {
       salesValue: 0,
       salesUnits: 0,
       stockUnits: 0,
+      depotSpansGap: false,
     };
     cur.salesValue += row.salesValue;
     cur.salesUnits += row.netQty;
     cur.stockUnits += row.stockQty;
+    if (moneySpansDepotGap(row, { value: row.salesValue, units: row.netQty }, depotGapKeys)) cur.depotSpansGap = true;
     if (row.weekStart && (!cur.weekStart || row.weekStart < cur.weekStart)) cur.weekStart = row.weekStart;
     wcMap.set(key, cur);
   }
@@ -1379,6 +1427,9 @@ export async function loadWeeklyDashboard(filters?: {
       stockUnits: Number(w.stockUnits.toFixed(2)),
       deltaValuePct: suppressGapSpannedValue(spansGap, deltaValuePct),
       spansGap,
+      // Marked, never suppressed (owner, 2026-09-17): one depot skipping a week must not blank the figure
+      // every other depot sent, but the reader is told it reads high.
+      depotSpansGap: w.depotSpansGap,
     };
   });
 
@@ -1467,7 +1518,7 @@ export async function loadWeeklyDashboard(filters?: {
     // rows behind the on-screen aggregates (weekRowsAdj: time-scoped, latest-stock-only) so the workbook's
     // pivots/formulas reconcile to the dashboard. Only built when requested (export path).
     factRows: filters?.includeFactRows
-      ? weekRowsAdj.map((row) => ({
+      ? grainWeekRowsAdj.map((row) => ({
           distributorCode: row.distributorCode,
           distributorName: row.distributorName,
           productCode: row.productCode,
@@ -1483,13 +1534,14 @@ export async function loadWeeklyDashboard(filters?: {
           weekStart: row.weekStart,
           batchId: row.batchId,
           family: familyByCode.get(normalizeCode(row.productCode)) ?? "",
-          salesValue: Number(row.salesValue.toFixed(2)),
-          salesUnits: Number(row.netQty.toFixed(2)),
+          salesValue: filters?.factRowsFullPrecision ? row.salesValue : Number(row.salesValue.toFixed(2)),
+          salesUnits: filters?.factRowsFullPrecision ? row.netQty : Number(row.netQty.toFixed(2)),
           stockUnits: Number(row.stockQty.toFixed(2)),
+          ...(row.areaBasis ? { areaBasis: row.areaBasis } : {}),
         }))
       : undefined,
     stockRows: filters?.includeStockRows
-      ? scopedRows.map((row) => ({
+      ? grainScopedRows.map((row) => ({
           distributorCode: row.distributorCode,
           distributorName: row.distributorName,
           regionCode: row.regionCode,
@@ -1508,6 +1560,7 @@ export async function loadWeeklyDashboard(filters?: {
           factoryPrice: priceMap.get(normalizeCode(row.productCode)) ?? null,
         }))
       : undefined,
+    factRowDepotWeekGaps: filters?.includeFactRows ? depotGaps : undefined,
   };
 }
 

@@ -138,17 +138,21 @@ function HierarchyTable({
     <>
       {/* Desktop. `table-fixed` with a colgroup and NO min-width floor — the page fits its screen.
           It fits by MERGING, never by shrinking type: the share bar rides under the Sales figure
-          instead of owning a column, so seven columns became six. Below `lg` the shell's sidebar
-          leaves too little width for six money columns, so a tablet gets the cards instead. */}
+          instead of owning a column, and so does the "no target" amount — the part of those sales
+          with no target, printed only where there is some — so seven columns became five. The
+          "Achievement" header and the growth pill cannot wrap, and six columns of the 619px the
+          portal leaves this table at a 1024px screen were too narrow for both: they spilled into
+          a sideways scroll. Below `lg` the shell's sidebar leaves too little width for the money
+          columns, so a tablet gets the cards instead.
+          tests/sales-target-tables-fit-the-screen.test.ts holds the arithmetic. */}
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
           <colgroup>
-            <col style={{ width: "25%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "18%" }} />
             <col style={{ width: "17%" }} />
-            <col style={{ width: "17%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "14%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "21%" }} />
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className={TABLE_HEAD_CLASS}>
@@ -157,7 +161,6 @@ function HierarchyTable({
               <th className="px-4 py-2.5 text-right">Target</th>
               <th className="px-4 py-2.5 text-right">Achievement</th>
               <th className="px-4 py-2.5 text-right">vs {priorLabel}</th>
-              <th className="px-4 py-2.5 text-right">No target</th>
             </tr>
           </thead>
           <tbody>
@@ -189,6 +192,14 @@ function HierarchyTable({
                       <span className="mt-1.5 block">
                         <ProportionBar fraction={Math.abs(node.current.actualValue) / maxSales} color={ACTUAL_COLOR} />
                       </span>
+                      {node.current.uncoveredActualValue !== 0 ? (
+                        <span className="mt-1.5 flex flex-wrap items-baseline justify-end gap-x-1.5">
+                          <span className="font-semibold tabular-nums text-amber-600">
+                            {formatEgpFull(node.current.uncoveredActualValue)}
+                          </span>
+                          <span className="text-phx-xs text-slate-500">no target</span>
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 text-right align-top tabular-nums text-slate-600">
                       {node.current.targetValue === 0 ? (
@@ -203,19 +214,10 @@ function HierarchyTable({
                     <td className="px-4 py-3 text-right align-top">
                       {hasPrior ? <GrowthPill value={node.growth} /> : <span className="text-xs text-slate-400">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-right align-top tabular-nums">
-                      {node.current.uncoveredActualValue === 0 ? (
-                        <span className="text-slate-300">—</span>
-                      ) : (
-                        <span className="font-semibold text-amber-600">
-                          {formatEgpFull(node.current.uncoveredActualValue)}
-                        </span>
-                      )}
-                    </td>
                   </tr>
                   {isOpen ? (
                     <tr className="border-b border-slate-200 bg-slate-50">
-                      <td className="px-4 py-4" colSpan={6}>
+                      <td className="px-4 py-4" colSpan={5}>
                         <BrickPanel bricks={bricks ?? null} loading={Boolean(bricksLoading)} />
                       </td>
                     </tr>
@@ -451,9 +453,12 @@ export function VsTargetDashboard({
           Rendered inline rather than through the shared CommandBand because the period/scope
           line has to stay a literal <p> here (tests/section-card-header-fits-a-phone.test.ts).
           SURFACE_CLASS goes FIRST: its `border` would otherwise erase the orange top rule when
-          the class list is merged. */}
+          the class list is merged.
+          The ring and aside go beside the headline from xl, not lg — CommandBand's
+          besideFrom="xl": at 1024px in the portal they left the headline a 132px column, with
+          the stats running under the ring (measured 2026-09-16). */}
       <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
-        <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
             <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">
@@ -533,8 +538,10 @@ export function VsTargetDashboard({
             {data.pendingDirectValue !== 0
               ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
               : ""}
-            {data.totals.targetValue !== 0
-              ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the closing is published.`
+            {/* pendingTargetValue, never totals.targetValue: totals hold PUBLISHED rows only, so in this
+                panel their target is always 0 and the sentence could never render. */}
+            {data.pendingTargetValue !== 0
+              ? ` A target of ${formatEgpFull(data.pendingTargetValue)} is already loaded and will be measured as soon as the closing is published.`
               : ""}
           </p>
           <p className="mt-3 text-xs text-slate-500">Pick an earlier month above to see published results.</p>

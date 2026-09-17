@@ -20,10 +20,10 @@ export const dynamic = "force-dynamic";
 // "return to this page after login" behavior, matching existing convention).
 // Super Admin / system scope / SFE Manager -> the admin Closing Matrix, filtered to this line
 // and period via query params (see app/(admin)/sales/monthly-closing/page.tsx searchParams).
-// District/Regional/National Manager, Product/Group Product Manager -> their own portal Monthly
-// Closing tab, which resolves their line automatically; only the period is passed through.
-// Everyone else (CEO, Marketing Manager, or any role with no closing view) -> unchanged, their
-// normal landing page. Granting the CEO a Matrix view is a real access-control decision this
+// Every PORTAL_CLOSING_ROLES role — District/Regional/National Manager, Product/Group Product
+// Manager, Marketing Manager, Medical Rep — -> their own portal Monthly Closing tab, which resolves
+// their line and scope automatically; only the period is passed through.
+// Everyone else (CEO, or any role with no closing view) -> unchanged, their normal landing page. Granting the CEO a Matrix view is a real access-control decision this
 // route does not make on its own.
 export async function GET(request: Request) {
   const access = await resolveAccessContext(request);

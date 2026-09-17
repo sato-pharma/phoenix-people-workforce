@@ -3,6 +3,7 @@ import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
+import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
@@ -213,6 +214,7 @@ import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-p
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
+import { runMultiSelectFilterFitsTests } from "./multi-select-filter-fits.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentBulkDecisionTests } from "./recruitment-bulk-decision.test.ts";
@@ -368,6 +370,13 @@ import {
   runKpisBoardJoinTests,
 } from "./kpis-board.test.ts";
 import {
+  runKpiCoverageDetailOrderTests,
+  runKpiCoverageLegacyListTests,
+  runKpiCoveragePhoenixListTests,
+  runKpiCoverageRepSelectionTests,
+} from "./kpis-coverage-doctor-lists.test.ts";
+import { runKpisBoardTablesFitTests } from "./kpis-board-tables-fit.test.ts";
+import {
   runTwoKpiReportsApplicabilityTests,
   runTwoKpiReportsConfigurableTests,
   runTwoKpiReportsGradeAndBandTests,
@@ -435,6 +444,7 @@ import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runRepsListTests } from "./reps-list.test.ts";
 import { runRepsListActivityTests } from "./reps-list-activity.test.ts";
 import { runRepsListVacantAreasTests } from "./reps-list-vacant-areas.test.ts";
+import { runMyListTests } from "./my-list.test.ts";
 import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
@@ -495,8 +505,14 @@ import { runCustomerClustersTests } from "./customer-clusters.test.ts";
 import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
 import { runWeeklyPosValueRowTests } from "./weekly-pos-value-row-is-not-units.test.ts";
 import { runWeeklyFileTotalsSelfCheckTests } from "./weekly-file-totals-self-check.test.ts";
+import { runWeeklyEgdMissingStockTests } from "./weekly-egd-missing-stock.test.ts";
+import { runWeeklyVerifySheetMatchTests } from "./weekly-verify-sheet-match.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
+import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
+import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
+import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
+import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-paging.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -542,9 +558,11 @@ import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
 import { runWeeklyBranchAreaSplitTests } from "./weekly-branch-area-split.test.ts";
 import { runWeeklyBranchAttributionTests } from "./weekly-branch-attribution.test.ts";
+import { runWeeklyOwnAreaLiftTests } from "./weekly-own-area-lift.test.ts";
 import { runWeeklyBranchNameScopeTests } from "./weekly-branch-name-scope.test.ts";
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
+import { runWeeklyStockKpiMonthsTests } from "./weekly-stock-kpi-months.test.ts";
 import { runWeeklyNsmDsmWorkbookTests } from "./weekly-nsm-dsm-workbook.test.ts";
 import { runWeeklyNsmDsmBeigeLookTests } from "./weekly-nsm-dsm-beige-look.test.ts";
 import { runWeeklyNsmDsmStockByBranchTests } from "./weekly-nsm-dsm-stock-by-branch.test.ts";
@@ -678,6 +696,7 @@ import { runPositionVacancyStatusIntegrityTests } from "./position-vacancy-statu
 import { runReconcileStaleVacancyAreaGuardTests } from "./reconcile-stale-vacancy-area-guard.test.ts";
 import { runVacancyAutofillOnBecomingEligibleTests } from "./vacancy-autofill-on-becoming-eligible.test.ts";
 import { runSalaryAllowancePolicyTests } from "./salary-allowance-policy.test.ts";
+import { runEmployeeImportPersonalFuelAllowanceTests } from "./employee-import-personal-fuel-allowance.test.ts";
 import { runWorkforceClassificationTests } from "./workforce-classification.test.ts";
 import { runWorkforceLifecycleSeatTests } from "./workforce-lifecycle-seat.test.ts";
 import { runWorkforceHierarchyContinuityTests } from "./workforce-hierarchy-continuity.test.ts";
@@ -941,17 +960,15 @@ import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
 import { runClosingDetailsRegionBasisTests } from "./closing-details-region-basis.test.ts";
-import { runAnalyticsOrganogramRegionsTests } from "./analytics-organogram-regions.test.ts";
 import { runSosRegionBasisTests } from "./sos-region-basis.test.ts";
 import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
-import { runAnalyticsValidationTests } from "./analytics-validation.test.ts";
-import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.ts";
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
+import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
@@ -961,10 +978,8 @@ import { runPediaTargetTemplateAndUploadFoldTests } from "./pedia-target-templat
 import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
 import { runSosDashboardGeographyIsLiveForEveryViewerTests } from "./sos-dashboard-geography-is-live-for-every-viewer.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
-import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
-import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
-import { runAnalyticsClosingGeographyScopeTests } from "./analytics-closing-geography-scope.test.ts";
-import { runAnalyticsFailureNotZeroTests } from "./analytics-failure-not-zero.test.ts";
+import { runSosDashboardFailureNotZeroTests } from "./sos-dashboard-failure-not-zero.test.ts";
+import { runSalesAnalyticsRetiredTests } from "./sales-analytics-retired.test.ts";
 import { runSupabasePaginationGuardsTests } from "./supabase-pagination-guards.test.ts";
 import { runSosUiTruthTests } from "./sos-ui-truth.test.ts";
 import { runSosDataCoverageTests } from "./sos-data-coverage.test.ts";
@@ -1020,10 +1035,6 @@ import { runSosWarehouseAreaDoesNotBlockBrickFillTests } from "./sos-warehouse-a
 import { runSosIngestionRemainderTests } from "./sos-ingestion-remainder.test.ts";
 import { runSalesScopeBlankRegionFailClosedTests } from "./sales-scope-blank-region-fail-closed.test.ts";
 import { runSosUiTruthRemainderTests } from "./sos-ui-truth-remainder.test.ts";
-import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
-import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
-import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
-import { runAnalyticsMultiSelectTimeFiltersTests } from "./analytics-multi-select-time-filters.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runApprovalsHubEmployeeContextGuardTests } from "./approvals-hub-employee-context-guard.test.ts";
@@ -1080,6 +1091,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runTargetVisualsSharedTests } from "./target-visuals-shared.test.ts";
+import { runSalesTargetTablesFitTheScreenTests } from "./sales-target-tables-fit-the-screen.test.ts";
 import { runPortalIdentityBandAndSalesWindowTests } from "./portal-identity-band-and-sales-window.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
 import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
@@ -1314,6 +1326,7 @@ import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
+import { runClosingExportOrganogramRegionLabelsTests } from "./closing-export-organogram-region-labels.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
@@ -1361,6 +1374,10 @@ import { runCrmContactMasterTests } from "./crm-contact-master.test.ts";
 import { runCrmNativeVisitsTests } from "./crm-native-visits.test.ts";
 import { runCrmNativePlansTests } from "./crm-native-plans.test.ts";
 import { runPhoenixCrmTests } from "./phoenix-crm.test.ts";
+import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
+import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
+import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
+import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -1410,6 +1427,8 @@ import { runTerritoryRestampAreaChangeTests } from "./territory-restamp-area-cha
 import { runTerritoryRestampLivenessTests } from "./territory-restamp-liveness.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runMedicalRepMonthlyClosingTests } from "./medical-rep-monthly-closing.test.ts";
+import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-export-matches-screen.test.ts";
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
@@ -1482,6 +1501,7 @@ import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.t
 import { runNotificationDrainHealthAlertTests } from "./notification-drain-health-alert.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
+import { runQuietHoursTelegramDeferralTests } from "./quiet-hours-telegram-deferral.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
@@ -1544,12 +1564,22 @@ import { runCeoSosTableRowKeysTests } from "./ceo-sos-table-row-keys.test.ts";
 import { runSosDashboardGroupMergeTests } from "./sos-dashboard-group-merge.test.ts";
 
 import { runWeeklyFieldForceTests } from "./weekly-field-force.test.ts";
+import { runWeeklySalesRepViewTests } from "./weekly-sales-rep-view.test.ts";
+import { runWeeklySalesDepotDetailTests } from "./weekly-sales-depot-detail.test.ts";
+import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
+import { runWeeklyUnitsOneProductTests } from "./weekly-units-one-product.test.ts";
+import { runWeeklyAdminUnitsOneProductTests } from "./weekly-admin-units-one-product.test.ts";
+import { runWeeklyUnitsAcrossProductsFollowupsTests } from "./weekly-units-across-products-followups.test.ts";
+import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
+import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
+import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
 import { runAdminFilenameCellsNeverEllipsiseTests } from "./admin-filename-cells-never-ellipsise.test.ts";
 import { runSectionCardHeaderFitsAPhoneTests } from "./section-card-header-fits-a-phone.test.ts";
 import { runPortalToolsGridFitsAPhoneTests } from "./portal-tools-grid-fits-a-phone.test.ts";
+import { runSalesCommandBandFitsALaptopTests } from "./sales-command-band-fits-a-laptop.test.ts";
 
 import { runRecruitmentFolderCvPopupTests } from "./recruitment-folder-cv-popup.test.ts";
 
@@ -1643,7 +1673,8 @@ import { runSecretBoxTests } from "./secret-box.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
-import { runAttendanceDigestEmailBlockTests } from "./attendance-digest-email-block.test.ts";
+import { runAttendanceDigestNoticeChannelsTests } from "./attendance-digest-notice-channels.test.ts";
+import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
@@ -1674,6 +1705,14 @@ import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
+import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attachment-path.test.ts";
+import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
+import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
+import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
+import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
+import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
+import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
+import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1710,6 +1749,7 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
+await runTest("rep targets (a Medical Rep's own targets: self-bounded, published sales only, units within one product)", runRepTargetsTests);
 await runTest(
   "test wiring is complete (no test file imported-but-uninvoked, none orphaned)",
   runTestWiringCompleteTests,
@@ -2140,6 +2180,10 @@ await runTest(
   runSearchableSelectNoEllipsisTests,
 );
 await runTest(
+  "shared filter dropdowns fit the screen (MultiSelectFilter and RoiMultiSelect: square corners, no ellipsis, wrapped labels; the panel hangs from a right-half trigger's right edge, divides out the display zoom and stays inside the viewport, main and every clipping box)",
+  runMultiSelectFilterFitsTests,
+);
+await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
   runRecruitmentAppliedForTests,
 );
@@ -2522,6 +2566,11 @@ await runTest("KPIs podium (four leaderboards, never a blended rank, and nobody 
 await runTest("KPIs attainment and identity (AM against 2 and PM against 10, never averaged, and a mixed-case hr id still resolves)", runKpiAttainmentAndIdentityTests);
 await runTest("KPIs medical reps only (managers off the board, above the filter layer so no URL undoes it)", runKpiMedicalRepOnlyTests);
 await runTest("KPIs early-window guard (a percentage two days into a month is a position, not a verdict)", runKpiTooEarlyToScoreTests);
+await runTest("KPIs coverage doctor lists (legacy: the covered and not-covered lists add up to the row, and a rep's list is never cut)", runKpiCoverageLegacyListTests);
+await runTest("KPIs coverage doctor lists (a URL can only open a rep already on the viewer's board, and only on the Coverage tab)", runKpiCoverageRepSelectionTests);
+await runTest("KPIs coverage doctor lists (newest visit first; late doctors before the ones not due yet)", runKpiCoverageDetailOrderTests);
+await runTest("KPIs coverage doctor lists (Phoenix: the lists add up to coverage.visited and coverage.missed, and follow the period)", runKpiCoveragePhoenixListTests);
+await runTest("KPIs board tables fit the screen (every column holds the width its head measured at the portal's 619px table at 1024px; Coverage's 12% columns had pushed Planned, Covered and Not reached past their cells, and Frequency had six columns for five cells)", runKpisBoardTablesFitTests);
 await runTest("two KPI reports (coverage is visited-at-least-once; frequency is the graded norm — different numbers)", runTwoKpiReportsVocabularyTests);
 await runTest("two KPI reports (the split is list_type, never speciality, and every list type lands in a report)", runTwoKpiReportsSplitTests);
 await runTest("two KPI reports (AM and PM are never averaged, and the pair never prints with a slash)", runTwoKpiReportsNeverAveragedTests);
@@ -2683,8 +2732,26 @@ await runTest("customer location clusters", runCustomerClustersTests);
 await runTest("weekly sales import", runWeeklySalesImportTests);
 await runTest("weekly POS value row is not units", runWeeklyPosValueRowTests);
 await runTest("weekly file totals self-check", runWeeklyFileTotalsSelfCheckTests);
+await runTest("weekly EGD: a workbook with no readable stock blocks instead of storing zero", runWeeklyEgdMissingStockTests);
+await runTest("weekly verification screen reads the same sheets as the import and reports a missing sheet as MISSING", runWeeklyVerifySheetMatchTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
+await runTest(
+  "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
+  runWeeklyStockWorkbookTotalsTests,
+);
+await runTest(
+  "weekly sales export Week Comparison: the TOTAL row never adds stock across weeks (Stock Units TOTAL is empty; Sales Value and Sales Units still SUM)",
+  runWeeklyWeekComparisonStockTotalTests,
+);
+await runTest(
+  "weekly sales Combined Report: the TOTAL rows never add stock across periods or units across products (unit TOTALs are empty; Sales Value and Rows still add)",
+  runWeeklyCombinedReportUnitTotalsTests,
+);
+await runTest(
+  "weekly sales Combined Report: every product row of the selected uploads is read past PostgREST's 1,000-row cap (paged on id), and Generated is Cairo local time, never UTC",
+  runWeeklyCombinedReportPagingTests,
+);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
 await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProductsTests);
@@ -2773,6 +2840,10 @@ await runTest("weekly column profile store (editable merge + validation)", runWe
 await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
+await runTest(
+  "weekly stock across months: each distributor's latest week in scope, never one month-end per month (tiles, compare delta, both exports; one-month views unchanged)",
+  runWeeklyStockKpiMonthsTests,
+);
 await runTest("weekly NSM/DSM export (column arithmetic, date header)", runWeeklyNsmDsmWorkbookTests);
 await runTest("weekly NSM/DSM export keeps the beige look (exempt from the house identity)", runWeeklyNsmDsmBeigeLookTests);
 await runTest("weekly NSM/DSM Stock by branch (reporting distributors, no apportioned stock)", runWeeklyNsmDsmStockByBranchTests);
@@ -2780,6 +2851,7 @@ await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pe
 await runTest("weekly branch area split (owner rule: even across governorates then areas)", runWeeklyBranchAreaSplitTests);
 await runTest("weekly branch name scope (a depot name names its territory)", runWeeklyBranchNameScopeTests);
 await runTest("weekly branch attribution (the split moves money and never creates it)", runWeeklyBranchAttributionTests);
+await runTest("weekly own-area lift (a UE-labelled depot reaches Upper Egypt 1/2 and Delta (3) viewers, narrowed to their own areas)", runWeeklyOwnAreaLiftTests);
 await runTest("weekly month vs target scoping (access bound, tab gate, region symmetry)", runWeeklyMonthTargetScopeTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
@@ -2938,6 +3010,7 @@ await runTest("position vacancy status integrity", runPositionVacancyStatusInteg
 await runTest("reconcile stale-replacement vacancy area + single-seat guard", runReconcileStaleVacancyAreaGuardTests);
 await runTest("vacancy autofill runs again when a hire becomes eligible", runVacancyAutofillOnBecomingEligibleTests);
 await runTest("salary allowance policy", runSalaryAllowancePolicyTests);
+await runTest("employee import keeps an approved personal fuel allowance", runEmployeeImportPersonalFuelAllowanceTests);
 await runTest("workforce classification", runWorkforceClassificationTests);
 await runTest("workforce lifecycle seat", runWorkforceLifecycleSeatTests);
 await runTest("HR_ID alias normalization (legacy AAA -> AA)", runHrIdAliasNormalizationTests);
@@ -3430,18 +3503,13 @@ await runTest(
   "the Closing Details tab offers and filters the SAME regions the Closing Matrix beside it is grouped by, its area list cascades off that same basis, and its access gate stays geographic so a region-scoped viewer's tab is never emptied",
   runClosingDetailsRegionBasisTests,
 );
-await runTest(
-  "the analytics region breakdowns file every area under the district the ORGANOGRAM gives it for that line and month, collapsing the line back out losslessly, while the geographic code stays on the row as the dimension access was applied in",
-  runAnalyticsOrganogramRegionsTests,
-);
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
-await runTest("analytics validation helpers", runAnalyticsValidationTests);
-await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests);
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
+await runTest("the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money", runSosMonthPaceAreaNamesTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
 await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
@@ -3471,10 +3539,11 @@ await runTest(
     + "last, so the later row is rejected by name)",
   runPediaTargetTemplateAndUploadFoldTests,
 );
-await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
-await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
-await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);
-await runTest("analytics failure is never rendered as a zero", runAnalyticsFailureNotZeroTests);
+await runTest("the SoS dashboard never renders or caches a failed load as a zero, and the SFE IMS view never falls back to the calendar month", runSosDashboardFailureNotZeroTests);
+await runTest(
+  "the Sales Analytics module stays retired: its pages are gone, every old address redirects to the page the owner chose, and nothing links back in",
+  runSalesAnalyticsRetiredTests,
+);
 await runTest("supabase pagination guards (no unordered pages, no row ceilings, no swallowed page errors)", runSupabasePaginationGuardsTests);
 await runTest("SoS UI truth (brick coverage denominator, export matches the screen)", runSosUiTruthTests);
 await runTest("SoS data coverage (missing months + per-distributor gaps are visible)", runSosDataCoverageTests);
@@ -3514,7 +3583,7 @@ await runTest('Badge tone contrast (every tone meets WCAG AA for small text, bot
 await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
-await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
+await runTest('analytics area scope v2 (one active alias target)', runAnalyticsAreaScopeV2Tests);
 await runTest('SoS latent guards + decisions of record', runSosLatentGuardsTests);
 await runTest('SoS Direct counts toward achievement (targets were set including it)', runSosDirectInAchievementTests);
 await runTest('SoS Direct reaches its region DM (not a rep), and UE-1/UE-2 exist to tag', runSosDirectToDmTests);
@@ -3525,11 +3594,7 @@ await runTest('SoS coded-path cross-area guard (blank-brick auto-fill never cros
 await runTest('SoS warehouse area (Main Store) never blocks a known brick from filling', runSosWarehouseAreaDoesNotBlockBrickFillTests);
 await runTest('SoS ingestion remainder (Direct value, blank-customer info, office bad units)', runSosIngestionRemainderTests);
 await runTest('sales scope fails closed on a blank region with no seat areas', runSalesScopeBlankRegionFailClosedTests);
-await runTest('SoS UI truth remainder (headline vs breakdowns, territory target dedup, filtered footer)', runSosUiTruthRemainderTests);
-await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
-await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
-await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
-await runTest("analytics multi-select time filters (period/channel/week/year)", runAnalyticsMultiSelectTimeFiltersTests);
+await runTest('SoS UI truth remainder (headline vs breakdowns, territory target dedup)', runSosUiTruthRemainderTests);
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("approvals hub employee context (a 403 body never becomes context state, so HR Operations does not crash the hub on an employee she may approve for but not read)", runApprovalsHubEmployeeContextGuardTests);
@@ -3589,6 +3654,7 @@ await runTest("direct orders approval window on mobile (every table desktop-only
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("target visuals shared (both target modules import one visual language; neither forks a primitive; null achievement stays neutral, null percent stays an em dash, ring arc stays clamped)", runTargetVisualsSharedTests);
+await runTest("sales target tables fit the screen (Portal Targets and Sales vs Target desktop tables: every column holds its unwrappable content at the narrowest 1024px portal table, merged column counts, colgroup and colSpan agree, no sideways scroll, floor or ellipsis)", runSalesTargetTablesFitTheScreenTests);
 await runTest("portal identity band and sales window (nothing renders above the identity banner on any of the 9 role centers, no horizontal nav rows on the portal, no ellipsis, a leaver leaves the list but not the money, every keycard names its closing month, and the landing page fits a 375px screen)", runPortalIdentityBandAndSalesWindowTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
@@ -4200,6 +4266,11 @@ await runTest(
 );
 
 await runTest(
+  "my list (the Reps List board in a Medical Rep account, opened on the rep's OWN list — owner 2026-09-16. The reach is the session's HR id and nothing else, so no URL parameter can open a colleague's list; Medical Rep stays off the manager board's role list, whose picker names every rep in reach; the two pages send each other's viewers across; and under the locked downward rule a peer's NAME is withheld server-side while the highlight, the partner's visits in the score and the insight all stay — unnamed partners are counted, never repeated, and counted by rep so two never collapse into one)",
+  runMyListTests,
+);
+
+await runTest(
   "crm plan verification (the ONLY thing Phoenix writes back into the customer's CRM — a district "
   + "manager signs off one rep's weekly or monthly plan. The vendor does NOT range-check the status "
   + "it is sent, proven live against a phantom plan id, so the refusal to lower an area manager's "
@@ -4338,6 +4409,26 @@ await runTest(
 await runTest(
   "Phoenix CRM, the pilot space (the roster the Super Admin picks is the gate, from the day a rep joins, with no end until removed; the KPIs read Phoenix only — call rate AM against 2 and PM against 10 reported apart and never averaged, coverage, frequency with an unnormed grade left out, plan achieved on the planned day; only a doctor visit counts and 100000 is no doctor; every service function checks crm_visit_entry; the roster is update, in-app notice only, never deleted)",
   runPhoenixCrmTests,
+);
+
+await runTest(
+  "Phoenix CRM calendar (the field week is Saturday to Wednesday plus a Thursday morning for accounts, never Friday; a passed day is fixed; Ramadan is the pinned Umm al-Qura table, re-derived from Intl so a hand-edited year cannot ship, and the Super Admin's moved year replaces only that year)",
+  runPhoenixCrmCalendarTests,
+);
+
+await runTest(
+  "Phoenix CRM rules (timings belong to a place and a missing day is never Sunday; at most 15 PM doctors and 5 AM accounts a plan day; a customer planned on a day with no timing needs an exception; uncovered first, then behind the grade; far-apart doctors are measured, never blocked; a visit far from the place saves, flagged; reports keep AM and PM apart; the reviewer is the nearest occupied manager seat above the territory)",
+  runPhoenixCrmRulesTests,
+);
+
+await runTest(
+  "Phoenix CRM notices are in-app + Telegram only, never email, and a Super Admin test entry tells nobody",
+  runPhoenixCrmEmailBlockTests,
+);
+
+await runTest(
+  "Phoenix CRM edges (the phoenix_crm grants per role; every route asserts its listed action before reading anything, and every POST checks the origin first; the registry and the screens agree with the routes; nothing reaches the pilot or iReports360's tables; the phone's code imports no server code; the migration is service-role only, writes its own tables only, keeps the photo bucket private and never uses current_date)",
+  runPhoenixCrmBoundaryTests,
 );
 
 await runTest(
@@ -4548,6 +4639,16 @@ await runTest(
 await runTest(
   "marketing manager monthly closing (portal tab, three gates agree, full workbook, no sales:import)",
   runMarketingManagerMonthlyClosingTests,
+);
+
+await runTest(
+  "medical rep monthly closing (owner 2026-09-16): the rep opens the portal tab, and its matrix, Details and export show their OWN area only — never a sibling rep's area in their region, never their region when their area matches nothing or is not on file",
+  runMedicalRepMonthlyClosingTests,
+);
+
+await runTest(
+  "scoped closing export matches the screen (owner 2026-09-16, \"Fix every scoped file now\"): every scoped viewer's file is built from their own Details rows, so the city split's shares and Main Stores are in it; a Main Stores row names no warehouse brick, block or invoice; the comparison files it under the unnamed \"—\"; its value reaches the file's matrix and Total with no factory price",
+  runScopedClosingExportMatchesScreenTests,
 );
 
 await runTest(
@@ -4921,6 +5022,11 @@ await runTest(
 );
 
 await runTest(
+  "quiet hours never hold a Telegram delivery pending that nothing can send: with Telegram off or no connected chat the deferral is written and reported skipped, and the retry worker judges a sendable payload by the same rule",
+  runQuietHoursTelegramDeferralTests,
+);
+
+await runTest(
   "notification drain health alert (a drain that attempts nothing while work is due is reported "
     + "unhealthy, while an idle, busy, or unprobeable drain stays silent)",
   runNotificationDrainHealthAlertTests,
@@ -5047,11 +5153,41 @@ await runTest(
 );
 
 await runTest("weekly field force (line+area -> rep, units never summed across products, exact vs allocated)", runWeeklyFieldForceTests);
+await runTest("weekly sales for a medical rep (own seat only, line kept while geography lifts, managers' API and export still refuse him)", runWeeklySalesRepViewTests);
+await runTest(
+  "weekly sales depot detail (gap-aware average per week, units never above one product, a rep's own share adds up to his page, export is the screen)",
+  runWeeklySalesDepotDetailTests,
+);
+await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API and its three workbooks; every manager role still passes)", runWeeklyTerritoryGateTests);
+await runTest(
+  "weekly sales unit totals appear only for one product (the Sales Units and Stock Units tiles, the Units column on a region or distributor cut, the export's Summary and Week Comparison)",
+  runWeeklyUnitsOneProductTests,
+);
+await runTest(
+  "admin weekly sales unit totals appear only for one product (the dashboard's unit tiles and their changes, its region, branch, distributor and week tables, its unit charts and watchlist stock; the Weekly BI workbook dashes every unit total that adds products and keeps each product's own)",
+  runWeeklyAdminUnitsOneProductTests,
+);
+await runTest(
+  "weekly units of different products are never added, follow-ups (Summarized Report: Month vs Target, the MTD/YTD and Low Sales totals dashed for several products, trends and rankings by value; stock with no sales judged product by product on the dashboard and the NSM/DSM export; the Upload screen)",
+  runWeeklyUnitsAcrossProductsFollowupsTests,
+);
+await runTest(
+  "weekly sales fits the screen with square corners (Distribution and Field Force tabs: no round corner, scroll box, width floor or ellipsis; every table fixed, its columns, head row, body row and colSpans one shape totalling 100%)",
+  runWeeklySalesFitsTheScreenTests,
+);
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
 await runTest(
   "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
   runPortalChromeNeverClipsTextTests,
+);
+await runTest(
+  "shell chrome fits outside main (the portal icon rail's nav fits its 58px rail and keeps the active marker inside the clip; the admin search placeholder wraps, never an ellipsis)",
+  runShellChromeOverflowsTests,
+);
+await runTest(
+  "portal icon rail scrolls on a short window, never squashes (every section link keeps its 40px height with shrink-0, the 28px active marker fits its link, the nav scrolls with its bar hidden)",
+  runPortalRailScrollsNeverSquashesTests,
 );
 await runTest(
   "admin filename cells never ellipsise (payroll batch File column, distributor import File column)",
@@ -5062,6 +5198,10 @@ await runTest(
   runSectionCardHeaderFitsAPhoneTests,
 );
 await runTest("portal tile grids are single-column on a phone (a PremiumNavTile floor is 172px; two columns give 146px at 320px)", runPortalToolsGridFitsAPhoneTests);
+await runTest(
+  "sales page headers fit a 1024px laptop (the ring and aside sit beside the headline only from xl)",
+  runSalesCommandBandFitsALaptopTests,
+);
 
 await runTest("recruitment folder row opens the CV in place (modal + download, never the ?candidate= redirect)", runRecruitmentFolderCvPopupTests);
 
@@ -5389,7 +5529,14 @@ await runTest(
   "weekly attendance review release flow (nothing reaches an employee before release, a trial week never releases, 2 working days then salary, and a balance-paid day is never also deducted from pay)",
   runAttendanceDigestRulesTests,
 );
-await runTest("weekly attendance release notice is in-app + Telegram only, never email", runAttendanceDigestEmailBlockTests);
+await runTest(
+  "weekly attendance review notices go by email, Telegram and in-app, email before Telegram, and read as a letter on Telegram",
+  runAttendanceDigestNoticeChannelsTests,
+);
+await runTest(
+  "a Google Calendar outage is not 'no holidays' (every pay-affecting reader refuses while calendarReachable is false; display surfaces say so)",
+  runHolidayCalendarOutageGateTests,
+);
 
 await runTest(
   "WhatsApp send opens a tab it can navigate (noopener makes window.open return null, stranding the user on about:blank)",
@@ -5636,6 +5783,51 @@ await runTest(
 await runTest(
   "AUTORUN guard arms only on the owner's own standalone upper-case word: a background agent's notice, a reminder, a slash command's echo, or a file name like autorun-guard.mjs never arms it, and his typed AUTORUN OFF still stands it down",
   runAutorunGuardFalseArmingTests,
+);
+
+await runTest(
+  "vacation submit takes a storage path only for the caller's OWN pending upload of the matching kind (never another employee's, a filed sick/ document, a traversal or an extra segment), checked with leave:create before any download or delete",
+  runVacationPendingAttachmentPathTests,
+);
+
+await runTest(
+  "Monthly Closing details and the scoped export open PUBLISHED months only: a scoped viewer naming an unpublished month is refused in plain words, naming none opens the newest published month, and Super Admin / system, SFE Manager, CEO, Finance Manager and the Marketing Manager keep every validated month",
+  runClosingDetailsPublicationGateTests,
+);
+
+await runTest(
+  "Performance Review export admits exactly who its page admits: the page, its reload route and its export all ask one audience check (Super Admin, system scope, SFE Manager) before the rate limit, the body or the company-wide load — sales:export alone reaches down to Medical Rep",
+  runClosingPerformanceReviewExportGateTests,
+);
+
+await runTest(
+  "black closing export names the Closing Matrix's organogram region on every sheet (Upper Egypt 1 and 2, never the map's Upper Egypt), moves no money, and its Direct tab keeps area-bearing direct orders (Minia 2's 20,370, Anti Infective August)",
+  runClosingExportOrganogramRegionLabelsTests,
+);
+
+await runTest(
+  "sign-in throttle tells an office from an attacker: an address where different colleagues signed in today gets ten failures per colleague (max 150) before everyone behind it is refused, an unknown address stays at fifteen, and only successful sign-ins count as colleagues",
+  runLoginSharedNetworkThrottleTests,
+);
+
+await runTest(
+  "workbook integrity checker reads an openpyxl workbook: an absolute relationship target resolves from the package root and Target may precede Id, so a correct file is CLEAN while a dangling target, a defined name past the data and a table past the data are still reported — the same verdicts as the ExcelJS spelling",
+  runCheckWorkbookIntegrityAbsoluteTargetsTests,
+);
+
+await runTest(
+  "a large sales workbook's storage path is honoured only from the importer upload-url minted it for: another importer's slot, a path outside incoming/<owner>/<upload id>/<file>, traversal and extra segments answer 400 before any download or delete",
+  runSalesImportUploadPathTests,
+);
+
+await runTest(
+  "the same workbook under another period is refused on its name AND figures, in the save step of every monthly upload screen: two months of a large all-Arabic workbook (both stored as .xlsx) and a distributor's fixed monthly file name load, the IS-S pair stays refused",
+  runDuplicateUploadNameAndFiguresTests,
+);
+
+await runTest(
+  "a manager bound to one region reads its organogram name on the weekly scope line: Upper Egypt 1, Upper Egypt 2 and Delta (3) (which depot labels never carry) and every other region, alike on Depot Detail, Weekly Sales and Weekly Stock; an unreadable organogram reads 1 region, never a code, and only a one-region viewer costs the read",
+  runWeeklyScopeRegionNamesTests,
 );
 
 await runTest(

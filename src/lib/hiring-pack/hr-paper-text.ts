@@ -318,6 +318,87 @@ export const HR_PAPER_ABSENCE_WARNING_V1: HrPaperTemplate = {
 };
 
 /**
+ * 4 — إنذار أول بالانقطاع عن العمل. Version 2, the owner's correction of 2026-09-17.
+ *
+ * 🔴 THE FACT WARNED ABOUT IS NOT COMING TO THE OFFICE. Version 1 recited «تغيبكم عن الحضور إلى مقر
+ * عملكم … الكائن في» the Cairo head office — and the case that exposed it was a medical rep, whose
+ * work is in the field and never at that address. A warning resting on the wrong fact hands the
+ * worker his answer ("I was never required at head office"). Article 166 speaks of absence from
+ * WORK, not from a building, so the paper now recites a stop in carrying out the job, proven the way
+ * مادة (8) of the contract makes attendance provable: nothing recorded through the approved means.
+ * The head-office address stays where it belongs, in the company recital at the top.
+ *
+ * NEUTRAL ON PURPOSE — no «مندوب دعاية طبية», no «الميدانية». This one paper serves every employee,
+ * and field wording on an office employee's warning is the same defect turned the other way round.
+ * The job is named through {{JOB_TITLE}}.
+ *
+ * 🔴 THE RESIGNATION PARAGRAPH PRINTS FOR EVERYONE, not behind a tick-box. The paper filed against a
+ * person has to be the paper he was handed, and a per-print option is one the filed copy can lose.
+ * So it is worded to be true of any absent employee: the relationship stands, because no resignation
+ * meeting Article 167 — written, signed, approved by the labour office — has been received, and
+ * saying so aloud or in a message is not one. It shuts the "I had already resigned" defence without
+ * asserting that this particular person said anything.
+ *
+ * AND THE REGISTERED LETTER IS NO LONGER ONE OPTION AMONG SEVERAL. Version 1's service note read
+ * "registered letter OR any means that proves notice", which reads as permission to WhatsApp it.
+ * Article 166 requires the registered letter; everything else is in addition.
+ */
+export const HR_PAPER_ABSENCE_WARNING_V2: HrPaperTemplate = {
+  id: "absence-warning-first-v2",
+  kind: "letter",
+  version: 2,
+  titleAr: "إنذار أول بالانقطاع عن العمل",
+  subtitleAr: LAW_SUBTITLE,
+  purposeAr:
+    "يُحرَّر من نسختين — نسخة تُسلَّم للعامل بتوقيعه بالاستلام، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: "الصادر عن — الشركة",
+  firstPartyLinesAr: FIRST_PARTY_LINES_AR,
+
+  secondPartyHeadingAr: "الموجَّه إلى — السيد / السيدة",
+  secondPartyFields: [
+    { labelAr: "الاسم رباعيًا", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+    { labelAr: "الوظيفة", token: "JOB_TITLE" },
+    { labelAr: "محل الإقامة", token: "ADDRESS", wide: true },
+    { labelAr: "تاريخ الإنذار", token: "ISSUE_DATE", ltr: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "تحية طيبة وبعد،",
+    "نظرًا لانقطاعكم عن مباشرة مهام عملكم بوظيفة {{JOB_TITLE}}، وعدم أدائكم الأعمال المكلفين بها، اعتبارًا من {{ABSENCE_FROM}} وحتى {{ABSENCE_TO}}، لمدة خمسة أيام عمل متصلة، دون أن يُثبَت خلالها أي حضور أو زيارات بالوسيلة المعتمدة وفقًا للمادة (8) من عقد العمل، ودون تقديم مسوغ قانوني أو عذر مقبول.",
+    "ونحيطكم علمًا بأن علاقة العمل لا تزال قائمة بكافة ما يترتب عليها من التزامات، إذ لم تُقدَّم إلينا حتى تاريخه استقالة مكتوبة موقعة منكم أو من وكيلكم الخاص ومعتمدة من الجهة الإدارية المختصة وفقًا للمادة (167) من قانون العمل رقم 14 لسنة 2025، ولا يُغني عن ذلك إبداء الرغبة في ترك العمل شفاهةً أو برسالة.",
+  ],
+  operativeHeadingAr: "لــــــــــذلـــــــــك",
+  operativeParagraphsAr: [
+    "فإننا نُنذركم بضرورة العودة فورًا إلى مباشرة مهام عملكم والانتظام في أداء الأعمال المكلفين بها، أو تقديم ما يثبت وجود عذر مشروع عن مدة الانقطاع، وننبهكم إلى أن استمرار الانقطاع دون مبرر مشروع لمدة تجاوز عشرة أيام متصلة يترتب عليه اعتباركم مستقيلًا حكمًا، وذلك إعمالًا للمادة (166) من قانون العمل رقم 14 لسنة 2025 وللمادة (8) من عقد العمل المبرم بيننا، مع احتفاظ الشركة بكافة حقوقها القانونية.",
+    "ولكم أن تُثبتوا عدم انقطاعكم بكافة طرق الإثبات، ويُحفظ لكم كل حق مقرر قانونًا عن مدة خدمتكم.",
+  ],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: ["الاسم والصفة:", "التوقيع والختم:", "التاريخ:"] },
+    { headingAr: "أقر باستلام هذا الإنذار — العامل", fieldsAr: ["الاسم:", "التوقيع:", "التاريخ:"] },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr:
+    "يُرسَل هذا الإنذار إلى العامل بخطاب موصى عليه بعلم الوصول على عنوانه الثابت بصدر العقد، وهو إجراء لازم إعمالًا للمادة (166) من قانون العمل لا يُغني عنه غيره، ويجوز إخطاره إضافيًا على بريده الإلكتروني الثابت بصدر العقد أو بأي وسيلة تُثبت العلم. وفي حالة تسليمه إليه وامتناعه عن التوقيع بالاستلام، يُثبت ذلك في محضر يوقعه شاهدان، وذلك إعمالًا للمادة (8) والمادة (13) بند (1) من العقد.",
+  serviceFields: [
+    { labelAr: "شاهد أول — الاسم", token: null },
+    { labelAr: "التوقيع", token: null },
+    { labelAr: "شاهد ثانٍ — الاسم", token: null },
+    { labelAr: "التوقيع", token: null },
+  ],
+  footerAr: "إنذار أول بالانقطاع عن العمل · المادة (166) من قانون العمل رقم 14 لسنة 2025",
+};
+
+/**
  * 5 — إخطار باعتبار العامل مستقيلاً حكمًا.
  *
  * 🔴 RENAMED FROM «إخطار بقبول إستقالة», and the rename is the substance. See the file header:
@@ -374,6 +455,71 @@ export const HR_PAPER_DEEMED_RESIGNATION_V1: HrPaperTemplate = {
   receiptAcknowledgmentAr: null,
   serviceNoteAr:
     "وفي حالة امتناع العامل عن التوقيع بالاستلام بعد إخطاره، يُثبت ذلك في محضر يوقعه شاهدان، ويُرسل الإخطار على عنوانه أو بريده الإلكتروني الثابتين بصدر العقد بخطاب موصى عليه بعلم الوصول أو بأي وسيلة تُثبت العلم، وذلك إعمالًا للمادة (8) والمادة (13) بند (1) من العقد.",
+  serviceFields: [
+    { labelAr: "شاهد أول — الاسم", token: null },
+    { labelAr: "التوقيع", token: null },
+    { labelAr: "شاهد ثانٍ — الاسم", token: null },
+    { labelAr: "التوقيع", token: null },
+  ],
+  footerAr: "إخطار باعتبار العامل مستقيلًا حكمًا · المادة (166) من قانون العمل رقم 14 لسنة 2025",
+};
+
+/**
+ * 5 — إخطار باعتبار العامل مستقيلاً حكمًا. Version 2, alongside the first warning's.
+ *
+ * The same correction, and it has to land on both papers together: version 1 recited the same
+ * «الحضور إلى مقر عملكم … الكائن في» head-office absence, so fixing only the warning would put the
+ * defect back on the paper that actually ends the service. It now recites the stop in work the
+ * warning recites, and says the earlier warning went by REGISTERED LETTER — the condition Article
+ * 166 sets before anyone can be deemed resigned, so a desk that skipped it meets the fact on the
+ * page it is about to sign rather than in a hearing.
+ */
+export const HR_PAPER_DEEMED_RESIGNATION_V2: HrPaperTemplate = {
+  id: "absence-deemed-resignation-v2",
+  kind: "letter",
+  version: 2,
+  titleAr: "إخطار باعتبار العامل مستقيلًا حكمًا",
+  subtitleAr: LAW_SUBTITLE,
+  purposeAr:
+    "يُحرَّر من نسختين — نسخة تُسلَّم للعامل بتوقيعه بالاستلام، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: "الصادر عن — الشركة",
+  firstPartyLinesAr: FIRST_PARTY_LINES_AR,
+
+  secondPartyHeadingAr: "الموجَّه إلى — السيد / السيدة",
+  secondPartyFields: [
+    { labelAr: "الاسم رباعيًا", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+    { labelAr: "الوظيفة", token: "JOB_TITLE" },
+    { labelAr: "محل الإقامة", token: "ADDRESS", wide: true },
+    { labelAr: "تاريخ الإخطار", token: "ISSUE_DATE", ltr: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "تحية طيبة وبعد،",
+    "نظرًا لانقطاعكم عن مباشرة مهام عملكم بوظيفة {{JOB_TITLE}}، وعدم أدائكم الأعمال المكلفين بها، اعتبارًا من {{ABSENCE_FROM}} وحتى {{ABSENCE_TO}}، لمدة تجاوزت عشرة أيام متصلة، دون أن يُثبَت خلالها أي حضور أو زيارات بالوسيلة المعتمدة وفقًا للمادة (8) من عقد العمل، ودون مبرر مشروع أو عذر مقبول.",
+    "وقد سبق إنذاركم بخطاب موصى عليه بعلم الوصول عن الانقطاع في الفترة من {{FIRST_WARNING_FROM}} إلى {{FIRST_WARNING_TO}}، ولم تعودوا إلى مباشرة عملكم ولم تقدموا ثمة عذر.",
+  ],
+  operativeHeadingAr: "لــــــــــذلـــــــــك",
+  operativeParagraphsAr: [
+    "نخطركم باعتباركم مستقيلًا حكمًا من العمل اعتبارًا من {{LAST_WORKING_DATE}}، لانقطاعكم أكثر من عشرة أيام متصلة دون مبرر مشروع، وذلك إعمالًا للمادة (166) من قانون العمل رقم 14 لسنة 2025 وللمادة (8) من عقد العمل المبرم بيننا.",
+    "ولا يُعد هذا الإخطار فصلًا تأديبيًا، ولكم أن تُثبتوا عدم انقطاعكم بكافة طرق الإثبات. وتُصرف كافة حقوقكم المقررة قانونًا عن مدة خدمتكم بعد إتمام إجراءات تسليم العهدة وإخلاء الطرف وفقًا للمادتين (10) و(12) من العقد.",
+  ],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيعات",
+  signatureColumns: [
+    { headingAr: "إدارة الموارد البشرية", fieldsAr: ["الاسم والصفة:", "التوقيع والختم:", "التاريخ:"] },
+    { headingAr: "أقر باستلام هذا الإخطار — العامل", fieldsAr: ["الاسم:", "التوقيع:", "التاريخ:"] },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr:
+    "يُرسَل هذا الإخطار إلى العامل بخطاب موصى عليه بعلم الوصول على عنوانه الثابت بصدر العقد، ويجوز إخطاره إضافيًا على بريده الإلكتروني الثابت بصدر العقد أو بأي وسيلة تُثبت العلم. وفي حالة تسليمه إليه وامتناعه عن التوقيع بالاستلام، يُثبت ذلك في محضر يوقعه شاهدان، وذلك إعمالًا للمادة (8) والمادة (13) بند (1) من العقد.",
   serviceFields: [
     { labelAr: "شاهد أول — الاسم", token: null },
     { labelAr: "التوقيع", token: null },
@@ -1074,7 +1220,9 @@ export const HR_PAPERS: readonly HrPaperTemplate[] = [
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
   HR_PAPER_ABSENCE_WARNING_V1,
+  HR_PAPER_ABSENCE_WARNING_V2,
   HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DEEMED_RESIGNATION_V2,
   HR_PAPER_DISCIPLINARY_WARNING_V1,
   HR_PAPER_DISCIPLINARY_PENALTY_V1,
   HR_PAPER_TRANSFER_DECISION_V1,

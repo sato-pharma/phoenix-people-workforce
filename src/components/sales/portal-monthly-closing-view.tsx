@@ -19,7 +19,8 @@ import { filterMonthlyClosingMatrix } from "@/lib/sales/monthly-closing-matrix-c
 
 // Employee-portal render of the SAME Closing Matrix + Details view an admin sees at
 // /sales/monthly-closing — but scoped to the viewer (District/Regional/National Sales Manager,
-// Product/Group Product Manager) and PUBLISHED-gated. The server (loadPortalMonthlyClosing) has
+// Product/Group Product Manager, Marketing Manager, and a Medical Rep to their own area(s) only) and
+// PUBLISHED-gated. The server (loadPortalMonthlyClosing) has
 // already narrowed the matrix to the viewer's line/region/area/products and stripped confidential
 // columns; this component is pure presentation on top of that, so it can never widen visibility.
 //

@@ -2,7 +2,8 @@
 // can pin them directly.
 //
 // Owner decision 2026-09-15, replacing the 2026-09-08 "silent" ruling:
-//   • a closed week waits on the admin review page until the Super Admin releases it
+//   • a week waits on the admin review page until the Super Admin releases it — from 2026-09-17 while
+//     it is still running, with later days going out in a second release ("Show live, release any time")
 //   • the employee then chooses, per day: deduct from SALARY, or from ANNUAL BALANCE (the same
 //     number of days, only when the balance covers them)
 //   • after choosing, the employee may dispute the day; the dispute goes to the reviewer
@@ -298,17 +299,71 @@ export function deadlineApplies(input: { answerDueOn: string | null; notifiedAt:
   return Boolean(input.notifiedAt) && isAnswerOverdue(input.answerDueOn, input.todayCairoIso);
 }
 
+/** What decides whether a notice told the employee, beyond the deliveries themselves. */
+export type NoticeRecipientFacts = {
+  /** An active login that has signed in to Phoenix at least once. */
+  hasSignedIn: boolean;
+  /** On the employee file, and not resigned, terminated or otherwise gone. */
+  stillEmployed: boolean;
+};
+
+/** The facts behind NoticeRecipientFacts, as read from the employee file, the login and its sessions. */
+export function noticeRecipientFactsFrom(input: {
+  /** An employee row was found for the HR id. */
+  onEmployeeFile: boolean;
+  /** Payroll's leaver rule calls their employment status terminal. */
+  terminalStatus: boolean;
+  /** An active login exists for the HR id. */
+  activeLogin: boolean;
+  /** A sign-in session has been recorded for the HR id. */
+  hasSession: boolean;
+}): NoticeRecipientFacts {
+  return {
+    hasSignedIn: input.activeLogin && input.hasSession,
+    // No employee row at all is not proof they still work here.
+    stillEmployed: input.onEmployeeFile && !input.terminalStatus,
+  };
+}
+
+/** One channel's outcome, as the notification system reports it. */
+export type NoticeDelivery = { channel: string; status: string; queuedForRetry?: boolean };
+
 /**
- * Whether a release notice reached the employee on at least one of its two channels. A notice the
- * notification system skipped (in-app switched off, governance refusal, no Telegram link and no
- * in-app) did not tell anyone, and must not start the clock that ends in a salary deduction.
+ * Whether a notice reached the employee through a real channel (owner, 2026-09-17 — "Only a real
+ * channel"): the email or the Telegram message WENT OUT, or the in-app bell reached someone who has
+ * signed in before. Only a delivery that actually happened counts:
+ *   - a bell notice for a person who has never signed in tells nobody;
+ *   - a channel the notification system skipped or failed tells nobody;
+ *   - a message held for quiet hours or waiting for a retry ("pending", "retrying") has not gone out
+ *     yet, and some holds can never go out (no linked Telegram, no address);
+ *   - an email handed to the outbox to retry is recorded "sent" but did not go out, and the outbox
+ *     files permanent blocks (an inactive template, a refused address) under the same retry.
+ * Counting too few only leaves days waiting for HR; counting too many deducts salary from someone
+ * who was never told.
  */
-export function releaseNoticeReached(deliveries: ReadonlyArray<{ channel: string; status: string }>): boolean {
+export function noticeReachedEmployee(
+  deliveries: ReadonlyArray<NoticeDelivery>,
+  recipient: Pick<NoticeRecipientFacts, "hasSignedIn">,
+): boolean {
   return deliveries.some(
     (delivery) =>
-      (delivery.channel === "in_app" || delivery.channel === "telegram") &&
-      (delivery.status === "sent" || delivery.status === "pending" || delivery.status === "retrying"),
+      delivery.status === "sent" &&
+      !delivery.queuedForRetry &&
+      (delivery.channel === "email" || delivery.channel === "telegram" || (delivery.channel === "in_app" && recipient.hasSignedIn)),
   );
+}
+
+/**
+ * Whether a release notice starts the answer deadline that ends in a salary deduction. Only when it
+ * reached the employee through a real channel, and only while they still work here: a leaver still
+ * gets the notice, but HR decides their days in the final pay, never the deadline (owner,
+ * 2026-09-17, keeping the 2026-09-16 ruling). Anyone not told keeps their days waiting for HR.
+ */
+export function releaseNoticeReached(
+  deliveries: ReadonlyArray<NoticeDelivery>,
+  recipient: NoticeRecipientFacts,
+): boolean {
+  return recipient.stillEmployed && noticeReachedEmployee(deliveries, recipient);
 }
 
 /**
@@ -339,6 +394,19 @@ function formatLongDay(dateIso: string): string {
 }
 
 export function buildWeekReleasedMessage(input: { weekStart: string; weekEnd: string; dayCount: number; answerDueOn: string }) {
+  const deadline = `Please answer by the end of ${formatLongDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`;
+  // One day reads as that day, "Wednesday 9 September", never "9 Sept to 9 Sept" (owner, 2026-09-17).
+  if (input.weekStart === input.weekEnd) {
+    const day = formatLongDay(input.weekStart);
+    return {
+      title: `Attendance review — ${day}`,
+      message:
+        `Your attendance on ${day} has a deduction.\n\n` +
+        `Choose whether the day is deducted from your salary or from your annual vacation balance. ` +
+        `After choosing, you can dispute the day if you believe it is wrong.\n\n` +
+        deadline,
+    };
+  }
   const days = input.dayCount === 1 ? "1 day" : `${input.dayCount} days`;
   return {
     title: `Attendance review — ${formatShortDay(input.weekStart)} to ${formatShortDay(input.weekEnd)}`,
@@ -346,7 +414,7 @@ export function buildWeekReleasedMessage(input: { weekStart: string; weekEnd: st
       `Your attendance for ${formatShortDay(input.weekStart)} to ${formatShortDay(input.weekEnd)} has ${days} with a deduction.\n\n` +
       `For each day, choose whether it is deducted from your salary or from your annual vacation balance. ` +
       `After choosing, you can dispute the day if you believe it is wrong.\n\n` +
-      `Please answer by the end of ${formatLongDay(input.answerDueOn)}. Any day not answered by then is deducted from salary.`,
+      deadline,
   };
 }
 
@@ -383,4 +451,83 @@ export function buildDisputeDecidedMessage(input: {
     title: `Attendance dispute rejected — ${formatShortDay(input.workDate)}`,
     message: `Your dispute for ${formatLongDay(input.workDate)} was rejected. ${outcome}${note}`,
   };
+}
+
+/** One day waiting for release as the review page showed it: the line and the days it deducts. */
+export type SeenReleaseLine = { id: number; days: number };
+
+/** More days than any real week holds; a longer list is refused rather than read. */
+export const MAX_SEEN_RELEASE_LINES = 20_000;
+
+/**
+ * The days the page showed when Release was clicked, from the request body. Every entry must be a
+ * positive whole line id and a finite number of days; nothing is guessed or skipped, because the list is
+ * what proves the Super Admin saw every day he is releasing.
+ */
+export function parseSeenReleaseLines(value: unknown): { lines: SeenReleaseLine[]; error: null } | { lines: null; error: string } {
+  if (!Array.isArray(value)) return { lines: null, error: "Reload the page and release again: the days you saw were not sent." };
+  if (value.length > MAX_SEEN_RELEASE_LINES) return { lines: null, error: "Too many days were sent." };
+  const lines: SeenReleaseLine[] = [];
+  for (const entry of value) {
+    const id = Number((entry as { id?: unknown } | null)?.id);
+    const days = Number((entry as { days?: unknown } | null)?.days);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(days) || days < 0) {
+      return { lines: null, error: "Reload the page and release again: a day you saw could not be read." };
+    }
+    lines.push({ id, days });
+  }
+  return { lines, error: null };
+}
+
+/**
+ * Which employee a release is for, from the request body (owner, 2026-09-17 — "every row has a release
+ * beside it … so I can release one employee and after release another"). Absent means the whole week:
+ * every employee waiting. Present, it must be a positive whole digest id; anything else is refused rather
+ * than read as "everyone", which would tell and clear people the Super Admin did not pick.
+ */
+export function parseReleaseDigestId(value: unknown): { digestId: number | null; error: null } | { digestId: null; error: string } {
+  if (value === undefined || value === null) return { digestId: null, error: null };
+  const digestId = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isInteger(digestId) || digestId <= 0) {
+    return { digestId: null, error: "Reload the page and release again: the employee you picked could not be read." };
+  }
+  return { digestId, error: null };
+}
+
+/**
+ * The waiting digests one release covers: every one in the week, or only the picked employee's. The
+ * others are not touched — their unticked days are not cleared and nobody else is told — so they keep
+ * waiting for their own release.
+ */
+export function releaseScope<T extends { id: number }>(waiting: readonly T[], digestId: number | null): T[] {
+  return digestId === null ? [...waiting] : waiting.filter((digest) => digest.id === digestId);
+}
+
+/**
+ * The days waiting for release that the page did NOT show as they are now: added since it loaded, or
+ * with different days (owner, 2026-09-17 — release any time, while the daily job keeps adding days). Any
+ * one of them means the Super Admin would release something he never saw, so the release is refused.
+ * Days are compared at 3 decimals, as they are stored. The database function repeats this check under
+ * the week's row lock.
+ */
+export function staleReleaseLines(
+  pending: ReadonlyArray<{ id: number; deductionDays: number }>,
+  seen: readonly SeenReleaseLine[],
+): number[] {
+  const seenDays = new Map(seen.map((line) => [line.id, Math.round(line.days * 1000)]));
+  return pending.filter((line) => seenDays.get(line.id) !== Math.round(line.deductionDays * 1000)).map((line) => line.id);
+}
+
+/**
+ * The dates a release notice names: the first and last day actually asked about. A second release of a
+ * week covers only the days that arrived after the first, so it must not repeat the whole week's dates.
+ * Falls back to the week when no day is listed.
+ */
+export function releaseNoticeRange(
+  askedDays: ReadonlyArray<{ workDate: string }>,
+  week: { weekStart: string; weekEnd: string },
+): { weekStart: string; weekEnd: string } {
+  if (!askedDays.length) return { weekStart: week.weekStart, weekEnd: week.weekEnd };
+  const dates = askedDays.map((day) => day.workDate).sort();
+  return { weekStart: dates[0]!, weekEnd: dates[dates.length - 1]! };
 }

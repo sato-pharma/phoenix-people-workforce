@@ -400,7 +400,7 @@ const absenceNeverCountedOnAnOutageDay: ReconciliationCheck = {
         ? outageDates.size === 0
           ? `No company-wide outage day in ${summary.dateFrom}..${outageTo}; the summary's absence figure stands.`
           : `The summary reports no absence, so the ${formatCount(outageDates.size, "outage day")} cannot have become false absentees.`
-        : `The summary counts ${formatCount(summary.totals.absentDays, "absent employee-day")} while the device recorded nothing for anybody on ${formatList(dates)} — each of those days turns all ${formatCount(rosterSize, "rostered employee")} into false absentees. Holiday calendar reachable: ${summary.holidaySourceConnected ? "yes" : "NO — a real public holiday could be being read as a working day"}.`,
+        : `The summary counts ${formatCount(summary.totals.absentDays, "absent employee-day")} while the device recorded nothing for anybody on ${formatList(dates)} — each of those days turns all ${formatCount(rosterSize, "rostered employee")} into false absentees. Holiday calendar reachable: ${summary.holidayCalendarReachable && summary.holidaySourceConnected ? "yes" : "NO — a real public holiday could be being read as a working day"}.`,
     };
   },
 };

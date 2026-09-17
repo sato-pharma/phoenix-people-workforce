@@ -127,6 +127,7 @@ type BreakdownState = { loading: boolean; rows: BreakdownLine[]; trend: TrendPoi
 const money = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const price = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtUnits = (value: number): string => money.format(Math.round(value));
+const fmtUnitCount = (value: number): string => `${fmtUnits(value)} ${Math.round(value) === 1 ? "unit" : "units"}`;
 const fmtPrice = (value: number | null): string => (value == null ? "—" : price.format(value));
 
 /**
@@ -568,6 +569,10 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             </div>
           ) : undefined
         }
+        // The ring and the "Measured" aside together never shrink, so beside the headline from 1024px
+        // they left it a 100px column next to the portal sidebar (measured 2026-09-16). They sit under
+        // the headline until 1280px instead.
+        besideFrom="xl"
         footer={
           <>
             <BandChoice
@@ -783,18 +788,21 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             {/* Desktop. `table-fixed` with an explicit colgroup, never a min-width floor: the
                 owner's golden rule is that the page fits its screen, and the way this table was
                 made to fit is by MERGING columns — area carries its region, product carries its
-                rep, target units carries the unit price — not by shrinking the type. Ten columns
-                became seven, and every one of them now owns a share of the width. */}
+                rep, and one Target cell carries the value, its units and the unit price — not by
+                shrinking the type. Ten columns became six. The last merge (Target units into
+                Target value, 2026-09-16) is what gives Achievement room for its header:
+                "ACHIEVEMENT" cannot wrap, and at 11% of the 572px table the portal has at a
+                1024px screen it spilled out of its cell into a sideways scroll.
+                tests/sales-target-tables-fit-the-screen.test.ts holds the arithmetic. */}
             <div className="hidden max-h-[60vh] overflow-y-auto md:block">
               <table className="w-full table-fixed border-collapse text-sm" data-portal-desktop-table>
                 <colgroup>
                   <col style={{ width: "2.25rem" }} />
                   <col style={{ width: "21%" }} />
-                  <col style={{ width: "25%" }} />
-                  <col style={{ width: "15%" }} />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "21%" }} />
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "26%" }} />
                 </colgroup>
                 <thead className="sticky top-0 z-10">
                   <tr className={`text-left ${TABLE_HEAD_CLASS}`}>
@@ -802,8 +810,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                     <th className="px-3 py-2.5">Area</th>
                     <th className="px-3 py-2.5">Product</th>
                     <th className="px-3 py-2.5 text-right">Actual</th>
-                    <th className="px-3 py-2.5 text-right">Target units</th>
-                    <th className="px-3 py-2.5 text-right">Target value</th>
+                    <th className="px-3 py-2.5 text-right">Target</th>
                     <th className="px-3 py-2.5 text-right">Achievement</th>
                   </tr>
                 </thead>
@@ -849,34 +856,41 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                           </td>
                           <td className="px-3 py-3 text-right align-top">
                             {canEdit ? (
-                              <Input
-                                type="number"
-                                inputMode="decimal"
-                                className="h-8 w-full text-right tabular-nums"
-                                placeholder="units"
-                                value={unitValue}
-                                onChange={(event) => onUnitsChange(row, event.target.value)}
-                              />
+                              <>
+                                <label className="block">
+                                  <span className={LABEL_CLASS}>Value</span>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    className="mt-0.5 h-8 w-full text-right tabular-nums"
+                                    placeholder="value"
+                                    value={editValue}
+                                    onChange={(event) => onValueChange(key, event.target.value)}
+                                  />
+                                </label>
+                                <label className="mt-1.5 block">
+                                  <span className={LABEL_CLASS}>Units</span>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    className="mt-0.5 h-8 w-full text-right tabular-nums"
+                                    placeholder="units"
+                                    value={unitValue}
+                                    onChange={(event) => onUnitsChange(row, event.target.value)}
+                                  />
+                                </label>
+                              </>
                             ) : (
-                              <span className="tabular-nums text-slate-700">{row.targetUnits == null ? "—" : fmtUnits(row.targetUnits)}</span>
+                              <>
+                                <p className="font-semibold tabular-nums text-sky-600">
+                                  {row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}
+                                </p>
+                                {row.targetUnits == null ? null : (
+                                  <p className="tabular-nums text-slate-700">{fmtUnitCount(row.targetUnits)}</p>
+                                )}
+                              </>
                             )}
                             <p className="mt-1 text-phx-xs tabular-nums text-slate-500">@ {fmtPrice(row.unitPrice)}</p>
-                          </td>
-                          <td className="px-3 py-3 text-right align-top">
-                            {canEdit ? (
-                              <Input
-                                type="number"
-                                inputMode="decimal"
-                                className="h-8 w-full text-right tabular-nums"
-                                placeholder="value"
-                                value={editValue}
-                                onChange={(event) => onValueChange(key, event.target.value)}
-                              />
-                            ) : (
-                              <span className="font-semibold tabular-nums text-sky-600">
-                                {row.targetValue == null ? "—" : formatEgpFull(row.targetValue)}
-                              </span>
-                            )}
                           </td>
                           <td className="px-3 py-3 align-top">
                             <AchievementMeter value={liveAch} />
@@ -884,7 +898,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                         </tr>
                         {detail ? (
                           <tr className="border-b border-slate-200 bg-slate-50">
-                            <td className="px-4 py-4" colSpan={7}>
+                            <td className="px-4 py-4" colSpan={6}>
                               <SourceBreakdown detail={detail} selectedPeriod={props.selectedPeriod} />
                             </td>
                           </tr>

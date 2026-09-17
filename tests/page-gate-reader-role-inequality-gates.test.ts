@@ -46,8 +46,12 @@ import {
  * a conservative approximation — it is a false accusation waiting for a caller, and
  * hr-seat-route-coherence.test.ts is exactly that caller: it already records
  * /hr/admin/weekly-plans/calendar as unparseable, *"an OR chain … which is why it cannot be
- * parsed"*, and both HR seats hold weekly_plans:read. So the five OR-chain files are asserted to
+ * parsed"*, and both HR seats hold weekly_plans:read. So the four OR-chain files are asserted to
  * yield NOTHING, by name, and a future "improvement" that reduces them fails here.
+ *
+ * There were five until 2026-09-16, when /sales/monthly-closing/performance-review moved its gate
+ * into `canOpenClosingPerformanceReview` so that its export route could ask the same question.
+ * tests/closing-performance-review-export-gate.test.ts pins how the reader sees that page now.
  */
 
 const APP_DIR = path.resolve(process.cwd(), "app");
@@ -171,11 +175,6 @@ export async function runPageGateReaderRoleInequalityGateTests(): Promise<void> 
     ["/admin/weekly-plans/calendar", ["(admin)", "admin", "weekly-plans", "calendar"], "canReadPlans"],
     ["/employee-portals/plans", ["employee-portals", "plans"], "canReadPlans"],
     ["/sales/monthly-closing", ["(admin)", "sales", "monthly-closing"], "isSystemAdministratorViewer"],
-    [
-      "/sales/monthly-closing/performance-review",
-      ["(admin)", "sales", "monthly-closing", "performance-review"],
-      "isSystemAdministratorViewer",
-    ],
   ];
   for (const [href, segments, hoisted] of orChainPages) {
     const source = pageSource(...segments);

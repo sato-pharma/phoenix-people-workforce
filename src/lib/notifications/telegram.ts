@@ -6,6 +6,8 @@ export type TelegramSendInput = {
   chatId: string;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
+  /** Keep the message's paragraph breaks instead of running it into one block. */
+  keepParagraphs?: boolean;
   message: string;
   title: string;
 };
@@ -237,6 +239,26 @@ function cleanTelegramText(value: string) {
     .slice(0, 900);
 }
 
+/** Each paragraph cleaned as one line, the blank line between paragraphs kept. */
+function cleanTelegramParagraphs(value: string) {
+  return value
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").replace(/[<>]/g, "").trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, 900);
+}
+
+/**
+ * The text a Telegram notification sends: the title, a blank line, then the message. The message is
+ * one block, unless `keepParagraphs` asks for its paragraph breaks to stay.
+ */
+export function telegramNotificationText(input: Pick<TelegramSendInput, "keepParagraphs" | "message" | "title">): string {
+  return [cleanTelegramText(input.title), input.keepParagraphs ? cleanTelegramParagraphs(input.message) : cleanTelegramText(input.message)]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function cleanButtonLabel(value: string | null | undefined) {
   return String(value ?? "")
     .replace(/\s+/g, " ")
@@ -453,10 +475,7 @@ export async function sendTelegramNotification(input: TelegramSendInput): Promis
   if (!token) return { reason: "TELEGRAM_BOT_TOKEN is missing.", skipped: true };
   if (!input.chatId.trim()) return { reason: "Telegram chat id is missing.", skipped: true };
 
-  const text = [input.title, input.message]
-    .map(cleanTelegramText)
-    .filter(Boolean)
-    .join("\n\n");
+  const text = telegramNotificationText(input);
   if (!text) return { reason: "Telegram message is empty.", skipped: true };
 
   const actionButtons = buildTelegramButtons(input);
