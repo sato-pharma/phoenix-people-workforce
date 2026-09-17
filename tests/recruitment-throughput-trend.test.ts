@@ -216,11 +216,13 @@ export function runRecruitmentThroughputTrendTests() {
   );
   assert.match(
     workspace,
-    /unread: shelfFree\.filter\(\(candidate\) => !views\[candidate\.id\]\)\.length/,
-    "unread stays a question about the WHOLE unfiled pool — it is the pile still in front of this " +
-      "reader. `shelfFree` is that pile and is exactly what `pool` used to be; `pool` itself now " +
+    /unread: reviewPool\.filter\(\(candidate\) => !views\[candidate\.id\]\)\.length/,
+    "unread stays a question about the WHOLE review pool — it is the pile still in front of this " +
+      "reader. `reviewPool` is that pile and is exactly what `pool` used to be; `pool` itself now " +
       "narrows to one vacant seat while a seat is being screened, and reading it here would make the " +
-      "backlog appear to shrink because somebody pressed a seat on the rail",
+      "backlog appear to shrink because somebody pressed a seat on the rail. Renamed from " +
+      "`shelfFree` on 2026-09-18, when an UNDECIDED filed CV came back into that pile: 371 of " +
+      "them had left this page unread, so the backlog it reported was 252 against a true 624",
   );
   // The old method must be gone, not merely unused.
   assert.doesNotMatch(

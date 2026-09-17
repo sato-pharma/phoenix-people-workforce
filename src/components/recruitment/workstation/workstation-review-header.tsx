@@ -216,9 +216,11 @@ export function WorkstationReviewHeader({
       {canReply && focus ? <WhatsAppReplyBox candidateId={row.id} /> : null}
       <DecisionButton
         disabled={busy}
+        hotkey="S"
         icon={<ThumbsUp className="h-3.5 w-3.5" />}
         label="Shortlist"
         onClick={() => onDecide("shortlisted", null)}
+        title="Keep this one — press S. The queue moves to the next CV on its own."
         tone="ok"
       />
       <DecisionButton
@@ -227,6 +229,7 @@ export function WorkstationReviewHeader({
         label="Reject"
         onClick={() => setRejecting((open) => !open)}
         pressed={rejecting}
+        title="Turn this one down. No keyboard shortcut on purpose — it asks you for a reason first."
         tone="danger"
       />
       {canSend ? (
@@ -251,9 +254,11 @@ export function WorkstationReviewHeader({
 
       <DecisionButton
         disabled={busy}
+        hotkey="J"
         icon={<SkipForward className="h-3.5 w-3.5" />}
         label="Next candidate"
         onClick={onNext}
+        title="The next CV in the queue — press J or the down arrow. K or the up arrow goes back one."
         tone="accent"
       />
     </>
@@ -310,7 +315,7 @@ export function WorkstationReviewHeader({
             aria-label="Leave full-screen reading"
             className="shrink-0 border border-phx-line bg-white p-1 text-phx-ink-2 transition-colors hover:border-phx-accent-line hover:text-phx-accent-press"
             onClick={onToggleFocus}
-            title="Leave full-screen reading"
+            title="Leave full-screen reading — or press Escape"
             type="button"
           >
             <Minimize2 aria-hidden className="h-3.5 w-3.5" />
@@ -469,17 +474,40 @@ export function WorkstationReviewHeader({
 
 function DecisionButton({
   disabled,
+  hotkey,
   icon,
   label,
   onClick,
   pressed,
+  title,
   tone,
 }: {
   disabled: boolean;
+  /**
+   * The single key that does this, printed ON the button.
+   *
+   * THE SHORTCUTS WERE INVISIBLE UNTIL 2026-09-18. `screening-workstation.tsx` has bound J/K, S and
+   * 0-3 since the day this screen shipped, with a comment reading "for the reader who is doing this
+   * two hundred times" — and nothing anywhere on the screen said so. Seven of the eight keys could
+   * only be found by reading the source, so a screener doing a thousand CVs a day did every one of
+   * them with the mouse. The owner's verdict on the result was "zero functionality".
+   *
+   * The mark is the one this module's own predecessor already uses — candidate-screening-session.tsx
+   * prints `<kbd>S</kbd>` inside the Shortlist button and names the key in the tooltip. This is that
+   * pattern, not a new one: same element, same 10px, same place. The one difference is spelling:
+   * that file writes `text-phx-2xs`, this one must write `text-[10px]`, because this file is pinned
+   * against named font sizes — see the render below.
+   *
+   * OMITTED MEANS THERE IS NO KEY, and that is load-bearing. Reject opens a panel to ask for a
+   * reason and is deliberately unbound; a `kbd` on it would promise a keystroke that does not exist.
+   */
+  hotkey?: string;
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   pressed?: boolean;
+  /** Says what the press does, and names the key — or says why this one has none. */
+  title?: string;
   tone: "ok" | "danger" | "info" | "accent";
 }) {
   // ── ONE LOUD BUTTON PER ROW, AND IT IS THE ONE THAT MOVES THE WORK ─────────────────────────────
@@ -524,10 +552,18 @@ function DecisionButton({
       )}
       disabled={disabled}
       onClick={onClick}
+      title={title}
       type="button"
     >
       {icon}
       {label}
+      {/* `text-[10px]`, NOT `text-phx-2xs`, though the predecessor screen writes the named token and
+          the two are the same 10px (tokens.css `--phx-fs-2xs`). tailwind-merge silently DROPS a
+          custom named font size — it compiles away and the element inherits, visible only through
+          getComputedStyle in a real browser — and this file is pinned against the named form by
+          runRecruitmentScreeningWorkstationTests for exactly that reason. It caught this on the
+          first push. The bracket literal is the always-safe spelling. */}
+      {hotkey ? <kbd className="text-[10px] font-normal opacity-70">{hotkey}</kbd> : null}
     </button>
   );
 }

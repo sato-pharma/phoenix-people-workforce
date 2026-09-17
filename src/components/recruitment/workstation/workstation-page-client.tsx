@@ -52,7 +52,7 @@
 // because the two bars this page owns have to fold with it; the panes keep their own flags
 // underneath and get them back untouched when the reader comes out.
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
 import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-react";
 
@@ -73,6 +73,7 @@ import {
 } from "@/components/recruitment/workstation/workstation-look";
 import {
   mergeNarrowing,
+  parseOpenCandidateId,
   screeningHref,
   screeningShellPoolHref,
   type ScreeningHrefOptions,
@@ -273,6 +274,36 @@ export function WorkstationPageClient({
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
 
+  // ── EVERY ROW IS A REAL LINK ────────────────────────────────────────────────────────────────
+  //
+  // Read here rather than threaded down from the two server shells, because both of them would have
+  // to pass it and neither has anything to do with it — and the rewrite this component already
+  // handles (see screeningShellPoolHref) means the browser's own URL is the only honest source for
+  // anything in the address bar.
+  //
+  // The href carries the CURRENT filters plus this candidate, so the second tab opens the same pile
+  // with that CV already open — not a stripped queue. Ctrl-click, middle-click and the context
+  // menu's "Open in new tab" all work from this and nothing else: a `<button>` cannot be opened in
+  // a tab by any of them, which is exactly what the owner asked for on 2026-09-18.
+  const openCandidateId = parseOpenCandidateId(useSearchParams().get("candidate"));
+  const candidateHref = useCallback(
+    (candidateId: string) =>
+      screeningHref(shellPoolHref, {
+        area,
+        candidate: candidateId,
+        notified,
+        rating,
+        received,
+        region,
+        role,
+        seen,
+        source,
+        status,
+        vacancy,
+      }),
+    [area, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy],
+  );
+
   const goTo = useCallback(
     (next: ScreeningHrefOptions) => {
       const href = screeningHref(shellPoolHref, {
@@ -343,11 +374,13 @@ export function WorkstationPageClient({
   const workstation = (
     <ScreeningWorkstation
       canDecide={canDecide}
+      candidateHref={candidateHref}
       canSendToManagers={canSendToManagers}
       canWriteNotes={canWriteNotes}
       counts={counts}
       filteredOut={filteredOut}
       focus={focus}
+      openCandidateId={openCandidateId}
       hiringManagers={hiringManagers}
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
@@ -476,7 +509,15 @@ export function WorkstationPageClient({
                 <ScanLine aria-hidden className="h-3.5 w-3.5" />
                 CV full screen
               </Action>
-              <Action onClick={() => setFullBleed(false)} tone="quiet">
+              {/* F is the key that got you here and Escape is the key that leaves, and neither was
+                  written anywhere on the screen. Naming both on the way out is what teaches the way
+                  in: there is no button that ENTERS full width, so the tooltip is the only place a
+                  reader can learn the key exists. */}
+              <Action
+                onClick={() => setFullBleed(false)}
+                title="Back to the page — or press F again, or Escape"
+                tone="quiet"
+              >
                 <Minimize2 aria-hidden className="h-3.5 w-3.5" />
                 Back to the page
               </Action>

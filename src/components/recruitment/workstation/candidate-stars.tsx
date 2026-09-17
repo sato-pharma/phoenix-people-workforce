@@ -71,10 +71,16 @@ export function CandidateStars({
             disabled={busy}
             key={value}
             onClick={() => onRate(value === rating ? null : value)}
+            // THE NUMBER ROW IS THE FAST WAY AND IT WAS UNDISCOVERABLE. 1, 2 and 3 have starred the
+            // open CV since this screen shipped and 0 has cleared it, bound in
+            // screening-workstation.tsx and named nowhere a reader could see. Every star on
+            // production's 1,121 CVs would have been a mouse press. The key goes in the tooltip
+            // rather than on the face: the button is a 28px glyph with no room for a second mark,
+            // and three stars wearing three digits would read as a score out of 3.
             title={
               value === rating
-                ? `${candidateRatingLabels[value]} — press again to take the star off`
-                : candidateRatingLabels[value]
+                ? `${candidateRatingLabels[value]} — press ${value} again, or 0, to take the star off`
+                : `${candidateRatingLabels[value]} — press ${value}`
             }
             type="button"
           >

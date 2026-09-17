@@ -153,6 +153,17 @@ export type WorkspaceCandidateRow = {
   notACv: boolean;
 
   /**
+   * WHERE this CV is filed, in the words a person reads - "Medical Representative · Sohag1".
+   *
+   * Null when it is filed nowhere, which is the ordinary case. It exists because an undecided filed
+   * CV is back in this queue since 2026-09-18 (isShelvedFromReview in candidate-folder.ts), and a
+   * row that silently rejoined the pile would leave the reader unable to tell it from one that was
+   * never filed - the same argument `seatReason` below makes for the seat pile. A hand-built folder
+   * has no name on the row, so it says so in words rather than printing an id.
+   */
+  folderLabel: string | null;
+
+  /**
    * WHY this CV is in the chosen vacant seat pile, in plain words - "Filed to the Menoufia 1
    * folder", "Chose Menoufia 1 on WhatsApp", "Email subject names Menoufia 1".
    *

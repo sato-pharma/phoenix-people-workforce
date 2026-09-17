@@ -42,7 +42,12 @@ import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateScreeningFacts, formatYearsOfExperience } from "@/lib/recruitment/candidate-screening-facts";
 import { describeForOrder } from "@/lib/recruitment/screening-describe";
 import { duplicateSets, orderForScreening, screeningBand } from "@/lib/recruitment/screening-order";
-import { isFiledCandidate } from "@/lib/recruitment/candidate-folder";
+import {
+  candidateFolderKindLabels,
+  candidateFolderLabel,
+  isCandidateFolderKind,
+  isShelvedFromReview,
+} from "@/lib/recruitment/candidate-folder";
 import { listCandidateIdsWithInterviewToday } from "@/lib/recruitment/interviews";
 import {
   listCandidateViews,
@@ -170,6 +175,30 @@ function text(value: string | null | undefined): string | null {
 }
 
 /**
+ * Where this CV is filed, in words - or null when it is filed nowhere.
+ *
+ * An undecided filed CV is in this queue again (isShelvedFromReview), so the row has to be able to
+ * say where it came from. Two shapes answer that, and only the first has a name to print: the four
+ * shelves carry a kind and a key, while a hand-built folder is a membership id this loader never
+ * resolves to a name. The second says so in words rather than printing the id, which is the owner's
+ * standing rule - a screen shows names, never raw codes.
+ *
+ * An unrecognised kind falls through to the same wording. `candidateFolderLabel` itself refuses to
+ * invent a label, and the duplicate archive never reaches here at all: those rows are shelved from
+ * review whatever their status, so they are not in this pool to be labelled.
+ */
+function filedLabelFor(candidate: Candidate): string | null {
+  const folder = candidate.folder;
+  if (folder && isCandidateFolderKind(folder.kind)) {
+    const place = candidateFolderLabel(folder.kind, folder.key);
+    const kind = candidateFolderKindLabels[folder.kind];
+    return place ? `${kind} · ${place}` : kind;
+  }
+  if (folder || (candidate.cvFolderIds?.length ?? 0) > 0) return "Filed in a folder";
+  return null;
+}
+
+/**
  * When somebody answered a send, or null while it is still open.
  *
  * TWO SOURCES, both real. A comment written after the send is a manager saying something about the
@@ -274,15 +303,23 @@ export async function loadScreeningWorkspace(
     loadRowFindings(),
   ]);
 
-  // A shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of the
-  // shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
+  // A DECIDED shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of
+  // the shelf is that a good-but-not-now CV stops being offered for review again. Taken off BEFORE
   // `filteredOut` is counted, so that number means the filters and never the archive.
   //
-  // THAT IS STILL THE DEFAULT AND IT IS UNCHANGED. What follows applies only when the link names one
-  // open seat, and it is the whole point of "screen a vacant seat": the shelf is where the CVs for an
-  // open seat are FILED, so for that one seat the shelf has to be read rather than skipped. See
-  // vacancy-seat-queue.ts for the measured hour this cost.
-  const shelfFree = allCandidates.filter((candidate) => !isFiledCandidate(candidate));
+  // AN UNDECIDED ONE STAYS, since 2026-09-18, and that is the bug this queue was reported for. The
+  // owner's complaint was "cvs lost ... i cannot reach what i want", and filing was the mechanism:
+  // 417 of 1,121 production candidates were filed and 371 of them were still `new`, so a fifth of
+  // the whole pipeline had left this page unread — out of the pool, out of "New CVs" (252 against a
+  // true 624) and out of the search, reachable only by opening one of 46 seats one at a time. See
+  // isShelvedFromReview in candidate-folder.ts for the rule and for the applicant it was measured on.
+  //
+  // THE SEAT MODE IS UNCHANGED. What follows applies only when the link names one open seat, and it
+  // is the whole point of "screen a vacant seat": the shelf is where the CVs for an open seat are
+  // FILED, so for that one seat the shelf is read rather than skipped — and it drops its own decided
+  // rows on its own rule (isSeatQueueDecided, which counts rejected, sent and hired but NOT
+  // shortlisted). See vacancy-seat-queue.ts for the measured hour this cost.
+  const reviewPool = allCandidates.filter((candidate) => !isShelvedFromReview(candidate));
 
   const seat =
     narrowing.vacancy === null
@@ -329,14 +366,14 @@ export async function loadScreeningWorkspace(
     }
   }
 
-  const pool = seatQueue ?? shelfFree;
+  const pool = seatQueue ?? reviewPool;
 
   // THE WIDER BASIS, for everything that must not shrink because one seat was picked: the duplicate
   // index, the filter dropdowns and the vacancy rail. In the default mode this IS the pool, so
   // nothing about that path changes.
   const poolBasis = seatQueue
-    ? [...new Map([...shelfFree, ...seatQueue].map((candidate) => [candidate.id, candidate])).values()]
-    : shelfFree;
+    ? [...new Map([...reviewPool, ...seatQueue].map((candidate) => [candidate.id, candidate])).values()]
+    : reviewPool;
 
   // WHO HAS THIS CV is already resolved — listCandidates overlays the send trail onto every
   // candidate it returns, so `managerNotified` and `sentFor` are the newest of (row stamp, send
@@ -475,6 +512,7 @@ export async function loadScreeningWorkspace(
       fitRoleLabel: fit.roleLabel,
       fitScore: fit.score,
       fitVerdict: roleFitVerdict(fit.score),
+      folderLabel: filedLabelFor(candidate),
       fullName: candidateDisplayName(candidate.fullName),
       id: candidate.id,
       interviewToday: queueInput.interviewToday,
@@ -639,7 +677,7 @@ export async function loadScreeningWorkspace(
     now: asOf,
     // The BACKLOG, never the seat: "am I keeping up" is a question about the whole pool, and a
     // figure that shrank because one seat was picked would answer a different one.
-    unread: shelfFree.filter((candidate) => !views[candidate.id]).length,
+    unread: reviewPool.filter((candidate) => !views[candidate.id]).length,
   });
 
   return {

@@ -378,6 +378,48 @@ export function isFiledCandidate(candidate: FiledCandidate | null | undefined): 
   return Boolean(candidate?.folder) || (candidate?.cvFolderIds?.length ?? 0) > 0;
 }
 
+/** A filed candidate plus the one other thing the review queue has to know: has anybody decided. */
+export type ReviewQueueCandidate = FiledCandidate & { status?: string | null };
+
+/**
+ * Is this CV off the SCREENING queue because somebody filed it?
+ *
+ * ── WHY THIS IS NOT JUST `isFiledCandidate` ─────────────────────────────────────────────────────
+ *
+ * The shelf's stated purpose is that "a good-but-not-now CV stops being offered for review again" —
+ * offered AGAIN, which presumes somebody read it once. Filing in practice runs the other way round:
+ * a CV arrives on WhatsApp, its declared area files it to a position shelf the same evening, and it
+ * leaves the queue before any human has opened it.
+ *
+ * Measured on production 2026-09-18: 417 of 1,121 candidates were filed, and 371 of those 417 were
+ * still `new` — undecided, unread, and absent from the screening page's own pool, its "New CVs"
+ * count (252 against a true 624) and its search. A live applicant filed to Sohag1 on 15 September
+ * could not be found by name, and the full-text CV search answered "0 CVs mention" for her.
+ *
+ * So being filed takes a CV off the queue only once a DECISION exists. An undecided filed CV has
+ * never been offered a first time, so nothing about it can be "again". The shelf keeps working
+ * exactly as the owner designed it for every CV somebody has shortlisted, rejected, sent or hired.
+ *
+ * THE DUPLICATE ARCHIVE IS NOT A SHELF and is exempt on purpose: that filing is a discard of a
+ * redundant record rather than a CV parked for a seat, so it stays out whatever its status says —
+ * the behaviour tests/candidate-folders.test.ts already pins.
+ *
+ * AN UNREADABLE STATUS LEAVES THE CV VISIBLE, which is the one place this disagrees with
+ * `isUnreviewedCandidateStatus` in candidate-status.ts: that one reads unrecognised free text as
+ * "somebody typed it, which is itself the review". Right for a count on a landing page, wrong here.
+ * This function is the only thing deciding whether a human is ever offered the CV again, so a value
+ * it cannot read must not be allowed to hide one — the same direction `isFiledCandidate` takes for
+ * a folder list nobody loaded. Production carries no such value today: all 1,121 rows sit on the
+ * five codes and `status` is NOT NULL defaulting to `new` (measured 2026-09-18), so this costs
+ * nothing now and stays right through any future backfill window.
+ */
+export function isShelvedFromReview(candidate: ReviewQueueCandidate | null | undefined): boolean {
+  if (!isFiledCandidate(candidate)) return false;
+  if (isDuplicateArchive(candidate?.folder?.kind)) return true;
+  const status = normalizeCandidateStatus(candidate?.status ?? null);
+  return status !== null && status !== "new";
+}
+
 /** One folder, with its contents. */
 export type CandidateFolder = {
   /** Stable identity for React keys — never shown to a person. */
