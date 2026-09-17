@@ -21,7 +21,9 @@ import type { HrPaperTemplate } from "../src/lib/hiring-pack/hr-paper-template.t
 import {
   HR_PAPERS,
   HR_PAPER_ABSENCE_WARNING_V1,
+  HR_PAPER_ABSENCE_WARNING_V2,
   HR_PAPER_DEEMED_RESIGNATION_V1,
+  HR_PAPER_DEEMED_RESIGNATION_V2,
   HR_PAPER_DISCIPLINARY_PENALTY_V1,
   HR_PAPER_DISCIPLINARY_WARNING_V1,
   HR_PAPER_DOCUMENTS_RECEIPT_V1,
@@ -237,29 +239,37 @@ function textOf(template: HrPaperTemplate): string {
 // ---------------------------------------------------------------------------------------------
 
 function testTheAbsenceThresholdIsMoreThanTenDays(): void {
-  const warning = textOf(HR_PAPER_ABSENCE_WARNING_V1);
-  const notice = textOf(HR_PAPER_DEEMED_RESIGNATION_V1);
+  // EVERY VERSION, the archived ones included: a served notice reprints from its own version, so a
+  // version that lost the threshold would reprint wrong for exactly the person it was served on.
+  const versions = [
+    [HR_PAPER_ABSENCE_WARNING_V1, HR_PAPER_DEEMED_RESIGNATION_V1],
+    [HR_PAPER_ABSENCE_WARNING_V2, HR_PAPER_DEEMED_RESIGNATION_V2],
+  ] as const;
+  for (const [warningPaper, noticePaper] of versions) {
+    const warning = textOf(warningPaper);
+    const notice = textOf(noticePaper);
 
-  // The first warning threatens the consequence; the notice declares it. Both must be phrased as
-  // EXCEEDING ten days, never as reaching it.
-  assert.ok(
-    warning.includes("تجاوز عشرة أيام متصلة"),
-    "the first warning must warn about EXCEEDING ten consecutive days. Article 166 says «أكثر من " +
-      "عشرة أيام متتالية», so at exactly ten the deemed resignation has not arisen and a notice " +
-      "issued then is premature.",
-  );
-  assert.ok(
-    notice.includes("تجاوزت عشرة أيام متصلة") && notice.includes("أكثر من عشرة أيام متصلة"),
-    "the deemed-resignation notice must both recite that the absence EXCEEDED ten consecutive days " +
-      "and rest its operative paragraph on the same threshold",
-  );
-
-  // And neither may state the bare "10 consecutive days" the owner's drafts did.
-  for (const [name, text] of [["warning", warning], ["notice", notice]] as const) {
+    // The first warning threatens the consequence; the notice declares it. Both must be phrased as
+    // EXCEEDING ten days, never as reaching it.
     assert.ok(
-      !/(?:لمدة|عن)\s+عشرة\s+أيام\s+متصلة/u.test(text),
-      `${name}: "for ten consecutive days" is the pre-correction wording — the threshold is more than ten`,
+      warning.includes("تجاوز عشرة أيام متصلة"),
+      `${warningPaper.id}: the first warning must warn about EXCEEDING ten consecutive days. Article ` +
+        "166 says «أكثر من عشرة أيام متتالية», so at exactly ten the deemed resignation has not " +
+        "arisen and a notice issued then is premature.",
     );
+    assert.ok(
+      notice.includes("تجاوزت عشرة أيام متصلة") && notice.includes("أكثر من عشرة أيام متصلة"),
+      `${noticePaper.id}: the deemed-resignation notice must both recite that the absence EXCEEDED ` +
+        "ten consecutive days and rest its operative paragraph on the same threshold",
+    );
+
+    // And neither may state the bare "10 consecutive days" the owner's drafts did.
+    for (const [name, text] of [[warningPaper.id, warning], [noticePaper.id, notice]] as const) {
+      assert.ok(
+        !/(?:لمدة|عن)\s+عشرة\s+أيام\s+متصلة/u.test(text),
+        `${name}: "for ten consecutive days" is the pre-correction wording — the threshold is more than ten`,
+      );
+    }
   }
 
   // THE CONTRACT MUST STILL AGREE. If a redraft changed مادة (8), these papers would be citing a
@@ -275,25 +285,117 @@ function testTheAbsenceThresholdIsMoreThanTenDays(): void {
 }
 
 function testTheSecondNoticeDeclaresRatherThanAcceptsAResignation(): void {
-  const notice = HR_PAPER_DEEMED_RESIGNATION_V1;
+  for (const notice of [HR_PAPER_DEEMED_RESIGNATION_V1, HR_PAPER_DEEMED_RESIGNATION_V2]) {
+    assert.ok(
+      notice.titleAr.includes("باعتبار العامل مستقيل"),
+      `${notice.id}: the notice DECLARES a deemed resignation under Article 166`,
+    );
+    const text = textOf(notice);
+    assert.ok(
+      !text.includes("قبول إستقالة") && !text.includes("قبول استقالة"),
+      `${notice.id}: it must never speak of ACCEPTING a resignation. The worker wrote none; accepting ` +
+        "one that does not exist is what lets the whole notice be set aside, and a real resignation " +
+        "is Article 167 with the labour office's approval — a different instrument entirely.",
+    );
+    assert.ok(
+      text.includes("المادة (166)"),
+      `${notice.id}: and it must cite the article it actually rests on`,
+    );
+    assert.ok(
+      text.includes("لا يُعد هذا الإخطار فصلًا تأديبيًا"),
+      `${notice.id}: it is not a disciplinary dismissal, and saying so is what keeps it a deemed resignation`,
+    );
+  }
+}
+
+/** The body of a paper — the recital of the facts, which is where the head office must not be. */
+function recitalOf(template: HrPaperTemplate): string {
+  return [...template.bodyParagraphsAr, ...template.operativeParagraphsAr].join("\n");
+}
+
+function testTheAbsencePapersRestOnWorkNotOnTheHeadOffice(): void {
+  // 🔴 THE OWNER'S CORRECTION OF 2026-09-17. Version 1 of both papers recited absence from «مقر
+  // عملكم … الكائن في» the head office, and the case that exposed it was a medical rep whose work is
+  // in the field. Article 166 is about absence from WORK; a paper resting on the office hands the
+  // worker his answer.
+  for (const paper of [HR_PAPER_ABSENCE_WARNING_V2, HR_PAPER_DEEMED_RESIGNATION_V2]) {
+    const recital = recitalOf(paper);
+    assert.ok(
+      !recital.includes("مقر عمل") &&
+        !recital.includes("الحضور إلى") &&
+        !recital.includes("{{COMPANY_HEAD_OFFICE_FULL}}"),
+      `${paper.id}: the facts must not rest on attending the head office — that is not where a field ` +
+        "employee works, and the address belongs in the company recital only",
+    );
+    assert.ok(
+      recital.includes("انقطاعكم عن مباشرة مهام عملكم") && recital.includes("{{JOB_TITLE}}"),
+      `${paper.id}: it recites a stop in carrying out the job, naming the job from the record`,
+    );
+    assert.ok(
+      recital.includes("بالوسيلة المعتمدة وفقًا للمادة (8)"),
+      `${paper.id}: and it rests on what مادة (8) makes provable — nothing recorded through the approved means`,
+    );
+    // ONE PAPER FOR EVERY EMPLOYEE. Field words on an office employee's warning are the same defect
+    // turned round, so the job is named through the token and never typed in.
+    assert.ok(
+      !recital.includes("مندوب") && !recital.includes("الميدانية"),
+      `${paper.id}: the wording must fit office and field staff alike`,
+    );
+    // The company recital at the top still carries the address — moved out of the facts, not deleted.
+    assert.ok(
+      paper.firstPartyLinesAr.some((line) => line.includes("{{COMPANY_HEAD_OFFICE_FULL}}")),
+      `${paper.id}: the head office stays in the company recital`,
+    );
+  }
+
+  const warning = HR_PAPER_ABSENCE_WARNING_V2;
   assert.ok(
-    notice.titleAr.includes("باعتبار العامل مستقيل"),
-    "the notice DECLARES a deemed resignation under Article 166",
+    textOf(warning).includes("خمسة أيام عمل متصلة"),
+    "the five days are WORK days: a rest day or public holiday is not an absence, and counting one " +
+      "sends the warning a day early",
   );
-  const text = textOf(notice);
   assert.ok(
-    !text.includes("قبول إستقالة") && !text.includes("قبول استقالة"),
-    "it must never speak of ACCEPTING a resignation. The worker wrote none; accepting one that does " +
-      "not exist is what lets the whole notice be set aside, and a real resignation is Article 167 " +
-      "with the labour office's approval — a different instrument entirely.",
+    recitalOf(warning).includes("مستقيلًا حكمًا"),
+    "the warning states the consequence in full rather than a vague «legal action»",
   );
   assert.ok(
-    text.includes("المادة (166)"),
-    "and it must cite the article it actually rests on",
+    recitalOf(warning).includes("للمادة (167)") && recitalOf(warning).includes("لا تزال قائمة"),
+    "it tells every absent employee the relationship stands until a resignation meeting Article 167 " +
+      "is received — which shuts the «I had already resigned» defence",
+  );
+
+  // THE REGISTERED LETTER IS REQUIRED, not one option among several. Version 1 read «بخطاب موصى عليه
+  // بعلم الوصول أو بأي وسيلة تُثبت العلم», which reads as permission to send it by message instead.
+  const service = warning.serviceNoteAr ?? "";
+  assert.ok(
+    service.includes("بخطاب موصى عليه بعلم الوصول") && service.includes("لا يُغني عنه غيره"),
+    "the warning's service note must make the registered letter Article 166 requires mandatory",
   );
   assert.ok(
-    text.includes("لا يُعد هذا الإخطار فصلًا تأديبيًا"),
-    "it is not a disciplinary dismissal, and saying so is what keeps it a deemed resignation",
+    !/بعلم الوصول\s+أو/u.test(service),
+    "and must never offer another means as an ALTERNATIVE to the registered letter",
+  );
+  assert.ok(
+    textOf(HR_PAPER_DEEMED_RESIGNATION_V2).includes("سبق إنذاركم بخطاب موصى عليه بعلم الوصول"),
+    "the notice recites that the warning went by registered letter — Article 166's precondition",
+  );
+
+  // THE OLD VERSIONS STAY PRINTABLE, byte for byte: a warning already served reprints as served.
+  for (const [archived, current] of [
+    [HR_PAPER_ABSENCE_WARNING_V1, HR_PAPER_ABSENCE_WARNING_V2],
+    [HR_PAPER_DEEMED_RESIGNATION_V1, HR_PAPER_DEEMED_RESIGNATION_V2],
+  ] as const) {
+    assert.equal(hrPaperById(archived.id), archived, `${archived.id} must stay reachable from the archive`);
+    const html = renderHrPaperHtml(packFixture(), 1, current, archived.id);
+    assert.ok(
+      html.includes("الحضور إلى مقر عملكم") && html.includes(archived.titleAr),
+      `${archived.id}: a reprint of the archived version must reproduce its own text`,
+    );
+  }
+  const current = renderHrPaperHtml(packFixture(), 1, HR_PAPER_ABSENCE_WARNING_V2);
+  assert.ok(
+    !current.includes("الحضور إلى مقر عملكم") && current.includes("إنذار أول بالانقطاع عن العمل"),
+    "today's warning prints the corrected text",
   );
 }
 
@@ -307,10 +409,12 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
   // module touches nine files, and a number somebody has to change is what makes that a decision
   // rather than an omission.
   // SIXTEEN since 2026-09-13: the letters pack added nine of the owner's own papers.
+  // EIGHTEEN since 2026-09-17: both absence papers gained a version 2, and version 1 of each stays.
   assert.equal(
     HR_PAPERS.length,
-    16,
-    "six papers were supplied, the certificate makes seven, and the letters pack adds nine",
+    18,
+    "six papers were supplied, the certificate makes seven, the letters pack adds nine, and the two " +
+      "absence papers each keep their archived version 1 beside version 2",
   );
 
   for (const document of HOUSE_PAPER_DOCUMENTS) {
@@ -339,8 +443,8 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
     ["nda", HR_PAPER_NDA_V1],
     ["appointmentDocsReceipt", HR_PAPER_DOCUMENTS_RECEIPT_V1],
     ["socialStatusSheet", HR_PAPER_SOCIAL_STATUS_V1],
-    ["absenceWarning", HR_PAPER_ABSENCE_WARNING_V1],
-    ["deemedResignation", HR_PAPER_DEEMED_RESIGNATION_V1],
+    ["absenceWarning", HR_PAPER_ABSENCE_WARNING_V2],
+    ["deemedResignation", HR_PAPER_DEEMED_RESIGNATION_V2],
     ["appointmentDocsReturn", HR_PAPER_DOCUMENTS_RETURN_V1],
     ["experienceCertificate", HR_PAPER_EXPERIENCE_CERTIFICATE_V1],
     ["disciplinaryWarning", HR_PAPER_DISCIPLINARY_WARNING_V1],
@@ -430,7 +534,12 @@ function testEveryPaperHasUniqueIdAndKnownTokens(): void {
 function testTheCompanyIsNoLongerABlank(): void {
   // The owner's warnings read «بشركة ........................ الكائن مقرها في ...............» on
   // papers this company issues about its own staff.
-  for (const paper of [HR_PAPER_ABSENCE_WARNING_V1, HR_PAPER_DEEMED_RESIGNATION_V1]) {
+  for (const paper of [
+    HR_PAPER_ABSENCE_WARNING_V1,
+    HR_PAPER_ABSENCE_WARNING_V2,
+    HR_PAPER_DEEMED_RESIGNATION_V1,
+    HR_PAPER_DEEMED_RESIGNATION_V2,
+  ]) {
     const html = renderHrPaperHtml(packFixture(), 1, paper);
     assert.ok(
       html.includes("ساتو فارما"),
@@ -444,7 +553,12 @@ function testTheCompanyIsNoLongerABlank(): void {
 }
 
 function testTheDatesThatCouldEndAServiceStayBlank(): void {
-  for (const paper of [HR_PAPER_ABSENCE_WARNING_V1, HR_PAPER_DEEMED_RESIGNATION_V1]) {
+  for (const paper of [
+    HR_PAPER_ABSENCE_WARNING_V1,
+    HR_PAPER_ABSENCE_WARNING_V2,
+    HR_PAPER_DEEMED_RESIGNATION_V1,
+    HR_PAPER_DEEMED_RESIGNATION_V2,
+  ]) {
     const values = buildHrPaperValues(packFixture());
     for (const token of ["ABSENCE_FROM", "ABSENCE_TO"] as const) {
       const value = values[token];
@@ -542,8 +656,8 @@ function testCopyCountsAreEachPapersOwnRequirement(): void {
     [HR_PAPER_NDA_V1, systemContractDefaults.ndaCopies],
     [HR_PAPER_DOCUMENTS_RECEIPT_V1, systemContractDefaults.appointmentDocsReceiptCopies],
     [HR_PAPER_SOCIAL_STATUS_V1, systemContractDefaults.socialStatusSheetCopies],
-    [HR_PAPER_ABSENCE_WARNING_V1, systemContractDefaults.absenceWarningCopies],
-    [HR_PAPER_DEEMED_RESIGNATION_V1, systemContractDefaults.deemedResignationCopies],
+    [HR_PAPER_ABSENCE_WARNING_V2, systemContractDefaults.absenceWarningCopies],
+    [HR_PAPER_DEEMED_RESIGNATION_V2, systemContractDefaults.deemedResignationCopies],
     [HR_PAPER_DOCUMENTS_RETURN_V1, systemContractDefaults.appointmentDocsReturnCopies],
     [HR_PAPER_DISCIPLINARY_WARNING_V1, systemContractDefaults.disciplinaryWarningCopies],
     [HR_PAPER_DISCIPLINARY_PENALTY_V1, systemContractDefaults.disciplinaryPenaltyCopies],
@@ -692,7 +806,7 @@ function testTheCertificateOmitsPaySeparationAndConduct(): void {
   );
   // ...and the notices KEPT it, now that the banner is keyed on the tokens rather than the kind.
   assert.ok(
-    renderHrPaperHtml(packFixture(), 1, HR_PAPER_ABSENCE_WARNING_V1).includes(
+    renderHrPaperHtml(packFixture(), 1, HR_PAPER_ABSENCE_WARNING_V2).includes(
       "The absence dates print blank",
     ),
     "the absence warning must keep its own warning",
@@ -996,7 +1110,7 @@ function testEveryHouseColourSurvivesABrowserPrint(): void {
     ["certificate of experience (English)", renderExperienceCertificateEnHtml(pack, 1)],
     ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
     ["social status sheet", renderHrPaperHtml(pack, 1, HR_PAPER_SOCIAL_STATUS_V1)],
-    ["first absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
+    ["first absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V2)],
   ];
 
   // Pages proven to paint no house colour at all, and therefore exempt from the invariant checked
@@ -1154,7 +1268,7 @@ function testEveryMastheadCarriesTheBand(): void {
   const rendered: ReadonlyArray<readonly [string, string]> = [
     ["contract", renderContractHtml(pack, 1)],
     ["confidentiality undertaking", renderHrPaperHtml(pack, 1, HR_PAPER_NDA_V1)],
-    ["absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V1)],
+    ["absence warning", renderHrPaperHtml(pack, 1, HR_PAPER_ABSENCE_WARNING_V2)],
     ["experience certificate", renderHrPaperHtml(pack, 1, HR_PAPER_EXPERIENCE_CERTIFICATE_V1)],
   ];
 
@@ -1394,6 +1508,7 @@ export function runHrFormsHousePapersTests(): void {
   testEveryMastheadCarriesTheBand();
   testTheAbsenceThresholdIsMoreThanTenDays();
   testTheSecondNoticeDeclaresRatherThanAcceptsAResignation();
+  testTheAbsencePapersRestOnWorkNotOnTheHeadOffice();
   testEveryPaperIsRegisteredAndCurrent();
   testEveryPaperHasUniqueIdAndKnownTokens();
   testTheCompanyIsNoLongerABlank();

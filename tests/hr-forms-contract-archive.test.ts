@@ -228,6 +228,10 @@ function testNothingIsEverRemovedFromTheArchive() {
     "form6-v1",
     "resignation-v1",
     "mutualTermination-v1",
+    "absence-warning-first-v1",
+    "absence-warning-first-v2",
+    "absence-deemed-resignation-v1",
+    "absence-deemed-resignation-v2",
   ];
   const live = new Set(DOCUMENT_TEMPLATE_VERSIONS.map((entry) => entry.id));
   for (const id of everKnown) {
@@ -272,7 +276,15 @@ function testTheArchiveListIsWhatTheScreenShows() {
   const archived = archivedTemplateVersions();
   assert.deepEqual(
     archived.map((entry) => entry.id),
-    ["contract-v3", "contract-v2", "contract-v1"],
+    // The two absence papers were replaced together on 2026-09-17, so they tie on the date and keep
+    // registry order between them.
+    [
+      "absence-warning-first-v1",
+      "absence-deemed-resignation-v1",
+      "contract-v3",
+      "contract-v2",
+      "contract-v1",
+    ],
     "the Archive screen lists exactly the superseded versions, newest supersession first",
   );
   for (const entry of archived) {
