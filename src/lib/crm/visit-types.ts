@@ -6,7 +6,9 @@
 // never documented, and for every one of those the description it sends is the
 // literal string "Unknown". Measured against production on 2026-08-21 that is
 // 2,965 visits: -30 (868 rows), -5 (1,633), -20 (171), -7 (148), -19 (91),
-// -21 (28), -6 (26).
+// -21 (28), -6 (26). An eighth, -16, first appeared on 2026-09-12: its first 54
+// visits (8 reps, to 2026-09-17) were all commented "Training", and the owner
+// ruled it Training on 2026-09-17.
 //
 // Phoenix has known what those seven mean since 2026-07-14 (PR #1061, confirmed
 // with the business owner by reading the actual `comment` text on hundreds of
@@ -47,6 +49,9 @@ export const BRM_TYPE = -21;
 // a description to. Counted as productive, same as REGULAR_TYPE ("put it in its
 // normal place") — pharmacy-flavored comments get their own distinct label.
 export const UNLABELED_FIELD_VISIT_TYPE = -30;
+// Training that the vendor sends as "Unknown" (owner ruling 2026-09-17). Same label and
+// bucket as TRAINING_TYPE; a separate constant because its stored description differs.
+export const UNLABELED_TRAINING_TYPE = -16;
 
 export type VisitBucket = "regular" | "campaign" | "training" | "admin";
 export type VisitClassification = { label: string; bucket: VisitBucket };
@@ -80,6 +85,7 @@ export function classifyVisit(type: number | null, comment: string | null, rawDe
   if (type === REGULAR_TYPE) return { label: "Regular", bucket: "regular" };
   if (type === CAMPAIGN_TYPE) return { label: "Campaign", bucket: "campaign" };
   if (type === TRAINING_TYPE) return { label: "Training", bucket: "training" };
+  if (type === UNLABELED_TRAINING_TYPE) return { label: "Training", bucket: "training" };
   if (type === HOLIDAY_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
   if (type === CASUAL_LEAVE_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
   if (type === MEETING_TYPE) return { label: "Meetings", bucket: "admin" };
@@ -143,6 +149,7 @@ export const CRM_VISIT_TYPE_FILTER_CODES: ReadonlyMap<string, readonly number[]>
   ["Admin Work", [ADMIN_WORK_TYPE]],
   ["Business Review (BRM)", [BRM_TYPE]],
   ["Unlabeled Field Visit", [UNLABELED_FIELD_VISIT_TYPE]],
+  ["Unlabeled Training", [UNLABELED_TRAINING_TYPE]],
   ["Sales / Leave Day", [AMBIGUOUS_TYPE]],
 ]);
 

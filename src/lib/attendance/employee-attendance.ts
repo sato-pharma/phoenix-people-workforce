@@ -232,6 +232,12 @@ export function isSelfOnlyAttendanceViewer(context: Pick<AccessContext, "role">)
  *    CRUD; Training Manager: read) but no traditional direct-report chain to fall
  *    back on, same gap class as the Head Office line-vs-reporting-edge issue fixed
  *    elsewhere for these roles (see [[company-org-structure-head-office]]).
+ *  - HR Operations — anyone, for ONE person at a time (owner ruling 2026-09-17). It approves leave
+ *    and excuse requests in the Approvals Hub, whose context panel reads this check, and it already
+ *    reads every employee's punches and deductions on the whole-company Fingerprint Report
+ *    (canAccessFingerprintReport → employees:read). Before the ruling the panel answered 403 for
+ *    every request it was asked to approve. The bulk list scoper below is deliberately NOT widened:
+ *    the ruling covered the per-person view, and the bulk exports keep their existing scope.
  *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
  *
  * Pure + exact-match; the security boundary for the manager view. Guests / no-scope
@@ -265,7 +271,9 @@ export function canViewEmployeeAttendanceReport(
     context.role === "Super Admin" ||
     context.role === "CEO" ||
     context.role === "SFE Manager" ||
-    context.role === "Training Manager"
+    context.role === "Training Manager" ||
+    // One person's report, for the requests HR Operations approves — see the doc comment above.
+    context.role === "HR Operations"
   ) {
     return true;
   }

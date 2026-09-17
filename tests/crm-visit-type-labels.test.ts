@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CRM_VISIT_TYPE_FILTER_CODES,
   CRM_VISIT_TYPE_OPTIONS,
+  classifyVisit,
   resolveVisitTypeLabel,
 } from "../src/lib/crm/visit-types.ts";
 
@@ -13,7 +14,9 @@ import {
 // Phoenix has known what each one means since 2026-07-14 (PR #1061, owner-confirmed by reading
 // the reps' own `comment` text), but that knowledge lived inside Employee 360 — so the CRM
 // master, the employee portal, the NSM board and SFE analytics all still printed "Unknown".
-const UNDOCUMENTED_CODES = [-5, -6, -7, -19, -20, -21, -30] as const;
+// An eighth, -16, first appeared 2026-09-12 — 54 visits by 8 reps to 2026-09-17, every comment
+// "Training" — and the owner ruled it Training on 2026-09-17.
+const UNDOCUMENTED_CODES = [-5, -6, -7, -16, -19, -20, -21, -30] as const;
 
 const FIXED_LABELS = [
   { code: -5, rows: 1633, label: "Vacations & Leaves" },
@@ -43,6 +46,16 @@ export function runCrmVisitTypeLabelTests() {
       `visit type ${code} (${rows} live rows) must resolve to "${label}"`,
     );
   }
+
+  // -16 is Training (owner ruling 2026-09-17): same label AND same bucket as the documented -9, so
+  // Employee 360 counts it as a training visit, never as admin work.
+  assert.equal(resolveVisitTypeLabel(-16, "Unknown", "Training"), "Training", "-16 must display as Training");
+  assert.equal(resolveVisitTypeLabel(-16, "Unknown", null), "Training", "-16 is Training whatever the comment says");
+  assert.deepEqual(
+    classifyVisit(-16, "Training", "Unknown"),
+    classifyVisit(-9, "Training", "Training"),
+    "-16 must classify exactly like the documented Training code (-9): label Training, bucket training",
+  );
 
   // -7 and -30 are separable only by the rep's own free text, so the comment routes them.
   assert.equal(resolveVisitTypeLabel(-7, "Unknown", "Sales day"), "Health Day", "-7 'sales day' is a health day");
@@ -87,6 +100,6 @@ export function runCrmVisitTypeLabelTests() {
   assert.deepEqual(
     covered,
     [...UNDOCUMENTED_CODES].sort((a, b) => a - b),
-    "the code-based filter entries must cover all seven undocumented codes, with no duplicates",
+    "the code-based filter entries must cover all eight undocumented codes, with no duplicates",
   );
 }

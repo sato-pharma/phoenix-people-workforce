@@ -91,6 +91,29 @@ export async function runAttendanceManagerViewAccessTests() {
     );
   }
 
+  // ── HR Operations: anyone, one person at a time (owner ruling 2026-09-17) ──────────────────────
+  // It approves leave and excuse requests in the Approvals Hub, whose context panel calls this
+  // check. Before the ruling the panel answered 403 on every request, because HR Operations is
+  // nobody's manager. It already reads every employee's punches on the company Fingerprint Report.
+  assert.equal(
+    canViewEmployeeAttendanceReport(ctx({ hrId: "H-1", role: "HR Operations", scope: "company" }), { hrId: "B-155", managerHrId: "A-8" }),
+    true,
+    "HR Operations must see the attendance of an employee whose request it approves — not only its direct reports",
+  );
+  // The ruling named HR Operations alone. HR Advisory is the nearest role and must stay on the
+  // manager fallback, so a widening by "any HR role" fires here.
+  assert.equal(
+    canViewEmployeeAttendanceReport(ctx({ hrId: "H-2", role: "HR Advisory", scope: "company" }), { hrId: "B-155", managerHrId: "A-8" }),
+    false,
+    "HR Advisory was not part of the 2026-09-17 ruling and must still be denied an unrelated employee",
+  );
+  // Guests and no-scope contexts still lose, whatever the role says.
+  assert.equal(
+    canViewEmployeeAttendanceReport(ctx({ hrId: "H-1", role: "HR Operations", source: "guest" }), { hrId: "B-155", managerHrId: "A-8" }),
+    false,
+    "a guest claiming HR Operations must be denied",
+  );
+
   // Guest / no-scope — denied even for self.
   assert.equal(canViewEmployeeAttendanceReport(ctx({ source: "guest" }), { hrId: "A-8", managerHrId: null }), false);
   assert.equal(canViewEmployeeAttendanceReport(ctx({ scope: "none" }), { hrId: "A-8", managerHrId: null }), false);
