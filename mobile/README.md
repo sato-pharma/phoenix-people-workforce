@@ -49,6 +49,26 @@ DOM-free type set are incompatible with the Next.js project's, so the two typech
 npm run typecheck      # tsc for this app only
 ```
 
+## The `overrides` block in `package.json`
+
+`uuid` is pinned to `11.1.1` for a Dependabot advisory on `@expo/config-plugins → xcode →
+uuid@^7.0.3` (missing buffer bounds check generating v3/v5/v6 UUIDs, CVSS 7.5). `xcode` only runs
+at `expo prebuild` time to edit iOS `.pbxproj` files, and this app is Android-only, so the
+vulnerable code never actually executes — but the override is verified safe (`xcode` calls only the
+named `uuid.v4()` export, which uuid 11 still ships; a real `.pbxproj` fixture parses, gets mutated,
+and re-serialises correctly through it) and closes the alert at no cost.
+
+A second advisory, `expo-router → query-string@7.1.3 → decode-uri-component@^0.2.2` (denial of
+service via exponential decoding of malformed percent-encoded input), is **deliberately left open**.
+Its only fix, `decode-uri-component@0.5.0`, rewrote the package as ESM-only with no CommonJS build.
+`query-string@7.1.3` (the last 7.x release — 8.x is an unrelated breaking rewrite) loads it with a
+plain `require()`, which under Node's CJS/ESM interop returns `{ default: fn }` instead of the
+function itself, so `query-string.parse()`/`.parseUrl()` throws `TypeError: decodeComponent is not a
+function` on every call — breaking deep-link parsing outright. `npm audit fix --force` confirms
+there is no in-range fix either: its only suggestion is downgrading `expo-router` to `5.1.11`, an
+unrelated Expo SDK generation. Re-open this once `query-string` or `expo-router` ships something
+compatible with the fixed `decode-uri-component`.
+
 ## How a screen gets its data
 
 The web portal has almost no read API — its pages are server components that call
