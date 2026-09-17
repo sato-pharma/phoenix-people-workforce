@@ -28,7 +28,10 @@ reporting.
 - `supabase/` — SQL. **`supabase/migrations/` holds the timestamped migrations**
   (`YYYYMMDDHHMMSS_*.sql`) that define the live schema/RLS; the loose `*.sql` files at the
   `supabase/` root are historical hardening/setup scripts. Treat SQL here as part of the
-  deliverable, not optional extras.
+  deliverable, not optional extras. A new one is scaffolded by the `new-migration` skill
+  (`.claude/skills/new-migration/SKILL.md`), which mints a timestamp that sorts after every
+  migration already on `main` and pre-flights the four content rules CI enforces; a prefix that
+  merely sorts early breaks no check and then applies in the wrong order for good.
 - `tests/` (unit) and `tests/e2e/` (Playwright). `docs/` holds architecture, editing, security,
   and operating-state notes.
 - `local-attendance-agent/` — a separate local .NET/PowerShell ZKTeco attendance agent (see its
