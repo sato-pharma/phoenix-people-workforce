@@ -530,9 +530,19 @@ export function runMailboxComplianceMonitorTests() {
   assert.notEqual(replaceAuditAt, -1, "replaceMonitorPassword must write an access-log row");
   assert.notEqual(replaceThrowAt, -1, "replaceMonitorPassword must refuse a bad candidate");
   assert.ok(replaceAuditAt < replaceThrowAt, "the audit row must be written BEFORE the refusal throws");
+  // Each refusal keeps its OWN row, pinned where it sits rather than counted. A floor cannot see
+  // this: with the success row present there are three logAccess calls, so deleting either
+  // refusal's audit still leaves two and a `>= 2` count stays green — while the refusal it was
+  // written for goes unrecorded, which is the whole silence this module exists to end.
+  const shortPasswordRefusalAt = replaceBody.indexOf("Paste the new app password.");
+  assert.notEqual(shortPasswordRefusalAt, -1, "replaceMonitorPassword must refuse an empty or short password");
   assert.ok(
-    (replaceBody.match(/await logAccess\(/g) ?? []).length >= 2,
-    "the short-password refusal and the connection result must each leave their own row",
+    replaceBody.slice(0, shortPasswordRefusalAt).includes("await logAccess("),
+    "the short-password refusal must leave its own access-log row before it throws",
+  );
+  assert.ok(
+    replaceBody.slice(candidateTestAt, refusalAt).includes("await logAccess("),
+    "a candidate the mailbox rejected must leave its own access-log row before the 422 throws",
   );
 
   // A proven replacement returns the monitor to health. Leaving last_error set would keep the
