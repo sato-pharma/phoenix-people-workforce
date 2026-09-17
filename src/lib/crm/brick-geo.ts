@@ -27,6 +27,7 @@ import { unstable_cache } from "next/cache";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { singleFlight } from "@/lib/utils/single-flight";
 
 /** One brick with a known geographic centre, ready for distance comparison. */
 type BrickCentroid = {
@@ -188,14 +189,32 @@ const loadBrickCentroidsCached = unstable_cache(
 );
 
 /**
+ * One cache lookup for every caller that arrives at the same moment.
+ *
+ * `unstable_cache` does not dedupe a miss: every caller that arrives while the entry is absent or
+ * expired runs the four reads above itself. Several callers resolve a whole LIST one row at a time —
+ * `attachOutstationCapturedLocations` calls this once per outstation request, and the Super Admin
+ * sidebar's 30-second badge poll lists every request — so each expiry became one full read of
+ * `source_of_sales_bricks` per request row. Production, 2026-09-17: 7,178 reads a day, 93% of them
+ * in bursts of 61 or more reads inside five seconds. Sharing the in-flight lookup turns each burst
+ * back into one read.
+ *
+ * It changes no value: every waiter receives exactly what the one lookup returned, and nothing is
+ * kept once it settles, so the 300-second window and the `sos-reference` tag still decide staleness.
+ */
+const loadBrickCentroidsShared = singleFlight(() => loadBrickCentroidsCached());
+
+/**
  * Every brick that has a geocoded centre, joined to its area/region. Degrades to an empty list on
  * any error (the caller then renders "—"): this is a display overlay, never load-bearing. The catch
  * lives OUTSIDE the cache deliberately — a transient DB error returns [] for this one call without
- * poisoning the cache, so the next request retries, exactly as the old module-cache did.
+ * poisoning the cache, so the next request retries, exactly as the old module-cache did. It is
+ * outside the shared in-flight lookup too: every waiter on a failed lookup gets [], and the slot is
+ * already empty for the next call.
  */
 export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
   try {
-    return await loadBrickCentroidsCached();
+    return await loadBrickCentroidsShared();
   } catch {
     return [];
   }

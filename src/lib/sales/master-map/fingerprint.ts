@@ -35,7 +35,13 @@ export type MasterMapStamp = string;
 async function stampOne(entry: (typeof SOURCE_TABLES)[number]): Promise<string> {
   const supabase = getSupabaseAdmin();
 
-  const countQuery = supabase.from(entry.table).select("*", { count: "exact", head: true });
+  // `.limit(1)` changes nothing about the count and removes a second full scan. PostgREST answers
+  // `count: "exact"` from its own count of the WHOLE filtered table, and separately counts the page
+  // it would have returned — which, with no limit, is the whole table again, even for a HEAD that
+  // returns no rows. On the customer map that second scan took 28.8 ms of a 145 ms probe
+  // (production EXPLAIN, 2026-09-17); limiting the page to one row leaves the exact count, and so
+  // the stamp, identical.
+  const countQuery = supabase.from(entry.table).select("*", { count: "exact", head: true }).limit(1);
   const newestQuery = supabase
     .from(entry.table)
     .select("updated_at")
