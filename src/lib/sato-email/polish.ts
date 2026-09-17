@@ -1,29 +1,32 @@
 /**
- * Takes what the sender actually wanted to say and gives it back in the company's voice: tighter,
- * plainer, corporate — the same email, better written.
+ * The Sato composer's assistant. It has TWO modes, and what separates them is where the facts are
+ * allowed to come from.
  *
- * Owner 2026-09-12: "add ai tool is the new sato composer in which i write what i want and it
- * enhance rephrase more to the point more corporate".
+ * **Rewrite** — owner 2026-09-12: "i write what i want and it enhance rephrase more to the point
+ * more corporate". The sender has written the email; this gives it back in the company's voice.
+ * Nothing may arrive that he did not already write, and the call FAILS rather than hand back
+ * something plausible.
  *
- * 🔴 THIS REWRITES WORDING AND FORMATTING. IT NEVER ADDS FACTS.
+ * **Write** — owner 2026-09-17: "i want to be able to tell it write a job offer to someone whose
+ * area will be like this … i want a real assistant, a real AI assist, not a do nothing". The sender
+ * writes an INSTRUCTION instead of an email and the assistant composes it. His instruction is his
+ * writing, so every figure, gap and address in it is his to use. What it must never do is answer a
+ * fact he never gave: a date, a salary or a name he did not state comes back as a `[square bracket]`
+ * gap for him to fill, never as a guess. Anything it states that he cannot be shown to have written
+ * is handed back to him as a CHECK, listed on screen beside the draft — a refusal there would make
+ * the feature useless, and silence would make it dangerous.
  *
- * The Sato composer is the one screen that mails a whole distribution list at once, so the failure
- * that matters here is not a clumsy sentence — it is a polished one that says something Sato never
- * said. A model asked to make a thin note sound corporate will happily invent the effective date,
- * the policy number, the deadline and the link. So every figure, every [square-bracket] gap and
- * every address — href or img src alike — that comes back is checked against what the sender wrote,
- * and the call FAILS rather than hands back something plausible. The sender is sitting in front of
- * the button and can press it again; a fabricated date in a company-wide announcement cannot be
- * taken back.
+ * 🔴 WHAT NEITHER MODE MAY DO. This is the one screen that mails a whole distribution list at once,
+ * so a minted URL — href or img src alike — is refused outright in both modes: it reaches the reader
+ * without a click and is the one fabrication shaped like an attack. And in neither mode may the
+ * reader learn a model was involved (owner rule 2026-08-04).
  *
- * It may FORMAT freely within the composer's own toolbox (`src/lib/email/toolbar-tools.ts`) — bold,
- * a list, a table, an Arabic paragraph's direction — because formatting rearranges what is already
- * there. It may not use a tool to introduce anything: a table cell needs a value the draft already
- * holds, and an <img> needs an address the sender already wrote.
+ * Both modes FORMAT freely within the composer's own toolbox (`src/lib/email/toolbar-tools.ts`) —
+ * bold, a list, an Arabic paragraph's direction, and a table of whatever shape the sender asked for.
  *
- * Nothing here sends anything, and nothing here is saved. The rewritten wording lands in the same
- * subject and body fields the sender was already editing, the preview is invalidated so a
- * recipient count can never describe a different email, and Undo puts his own words back untouched.
+ * Nothing here sends anything, and nothing here is saved. The draft lands in the same subject and
+ * body fields the sender was already editing, the preview is invalidated so a recipient count can
+ * never describe a different email, and Undo puts his own words back untouched.
  *
  * The pure half sits at the top so those guards can be asserted without a network.
  */
@@ -42,11 +45,30 @@ import { toolboxPromptLines } from "@/lib/email/toolbar-tools";
 export const SATO_POLISH_MAX_SUBJECT_CHARS = 200;
 /** A generous announcement. Longer than this and the sender is writing a document, not an email. */
 export const SATO_POLISH_MAX_BODY_CHARS = 40_000;
+/**
+ * How much instruction the assistant reads.
+ *
+ * The old 600 was sized for a nudge ("shorter, warmer"). A write instruction is a briefing — the
+ * role, the area, the terms, what to leave blank — and cutting it mid-sentence silently drops the
+ * half of the request that carried the facts.
+ */
+export const SATO_ASSIST_MAX_INSTRUCTION_CHARS = 4_000;
+
+/** Where the facts come from: the sender's draft (rewrite) or the sender's instruction (write). */
+export type SatoAssistMode = "rewrite" | "write";
+
+export function parseSatoAssistMode(value: unknown): SatoAssistMode {
+  return value === "write" ? "write" : "rewrite";
+}
 
 export type SatoPolishRequest = {
   bodyHtml: string;
-  /** An optional nudge in the sender's own words — "shorter", "warmer", "make the deadline stand out". */
+  /**
+   * In rewrite mode, a nudge in the sender's own words — "shorter", "warmer", "lead with the
+   * deadline". In write mode it IS the request, and it is the only place new facts may come from.
+   */
   instruction?: string;
+  mode?: SatoAssistMode;
   subject: string;
 };
 
@@ -54,6 +76,13 @@ export type SatoPolishResult = {
   bodyHtml: string;
   /** One short line per change, so the sender can see what was done without diffing two drafts. */
   changes: string[];
+  /**
+   * Write mode only: figures the draft now states that the sender cannot be shown to have written.
+   * Not a refusal — a list to read before sending. Empty in rewrite mode, where the same finding is
+   * a refusal instead.
+   */
+  checks: string[];
+  mode: SatoAssistMode;
   subject: string;
 };
 
@@ -178,16 +207,41 @@ const VOICE_RULES: ReadonlyArray<{ label: string; pattern: RegExp }> = [
   },
 ];
 
+export type SatoAssistSender = { bodyHtml: string; instruction?: string; subject: string };
+
 /**
- * Why a rewrite must not be handed back. Empty means it is safe for the sender to look at.
+ * Everything the sender himself wrote, as words.
  *
- * Everything is measured against what the sender wrote — his subject and his body, in words, with
- * the markup stripped — because that is the whole definition of "rephrase": nothing may arrive that
- * was not already there.
+ * 🔴 THE INSTRUCTION COUNTS AS HIS WRITING, IN BOTH MODES. He typed it, on this screen, seconds
+ * ago. Leaving it out is what made the assistant feel like a do-nothing: "say we close at 2 PM"
+ * typed into the box came back refused as a figure nobody wrote.
+ */
+export function senderWriting(sender: SatoAssistSender): string {
+  return [sender.subject, emailPlainText(sender.bodyHtml), String(sender.instruction ?? "")]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Addresses written as plain text — a link the sender pasted into his instruction is still his. */
+function writtenUrls(value: string): string[] {
+  return Array.from(String(value ?? "").matchAll(/https?:\/\/[^\s<>"')\]]+/gi)).map((match) =>
+    match[0].toLowerCase().replace(/[.,;:]+$/, ""),
+  );
+}
+
+/**
+ * Why a draft must not be handed back at all. Empty means it is safe for the sender to look at.
+ *
+ * Three of these hold in BOTH modes — an empty draft, a draft that names the assistant, and an
+ * address nobody wrote. The other two — a figure and a filled-in gap — are what "rewrite" means,
+ * and they are refusals only there. In write mode the sender ASKED for content, so the same finding
+ * is reported by `unverifiedFigures` instead of thrown away.
  */
 export function findPolishViolations(
   candidate: { bodyHtml: string; subject: string },
-  sender: { bodyHtml: string; subject: string },
+  sender: SatoAssistSender,
+  mode: SatoAssistMode = "rewrite",
 ): string[] {
   const violations: string[] = [];
 
@@ -195,42 +249,114 @@ export function findPolishViolations(
   if (!bodyText) violations.push("the rewritten body came back empty");
   if (!candidate.subject.trim()) violations.push("the rewritten subject came back empty");
 
-  const written = `${sender.subject}\n${emailPlainText(sender.bodyHtml)}`;
+  const written = senderWriting(sender);
   const rewritten = `${candidate.subject}\n${bodyText}`;
 
   for (const rule of VOICE_RULES) {
     if (rule.pattern.test(rewritten) && !rule.pattern.test(written)) violations.push(rule.label);
   }
 
-  const allowedFigures = new Set(numericTokens(written));
-  const invented = Array.from(new Set(numericTokens(rewritten).filter((token) => !allowedFigures.has(token))));
-  if (invented.length > 0) violations.push(`figures nobody wrote (${invented.join(", ")})`);
+  if (mode === "rewrite") {
+    const allowedFigures = new Set(numericTokens(written));
+    const invented = Array.from(new Set(numericTokens(rewritten).filter((token) => !allowedFigures.has(token))));
+    if (invented.length > 0) violations.push(`figures nobody wrote (${invented.join(", ")})`);
 
-  // A gap the sender still has to fill must survive the rewrite. One that disappeared was filled
-  // in by the model, which means the email now states something as fact that nobody decided.
-  const kept = new Set(bracketTokens(rewritten));
-  const lost = Array.from(new Set(bracketTokens(written).filter((token) => !kept.has(token))));
-  if (lost.length > 0) violations.push(`gaps it filled in by itself (${lost.join(", ")})`);
+    // A gap the sender still has to fill must survive the rewrite. One that disappeared was filled
+    // in by the model, which means the email now states something as fact that nobody decided.
+    const kept = new Set(bracketTokens(rewritten));
+    const lost = Array.from(new Set(bracketTokens(written).filter((token) => !kept.has(token))));
+    if (lost.length > 0) violations.push(`gaps it filled in by itself (${lost.join(", ")})`);
+  }
 
-  const allowedLinks = new Set(linkTargets(sender.bodyHtml));
+  const allowedLinks = new Set([...linkTargets(sender.bodyHtml), ...writtenUrls(String(sender.instruction ?? ""))]);
   const mintedLinks = Array.from(new Set(linkTargets(candidate.bodyHtml).filter((href) => !allowedLinks.has(href))));
   if (mintedLinks.length > 0) violations.push(`links nobody wrote (${mintedLinks.join(", ")})`);
 
   return violations;
 }
 
+/** At most this many checks are listed — a longer list stops being read. */
+const MAX_CHECKS = 8;
+
+/**
+ * Write mode's honest half: the figures the draft now states that the sender cannot be shown to
+ * have written, so he reads them before the email goes to a distribution list.
+ *
+ * It is a LIST, not a refusal. He asked it to write a job offer; refusing every draft that carries
+ * a probation period he did not dictate would hand him back nothing, which is the complaint this
+ * mode exists to answer. The prompt tells the model to leave a [square bracket] gap instead of
+ * guessing, so a well-behaved draft produces an empty list and this panel stays shut.
+ */
+export function unverifiedFigures(
+  candidate: { bodyHtml: string; subject: string },
+  sender: SatoAssistSender,
+): string[] {
+  const allowed = new Set(numericTokens(senderWriting(sender)));
+  const stated = `${candidate.subject}\n${emailPlainText(candidate.bodyHtml)}`;
+  return Array.from(new Set(numericTokens(stated).filter((token) => !allowed.has(token)))).slice(0, MAX_CHECKS);
+}
+
 // -- Pure: the prompt --------------------------------------------------------
 
 export function buildPolishPrompt(input: SatoPolishRequest): string {
-  const instruction = String(input.instruction ?? "").replace(/\s+/g, " ").trim();
+  const mode = parseSatoAssistMode(input.mode);
+  // Newlines survive in write mode on purpose: a briefing arrives as a list of points, and
+  // flattening it to one line is the difference between "three terms" and one run-on sentence.
+  const instruction =
+    mode === "write"
+      ? String(input.instruction ?? "").replace(/[ \t]+/g, " ").trim().slice(0, SATO_ASSIST_MAX_INSTRUCTION_CHARS)
+      : String(input.instruction ?? "").replace(/\s+/g, " ").trim().slice(0, SATO_ASSIST_MAX_INSTRUCTION_CHARS);
+  const subject = String(input.subject ?? "").trim();
+  const body = String(input.bodyHtml ?? "").slice(0, SATO_POLISH_MAX_BODY_CHARS);
+
+  if (mode === "write") {
+    return [
+      `What the sender asked you to write:\n${instruction}`,
+      subject ? `Subject he has already typed (keep it unless he asked otherwise):\n${subject}` : "Subject: he has not typed one — write it.",
+      emailPlainText(body)
+        ? `What is already in the body (build on it, do not throw it away):\n${body}`
+        : "The body is empty — this email is yours to write from his request above.",
+    ].join("\n\n");
+  }
+
   return [
-    `Subject as written:\n${String(input.subject ?? "").trim() || "(the sender has not written one yet)"}`,
-    `Body as written (HTML):\n${String(input.bodyHtml ?? "").slice(0, SATO_POLISH_MAX_BODY_CHARS)}`,
-    instruction ? `What the sender asked for on top of the house voice:\n${instruction.slice(0, 600)}` : "",
+    `Subject as written:\n${subject || "(the sender has not written one yet)"}`,
+    `Body as written (HTML):\n${body}`,
+    instruction ? `What the sender asked for on top of the house voice:\n${instruction}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
 }
+
+/**
+ * The toolbar, written out for a model that cannot click it. Shared by both modes — an assistant
+ * that can write an email but not bold a line inside it is the same do-nothing in a new shape.
+ */
+const TOOLBOX_BLOCK = [
+  "THE TOOLBOX — you are pressing the same buttons the sender has:",
+  "The sender writes in an editor with a Gmail-style toolbar. You cannot click it, so you press a button by writing the markup that button produces. This is the whole list, and nothing outside it survives:",
+  ...toolboxPromptLines(),
+  "",
+  "When the sender asks for one of these in his own words, do it. \"Bold the deadline\", \"put the dates in a table\", \"make it a list\", \"right-align the Arabic\" are instructions to use that tool.",
+].join("\n");
+
+/**
+ * 🔴 THE TABLE LINE IS THE ONE THE OWNER CHANGED (2026-09-17). It used to read "only when the draft
+ * already contains something with two dimensions … never add a column the draft cannot fill", which
+ * is why "make it a table of two columns" came back as a paragraph. A shape he names is an
+ * instruction, not a suggestion: build exactly the table he asked for.
+ */
+const TOOLBOX_USE_BLOCK = [
+  "HOW TO USE THE TOOLBOX — restraint is the house style, but an instruction always wins:",
+  "- Formatting carries meaning. If everything is bold, nothing is. A company announcement normally needs nothing more than paragraphs, one list, and bold on the single thing that must not be missed.",
+  "- Use a heading only when the email genuinely has two or more sections. One section needs no heading.",
+  "- TABLES. When the sender names a shape — \"a table with two columns\", \"add a column for the area\", \"one row per branch\", \"drop the last row\" — build exactly that shape, whatever the current table looks like. A table may have any number of columns and rows. Left to your own judgement, reach for a table only when the content has two dimensions, and never leave a cell empty: if a value is not known, put a [square bracket] gap in the cell so the sender fills it.",
+  "- Every cell of a table you write carries the house border and padding, exactly as the Insert table tool above shows. A bare <td> with no style renders as an unruled cell.",
+  "- Colour, highlight, font and font size only when the sender asks for them. Left alone, the house design supplies all of that and looks better than anything you would choose.",
+  "- Arabic paragraphs take dir=\"rtl\", which already right-aligns them — do not add text-align as well. English paragraphs need neither. In a bilingual email set the direction per paragraph, never once around the whole body.",
+  "- Use <ul> when the email lists things. One idea per item, no full stop at the end of an item.",
+  "- No <div>, no <script>, no class attribute, no markdown, no code fences. A style declaration outside the list above is dropped in silence, so writing one just loses the formatting.",
+].join("\n");
 
 /**
  * Exported so `tests/sato-email-toolbox.test.ts` can assert the toolbox actually reaches the
@@ -257,23 +383,8 @@ export const SATO_POLISH_INSTRUCTIONS = [
     "- Never mention that this text was generated, rewritten or assisted in any way, and never refer to yourself.",
     "- Never soften or harden the decision he is announcing. You change how it reads, never what it says.",
   ].join("\n"),
-  [
-    "THE TOOLBOX — you are pressing the same buttons the sender has:",
-    "The sender writes in an editor with a Gmail-style toolbar. You cannot click it, so you press a button by writing the markup that button produces. This is the whole list, and nothing outside it survives:",
-    ...toolboxPromptLines(),
-    "",
-    "When the sender asks for one of these in his own words, do it. \"Bold the deadline\", \"put the dates in a table\", \"make it a list\", \"right-align the Arabic\" are instructions to use that tool, not requests for new content — you format what is already there.",
-  ].join("\n"),
-  [
-    "HOW TO USE THE TOOLBOX — restraint is the house style:",
-    "- Formatting carries meaning. If everything is bold, nothing is. A company announcement normally needs nothing more than paragraphs, one list, and bold on the single thing that must not be missed.",
-    "- Use a heading only when the announcement genuinely has two or more sections. One section needs no heading.",
-    "- Use a table only when the draft already contains something with two dimensions — a date per branch, an amount per grade. Never build a table with an empty cell, and never add a column the draft cannot fill.",
-    "- Colour, highlight, font and font size only when the sender asks for them. Left alone, the house design supplies all of that and looks better than anything you would choose.",
-    "- Arabic paragraphs take dir=\"rtl\", which already right-aligns them — do not add text-align as well. English paragraphs need neither. In a bilingual email set the direction per paragraph, never once around the whole body.",
-    "- Use <ul> when the draft lists things. One idea per item, no full stop at the end of an item.",
-    "- No <div>, no <script>, no class attribute, no markdown, no code fences. A style declaration outside the list above is dropped in silence, so writing one just loses the formatting.",
-  ].join("\n"),
+  TOOLBOX_BLOCK,
+  TOOLBOX_USE_BLOCK,
   [
     "Also return a short list of what you changed, in plain words a non-writer understands, at most five items. Examples of the right register:",
     "- Moved the decision into the first sentence.",
@@ -282,6 +393,48 @@ export const SATO_POLISH_INSTRUCTIONS = [
     "- Put the branch closing times in a table.",
     "- Made the Arabic paragraph read right to left.",
     "Say nothing about tone in the abstract, and never claim you added anything.",
+  ].join("\n"),
+].join("\n\n");
+
+/**
+ * Write mode's prompt — the assistant the owner asked for on 2026-09-17.
+ *
+ * The register and the toolbox are the same; the contract is the opposite way round. Here the
+ * sender's REQUEST is the source of truth and the body may be empty, so the instruction that
+ * carries the weight is the one about gaps: a fact he did not give comes back as a [square bracket]
+ * for him to fill, never as a plausible guess. That single rule is what lets this mode write a whole
+ * job offer without inventing the salary.
+ */
+export const SATO_WRITE_INSTRUCTIONS = [
+  "You write an internal email for Sato Pharma, an Egyptian pharmaceutical company, inside its HR system. A named colleague has told you what he wants the email to say, in his own words, and you write it for him. It will be emailed to employees, a candidate or a distribution list under the company's own identity, after he has read it.",
+  [
+    "WHAT YOU PRODUCE:",
+    "- The complete email he asked for — subject and body — ready to read and send, not an outline and not a single thin paragraph.",
+    "- The KIND of email he names: a job offer reads as a job offer, an announcement as an announcement, a warning letter as a warning letter, an invitation as an invitation. Use the structure that kind of letter normally has.",
+    "- Formal corporate register: measured, impersonal, confident. No slang, no exclamation marks, no emoji, no hype, no marketing language.",
+    "- Write in the language he used. If he writes Arabic, the email is Arabic; if he asks for both languages, give each its own paragraph.",
+    "- A subject that says what the email is about in a few words. Sentence case, never Title Case. Never a teaser, never a question, no Important or Urgent prefix.",
+    "- When he has already typed part of the email, build on what is there rather than replacing it.",
+  ].join("\n"),
+  [
+    "🔴 THE ONE RULE THAT MATTERS — YOU NEVER INVENT A FACT:",
+    "- Every fact you state must come from what he wrote: his request, or the draft already in the body.",
+    "- A fact he did NOT give you — a date, a salary, a figure, a percentage, a deadline, a name, a job title, an area, a phone number, an address, a policy number — is written as a [square bracket] gap in the place it belongs: [start date], [basic salary], [line manager]. He fills it in before sending. A gap he has to fill is useful; a plausible number nobody decided is dangerous.",
+    "- Never mint a link or an image address. Use a URL only if he wrote it himself.",
+    "- Never promise anything on the company's behalf that he did not say — no benefit, no bonus, no allowance, no guarantee, no deadline.",
+    "- Never add a greeting or a sign-off. The email design prints the company's own frame around your text, and he signs it in a separate field.",
+    "- Never mention that this text was written, generated or assisted by anything, and never refer to yourself.",
+    "- If his request is too thin to write from, still write the email he asked for and leave every unknown as a [square bracket] gap. Say what is missing in the change list.",
+  ].join("\n"),
+  TOOLBOX_BLOCK,
+  TOOLBOX_USE_BLOCK,
+  [
+    "Also return a short list of what you did, in plain words, at most five items. Examples of the right register:",
+    "- Wrote the offer as a letter: role, terms, then what happens next.",
+    "- Left [basic salary] and [start date] as gaps for you to fill.",
+    "- Put the three terms in a two-column table, as you asked.",
+    "- Wrote it in Arabic, right to left.",
+    "Name every gap you left, so he knows what is still his to decide.",
   ].join("\n"),
 ].join("\n\n");
 
@@ -359,33 +512,43 @@ function parsePolish(text: string): { bodyHtml: string; changes: string[]; subje
 }
 
 /**
- * Rewrites one draft and hands it straight back to the sender to look at. Writes nothing, sends
- * nothing, and decides nothing.
+ * Writes or rewrites one draft and hands it straight back to the sender to look at. Writes nothing,
+ * sends nothing, and decides nothing.
  */
 export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<SatoPolishResult> {
+  const mode = parseSatoAssistMode(input.mode);
   const subject = String(input.subject ?? "").trim();
   const bodyHtml = String(input.bodyHtml ?? "").trim();
-  if (!emailPlainText(bodyHtml)) {
-    throw new SatoPolishError("polish_failed", "Write the email in your own words first.");
+  const instruction = String(input.instruction ?? "").trim();
+
+  // Each mode has exactly one thing it cannot start without: rewrite needs an email, write needs a
+  // request. An empty body is NORMAL in write mode — that is the whole point of it.
+  if (mode === "write") {
+    if (!instruction) throw new SatoPolishError("polish_failed", "Tell it what to write first.");
+  } else if (!emailPlainText(bodyHtml)) {
+    throw new SatoPolishError("polish_failed", "Write the email in your own words first, or use Write it.");
   }
   if (!hasOpenAiApiKey()) {
-    throw new SatoPolishError("polish_not_configured", "Rewriting is not configured on this server yet.");
+    throw new SatoPolishError("polish_not_configured", "The assistant is not configured on this server yet.");
   }
 
-  const prompt = buildPolishPrompt({ ...input, bodyHtml, subject });
+  const prompt = buildPolishPrompt({ ...input, bodyHtml, instruction, mode, subject });
 
   let outputText: string;
   try {
     // The strong tier, not the cheap one, and for the same reason the email module already uses it:
     // this is a whole email going to a distribution list under the company's name, pressed a handful
     // of times a day. The nano tier is the right fit for a one-sentence register change; it is not
-    // the right fit for holding a multi-paragraph announcement's meaning steady while rewriting it.
+    // the right fit for holding a multi-paragraph announcement's meaning steady while rewriting it,
+    // nor for writing a job offer that has to leave the unknowns as gaps rather than fill them.
     const response = await createOpenAiResponseText({
       input: prompt,
-      instructions: SATO_POLISH_INSTRUCTIONS,
-      maxOutputTokens: 6_000,
+      instructions: mode === "write" ? SATO_WRITE_INSTRUCTIONS : SATO_POLISH_INSTRUCTIONS,
+      // Write mode composes a whole letter, sometimes bilingual, sometimes with a table — the
+      // rewrite budget is measured against an email that already exists.
+      maxOutputTokens: mode === "write" ? 9_000 : 6_000,
       model: resolveOpenAiCopilotModel(),
-      purpose: "sato-email-polish",
+      purpose: mode === "write" ? "sato-email-write" : "sato-email-polish",
       reasoning: { effort: "medium" },
       text: polishTextFormat,
       // The copilot model at medium effort routinely outruns the 25s nano-tier default.
@@ -394,7 +557,7 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     outputText = response.outputText;
   } catch (error) {
     if (error instanceof PhoenixOpenAiError) throw polishErrorFromOpenAi(error);
-    throw new SatoPolishError("polish_failed", "The rewrite could not be produced. Try again.");
+    throw new SatoPolishError("polish_failed", "The draft could not be produced. Try again.");
   }
 
   const parsed = parsePolish(outputText);
@@ -405,17 +568,30 @@ export async function polishSatoEmailDraft(input: SatoPolishRequest): Promise<Sa
     subject: cleanPolishedSubject(parsed.subject),
   };
 
-  const violations = findPolishViolations(candidate, { bodyHtml, subject });
+  const sender = { bodyHtml, instruction, subject };
+  const violations = findPolishViolations(candidate, sender, mode);
   if (violations.length > 0) {
     throw new SatoPolishError(
       "polish_failed",
-      `The rewrite was rejected because it changed the facts, not just the wording (${violations.join("; ")}). Try again, or send your own words.`,
+      mode === "write"
+        ? `The draft was rejected (${violations.join("; ")}). Try again, or write it yourself.`
+        : `The rewrite was rejected because it changed the facts, not just the wording (${violations.join("; ")}). Try again, or send your own words.`,
     );
   }
 
   return {
     bodyHtml: candidate.bodyHtml,
     changes: parsed.changes.map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean),
+    // Rewrite mode refuses an invented figure outright, so by here it has none to report. Write
+    // mode names them instead — a bare list of digits would tell the sender nothing, so each one
+    // arrives as the sentence he needs to act on.
+    checks:
+      mode === "write"
+        ? unverifiedFigures(candidate, sender).map(
+            (figure) => `${figure} — you did not write this figure. Confirm it, or replace it with a [gap] to fill.`,
+          )
+        : [],
+    mode,
     subject: candidate.subject,
   };
 }

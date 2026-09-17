@@ -77,6 +77,21 @@ type PreviewView = {
 /** Mirrors MAX_MATCHES in app/api/admin/sato-email/employees/route.ts, so the screen can say it is a cap. */
 const SEARCH_MATCH_CAP = 25;
 
+/**
+ * What the assistant is being asked to do.
+ *
+ * Owner 2026-09-17: "I want to be able to tell it write a job offer to someone whose area will be
+ * like this ... I wanted a real assistant, not a do-nothing." Write composes from his instruction
+ * and works on an empty body; Rewrite is the older behaviour, which only ever touches wording.
+ *
+ * Declared here rather than imported from `@/lib/sato-email/polish`, which is a server module —
+ * importing it would pull the OpenAI client into the browser bundle. `parseSatoAssistMode` on the
+ * route is the authority; anything else it receives is read as a rewrite.
+ */
+type AssistMode = "rewrite" | "write";
+/** Mirrors SATO_ASSIST_MAX_INSTRUCTION_CHARS, which the route slices at. Pinned by the polish test. */
+const ASSIST_INSTRUCTION_MAX_CHARS = 4_000;
+
 type SendResultView = {
   emailCount: number;
   outcomes: Array<{ batchIndex: number; id: string | null; reason: string | null; recipients: number; status: string }>;
@@ -144,11 +159,13 @@ export function SatoEmailComposer({
   // clears the preview, and the reason box must not vanish under the sender's cursor as it does.
   const [serverOutside, setServerOutside] = useState<string[]>([]);
 
-  // The rewrite. `polished` holds what the sender wrote immediately before it, which is the whole
+  // The assistant. `polished` holds what the sender wrote immediately before it, which is the whole
   // of Undo: his own words are never sent anywhere to be fetched back, they are simply still here.
-  const [nudge, setNudge] = useState("");
-  const [polishing, setPolishing] = useState(false);
-  const [polished, setPolished] = useState<{ bodyHtml: string; changes: string[]; subject: string } | null>(null);
+  const [instruction, setInstruction] = useState("");
+  const [polishing, setPolishing] = useState<AssistMode | null>(null);
+  const [polished, setPolished] = useState<
+    { bodyHtml: string; changes: string[]; checks: string[]; mode: AssistMode; subject: string } | null
+  >(null);
 
   const [clientRequestId, setClientRequestId] = useState(newRequestId);
   const [preview, setPreview] = useState<PreviewView | null>(null);
@@ -265,36 +282,43 @@ export function SatoEmailComposer({
   }
 
   /**
-   * Puts the draft into the company's voice. Nothing is saved and nothing is sent — the rewritten
-   * wording lands straight back in the two fields the sender was already editing, and the preview
-   * is invalidated with it, so a recipient count on screen can never belong to the older draft.
+   * Writes the email he asked for, or puts the draft he wrote into the company's voice. Nothing is
+   * saved and nothing is sent — the result lands straight back in the two fields he was already
+   * editing, and the preview is invalidated with it, so a recipient count on screen can never
+   * belong to the older draft.
    */
-  async function polish() {
-    setPolishing(true);
+  async function polish(assistMode: AssistMode) {
+    setPolishing(assistMode);
     setError(null);
     try {
       const response = await fetch("/api/admin/sato-email/polish", {
-        body: JSON.stringify({ bodyHtml, instruction: nudge, subject }),
+        body: JSON.stringify({ bodyHtml, instruction, mode: assistMode, subject }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
       const payload = (await response.json()) as {
         message?: string;
-        result?: { bodyHtml: string; changes: string[]; subject: string };
+        result?: { bodyHtml: string; changes: string[]; checks?: string[]; mode?: AssistMode; subject: string };
       };
       if (!response.ok || !payload.result) {
-        setError(payload.message ?? "The rewrite could not be produced.");
+        setError(payload.message ?? "The assistant could not answer.");
         return;
       }
       // His own words, kept here and nowhere else, so Undo is exact rather than approximate.
-      setPolished({ bodyHtml, changes: payload.result.changes, subject });
+      setPolished({
+        bodyHtml,
+        changes: payload.result.changes,
+        checks: payload.result.checks ?? [],
+        mode: payload.result.mode ?? assistMode,
+        subject,
+      });
       setSubject(payload.result.subject);
       setBodyHtml(payload.result.bodyHtml);
       invalidate();
     } catch {
-      setError("The rewrite could not be produced.");
+      setError("The assistant could not answer.");
     } finally {
-      setPolishing(false);
+      setPolishing(null);
     }
   }
 
@@ -591,34 +615,64 @@ export function SatoEmailComposer({
           </div>
 
           <div className="mt-3 rounded-xl border border-phx-line bg-phx-paper p-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <label className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2" htmlFor="sato-assist">
+              Tell the assistant what you want
+            </label>
+            <textarea
+              className={`mt-2 ${FIELD} min-h-[88px]`}
+              id="sato-assist"
+              maxLength={ASSIST_INSTRUCTION_MAX_CHARS}
+              onChange={(event) => setInstruction(event.target.value)}
+              placeholder={
+                "Write a job offer for Ahmed Samir, medical representative, Giza area, reporting to the Cairo district " +
+                "manager — or, on a draft you already wrote: shorter, lead with the deadline, put the branches in a " +
+                "table of two columns"
+              }
+              rows={3}
+              value={instruction}
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 className={DARK_BUTTON}
-                disabled={polishing || !bodyHtml.trim()}
-                onClick={() => void polish()}
+                disabled={polishing !== null || !instruction.trim()}
+                onClick={() => void polish("write")}
                 type="button"
               >
-                {polishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {polishing ? "Rewriting" : "Rewrite it"}
+                {polishing === "write" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {polishing === "write" ? "Writing" : "Write it"}
               </button>
-              <input
-                className={`${FIELD} h-[42px] min-w-[220px] flex-1`}
-                maxLength={200}
-                onChange={(event) => setNudge(event.target.value)}
-                placeholder="Optional — shorter, warmer, lead with the deadline"
-                value={nudge}
-              />
+              <button
+                className={PALE_BUTTON}
+                disabled={polishing !== null || !bodyHtml.trim()}
+                onClick={() => void polish("rewrite")}
+                type="button"
+              >
+                {polishing === "rewrite" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                {polishing === "rewrite" ? "Rewriting" : "Rewrite what I wrote"}
+              </button>
             </div>
             <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
-              Write it however it comes out. This says the same thing in the company&apos;s voice — shorter, plainer,
-              more corporate. It never adds a date, a figure, a link or anything inside [square brackets] that you did
-              not write yourself, and it refuses rather than guess.
+              <strong>Write it</strong> composes the whole email from what you asked for, even on an empty page, and
+              uses every button in the toolbar above — including a table of the shape you name. <strong>Rewrite what
+              I wrote</strong> keeps your draft and only changes how it reads. Neither one invents a fact: anything you
+              did not give it comes back as a [square bracket] gap for you to fill, and a link it did not get from you
+              is refused outright.
             </p>
 
             {polished ? (
               <div className="mt-3 rounded-lg border border-phx-line bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">What changed</span>
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-phx-ink-2">
+                    {polished.mode === "write" ? "What it wrote" : "What changed"}
+                  </span>
                   <button className={PALE_BUTTON} onClick={undoPolish} type="button">
                     <Undo2 className="h-4 w-4" />
                     Put my words back
@@ -633,10 +687,32 @@ export function SatoEmailComposer({
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-sm font-semibold text-phx-ink">The wording was tightened.</p>
+                  <p className="mt-2 text-sm font-semibold text-phx-ink">
+                    {polished.mode === "write" ? "The email is written." : "The wording was tightened."}
+                  </p>
                 )}
+                {/*
+                  🔴 THE CHECK LIST. A figure the assistant wrote that you never gave it is not refused in
+                  write mode — refusing would leave you with no email at all — so it is named here instead,
+                  one line each, in the place you cannot miss before pressing Preview.
+                */}
+                {polished.checks.length > 0 ? (
+                  <div className="mt-3 rounded-lg border border-[#FED7AA] bg-phx-accent-soft p-3">
+                    <span className="text-phx-xs font-black uppercase tracking-wide text-phx-accent-press">
+                      Check these before you send
+                    </span>
+                    <ul className="mt-2 space-y-1">
+                      {polished.checks.map((check) => (
+                        <li className="text-sm font-semibold text-phx-ink" key={check}>
+                          {check}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
                 <p className="mt-2 text-xs font-semibold text-phx-ink-faint">
-                  Read it before you send it. Edit it freely — this panel closes as soon as you do.
+                  Read it before you send it. Fill in anything left in [square brackets]. Edit it freely — this panel
+                  closes as soon as you do.
                 </p>
               </div>
             ) : null}
@@ -925,7 +1001,7 @@ export function SatoEmailComposer({
         ) : null}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null || polishing || uploading} onClick={() => void runPreview()} type="button">
+          <button className={DARK_BUTTON} disabled={!canCompose || busy !== null || polishing !== null || uploading} onClick={() => void runPreview()} type="button">
             {busy === "preview" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
             Preview and count recipients
           </button>
@@ -1006,7 +1082,7 @@ export function SatoEmailComposer({
                   {preview.recipientCount === 1 ? "" : "s"} now? A sent email cannot be recalled.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button className={DARK_BUTTON} disabled={busy !== null || polishing || uploading} onClick={() => void send()} type="button">
+                  <button className={DARK_BUTTON} disabled={busy !== null || polishing !== null || uploading} onClick={() => void send()} type="button">
                     {busy === "send" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                     Yes, send it
                   </button>

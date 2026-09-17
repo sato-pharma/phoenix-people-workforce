@@ -4,7 +4,9 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { canUseSatoEmail } from "@/lib/sato-email/access";
 import {
+  parseSatoAssistMode,
   polishSatoEmailDraft,
+  SATO_ASSIST_MAX_INSTRUCTION_CHARS,
   SATO_POLISH_MAX_BODY_CHARS,
   SATO_POLISH_MAX_SUBJECT_CHARS,
   SatoPolishError,
@@ -19,7 +21,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 150;
 
 /**
- * Rewrites the draft the sender is looking at. Sends nothing, saves nothing, decides nothing.
+ * The composer's assistant: writes the email the sender asked for, or rewrites the one he wrote
+ * (`mode`). Sends nothing, saves nothing, decides nothing.
  *
  * The gate is `canUseSatoEmail`, the same predicate as every other route behind this screen, and
  * not `communication` — that resource also opens the older HR composer, the system email templates
@@ -48,7 +51,11 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const result = await polishSatoEmailDraft({
       bodyHtml: typeof body.bodyHtml === "string" ? body.bodyHtml.slice(0, SATO_POLISH_MAX_BODY_CHARS) : "",
-      instruction: typeof body.instruction === "string" ? body.instruction.slice(0, 600) : "",
+      // The instruction is the only place a write-mode fact can come from, so it is cut at the
+      // briefing length, not at the old nudge length — see SATO_ASSIST_MAX_INSTRUCTION_CHARS.
+      instruction:
+        typeof body.instruction === "string" ? body.instruction.slice(0, SATO_ASSIST_MAX_INSTRUCTION_CHARS) : "",
+      mode: parseSatoAssistMode(body.mode),
       subject: typeof body.subject === "string" ? body.subject.slice(0, SATO_POLISH_MAX_SUBJECT_CHARS) : "",
     });
 
@@ -56,7 +63,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (isApiRateLimitError(error)) {
       return NextResponse.json(
-        { message: "Too many rewrites — slow down.", retryAfterSeconds: error.retryAfterSeconds },
+        { message: "Too many requests to the assistant — slow down.", retryAfterSeconds: error.retryAfterSeconds },
         { status: 429 },
       );
     }
