@@ -808,7 +808,7 @@ type ComparisonMasters = {
 async function loadComparisonMasters(): Promise<ComparisonMasters> {
   const supabase = getSupabaseAdmin();
   const [references, brickMasterResult] = await Promise.all([
-    loadSalesReferenceData(),
+    loadSalesReferenceData({ includeCustomerBricks: false }),
     supabase.from("source_of_sales_bricks").select("brick_id,brick_name,area_code,region_code").eq("active", true),
   ]);
 

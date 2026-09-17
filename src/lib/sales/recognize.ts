@@ -81,7 +81,8 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
   const profile = await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
   // Load masters + file buffer in parallel; load crosswalks only after coded-sheet and header checks pass.
-  const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
+  // No customer→brick crosswalk here: loadCrosswalks reads the customer map itself.
+  const [refs, buffer] = await Promise.all([loadSalesReferenceData({ includeCustomerBricks: false }), file.arrayBuffer()]);
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);

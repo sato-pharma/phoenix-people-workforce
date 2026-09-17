@@ -102,7 +102,9 @@ async function selectAllActive(supabase: SupabaseAdmin, table: string, columns: 
 export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSalesReferenceData>>): Promise<Crosswalks> {
   const supabase = getSupabaseAdmin();
   const [refs, prodA, terrA, areaA, regionA, custMap] = await Promise.all([
-    preRefs ?? loadSalesReferenceData(),
+    // Masters only. The customer→brick map is read below, keyset-paged and with its confidence, so
+    // the reference data's own copy of it would be a second full read of the same table.
+    preRefs ?? loadSalesReferenceData({ includeCustomerBricks: false }),
     selectAllActive(supabase, "source_of_sales_product_aliases", "alias,product_code,distributor_code"),
     selectAllActive(supabase, "source_of_sales_territory_aliases", "alias,target_type,target_code"),
     selectAllActive(supabase, "source_of_sales_area_aliases", "alias,area_code,region_code"),

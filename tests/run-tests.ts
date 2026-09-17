@@ -526,6 +526,7 @@ import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
+import { runSalesReferenceCrosswalkCallersTests } from "./sales-reference-crosswalk-callers.test.ts";
 import { runCustomerDirectoryTests } from "./customer-directory.test.ts";
 import { runCustomerMappingTests } from "./sales-customer-mapping.test.ts";
 import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.test.ts";
@@ -2767,6 +2768,7 @@ await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)
 await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
+await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);
 await runTest("sos customer key", runSosCustomerKeyTests);
 await runTest("sos code canonical (leading-zero drift)", runSosCodeCanonicalTests);
 await runTest("customer directory", runCustomerDirectoryTests);
