@@ -1498,6 +1498,7 @@ import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.t
 import { runNotificationDrainHealthAlertTests } from "./notification-drain-health-alert.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
+import { runQuietHoursTelegramDeferralTests } from "./quiet-hours-telegram-deferral.test.ts";
 import { runExpenseClaimsRefreshTests } from "./expense-claims-refresh.test.ts";
 import { runMarketingFinanceRequirementOnApprovalTests } from "./marketing-finance-requirement-on-approval.test.ts";
 import { runMarketingInvoiceOverdueMarkerTests } from "./marketing-invoice-overdue-marker.test.ts";
@@ -5006,6 +5007,11 @@ await runTest(
   "notification drain starvation guard (all three retry drains keep exhausted rows out of the due "
     + "window in SQL, and page/limit boundaries stay stable on a total order)",
   runNotificationDrainStarvationGuardTests,
+);
+
+await runTest(
+  "quiet hours never hold a Telegram delivery pending that nothing can send: with Telegram off or no connected chat the deferral is written and reported skipped, and the retry worker judges a sendable payload by the same rule",
+  runQuietHoursTelegramDeferralTests,
 );
 
 await runTest(
