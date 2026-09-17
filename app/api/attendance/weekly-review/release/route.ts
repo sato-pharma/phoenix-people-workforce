@@ -13,7 +13,8 @@ export const dynamic = "force-dynamic";
  * Release the days of one week waiting now — the step that notifies employees. Owner decisions
  * 2026-09-15 (nothing reaches an employee until this is clicked) and 2026-09-17 (release any time;
  * later days go out in a second release). `seenLines` is every waiting day as the page showed it, so a
- * day that arrived after the page loaded is never released unseen. The Super Admin only — a dispute
+ * day that arrived after the page loaded is never released unseen. `digestId`, when sent, releases that one
+ * employee only and leaves the others waiting (owner, 2026-09-17). The Super Admin only — a dispute
  * reviewer can see the week but cannot release it.
  */
 export async function POST(request: Request) {
@@ -28,7 +29,12 @@ export async function POST(request: Request) {
     }
     if (!access.hrId) throw validationError("No HR ID on session.");
 
-    const payload = (await request.json().catch(() => ({}))) as { cycleKey?: unknown; weekIndex?: unknown; seenLines?: unknown };
+    const payload = (await request.json().catch(() => ({}))) as {
+      cycleKey?: unknown;
+      weekIndex?: unknown;
+      seenLines?: unknown;
+      digestId?: unknown;
+    };
     const cycleKey = String(payload.cycleKey ?? "");
     if (!/^\d{4}-\d{2}$/.test(cycleKey)) throw validationError("Invalid cycle.");
     const weekIndex = Number(payload.weekIndex);
@@ -40,6 +46,7 @@ export async function POST(request: Request) {
       cycleKey,
       weekIndex,
       seenLines: payload.seenLines,
+      digestId: payload.digestId,
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {

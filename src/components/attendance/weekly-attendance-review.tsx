@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { MAX_MARKED_DAYS, type ReviewWeekStage } from "@/lib/attendance/digest-rules.ts";
 import type { DigestLineRow, ReviewEmployee, ReviewWeek, ReviewWeekOption } from "@/lib/attendance/digest-service.ts";
@@ -14,6 +14,10 @@ import type { DigestLineRow, ReviewEmployee, ReviewWeek, ReviewWeekOption } from
 // 2026-09-17 — "Show live, release any time". A week is here from its first day and holds the days up
 // to yesterday; the daily job, or Refresh, brings it up to date. He can release the days so far in the
 // middle of the week, and later days go out in a second release of the same week.
+//
+// 2026-09-17 — "every row has a release beside it … so I can release one employee and after release
+// another". Each waiting employee has their own Release; the others keep waiting, ticks untouched. The
+// week's Release still sends everyone waiting at once.
 //
 // House rules this is built to:
 //   • Square edges — no rounded-* classes.
@@ -125,11 +129,19 @@ function roundLabel(round: number): string {
   return `Release ${round}`;
 }
 
+/** An employee whose days can be released now: a real week, not yet released. */
+function waitingForRelease(employee: ReviewEmployee): boolean {
+  return !employee.dryRun && employee.status === "awaiting_release";
+}
+
+/** One employee's days waiting for release, as this page shows them. */
+function employeeSeenLines(employee: ReviewEmployee): Array<{ id: number; days: number }> {
+  return employee.lines.filter((line) => line.action === "pending").map((line) => ({ id: line.id, days: line.deductionDays }));
+}
+
 /** Every day waiting for release, as this page shows it. The release is refused if the server holds any other. */
 function seenLines(week: ReviewWeek): Array<{ id: number; days: number }> {
-  return week.employees
-    .filter((employee) => !employee.dryRun && employee.status === "awaiting_release")
-    .flatMap((employee) => employee.lines.filter((line) => line.action === "pending").map((line) => ({ id: line.id, days: line.deductionDays })));
+  return week.employees.filter(waitingForRelease).flatMap((employee) => employeeSeenLines(employee));
 }
 
 function answerText(line: DigestLineRow): string {
@@ -141,13 +153,13 @@ function answerText(line: DigestLineRow): string {
 }
 
 /** What a release would do right now: the ticked days asked about, the unticked days cleared. */
-function selection(week: ReviewWeek) {
+function selection(employees: readonly ReviewEmployee[]) {
   let ticked = 0;
   let unticked = 0;
   let tickedDays = 0;
   const told = new Set<number>();
-  for (const employee of week.employees) {
-    if (employee.dryRun || employee.status !== "awaiting_release") continue;
+  for (const employee of employees) {
+    if (!waitingForRelease(employee)) continue;
     for (const line of employee.lines) {
       if (line.action !== "pending") continue;
       if (line.deduct) {
@@ -183,7 +195,8 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<number, string>>({});
-  const [confirming, setConfirming] = useState(false);
+  /** The release being confirmed: the whole week, one employee's (by digest), or none. */
+  const [confirming, setConfirming] = useState<"week" | number | null>(null);
 
   async function load(target: { cycleKey: string; weekIndex: number } | null) {
     const query = target ? `?cycleKey=${encodeURIComponent(target.cycleKey)}&weekIndex=${target.weekIndex}` : "";
@@ -196,7 +209,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
     setWeeks(payload.weeks ?? []);
     setWeek(payload.week ?? null);
     setDrafts({});
-    setConfirming(false);
+    setConfirming(null);
   }
 
   async function choose(key: string) {
@@ -347,6 +360,46 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
     }
   }
 
+  /** Release one employee's days only; everyone else in the week keeps waiting. */
+  async function releaseEmployee(current: ReviewWeek, employee: ReviewEmployee) {
+    setBusy(`release:${employee.digestId}`);
+    setError(null);
+    setNotice(null);
+    const name = employee.employeeName;
+    const othersWaiting = current.employees.filter((other) => waitingForRelease(other) && other.digestId !== employee.digestId).length;
+    try {
+      const response = await fetch("/api/attendance/weekly-review/release", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          cycleKey: current.cycleKey,
+          weekIndex: current.weekIndex,
+          digestId: employee.digestId,
+          seenLines: employeeSeenLines(employee),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.message ?? `${name}'s days could not be released.`);
+      const notified = Number(payload.notified ?? 0);
+      const notNotified = Number(payload.notNotified ?? 0);
+      const cleared = Number(payload.clearedDays ?? 0);
+      setNotice(
+        `Released for ${name}.` +
+          (notified ? " They were notified in-app or on Telegram." : "") +
+          (cleared ? ` ${countText(cleared, "unticked day was", "unticked days were")} cleared and will never be deducted.` : "") +
+          (notNotified
+            ? " They could not be notified: they still see the week on their page, and their days are never deducted automatically for going unanswered."
+            : "") +
+          (othersWaiting ? ` ${countText(othersWaiting, "other employee is", "other employees are")} still waiting for release.` : ""),
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `${name}'s days could not be released.`);
+    } finally {
+      await load(current);
+      setBusy(null);
+    }
+  }
+
   function dayBlock(current: ReviewWeek, employee: ReviewEmployee, line: DigestLineRow, layout: "table" | "card") {
     const canMark =
       canManage && current.stage === "awaiting_release" && employee.status === "awaiting_release" && !employee.dryRun && line.action === "pending";
@@ -465,18 +518,74 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
     return parts.join(" · ");
   }
 
-  const pick = week ? selection(week) : null;
+  const pick = week ? selection(week.employees) : null;
   const releasable =
-    canManage && week !== null && week.stage === "awaiting_release" && week.employees.some((employee) => !employee.dryRun && employee.status === "awaiting_release");
+    canManage && week !== null && week.stage === "awaiting_release" && week.employees.some((employee) => waitingForRelease(employee));
   const canRefresh = canManage && week !== null && week.canRefresh;
-  const releaseLabel = week?.releasedAt ? "Release the new days" : week?.running ? "Release the days so far" : "Release this week";
+  // The week's button sends everyone still waiting; each employee's row has its own.
+  const releaseLabel = week?.releasedAt ? "Release everyone waiting" : week?.running ? "Release everyone, days so far" : "Release everyone";
+
+  function employeeReleasable(current: ReviewWeek, employee: ReviewEmployee): boolean {
+    return canManage && current.stage === "awaiting_release" && waitingForRelease(employee);
+  }
+
+  function employeeReleaseButton(current: ReviewWeek, employee: ReviewEmployee) {
+    if (!employeeReleasable(current, employee) || confirming === employee.digestId) return null;
+    return (
+      <button
+        aria-label={`Release ${employee.employeeName} only`}
+        className="mt-2 border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+        disabled={busy !== null}
+        onClick={() => setConfirming(employee.digestId)}
+        type="button"
+      >
+        Release
+      </button>
+    );
+  }
+
+  function employeeConfirmation(current: ReviewWeek, employee: ReviewEmployee) {
+    const name = employee.employeeName;
+    const counts = selection([employee]);
+    const others = current.employees.filter((other) => waitingForRelease(other) && other.digestId !== employee.digestId).length;
+    return (
+      <>
+        <p className="text-sm font-semibold text-slate-800">
+          {counts.ticked === 0
+            ? `Nothing is ticked for ${name}. Releasing clears their ${countText(counts.unticked, "flagged day", "flagged days")}: none is deducted and ${name} is not told.`
+            : `Release ${countText(counts.ticked, "ticked day", "ticked days")} (${daysText(counts.tickedDays)}) to ${name}? They are told in-app and on Telegram and have ${countText(answerWorkingDays, "working day", "working days")} to choose salary or annual balance.` +
+              (counts.unticked ? ` The ${countText(counts.unticked, "unticked day", "unticked days")} will be cleared and never deducted.` : "")}
+          {others ? ` The other ${countText(others, "employee keeps", "employees keep")} waiting.` : ""}
+          {current.running ? " Days from later in this week wait for a second release." : ""}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => void releaseEmployee(current, employee)}
+            type="button"
+          >
+            {busy === `release:${employee.digestId}` ? "Releasing" : "Yes, release"}
+          </button>
+          <button
+            className="border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50"
+            disabled={busy !== null}
+            onClick={() => setConfirming(null)}
+            type="button"
+          >
+            Not yet
+          </button>
+        </div>
+      </>
+    );
+  }
 
   function weekSummary(current: ReviewWeek): string {
     const running = current.running ? `${runningText(current)} · ` : "";
     switch (current.stage) {
       case "awaiting_release": {
-        const counts = selection(current);
-        const earlier = current.releasedAt ? ` · earlier days released ${formatCairoMoment(current.releasedAt)}` : "";
+        const counts = selection(current.employees);
+        const earlier = current.releasedAt ? ` · last release ${formatCairoMoment(current.releasedAt)}` : "";
         return `${running}Waiting for release · ${countText(current.employeeCount, "employee", "employees")} · ${counts.ticked} of ${counts.ticked + counts.unticked} days ticked · ${daysText(counts.tickedDays)} to deduct${earlier}`;
       }
       case "released":
@@ -498,7 +607,8 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
         <p className="mt-1 text-sm text-slate-600">
           Pick a week. A week shows its flagged days up to yesterday and is brought up to date every morning and
           afternoon, or when you press Refresh. Tick the flagged days to deduct and set how many days each one takes; a
-          day you do not tick is cleared when you release and never deducted. You can release the days so far at any
+          day you do not tick is cleared when you release and never deducted. Release one employee from their own row
+          and the others keep waiting, or release everyone waiting at once. You can release the days so far at any
           time, and days that arrive later wait for a second release. On release each employee is told in-app and on
           Telegram, chooses salary or annual balance for each ticked day, and can dispute it. A day not answered within
           the deadline is deducted from salary.
@@ -561,11 +671,11 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 </p>
               ) : null}
             </div>
-            {releasable && !confirming ? (
+            {releasable && confirming !== "week" ? (
               <button
                 className="border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white disabled:opacity-50"
                 disabled={busy !== null}
-                onClick={() => setConfirming(true)}
+                onClick={() => setConfirming("week")}
                 type="button"
               >
                 {releaseLabel}
@@ -583,7 +693,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
             ) : null}
           </header>
 
-          {releasable && confirming && pick ? (
+          {releasable && confirming === "week" && pick ? (
             <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-sm font-semibold text-slate-800">
                 {pick.ticked === 0
@@ -604,7 +714,7 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 <button
                   className="border border-slate-400 bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-slate-700 disabled:opacity-50"
                   disabled={busy !== null}
-                  onClick={() => setConfirming(false)}
+                  onClick={() => setConfirming(null)}
                   type="button"
                 >
                   Not yet
@@ -639,27 +749,37 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                 </thead>
                 <tbody>
                   {week.employees.map((employee) => (
-                    <tr className="align-top" key={employee.digestId}>
-                      <td className="break-words border-b border-slate-100 px-4 py-3">
-                        <p className="text-sm font-bold text-slate-800">{employee.employeeName}</p>
-                        {employee.jobTitle ? <p className="text-xs text-slate-500">{employee.jobTitle}</p> : null}
-                        {employee.releaseRound >= 2 ? (
-                          <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{roundLabel(employee.releaseRound)}</p>
-                        ) : null}
-                      </td>
-                      <td className="break-words border-b border-slate-100 px-4 py-3">
-                        <div className="divide-y divide-slate-100">{employee.lines.map((line) => dayBlock(week, employee, line, "table"))}</div>
-                      </td>
-                      <td className="break-words border-b border-slate-100 px-4 py-3 text-sm text-slate-700">
-                        {employee.status === "awaiting_release" && !employee.dryRun ? (
-                          <>
-                            <p className="font-semibold">{daysText(employee.totalDeductionDays)}</p>
-                            <p className="text-xs text-slate-500">{money(employee.totalDeductionValue, employee.currency)}</p>
-                          </>
-                        ) : null}
-                        <p className="text-xs text-slate-500">{statusCell(employee)}</p>
-                      </td>
-                    </tr>
+                    <Fragment key={employee.digestId}>
+                      <tr className="align-top">
+                        <td className="break-words border-b border-slate-100 px-4 py-3">
+                          <p className="text-sm font-bold text-slate-800">{employee.employeeName}</p>
+                          {employee.jobTitle ? <p className="text-xs text-slate-500">{employee.jobTitle}</p> : null}
+                          {employee.releaseRound >= 2 ? (
+                            <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{roundLabel(employee.releaseRound)}</p>
+                          ) : null}
+                        </td>
+                        <td className="break-words border-b border-slate-100 px-4 py-3">
+                          <div className="divide-y divide-slate-100">{employee.lines.map((line) => dayBlock(week, employee, line, "table"))}</div>
+                        </td>
+                        <td className="break-words border-b border-slate-100 px-4 py-3 text-sm text-slate-700">
+                          {employee.status === "awaiting_release" && !employee.dryRun ? (
+                            <>
+                              <p className="font-semibold">{daysText(employee.totalDeductionDays)}</p>
+                              <p className="text-xs text-slate-500">{money(employee.totalDeductionValue, employee.currency)}</p>
+                            </>
+                          ) : null}
+                          <p className="text-xs text-slate-500">{statusCell(employee)}</p>
+                          {employeeReleaseButton(week, employee)}
+                        </td>
+                      </tr>
+                      {confirming === employee.digestId && employeeReleasable(week, employee) ? (
+                        <tr>
+                          <td className="border-b border-slate-200 bg-slate-50 px-4 py-3" colSpan={3}>
+                            {employeeConfirmation(week, employee)}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -679,6 +799,10 @@ export function WeeklyAttendanceReview({ initialWeeks, initialWeek, initialError
                         : ""}
                       {statusCell(employee)}
                     </p>
+                    {employeeReleaseButton(week, employee)}
+                    {confirming === employee.digestId && employeeReleasable(week, employee) ? (
+                      <div className="mt-2 border-l-2 border-slate-400 bg-slate-50 px-3 py-2">{employeeConfirmation(week, employee)}</div>
+                    ) : null}
                     <div className="mt-2 divide-y divide-slate-100 border-t border-slate-100 pt-2">
                       {employee.lines.map((line) => dayBlock(week, employee, line, "card"))}
                     </div>

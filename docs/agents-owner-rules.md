@@ -2174,6 +2174,15 @@ His answers, chosen from options:
   request. Refresh works on them through 1 October, while August is last month, and after that they
   stay listed while any day waits for release or an answer. Nothing before August 2026 is reviewed.
 - **"Yes, keep ½ day."** The deduction rule itself is unchanged.
+- **"i want every row to has a release beside it not only the full week but only every single
+  employee so i can realse one employee and after release another"** (same day). Every employee
+  waiting for release has their own **Release** on their row, with a confirmation that names them. It
+  sends `digestId` and only that employee's days. `releaseScope` narrows the release to that one
+  digest before any day is checked, cleared or told. The other employees keep waiting, and their
+  ticks stay as they were. The week's button stays and releases **everyone waiting**. No migration was
+  needed, because `phx_attendance_release_digest` already works one digest at a time. Asked the same
+  day after a whole-week release cleared 12 unticked days he had meant to keep. Those days were
+  restored by hand from `attendance_backup_20260917.w3_release_*`.
 
 **Do not restore** the day-24 weeks (`latestClosedSettlementWeek`, `closedWeeksOfCurrentCycle`), the
 one-shot build with its undo, or a week that appears only once it has closed. They are the superseded
