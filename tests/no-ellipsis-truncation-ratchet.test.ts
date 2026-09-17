@@ -156,8 +156,14 @@ import path from "node:path";
  * gave it 195px at 768 and 150px at 1024, and only widens past it at xl, so on every admin page
  * between those widths it ended in an ellipsis. `truncate` -> `leading-tight`: it wraps to two
  * lines, which fit inside the h-10 box. Pinned by tests/shell-chrome-overflows.test.ts.
+ *
+ * 201 -> 197 on 2026-09-17: the two shared filter dropdowns, on 14 screens between them, every sales
+ * filter bar among them. MultiSelectFilter and RoiMultiSelect each cut their summary line and every
+ * option label, so a long depot or distributor name ended in an ellipsis inside the one control that
+ * picks it. `truncate` -> `min-w-0 break-words` on all four, and the trigger's fixed `h-[58px]` became
+ * a `min-h-[58px]` floor so a wrapped line grows it. Pinned by tests/multi-select-filter-fits.test.ts.
  */
-const BASELINE = 201;
+const BASELINE = 197;
 
 const ROOTS = ["app", "src"];
 

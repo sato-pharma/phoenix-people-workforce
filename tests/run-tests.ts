@@ -214,6 +214,7 @@ import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-p
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
+import { runMultiSelectFilterFitsTests } from "./multi-select-filter-fits.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentBulkDecisionTests } from "./recruitment-bulk-decision.test.ts";
@@ -2173,6 +2174,10 @@ await runTest(
 await runTest(
   "searchable select (no dropdown clips an option with an ellipsis, and no option wraps to two lines)",
   runSearchableSelectNoEllipsisTests,
+);
+await runTest(
+  "shared filter dropdowns fit the screen (MultiSelectFilter and RoiMultiSelect: square corners, no ellipsis, wrapped labels; the panel hangs from a right-half trigger's right edge, divides out the display zoom and stays inside the viewport, main and every clipping box)",
+  runMultiSelectFilterFitsTests,
 );
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
