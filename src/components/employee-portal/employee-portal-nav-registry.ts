@@ -31,6 +31,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Sunrise,
   Target,
   Trophy,
   User,
@@ -141,6 +142,11 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // KPIs carries the same role list and the same permission as Reps List — one gate, two doors.
   // "KPIs" is already short enough for the bottom nav, so label and fullLabel are the same word.
   { label: "KPIs", fullLabel: "KPIs", href: "/employee-portals/kpis", icon: TrendingUp, flags: ["showKpisTab"], permission: { resource: "crm_visits", action: "read" } },
+  // Early Birds — the one board in this registry a rep opens BEFORE the working day rather than
+  // after it, which is exactly the case for a phone tab. No `permission`: the page has no single
+  // machine-readable gate (resolveEarlyBirdsScope decides what it shows from the reporting chain),
+  // and employee-portal-nav-permission-matches-page.test.ts requires the field to be absent then.
+  { label: "Early Birds", fullLabel: "Early Birds", href: "/employee-portals/early-birds", icon: Sunrise, flags: ["showEarlyBirdsTab"] },
   // The label is the FULL "Reps Plans", not a shortened "Plans", and not "Reps": both are already
   // taken — "Plans" by the rep's own Weekly / Monthly Plan two entries above, "Reps" by Reps List —
   // and a District Manager holds every one of those flags at once, so shortening puts two identical
