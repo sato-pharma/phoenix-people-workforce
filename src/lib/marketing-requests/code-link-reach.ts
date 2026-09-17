@@ -19,8 +19,8 @@
  * distributors count toward the campaigns he pays for, and none of them were counting.
  *
  * WHY THE STATUS IS INHERITED, NEVER SET. A link's `validation_status` decides whether the venue
- * appears in the picker at all — `getMarketingRequestDraftWorkspace` reads only `system_validated`
- * and `sfe_validated`. Stamping a new link `system_validated` because that is the common value
+ * appears in the picker at all — `getMarketingRequestDraftWorkspace` reads only the statuses in
+ * `LINK_STATUS_PRECEDENCE` below. Stamping a new link `system_validated` because that is the common value
  * would make a venue nobody has validated suddenly selectable, turning a bookkeeping fix into a
  * silent validation bypass. So a new link copies the status the customer ALREADY has on that same
  * venue: strongest wins, and a customer whose existing link is unvalidated gets an unvalidated
@@ -34,8 +34,18 @@
  * Order is the rule, not a detail: it decides which status a new sibling link inherits when a
  * customer somehow holds more than one link to the same venue. Anything not listed ranks below
  * every entry here and keeps the venue out of the picker.
+ *
+ * This is also THE list of statuses that count as validated for a link. The request picker and the
+ * draft guard in `service.ts` filter on it directly, so a status added here is selectable
+ * everywhere at once, and a status missing here is selectable nowhere.
+ *
+ * - `admin_approved` — a person pressed Approve on Customer Pharmacy Mapping: a ruling on this very
+ *   pairing. Owner decision 2026-09-17: its own status, so a human ruling is never filed under the
+ *   machine's label (AGENTS.md 4.1) and never mixed in with desk entries.
+ * - `sfe_validated` — a desk entry: an admin validated on someone's behalf, with no field capture.
+ * - `system_validated` — the evidence gate. NO HUMAN LOOKED.
  */
-export const LINK_STATUS_PRECEDENCE = ["sfe_validated", "system_validated"] as const;
+export const LINK_STATUS_PRECEDENCE = ["admin_approved", "sfe_validated", "system_validated"] as const;
 
 export type LinkValidationStatus = (typeof LINK_STATUS_PRECEDENCE)[number];
 
@@ -76,6 +86,15 @@ export function linkStatusRankSql(column: string): string {
     .map((status, index) => `when '${status}' then ${total - index + 1}`)
     .join(" ");
   return `case ${column} ${whens} else 1 end`;
+}
+
+/**
+ * The SQL `in` list of selectable statuses, for a query that must match the picker — emitted from
+ * `LINK_STATUS_PRECEDENCE` for the same reason as `linkStatusRankSql`: a hand-typed copy is the one
+ * that silently misses a status added later.
+ */
+export function selectableLinkStatusSqlList(): string {
+  return `(${LINK_STATUS_PRECEDENCE.map((status) => `'${status}'`).join(", ")})`;
 }
 
 /** Written onto every link this path creates, so the row explains itself years later. */

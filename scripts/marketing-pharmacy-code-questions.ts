@@ -86,6 +86,7 @@ import {
 import {
   BACKFILLED_LINK_NOTE,
   linkStatusRankSql,
+  selectableLinkStatusSqlList,
 } from "../src/lib/marketing-requests/code-link-reach.ts";
 
 const HEADER_FILL = "FF0F172A";
@@ -691,7 +692,7 @@ async function findUnlinkFallout(sql: postgres.Sql, codeIds: string[]) {
        left join public.marketing_pharmacies p on p.id = l.pharmacy_id
        left join public.marketing_pharmacy_distributor_codes dc on dc.id = l.distributor_code_id
        where coalesce(l.active, true)
-         and l.validation_status in ('system_validated', 'sfe_validated')
+         and l.validation_status in ${selectableLinkStatusSqlList()}
          and coalesce(c.active, true)
      ),
      scored as (

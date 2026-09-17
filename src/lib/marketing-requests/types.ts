@@ -26,10 +26,17 @@ export type MarketingCustomerType = (typeof MARKETING_CUSTOMER_TYPES)[number];
 
 export type MarketingEvidenceStatus = "missing" | "pending" | "complete";
 
+/**
+ * `admin_approved` exists on customer↔pharmacy LINKS only — the database check on
+ * `marketing_customers` and `marketing_pharmacies` does not allow it. It is what a person's Approve
+ * on Customer Pharmacy Mapping writes (owner decision 2026-09-17), kept apart from
+ * `system_validated`, which means no human looked.
+ */
 export type MarketingValidationStatus =
   | "pending"
   | "system_validated"
   | "sfe_validated"
+  | "admin_approved"
   | "rejected";
 
 export type MarketingPharmacyCodeReferenceStatus =

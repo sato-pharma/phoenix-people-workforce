@@ -49,6 +49,9 @@ import {
 // Reused rather than re-implemented: this module already owns the "render a recorded instant in
 // Cairo, never raw UTC" formatter, and it imports nothing from here, so there is no cycle.
 import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
+// The one list of link statuses that count as validated. Imported, never re-typed: the draft guard
+// and the request picker below must agree with each other and with the backfill's precedence.
+import { LINK_STATUS_PRECEDENCE } from "@/lib/marketing-requests/code-link-reach";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -4695,7 +4698,7 @@ async function assertMarketingCustomerHasValidatedVenue(
     .select("id")
     .eq("customer_id", customerId)
     .eq("active", true)
-    .in("validation_status", ["system_validated", "sfe_validated"])
+    .in("validation_status", [...LINK_STATUS_PRECEDENCE])
     .limit(1);
   if (validatedCustomerLinkResult.error) throw validatedCustomerLinkResult.error;
   if ((validatedCustomerLinkResult.data ?? []).length === 0) {
@@ -4744,6 +4747,7 @@ async function fetchVenuePharmacies(supabase: SupabaseClient, pharmacyIds: strin
 
 function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
   return {
+    admin_approved: 0,
     pending: 0,
     rejected: 0,
     sfe_validated: 0,
@@ -4906,8 +4910,8 @@ async function fetchRowsByIds<T extends { id: string | number }>(
  * Re-decide the customer's existing links once its own evidence has just been supplied.
  *
  * Without this the "complete an existing customer" path would be decorative. **The link row is the
- * gate** — the request dropdown and the draft guard both filter on
- * `validation_status IN ('system_validated','sfe_validated')` — and every link's status was frozen
+ * gate** — the request dropdown and the draft guard both filter on `LINK_STATUS_PRECEDENCE`
+ * (`admin_approved`, `sfe_validated`, `system_validated`) — and every link's status was frozen
  * at the moment it was written, from the customer evidence that existed *then*. A customer imported
  * with no photo therefore carries links stamped `pending`, and photographing the customer today
  * changes the customer row alone: the links stay pending, the customer stays unusable, and the rep
@@ -4916,7 +4920,8 @@ async function fetchRowsByIds<T extends { id: string | number }>(
  * Three rules keep this from becoming a way to launder rows clean:
  *
  * - **Promotion only.** A link is touched only while it is `pending`. `rejected` is a human verdict
- *   and `system_validated` / `sfe_validated` are already better than anything computed here.
+ *   and `system_validated` / `sfe_validated` / `admin_approved` are already better than anything
+ *   computed here.
  * - **The pharmacy half still has to hold up.** `resolveMarketingSystemValidationStatus` is re-run
  *   in full, so a shop that was never photographed keeps its link pending exactly as before — the
  *   customer's new photo is not evidence about the shop.
@@ -7082,7 +7087,7 @@ const loadMarketingDraftReferenceDataCached = unstable_cache(
         .from("marketing_customer_pharmacies")
         .select("customer_id, distributor_code_id, pharmacy_id")
         .or("active.is.null,active.eq.true")
-        .in("validation_status", ["system_validated", "sfe_validated"]),
+        .in("validation_status", [...LINK_STATUS_PRECEDENCE]),
       // Display data for the target-pharmacy picker. Both tables are small reference sets.
       supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code, venue_type"),
       supabase

@@ -271,7 +271,7 @@ Full account: `docs/agents-owner-rules.md` §4.1.
 - 🔒 **Venue validation is GPS + a live picture ALWAYS; leg 3 (the registered code, else the licence) is PHARMACY-only.** A non-pharmacy venue routes to **`admin`**, never `none`; a codeless PHARMACY is still refused. Direct-order desk only. **`nursery` = any venue with no distributor account — the owner's own filing, not a defect.**
 - 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** **The REGISTERED CODE beats live GPS.**
 - 🔴 **A licence verdict is PERMANENT, with no correction path.** **Ask the owner before the first one is recorded.**
-- 🔴 **`system_validated` means NO HUMAN LOOKED.** The screen is **Super Admin only** — not SFE.
+- 🔴 **`system_validated` means NO HUMAN LOOKED.** The screen is **Super Admin only** — not SFE. A person's Approve on a link writes **`admin_approved`**, never it and never the desk's `sfe_validated`; the validated set is `LINK_STATUS_PRECEDENCE`.
 - 🔴 **AREA governs both sight and reuse of a venue's evidence; never backfill ownership.**
 - 🔴 **The badge must read the live evidence, not a frozen note** — EITHER half reaching `complete` clears it.
 - 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** Repair it with hand SQL, not code.

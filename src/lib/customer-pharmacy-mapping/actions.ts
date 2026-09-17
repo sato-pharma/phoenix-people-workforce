@@ -98,7 +98,39 @@ function toDecisionResult(row: LinkDecisionRow): CustomerPharmacyLinkDecisionRes
 }
 
 /**
- * pending → system_validated. Requires the link to currently be pending and active; the update is
+ * The status a person's Approve writes. Never `system_validated`: that status means NO HUMAN LOOKED
+ * (AGENTS.md 4.1) — it is what the evidence gate grants on a GPS fix and a live photo — and until
+ * 2026-09-17 this button filed a human ruling under it, with only the note telling the two apart.
+ * Not `sfe_validated` either, which is the desk status. Owner decision 2026-09-17, asked in chat.
+ */
+export const CUSTOMER_PHARMACY_APPROVED_STATUS: CustomerPharmacyValidationStatus = "admin_approved";
+
+/**
+ * The row patch an Approve writes, built without IO so the status it carries is under test and not
+ * only under a source pattern.
+ */
+export function buildCustomerPharmacyApprovalPatch(input: {
+  accessHrId: string | null | undefined;
+  actorHrId: string | null;
+  existingNotes: string | null;
+  notes?: string | null;
+  now: Date;
+}) {
+  const trimmedNotes = typeof input.notes === "string" ? input.notes.trim() : "";
+  const approvalNote = trimmedNotes.length > 0
+    ? `Approved: ${trimmedNotes}`
+    : `Approved by ${input.actorHrId ?? input.accessHrId ?? "system"}.`;
+
+  return {
+    updated_at: input.now.toISOString(),
+    updated_by_hr_id: input.actorHrId,
+    validation_notes: composeValidationNotes(input.existingNotes, approvalNote),
+    validation_status: CUSTOMER_PHARMACY_APPROVED_STATUS,
+  };
+}
+
+/**
+ * pending → admin_approved. Requires the link to currently be pending and active; the update is
  * conditioned on that same status in the `WHERE` clause (not just pre-checked) so a concurrent
  * decision on the same link loses the race cleanly instead of double-applying.
  */
@@ -118,19 +150,18 @@ export async function approveCustomerPharmacyLink(
   }
 
   const actorHrId = await resolveActorStoredHrId(access);
-  const trimmedNotes = typeof input.notes === "string" ? input.notes.trim() : "";
-  const approvalNote = trimmedNotes.length > 0
-    ? `Approved: ${trimmedNotes}`
-    : `Approved by ${actorHrId ?? access.hrId ?? "system"}.`;
 
   const { data, error } = await getSupabaseAdmin()
     .from("marketing_customer_pharmacies")
-    .update({
-      updated_at: new Date().toISOString(),
-      updated_by_hr_id: actorHrId,
-      validation_notes: composeValidationNotes(existing.validation_notes, approvalNote),
-      validation_status: "system_validated",
-    })
+    .update(
+      buildCustomerPharmacyApprovalPatch({
+        accessHrId: access.hrId,
+        actorHrId,
+        existingNotes: existing.validation_notes,
+        notes: input.notes,
+        now: new Date(),
+      }),
+    )
     .eq("id", linkId)
     .eq("validation_status", "pending")
     .select("id, validation_status, validation_notes, updated_at, updated_by_hr_id")

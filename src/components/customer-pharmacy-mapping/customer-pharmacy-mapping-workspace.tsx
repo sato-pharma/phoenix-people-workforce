@@ -54,15 +54,20 @@ function bucketBadgeVariant(bucket: CustomerPharmacyReadinessBucket) {
   return "neutral" as const;
 }
 
+// "Admin approved" is what the Approve button on this page writes: a person looked. "System
+// validated" is the evidence gate, where no person did, so the two must never share a label.
 const STATUS_LABELS: Record<CustomerPharmacyValidationStatus, string> = {
   pending: "Pending",
   system_validated: "System validated",
   sfe_validated: "SFE validated",
+  admin_approved: "Admin approved",
   rejected: "Rejected",
 };
 
 function statusBadgeVariant(status: CustomerPharmacyValidationStatus) {
-  if (status === "system_validated" || status === "sfe_validated") return "success" as const;
+  if (status === "system_validated" || status === "sfe_validated" || status === "admin_approved") {
+    return "success" as const;
+  }
   if (status === "rejected") return "danger" as const;
   return "warning" as const;
 }

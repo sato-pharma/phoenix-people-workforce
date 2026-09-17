@@ -46,6 +46,7 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
+import { LINK_STATUS_PRECEDENCE, linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import {
   describeRestoredDraft,
   isDraftWorthKeeping,
@@ -483,6 +484,7 @@ function emptyWorkspace(): MarketingValidationWorkspacePayload {
     reusablePharmacies: [],
     rows: [],
     summary: {
+      admin_approved: 0,
       pending: 0,
       rejected: 0,
       sfe_validated: 0,
@@ -492,8 +494,13 @@ function emptyWorkspace(): MarketingValidationWorkspacePayload {
   };
 }
 
+/** Position in `LINK_STATUS_PRECEDENCE`; lower is stronger. */
+function linkStatusRank(status: MarketingValidationStatus): number {
+  return (LINK_STATUS_PRECEDENCE as readonly string[]).indexOf(status);
+}
+
 function statusVariant(status: MarketingValidationStatus): "success" | "warning" | "danger" | "neutral" {
-  if (status === "system_validated" || status === "sfe_validated") return "success";
+  if (linkStatusIsSelectable(status)) return "success";
   if (status === "rejected") return "danger";
   if (status === "pending") return "warning";
   return "neutral";
@@ -2024,12 +2031,15 @@ export function MarketingValidationWorkspace() {
   const validatedGroups = useMemo(() => {
     const groups = new Map<string, ValidatedCustomerGroup>();
     for (const row of workspace.rows) {
-      if (row.validationStatus !== "system_validated" && row.validationStatus !== "sfe_validated") continue;
+      if (!linkStatusIsSelectable(row.validationStatus)) continue;
       const key = row.customer.id;
       const current = groups.get(key);
       if (current) {
         current.rows.push(row);
-        if (row.validationStatus === "sfe_validated") current.status = "sfe_validated";
+        // The group shows its strongest link, in the same order a backfilled sibling inherits.
+        if (linkStatusRank(row.validationStatus) < linkStatusRank(current.status)) {
+          current.status = row.validationStatus;
+        }
       } else {
         groups.set(key, {
           customerName: row.customer.displayName,
@@ -2641,7 +2651,7 @@ export function MarketingValidationWorkspace() {
   })();
   const activeCameraLabel = cameraTarget?.pharmacyKey ? "Pharmacy" : "Customer";
 
-  const totalValidated = workspace.summary.system_validated + workspace.summary.sfe_validated;
+  const totalValidated = LINK_STATUS_PRECEDENCE.reduce((sum, status) => sum + workspace.summary[status], 0);
 
   return (
     <WorkspaceErrorBoundary fallbackTitle="Validation workspace error">
@@ -2700,11 +2710,14 @@ export function MarketingValidationWorkspace() {
                 <MetricSkeleton />
                 <MetricSkeleton />
                 <MetricSkeleton />
+                <MetricSkeleton />
               </>
             ) : (
               <>
                 <MetricCard accent="green" icon={CheckCircle2} label="System Validated" value={workspace.summary.system_validated} />
                 <MetricCard accent="blue" icon={UserCheck} label="SFE Validated" value={workspace.summary.sfe_validated} />
+                {/* Blue like SFE: both are a person's decision. Green stays the evidence gate alone. */}
+                <MetricCard accent="blue" icon={ShieldCheck} label="Admin Approved" value={workspace.summary.admin_approved} />
                 <MetricCard accent="amber" icon={Clock} label="Pending" value={workspace.summary.pending} />
                 <MetricCard accent="red" icon={ShieldX} label="Rejected" value={workspace.summary.rejected} />
               </>

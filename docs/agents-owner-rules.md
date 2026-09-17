@@ -811,6 +811,21 @@ running month "just to see".
 - 🔴 **`system_validated` means NO HUMAN LOOKED.** The admin register never blocks on it, and the
   screen is **Super Admin only** — not SFE. `marketing-system-validated-means-no-human-looked`
 
+  **A person's Approve writes `admin_approved` — owner decision 2026-09-17, asked in chat as
+  multiple choice.** Until then `approveCustomerPharmacyLink` (the Approve button on Customer
+  Pharmacy Mapping, open to the Super Admin and the CEO) moved a pending link to `system_validated`,
+  and only an `Approved: ` / `Approved by ` line in `validation_notes` told a human ruling from the
+  evidence gate. He was offered reusing `sfe_validated` (no migration) and chose a new status
+  instead, because every `sfe_validated` link then was a desk entry — 11 direct, 6 siblings that
+  inherited a desk status in the 2026-09-08 code backfill — and reuse would have mixed his rulings
+  with them. The status is LINK-only (the database check on `marketing_customers` and
+  `marketing_pharmacies` does not allow it), and every reader that decides "validated" for a link
+  takes it from `LINK_STATUS_PRECEDENCE` in `src/lib/marketing-requests/code-link-reach.ts`, with
+  `CUSTOMER_PHARMACY_VALIDATED_STATUSES` in the mapping module pinned equal to it by a test. At the
+  time of the change the button had written **0** approvals in production, so nothing needed
+  relabelling; any approval made before the deploy is found by its note stamp and is his to decide,
+  never a SQL relabel.
+
 - 🔴 **A venue's evidence was WRITE-ONCE, writable only at insert** — fixed in #2352. **AREA governs
   both sight and reuse; never backfill ownership.**
   `marketing-venue-evidence-was-writable-only-at-insert`

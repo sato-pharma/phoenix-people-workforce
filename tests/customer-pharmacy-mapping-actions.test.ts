@@ -113,7 +113,7 @@ function testActionsServiceSourceGuards() {
   // `decideExcuseRequestAsManager` in src/lib/excuses/service.ts.
   assert.match(
     source,
-    /validation_status: "system_validated",\s*\n\s*\}\)\s*\n\s*\.eq\("id", linkId\)\s*\n\s*\.eq\("validation_status", "pending"\)/,
+    /buildCustomerPharmacyApprovalPatch\(\{[\s\S]{0,300}?\}\),\s*\n\s*\)\s*\n\s*\.eq\("id", linkId\)\s*\n\s*\.eq\("validation_status", "pending"\)/,
     "approve's UPDATE must be guarded by a DB-level validation_status compare-and-swap",
   );
   assert.match(
