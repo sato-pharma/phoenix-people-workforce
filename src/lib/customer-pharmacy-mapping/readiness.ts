@@ -16,10 +16,16 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── Public value types ────────────────────────────────────────────────────────
 
+/**
+ * `admin_approved` is what `approveCustomerPharmacyLink` writes — a person pressed Approve on this
+ * page. `system_validated` means NO HUMAN LOOKED (AGENTS.md 4.1), so a human ruling never takes that
+ * label. Owner decision 2026-09-17.
+ */
 export type CustomerPharmacyValidationStatus =
   | "pending"
   | "system_validated"
   | "sfe_validated"
+  | "admin_approved"
   | "rejected";
 
 export type CustomerPharmacyCustomerType =
@@ -140,9 +146,16 @@ export const UNKNOWN_DISTRIBUTOR_LABEL = "Unknown distributor";
  */
 export const NO_DISTRIBUTOR_ACCOUNT_LABEL = "No distributor account";
 
-const VALIDATED_STATUSES: ReadonlySet<CustomerPharmacyValidationStatus> = new Set([
-  "system_validated",
+/**
+ * Every link status that makes a customer "ready". Must hold exactly the statuses in
+ * `LINK_STATUS_PRECEDENCE` (marketing-requests/code-link-reach.ts), which the request picker filters
+ * on — kept as its own copy because this module stays independent of marketing-requests, and pinned
+ * equal by `tests/customer-pharmacy-mapping-readiness.test.ts` so the two cannot drift.
+ */
+export const CUSTOMER_PHARMACY_VALIDATED_STATUSES: ReadonlySet<CustomerPharmacyValidationStatus> = new Set([
+  "admin_approved",
   "sfe_validated",
+  "system_validated",
 ]);
 
 export function isInferredFromHistory(validationNotes: string | null | undefined): boolean {
@@ -201,7 +214,7 @@ export function isNotFieldValidated(validationNotes: string | null | undefined):
 }
 
 function isValidatedStatus(status: CustomerPharmacyValidationStatus): boolean {
-  return VALIDATED_STATUSES.has(status);
+  return CUSTOMER_PHARMACY_VALIDATED_STATUSES.has(status);
 }
 
 // ── Pure builder ────────────────────────────────────────────────────────────────
@@ -212,7 +225,8 @@ function isValidatedStatus(status: CustomerPharmacyValidationStatus): boolean {
  * customers sorted by name. This is the seam covered by the unit tests.
  *
  * Readiness buckets (over a customer's provided links):
- *   - "ready"        → at least one link with validationStatus in (system_validated, sfe_validated)
+ *   - "ready"        → at least one link with validationStatus in CUSTOMER_PHARMACY_VALIDATED_STATUSES
+ *                      (admin_approved, sfe_validated, system_validated)
  *   - "pending_only" → has ≥1 link but none validated (includes rejected-only)
  *   - "no_links"     → zero links
  */

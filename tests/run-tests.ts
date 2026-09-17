@@ -1680,6 +1680,7 @@ import { runAttendanceDigestNoticeChannelsTests } from "./attendance-digest-noti
 import { runHolidayCalendarOutageGateTests } from "./holiday-calendar-outage-gates.test.ts";
 import { runMarketingCodeUnlinkFalloutTests } from "./marketing-code-unlink-fallout.test.ts";
 import { runMarketingCodeLinkReachTests } from "./marketing-code-link-reach.test.ts";
+import { runMarketingLinkAdminApprovedStatusTests } from "./marketing-link-admin-approved-status.test.ts";
 import { runReturnedOrdersAgeingTests } from "./returned-orders-ageing.test.ts";
 import { runNotificationHeldAgeingTests } from "./notification-held-ageing.test.ts";
 import { runOverCapNeverBlocksTests } from "./over-cap-never-blocks.test.ts";
@@ -5563,6 +5564,11 @@ await runTest(
 await runTest(
   "a new code link inherits its validation status and never elevates an unvalidated venue into the picker",
   runMarketingCodeLinkReachTests,
+);
+
+await runTest(
+  "a person's Approve on Customer Pharmacy Mapping writes admin_approved, never system_validated (no human looked) or the desk's sfe_validated, and admin_approved counts as validated in the picker, the draft guard, the mapping page and the link table's database check (owner decision 2026-09-17)",
+  runMarketingLinkAdminApprovedStatusTests,
 );
 
 await runTest(

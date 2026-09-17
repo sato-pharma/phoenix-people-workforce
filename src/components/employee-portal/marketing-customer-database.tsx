@@ -25,6 +25,7 @@ import type {
   MarketingValidationStatus,
   MarketingVenueMergeCandidate,
 } from "@/lib/marketing-requests/types";
+import { linkStatusIsSelectable } from "@/lib/marketing-requests/code-link-reach";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
@@ -44,7 +45,7 @@ function emptyWorkspace(): MarketingCustomerDatabaseWorkspace {
 }
 
 function statusVariant(status: MarketingValidationStatus): "success" | "warning" | "danger" | "neutral" {
-  if (status === "system_validated" || status === "sfe_validated") return "success";
+  if (linkStatusIsSelectable(status)) return "success";
   if (status === "rejected") return "danger";
   if (status === "pending") return "warning";
   return "neutral";
