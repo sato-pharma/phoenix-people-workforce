@@ -14,7 +14,13 @@
 // readable on its own.
 //
 // PURE. The IO is in sos-month-pace-loader.ts. VALUE ONLY — never units.
+//
+// NAMES, NEVER CODES (owner rule). A row takes the first real name any input gives its area; with none,
+// it reads "Unnamed area" (owner's pick, 2026-09-17) and never falls back to the code.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** What a row says when no input named its area. */
+export const UNNAMED_AREA_LABEL = "Unnamed area";
 
 export type MonthPaceTargetInput = { areaCode: string; areaName?: string | null; targetValue: number };
 export type MonthPaceWeeklyInput = {
@@ -29,6 +35,7 @@ export type MonthPaceDirectInput = { areaCode: string; areaName?: string | null;
 
 export type MonthPaceRow = {
   areaCode: string;
+  /** Always a name: the area's own, else UNNAMED_AREA_LABEL. Never the code. */
   areaName: string;
   /** null when the area has no target this month. */
   targetValue: number | null;
@@ -90,7 +97,9 @@ export function buildMonthPace(input: {
   const entry = (areaCode: string, areaName?: string | null) => {
     const code = upper(areaCode);
     const found = byArea.get(code) ?? { areaName: "", target: null, weekly: 0, direct: 0 };
-    if (!found.areaName && areaName) found.areaName = String(areaName).trim();
+    // A "name" that is only the code again is what an upstream `name || code` fallback hands over.
+    const name = String(areaName ?? "").trim();
+    if (!found.areaName && name && name.toUpperCase() !== code) found.areaName = name;
     byArea.set(code, found);
     return found;
   };
@@ -125,7 +134,7 @@ export function buildMonthPace(input: {
     const soFar = found.weekly + found.direct;
     return {
       areaCode,
-      areaName: found.areaName || areaCode,
+      areaName: found.areaName || UNNAMED_AREA_LABEL,
       targetValue: target != null ? round2(target) : null,
       weeklyValue: round2(found.weekly),
       directValue: round2(found.direct),
