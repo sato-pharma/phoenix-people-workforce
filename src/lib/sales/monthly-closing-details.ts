@@ -1,4 +1,5 @@
 import type { AccessContext } from "@/lib/auth/permissions";
+import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import {
   applyProductCodeAllowlist,
   canViewHeadOfficeLine,
@@ -330,45 +331,77 @@ async function validatedBatchIdsForPeriod(period: string): Promise<string[]> {
   return (data ?? []).map((row) => text((row as { id?: unknown }).id)).filter(Boolean);
 }
 
+/** Batches read at once. Each walk is sequential inside itself; four keep the PostgREST pool calm. */
+const BATCH_READ_CONCURRENCY = 4;
+
 /**
- * Read every import row for the batches, KEYSET-paged on the bigint primary key.
+ * Read every import row for the batches, KEYSET-paged ONE BATCH AT A TIME on
+ * (batch_id, row_number), then returned in ascending `id` order.
  *
  * Not `.range()`: PostgREST offset paging without an ORDER BY has no stable row order, so
  * consecutive pages can repeat rows and skip others at random. That exact bug dropped 1,262 of
- * 49,713 customer mappings in the June 2026 import. Ordering by `id` and seeking past the last
- * id read is immune to it, and to concurrent inserts shifting rows across a page boundary.
+ * 49,713 customer mappings in the June 2026 import. Seeking past the last key read is immune to it,
+ * and to concurrent inserts shifting rows across a page boundary.
+ *
+ * Not one walk over the whole batch list by `id`, which is what this was until 2026-09-17. Asked for
+ * `batch_id IN (…18 ids…) ORDER BY id LIMIT 1000`, Postgres walks the primary key from the very
+ * first row ever imported and discards every row belonging to another month: measured on production
+ * for July, 254,652 rows thrown away to return the first 1,000, averaging 1.4 s a call over 1,625
+ * calls, and every later page crossing another month's rows paid for them too (65 ms average over
+ * 61,738 calls). `(batch_id, row_number)` is the table's own unique index and row_number is NOT
+ * NULL, so each page is an exact index range: nothing read is thrown away.
+ *
+ * The ORDER is unchanged. The rows are re-sorted by `id` before they leave, so every consumer sees
+ * the same sequence the single walk produced — the details sheet and everything built from it.
  */
-async function readImportRows(batchIds: string[], line: string): Promise<Array<Record<string, unknown>>> {
-  if (batchIds.length === 0) return [];
-  const supabase = getSupabaseAdmin();
-  const rows: Array<Record<string, unknown>> = [];
-  let cursor: number | null = null;
-  for (;;) {
-    let query = supabase
-      .from("source_of_sales_import_rows")
-      .select(
-        "id,row_number,batch_id,distributor_code,invoice_period,invoice_date,official_line," +
-          "region_code,region_name,area_code,area_name,block_code,brick_id," +
-          "client_code,client_name,client_address,product_code,product_name," +
-          "qty,bonus_qty,discount,value,is_direct,validation_state",
-      )
-      .in("batch_id", batchIds)
-      .order("id", { ascending: true })
-      .limit(PAGE);
-    if (cursor !== null) query = query.gt("id", cursor);
+export async function readImportRowsFrom(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  batchIds: string[],
+  line: string,
+  pageSize = PAGE, // injectable only so a database-free test can force multi-page walks
+): Promise<Array<Record<string, unknown>>> {
+  // Distinct, because one IN list never returned a row twice and a batch read twice would.
+  const batches = [...new Set(batchIds)];
+  if (batches.length === 0) return [];
+  const lineKey = normalizeLineKey(line);
 
-    const { data, error } = await query;
-    if (error) throw error;
-    const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    if (page.length === 0) break;
-    for (const row of page) {
-      if (normalizeLineKey(text(row.official_line)) === normalizeLineKey(line)) rows.push(row);
+  const perBatch = await mapWithConcurrency(batches, BATCH_READ_CONCURRENCY, async (batchId) => {
+    const kept: Array<Record<string, unknown>> = [];
+    let cursor: number | null = null;
+    for (;;) {
+      let query = supabase
+        .from("source_of_sales_import_rows")
+        .select(
+          "id,row_number,batch_id,distributor_code,invoice_period,invoice_date,official_line," +
+            "region_code,region_name,area_code,area_name,block_code,brick_id," +
+            "client_code,client_name,client_address,product_code,product_name," +
+            "qty,bonus_qty,discount,value,is_direct,validation_state",
+        )
+        .eq("batch_id", batchId)
+        .order("row_number", { ascending: true })
+        .limit(pageSize);
+      if (cursor !== null) query = query.gt("row_number", cursor);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      const page = (data ?? []) as unknown as Array<Record<string, unknown>>;
+      if (page.length === 0) break;
+      for (const row of page) {
+        if (normalizeLineKey(text(row.official_line)) === lineKey) kept.push(row);
+      }
+      if (page.length < pageSize) break;
+      const last = Number(page[page.length - 1]?.row_number);
+      if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
+      cursor = last;
     }
-    if (page.length < PAGE) break;
-    const last = Number(page[page.length - 1]?.id);
-    if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
-    cursor = last;
-  }
+    return kept;
+  });
+
+  return perBatch.flat().sort((a, b) => Number(a.id) - Number(b.id));
+}
+
+async function readImportRows(batchIds: string[], line: string): Promise<Array<Record<string, unknown>>> {
+  const rows = await readImportRowsFrom(getSupabaseAdmin(), batchIds, line);
   await fillMissingAddresses(rows);
   return rows;
 }
