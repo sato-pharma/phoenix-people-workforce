@@ -5,11 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolveEmployeeIdentityId } from "../src/lib/auth/permissions.ts";
 import { sharedIdentityKeys } from "../src/lib/auth/identity-aliases.ts";
 import { buildWeeklyAreaSplitIndex } from "../src/lib/sales/weekly/branch-area-split.ts";
-import {
-  parseWeeklySalesDetailManagerParams,
-  selectManagerDepotRows,
-  wholeDepotRows,
-} from "../src/lib/sales/weekly/depot-detail-service.ts";
+import { managerDepotRows, parseWeeklySalesDetailManagerParams } from "../src/lib/sales/weekly/depot-detail-service.ts";
 import {
   buildWeeklySalesDepotDetailFilename,
   buildWeeklySalesDepotDetailWorkbook,
@@ -20,11 +16,8 @@ import {
   selectFieldForceSeats,
   type FieldForceSeatRow,
 } from "../src/lib/sales/weekly/portal-weekly-field-force.ts";
-import {
-  mayLiftWeeklyGeography,
-  weeklyFieldForceGeography,
-  weeklyScopeOwnAreaKeys,
-} from "../src/lib/sales/weekly/own-area-scope.ts";
+import { weeklyScopeOwnAreaKeys } from "../src/lib/sales/weekly/own-area-scope.ts";
+import { mayLiftWeeklyGeography, narrowWeeklyRowsToOwnAreaShare } from "../src/lib/sales/weekly/own-area-share.ts";
 import { selectOwnRepSeats, selectRepWeeklySales } from "../src/lib/sales/weekly/portal-weekly-rep.ts";
 import {
   parseRepWeeklyDepotDetailParams,
@@ -868,10 +861,11 @@ export async function runWeeklySalesDepotDetailTests() {
     );
   }
 
-  // ── 9b. a lifted manager reads his own areas' shares, and adds up to his Field Force tab ─────────
+  // ── 9b. a district manager reads his own areas' share, and adds up to his Field Force tab ───────
   // The depot rows say "Upper Egypt", never Upper Egypt 1, so the Upper Egypt 1 district manager's region
   // bound never fetched Minia and Assiut — although the owner's split gives three of its four quarters to
-  // his areas, and his Field Force tab counts them. His load is lifted and narrowed straight back.
+  // his areas, and his Field Force tab counts them. The owner ruled on 2026-09-17 that every figure on his
+  // screens follows his own areas, and that a depot serving several areas reaches him as his share only.
   const DM_SCOPE = {
     tier: "territory" as const,
     allowedLineNames: new Set(["Anti Infective"]),
@@ -880,10 +874,43 @@ export async function runWeeklySalesDepotDetailTests() {
     canViewHeadOffice: false,
   };
   const dmKeys = weeklyScopeOwnAreaKeys(DM_SCOPE);
-  assert.equal(mayLiftWeeklyGeography(DM_SCOPE, dmKeys), true, "fixture: the Upper Egypt 1 manager's load lifts");
-  const DM_ROWS = REP_ROWS.filter((row) => row.line === "Anti Infective");
-  const dmGeography = weeklyFieldForceGeography(DM_ROWS, DM_SCOPE, dmKeys);
-  const dmRows = selectManagerDepotRows({ rows: DM_ROWS, geography: dmGeography, areaSplit: splitIndex });
+  assert.equal(mayLiftWeeklyGeography(DM_SCOPE, dmKeys), true, "fixture: the Upper Egypt 1 manager follows his own areas");
+  const DM_ROWS = [
+    ...REP_ROWS.filter((row) => row.line === "Anti Infective"),
+    // THE CASE THE OWNER RULED ON: a depot filed under HIS region, whose split gives a quarter to Assuit 2.
+    factRow({
+      branchCode: "UE-KA-01",
+      branchName: MINYA_ASSIUT,
+      regionCode: "UE-1",
+      regionName: "Upper Egypt 1",
+      productCode: "P3",
+      productName: "Zinnat 250mg",
+      family: "Zinnat",
+      salesValue: 400,
+      salesUnits: 4,
+    }),
+  ];
+  // The weekly loader holds these as its own rows, narrows them, and hands the Depot Detail the row grain.
+  type DmLoadRow = WeeklyFactExportRow & { officialLine: string; netQty: number; salesQty: number; stockQty: number };
+  const toLoadRow = (row: WeeklyFactExportRow): DmLoadRow => ({
+    ...row,
+    officialLine: row.line,
+    netQty: row.salesUnits,
+    salesQty: row.salesUnits,
+    stockQty: row.stockUnits,
+  });
+  const toGrainRow = (row: DmLoadRow): WeeklyFactExportRow => ({
+    ...row,
+    line: row.officialLine,
+    salesUnits: row.netQty,
+    stockUnits: row.stockQty,
+  });
+  const dmGrain = narrowWeeklyRowsToOwnAreaShare(DM_ROWS.map(toLoadRow), DM_SCOPE, {
+    ownAreaKeys: dmKeys,
+    areaSplit: splitIndex,
+    seatIndex: index,
+  }).map(toGrainRow);
+  const dmRows = managerDepotRows(dmGrain);
   const rowTuple = (row: WeeklySalesDetailSourceRow) =>
     [row.branchName, row.productName, row.areaCode, row.weekNumber, row.salesValue, row.basis].join(" / ");
   assert.deepEqual(
@@ -899,22 +926,30 @@ export async function runWeeklySalesDepotDetailTests() {
       [MINYA_ASSIUT, "Flagyl 500mg", "UE1", 1, 200, "allocated"],
       [MINYA_ASSIUT, "Flagyl 500mg", "UE2", 1, 200, "allocated"],
       [MINYA_ASSIUT, "Flagyl 500mg", "UE3", 1, 200, "allocated"],
+      [MINYA_ASSIUT, "Zinnat 250mg", "UE1", 1, 100, "allocated"],
+      [MINYA_ASSIUT, "Zinnat 250mg", "UE2", 1, 100, "allocated"],
+      [MINYA_ASSIUT, "Zinnat 250mg", "UE3", 1, 100, "allocated"],
     ]
       .map((tuple) => tuple.join(" / "))
       .sort(),
-    "his own depots stay whole; Minia and Assiut reaches him only as the quarters in his own areas — never Assuit 2's, and never a depot no rule places",
+    "depots mapped to his areas stay whole; Minia and Assiut reaches him only as the quarters in his own areas — never Assuit 2's, not even from a depot filed under his own region, and never a depot no rule places",
   );
-  for (const share of dmRows.filter((row) => row.basis === "allocated")) {
+  for (const row of dmRows) {
     assert.deepEqual(
-      [share.regionCode, share.regionName],
-      ["UE", "Upper Egypt"],
-      "a share keeps the depot's own region label, which is what the page's Region filter reads",
+      [row.regionCode, row.regionName],
+      ["UE-1", "Upper Egypt 1"],
+      "every row is filed under the organogram's region for its area, which is what the page's Region filter reads",
     );
   }
   assert.deepEqual(
-    selectManagerDepotRows({ rows: DM_ROWS, geography: null, areaSplit: splitIndex }),
-    wholeDepotRows(DM_ROWS),
-    "a manager whose load was not lifted reads every row whole, exactly as before",
+    managerDepotRows(DM_ROWS).map((row) => row.basis),
+    DM_ROWS.map(() => "whole"),
+    "a manager whose load does not follow his areas reads every row whole, exactly as before",
+  );
+  assert.equal(
+    managerDepotRows(DM_ROWS)[0].salesValue,
+    DM_ROWS[0].salesValue,
+    "and reads each row's own figures",
   );
 
   const dmView = buildWeeklySalesDepotDetail({
@@ -939,6 +974,9 @@ export async function runWeeklySalesDepotDetailTests() {
       [`${MINYA_ASSIUT} / Flagyl 500mg / Minia 1`, [200, "allocated", 200]],
       [`${MINYA_ASSIUT} / Flagyl 500mg / Minia 2`, [200, "allocated", 200]],
       [`${MINYA_ASSIUT} / Flagyl 500mg / Assuit 1`, [200, "allocated", 200]],
+      [`${MINYA_ASSIUT} / Zinnat 250mg / Minia 1`, [100, "allocated", 100]],
+      [`${MINYA_ASSIUT} / Zinnat 250mg / Minia 2`, [100, "allocated", 100]],
+      [`${MINYA_ASSIUT} / Zinnat 250mg / Assuit 1`, [100, "allocated", 100]],
       ["Mallawi Branch / Augmentin 1g / Minia 2", [98765, "whole", 0]],
       ["Assiut Branch / Augmentin 1g / Assuit 1", [33333, "whole", 0]],
     ]),
@@ -946,16 +984,21 @@ export async function runWeeklySalesDepotDetailTests() {
   );
   assert.deepEqual(
     [dmView.kpis.value, dmView.kpis.allocatedValue, dmView.kpis.mappedValue],
-    [138698, 3600, 0],
-    "his total is his own depots whole plus the shares in his own areas, and nothing of a manager's is 'mapped by hand'",
+    [138998, 3900, 0],
+    "his total is the depots mapped to his areas plus the shares in his own areas, and nothing of a manager's is 'mapped by hand'",
   );
-  const dmFieldForce = buildPortalWeeklyFieldForce({
-    rows: DM_ROWS,
-    areaSplit: splitIndex,
-    seatIndex: index,
-    geography: dmGeography,
-  });
+  const dmFieldForce = buildPortalWeeklyFieldForce({ rows: dmGrain, areaSplit: splitIndex, seatIndex: index });
   assert.equal(dmView.kpis.value, dmFieldForce.totals.value, "his Depot Detail adds up to his Field Force tab");
+  assert.equal(
+    dmView.kpis.value,
+    dmGrain.reduce((sum, row) => sum + row.salesValue, 0),
+    "and to the Sales Value his Weekly Sales screen builds from the same rows",
+  );
+  assert.deepEqual(
+    [dmFieldForce.totals.exactValue, dmFieldForce.totals.allocatedValue],
+    [dmView.kpis.value - dmView.kpis.allocatedValue, dmView.kpis.allocatedValue],
+    "the tab calls allocated exactly what the Depot Detail calls allocated",
+  );
   assert.equal(weeklySalesDetailShowsBasis(dmView), true, "his screen and book say how each figure reached him");
   assert.equal(weeklySalesDetailShowsBasis(view), false, "a manager with no share in view keeps the whole-depot screen");
 
@@ -971,7 +1014,7 @@ export async function runWeeklySalesDepotDetailTests() {
     const labels = headers(sheet);
     assert.ok(
       labels.includes("Region") && labels.includes("How It Reached You") && labels.includes("Of Which Allocated (EGP)"),
-      "a lifted manager's book states what was allocated, as his screen labels it",
+      "a district manager's book states what was allocated, as his screen labels it",
     );
     assert.notEqual(
       formulaOf(sheet, 4 + dmView.cells.length, columnOf(sheet, "Of Which Allocated (EGP)")),
@@ -988,11 +1031,13 @@ export async function runWeeklySalesDepotDetailTests() {
     );
     const basisRule = notes.find((note) => note.topic === "How it reached you")?.rule ?? "";
     assert.match(basisRule, /your own areas/, "in a manager's words");
+    assert.match(basisRule, /parts in other managers' areas are not counted/, "and told that other managers' parts leave");
     assert.doesNotMatch(basisRule, /Mapped by hand/, "never a rep's");
     const missing = weeklySalesDepotDetailNotes({ ...dmPayload, allocationUnavailable: true }, "17 Sep 2026, 10:00").find(
       (note) => note.topic === "Allocation missing",
     );
-    assert.ok(missing, "a lifted manager is warned when the depot map did not load");
+    assert.ok(missing, "a district manager is warned when the depot map did not load");
+    assert.match(missing.rule, /filed under your own region counts whole/, "and told what he reads instead");
     assert.doesNotMatch(missing.rule, /mapped to your area by hand/, "in a manager's words, not a rep's");
   }
 
@@ -1145,23 +1190,24 @@ export async function runWeeklySalesDepotDetailTests() {
   );
   assert.match(
     managerService,
-    /const ownAreaKeys = weeklyScopeOwnAreaKeys\(scope\.accessScope\);\s+const liftGrain = mayLiftWeeklyGeography\(scope\.accessScope, ownAreaKeys\);/,
-    "a district or regional manager's own areas come from his own scope, and only such a manager lifts",
+    /const ownAreaKeys = weeklyScopeOwnAreaKeys\(scope\.accessScope\);\s+const followsOwnAreas = mayLiftWeeklyGeography\(scope\.accessScope, ownAreaKeys\);/,
+    "a district or regional manager's own areas come from his own scope, and only such a manager follows them",
   );
   assert.match(
     managerService,
-    /liftRowGrainGeography: liftGrain,/,
-    "an Upper Egypt 1/2 or Delta (3) manager's load is lifted, as his Field Force tab's is",
+    /excludeUnmapped: true,\s+ownAreaShare,\s+\}\)/,
+    "his load reads his own areas' share, exactly as his Weekly Sales screen and Field Force tab do",
+  );
+  assert.doesNotMatch(managerService, /liftRowGrainGeography/, "never a lifted grain narrowed a second way");
+  assert.match(
+    managerService,
+    /rows: managerDepotRows\(data\.factRows \?\? \[\]\),/,
+    "the rows are built into figures exactly as the load returned them",
   );
   assert.match(
     managerService,
-    /weeklyFieldForceGeography\(factRows, scope\.accessScope, ownAreaKeys\)/,
-    "and is narrowed by the same rule his Field Force tab uses",
-  );
-  assert.match(
-    managerService,
-    /rows: selectManagerDepotRows\(\{ rows: factRows, geography, areaSplit \}\),/,
-    "before a single figure is built",
+    /allocationUnavailable:\s+followsOwnAreas &&/,
+    "and only a manager who follows his areas is warned when the depot map did not load",
   );
   const weeklyEngine = readSource("../src/lib/sales/weekly/service.ts");
   assert.match(

@@ -11,31 +11,25 @@
 // of every one of them to his areas. His reps read low on his Field Force tab, their month-pace strip
 // read about zero, and their Weekly Stock screen was nearly empty.
 //
-// THE RULE
-// ────────
-// Lift the region and area bounds for the LOAD only (liftWeeklyGeography — the line bound, the
-// confidential products and the Head Office strip all stay), then narrow straight back:
-//   • a row the viewer's own scope admits counts whole, exactly as before the lift;
-//   • any other row counts only where the depot split places it in one of his OWN areas.
-// Nothing another district owns is added, and nothing he saw before is taken away. A load lifts only
-// when there IS a region bound to lift and the viewer's own areas are known — a manager's seat areas,
-// or a medical rep's own filled seats, picked by his own Weekly Sales screen's selectOwnRepSeats.
-// Everyone else loads exactly as before.
+// Every sales figure — the Weekly Sales screen, its Field Force tab, the month-pace strip and a
+// manager's Depot Detail — now reads the viewer's own areas' share through own-area-share.ts, where
+// money placed in another manager's area leaves (owner, 2026-09-17). What stays here is who the viewer's
+// own areas are, and Weekly Stock's narrowing, which keeps a depot's shelf WHOLE (admitWeeklyStockRows).
+// A load lifts only when there IS a region bound to lift and the viewer's own areas are known — a
+// manager's seat areas, or a medical rep's own filled seats, picked by his own Weekly Sales screen's
+// selectOwnRepSeats. Everyone else loads exactly as before.
 
 import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import { applyWeeklyTerritoryScope, type WeeklyAccessScope } from "@/lib/sales/weekly/access";
 import type { WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
-import {
-  fieldForceKey,
-  loadFieldForceSeatIndex,
-  type FieldForceGeography,
-  type FieldForceSeat,
-} from "@/lib/sales/weekly/portal-weekly-field-force";
+import { fieldForceKey, loadFieldForceSeatIndex, type FieldForceSeat } from "@/lib/sales/weekly/portal-weekly-field-force";
 import { repWeeklySeatKey, selectOwnRepSeats } from "@/lib/sales/weekly/portal-weekly-rep";
 import type { WeeklyStockSourceRow } from "@/lib/sales/weekly/stock-dashboard";
-import type { WeeklyDistributorOption, WeeklyFactExportRow, WeeklyFilterMode } from "@/lib/sales/weekly/types";
+import type { WeeklyDistributorOption, WeeklyFilterMode } from "@/lib/sales/weekly/types";
+
+export { mayLiftWeeklyGeography } from "@/lib/sales/weekly/own-area-share";
 
 /** The part of a territory scope a lifted load drops, kept so the narrowing can re-apply it. */
 export type WeeklyGeographyBound = {
@@ -61,14 +55,6 @@ export function weeklyScopeOwnAreaKeys(scope: WeeklyAccessScope): Set<string> {
 }
 
 /**
- * Whether a load may lift this viewer's geography: a territory viewer who HAS a region bound, and whose
- * own areas are known, so there is something to narrow back to. Anything else never lifts. Pure.
- */
-export function mayLiftWeeklyGeography(scope: WeeklyAccessScope, ownAreaKeys: ReadonlySet<string>): boolean {
-  return scope.tier === "territory" && scope.allowedRegionCodes !== null && ownAreaKeys.size > 0;
-}
-
-/**
  * The viewer's own area keys, or an empty set when his load must not lift. A district or regional
  * manager's come from his seat's area bound. A medical rep's scope has no area bound, so his come from
  * his own filled rep seats in the organogram — `seats` when the caller already loaded them, otherwise
@@ -86,28 +72,6 @@ export async function resolveWeeklyOwnAreaKeys(
   const repSeats = seats ?? (await loadFieldForceSeatIndex()).seats;
   const ownSeats = selectOwnRepSeats(repSeats, sharedIdentityKeys(resolveEmployeeIdentityId(ctx)), scope.allowedLineNames);
   return new Set(ownSeats.map(repWeeklySeatKey));
-}
-
-/**
- * The narrowing a lifted Field Force load hands buildPortalWeeklyFieldForce. "His own scope admits the
- * row" is applyWeeklyTerritoryScope itself — the exact union the un-lifted load applies — run once over
- * the loaded rows rather than re-stated here. Pure.
- */
-export function weeklyFieldForceGeography(
-  rows: readonly WeeklyFactExportRow[],
-  bound: WeeklyGeographyBound,
-  ownAreaKeys: ReadonlySet<string>,
-): FieldForceGeography {
-  // The two geography fields by name: a whole territory scope passed as `bound` must not carry its line
-  // bound in (lines are already applied by the load).
-  const admitted = new Set(
-    applyWeeklyTerritoryScope([...rows], {
-      allowedLineNames: null,
-      allowedRegionCodes: bound.allowedRegionCodes,
-      allowedAreaCodes: bound.allowedAreaCodes,
-    }),
-  );
-  return { admitsWhole: (row) => admitted.has(row), ownAreaKeys };
 }
 
 /**

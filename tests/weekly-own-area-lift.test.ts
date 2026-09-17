@@ -3,18 +3,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import type { AccessContext, PhoenixRole } from "../src/lib/auth/permissions.ts";
-import { liftWeeklyGeography, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
+import { applyWeeklyAccessScope, liftWeeklyGeography, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import { buildWeeklyAreaSplitIndex } from "../src/lib/sales/weekly/branch-area-split.ts";
 import { depotWeekGaps } from "../src/lib/sales/weekly/decumulate.ts";
 import {
   admitWeeklyStockRows,
   mayLiftWeeklyGeography,
   resolveWeeklyOwnAreaKeys,
-  weeklyFieldForceGeography,
   weeklyScopeOwnAreaKeys,
   weeklyStockProductPredicate,
   withExtraWeeklyOptions,
 } from "../src/lib/sales/weekly/own-area-scope.ts";
+import {
+  narrowWeeklyRowsToOwnAreaShare,
+  type WeeklyOwnAreaShare,
+  type WeeklyOwnAreaShareRow,
+} from "../src/lib/sales/weekly/own-area-share.ts";
 import {
   buildPortalWeeklyFieldForce,
   fieldForceKey,
@@ -33,10 +37,15 @@ import type { WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 // low on the Field Force tab, a rep's month-pace strip read about zero, and Weekly Stock was nearly
 // empty (found 2026-09-16, building the medical rep's own Weekly Sales page).
 //
-// The fix lifts the region bound for the LOAD only and narrows straight back:
-//   1. a row the viewer's own scope admits counts whole, exactly as before;
-//   2. any other row counts only where the depot split places it in one of HIS areas;
-//   3. nothing another district owns is added, and nothing he saw before is taken away.
+// PR 3894 lifted the region bound for the Field Force tab's LOAD and kept a row his own scope admitted
+// WHOLE. Measured on production on 17 Sept 2026 that left a manager's screens disagreeing (the Upper
+// Egypt 2 manager's Sales Value 5,135 beside 25,694 on his Field Force tab) and put other managers' money
+// on his tab (Qalubeya, Delta (3)'s since 1 Sept, still whole on Delta (1)'s). The owner ruled:
+//   1. every figure on a manager's screens follows his own areas;
+//   2. money the depot split places in ANOTHER manager's area is not his, whatever its region label;
+//   3. a depot serving several areas reaches him as his areas' share only.
+// Money that reaches no area at all (a warehouse, a tender) stays with the manager whose scope admits it.
+// Weekly Stock keeps its own rule: a shelf serving one of his areas stays whole (block 5).
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -150,13 +159,24 @@ const viewer = (hrId: string, role: PhoenixRole = "Medical Rep"): AccessContext 
   source: "session",
 });
 
-function factRow(overrides: Partial<WeeklyFactExportRow>): WeeklyFactExportRow {
+/** One de-cumulated row as the weekly loader holds it, before any figure is built. */
+type LoadRow = WeeklyOwnAreaShareRow & {
+  distributorCode: string;
+  distributorName: string;
+  productName: string;
+  cycleMonth: string;
+  weekNumber: number | null;
+  weekStart: string;
+  batchId: string;
+};
+
+function loadRow(overrides: Partial<LoadRow>): LoadRow {
   return {
     distributorCode: "IBS",
     distributorName: "Ibn Sina",
     productCode: "AI01",
     productName: "Royafloxacin 500mg",
-    line: AI,
+    officialLine: AI,
     regionCode: "UE",
     regionName: "Upper Egypt",
     areaCode: null,
@@ -166,27 +186,64 @@ function factRow(overrides: Partial<WeeklyFactExportRow>): WeeklyFactExportRow {
     weekNumber: 1,
     weekStart: "2026-09-01",
     batchId: "batch-1",
-    family: "Royafloxacin",
     salesValue: 0,
-    salesUnits: 0,
-    stockUnits: 0,
+    salesQty: 0,
+    netQty: 0,
+    stockQty: 0,
     ...overrides,
   };
 }
 
-// What a lifted load hands back for one month: the viewer's own rows AND the rows his region bound
-// used to hide.
-const OWN_SOHAG = factRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: SOHAG, salesValue: 1000, salesUnits: 10 });
-const UE_MINYA_ASSIUT = factRow({ salesValue: 4000, salesUnits: 40 });
-const UE_PINNED_UE5 = factRow({ areaCode: "UE5", branchName: "Sohag hand-mapped", weekNumber: 2, salesValue: 700, salesUnits: 7 });
-const UE_PINNED_UE1 = factRow({ areaCode: "UE1", branchName: "Minia hand-mapped", weekNumber: 2, salesValue: 300, salesUnits: 3 });
-const UE_WAREHOUSE = factRow({ branchName: WAREHOUSE, weekNumber: 2, salesValue: 900, salesUnits: 9 });
-const OWN_WAREHOUSE = factRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: WAREHOUSE, weekNumber: 2, salesValue: 250, salesUnits: 2 });
-const UE_WEEK3_OTHER = factRow({ areaCode: "UE2", branchName: "Minia hand-mapped", weekNumber: 3, salesValue: 50, salesUnits: 1 });
+/** The row grain the loader hands the Field Force grid (service.ts factRows). */
+const toFactRow = (row: LoadRow): WeeklyFactExportRow => ({
+  distributorCode: row.distributorCode,
+  distributorName: row.distributorName,
+  productCode: row.productCode,
+  productName: row.productName,
+  line: row.officialLine,
+  regionCode: row.regionCode,
+  regionName: row.regionName,
+  areaCode: row.areaCode,
+  branchCode: row.branchCode,
+  branchName: row.branchName,
+  cycleMonth: row.cycleMonth,
+  weekNumber: row.weekNumber,
+  weekStart: row.weekStart,
+  batchId: row.batchId,
+  family: "Royafloxacin",
+  salesValue: row.salesValue,
+  salesUnits: row.netQty,
+  stockUnits: row.stockQty,
+  ...(row.areaBasis ? { areaBasis: row.areaBasis } : {}),
+});
 
-const LIFTED_ROWS = [OWN_SOHAG, UE_MINYA_ASSIUT, UE_PINNED_UE5, UE_PINNED_UE1, UE_WAREHOUSE, OWN_WAREHOUSE, UE_WEEK3_OTHER];
-/** The rows the region-bound load returned before the fix. */
-const DM_BOUND_ROWS = [OWN_SOHAG, UE_PINNED_UE5, OWN_WAREHOUSE];
+// One month of Anti Infective depot rows in Upper Egypt, every region label included.
+/** Filed under Upper Egypt 2; Sohag splits half to UE5, half to UE6 — both his. */
+const OWN_SOHAG = loadRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: SOHAG, salesValue: 1000, netQty: 10, salesQty: 12, stockQty: 20 });
+/** Filed under the old "UE" label; a quarter each to UE1 and UE2 (Upper Egypt 1), UE3 and UE4 (his). */
+const UE_MINYA_ASSIUT = loadRow({ salesValue: 4000, netQty: 40, salesQty: 44, stockQty: 80 });
+/** THE CASE THE OWNER RULED ON: filed under HIS region, yet half its money is Upper Egypt 1's. */
+const OWN_MINYA_ASSIUT = loadRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", branchCode: "BR2", salesValue: 2000, netQty: 20, salesQty: 20, stockQty: 40 });
+const UE_PINNED_UE5 = loadRow({ areaCode: "UE5", branchName: "Sohag hand-mapped", weekNumber: 2, salesValue: 700, netQty: 7, salesQty: 7, stockQty: 14 });
+const UE_PINNED_UE1 = loadRow({ areaCode: "UE1", branchName: "Minia hand-mapped", weekNumber: 2, salesValue: 300, netQty: 3, salesQty: 3, stockQty: 6 });
+/** Filed under HIS region, mapped by hand to another manager's area. */
+const OWN_PINNED_UE1 = loadRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", areaCode: "UE1", branchName: "Minia hand-mapped 2", weekNumber: 2, salesValue: 150, netQty: 2, salesQty: 2, stockQty: 4 });
+const UE_WAREHOUSE = loadRow({ branchName: WAREHOUSE, weekNumber: 2, salesValue: 900, netQty: 9, salesQty: 9, stockQty: 18 });
+const OWN_WAREHOUSE = loadRow({ regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: WAREHOUSE, weekNumber: 2, salesValue: 250, netQty: 2, salesQty: 2, stockQty: 5 });
+const UE_WEEK3_OTHER = loadRow({ areaCode: "UE2", branchName: "Minia hand-mapped", weekNumber: 3, salesValue: 50, netQty: 1, salesQty: 1, stockQty: 2 });
+
+const LOADED_ROWS = [
+  OWN_SOHAG, UE_MINYA_ASSIUT, OWN_MINYA_ASSIUT, UE_PINNED_UE5, UE_PINNED_UE1, OWN_PINNED_UE1, UE_WAREHOUSE, OWN_WAREHOUSE, UE_WEEK3_OTHER,
+];
+
+const share = (ownAreaKeys: ReadonlySet<string>, overrides: Partial<WeeklyOwnAreaShare> = {}): WeeklyOwnAreaShare => ({
+  ownAreaKeys,
+  areaSplit: SPLIT,
+  seatIndex: INDEX,
+  ...overrides,
+});
+
+const sumValue = (rows: readonly { salesValue: number }[]) => rows.reduce((sum, row) => sum + row.salesValue, 0);
 
 const byArea = (grid: PortalWeeklyFieldForce) =>
   Object.fromEntries(grid.reps.filter((rep) => rep.areaCode).map((rep) => [rep.areaCode as string, rep.value]));
@@ -216,62 +273,236 @@ function stockRow(overrides: Partial<WeeklyStockSourceRow>): WeeklyStockSourceRo
 }
 
 export async function runWeeklyOwnAreaLiftTests() {
-  // ── 1. the Field Force grid of an Upper Egypt 2 district manager ───────────────────────────
+  // ── 1. an Upper Egypt 2 district manager's rows follow his own areas ───────────────────────
   {
     const ownAreaKeys = weeklyScopeOwnAreaKeys(UE2_DM_SCOPE);
-    const before = buildPortalWeeklyFieldForce({ rows: DM_BOUND_ROWS, areaSplit: SPLIT, seatIndex: INDEX });
-    const after = buildPortalWeeklyFieldForce({
-      rows: LIFTED_ROWS,
-      areaSplit: SPLIT,
-      seatIndex: INDEX,
-      geography: weeklyFieldForceGeography(LIFTED_ROWS, UE2_DM_SCOPE, ownAreaKeys),
-    });
+    const snapshot = JSON.stringify(LOADED_ROWS);
+    const rows = narrowWeeklyRowsToOwnAreaShare(LOADED_ROWS, UE2_DM_SCOPE, share(ownAreaKeys));
+    assert.equal(JSON.stringify(LOADED_ROWS), snapshot, "the loaded rows are never mutated");
 
-    // HEADLINE — the "UE" Minia+Assiut depot pays his two Assiut reps their quarter each.
-    assert.equal(byArea(after).UE3, 1000, "Assuit 1 receives its 25% of the UE-labelled depot the region bound used to hide");
-    assert.equal(byArea(after).UE4, 1000, "Assuit 2 receives its 25% of the same depot");
+    const valueIn = (area: string | null) =>
+      sumValue(rows.filter((row) => (row.areaCode ?? null) === area));
 
-    // HEADLINE — nothing from another district. The other half of that depot is Upper Egypt 1's.
-    assert.equal(byArea(after).UE1, undefined, "Minia 1's share of a lifted row never reaches an Upper Egypt 2 grid");
-    assert.equal(byArea(after).UE2, undefined, "nor Minia 2's — neither the split share nor its hand-mapped row");
+    // HEADLINE (owner, 2026-09-17) — a depot filed under HIS region reaches him as his areas' share only.
+    const ownMinya = rows.filter((row) => row.branchCode === "BR2");
+    assert.deepEqual(
+      ownMinya.map((row) => [row.areaCode, row.salesValue, row.areaBasis]),
+      [["UE3", 500], ["UE4", 500]].map(([area, value]) => [area, value, "allocated"]),
+      "a Minia+Assiut depot labelled Upper Egypt 2 counts only its Assiut quarters, never whole",
+    );
+    // HEADLINE — money the split places in another manager's area leaves, whatever the depot's label.
+    assert.equal(valueIn("UE1"), 0, "no Minia 1 money: not the UE-labelled share, not the UE-2-labelled share, not a hand-mapped row");
+    assert.equal(valueIn("UE2"), 0, "no Minia 2 money either");
+    assert.ok(!rows.some((row) => row.branchName === "Minia hand-mapped 2"), "a row filed under his region but mapped to Minia 1 is Minia 1's");
 
-    // HEADLINE — nothing he saw before is taken away or changed.
-    assert.equal(byArea(after).UE5, 1200, "his own Sohag half (500) and the row pinned to his area (700) both stay whole");
-    assert.equal(byArea(after).UE6, 500, "the other Sohag half is unchanged");
-    assert.equal(residue(after), 250, "the residue of a row his own scope admits is still reported, never dropped");
-    assert.equal(residue(after), residue(before), "and the lift adds no residue from rows he could not see");
-    assert.equal(after.totals.unattributedValue, 250, "a lifted warehouse outside his scope is not his residue");
-    for (const [area, value] of Object.entries(byArea(before))) {
-      const gained = area === "UE3" || area === "UE4" ? 1000 : 0;
-      assert.equal(byArea(after)[area], value + gained, `${area} gains exactly its own-area share and nothing else`);
-    }
-    assert.equal(after.totals.value, before.totals.value + 2000, "the lift adds exactly the two Assiut shares");
+    // The "UE" rows his region bound used to hide reach him as his share.
+    assert.equal(valueIn("UE3"), 1500, "Assuit 1: a quarter of the UE depot (1,000) and of the UE-2 depot (500)");
+    assert.equal(valueIn("UE4"), 1500, "Assuit 2: the same");
+    assert.equal(valueIn("UE5"), 1200, "Sohag 1: half the Sohag depot (500) and the row mapped to it by hand (700)");
+    assert.equal(valueIn("UE6"), 500, "Sohag 2: the other half");
 
-    const ue5 = after.reps.find((rep) => rep.areaCode === "UE5");
-    assert.equal(ue5?.exactValue, 700, "a hand-mapped row stays EXACT after the lift");
-    assert.equal(ue5?.allocatedValue, 500, "and a name-read share stays ALLOCATED");
-    assert.equal(after.reps.find((rep) => rep.areaCode === "UE3")?.allocatedValue, 1000, "a lifted split share is an allocation");
+    // Money no rule places stays with the manager whose scope admits it, and nobody else.
+    assert.equal(valueIn(null), 250, "his own region's warehouse stays, whole; the UE warehouse is not his");
+    assert.equal(rows.find((row) => row.areaCode === null)?.areaBasis, "whole", "and it is marked whole");
+    assert.equal(sumValue(rows), 4950, "his total is exactly his areas' money plus the residue his scope admits");
 
-    // A week is a column only where a row that counts for him carries it. Week 3 is carried by Minia 2's
-    // hand-mapped row alone, which the narrowing drops, so it is not his column.
-    assert.deepEqual(after.weekNumbers, [1, 2], "a week only another district's row carries is never a column on his grid");
-    assert.deepEqual(after.weekNumbers, before.weekNumbers, "the lift adds no week his own rows and shares do not carry");
+    // How each row reached him, and where it is filed: under the organogram's region, not the depot label.
+    assert.equal(rows.find((row) => row.branchName === "Sohag hand-mapped")?.areaBasis, "mapped", "a hand-mapped row is marked mapped");
+    const ueQuarter = rows.find((row) => row.branchCode === "BR" && row.branchName === MINYA_ASSIUT && row.areaCode === "UE3");
+    assert.deepEqual(
+      [ueQuarter?.regionCode, ueQuarter?.regionName],
+      ["UE-2", "Upper Egypt 2"],
+      "a UE-labelled share in Assuit 1 is filed under Upper Egypt 2",
+    );
+    assert.equal(rows.find((row) => row.branchName === "Sohag hand-mapped")?.regionCode, "UE-2", "and so is a UE-labelled row mapped to Sohag 1");
+    assert.equal(rows.find((row) => row.areaCode === null)?.regionCode, "UE-2", "residue keeps its own label");
+
+    // Units split with the money and are conserved — net, gross and stock alike.
+    const ueParts = rows.filter((row) => row.branchCode === "BR" && row.branchName === MINYA_ASSIUT);
+    assert.deepEqual(
+      ueParts.map((row) => [row.netQty, row.salesQty, row.stockQty]),
+      [[10, 11, 20], [10, 11, 20]],
+      "each Assiut quarter carries a quarter of the net units, the gross units and the stock",
+    );
+    const sohagHalves = rows.filter((row) => row.branchName === SOHAG);
+    assert.deepEqual(
+      [sohagHalves.reduce((sum, row) => sum + row.netQty, 0), sohagHalves.reduce((sum, row) => sum + row.salesQty, 0)],
+      [10, 12],
+      "a depot wholly in his areas keeps every unit",
+    );
+
+    // In load order, so every list built from these rows reads as it did.
+    assert.deepEqual(
+      rows.map((row) => row.salesValue),
+      [500, 500, 1000, 1000, 500, 500, 700, 250],
+      "rows come back in the order they were loaded, each depot's parts in place of the depot",
+    );
+
+    // HEADLINE — his Sales Value and his Field Force total are one number.
+    const grid = buildPortalWeeklyFieldForce({ rows: rows.map(toFactRow), areaSplit: SPLIT, seatIndex: INDEX });
+    assert.equal(grid.totals.value, sumValue(rows), "the Field Force total equals the KPI built from the same rows");
+    assert.equal(byArea(grid).UE3, 1500, "the grid files his Assuit 1 share under its rep");
+    assert.equal(byArea(grid).UE1, undefined, "and no Upper Egypt 1 rep appears on his grid");
+    assert.equal(residue(grid), 250, "the admitted warehouse is reported as not attributed, never dropped");
+    const ue5 = grid.reps.find((rep) => rep.areaCode === "UE5");
+    assert.deepEqual([ue5?.exactValue, ue5?.allocatedValue], [700, 500], "a hand-mapped row stays EXACT, a split share ALLOCATED");
+    assert.deepEqual(
+      [grid.reps.find((rep) => rep.areaCode === "UE3")?.exactValue, grid.reps.find((rep) => rep.areaCode === "UE3")?.allocatedValue],
+      [0, 1500],
+      "a share that already carries its area is still an allocation on the grid",
+    );
+    assert.deepEqual(grid.weekNumbers, [1, 2], "the column axis is his own rows' weeks, as his week comparison is");
+
+    // Degraded: the depot-split map did not load. Nothing is split; his region's depots stay whole and
+    // another region's depots stay out. Hand-mapped rows still follow the area.
+    const noSplit = narrowWeeklyRowsToOwnAreaShare(LOADED_ROWS, UE2_DM_SCOPE, share(ownAreaKeys, { areaSplit: null }));
+    assert.deepEqual(
+      noSplit.map((row) => [row.branchName, row.areaCode, row.salesValue, row.areaBasis]),
+      [
+        [SOHAG, null, 1000, "whole"],
+        [MINYA_ASSIUT, null, 2000, "whole"],
+        ["Sohag hand-mapped", "UE5", 700, "mapped"],
+        [WAREHOUSE, null, 250, "whole"],
+      ],
+      "with no split map, only his own region's depots (whole) and rows mapped to his areas remain",
+    );
+    // Degraded: the organogram did not load. The money is the same; only the region label is the depot's.
+    const noSeats = narrowWeeklyRowsToOwnAreaShare(LOADED_ROWS, UE2_DM_SCOPE, share(ownAreaKeys, { seatIndex: null }));
+    assert.equal(sumValue(noSeats), 4950, "an unreadable organogram never changes his money");
+    assert.equal(noSeats.find((row) => row.branchName === "Sohag hand-mapped")?.regionCode, "UE", "it keeps the depot's own label");
   }
 
-  // ── 2. a medical rep's own seat (the month-pace strip) ─────────────────────────────────────
+  // ── 1b. money in an area no district manager owns stays with the manager of its region ─────
+  // Owner, 2026-09-17: a line's "Others" areas carry no rep, no target and no district manager. Money the
+  // split places there, or a branch mapped there by hand, stays with the manager whose own region-bound
+  // scope admits the depot row, under "Not attributed to a rep", as a warehouse does. Measured for
+  // September, leaving it out took EGP 50,454 off CNS Giza and 23,735 off CNS Upper Egypt. An area with
+  // no REP seat is not the same thing: Delta (3) owns Anti Infective's OT9 with no rep in it.
+  {
+    const OTHERS_SEAT = {
+      seat_id: "SEAT-AI-OTHERS",
+      seat_tier: "DM",
+      line_code: "anti_infective",
+      line_name: AI,
+      region_code: "OT",
+      occupant_hr_id: null,
+      is_vacant: true,
+      is_other_pseudo_dm: true,
+    };
+    // Sohag 3 sits under the line's Others pseudo-DM. Minya 3 is Upper Egypt 1's, with no rep seat.
+    const LINE_AREAS = [
+      ...["UE1", "UE2", "UE9", "OT99"].map((area_code) => ({ line_code: "anti_infective", area_code, dm_seat_id: "SEAT-AI-DM-UE1" })),
+      ...["UE3", "UE4", "UE5", "UE6", "UE7", "UE8"].map((area_code) => ({ line_code: "anti_infective", area_code, dm_seat_id: "SEAT-AI-DM-UE2" })),
+      { line_code: "anti_infective", area_code: "OT97", dm_seat_id: "SEAT-AI-OTHERS" },
+    ];
+    const nameOf = (hrId: string | null) => (hrId ? (NAMES[hrId] ?? null) : null);
+    const index = selectFieldForceSeats([...SEATS, OTHERS_SEAT], nameOf, LINE_AREAS);
+    const split = buildWeeklyAreaSplitIndex(
+      [
+        ...MAP_ROWS,
+        { line_code: "anti_infective", area_code: "OT97", operational_region_code: "OT", effective_from: "2026-07-13", effective_to: null },
+        { line_code: "anti_infective", area_code: "OT99", operational_region_code: "UE-1", effective_from: "2026-07-13", effective_to: null },
+      ],
+      [...AREA_ROWS, { area_code: "OT97", area_name: "Sohag 3" }, { area_code: "OT99", area_name: "Minya 3" }],
+      "2026-09-16",
+    );
+
+    assert.equal(INDEX.managedAreaKeys, undefined, "fixture: an index built without the area map knows no ownership");
+    assert.ok(index.managedAreaKeys?.has(fieldForceKey(AI, "OT99")), "an area with no rep seat is still its manager's");
+    assert.ok(index.managedAreaKeys?.has(fieldForceKey(AI, "UE7")), "and so is a vacant rep's area");
+    assert.ok(!index.managedAreaKeys?.has(fieldForceKey(AI, "OT97")), "the Others pseudo-DM owns no one's area");
+
+    const UE2 = { regionCode: "UE-2", regionName: "Upper Egypt 2" };
+    const rowsLoaded = [
+      /** His region's Sohag depot, a third each to Sohag 1, Sohag 2 and Sohag 3 (no manager). */
+      loadRow({ ...UE2, branchName: SOHAG, branchCode: "BR3", salesValue: 900, netQty: 9, salesQty: 9, stockQty: 18 }),
+      /** The same depot under the old "UE" label, which his own scope does not admit. */
+      loadRow({ branchName: SOHAG, branchCode: "BR4", salesValue: 600, netQty: 6, salesQty: 6, stockQty: 12 }),
+      /** Mapped by hand to Sohag 3, under his region's label, and under the old label. */
+      loadRow({ ...UE2, areaCode: "OT97", branchName: "Sohag 3 hand-mapped", weekNumber: 2, salesValue: 400, netQty: 4, salesQty: 4, stockQty: 8 }),
+      loadRow({ areaCode: "OT97", branchName: "Sohag 3 hand-mapped 2", weekNumber: 2, salesValue: 50, netQty: 1, salesQty: 1, stockQty: 2 }),
+      /** Mapped by hand to Minya 3: Upper Egypt 1's area, although no rep sits in it. */
+      loadRow({ ...UE2, areaCode: "OT99", branchName: "Minya 3 hand-mapped", weekNumber: 2, salesValue: 700, netQty: 7, salesQty: 7, stockQty: 14 }),
+      /** His region's Minia+Assiut depot: half over Minia 1, Minia 2 and Minya 3, half over Assuit 1 and 2. */
+      loadRow({ ...UE2, branchCode: "BR5", salesValue: 1200, netQty: 12, salesQty: 12, stockQty: 24 }),
+    ];
+    const withMap = share(weeklyScopeOwnAreaKeys(UE2_DM_SCOPE), { areaSplit: split, seatIndex: index });
+    const rows = narrowWeeklyRowsToOwnAreaShare(rowsLoaded, UE2_DM_SCOPE, withMap);
+    const valueIn = (kept: readonly WeeklyOwnAreaShareRow[], area: string) =>
+      sumValue(kept.filter((row) => row.areaCode === area));
+
+    // HEADLINE — his region's money in an area no manager owns stays on his screens.
+    assert.equal(valueIn(rows, "OT97"), 700, "Sohag 3: his region depot's third (300) and his region's hand-mapped row (400)");
+    assert.deepEqual(
+      rows.filter((row) => row.areaCode === "OT97").map((row) => [row.salesValue, row.areaBasis, row.regionCode]),
+      [[300, "allocated", "UE-2"], [400, "mapped", "UE-2"]],
+      "a split third stays an allocation and a hand-mapped row stays mapped, each under the depot's own label",
+    );
+    // HEADLINE — only for a row his own scope admits.
+    assert.deepEqual(
+      rows.filter((row) => row.branchCode === "BR4").map((row) => [row.areaCode, row.salesValue]),
+      [["UE5", 200], ["UE6", 200]],
+      "an old-label depot reaches him as his own areas' thirds only, never its Sohag 3 third",
+    );
+    assert.ok(!rows.some((row) => row.branchName === "Sohag 3 hand-mapped 2"), "and an old-label row mapped to Sohag 3 is not his");
+    // HEADLINE — an area with no rep seat is still another manager's.
+    assert.equal(valueIn(rows, "OT99"), 0, "Minya 3 is Upper Egypt 1's: neither the hand-mapped row nor the depot's share reaches him");
+    assert.deepEqual(
+      ["UE1", "UE2", "UE3", "UE4", "UE5", "UE6"].map((area) => valueIn(rows, area)),
+      [0, 0, 300, 300, 500, 500],
+      "his own areas are exactly as before",
+    );
+    assert.equal(sumValue(rows), 2300, "his total is his areas' money plus what his scope admits in Sohag 3");
+
+    // On the grid it is money under no rep, never a rep row.
+    const grid = buildPortalWeeklyFieldForce({ rows: rows.map(toFactRow), areaSplit: split, seatIndex: index });
+    assert.equal(grid.totals.value, sumValue(rows), "the Field Force total still equals the KPI");
+    assert.equal(residue(grid), 700, "Sohag 3 is reported as not attributed to a rep");
+    assert.ok(!grid.reps.some((rep) => rep.areaCode === "OT97"), "no rep row is invented for it");
+    const ownerless = grid.reps.find((rep) => rep.kind === "unattributed");
+    assert.deepEqual([ownerless?.exactValue, ownerless?.allocatedValue], [400, 300], "its hand-mapped and allocated parts stay apart");
+
+    // The money reaches one district manager only: Upper Egypt 1's never sees Sohag 3, and keeps Minya 3.
+    const UE1_DM_SCOPE = { ...UE2_DM_SCOPE, allowedRegionCodes: new Set(["UE-1"]), allowedAreaCodes: new Set(["UE1", "UE2", "UE9", "OT99"]) };
+    const ue1 = narrowWeeklyRowsToOwnAreaShare(rowsLoaded, UE1_DM_SCOPE, share(weeklyScopeOwnAreaKeys(UE1_DM_SCOPE), { areaSplit: split, seatIndex: index }));
+    assert.equal(valueIn(ue1, "OT97"), 0, "a depot another region's manager admits never puts Sohag 3 on his screens");
+    assert.equal(valueIn(ue1, "OT99"), 900, "Minya 3 is his: the hand-mapped row (700) and its third of the depot's Minia half (200)");
+
+    // Degraded: ownership unknown. No area counts as ownerless, so nothing beyond his own areas is kept.
+    const noMap = narrowWeeklyRowsToOwnAreaShare(rowsLoaded, UE2_DM_SCOPE, { ...withMap, seatIndex: INDEX });
+    assert.equal(valueIn(noMap, "OT97"), 0, "with no area map, Sohag 3 is not kept");
+    assert.equal(sumValue(noMap), 1600, "and his own areas' money is unchanged");
+    const emptyMap = narrowWeeklyRowsToOwnAreaShare(rowsLoaded, UE2_DM_SCOPE, {
+      ...withMap,
+      seatIndex: { ...index, managedAreaKeys: new Set<string>() },
+    });
+    assert.equal(sumValue(emptyMap), 1600, "an empty map never reads as \"no one owns anything\"");
+  }
+
+  // ── 2. a medical rep's own seat (the month-pace strip) and viewers who never follow areas ───
   {
     const repKeys = await resolveWeeklyOwnAreaKeys(viewer("A-105"), UE2_REP_SCOPE, INDEX.seats);
-    const before = buildPortalWeeklyFieldForce({ rows: [OWN_SOHAG, OWN_WAREHOUSE], areaSplit: SPLIT, seatIndex: INDEX });
-    const after = buildPortalWeeklyFieldForce({
-      rows: LIFTED_ROWS,
-      areaSplit: SPLIT,
-      seatIndex: INDEX,
-      geography: weeklyFieldForceGeography(LIFTED_ROWS, UE2_REP_SCOPE, repKeys),
-    });
-    assert.equal(byArea(before).UE5, 500, "region-bound, the Sohag 1 rep saw only his half of the UE-2 depot");
-    assert.equal(byArea(after).UE5, 1200, "lifted, the UE-labelled row pinned to his own area reaches him too");
-    assert.equal(byArea(after).UE3, undefined, "a lifted row's share in a colleague's area is not a rep's");
-    assert.equal(byArea(after).UE4, undefined, "nor the other colleague's");
+    const rows = narrowWeeklyRowsToOwnAreaShare(LOADED_ROWS, UE2_REP_SCOPE, share(repKeys));
+    const grid = buildPortalWeeklyFieldForce({ rows: rows.map(toFactRow), areaSplit: SPLIT, seatIndex: INDEX });
+    assert.equal(byArea(grid).UE5, 1200, "the Sohag 1 rep: his half of the Sohag depot and the UE row mapped to his area");
+    assert.equal(byArea(grid).UE6, undefined, "never his colleague's half");
+    assert.equal(byArea(grid).UE3, undefined, "nor any share of the Minia+Assiut depots");
+
+    // A viewer with no region bound, or no known own areas, reads exactly his own scope.
+    const product: WeeklyAccessScope = { tier: "product", productCodes: new Set(["AI01"]), canViewHeadOffice: false };
+    const full: WeeklyAccessScope = { tier: "full", canViewRestricted: false, canViewHeadOffice: false };
+    for (const [label, scope, keys] of [
+      ["a product manager", product, weeklyScopeOwnAreaKeys(UE2_DM_SCOPE)],
+      ["a company-wide viewer", full, weeklyScopeOwnAreaKeys(UE2_DM_SCOPE)],
+      ["a manager with no region bound", { ...UE2_DM_SCOPE, allowedRegionCodes: null }, weeklyScopeOwnAreaKeys(UE2_DM_SCOPE)],
+      ["a rep whose seat is unknown", UE2_REP_SCOPE, new Set<string>()],
+    ] as [string, WeeklyAccessScope, Set<string>][]) {
+      assert.deepEqual(
+        narrowWeeklyRowsToOwnAreaShare(LOADED_ROWS, scope, share(keys)),
+        applyWeeklyAccessScope(LOADED_ROWS, scope),
+        `${label} reads exactly his own scope`,
+      );
+    }
   }
 
   // ── 3. whose areas are whose ───────────────────────────────────────────────────────────────
@@ -431,50 +662,50 @@ export async function runWeeklyOwnAreaLiftTests() {
     );
   }
 
-  // ── 6. a lifted grid's upload-gap flags are per depot, over the money that counts for him ─────
+  // ── 6. his grid's upload-gap flags are per depot, over the money that counts for him ──────────
   // Measured 2026-09-17 on Delta (3)'s Anti Infective August tab: Ibn Sina-Sato and Overseas sent no
-  // week-2 sheet, while a POS return landed in one of her areas in week 2. Pooled over the lifted load,
-  // every week looked uploaded, so week 3, which held two weeks of those two depots' sales, had no flag.
+  // week-2 sheet, while a POS return landed in one of her areas in week 2. Pooled over the load, every
+  // week looked uploaded, so week 3, which held two weeks of those two depots' sales, had no flag.
   {
-    const sheet = (distributorCode: string, weekNumber: number, overrides: Partial<WeeklyFactExportRow> = {}) =>
-      factRow({ distributorCode, weekNumber, weekStart: `2026-09-0${weekNumber}`, ...overrides });
+    const sheet = (distributorCode: string, weekNumber: number, overrides: Partial<LoadRow> = {}) =>
+      loadRow({ distributorCode, weekNumber, weekStart: `2026-09-0${weekNumber}`, ...overrides });
     const ownSohag = { regionCode: "UE-2", regionName: "Upper Egypt 2", branchName: SOHAG };
-    const rows = [
+    const loaded = [
       // Ibn Sina-Sato and Overseas skipped week 2. Their UE Minia+Assiut books give each Assiut area a quarter.
-      sheet("IS-S", 1, { salesValue: 4000, salesUnits: 40 }),
-      sheet("IS-S", 3, { salesValue: 8000, salesUnits: 80 }),
-      sheet("IS-S", 4, { salesValue: 4000, salesUnits: 40 }),
-      sheet("PS", 1, { salesValue: 2000, salesUnits: 20 }),
-      sheet("PS", 3, { salesValue: 2000, salesUnits: 20 }),
+      sheet("IS-S", 1, { salesValue: 4000, netQty: 40 }),
+      sheet("IS-S", 3, { salesValue: 8000, netQty: 80 }),
+      sheet("IS-S", 4, { salesValue: 4000, netQty: 40 }),
+      sheet("PS", 1, { salesValue: 2000, netQty: 20 }),
+      sheet("PS", 3, { salesValue: 2000, netQty: 20 }),
       // POS sent weeks 1 to 3. Its week 2 is a return, and a quarter of it lands in each Assiut area.
-      sheet("POS", 1, { salesValue: 800, salesUnits: 8 }),
-      sheet("POS", 2, { salesValue: -888, salesUnits: -8 }),
-      sheet("POS", 3, { salesValue: 800, salesUnits: 8 }),
-      // Ibn Sina's Sohag book is his own region's, admitted whole, and it skipped nothing.
-      sheet("IBS", 1, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
-      sheet("IBS", 2, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
-      sheet("IBS", 3, { ...ownSohag, salesValue: 1000, salesUnits: 10 }),
+      sheet("POS", 1, { salesValue: 800, netQty: 8 }),
+      sheet("POS", 2, { salesValue: -888, netQty: -8 }),
+      sheet("POS", 3, { salesValue: 800, netQty: 8 }),
+      // Ibn Sina's Sohag book is his own region's, both halves his, and it skipped nothing.
+      sheet("IBS", 1, { ...ownSohag, salesValue: 1000, netQty: 10 }),
+      sheet("IBS", 2, { ...ownSohag, salesValue: 1000, netQty: 10 }),
+      sheet("IBS", 3, { ...ownSohag, salesValue: 1000, netQty: 10 }),
       // EGD's first sheet of the month is week 5, so it holds weeks 1 to 5, but it reaches Minia 2 alone.
-      sheet("EG", 5, { areaCode: "UE2", branchName: "Minia hand-mapped", salesValue: 500, salesUnits: 5 }),
+      sheet("EG", 5, { areaCode: "UE2", branchName: "Minia hand-mapped", salesValue: 500, netQty: 5 }),
     ];
     const ownAreaKeys = weeklyScopeOwnAreaKeys(UE2_DM_SCOPE);
-    const grid = (loaded: WeeklyFactExportRow[]) =>
+    // As the screen builds it: the gaps are read over every loaded row, the grid over his own-area rows.
+    const grid = (rows: LoadRow[]) =>
       buildPortalWeeklyFieldForce({
-        rows: loaded,
+        rows: narrowWeeklyRowsToOwnAreaShare(rows, UE2_DM_SCOPE, share(ownAreaKeys)).map(toFactRow),
         areaSplit: SPLIT,
         seatIndex: INDEX,
-        depotWeekGaps: depotWeekGaps(loaded),
-        geography: weeklyFieldForceGeography(loaded, UE2_DM_SCOPE, ownAreaKeys),
+        depotWeekGaps: depotWeekGaps(rows),
       });
     const flagsByArea = (built: PortalWeeklyFieldForce) =>
       Object.fromEntries(built.reps.filter((rep) => rep.areaCode).map((rep) => [rep.areaCode as string, rep.gapWeekNumbers]));
 
     assert.deepEqual(
-      depotWeekGaps(rows).map((gap) => `${gap.distributorCode} week ${gap.weekNumber}`),
+      depotWeekGaps(loaded).map((gap) => `${gap.distributorCode} week ${gap.weekNumber}`),
       ["EG week 5", "IS-S week 3", "PS week 3"],
       "fixture: three depot weeks span a gap",
     );
-    const dm = grid(rows);
+    const dm = grid(loaded);
 
     // HEADLINE: week 3 is flagged, although POS's sheet means some depot sent every week before it.
     assert.deepEqual(dm.gapWeekNumbers, [3], "a week is flagged when a depot whose money counts for him skipped the week before");
@@ -491,34 +722,71 @@ export async function runWeeklyOwnAreaLiftTests() {
     assert.deepEqual(dm.weekNumbers, [1, 2, 3, 4], "EGD's week 5 reaches only Minia 2, so it is no column on his grid");
 
     // A gapped depot row that moves no money cannot make a figure read high.
-    const stockOnly = sheet("RM", 4, { ...ownSohag, stockUnits: 60 });
+    const stockOnly = sheet("RM", 4, { ...ownSohag, stockQty: 60 });
     assert.deepEqual(
-      depotWeekGaps([...rows, stockOnly]).filter((gap) => gap.distributorCode === "RM").map((gap) => gap.weekNumber),
+      depotWeekGaps([...loaded, stockOnly]).filter((gap) => gap.distributorCode === "RM").map((gap) => gap.weekNumber),
       [4],
       "fixture: ramco's first sheet of the month is week 4",
     );
-    assert.deepEqual(grid([...rows, stockOnly]).gapWeekNumbers, [3], "a stock-only row from a gapped depot week flags nothing");
+    assert.deepEqual(grid([...loaded, stockOnly]).gapWeekNumbers, [3], "a stock-only row from a gapped depot week flags nothing");
 
     // The same first sheet with sales in his areas holds weeks 1 to 4, and is flagged where it lands.
-    const sold = grid([...rows, { ...stockOnly, salesValue: 600, salesUnits: 6 }]);
+    const sold = grid([...loaded, { ...stockOnly, salesValue: 600, netQty: 6 }]);
     assert.deepEqual(sold.gapWeekNumbers, [3, 4], "a depot's first sheet after week 1 is flagged once its money reaches him");
     assert.deepEqual(flagsByArea(sold), { UE3: [3], UE4: [3], UE5: [4], UE6: [4] }, "on the rows it reached, and no others");
   }
 
-  // ── 7. the wiring — each surface loads lifted and narrows before a figure is built ─────────
+  // ── 7. the wiring — every surface reads the same own-area rows before a figure is built ────
   {
+    const service = readSource("../src/lib/sales/weekly/service.ts");
+    assert.match(
+      service,
+      /const ownAreaShare = filters\?\.ownAreaShare \? await filters\.ownAreaShare : null;\s+const visibleRows = ownAreaShare\s+\? narrowWeeklyRowsToOwnAreaShare\(realRows, accessScope, ownAreaShare\)\s+: applyWeeklyAccessScope\(realRows, accessScope\);/,
+      "the loader chooses a manager's rows ONCE, before every aggregate, option list and row grain",
+    );
+    assert.match(
+      service,
+      /const grainScope =\s+filters\?\.liftRowGrainGeography && !ownAreaShare \? liftWeeklyGeography\(accessScope\) : accessScope;/,
+      "and never re-reads his rows without the bound when they already follow his areas",
+    );
+    assert.match(service, /\.\.\.\(row\.areaBasis \? \{ areaBasis: row\.areaBasis \} : \{\}\)/, "each row grain row says how it reached him");
+    const seatLoad = functionBody(readSource("../src/lib/sales/weekly/portal-weekly-field-force.ts"), "loadFieldForceSeatIndex");
+    assert.match(
+      seatLoad,
+      /from\("au_v_line_area_map"\)\.select\("line_code,area_code,dm_seat_id"\)\.is\("effective_to", null\)/,
+      "the seat index reads which manager owns each area today",
+    );
+    assert.match(
+      seatLoad,
+      /lineAreaResult\.error \? undefined : \(\(lineAreaResult\.data \?\? \[\]\) as FieldForceLineAreaRow\[\]\)/,
+      "and hands it to the index, leaving ownership unknown when the map cannot be read",
+    );
+
     const portal = readSource("../src/lib/sales/weekly/portal-weekly-dashboard.ts");
     const tab = functionBody(portal, "getPortalWeeklyDashboard");
-    assert.match(tab, /liftRowGrainGeography:\s*liftGrain/, "the Field Force tab loads its row grain lifted");
-    assert.match(tab, /mayLiftWeeklyGeography\(/, "only when there is a region bound to lift and own areas to narrow to");
-    assert.match(tab, /geography:[\s\S]*?weeklyFieldForceGeography\(/, "and hands the narrowing to the grid");
-    assert.match(tab, /factRowDepotWeekGaps:\s*_factRowDepotWeekGaps/, "the depot gap list never reaches the browser");
-    assert.match(tab, /depotWeekGaps:\s*data\.factRowDepotWeekGaps \?\? \[\],/, "the grid is flagged per depot, lifted or not");
+    assert.match(tab, /const ownAreaKeys = weeklyScopeOwnAreaKeys\(scope\.accessScope\);/, "the manager's screen takes his own areas whether or not the tab is open");
+    assert.match(tab, /const followsOwnAreas = mayLiftWeeklyGeography\(scope\.accessScope, ownAreaKeys\);/, "only when there is a region bound and own areas to follow");
+    assert.match(
+      tab,
+      /includeFactRows: includeFieldForce,\s+(?:\/\/[^\n]*\n\s+)*factRowsFullPrecision: includeFieldForce,\s+ownAreaShare,\s+\}\)/,
+      "the screen's load follows them, and the tab sums them unrounded, so the KPIs, the export and the tab agree to the pound",
+    );
+    assert.match(tab, /computeWeeklyComparison\(filters, scope, trimmed, ownAreaShare\)/, "last month's movers follow the same areas");
+    assert.match(tab, /trimWeeklyFilterOptions\(data, scope, followsOwnAreas\)/, "his region list names the organogram regions his rows carry");
+    assert.doesNotMatch(tab, /liftRowGrainGeography/, "the tab no longer lifts a grain of its own");
+    assert.match(
+      tab,
+      /const \{ factRows: _factRows, factRowDepotWeekGaps: _factRowDepotWeekGaps, \.\.\.clientSafe \} = trimmed;/,
+      "neither the row grain nor the depot gap list, which names depots beyond his scope, reaches the browser",
+    );
+    assert.match(tab, /depotWeekGaps:\s*data\.factRowDepotWeekGaps \?\? \[\],/, "the grid is flagged per depot");
+    const comparison = portal.slice(portal.indexOf("async function computeWeeklyComparison("), portal.indexOf("export type PortalWeeklyFilters"));
+    assert.match(comparison, /allWeeks: true,\s+ownAreaShare,\s+\}\)/, "the comparison load passes the share on");
 
     const month = functionBody(portal, "getPortalWeeklyMonthFieldForce");
     assert.match(month, /resolveWeeklyOwnAreaKeys\(/, "the month grid resolves a medical rep's own seats");
-    assert.match(month, /liftRowGrainGeography:\s*liftGrain/, "and loads lifted");
-    assert.match(month, /geography:[\s\S]*?weeklyFieldForceGeography\(/, "and narrows");
+    assert.match(month, /includeFactRows: true,\s+ownAreaShare,/, "and follows his own areas");
+    assert.doesNotMatch(month, /liftRowGrainGeography/, "with no lifted grain of its own");
     assert.match(month, /depotWeekGaps:\s*data\.factRowDepotWeekGaps \?\? \[\],/, "and flags per depot");
     assert.match(
       readSource("../src/lib/sales/weekly/portal-weekly-rep.ts"),
@@ -527,8 +795,11 @@ export async function runWeeklyOwnAreaLiftTests() {
     );
     assert.match(month, /excludeUnmapped:\s*true/, "owner rule: every weekly report leaves unmapped products out");
 
+    const exportRoute = readSource("../app/api/employee-portals/weekly-sales/export/route.ts");
+    assert.match(exportRoute, /getPortalWeeklyDashboard\(/, "the Distribution export reads the same own-area screen");
+
     const pace = readSource("../src/lib/sales/sos-month-pace-loader.ts");
-    assert.match(pace, /getPortalWeeklyMonthFieldForce\(/, "the month-pace strip reads the lifted month grid");
+    assert.match(pace, /getPortalWeeklyMonthFieldForce\(/, "the month-pace strip reads the own-area month grid");
     assert.doesNotMatch(pace, /getPortalWeeklyDashboard\(/, "never the region-bound dashboard again");
 
     const stock = readSource("../src/lib/sales/weekly/stock-dashboard-service.ts");
@@ -552,7 +823,6 @@ export async function runWeeklyOwnAreaLiftTests() {
       "and reads the product list before that filter, so choosing one product never hides the others",
     );
 
-    const service = readSource("../src/lib/sales/weekly/service.ts");
     assert.match(service, /factRows: filters\?\.includeFactRows\s*\?\s*grainWeekRowsAdj\.map/, "factRows come from the grain the caller asked for");
     assert.match(service, /stockRows: filters\?\.includeStockRows\s*\?\s*grainScopedRows\.map/, "and so do stockRows");
     assert.match(
@@ -563,7 +833,7 @@ export async function runWeeklyOwnAreaLiftTests() {
     assert.match(
       service,
       /applyWeeklyAccessScope\(realRows, grainScope\)[\s\S]{0,120}\.filter\(passesRowFilters\)/,
-      "a lifted grain passes exactly the filters the viewer's own rows pass",
+      "a lifted Weekly Stock grain passes exactly the filters the viewer's own rows pass",
     );
   }
 }

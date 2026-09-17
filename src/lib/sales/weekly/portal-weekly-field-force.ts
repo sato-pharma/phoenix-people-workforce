@@ -72,6 +72,21 @@ export type FieldForceSeatIndex = {
   byLineArea: Map<string, FieldForceSeat>;
   /** Every rep seat, so a rep who sold nothing this month is still listed rather than vanishing. */
   seats: FieldForceSeat[];
+  /**
+   * Every `${normalizedLine}|${AREA}` a real district manager's seat owns on the current line-to-area map,
+   * vacant seats included. An area has no rep seat more often than it has no manager: a manager can own
+   * one (Delta (3)'s Anti Infective OT9, Upper Egypt 2's Pedia OT6), so rep seats cannot answer this. An
+   * area missing from the set, such as a line's "Others" areas under its pseudo-DM, belongs to no district
+   * manager. Absent when the map was not read, and then no area may be treated as ownerless.
+   */
+  managedAreaKeys?: Set<string>;
+};
+
+/** One current `au_v_line_area_map` row, narrowed to what the index reads. */
+export type FieldForceLineAreaRow = {
+  line_code?: string | null;
+  area_code?: string | null;
+  dm_seat_id?: string | null;
 };
 
 const norm = (value: unknown) => String(value ?? "").trim();
@@ -116,10 +131,14 @@ export type FieldForceSeatRow = {
  *
  * Each seat is registered under BOTH its line_name and its line_code key, so either spelling on a
  * weekly row finds the rep. The per-line "Others" pseudo-DM is excluded — it holds no real people.
+ *
+ * Given the current line-to-area map, it also records which areas a real district manager owns
+ * (managedAreaKeys); without it that set is absent.
  */
 export function selectFieldForceSeats(
   rows: FieldForceSeatRow[],
   nameOf: (hrId: string | null) => string | null,
+  lineAreas?: FieldForceLineAreaRow[],
 ): FieldForceSeatIndex {
   const managerNameBySeatId = new Map<string, string | null>();
   for (const row of rows) {
@@ -168,7 +187,36 @@ export function selectFieldForceSeats(
     }
   }
 
-  return { byLineArea, seats };
+  if (!lineAreas) return { byLineArea, seats };
+  return { byLineArea, seats, managedAreaKeys: selectManagedAreaKeys(rows, lineAreas) };
+}
+
+/**
+ * Pure: every (line, area) a real district manager's seat owns. The line's "Others" pseudo-DM owns
+ * nobody's areas, and a map row naming a seat the org tree does not hold is no manager's either. Each
+ * area is registered under its line code and, when the seat is on the same line, the seat's line name.
+ */
+function selectManagedAreaKeys(rows: FieldForceSeatRow[], lineAreas: FieldForceLineAreaRow[]): Set<string> {
+  const managerSeats = new Map<string, FieldForceSeatRow>();
+  for (const row of rows) {
+    const tier = upper(row.seat_tier);
+    if (tier !== "DM" && tier !== "ACTING_DM") continue;
+    if (row.is_other_pseudo_dm === true || !norm(row.seat_id)) continue;
+    managerSeats.set(norm(row.seat_id), row);
+  }
+
+  const keys = new Set<string>();
+  for (const area of lineAreas) {
+    const seat = managerSeats.get(norm(area.dm_seat_id));
+    if (!seat) continue;
+    const lineKeys = [area.line_code];
+    if (fieldForceLineKey(seat.line_code) === fieldForceLineKey(area.line_code)) lineKeys.push(seat.line_name);
+    for (const line of lineKeys) {
+      const key = fieldForceKey(line, area.area_code);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
 }
 
 /**
@@ -181,13 +229,15 @@ export function selectFieldForceSeats(
 export async function loadFieldForceSeatIndex(): Promise<FieldForceSeatIndex> {
   const supabase = getSupabaseAdmin();
   try {
-    const [treeResult, employeesResult] = await Promise.all([
+    const [treeResult, employeesResult, lineAreaResult] = await Promise.all([
       supabase
         .from("au_v_org_tree")
         .select(
           "seat_id,seat_tier,line_code,line_name,region_code,region_name,area_code,area_name,occupant_hr_id,is_vacant,is_other_pseudo_dm,parent_seat_id",
         ),
       supabase.from("employees").select("hr_id, full_name, nickname"),
+      // Current rows only, as the seat area scope reads them: which manager owns an area today.
+      supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
     ]);
     if (treeResult.error) throw treeResult.error;
     if (employeesResult.error) throw employeesResult.error;
@@ -206,6 +256,8 @@ export async function loadFieldForceSeatIndex(): Promise<FieldForceSeatIndex> {
     return selectFieldForceSeats(
       (treeResult.data ?? []) as FieldForceSeatRow[],
       (hrId) => (hrId ? (nameByHrId.get(hrId) ?? null) : null),
+      // An unreadable map leaves the ownership unknown rather than blanking the reps.
+      lineAreaResult.error ? undefined : ((lineAreaResult.data ?? []) as FieldForceLineAreaRow[]),
     );
   } catch {
     return { byLineArea: new Map(), seats: [] };
@@ -286,22 +338,9 @@ export type PortalWeeklyFieldForce = {
   seatIndexUnavailable: boolean;
 };
 
-type TaggedRow = WeeklyFactExportRow & { exactArea: boolean; admittedWhole: boolean };
+type TaggedRow = WeeklyFactExportRow & { exactArea: boolean };
 
 const lineNameOf = (row: WeeklyFactExportRow) => norm(row.line) || "—";
-
-/**
- * How a grid built from a LIFTED load is narrowed back to its viewer (own-area-scope.ts).
- *
- * `admitsWhole` answers for an input row: true when the viewer's own scope admits it, which is every
- * row he saw before the lift. `ownAreaKeys` holds his own `${lineKey}|${AREA}` keys. A row his scope
- * admits counts whole, exactly as before; any other row counts only for the share the depot split
- * places in one of his own areas.
- */
-export type FieldForceGeography = {
-  admitsWhole: (row: WeeklyFactExportRow) => boolean;
-  ownAreaKeys: ReadonlySet<string>;
-};
 
 /**
  * Build the field-force grid from a dashboard's fact rows.
@@ -323,24 +362,17 @@ export function buildPortalWeeklyFieldForce(input: {
    */
   depotWeekGaps?: readonly DepotWeekGap[];
   seatIndexUnavailable?: boolean;
-  /**
-   * Required whenever `rows` came from a load with the geography lifted (liftRowGrainGeography).
-   * Absent = every row counts, which is right only for rows already bounded to the viewer.
-   */
-  geography?: FieldForceGeography | null;
 }): PortalWeeklyFieldForce {
   const { rows, areaSplit, seatIndex } = input;
-  const geography = input.geography ?? null;
 
   // Tag BEFORE the split: a row carrying an area came from a branch the owner mapped by hand, and
   // splitWeeklyRowsByBranch leaves exactly those rows alone. After the split the two are
-  // indistinguishable, and the exact/allocated mix is the whole honesty story of this screen.
-  // Whether the viewer's own scope admits the row is read here too, while the row is still the one
-  // the caller handed in — the split's parts are copies.
+  // indistinguishable, and the exact/allocated mix is the whole honesty story of this screen. A load
+  // that followed the viewer's own areas (own-area-share.ts) has already split its depots, and says so
+  // on each row: its placed parts carry an area and are still allocations.
   const tagged: TaggedRow[] = rows.map((row) => ({
     ...row,
-    exactArea: Boolean(norm(row.areaCode)),
-    admittedWhole: geography ? geography.admitsWhole(row) : true,
+    exactArea: row.areaBasis ? row.areaBasis === "mapped" : Boolean(norm(row.areaCode)),
   }));
   const { rows: split } = splitWeeklyRowsByBranch(tagged, areaSplit);
 
@@ -366,11 +398,8 @@ export function buildPortalWeeklyFieldForce(input: {
     const units = Number(row.salesUnits) || 0;
     const week = row.weekNumber;
 
-    // A lifted load holds rows the viewer's own scope never admitted. Of those, only the share the
-    // split placed in one of HIS areas may count: another district's share, and the residue of a row
-    // he could not see, stop here before a single figure is summed. Their week stops here too, so a
-    // column exists only where a row that counts for him carries it.
-    if (!row.admittedWhole && !geography?.ownAreaKeys.has(fieldForceKey(row.line, row.areaCode))) continue;
+    // Every row here already counts for the viewer: a load that follows his own areas narrowed it first
+    // (own-area-share.ts). So a week is a column exactly where one of his rows carries it.
     if (week !== null && week !== undefined) weekNumbers.add(week);
 
     // Money from a depot week that spans an upload gap reads high. A row that moves no money cannot.

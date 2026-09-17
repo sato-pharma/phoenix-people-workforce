@@ -5,26 +5,22 @@
 // dashboard's own tabs do, and is enforced inside loadWeeklyDashboard. Query params only narrow inside
 // what the viewer may already see.
 //
-// A district or regional manager's region bound is LIFTED for the load and narrowed straight back to his
-// own areas (own-area-scope.ts), as his Field Force tab and Weekly Stock are. Depot rows keep the region
-// label they were mapped with, so an Upper Egypt 1, Upper Egypt 2 or Delta (3) manager's region-bound load
-// never fetched the "Upper Egypt" or Delta (1)/(2) rows the depot split shares with his areas, and this
-// tab read nearly empty beside a full Field Force tab.
+// A district or regional manager reads his own areas' share of every depot (own-area-share.ts), exactly
+// as every other figure on his Weekly Sales screen does (owner, 2026-09-17), so this tab's total is his
+// Field Force total. Depot rows keep the region label they were mapped with, so a region-bound load missed
+// the "Upper Egypt" rows the split shares with an Upper Egypt 2 manager, and counted a depot whole for
+// Delta (1) whose money the split now places in Delta (3)'s areas.
 //
 // Every weekly report sets excludeUnmapped (owner rule), so a product the Product Master has not mapped
 // to a line never reaches these totals. The screen and the workbook both say so.
 
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import type { WeeklyAccessScope } from "@/lib/sales/weekly/access";
-import { loadWeeklyAreaSplitIndex, type WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
-import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
-import {
-  mayLiftWeeklyGeography,
-  weeklyFieldForceGeography,
-  weeklyScopeOwnAreaKeys,
-} from "@/lib/sales/weekly/own-area-scope";
+import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
+import { weeklyScopeOwnAreaKeys } from "@/lib/sales/weekly/own-area-scope";
+import { mayLiftWeeklyGeography } from "@/lib/sales/weekly/own-area-share";
 import { resolvePortalWeeklyScope, type PortalWeeklyFilters } from "@/lib/sales/weekly/portal-weekly-dashboard";
-import { fieldForceKey, type FieldForceGeography } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { loadFieldForceSeatIndex } from "@/lib/sales/weekly/portal-weekly-field-force";
 import {
   buildWeeklySalesDepotDetail,
   weeklySalesPeriodLabel,
@@ -156,47 +152,12 @@ export async function loadWeeklySalesUploadCalendar(cycleMonths: readonly string
 }
 
 /**
- * A manager's depot rows. Every row whole — unless his load lifted its geography (own-area-scope.ts), when
- * he gets the rule every lifted weekly screen follows: a row his own scope admits counts whole, exactly as
- * before the lift, and any other row counts only for the share the owner's depot split places in one of
- * HIS areas, labelled an allocation. Another district's share and the residue of a row he could not see
- * stop here. A share keeps the depot's region label, which is what the page's Region filter reads, so a
- * drill into that region keeps it. Pure.
+ * A manager's depot rows, as his load returned them. A load that followed his own areas (own-area-share.ts)
+ * says how each row reached him: his areas' share of a depot the owner's split rule spreads is an allocated
+ * share, filed under the area it landed in; a depot mapped by hand to one of his areas, or one no rule
+ * places, is the depot's whole sale. Every row of any other load is whole. Pure.
  */
-export function selectManagerDepotRows(input: {
-  rows: readonly WeeklyFactExportRow[];
-  /** Required whenever `rows` came from a load with the geography lifted; null = every row counts whole. */
-  geography: FieldForceGeography | null;
-  areaSplit: WeeklyAreaSplitIndex | null;
-}): WeeklySalesDetailSourceRow[] {
-  const { geography } = input;
-  if (!geography) return wholeDepotRows(input.rows);
-
-  const admitted: WeeklyFactExportRow[] = [];
-  const outside: (WeeklyFactExportRow & { exactArea: boolean })[] = [];
-  for (const row of input.rows) {
-    // Asked of the row the caller handed in: the split's parts are copies.
-    if (geography.admitsWhole(row)) admitted.push(row);
-    // Tagged BEFORE the split, as buildPortalWeeklyFieldForce tags: a row carrying an area came from a depot
-    // mapped by hand, and the split leaves exactly those alone.
-    else outside.push({ ...row, exactArea: Boolean(String(row.areaCode ?? "").trim()) });
-  }
-
-  const shares: WeeklySalesDetailSourceRow[] = [];
-  for (const part of splitWeeklyRowsByBranch(outside, input.areaSplit).rows) {
-    if (!geography.ownAreaKeys.has(fieldForceKey(part.line, part.areaCode))) continue;
-    const [row] = wholeDepotRows([part]);
-    shares.push({
-      ...row,
-      areaCode: String(part.areaCode).trim().toUpperCase(),
-      basis: part.exactArea ? "whole" : "allocated",
-    });
-  }
-  return [...wholeDepotRows(admitted), ...shares];
-}
-
-/** A manager reads every depot row whole: no split, no allocation. */
-export function wholeDepotRows(rows: readonly WeeklyFactExportRow[]): WeeklySalesDetailSourceRow[] {
+export function managerDepotRows(rows: readonly WeeklyFactExportRow[]): WeeklySalesDetailSourceRow[] {
   return rows.map((row) => ({
     batchId: row.batchId,
     distributorCode: row.distributorCode,
@@ -214,7 +175,7 @@ export function wholeDepotRows(rows: readonly WeeklyFactExportRow[]): WeeklySale
     weekStart: row.weekStart,
     salesValue: row.salesValue,
     salesUnits: row.salesUnits,
-    basis: "whole",
+    basis: row.areaBasis === "allocated" ? "allocated" : "whole",
   }));
 }
 
@@ -257,10 +218,21 @@ export async function loadWeeklySalesDepotDetail(
   // become a fetch whitelist. The option lists this narrowing would trim are never read here.
   const includeMonths =
     page.cycleMonthMode !== "exclude" && (page.cycleMonths ?? []).length > 0 ? (page.cycleMonths ?? []) : null;
-  // His own areas, straight from his seat's scope — the keys his Field Force tab narrows by. Only a
-  // territory manager with a region bound and known areas lifts; every other viewer loads as before.
+  // His own areas, straight from his seat's scope — the keys his Weekly Sales screen follows. Only a
+  // territory manager with a region bound and known areas follows them; every other viewer loads as before.
   const ownAreaKeys = weeklyScopeOwnAreaKeys(scope.accessScope);
-  const liftGrain = mayLiftWeeklyGeography(scope.accessScope, ownAreaKeys);
+  const followsOwnAreas = mayLiftWeeklyGeography(scope.accessScope, ownAreaKeys);
+  // The owner's depot-split rule and the organogram's seats, read alongside the rows. Both fail soft: with
+  // no split he keeps the depots his own scope admits plus those mapped to his areas, and the screen says
+  // his figures read low.
+  const areaSplitLoad = followsOwnAreas ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null);
+  const ownAreaShare = followsOwnAreas
+    ? Promise.all([areaSplitLoad, loadFieldForceSeatIndex()]).then(([areaSplit, seatIndex]) => ({
+        ownAreaKeys,
+        areaSplit,
+        seatIndex,
+      }))
+    : null;
 
   const [data, areaNames, uploads, areaSplit] = await Promise.all([
     loadWeeklyDashboard({
@@ -286,22 +258,12 @@ export async function loadWeeklySalesDepotDetail(
       factRowsFullPrecision: true,
       // Owner rule for every weekly report and export: unmapped products never reach a total.
       excludeUnmapped: true,
-      // Only the row grain lifts; the page's KPIs and option lists stay on his own scope. The grain is then
-      // wider than he may see, and selectManagerDepotRows narrows it before a single figure is built.
-      liftRowGrainGeography: liftGrain,
+      ownAreaShare,
     }),
     loadWeeklyAreaNames(),
     loadWeeklySalesUploadCalendar(includeMonths),
-    // The owner's depot-split rule, read only for a lifted load. Fails soft to null: he then keeps the
-    // depots his own scope admits, and the screen says his figures read low.
-    liftGrain ? loadWeeklyAreaSplitIndex().catch(() => null) : Promise.resolve(null),
+    areaSplitLoad,
   ]);
-
-  const factRows = data.factRows ?? [];
-  const geography =
-    liftGrain && scope.accessScope.tier === "territory"
-      ? weeklyFieldForceGeography(factRows, scope.accessScope, ownAreaKeys)
-      : null;
 
   const period = {
     cycleMonths: page.cycleMonths,
@@ -311,7 +273,7 @@ export async function loadWeeklySalesDepotDetail(
   };
   const view = buildWeeklySalesDepotDetail({
     audience: "manager",
-    rows: selectManagerDepotRows({ rows: factRows, geography, areaSplit }),
+    rows: managerDepotRows(data.factRows ?? []),
     areaNames,
     uploads,
     period,
@@ -326,7 +288,7 @@ export async function loadWeeklySalesDepotDetail(
     },
     status: "ok",
     allocationUnavailable:
-      geography !== null &&
+      followsOwnAreas &&
       (areaSplit === null || (areaSplit.areasByLineRegion.size === 0 && areaSplit.areasByLineGovernorate.size === 0)),
   };
 }

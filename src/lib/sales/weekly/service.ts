@@ -28,6 +28,7 @@ import {
   weekHasDecumulationGap,
 } from "@/lib/sales/weekly/decumulate";
 import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
+import { narrowWeeklyRowsToOwnAreaShare, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
@@ -38,6 +39,7 @@ import {
   WEEKLY_TRACKED_SCOPE_NOTE,
 } from "@/lib/sales/weekly/tracked-lines";
 import type {
+  WeeklyAreaBasis,
   WeeklyBatch,
   WeeklyBranchComparisonRow,
   WeeklyDashboard,
@@ -542,6 +544,8 @@ type FactRow = {
   /** net units = gross - returns; this is what the dashboard reports as "units" */
   netQty: number;
   stockQty: number;
+  /** How the row reached the viewer, on a load that follows his own areas (ownAreaShare) only. */
+  areaBasis?: WeeklyAreaBasis;
 };
 
 const delta = (current: number, prior: number | null): WeeklyDelta => ({
@@ -820,17 +824,23 @@ export async function loadWeeklyDashboard(filters?: {
    */
   includeStockRows?: boolean;
   /**
-   * Portal Field Force, month pace and Weekly Stock only: build `factRows` and `stockRows` with a
-   * territory viewer's REGION and AREA bounds lifted (liftWeeklyGeography) — his line bound, the
-   * confidential products and the Head Office strip all stay, and every filter above still applies.
-   * Nothing else on the payload moves: KPIs, trend, rankings, option lists and weekComparison stay on
-   * his own scope.
+   * Weekly Stock only: build `stockRows` with a territory viewer's REGION and AREA bounds lifted
+   * (liftWeeklyGeography) — his line bound, the confidential products and the Head Office strip all
+   * stay, and every filter above still applies. Nothing else on the payload moves.
    *
    * The row grain is then WIDER than the viewer may see, so a caller that sets this MUST narrow those
-   * rows to his own areas before building any figure from them (own-area-scope.ts). No effect on a
-   * full, product or none tier.
+   * rows to his own areas before building any figure from them (admitWeeklyStockRows). No effect on a
+   * full, product or none tier, and none alongside `ownAreaShare`, whose rows are already his.
    */
   liftRowGrainGeography?: boolean;
+  /**
+   * A manager's screens: EVERY figure follows his own areas (owner, 2026-09-17). His rows are read with
+   * his region bound lifted and narrowed at once to his own areas' share of each depot, plus the unplaced
+   * residue his own scope admits (own-area-share.ts), so the KPIs, trend, rankings, option lists,
+   * weekComparison and factRows all agree. A promise, so the caller can read the split and seat indexes
+   * alongside the rows; it must not reject. No effect on a viewer who may not lift (mayLiftWeeklyGeography).
+   */
+  ownAreaShare?: WeeklyOwnAreaShare | Promise<WeeklyOwnAreaShare | null> | null;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -1188,7 +1198,12 @@ export async function loadWeeklyDashboard(filters?: {
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
   const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true, canViewHeadOffice: false };
-  const visibleRows = applyWeeklyAccessScope(realRows, accessScope);
+  // A manager's own areas' share, when the caller asked for it: the one place his rows are chosen, so
+  // every aggregate and option list below is built from the same rows.
+  const ownAreaShare = filters?.ownAreaShare ? await filters.ownAreaShare : null;
+  const visibleRows = ownAreaShare
+    ? narrowWeeklyRowsToOwnAreaShare(realRows, accessScope, ownAreaShare)
+    : applyWeeklyAccessScope(realRows, accessScope);
   // Metadata scope: full tier already sees every distributor/batch; every other tier (product /
   // territory / none) is bounded to the distributor codes that actually have at least one row
   // visible after the scope redaction above — so the distributor dropdown and report "sources"
@@ -1300,11 +1315,13 @@ export async function loadWeeklyDashboard(filters?: {
   const priorRowsAdj = latestStockOnly(priorRows);
 
   // The row grain factRows / stockRows are built from. The viewer's own rows unless the caller lifted
-  // the geography (liftRowGrainGeography), in which case the same filters and the same time scope run
-  // over rows scoped WITHOUT the region and area bounds. Only the returned grain differs: every
-  // aggregate above and below stays on the viewer's own scope, and the caller narrows this grain back
-  // to his own areas.
-  const grainScope = filters?.liftRowGrainGeography ? liftWeeklyGeography(accessScope) : accessScope;
+  // the geography (liftRowGrainGeography, Weekly Stock), in which case the same filters and the same time
+  // scope run over rows scoped WITHOUT the region and area bounds. Only the returned grain differs: every
+  // aggregate above and below stays on the viewer's own scope, and the caller narrows this grain back to
+  // his own areas. Never alongside ownAreaShare: that viewer's rows are already his own areas' share, and
+  // re-reading them without the bound would hand back other managers' money.
+  const grainScope =
+    filters?.liftRowGrainGeography && !ownAreaShare ? liftWeeklyGeography(accessScope) : accessScope;
   const grainLifted = grainScope !== accessScope && Boolean(filters?.includeFactRows || filters?.includeStockRows);
   const grainScopedRows = grainLifted
     ? applyWeeklyTrackedLineScope(applyWeeklyAccessScope(realRows, grainScope), {
@@ -1518,8 +1535,7 @@ export async function loadWeeklyDashboard(filters?: {
     trend,
     // Row-level grain for the BI export (hidden Data sheet → pivots/charts/formulas). Mirrors the exact
     // rows behind the on-screen aggregates (weekRowsAdj: time-scoped, latest-stock-only) so the workbook's
-    // pivots/formulas reconcile to the dashboard. Only built when requested (export path). A lifted
-    // grain (liftRowGrainGeography) is the one exception, and its caller narrows it before use.
+    // pivots/formulas reconcile to the dashboard. Only built when requested (export path).
     factRows: filters?.includeFactRows
       ? grainWeekRowsAdj.map((row) => ({
           distributorCode: row.distributorCode,
@@ -1540,6 +1556,7 @@ export async function loadWeeklyDashboard(filters?: {
           salesValue: filters?.factRowsFullPrecision ? row.salesValue : Number(row.salesValue.toFixed(2)),
           salesUnits: filters?.factRowsFullPrecision ? row.netQty : Number(row.netQty.toFixed(2)),
           stockUnits: Number(row.stockQty.toFixed(2)),
+          ...(row.areaBasis ? { areaBasis: row.areaBasis } : {}),
         }))
       : undefined,
     stockRows: filters?.includeStockRows

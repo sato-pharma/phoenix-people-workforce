@@ -58,6 +58,8 @@ export type WeeklySplittableRow = {
   salesValue: number;
   salesUnits: number;
   stockUnits: number;
+  /** Gross units, when the row carries them: split by the same weights as the net units. */
+  grossUnits?: number;
 };
 
 export type WeeklyBranchSplitStats = {
@@ -138,6 +140,7 @@ export function splitWeeklyRowsByBranch<T extends WeeklySplittableRow>(
     const value = splitProRata(row.salesValue, weights);
     const units = splitProRata(row.salesUnits, weights);
     const stock = splitProRata(row.stockUnits, weights);
+    const gross = row.grossUnits === undefined ? null : splitProRata(row.grossUnits, weights);
     shares.forEach((share, i) => {
       out.push({
         ...row,
@@ -145,6 +148,7 @@ export function splitWeeklyRowsByBranch<T extends WeeklySplittableRow>(
         salesValue: value[i],
         salesUnits: units[i],
         stockUnits: stock[i],
+        ...(gross ? { grossUnits: gross[i] } : {}),
       });
     });
   }

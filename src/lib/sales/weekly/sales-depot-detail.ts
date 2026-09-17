@@ -17,9 +17,9 @@
 //     his parts, each labelled by how it reached him: mapped to his area by hand, or allocated to it by
 //     the owner's depot-split rule. That label travels to every cell, so an allocation is never shown
 //     as an observation.
-//   • A manager reads whole depots — except a district or regional manager whose load lifted its region
-//     bound (own-area-scope.ts): a depot outside his own scope reaches him only as the share the split
-//     places in his own areas, and that share carries the same "Allocated share" label a rep's does.
+//   • A manager reads whole depots — except a district or regional manager, who reads his own areas'
+//     share (own-area-share.ts): a depot the split spreads over several areas reaches him only as the part
+//     in his own areas, and that part carries the same "Allocated share" label a rep's does.
 //
 // AVERAGE PER WEEK IS GAP-AWARE. Most distributors restate the month to date, and de-cumulation
 // subtracts each sheet from the previous PRESENT sheet of the month, so an upload that follows a missed
@@ -57,7 +57,7 @@ export const WEEKLY_SALES_DETAIL_MOVEMENT_LABELS: Record<WeeklySalesDetailMoveme
  * whole     — a manager's row: the depot's whole sale, in the area the owner mapped it to (or none).
  * mapped    — a rep's row: the depot is mapped to his area by hand, so the whole sale is his.
  * allocated — a rep's row: the depot's name places it across several areas, and this is his share. Or a
- *             lifted manager's row: a depot outside his own scope, and this is the share in his own areas.
+ *             district or regional manager's row: the same kind of depot, and this is his own areas' share.
  * mixed     — a cell holding both kinds (the depot's mapping changed inside the period).
  */
 export type WeeklySalesDetailBasis = "whole" | "mapped" | "allocated" | "mixed";
@@ -71,7 +71,7 @@ export const WEEKLY_SALES_DETAIL_BASIS_LABELS: Record<WeeklySalesDetailBasis, st
 
 /**
  * Whether the view states how each figure reached the viewer: always for a rep, and for a manager only
- * when a lifted load placed a depot-split share in his view. The screen and the workbook both ask here,
+ * when his own areas' share of a depot-split depot is in his view. The screen and the workbook both ask here,
  * so the download shows the basis exactly when the screen does.
  */
 export function weeklySalesDetailShowsBasis(view: { audience: WeeklySalesDetailAudience; cells: readonly { basis: WeeklySalesDetailBasis }[] }): boolean {
@@ -160,7 +160,7 @@ export type WeeklySalesDetailCell = {
   share: number | null;
   movement: WeeklySalesDetailMovement;
   basis: WeeklySalesDetailBasis;
-  /** the part of `value` placed by the depot-split rule (a rep's cell, or a lifted manager's; 0 otherwise) */
+  /** the part of `value` placed by the depot-split rule (a rep's cell, or a district or regional manager's; 0 otherwise) */
   allocatedValue: number;
 };
 
@@ -214,7 +214,7 @@ export type WeeklySalesDetailView = {
     unmappedValue: number;
     /** rep only: value from depots mapped to his area by hand (0 for a manager) */
     mappedValue: number;
-    /** value the depot-split rule placed in the viewer's own area — a rep's, or a lifted manager's own areas */
+    /** value the depot-split rule placed in the viewer's own area — a rep's, or a district or regional manager's own areas */
     allocatedValue: number;
     /** the most weeks any in-view distributor covers — the period's length in weeks */
     weeksCovered: number;
@@ -250,7 +250,8 @@ export type WeeklySalesDepotDetailPayload = {
   status: WeeklySalesDetailStatus;
   /**
    * The depot-split index did not load: a rep then reads only the depots mapped to his area by hand, and a
-   * lifted manager only the depots his own scope names. False for every other manager.
+   * district or regional manager reads no depot split — one filed under his own region whole, one filed
+   * under another region not at all. False for every other manager.
    */
   allocationUnavailable: boolean;
 };
@@ -570,7 +571,7 @@ export function buildWeeklySalesDepotDetail(input: {
         weeksSold += spans.get(batchId) ?? 1;
       }
     }
-    // A manager's cell is whole unless a lifted load placed a depot-split share in it; a rep's keeps its own rule.
+    // A manager's cell is whole unless his own areas' share of a depot-split depot is in it; a rep's keeps its own rule.
     const basis: WeeklySalesDetailBasis =
       audience === "manager"
         ? cell.hasAllocated
