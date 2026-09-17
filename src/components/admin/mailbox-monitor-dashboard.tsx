@@ -68,9 +68,10 @@ function monitorTitle(monitor: MailboxMonitor): string {
 
 /**
  * The inline "replace the app password" form, shared by the desktop row and the mobile card so the
- * two cannot drift. Rendered under the row it belongs to rather than beside the buttons: the
- * actions already sit in a nowrap row, and an extra input there would push the table into a
- * horizontal scroll (owner rule — wrapping and stacking win, never a sideways scrollbar).
+ * two cannot drift. Rendered UNDER the row it belongs to rather than beside the buttons: the
+ * actions already wrap onto as many lines as the width gives them, and an input added beside them
+ * would push the table sideways (owner rule — wrapping and stacking win, never a sideways
+ * scrollbar).
  */
 function ReplacePasswordPanel({
   busy,
@@ -86,34 +87,40 @@ function ReplacePasswordPanel({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-      <p className="text-sm font-semibold text-slate-900">Replace the app password</p>
-      <p className="mt-1 text-xs text-amber-900/90">
-        Generate a new app password on the mailbox — its own security settings, under{" "}
-        <span className="font-semibold">Manage app passwords</span> — and name it exactly{" "}
-        <code className="rounded-md border border-amber-300 bg-white px-1.5 py-0.5 font-bold tracking-[0.12em] text-slate-900">
-          imap
-        </code>
-        . The password stored now keeps working until the new one connects.
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Input
-          autoComplete="off"
-          className="w-full sm:w-72"
-          placeholder="the new app password"
-          type="password"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-        />
-        <Button disabled={busy} size="sm" onClick={onSave}>
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-          {busy ? "Testing the connection…" : "Save new password"}
-        </Button>
-        <Button disabled={busy} size="sm" variant="ghost" onClick={onCancel}>
-          Cancel
-        </Button>
+    // AdminCallout is the admin shell's own amber box. It lays its children out as a flex row, so
+    // the form goes inside one block — and it is square-edged, which the hand-rolled div was not.
+    <AdminCallout tone="warning">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-slate-900">Replace the app password</p>
+        <p className="mt-1 text-xs text-amber-900/90">
+          Generate a new app password on the mailbox — its own security settings, under{" "}
+          <span className="font-semibold">Manage app passwords</span> — and name it exactly{" "}
+          <code className="rounded-md border border-amber-300 bg-white px-1.5 py-0.5 font-bold tracking-[0.12em] text-slate-900">
+            imap
+          </code>
+          . The password stored now keeps working until the new one connects.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Input
+            // NOT autoComplete="off": browsers ignore it on a password field and offer to save
+            // this one against the ADMIN's own login. "new-password" is the value they honour.
+            autoComplete="new-password"
+            className="w-full sm:w-72"
+            placeholder="the new app password"
+            type="password"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <Button disabled={busy} size="sm" onClick={onSave}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+            {busy ? "Testing the connection…" : "Save new password"}
+          </Button>
+          <Button disabled={busy} size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
       </div>
-    </div>
+    </AdminCallout>
   );
 }
 
@@ -148,10 +155,28 @@ export function MailboxMonitorDashboard({
   // Per-row busy state (re-check / remove / replace the app password)
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Which row has its "replace the app password" form open, and what is typed in it. One at a
-  // time, and the field is cleared on every open and close so a pasted credential never lingers.
-  const [replacingId, setReplacingId] = useState<string | null>(null);
-  const [replacementPassword, setReplacementPassword] = useState("");
+  // Which row has its "replace the app password" form open, and what is typed in it. ONE value,
+  // not two: an id in one state and a password in another can disagree for a render, and the way
+  // they disagreed here was the worst one — row A's request finishing while row B's panel was open
+  // closed B and threw away what had been typed into it. One at a time, and the field is cleared
+  // on every open and close so a pasted credential never lingers.
+  const [replacing, setReplacing] = useState<{ id: string; password: string } | null>(null);
+
+  // Only one panel is ever open, so this always writes the open row's field.
+  const setReplacementPassword = useCallback((password: string) => {
+    setReplacing((current) => (current ? { ...current, password } : current));
+  }, []);
+
+  // Close the panel ONLY if it is still the one this row opened, and free the spinner ONLY if this
+  // row is still the busy one. Both are keyed by id because two rows can be in flight at once: the
+  // buttons are disabled per row, not globally, so a slow re-check on one row and a replace on
+  // another overlap, and whichever resolves second must not undo the other.
+  const closeReplaceFor = useCallback((id: string) => {
+    setReplacing((current) => (current?.id === id ? null : current));
+  }, []);
+  const clearBusyFor = useCallback((id: string) => {
+    setBusyId((current) => (current === id ? null : current));
+  }, []);
 
   // Reader
   const [reader, setReader] = useState<ReaderState | null>(null);
@@ -261,13 +286,12 @@ export function MailboxMonitorDashboard({
     } catch {
       toast.error("Could not reach the server.");
     } finally {
-      setBusyId(null);
+      clearBusyFor(monitor.id);
     }
   }
 
   function toggleReplace(monitor: MailboxMonitor) {
-    setReplacementPassword("");
-    setReplacingId((previous) => (previous === monitor.id ? null : monitor.id));
+    setReplacing((current) => (current?.id === monitor.id ? null : { id: monitor.id, password: "" }));
   }
 
   /**
@@ -276,7 +300,7 @@ export function MailboxMonitorDashboard({
    * re-adding does not (the log survives, but `ON DELETE SET NULL` cuts it loose from the monitor).
    */
   async function handleReplacePassword(monitor: MailboxMonitor) {
-    const next = replacementPassword.trim();
+    const next = (replacing?.id === monitor.id ? replacing.password : "").trim();
     if (!next) {
       toast.error("Paste the new app password.");
       return;
@@ -294,16 +318,19 @@ export function MailboxMonitorDashboard({
         // but "could not connect" on a screen about a mailbox reads as "the mailbox is broken now"
         // unless the message rules it out.
         toast.error(data.message || "Could not connect with that app password.");
+        // Drop the rejected credential but leave the panel open for the next one. The mail server
+        // has just refused it, so there is nothing left to keep — and the promise made above is
+        // that a pasted credential never lingers in this screen's memory.
+        setReplacing((current) => (current?.id === monitor.id ? { id: monitor.id, password: "" } : current));
         return;
       }
       upsertMonitor(data.monitor);
-      setReplacingId(null);
-      setReplacementPassword("");
+      closeReplaceFor(monitor.id);
       toast.success(`New app password saved — ${monitorTitle(data.monitor)} is connected again.`);
     } catch {
       toast.error("Could not reach the server.");
     } finally {
-      setBusyId(null);
+      clearBusyFor(monitor.id);
     }
   }
 
@@ -322,15 +349,12 @@ export function MailboxMonitorDashboard({
       setMonitors((prev) => prev.filter((row) => row.id !== monitor.id));
       if (reader?.monitor.id === monitor.id) setReader(null);
       // The row is gone; leaving its replace form open would point a typed credential at nothing.
-      if (replacingId === monitor.id) {
-        setReplacingId(null);
-        setReplacementPassword("");
-      }
+      closeReplaceFor(monitor.id);
       toast.success("Removed.");
     } catch {
       toast.error("Could not reach the server.");
     } finally {
-      setBusyId(null);
+      clearBusyFor(monitor.id);
     }
   }
 
@@ -489,7 +513,7 @@ export function MailboxMonitorDashboard({
             <label className="space-y-1.5">
               <span className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">App password</span>
               <Input
-                autoComplete="off"
+                autoComplete="new-password"
                 placeholder="the generated app password"
                 type="password"
                 value={appPassword}
@@ -558,7 +582,7 @@ export function MailboxMonitorDashboard({
                         className={cn(
                           "hover:bg-slate-50/70",
                           // The open panel is part of this row, so the rule between them comes off.
-                          replacingId === monitor.id ? "" : "border-b border-slate-100 last:border-0",
+                          replacing?.id === monitor.id ? "" : "border-b border-slate-100 last:border-0",
                         )}
                       >
                         <td className="px-6 py-3">
@@ -591,12 +615,12 @@ export function MailboxMonitorDashboard({
                           </div>
                         </td>
                       </tr>
-                      {replacingId === monitor.id ? (
+                      {replacing?.id === monitor.id ? (
                         <tr className="border-b border-slate-100 last:border-0">
                           <td className="px-6 pb-4" colSpan={5}>
                             <ReplacePasswordPanel
                               busy={busyId === monitor.id}
-                              value={replacementPassword}
+                              value={replacing?.password ?? ""}
                               onCancel={() => toggleReplace(monitor)}
                               onChange={setReplacementPassword}
                               onSave={() => handleReplacePassword(monitor)}
@@ -637,11 +661,11 @@ export function MailboxMonitorDashboard({
                       <Trash2 className="h-3.5 w-3.5" />Remove
                     </Button>
                   </div>
-                  {replacingId === monitor.id ? (
+                  {replacing?.id === monitor.id ? (
                     <div className="mt-3">
                       <ReplacePasswordPanel
                         busy={busyId === monitor.id}
-                        value={replacementPassword}
+                        value={replacing?.password ?? ""}
                         onCancel={() => toggleReplace(monitor)}
                         onChange={setReplacementPassword}
                         onSave={() => handleReplacePassword(monitor)}

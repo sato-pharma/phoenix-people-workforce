@@ -102,6 +102,31 @@ export type MailboxMessageDetail = {
   attachments: MailboxAttachmentMeta[];
 };
 
+/**
+ * Every action the access log records — the whole vocabulary, in one place.
+ *
+ * `mailbox_monitor_access_log.action` is a plain text column with no check constraint, and the
+ * list of legal values was written as a COMMENT in the migration that created the table
+ * (20260828123000_mailbox_compliance_monitor.sql). `replace_password` was then added to the
+ * service without it — the comment still says "add | delete | connect_test | list_folders |
+ * list_messages | open_message | update", so the only written record of the vocabulary is now
+ * wrong, and nothing anywhere would have caught that.
+ *
+ * An applied migration is a historical record and is never edited, so the vocabulary lives here
+ * instead, where the compiler holds it: a new action has to be added to this union before it can
+ * be logged. `update` is kept because rows carrying it exist in the table from before the
+ * replace-password path was split out of it.
+ */
+export type MailboxAccessAction =
+  | "add"
+  | "connect_test"
+  | "delete"
+  | "list_folders"
+  | "list_messages"
+  | "open_message"
+  | "replace_password"
+  | "update";
+
 /** Result of a connection test — used both when adding and when re-checking health. */
 export type MailboxConnectionTest =
   | { ok: true; inboxExists: boolean }

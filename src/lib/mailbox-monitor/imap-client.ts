@@ -12,6 +12,7 @@ import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 
 import { describeImapError } from "@/lib/mailbox-monitor/imap-error";
+import { logError } from "@/lib/observability/log";
 import type {
   MailboxAttachmentMeta,
   MailboxConnection,
@@ -36,8 +37,19 @@ function makeClient(conn: MailboxConnection): ImapFlow {
 
 async function withClient<T>(conn: MailboxConnection, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
   const client = makeClient(conn);
-  await client.connect();
+  // ImapFlow is an EventEmitter and emits 'error' on a socket timeout, a TLS reset or a server-side
+  // drop — and node throws an UNCAUGHT exception when 'error' has no listener. Under Next's own
+  // uncaughtException logger that is "only" a leaked socket and a spurious fault, but the listener
+  // has to exist and it has to be attached BEFORE connect(). connect() then goes INSIDE the try, so
+  // a rejected login still reaches the finally instead of holding its socket open for the timeout.
+  client.on("error", (error) => {
+    logError("Mailbox monitor IMAP connection error", {
+      error,
+      labels: { event: "mailbox_monitor_imap_socket_error" },
+    });
+  });
   try {
+    await client.connect();
     return await fn(client);
   } finally {
     try {
@@ -66,12 +78,27 @@ function firstAddress(source: unknown): { name: string | null; address: string |
 
 function allAddresses(source: unknown): string[] {
   if (!Array.isArray(source)) return [];
-  return source
-    .map((entry) => {
-      const e = entry as { address?: unknown };
-      return typeof e.address === "string" ? e.address : null;
-    })
-    .filter((value): value is string => Boolean(value));
+  const found: string[] = [];
+  for (const entry of source) {
+    const e = entry as { address?: unknown; group?: unknown };
+    if (typeof e.address === "string" && e.address) found.push(e.address);
+    // A group address ("Team: a@x, b@x;") carries its members on `group` and has no address itself.
+    else if (Array.isArray(e.group)) found.push(...allAddresses(e.group));
+  }
+  return found;
+}
+
+/**
+ * Every address on a mailparser To/Cc field.
+ *
+ * `to` and `cc` are NOT in mailparser's singleKeys list, so a message whose header appeared more
+ * than once — routine on forwards and list mail — arrives as an ARRAY of address objects rather
+ * than one. Reading `.value` off the array yields undefined, which rendered every such message's
+ * recipients as none at all, on a screen whose purpose is establishing who was written to.
+ */
+function addressListOf(field: unknown): string[] {
+  const objects = Array.isArray(field) ? field : field ? [field] : [];
+  return objects.flatMap((object) => allAddresses((object as { value?: unknown })?.value));
 }
 
 function bodyStructureHasAttachment(structure: unknown): boolean {
@@ -201,19 +228,17 @@ export async function fetchMessage(
       }));
 
       const fromValue = mail.from?.value?.[0];
-      const toValues = Array.isArray(mail.to) ? [] : mail.to?.value ?? [];
-      const ccValues = Array.isArray(mail.cc) ? [] : mail.cc?.value ?? [];
 
       return {
         attachments,
-        ccAddresses: ccValues.map((v) => v.address ?? "").filter(Boolean),
+        ccAddresses: addressListOf(mail.cc),
         date: mail.date ? new Date(mail.date).toISOString() : null,
         fromAddress: fromValue?.address ?? null,
         fromName: fromValue?.name || null,
         html: typeof mail.html === "string" ? mail.html : null,
         subject: mail.subject ?? null,
         text: mail.text ?? null,
-        toAddresses: toValues.map((v) => v.address ?? "").filter(Boolean),
+        toAddresses: addressListOf(mail.to),
         uid,
       };
     } finally {

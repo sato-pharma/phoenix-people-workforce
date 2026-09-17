@@ -6,13 +6,13 @@ import {
   mailboxMonitorErrorResponse,
   type MailboxMonitorRouteAccess,
 } from "@/lib/mailbox-monitor/route-errors";
+import { assertMailboxImapCeiling } from "@/lib/mailbox-monitor/route-limits";
 import {
   deleteMonitor,
   listMonitorFolders,
   recheckMonitor,
   replaceMonitorPassword,
 } from "@/lib/mailbox-monitor/service";
-import { assertApiRateLimit, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -27,6 +27,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "read");
     const { id } = await context.params;
+    // Opening a mailbox is a live IMAP login with the stored credential, and this row may be one
+    // whose app password was revoked — the button stays enabled on a failing row. route-limits.ts
+    // holds the reason every one of these paths has to be bounded, not just the one that paid for it.
+    await assertMailboxImapCeiling({
+      actor: access.loginId ?? access.hrId,
+      monitorId: id,
+      request,
+      scope: "mailbox-monitor:open",
+    });
     const folders = await listMonitorFolders(id, access.hrId ?? access.loginId ?? null);
     return NextResponse.json({ folders });
   } catch (error) {
@@ -60,24 +69,34 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const actorHrId = access.hrId ?? access.loginId ?? null;
 
     // The Re-check button sends no body at all, so the parse is expected to fail on that path —
-    // `.catch` rather than a try block, which would also swallow the failures below it.
-    const body = (await request.json().catch(() => ({}))) as PatchBody;
-    const appPassword = typeof body.appPassword === "string" ? body.appPassword : "";
+    // `.catch` rather than a try block, which would also swallow the failures below it. `body` is
+    // read through `?.` because a literal `null` IS valid JSON: it parses, so the catch never runs,
+    // and reading a property off it threw a TypeError that came back as a raw 500.
+    const body = (await request.json().catch(() => ({}))) as PatchBody | null;
+    const appPassword = typeof body?.appPassword === "string" ? body.appPassword : "";
 
     if (appPassword) {
       // Each attempt is a live IMAP login against a real mailbox. Yahoo locks an account out after
       // enough failures, so a mistyped password must not be retryable at machine speed — same
       // ceiling as the add path, which lands at the same place for the same reason.
-      await assertApiRateLimit({
-        identifier: rateLimitIdentity({ actor: access.loginId ?? access.hrId, request }),
-        limit: 10,
+      await assertMailboxImapCeiling({
+        actor: access.loginId ?? access.hrId,
+        monitorId: id,
+        request,
         scope: "mailbox-monitor:replace-password",
-        windowMs: 60_000,
       });
       const replaced = await replaceMonitorPassword(id, appPassword, actorHrId);
       return NextResponse.json({ monitor: replaced, ok: true });
     }
 
+    // A bare re-check is a live login too — and it is the button an admin clicks REPEATEDLY on a
+    // mailbox that is already failing, which is precisely the sequence that locks the account out.
+    await assertMailboxImapCeiling({
+      actor: access.loginId ?? access.hrId,
+      monitorId: id,
+      request,
+      scope: "mailbox-monitor:recheck",
+    });
     const monitor = await recheckMonitor(id, actorHrId);
     return NextResponse.json({ monitor, ok: true });
   } catch (error) {
