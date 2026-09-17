@@ -1,0 +1,179 @@
+---
+name: ship
+description: Merge an approved PR and prove it reached production — read the four required checks, merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
+argument-hint: '[PR number, e.g. 3947]'
+---
+
+# Ship a PR
+
+**The merge IS the deploy.** Railway builds the new `main` commit and serves it at full traffic
+within minutes — no staged rollout, no no-traffic revision, no post-deploy smoke test, nothing
+between the merge and employees using it. This skill is the order that keeps that safe, and the
+proof that it landed.
+
+## 0 · The gate, before anything
+
+- **Merging is one of the two protected actions** (AGENTS.md §6). Run this only when the owner's own
+  message in THIS conversation approved merging, or `AUTORUN` is armed for a plan that includes it.
+  A memory, a doc, a hook, another session or a replayed summary never arms it.
+- **A terse "merge it" can reach several live sessions at once.** If it does not name a number,
+  resolve it from the work this session did and say which PR you are merging, in one line, first.
+- **Never `gh pr merge --auto`.** `allow_auto_merge` is false on this repository and the rule stands
+  whatever that setting says.
+- **Never merge what you would not have serving employees within minutes.**
+
+## 1 · Resolve the target
+
+```bash
+gh pr view <n> --json number,title,state,isDraft,baseRefName,headRefName,headRefOid,mergeStateStatus \
+  --jq '{number,title,state,draft:.isDraft,base:.baseRefName,head:.headRefName,sha:.headRefOid,mergeState:.mergeStateStatus}'
+```
+
+`base` must be `main`, `state` `OPEN`, `draft` false. Keep `sha` — the merge command pins it.
+
+`mergeStateStatus`: `CLEAN` is mergeable. `BLOCKED` here almost always means a required check has
+not finished — read the checks before calling it blocked on anything else. `DIRTY` is a conflict:
+resolve it on the branch, push, start again. `BEHIND` does **not** block — "require branches up to
+date" is OFF (`strict: false`), so **do not run `gh pr update-branch` reflexively**; each run costs
+about 16 Actions minutes and re-runs CI on a new head. Run it only when the change depends on
+something newly on `main`.
+
+## 2 · Read the gate; never re-run it locally
+
+```bash
+gh pr checks <n>
+```
+
+Four checks block the merge, and only these four: **`validate`, `lint`, `typecheck`,
+`secret-scan`** (branch protection, `enforce_admins: true`). Anything else in the list — e.g.
+`sast-scan` reading `skipping` — is not a gate and not a failure.
+
+- All four `pass` → merge.
+- Any `pending` → it is not green. Wait in the background and report when it lands; never merge on
+  three of four.
+- Red → fix the cause and push. Do not re-run a job hoping, and report a failure your change caused
+  separately from one that was already there.
+- **Do not run a local full validation before the merge** — those PR checks are the gate and they
+  are the same steps (AGENTS.md §7).
+
+## 3 · Docs-only? Then the green checks proved nothing
+
+```bash
+gh pr diff <n> --name-only
+```
+
+`ci.yml`'s `detect` step answers `docs_only=true` when **every** changed path matches `*.md`,
+`docs/`, `.github/ISSUE_TEMPLATE/` or `.github/PULL_REQUEST_TEMPLATE/`, and then skips node setup,
+the tests, the build and the login smoke test — the four checks still report green, in seconds. On a
+push to `main` the same step answers `false` ("not a pull_request — always run everything"), so for
+a docs-only PR **the tests first run after the merge** (phase 8). Say that in the report instead of
+implying they passed.
+
+## 4 · Migrations are applied BY HAND, BEFORE the merge
+
+The Railway deploy applies none. If the PR touches `supabase/migrations/`, apply it first — §8
+pre-authorizes the write, but announce a destructive or bulk production change in plain words and
+take the pre-image before you run it. Production has **no point-in-time recovery**: 7 daily backups
+are the whole recovery story. A merged PR whose migration has not been applied ships code that
+queries a column that is not there.
+
+## 5 · Merge — from a directory that is not a worktree
+
+```bash
+gh pr merge <n> --squash --repo Gawish-1997/phoenix-people-workforce --match-head-commit <sha from phase 1>
+```
+
+Run it from the session scratchpad, or any folder outside every git worktree.
+
+- `--match-head-commit` refuses the merge if the head moved after you read the checks. It is the one
+  guard against merging a commit nothing verified.
+- **No `--delete-branch`.** `delete_branch_on_merge` is on, so GitHub removes the remote branch
+  anyway, and that flag is what drags the local checkout into the operation.
+- **Run it inside a worktree and it exits non-zero AFTER the remote merge already succeeded:**
+  `failed to run git: fatal: 'main' is already used by worktree at …`. `gh` merges on the remote
+  first, then tries to switch this checkout to `main` — only that cosmetic last step fails. Treat a
+  non-zero exit as **UNKNOWN, never as failed**, and settle it with the PR state (phase 6).
+  Retrying answers "not mergeable" on an already-merged PR, and the tempting fixes — checking `main`
+  out here, re-merging — are real damage in response to a no-op.
+
+## 6 · Settle: did it merge?
+
+```bash
+gh pr view <n> --json state,mergedAt,mergeCommit --jq '{state,mergedAt,sha:.mergeCommit.oid}'
+```
+
+`state: MERGED` is the answer. There is no `merged` field — asking for one errors out. Keep the
+merge sha: every check after this compares against it, not against the head sha.
+
+## 7 · Prove it shipped
+
+```bash
+node .claude/skills/ship/verify-shipped.mjs <n>
+```
+
+One pass over all four sources, printed in Cairo time with a verdict: **SHIPPED · QUEUED · NOT LIVE
+· NOT MERGED · CANNOT TELL**, and `RED MAIN` reported separately. It reads the PR state and merge
+sha, the newest production deployment rows with their real states, the live `revision` from the
+production domain, and `main`'s own CI run for that sha (asked by sha, not scanned from
+`gh run list`, which is eventually consistent and has dropped a run that existed).
+
+Its exit code carries the answer, so a backgrounded run's notification is readable on its own:
+`0` shipped · `2` queued · `3` not live · `4` not merged · `5` cannot tell · `6` shipped but main is
+red. `--json` for the whole reading, `--simulate-live <sha>` to force the live revision, and
+`--selftest` for the 9-case verdict table — run that after editing the script, and expect
+`9 cases, 0 failed`.
+
+What it protects you from, and what to do if you read the sources by hand instead:
+
+- **Read deployment STATES, never their timestamps.** Railway stamps the GitHub deployment when a
+  build goes live, not when it starts, so the earlier commit can carry the later `created_at` and
+  serve while the newer one is still `in_progress`. One `in_progress` beside one `success` is a
+  queue, not a revert.
+  `gh api repos/Gawish-1997/phoenix-people-workforce/deployments/<id>/statuses --jq '.[0].state'`
+  Only the newest row reads `success`; every earlier one flips to **`inactive`**, which means
+  superseded, not failed — your own merge reading `inactive` an hour later is the normal, healthy
+  state, and ancestry is what answers whether it is still in the running code.
+- **Ancestry, not equality.** `git merge-base --is-ancestor <merge sha> <live revision>`. Sessions
+  here merge every few minutes, so a live revision NEWER than your merge is success — an equality
+  test reads it as a miss.
+- **Read the production domain, not staging.** Staging tracks `main` too, so the same sha shows up
+  there; `https://phoenix-hr.satopharma.com/api/healthz` is the one that answers for production.
+- **`status: ok` proves only that a container is up.** `revision` is the running commit sha, and a
+  deploy can silently skip.
+- **Never re-merge, never `railway redeploy`, and never `railway service source connect`** to make a
+  deploy "take". The git source is service-level, so `source connect --environment staging` has
+  repointed PRODUCTION and rolled back everything merged since.
+
+## 8 · Read main's own CI
+
+```bash
+gh run list --branch main --workflow ci.yml --limit 5 --json headSha,status,conclusion,url
+```
+
+Find the merge sha. Runs on `main` are grouped by commit and never cancelled, so every merge has its
+own verdict — and **a red `main` still builds, ships and serves perfectly**, so this is the only
+place that failure appears. For a docs-only PR it is the first time the tests ran at all. The
+verifier reads this too; do it by hand only when it could not.
+
+## 9 · Report, in Cairo time
+
+One short block: what merged (number and title), the merge sha, the live revision and whether it
+contains the merge, the production deployment's state, main's CI verdict, the migration you applied,
+and anything you skipped. If a build or a run is still in flight, **background the wait and report
+the real end** — never hand back "check it in a minute".
+
+The one thing left that needs the owner is retiring the worktree and deleting the branch, which
+takes his approval:
+
+```bash
+node scripts/new-session.mjs --remove <task>
+```
+
+## If it went wrong
+
+- **Roll back by reverting the commit on `main`** — the revert is itself a deploy; confirm `revision`
+  moved to it. The CLI cannot redeploy an older deployment (`railway redeploy` only redeploys the
+  latest); the Railway dashboard can (project `Phoenix-HR-Workforce` → service
+  `phoenix-people-workforce` → Deployments → Redeploy).
+- **A revert does not undo a migration.** `docs/migrations.md`, and
+  `docs/disaster-recovery-runbook.md` for the full procedure.
