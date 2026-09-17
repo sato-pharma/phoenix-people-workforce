@@ -165,8 +165,12 @@ import path from "node:path";
  *
  * 197 -> 196 on 2026-09-17: the Sales Analytics module was retired, and its KPI card
  * (analytics-kpi-card.tsx) went with it. No screen changed; the site left with the file.
+ *
+ * 196 -> 194 on 2026-09-17: the admin shell's Weekly Sales Dashboard (weekly-dashboard-view-impl.tsx).
+ * The product mix legend and the trend tooltip's distributor names ended in an ellipsis; both are now
+ * `min-w-0 break-words` and wrap. Pinned by tests/weekly-sales-fits-the-screen.test.ts.
  */
-const BASELINE = 196;
+const BASELINE = 194;
 
 const ROOTS = ["app", "src"];
 

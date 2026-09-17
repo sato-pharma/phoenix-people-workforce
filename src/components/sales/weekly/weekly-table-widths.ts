@@ -1,4 +1,5 @@
-// Column widths for the Weekly Sales managers' tables, as percentages of a fixed-layout table.
+// Column widths for the Weekly Sales tables — the managers' portal and the admin shell's dashboard — as
+// percentages of a fixed-layout table.
 //
 // THE FITS-THE-SCREEN GOLDEN RULE (AGENTS.md §4): every table here is `w-full table-fixed` with each
 // column's width declared, so it cannot grow past its container at any screen size. It fits by
@@ -46,4 +47,49 @@ export function breakdownColumns(
 export function completenessColumns(monthCount: number): { distributor: number; month: number } {
   const month = monthCount > 0 ? Math.min(23, 69 / monthCount) : 0;
   return { distributor: 100 - month * monthCount, month };
+}
+
+// ── The admin shell's Weekly Sales Dashboard (weekly-dashboard-view-impl.tsx) ──────────────────────
+//
+// Sized for the narrowest tables, measured on 2026-09-17: the expanded sidebar at 1024px leaves a
+// full-width table 640px, 768px (no sidebar) leaves 656px, and from 1536px the ranked tables sit two
+// abreast at 556px each. At 556px a money figure ("EGP 98,765,432") still fits its column without breaking
+// inside the number and a unit count fits whole; the name columns take what is left and wrap.
+
+/** A ranked table (By region, By product, By distributor): the name with its value bar beneath, sales
+ * value, units, stock and share. */
+export function rankColumns(): { name: number; value: number; units: number; stock: number; share: number } {
+  return { name: 34, value: 24, units: 15, stock: 15, share: 12 };
+}
+
+/** The Branches comparison table: the branch with its value bar beneath, its region, sales value, units,
+ * stock and share. */
+export function branchComparisonColumns(): {
+  branch: number;
+  region: number;
+  value: number;
+  units: number;
+  stock: number;
+  share: number;
+} {
+  return { branch: 26, region: 16, value: 20, units: 13, stock: 13, share: 12 };
+}
+
+/** The Week-by-week comparison: month, week (with its gap chips wrapping beneath the week mark), period
+ * date, sales value, sales units, stock units and the change against the previous week. */
+export function weekComparisonColumns(): {
+  month: number;
+  week: number;
+  date: number;
+  value: number;
+  units: number;
+  stock: number;
+  delta: number;
+} {
+  return { month: 12, week: 16, date: 14, value: 19, units: 13, stock: 13, delta: 13 };
+}
+
+/** The Stock on hand watchlist: the branch with its stock bar beneath, its region and its stock units. */
+export function zeroStockColumns(): { branch: number; region: number; stock: number } {
+  return { branch: 52, region: 24, stock: 24 };
 }
