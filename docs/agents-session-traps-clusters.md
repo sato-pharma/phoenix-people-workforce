@@ -69,6 +69,7 @@ does not fire, so its silence is not evidence that no trap applies.
 - **Recover a PR with `gh run rerun <id>` on its OWN `pull_request`-sourced run** — it keeps the `event`, so its checks DO reach the rollup. Then WAIT: dispatch lags 20–30 MINUTES during an outage and events are NOT dropped. Fire ONE recovery event and leave it.
 - **An extra SHA does not merely waste a run — it ACTIVELY KILLS the real head's**, because `ci.yml`'s concurrency group is the same for every commit on a PR. Never push an empty commit to force a `synchronize`.
 - **`actions/runs?head_sha=` needs the FULL 40-char SHA** — an abbreviated one returns `total=0` with no error.
+- **`gh run list` is EVENTUALLY CONSISTENT — it dropped a run that existed**, in the minute another commit merged: a commit whose CI had already passed read as *main has no verdict*, from inside a 20-row window that should have held it. Ask by commit, not by scanning the list — `gh api "repos/Gawish-1997/phoenix-people-workforce/actions/runs?head_sha=<full sha>"` answered correctly at the same moment (measured 2026-09-17, while building the `ship` skill).
 - **A push to `main` during an outage ships to PRODUCTION with no CI run at all.** Recover with `gh workflow run ci.yml --ref main`.
 - **The GitHub repo is `phoenix-people-workforce`; the FOLDER, npm package, `supabase/config.toml` and dead GCP project are all `phoenix-workforce`.** A path built from the checkout name 404s, which reads as *the deploy never happened*. `gh repo view --json nameWithOwner` settles it.
 
