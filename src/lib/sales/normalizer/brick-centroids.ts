@@ -243,7 +243,7 @@ export function summarizeBrickCentroidCoverage(
 
 export async function getBrickCentroidCoverage(): Promise<BrickCentroidCoverage> {
   const [refs, cachedRows] = await Promise.all([
-    loadSalesReferenceData(),
+    loadSalesReferenceData({ includeCustomerBricks: false }),
     pageAll<{ geocode_status: string | null; source_key: string | null }>(async (from, to) => {
       const { data, error } = await getSupabaseAdmin()
         .from("geo_locations")
@@ -314,7 +314,7 @@ function coordinateKey(lat: number, lng: number): string {
 
 export async function buildBrickCentroids(): Promise<BuildBrickCentroidsResult> {
   const supabase = getSupabaseAdmin();
-  const refs = await loadSalesReferenceData();
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const bricks = refs.bricks ?? [];
   const existing = await loadBrickCentroids();
 
