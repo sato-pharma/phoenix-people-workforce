@@ -361,6 +361,141 @@ export async function getEffectiveExcludedAgentCrmIds(): Promise<number[]> {
 
 const DEFAULT_PAGE_SIZE = 1000;
 
+// ── Company-wide date-range scans read one calendar day at a time ─────────────────────────────
+// A keyset page is `<filter> ORDER BY id LIMIT 1000`. When the filter is a wide date window with
+// nobody named in it, Postgres cannot stop early: it reads EVERY row in the window through the date
+// index and sorts it to hand back the first 1,000, and the next page does the same again. The
+// unified views make that certain — their cutover clause (`visit_date < COALESCE((SELECT cutover…),
+// 'infinity')`) knocks the planner's estimate for any date window down to its 0.5% default (673 rows
+// estimated against 36,167 real ones for July–August), so an ordered plan never looks worth it, and
+// the generic plan a PostgREST prepared statement falls back to estimates `$1`/`$2` ranges the same
+// way. Production: the Business Review's July–August visit read re-read all 36,167 rows on each of
+// its 37 pages and was cancelled at the 8-second statement timeout (14 Sep 17:16, 16 Sep 14:08 Cairo).
+//
+// So a company-wide window is read in two steps. First one UNORDERED page of the whole window: with
+// no sort Postgres stops at the page limit, so the probe is cheap on a dense window, and on a sparse
+// one (a leave type, double visits only) a short probe already holds every row — it is put in the
+// single scan's order and returned, one request as before. Only a full probe goes on to read one day
+// per request, which bounds every request to a single day's rows whatever plan Postgres picks. The
+// days are disjoint and cover the window, so their union is exactly the rows the single scan
+// returned, handed back in its order (id for visits; check_date then id for check-ins). Reads that
+// name people — an agent, a double-visitor, a contact, a participant, a GPS box — already return few
+// rows through their own indexes and keep one scan.
+
+/** Longest window read day by day; a longer one keeps the single keyset scan. */
+const DAY_SLICE_MAX_DAYS = 400;
+/** Day requests in flight at once for one read. */
+const DAY_SLICE_CONCURRENCY = 4;
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A YYYY-MM-DD string naming a real calendar day. JavaScript rolls 2026-02-30 over into March and
+ * makes 2026-13-01 an Invalid Date (whose toISOString throws), so both are checked by round trip. */
+function isCalendarDay(value: string): boolean {
+  if (!ISO_DAY.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Every calendar day from `dateFrom` through `dateTo` inclusive, as YYYY-MM-DD — the requests a
+ * company-wide range scan is split into. `null` (keep the single scan) when either bound is missing
+ * or not a real calendar date, the window is inverted or one day long, or it spans more than
+ * {@link DAY_SLICE_MAX_DAYS} days. Pure, exported for its unit test.
+ */
+export function dayScanSlices(dateFrom: string | null | undefined, dateTo: string | null | undefined): string[] | null {
+  if (!dateFrom || !dateTo || !isCalendarDay(dateFrom) || !isCalendarDay(dateTo)) return null;
+  if (dateFrom >= dateTo) return null;
+  const days: string[] = [];
+  for (let day = dateFrom; day <= dateTo; day = addDaysIso(day, 1)) {
+    days.push(day);
+    if (days.length > DAY_SLICE_MAX_DAYS) return null;
+  }
+  return days;
+}
+
+/** True when a visit read names the people or contacts it is about (see the note above).
+ * Pure, exported for its unit test. */
+export function visitFilterNamesPeople(filter: CrmVisitFilter): boolean {
+  return (
+    (filter.agentCrmIds?.length ?? 0) > 0 ||
+    (filter.agentHrIds?.length ?? 0) > 0 ||
+    Boolean(filter.agentHrIdILike) ||
+    (filter.doubleHrIds?.length ?? 0) > 0 ||
+    (filter.contactCrmIds?.length ?? 0) > 0 ||
+    filter.participantCrmIds != null ||
+    filter.participantHrIds != null
+  );
+}
+
+/** The check-in twin of {@link visitFilterNamesPeople}; a GPS box counts as naming a place.
+ * Pure, exported for its unit test. */
+export function checkinFilterNamesPeople(filter: CrmCheckinFilter): boolean {
+  return (
+    (filter.agentCrmIds?.length ?? 0) > 0 ||
+    (filter.agentHrIds?.length ?? 0) > 0 ||
+    Boolean(filter.agentHrIdILike) ||
+    filter.agentCrmOrHrIds != null ||
+    filter.bounds != null
+  );
+}
+
+/** `order by id` for the canonical lowercase uuid text PostgREST returns: Postgres compares a uuid
+ * byte by byte, and fixed-width lowercase hex with hyphens in fixed places sorts the same way under
+ * plain code-unit comparison. Pure, exported for its unit test. */
+export function compareUuidText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** `order by check_date, id` for check-in rows as PostgREST returns them. Every timestamp in one
+ * response carries the session's one UTC offset and Postgres's own ISO form (fraction digits only
+ * when non-zero, trailing zeros trimmed), so plain text order is time order: a whole second's `+`
+ * sorts before the `.` of a fraction in that second, and fraction digits compare left to right.
+ * Pure, exported for its unit test. */
+export function compareCheckinScanOrder(a: { check_date: string; id: string }, b: { check_date: string; id: string }): number {
+  if (a.check_date !== b.check_date) return a.check_date < b.check_date ? -1 : 1;
+  return compareUuidText(a.id, b.id);
+}
+
+/** Runs `read` for every day, {@link DAY_SLICE_CONCURRENCY} at a time, results kept in day order. */
+async function readDaySlices<R>(days: readonly string[], read: (day: string) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(days.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < days.length) {
+      const index = next;
+      next += 1;
+      results[index] = await read(days[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DAY_SLICE_CONCURRENCY, days.length) }, worker));
+  return results;
+}
+
+/**
+ * The company-wide window read (see the note above): an unordered probe page, then — only when it
+ * comes back full — one scan per day. `null` when any request found the mirror schema missing.
+ * `order` puts a short probe in the single scan's order; `sortDays` re-sorts the joined days (visits,
+ * whose id order crosses days) or leaves them end to end (check-ins, already in check_date order).
+ * Takes its requests as functions, so it is exported for its unit test.
+ */
+export async function readCompanyWindow<Row>(options: {
+  days: readonly string[];
+  pageSize: number;
+  probe: () => Promise<Row[] | null>;
+  scanDay: (day: string) => Promise<Row[] | null>;
+  order: (a: Row, b: Row) => number;
+  sortDays: boolean;
+}): Promise<Row[] | null> {
+  const probe = await options.probe();
+  if (probe === null) return null;
+  if (probe.length < options.pageSize) return probe.sort(options.order);
+  const slices = await readDaySlices(options.days, options.scanDay);
+  if (slices.some((slice) => slice === null)) return null;
+  const rows = (slices as Row[][]).flat();
+  return options.sortDays ? rows.sort(options.order) : rows;
+}
+
 /**
  * Expand hr-id filter values so a case-SENSITIVE PostgREST `.in("agent_hr_id"/"double_hr_id", …)`
  * matches regardless of the caller's casing. The mirror stores whatever casing the employee roster
@@ -789,23 +924,54 @@ export async function queryVisits<T = CrmVisitRow>(
   const requestedColumns = options.collapseDoubleVisits ? withDuplicateDetectionColumns(options.columns ?? "*") : options.columns;
   const projection = withIdColumn(requestedColumns ?? "*");
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const rows: T[] = [];
-  let cursor: string | null = null;
-  for (;;) {
-    let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
-    query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
-    query = query.order("id", { ascending: true }).limit(pageSize);
-    if (cursor) query = query.gt("id", cursor);
-    const { data, error } = await query;
-    if (error) {
-      if (isCrmSchemaMissingError(error)) return [];
-      throw new Error(error.message);
+  type Row = T & { id: string };
+  const filtered = () => {
+    const query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
+    return applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
+  };
+  /** One keyset scan (order by id) of the filter, narrowed to one `visit_date` when `day` is set.
+   * `null` when the mirror schema is missing. */
+  const scan = async (day: string | null): Promise<Row[] | null> => {
+    const scanned: Row[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      let query = filtered();
+      if (day) query = query.eq("visit_date", day);
+      query = query.order("id", { ascending: true }).limit(pageSize);
+      if (cursor) query = query.gt("id", cursor);
+      const { data, error } = await query;
+      if (error) {
+        if (isCrmSchemaMissingError(error)) return null;
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as unknown as Row[];
+      scanned.push(...page);
+      if (page.length < pageSize) break;
+      cursor = page[page.length - 1].id;
     }
-    const page = (data ?? []) as unknown as Array<T & { id: string }>;
-    rows.push(...page);
-    if (page.length < pageSize) break;
-    cursor = page[page.length - 1].id;
-  }
+    return scanned;
+  };
+  // A company-wide window is probed, then read day by day when dense (see "Company-wide date-range
+  // scans" above), and comes back in the single scan's id order either way.
+  const days = visitFilterNamesPeople(options) ? null : dayScanSlices(options.dateFrom, options.dateTo);
+  const rows: Row[] | null = days
+    ? await readCompanyWindow<Row>({
+        days,
+        pageSize,
+        probe: async () => {
+          const { data, error } = await filtered().limit(pageSize);
+          if (error) {
+            if (isCrmSchemaMissingError(error)) return null;
+            throw new Error(error.message);
+          }
+          return (data ?? []) as unknown as Row[];
+        },
+        scanDay: scan,
+        order: (a, b) => compareUuidText(a.id, b.id),
+        sortDays: true,
+      })
+    : await scan(null);
+  if (rows === null) return [];
   return options.collapseDoubleVisits
     ? (collapseDuplicateVisitSubmissions(rows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
     : rows;
@@ -953,9 +1119,11 @@ export function applyCheckinFilter(
  *
  * - With an explicit `limit`: a single ordered, bounded fetch (e.g. "nearest few check-ins").
  * - Without `limit`: a full-coverage scan, keyset-paginated by `check_date`. `check_date` (not
- *   the random uuid `id`) is part of the `(agent_crm_id, check_date)` composite index this table
- *   has, so ordering by it keeps each page an index range-scan rather than a full sort — 130ms
- *   vs 12.8s on a real 30-day/112-agent production query. `check_date` is NOT unique, so the
+ *   the random uuid `id`) leads or follows every check-in index — `(agent_crm_id, check_date)`,
+ *   `(agent_hr_id, check_date)` and `(check_date)` — so ordering by it keeps each page an index
+ *   range-scan rather than a full sort — 130ms vs 12.8s on a real 30-day/112-agent production
+ *   query. A company-wide window (nobody named, no GPS box) is read one calendar day at a time,
+ *   each day through `(check_date)`. `check_date` is NOT unique, so the
  *   cursor is `.gte` + an id de-dupe rather than `.gt`: this docstring previously claimed
  *   duplicate timestamps were "never observed in production", but production actually has 1,797
  *   timestamps shared by 2+ rows (up to 20 on one), so a `.gt()` cursor landing mid-group silently
@@ -1001,41 +1169,73 @@ export async function queryCheckins<T = CrmCheckinRow>(
 
   const projection = withIdColumn(withCheckDateColumn(options.columns ?? "*"));
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const rows: T[] = [];
-  const seenIds = new Set<string>();
-  let cursor: string | null = null;
-  for (;;) {
-    let query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(projection);
-    query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
-    // Secondary sort on the unique `id` makes the order within one timestamp deterministic.
-    query = query.order("check_date", { ascending: true }).order("id", { ascending: true }).limit(pageSize);
-    // `.gte` (NOT `.gt`) so a page boundary landing inside a group of rows that share a timestamp
-    // cannot skip the rest of that group — `check_date` is NOT unique: production has 1,797
-    // timestamps shared by 2+ check-ins, up to 20 rows on a single one, which disproves the
-    // "never observed in production" assumption this loop used to rely on. The re-read overlap is
-    // removed by the `seenIds` de-dupe below, so callers still get each row exactly once.
-    if (cursor) query = query.gte("check_date", cursor);
-    const { data, error } = await query;
-    if (error) {
-      if (isCrmSchemaMissingError(error)) return [];
-      throw new Error(error.message);
+  type Row = T & { check_date: string; id: string };
+  const filtered = () => {
+    const query = supabase.from(CRM_CHECKINS_UNIFIED_VIEW).select(projection);
+    return applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
+  };
+  /** One keyset scan of the filter, narrowed to the half-open day [day 00:00, next day 00:00) when
+   * `day` is set. `null` when the mirror schema is missing. */
+  const scan = async (day: string | null): Promise<Row[] | null> => {
+    const rows: Row[] = [];
+    const seenIds = new Set<string>();
+    let cursor: string | null = null;
+    for (;;) {
+      let query = filtered();
+      // Inside the caller's own bounds, so the days partition exactly the rows the whole window holds.
+      if (day) query = query.gte("check_date", `${day}T00:00:00`).lt("check_date", `${addDaysIso(day, 1)}T00:00:00`);
+      // Secondary sort on the unique `id` makes the order within one timestamp deterministic.
+      query = query.order("check_date", { ascending: true }).order("id", { ascending: true }).limit(pageSize);
+      // `.gte` (NOT `.gt`) so a page boundary landing inside a group of rows that share a timestamp
+      // cannot skip the rest of that group — `check_date` is NOT unique: production has 1,797
+      // timestamps shared by 2+ check-ins, up to 20 rows on a single one, which disproves the
+      // "never observed in production" assumption this loop used to rely on. The re-read overlap is
+      // removed by the `seenIds` de-dupe below, so callers still get each row exactly once.
+      if (cursor) query = query.gte("check_date", cursor);
+      const { data, error } = await query;
+      if (error) {
+        if (isCrmSchemaMissingError(error)) return null;
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as unknown as Row[];
+      let added = 0;
+      for (const row of page) {
+        if (seenIds.has(row.id)) continue;
+        seenIds.add(row.id);
+        rows.push(row);
+        added += 1;
+      }
+      if (page.length < pageSize) break;
+      // Pathological guard: a full page whose rows were ALL already seen means more than `pageSize`
+      // check-ins share one timestamp, so the `.gte` cursor cannot advance. Stop rather than loop
+      // forever (max observed in production is 20 rows on one timestamp, vs a 1000-row page).
+      if (added === 0) break;
+      cursor = page[page.length - 1].check_date;
     }
-    const page = (data ?? []) as unknown as Array<T & { check_date: string; id: string }>;
-    let added = 0;
-    for (const row of page) {
-      if (seenIds.has(row.id)) continue;
-      seenIds.add(row.id);
-      rows.push(row);
-      added += 1;
-    }
-    if (page.length < pageSize) break;
-    // Pathological guard: a full page whose rows were ALL already seen means more than `pageSize`
-    // check-ins share one timestamp, so the `.gte` cursor cannot advance. Stop rather than loop
-    // forever (max observed in production is 20 rows on one timestamp, vs a 1000-row page).
-    if (added === 0) break;
-    cursor = page[page.length - 1].check_date;
-  }
-  return rows;
+    return rows;
+  };
+  // A company-wide window is probed, then read day by day when dense (see "Company-wide date-range
+  // scans" above). The days are disjoint and in calendar order, each sorted by (check_date, id), so
+  // joining them end to end IS the single scan's order — no re-sort, and no id can be in two days.
+  const days = checkinFilterNamesPeople(options) ? null : dayScanSlices(options.dateFrom, options.dateTo);
+  const rows: Row[] | null = days
+    ? await readCompanyWindow<Row>({
+        days,
+        pageSize,
+        probe: async () => {
+          const { data, error } = await filtered().limit(pageSize);
+          if (error) {
+            if (isCrmSchemaMissingError(error)) return null;
+            throw new Error(error.message);
+          }
+          return (data ?? []) as unknown as Row[];
+        },
+        scanDay: scan,
+        order: compareCheckinScanOrder,
+        sortDays: false,
+      })
+    : await scan(null);
+  return rows ?? [];
 }
 
 // ── Visits Report view (paginated table + export) ─────────────────────────────────
@@ -1466,7 +1666,8 @@ export async function queryVisitsPage<T = CrmVisitRow>(options: {
  * timeout even on an index-only scan (it still walks+discards `offset` entries), and (2) with no
  * `ORDER BY`, page boundaries aren't stable, so a sync writing mid-scan can skip or duplicate rows.
  * `id` is added to the projection for the cursor even when the caller didn't ask for it (it just
- * rides along). Returns `[]` if the schema is missing.
+ * rides along). A window of two days or more is read one day at a time and merged back into id
+ * order (see "Company-wide date-range scans" above). Returns `[]` if the schema is missing.
  */
 async function keysetScanVisitsForRange<T>(options: {
   dateFrom: string;
@@ -1476,29 +1677,54 @@ async function keysetScanVisitsForRange<T>(options: {
 }): Promise<T[]> {
   const supabase = getSupabaseAdmin();
   const projection = withIdColumn(options.columns);
-  const rows: T[] = [];
-  let cursor: string | null = null;
-  try {
+  type Row = T & { id: string };
+  const windowed = () => {
+    let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
+    if (options.excludedInList) query = query.not("exclusion_crm_id", "in", options.excludedInList);
+    return query.gte("visit_date", options.dateFrom).lte("visit_date", options.dateTo);
+  };
+  /** One keyset scan of the window, narrowed to one `visit_date` when `day` is set. `null` when the
+   * mirror schema is missing. */
+  const scan = async (day: string | null): Promise<Row[] | null> => {
+    const scanned: Row[] = [];
+    let cursor: string | null = null;
     for (;;) {
-      let query = supabase.from(CRM_VISITS_UNIFIED_VIEW).select(projection);
-      if (options.excludedInList) query = query.not("exclusion_crm_id", "in", options.excludedInList);
-      query = query
-        .gte("visit_date", options.dateFrom)
-        .lte("visit_date", options.dateTo)
-        .order("id", { ascending: true })
-        .limit(DEFAULT_PAGE_SIZE);
+      let query = windowed();
+      if (day) query = query.eq("visit_date", day);
+      query = query.order("id", { ascending: true }).limit(DEFAULT_PAGE_SIZE);
       if (cursor) query = query.gt("id", cursor);
       const { data, error } = await query;
       if (error) {
-        if (isCrmSchemaMissingError(error)) return [];
+        if (isCrmSchemaMissingError(error)) return null;
         throw new Error(error.message);
       }
-      const page = (data ?? []) as unknown as Array<T & { id: string }>;
-      rows.push(...page);
+      const page = (data ?? []) as unknown as Row[];
+      scanned.push(...page);
       if (page.length < DEFAULT_PAGE_SIZE) break;
       cursor = page[page.length - 1].id;
     }
-    return rows;
+    return scanned;
+  };
+  try {
+    const days = dayScanSlices(options.dateFrom, options.dateTo);
+    const rows: Row[] | null = days
+      ? await readCompanyWindow<Row>({
+          days,
+          pageSize: DEFAULT_PAGE_SIZE,
+          probe: async () => {
+            const { data, error } = await windowed().limit(DEFAULT_PAGE_SIZE);
+            if (error) {
+              if (isCrmSchemaMissingError(error)) return null;
+              throw new Error(error.message);
+            }
+            return (data ?? []) as unknown as Row[];
+          },
+          scanDay: scan,
+          order: (a, b) => compareUuidText(a.id, b.id),
+          sortDays: true,
+        })
+      : await scan(null);
+    return (rows ?? []) as unknown as T[];
   } catch (error) {
     if (isCrmSchemaMissingError(error)) return [];
     throw error;
