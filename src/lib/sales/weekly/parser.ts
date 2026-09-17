@@ -74,6 +74,14 @@ function cellNumber(cell: ExcelJS.Cell | undefined): number {
   return isParenNegative ? -Math.abs(num) : num;
 }
 
+/**
+ * True when the cell holds a readable quantity, zero included — as opposed to a blank or a word.
+ * `cellNumber` answers 0 for all three, which is how a missing column passes for genuine zeros.
+ */
+function cellHoldsNumber(cell: ExcelJS.Cell | undefined): boolean {
+  return /^\(?-?[\d,]*\.?\d+\)?$/.test(cellText(cell).replace(/\s+/g, ""));
+}
+
 /** Thousands-separated, at most 2 decimals — for numbers that appear in operator-facing messages. */
 function readableNumber(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -430,18 +438,35 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
 
   // Stock ONLY from "Current Stock Branches" (ignore Pharmacy / Transfer / Transfer Return). Sum
   // ITEM_STOCK per (ITEM_CODE, COMPANY_ENTITY_CODE).
+  //
+  // A workbook that yields NO stock blocks the upload instead of storing zero on every row. The
+  // 2026-08 month-end file ("EGD SATO END SALES &STOCK 31-8-2026") was read with no sheet of that
+  // name — only its two sales sheets — and validated cleanly at 0 stock; because the engine keeps each distributor's stock
+  // from its LATEST week, that one batch turned EGD's whole stock position into 0. Genuine zero is
+  // still accepted: the check is for a readable quantity in the stock column, and "0" is readable.
   const stock = findSheet(workbook, { name: "Current Stock Branches", includes: "Current Stock Branches" });
-  if (stock) {
+  if (!stock) {
+    blockingReasons.push(
+      `EGD: this workbook has no "Current Stock Branches" sheet (its sheets are: ${workbook.worksheets.map((sheet) => sheet.name.trim()).join(" · ")}). ` +
+        "Stock is read from that sheet only, so importing would store every branch with zero stock. Nothing was " +
+        "imported. Ask EGD for the full sales and stock export, or restore the sheet's name, and upload again.",
+    );
+  } else {
     names.push(stock.name);
     const agg = new Map<string, WeeklyObservation>();
+    const stockQtyCol = colOf(stockC, "stockQty", 3);
+    let stockRows = 0;
+    let stockRowsWithQty = 0;
     for (let r = dataStartRow(stockC, 2); r <= stock.rowCount; r += 1) {
       const row = stock.getRow(r);
       const itemCode = cellText(at(row, colOf(stockC, "itemCode", 1)));
       const itemName = cellText(at(row, colOf(stockC, "itemName", 2)));
       const entityCode = cellText(at(row, colOf(stockC, "entityCode", 13)));
       const entityName = cellText(at(row, colOf(stockC, "entityName", 14)));
-      const qty = cellNumber(at(row, colOf(stockC, "stockQty", 3)));
+      const qty = cellNumber(at(row, stockQtyCol));
       if (!itemCode && !entityCode) continue;
+      stockRows += 1;
+      if (cellHoldsNumber(at(row, stockQtyCol))) stockRowsWithQty += 1;
       const key = `${normalizeCode(itemCode)}|${normalizeKey(entityCode || entityName)}`;
       const existing = agg.get(key);
       if (existing) {
@@ -460,6 +485,21 @@ function adaptEG(ctx: AdapterContext): AdapterResult {
       }
     }
     for (const obs of agg.values()) observations.push(obs);
+
+    const sheetLabel = `EGD: the "${stock.name.trim()}" sheet`;
+    if (stockRows === 0) {
+      blockingReasons.push(
+        `${sheetLabel} has no stock rows, so importing would store every branch with zero stock. Nothing was ` +
+          "imported. Ask EGD for the export with its stock filled in, and upload again.",
+      );
+    } else if (stockRowsWithQty === 0) {
+      const header = cellText(at(stock.getRow(headerRowOf(stockC, 1)), stockQtyCol)) || "blank";
+      blockingReasons.push(
+        `${sheetLabel} has ${stockRows} row(s) but no stock quantity in column ${stockQtyCol} (header: ${header}), ` +
+          "so the stock column has moved or is missing and importing would store every branch with zero stock. " +
+          "Nothing was imported. Check the column layout for EGD before uploading again.",
+      );
+    }
   }
 
   return { observations, sheetDates, sheetName: names.join(" + ") || "EGD", blockingReasons };
