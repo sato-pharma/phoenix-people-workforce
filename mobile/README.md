@@ -79,6 +79,27 @@ system with their own permissions. To build one pointed elsewhere, set
 `EXPO_PUBLIC_PHOENIX_API_URL` in the build profile's `env` block in `eas.json` — any non-production
 target is labelled on the login screen and on Profile.
 
+### Over-the-air updates — not set up, and the one thing to get right if they are
+
+**There is no update pipeline today.** `eas.json` has no `channel` and `expo-updates` is not a
+dependency, deliberately, so that nothing here implies a capability that does not exist.
+
+It is worth knowing what it would buy, because it changes how a distribution route reads. EAS Update
+ships the non-native parts of the app — JavaScript, styling, images — over the air to an
+already-installed APK, internal distribution included. This app is almost entirely those parts:
+screens, business rules, API calls, copy. A new binary is needed only for a change to native code or
+native dependencies, a change to app permissions, or an Expo SDK upgrade. So "sideloaded means every
+tablet by hand, every release" is not true; it is by hand only for that smaller set.
+
+🔴 **If you wire it, pin the runtime-version policy deliberately — do not take a default.** The
+runtime version is what ties a JS bundle to the native binary that can run it. Publish a bundle to a
+binary whose runtime does not match and the app may misbehave or crash on launch. On a sideloaded
+fleet that is materially worse than it sounds: there is no store channel to push a recall through,
+so a bad bundle means reaching every affected tablet physically, in the field, one at a time.
+
+It is the same shape as the signing-key note above — cheap to get right at setup, expensive to
+discover later. Both are recorded here rather than left to be rediscovered.
+
 ## Why npm here, and pnpm in the repo root
 
 React Native's Metro bundler resolves modules by walking `node_modules` directly, and pnpm's
