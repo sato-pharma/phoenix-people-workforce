@@ -71,6 +71,12 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   // a week released for an answer, and a dispute decided. Both name only the week or the day, the
   // number of days, the deadline and the outcome, never an amount, so full content is safe to send.
   { enabled: true, genericOnly: false, module: "attendance_digest", notes: "Weekly attendance review release and dispute-decision notices; in-app and Telegram only, email permanently blocked.", optional: false },
+  // Phoenix CRM (owner rule 2026-09-16): in-app + Telegram only, email hard-blocked in
+  // phoenix-crm-channel-guard.ts. Same reasoning as early_birds: without this row the unknown-module
+  // fail-safe drops Telegram and a manager in the field is left with the in-app bell alone. Not
+  // genericOnly: the customer, the proposed grade or drop reason and the week ARE what a manager
+  // decides on; the notices carry no money and no personal data beyond the rep's name.
+  { enabled: true, genericOnly: false, module: "phoenix_crm", notes: "Grade and drop requests and weekly plans waiting for the reviewing manager, and their decisions; in-app and Telegram only, email permanently blocked.", optional: false },
 ];
 
 function cleanModule(value: unknown) {
