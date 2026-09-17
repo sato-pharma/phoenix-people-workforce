@@ -94,6 +94,9 @@ export function buildPortalWeeklyWorkbook(
 
   // ── Tab 2: Week Comparison ──────────────────────────────────────────────────
   // Its units add every week in scope, so they need the stricter one-product test (unit-totals.ts).
+  // Stock Units stays out of the TOTAL row: each week's stock is a snapshot of what is on hand, not a
+  // flow, so adding the weeks multiplies it (the same reason service.ts's latestStockOnly keeps one week
+  // for the tiles). Its TOTAL cell is empty, because a row labelled TOTAL must not show one week's stock.
   const weekCompUnits = weeklyWeekComparisonUnitsAreOneProduct(data);
   const weekCompRows = data.weekComparison.map((row) => ({
     month: formatCycleMonth(row.cycleMonth),
@@ -120,7 +123,7 @@ export function buildPortalWeeklyWorkbook(
       ...(weekCompUnits
         ? [
             { key: "salesUnits", label: "Sales Units", numeric: true, width: 16 },
-            { key: "stockUnits", label: "Stock Units", numeric: true, width: 16 },
+            { key: "stockUnits", label: "Stock Units", numeric: true, excludeFromTotal: true, width: 16 },
           ]
         : []),
       { key: "deltaPct", label: "Δ% vs Prior Week", width: 18 },
