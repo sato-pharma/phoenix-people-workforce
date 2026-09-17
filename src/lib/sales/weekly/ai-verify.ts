@@ -19,9 +19,10 @@ import ExcelJS from "exceljs";
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
 import { recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
-import { type WeeklyContractSheet } from "@/lib/sales/weekly/column-contract";
+import { type WeeklyContractSheet, type WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
 import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { weeklyDistributorByCode } from "@/lib/sales/weekly/distributors";
+import { matchWeeklySheet, weeklySheetMatcher } from "@/lib/sales/weekly/sheet-match";
 import type { WeeklyVerifyColumn, WeeklyVerifyMatrix, WeeklyVerifyResult } from "@/lib/sales/weekly/types";
 
 // ── AI provider resolution (shared with src/lib/sales/ai/provider.ts) ──────────────────────────────
@@ -35,7 +36,7 @@ export function hasWeeklyVerifyAi(): boolean {
   return resolveProvider() !== null;
 }
 
-// ── cell / sheet helpers (mirror parser.ts) ───────────────────────────────────────────────────────
+// ── cell helper (mirrors parser.ts) ───────────────────────────────────────────────────────────────
 function cellText(cell: ExcelJS.Cell | undefined): string {
   if (!cell) return "";
   const value = cell.value as unknown;
@@ -50,18 +51,6 @@ function cellText(cell: ExcelJS.Cell | undefined): string {
     if (obj.text != null) return String(obj.text).trim();
   }
   return String(value).trim();
-}
-
-function findSheet(workbook: ExcelJS.Workbook, sheet: WeeklyContractSheet): ExcelJS.Worksheet | undefined {
-  if (sheet.sheetName) {
-    const exact = workbook.worksheets.find((ws) => ws.name.trim().toLowerCase() === sheet.sheetName!.toLowerCase());
-    if (exact) return exact;
-  }
-  if (sheet.sheetIncludes) {
-    const partial = workbook.worksheets.find((ws) => ws.name.toLowerCase().includes(sheet.sheetIncludes!.toLowerCase()));
-    if (partial) return partial;
-  }
-  return workbook.worksheets[0];
 }
 
 async function loadWorkbook(buffer: ArrayBuffer | Buffer): Promise<ExcelJS.Workbook> {
@@ -152,63 +141,71 @@ async function judgeWithAi(
   return { judgements: Array.isArray(parsed.items) ? parsed.items : [], summary: String(parsed.summary ?? "") };
 }
 
-// ── main entry ──────────────────────────────────────────────────────────────────────────────────
-export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<WeeklyVerifyResult> {
-  const distributor = weeklyDistributorByCode(input.distributorCode);
-  if (!distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+// ── deterministic column plan (pure: no database, no AI) ─────────────────────────────────────────
+type WeeklyVerifyFormField = WeeklyContractSheet["formField"];
 
-  // Header-name-matched distributors (e.g. Direct's hand-coded sheet, parser.ts adaptDirect) have no
-  // fixed-position column-contract.ts entry — there is no positional layout for this check to read.
-  // Skip straight to a deterministic "review manually" result instead of throwing "unknown distributor".
-  if (distributor.headerNameMatched) {
-    return {
-      aiNote:
-        `${distributor.name}'s columns are matched by header NAME, not position, so there is no fixed layout to check here. ` +
-        "Confirm the file's headers look right before uploading.",
-      aiUsed: false,
-      columns: [],
-      distributor: { code: distributor.code, name: distributor.name },
-      files: [],
-      matrices: [],
-      verdict: "pass",
-      warnings: [],
-    };
-  }
+export type WeeklyVerifyPlan = Pick<WeeklyVerifyResult, "files" | "columns" | "matrices" | "warnings">;
 
-  // Resolve the SAME contract the parser will use (DB override merged over code), so the pre-upload
-  // verification reflects exactly which columns the importer will read — never a "green lie".
-  const contract = await resolveWeeklyContract(input.distributorCode);
-  if (!contract) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
-
-  // Load each provided file into a workbook, keyed by the form field the contract references.
-  const sources: Record<string, { buf?: ArrayBuffer | Buffer; name: string }> = {
-    file: { buf: input.fileBuffer, name: input.fileName || "weekly file" },
-    salesFile: { buf: input.salesBuffer, name: input.salesFileName || "sales matrix file" },
-    stockFile: { buf: input.stockBuffer, name: input.stockFileName || "stock matrix file" },
-  };
-  const workbooks = new Map<string, ExcelJS.Workbook>();
-  for (const key of Object.keys(sources)) {
-    const buf = sources[key].buf;
-    if (buf) workbooks.set(key, await loadWorkbook(buf));
-  }
-
+/**
+ * Read each contract sheet's header row from the uploaded workbook(s) and lay out which column the
+ * import takes each field from. The worksheet is picked by sheet-match.ts — the SAME rule the parser's
+ * adapters use — so this can only ever show a sheet the import will read. A sheet the import would not
+ * find is reported as MISSING, one row per pinned field, and is never replaced by another sheet: the
+ * EGD month-end file of 2026-08 had no "Current Stock Branches", and the old fallback showed "Current
+ * Stock Pharmacy" (or column 3 of the sales sheet) as the stock source while the import read no stock.
+ */
+export function planWeeklyVerify(input: {
+  distributorCode: string;
+  contract: WeeklyDistributorContract;
+  workbooks: ReadonlyMap<WeeklyVerifyFormField, ExcelJS.Workbook>;
+  fileNames: Record<WeeklyVerifyFormField, string>;
+}): WeeklyVerifyPlan {
   const columns: WeeklyVerifyColumn[] = [];
   const matrices: WeeklyVerifyMatrix[] = [];
-  const files: { role: string; fileName: string; sheetName: string }[] = [];
+  const files: WeeklyVerifyPlan["files"] = [];
   const warnings: string[] = [];
 
-  for (const sheetSpec of contract.sheets) {
-    const workbook = workbooks.get(sheetSpec.formField);
+  for (const sheetSpec of input.contract.sheets) {
+    const workbook = input.workbooks.get(sheetSpec.formField);
     if (!workbook) {
       warnings.push(`The ${sheetSpec.role} file was not provided, so its columns could not be checked.`);
       continue;
     }
-    const worksheet = findSheet(workbook, sheetSpec);
-    if (!worksheet) {
-      warnings.push(`Could not find the "${sheetSpec.sheetName ?? sheetSpec.role}" sheet for the ${sheetSpec.role} data.`);
+    const matcher = weeklySheetMatcher(input.distributorCode, sheetSpec.role);
+    const match = matcher ? matchWeeklySheet(workbook, matcher) : null;
+    if (!matcher || !match) {
+      const wanted = matcher ? `"${matcher.name}" sheet` : `${sheetSpec.role} sheet`;
+      const present = workbook.worksheets.map((ws) => `"${ws.name.trim()}"`).join(", ") || "none";
+      warnings.push(
+        `MISSING: this file has no ${wanted}, so the import will not read any ${sheetSpec.role} data from it — ` +
+          `no other sheet is used in its place. Sheets in the file: ${present}.`,
+      );
+      for (const field of sheetSpec.fields) {
+        columns.push({
+          sheetRole: sheetSpec.role,
+          sheetName: "",
+          field: field.field,
+          label: field.label,
+          columnIndex: field.columnIndex,
+          expectedHeaderHint: field.expectedHeaderHint,
+          observedHeader: "",
+          status: "missing",
+          note: `This file has no ${wanted} — the import reads no ${sheetSpec.role} data.`,
+          critical: field.role === "key" || field.role === "value",
+        });
+      }
       continue;
     }
-    files.push({ role: sheetSpec.role, fileName: sources[sheetSpec.formField].name, sheetName: worksheet.name });
+    const worksheet = match.worksheet;
+    // Some adapters read the first sheet when no sheet carries the expected name (Ibn Sina's real
+    // exports always do). With one sheet there is nothing else it could be; with several, say so.
+    if (match.matchedBy === "first-sheet" && workbook.worksheets.length > 1) {
+      warnings.push(
+        `No sheet is named "${matcher.name}", so the import reads this file's first sheet, "${worksheet.name.trim()}", ` +
+          `for the ${sheetSpec.role} data. Check that it is the right sheet before uploading.`,
+      );
+    }
+    files.push({ role: sheetSpec.role, fileName: input.fileNames[sheetSpec.formField], sheetName: worksheet.name });
     const header = worksheet.getRow(sheetSpec.headerRowNumber);
 
     for (const field of sheetSpec.fields) {
@@ -256,6 +253,65 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
     }
   }
 
+  return { files, columns, matrices, warnings };
+}
+
+/**
+ * Drift only when a CRITICAL column clearly drifted, is empty, or sits on a sheet the file does not have.
+ * "uncertain" never blocks "pass" (the operator is the human gate); per the owner's choice drift WARNS
+ * but does not hard-block.
+ */
+export function weeklyVerifyVerdict(columns: readonly WeeklyVerifyColumn[]): WeeklyVerifyResult["verdict"] {
+  return columns.some((c) => c.critical && (c.status === "drift" || c.status === "empty" || c.status === "missing")) ? "drift" : "pass";
+}
+
+// ── main entry ──────────────────────────────────────────────────────────────────────────────────
+export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<WeeklyVerifyResult> {
+  const distributor = weeklyDistributorByCode(input.distributorCode);
+  if (!distributor) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+
+  // Header-name-matched distributors (e.g. Direct's hand-coded sheet, parser.ts adaptDirect) have no
+  // fixed-position column-contract.ts entry — there is no positional layout for this check to read.
+  // Skip straight to a deterministic "review manually" result instead of throwing "unknown distributor".
+  if (distributor.headerNameMatched) {
+    return {
+      aiNote:
+        `${distributor.name}'s columns are matched by header NAME, not position, so there is no fixed layout to check here. ` +
+        "Confirm the file's headers look right before uploading.",
+      aiUsed: false,
+      columns: [],
+      distributor: { code: distributor.code, name: distributor.name },
+      files: [],
+      matrices: [],
+      verdict: "pass",
+      warnings: [],
+    };
+  }
+
+  // Resolve the SAME contract the parser will use (DB override merged over code), so the pre-upload
+  // verification reflects exactly which columns the importer will read — never a "green lie".
+  const contract = await resolveWeeklyContract(input.distributorCode);
+  if (!contract) throw new Error(`Unknown weekly distributor "${String(input.distributorCode).trim()}".`);
+
+  // Load each provided file into a workbook, keyed by the form field the contract references.
+  const sources: Record<WeeklyVerifyFormField, { buf?: ArrayBuffer | Buffer; name: string }> = {
+    file: { buf: input.fileBuffer, name: input.fileName || "weekly file" },
+    salesFile: { buf: input.salesBuffer, name: input.salesFileName || "sales matrix file" },
+    stockFile: { buf: input.stockBuffer, name: input.stockFileName || "stock matrix file" },
+  };
+  const workbooks = new Map<WeeklyVerifyFormField, ExcelJS.Workbook>();
+  for (const key of Object.keys(sources) as WeeklyVerifyFormField[]) {
+    const buf = sources[key].buf;
+    if (buf) workbooks.set(key, await loadWorkbook(buf));
+  }
+
+  const { files, columns, matrices, warnings } = planWeeklyVerify({
+    distributorCode: distributor.code,
+    contract,
+    workbooks,
+    fileNames: { file: sources.file.name, salesFile: sources.salesFile.name, stockFile: sources.stockFile.name },
+  });
+
   // ── AI overlay (graceful: never throws out of here) ──
   const provider = resolveProvider();
   let aiUsed = false;
@@ -263,7 +319,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
     "AI verification is not configured here — review the column mapping below and confirm it matches your file before uploading.";
 
   const judgeItems = columns
-    .filter((c) => c.status !== "empty")
+    .filter((c) => c.status !== "empty" && c.status !== "missing")
     .map((c, index) => ({ id: index, ref: c, sheetRole: c.sheetRole, label: c.label, columnIndex: c.columnIndex, expectedHeaderHint: c.expectedHeaderHint, observedHeader: c.observedHeader }));
 
   if (provider && judgeItems.length > 0) {
@@ -297,9 +353,7 @@ export async function verifyWeeklyUpload(input: WeeklyVerifyInput): Promise<Week
   }
 
   // ── verdict (deterministic — never trust the model's overall call) ──
-  // Drift only when a CRITICAL column clearly drifted or is missing. "uncertain" never blocks "pass"
-  // (the operator is the human gate); per the owner's choice drift WARNS but does not hard-block.
-  const verdict: "pass" | "drift" = columns.some((c) => c.critical && (c.status === "drift" || c.status === "empty")) ? "drift" : "pass";
+  const verdict = weeklyVerifyVerdict(columns);
 
   return {
     distributor: { code: distributor.code, name: distributor.name },
