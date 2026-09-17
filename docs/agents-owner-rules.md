@@ -2166,8 +2166,13 @@ His answers, chosen from options:
   to match."** `digest-weeks.ts` cuts a calendar month into 1–7, 8–14, 15–21 and the 22nd to the month
   end. September 2026 is the one transition month: week 2 is 1–6 Sep, week 3 keeps 7–13 Sep because
   its real digests were already built on those dates, week 4 is 14–23 Sep and week 5 is 24–30 Sep.
-  Nothing before September 2026 is reviewed, because August's last days are in August's month-end
-  deductions.
+- **"build starting from 1 august"** (same day, after the live weeks shipped). August 2026 is
+  reviewed as an ordinary calendar month: 1–7, 8–14, 15–21 and 22–31 Aug (`FIRST_REVIEW_MONTH`). When
+  he asked, August's 50 fingerprint days were all still Pending in month-end deductions and nothing
+  was published, so an answer reaches the same candidate through the bridge and never charges twice.
+  The daily job does not refresh August (it is not the review month): its weeks were built once on
+  request. Refresh works on them through 1 October, while August is last month, and after that they
+  stay listed while any day waits for release or an answer. Nothing before August 2026 is reviewed.
 - **"Yes, keep ½ day."** The deduction rule itself is unchanged.
 
 **Do not restore** the day-24 weeks (`latestClosedSettlementWeek`, `closedWeeksOfCurrentCycle`), the

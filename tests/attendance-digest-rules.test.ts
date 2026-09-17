@@ -1006,9 +1006,10 @@ export async function runAttendanceDigestRulesTests() {
     assert.deepEqual(syncedWeeks("2026-10-05"), ["2026-10 week 1 through 2026-10-04"], "after that, September is left alone");
     assert.deepEqual(
       syncedWeeks("2026-09-02"),
-      ["2026-09 week 2 through 2026-09-01"],
-      "August is never reviewed: its days are in August's month-end deductions",
+      ["2026-08 week 4 through 2026-08-31", "2026-09 week 2 through 2026-09-01"],
+      "August is reviewed (owner, 2026-09-17: \"build starting from 1 august\"), so its last week follows the same first-days rule as every month",
     );
+    assert.deepEqual(syncedWeeks("2026-08-02"), ["2026-08 week 1 through 2026-08-01"], "nothing before August 2026 is reviewed: July has no weeks");
 
     assert.equal(refreshableReviewWeek("2026-09", 5, "2026-10-20")?.throughIso, "2026-09-30", "the page may still refresh last month's weeks");
     assert.equal(refreshableReviewWeek("2026-09", 5, "2026-11-02"), null, "…but not an older month's: its days are in month-end payroll by then");

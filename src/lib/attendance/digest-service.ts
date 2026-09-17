@@ -856,7 +856,7 @@ function distinctEmployees(digests: ReadonlyArray<{ employeeHrId: string }>): nu
 
 /**
  * How a week reads on `todayIso`. A week of the review calendar gets its own dates, whether it is still
- * running, and whether it may be refreshed; a week from before September 2026 (the old payroll cycle)
+ * running, and whether it may be refreshed; a week from before August 2026 (the old payroll cycle)
  * keeps the dates stored on its digests and is never refreshed.
  */
 function weekTiming(
