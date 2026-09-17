@@ -233,4 +233,36 @@ export function runWeeklyStockDashboardTests() {
   for (const role of PORTAL_WEEKLY_STOCK_ROLES) {
     assert.equal(resolvePortalNav(role).showWeeklyStockTab, true, `${role}: nav flag matches the server role list`);
   }
+
+  // ── Layout: the desktop tables open at 1024 px, where the portal leaves them about 620 px. They fit by
+  // MERGING columns, never by shrinking type or scrolling (owner golden rules): the status badge sits under
+  // the name and the weeks of cover under the average — moved, never dropped, since the export has both.
+  const dashboard = readSource("../src/components/sales/weekly/weekly-stock-dashboard.tsx");
+  assert.doesNotMatch(dashboard, /overflow-x-auto|min-w-\[/, "never a horizontal scroll (owner golden rule)");
+  assert.doesNotMatch(dashboard, /\btruncate\b/, "long names wrap, never an ellipsis");
+  assert.equal((dashboard.match(/<table className="w-full table-fixed/g) ?? []).length, 3, "every table is fixed-layout");
+  assert.equal((dashboard.match(/<colgroup>/g) ?? []).length, 3, "and sized by its colgroup");
+  const desktopTables = dashboard
+    .split('<table className="w-full table-fixed')
+    .slice(1)
+    .map((chunk) => chunk.slice(0, chunk.indexOf("</table>")));
+  for (const table of desktopTables) {
+    const widths = [...table.matchAll(/<col className="w-\[(\d+)%\]" \/>/g)].map((match) => Number(match[1]));
+    const headers = [...table.matchAll(/<th className=\{(TH|TH_NUM)\}>/g)].map((match) => match[1]);
+    assert.equal(widths.length, headers.length, "every column header has its own col");
+    assert.equal(widths.reduce((sum, width) => sum + width, 0), 100, "every colgroup adds up to the table's width");
+    headers.forEach((kind, index) => {
+      if (kind === "TH_NUM") assert.ok(widths[index] >= 16, `a figure column is at least 16% wide, never a sliver its figure spills out of`);
+    });
+    assert.doesNotMatch(table, />(?:Cover|Status)<\/th>/, "the status badge sits under the name and the cover under the average");
+    assert.match(table, /<StatusBadge status=\{(?:cell|row)\.status\} \/>/, "every desktop row still shows its status");
+    assert.match(table, /formatCoverLine\((?:cell|row)\.coverWeeks\)/, "every desktop row still shows its weeks of cover, labelled");
+  }
+  // A figure on a headline tile or a phone card wraps inside its box rather than running out of it: three across
+  // at 375 px, the depot cards could not hold "EGP 512.5K" on one line (Depot Detail's figures wrap the same way).
+  const figures = [...dashboard.matchAll(/<p className="([^"]*)">\{value\}<\/p>/g)].map((match) => match[1]);
+  assert.equal(figures.length, 2, "the headline tile and the phone card each print one figure");
+  for (const figure of figures) assert.doesNotMatch(figure, /\bwhitespace-nowrap\b/, "a figure wraps inside its box, never runs out of it");
+  assert.match(dashboard, /hidden lg:block/, "desktop reads full tables");
+  assert.match(dashboard, /lg:hidden/, "a phone reads cards");
 }
