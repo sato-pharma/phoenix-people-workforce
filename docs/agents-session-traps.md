@@ -702,6 +702,46 @@ this file already gives them)
 - **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.** Reverse it onto a navy
   band, or recolour the near-white pixels, before any export or print.
   `sato-logo-wordmark-is-white-invisible-on-paper`
+- **`railway logs --http` without `--since` returns only a SHORT recent window (about 12 minutes,
+  as measured), whatever `--lines` says.** A filtered count taken that way reads as *zero calls*,
+  or as a handful, while traffic is flowing — and a small, plausible number reads as a finding,
+  not as a truncated window. Measured on production 2026-09-15 at about 22:45 Cairo with Railway
+  CLI 5.30.3, on deployment `062cd765-8968-4347-b5a8-74a1b7a98cd7` of `phoenix-people-workforce` in
+  `production`: `railway logs <deploymentId> -s phoenix-people-workforce -e production --http
+  --filter "@method:POST" --lines 3000 --json` returned **17** lines, spanning only 22:33 to 22:45
+  Cairo. The same command with `--since 2026-09-15T14:30:00Z` (17:30 Cairo) returned **919**, from
+  17:38 to 22:50 Cairo. With `--filter "@path:/api/webhooks/whatsapp"`, the WhatsApp webhook read
+  **3** calls without `--since` and **126** with it — 17:49 to 22:40 Cairo, every one HTTP 200.
+  Nothing warns you: `railway logs --help` describes `--lines` only as a number of lines to fetch
+  and names no default window at all, so about 12 minutes is a measurement, not a documented
+  limit — never budget against it. Pass `--since` every time: it takes an ISO timestamp or ONE
+  relative unit (`30s`, `5m`, `2h`, `1d`, `1w`); a compound `2h30m` is refused, so pass a timestamp
+  for anything else. And HTTP logs exist only for the CURRENT deployment: a REMOVED deployment
+  returns nothing at all, which again reads exactly like no traffic.
+  **No memory file holds this trap, and this account is the record.**
+- **Judge a WhatsApp SILENCE by DELIVERY LAG, never by quiet alone.** On 2026-09-15 no inbound
+  message arrived on either company line from 07:49 to 11:52 Cairo — about four hours, longer than
+  the prior week's longest daytime gap of 3.3 hours — and it was read as a possible outage. It was
+  not one. What settles it is Meta's retry: a webhook delivery that fails is re-sent, with
+  decreasing frequency, for up to **7 days**, so a real outage leaves a signature once delivery
+  resumes — inbound rows recorded LATE, with `whatsapp_inbox_messages.received_at` (when Phoenix
+  wrote the row) far behind `sent_at` (Meta's own message time). That day **121** live inbound
+  rows arrived after the gap, **none** with `received_at - sent_at` over five minutes, and the
+  hourly median lag ran **1.9 to 2.9 seconds**; Meta's configuration read healthy throughout —
+  numbers connected, webhook subscription active, callback pointing at Phoenix. The test: filter
+  `direction = 'inbound'`, exclude the rows `scripts/whatsapp-inbox-backfill.sql` wrote
+  (`payload ? 'backfill'`) and any row with `historical` set, then look for late rows. **Zero late
+  rows plus a normal lag means the silence was simply no traffic.** The `historical` exclusion
+  comes from the code, not from that day's rows: a coexistence history replay arrives through the
+  live webhook, in both directions, carrying each message's ORIGINAL `sent_at`
+  (`src/lib/whatsapp-inbox/webhook-parse.ts`), so an inbound one reads as late by construction and
+  fakes the outage signature. The table's own trigger draws the same line (`v_is_live_inbound`):
+  `direction = 'inbound' and not historical`. The blind spot: a delivery Phoenix answered with 200
+  but failed to record leaves no late row either, so pair the test with the error monitor
+  (`app_error_events`) and the first and last message time per line (`phone_number_id`). Read-only
+  Meta checks already exist in `src/lib/recruitment/inbound/whatsapp-health.ts` —
+  `probeAllWhatsAppNumbers` and `fetchWebhookRouting`.
+  **No memory file holds this trap, and this account is the record.**
 
 **Validation**
 

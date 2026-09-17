@@ -101,6 +101,8 @@ does not fire, so its silence is not evidence that no trap applies.
 - **`updated_by_hr_id` LIES about who wrote a row.**
 - **HR ids are MIXED CASE, so a plain `.eq` silently under-returns** — one `.eq` hid 28% of reps' own orders, and on `au.occupancy_history` the loss is TOTAL (0 of 120 join), where a row matching nobody reads as *a vacant seat* rather than a bug. Lower BOTH sides.
 - **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.**
+- **`railway logs --http` without `--since` returns only a SHORT recent window (about 12 minutes, as measured), whatever `--lines` says** — so a filtered count can read as *zero calls* while traffic flows: 3 WhatsApp webhook calls without it, 126 with it. Always pass `--since` (an ISO timestamp, or ONE unit like `2h` — `2h30m` is refused); HTTP logs exist only for the CURRENT deployment, and a REMOVED one returns nothing.
+- **Judge a WhatsApp SILENCE by DELIVERY LAG, never by quiet alone** — Meta re-sends a failed webhook for up to 7 days, so a real outage leaves inbound rows whose `received_at` sits far behind `sent_at`. Leave out backfilled rows (`payload ? 'backfill'`) and history replays (`historical`); zero late rows plus a seconds-scale lag means NO TRAFFIC, not an outage. It cannot see a 200 that recorded nothing — pair it with `app_error_events` and each line's first and last message.
 
 **Validation**
 
