@@ -46,11 +46,18 @@
  * one and the "total kills this run" tail — it reported 237. Pass -CaseSensitive.)
  *
  * The cycle's real shape: this codebase's dev server legitimately reaches ~6 GB under real use,
- * the watchdog's per-process ceiling IS 6 GB, so it reaps a healthy server and a session
- * restarts it. Each cycle drove physical RAM to 94%, Windows evicted working sets to the
+ * the watchdog's per-process ceiling WAS 6 GB, so it reaped a healthy server and a session
+ * restarted it. Each cycle drove physical RAM to 94%, Windows evicted working sets to the
  * pagefile, and dwm.exe ended up 4% resident — that is what "the whole machine is slow" was,
- * with CPU never above 9%. Fixing it means the watchdog THRESHOLD (and running one dev server
- * at a time, AGENTS.md 5), not the bundler. Do not re-file this under turbopack.
+ * with CPU never above 9%. The fix was the watchdog THRESHOLD (and running one dev server
+ * at a time, AGENTS.md 5), never the bundler. Do not re-file this under turbopack.
+ *
+ * SETTLED 2026-09-12: mem-watchdog.ps1 now EXEMPTS a next dev server from every one of its rules
+ * ("A NEXT DEV SERVER IS THEREFORE TOUCHED BY NOTHING IN THIS SCRIPT AT ALL", its own header), so
+ * this sawtooth cannot recur and there is no threshold left to tune. Under its floors the watchdog
+ * reclaims NODE JOBS — a typecheck, a build, a test run. What stops a dev server, since 2026-09-17,
+ * is ~/.claude/hooks/dev-server-reaper.mjs: the one the ENDING session started, and nobody else's.
+ * Account: docs/agents-worktree-and-machine-limits.md.
  *
  * ALSO (AGENTS.md 2.1, Worktrees): turbopack rejects the junctioned node_modules that every
  * `_wt-*` worktree uses, because it reads the junction as a symlink out of the project root.
