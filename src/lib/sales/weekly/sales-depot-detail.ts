@@ -17,6 +17,9 @@
 //     his parts, each labelled by how it reached him: mapped to his area by hand, or allocated to it by
 //     the owner's depot-split rule. That label travels to every cell, so an allocation is never shown
 //     as an observation.
+//   • A manager reads whole depots — except a district or regional manager whose load lifted its region
+//     bound (own-area-scope.ts): a depot outside his own scope reaches him only as the share the split
+//     places in his own areas, and that share carries the same "Allocated share" label a rep's does.
 //
 // AVERAGE PER WEEK IS GAP-AWARE. Most distributors restate the month to date, and de-cumulation
 // subtracts each sheet from the previous PRESENT sheet of the month, so an upload that follows a missed
@@ -53,8 +56,9 @@ export const WEEKLY_SALES_DETAIL_MOVEMENT_LABELS: Record<WeeklySalesDetailMoveme
  * How a figure reached the viewer.
  * whole     — a manager's row: the depot's whole sale, in the area the owner mapped it to (or none).
  * mapped    — a rep's row: the depot is mapped to his area by hand, so the whole sale is his.
- * allocated — a rep's row: the depot's name places it across several areas, and this is his share.
- * mixed     — a rep's cell holding both (the depot's mapping changed inside the period).
+ * allocated — a rep's row: the depot's name places it across several areas, and this is his share. Or a
+ *             lifted manager's row: a depot outside his own scope, and this is the share in his own areas.
+ * mixed     — a cell holding both kinds (the depot's mapping changed inside the period).
  */
 export type WeeklySalesDetailBasis = "whole" | "mapped" | "allocated" | "mixed";
 
@@ -64,6 +68,15 @@ export const WEEKLY_SALES_DETAIL_BASIS_LABELS: Record<WeeklySalesDetailBasis, st
   allocated: "Allocated share",
   mixed: "Part allocated",
 };
+
+/**
+ * Whether the view states how each figure reached the viewer: always for a rep, and for a manager only
+ * when a lifted load placed a depot-split share in his view. The screen and the workbook both ask here,
+ * so the download shows the basis exactly when the screen does.
+ */
+export function weeklySalesDetailShowsBasis(view: { audience: WeeklySalesDetailAudience; cells: readonly { basis: WeeklySalesDetailBasis }[] }): boolean {
+  return view.audience === "rep" || view.cells.some((cell) => cell.basis === "allocated" || cell.basis === "mixed");
+}
 
 /** One de-cumulated, scoped fact row (a product at a depot in one upload), or a rep's part of one. */
 export type WeeklySalesDetailSourceRow = {
@@ -147,7 +160,7 @@ export type WeeklySalesDetailCell = {
   share: number | null;
   movement: WeeklySalesDetailMovement;
   basis: WeeklySalesDetailBasis;
-  /** the part of `value` placed by the depot-split rule rather than a hand mapping (rep only; 0 otherwise) */
+  /** the part of `value` placed by the depot-split rule (a rep's cell, or a lifted manager's; 0 otherwise) */
   allocatedValue: number;
 };
 
@@ -199,9 +212,9 @@ export type WeeklySalesDetailView = {
     returnsValue: number;
     /** value of cells with no area mapping */
     unmappedValue: number;
-    /** rep: value from depots mapped to his area by hand */
+    /** rep only: value from depots mapped to his area by hand (0 for a manager) */
     mappedValue: number;
-    /** rep: value allocated to his area by the depot-split rule */
+    /** value the depot-split rule placed in the viewer's own area — a rep's, or a lifted manager's own areas */
     allocatedValue: number;
     /** the most weeks any in-view distributor covers — the period's length in weeks */
     weeksCovered: number;
@@ -235,7 +248,10 @@ export type WeeklySalesDepotDetailPayload = {
   };
   /** Always "ok" for a manager. */
   status: WeeklySalesDetailStatus;
-  /** Rep only: the depot-split index did not load, so only hand-mapped depots reached him. */
+  /**
+   * The depot-split index did not load: a rep then reads only the depots mapped to his area by hand, and a
+   * lifted manager only the depots his own scope names. False for every other manager.
+   */
   allocationUnavailable: boolean;
 };
 
@@ -386,6 +402,8 @@ type CellAccumulator = {
   mappedValue: number;
   allocatedValue: number;
   hasWhole: boolean;
+  /** a flag, not the value: an allocated sale and return can net to exactly nothing */
+  hasAllocated: boolean;
   byUpload: Map<string, { units: number; value: number }>;
 };
 
@@ -518,13 +536,15 @@ export function buildWeeklySalesDepotDetail(input: {
       : WEEKLY_SALES_DETAIL_UNMAPPED_AREA_LABEL;
     const current =
       cellsByKey.get(key) ??
-      { row, areaName, units: 0, value: 0, mappedValue: 0, allocatedValue: 0, hasWhole: false, byUpload: new Map() };
+      { row, areaName, units: 0, value: 0, mappedValue: 0, allocatedValue: 0, hasWhole: false, hasAllocated: false, byUpload: new Map() };
     const value = Number(row.salesValue) || 0;
     const units = Number(row.salesUnits) || 0;
     current.units += units;
     current.value += value;
-    if (row.basis === "allocated") current.allocatedValue += value;
-    else if (row.basis === "mapped") current.mappedValue += value;
+    if (row.basis === "allocated") {
+      current.allocatedValue += value;
+      current.hasAllocated = true;
+    } else if (row.basis === "mapped") current.mappedValue += value;
     else current.hasWhole = true;
     const slot = slotOf(row.batchId);
     const perUpload = current.byUpload.get(slot) ?? { units: 0, value: 0 };
@@ -550,14 +570,21 @@ export function buildWeeklySalesDepotDetail(input: {
         weeksSold += spans.get(batchId) ?? 1;
       }
     }
+    // A manager's cell is whole unless a lifted load placed a depot-split share in it; a rep's keeps its own rule.
     const basis: WeeklySalesDetailBasis =
-      audience === "manager" || cell.hasWhole
-        ? "whole"
-        : Math.abs(cell.allocatedValue) <= EPSILON
-          ? "mapped"
-          : Math.abs(cell.mappedValue) <= EPSILON
-            ? "allocated"
-            : "mixed";
+      audience === "manager"
+        ? cell.hasAllocated
+          ? cell.hasWhole
+            ? "mixed"
+            : "allocated"
+          : "whole"
+        : cell.hasWhole
+          ? "whole"
+          : Math.abs(cell.allocatedValue) <= EPSILON
+            ? "mapped"
+            : Math.abs(cell.mappedValue) <= EPSILON
+              ? "allocated"
+              : "mixed";
     const exact: ExactFigures = {
       units: cell.units,
       value: cell.value,
@@ -650,7 +677,8 @@ export function buildWeeklySalesDepotDetail(input: {
     else unmappedValue += exact.value;
     if (cell.basis !== "whole") {
       allocatedValue += exact.allocatedValue;
-      mappedValue += exact.value - exact.allocatedValue;
+      // A manager's "mixed" cell holds whole-depot value beside the share, and none of it is mapped by hand.
+      if (audience === "rep") mappedValue += exact.value - exact.allocatedValue;
     }
     if (cell.movement === "returns") {
       returnsCount += 1;
