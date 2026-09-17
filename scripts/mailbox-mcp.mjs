@@ -21,6 +21,17 @@
 // crafted subject carrying a newline cannot forge an extra row in a listing, and a message body is
 // fenced and labelled before it is handed back.
 //
+// REGISTRATION IS DELIBERATELY NOT PROJECT-SCOPED, and that follows directly from the paragraph
+// above. .mcp.json is tracked and reaches every worktree, so an entry there would offer
+// stranger-written email to every session in the repo — including the ones holding the
+// pre-authorised production Supabase writes of AGENTS.md §8, where injected text sits one step
+// from a live mutation. Register it instead in the one folder that needs it, at local scope, where
+// it stays private to that folder and is never committed:
+//
+//   claude mcp add mailbox -- node scripts/mailbox-mcp.mjs
+//
+// (local is `claude mcp add`'s default scope; --scope project would write it back into .mcp.json.)
+//
 // CREDENTIALS are read from the environment, or — failing that — from the MAILBOX_MCP_ lines of
 // .env.local and nothing else in it (see loadMailboxEnv below). They are never written anywhere:
 //
@@ -47,10 +58,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 // imports nothing at all, and this repo pins node >= 24 (.nvmrc), which strips the types on import.
 import { describeImapError, normalizeAppPassword } from "../src/lib/mailbox-monitor/imap-error.ts";
 
-// imapflow and mailparser are loaded on FIRST USE, not at startup. This server is registered in
-// .mcp.json, so it is spawned for every session in the repo, and most of them never read a mail —
-// the two mail stacks together cost ~18 MB resident and ~0.9 s of startup that those sessions
-// would otherwise pay for nothing. Node caches the module after the first tool call.
+// imapflow and mailparser are loaded on FIRST USE, not at startup. This server is spawned for
+// every session in the folder it is registered in, and most of them never read a mail — the two
+// mail stacks together cost ~18 MB resident and ~0.9 s of startup that those sessions would
+// otherwise pay for nothing. Node caches the module after the first tool call.
 
 /**
  * Drop everything this process does not need out of process.env, before any tool exists.
