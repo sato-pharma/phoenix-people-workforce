@@ -200,7 +200,7 @@ function flexibleRows(input: {
         result.deductionDays <= 0
           ? ""
           : bothLateAndShort
-            ? "worse of the two"
+            ? "larger penalty only"
             : result.halved
               ? `${formatDeductionDays(result.deductionDays * 2)} halved`
               : "",
@@ -337,7 +337,7 @@ export function buildAttendancePolicyExplainer(input: {
       `Arriving any time up to ${clockFromMinutes(ceilingMinutes)} is not late.`,
       `What is required is the presence, not the clock: ${durationFromMinutes(requiredMinutes)} between your first and last punch.`,
       "Completing the hours halves a late penalty.",
-      "When a day is both late and short, only the worse of the two applies — never both.",
+      "When a day is both late and short, only the larger penalty applies — never both.",
       "A day with a single punch is never auto-deducted; it goes for verification first.",
     ];
     if (freeMinutes > 0) {

@@ -9,8 +9,7 @@
 //     short-hours shortfall.
 //   • Completing the required hours HALVES a late penalty (exact ÷2): 30 min late
 //     is normally a half-day, but if the hours were still completed it is a quarter-day.
-//   • If a day is BOTH late and short, apply the WORSE of the two (larger deduction),
-//     never both.
+//   • If a day is BOTH late and short, apply only the LARGER deduction, never both.
 //   • Deduction size is the exact bracket value — no rounding, no escalation.
 //   • A missing punch (only one punch) is never auto-deducted here; it is flagged
 //     for the A-13 → HR → COO verification chain handled by the settlement layer.
@@ -251,7 +250,8 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
     };
   }
 
-  // Both late and short → take the worse (larger) of the two, no halving.
+  // Both late and short → only the larger deduction applies, no halving. The reason text names
+  // only the penalty that applies; the owner ruled the old comparative wording is never shown (2026-09-17).
   if (lateMinutes > 0 && shortMinutes > 0) {
     if (shortDeduction >= lateDeduction) {
       return {
@@ -262,7 +262,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
         deductionDays: shortDeduction,
         hoursCompleted,
         halved: false,
-        reason: `Late ${lateMinutes} min and short ${shortMinutes} min — short-hours penalty applies (the worse of the two).`,
+        reason: `Late ${lateMinutes} min and short ${shortMinutes} min — short-hours penalty applies.`,
       };
     }
     return {
@@ -273,7 +273,7 @@ export function evaluateFlexibleHoursDay(input: FlexibleHoursInput): FlexibleHou
       deductionDays: lateDeduction,
       hoursCompleted,
       halved: false,
-      reason: `Late ${lateMinutes} min and short ${shortMinutes} min — lateness penalty applies (the worse of the two).`,
+      reason: `Late ${lateMinutes} min and short ${shortMinutes} min — lateness penalty applies.`,
     };
   }
 
