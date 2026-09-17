@@ -48,6 +48,12 @@
     // naming pattern is left unmatched.
     ".codex-worktrees",
     "_wt-*",
+    // The native Android app (Expo / React Native). It is a separate program with its own
+    // tsconfig, its own React types and its own module resolution — `react-native`'s JSX and
+    // DOM-free lib set are incompatible with the "dom" lib this project compiles against, so
+    // tsc walking it produces hundreds of errors for code that is correct. Check it with
+    // `npm run typecheck` inside mobile/, which is what CI's mobile job runs.
+    "mobile",
     "scripts/tmp",
     "supabase/.temp",
     // Gitignored scratch space (.gitignore: "outputs/"). Files rescued out of

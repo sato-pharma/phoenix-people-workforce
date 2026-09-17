@@ -15,6 +15,7 @@ import {
   accessContextFromDevPreviewToken,
   phoenixDevPreviewCookieName,
 } from "@/lib/auth/dev-preview";
+import { bearerTokenFromRequest } from "@/lib/auth/native-session";
 import {
   getCookieValue,
   phoenixSessionCookieName,
@@ -435,6 +436,18 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
 
   if (sessionContext) {
     return sessionContext;
+  }
+
+  // Native clients (the Android app) carry the same signed session token in an Authorization
+  // header instead of a cookie — see src/lib/auth/native-session.ts for why, and for why this
+  // grants nothing the cookie path does not. It runs AFTER the cookie deliberately: a browser
+  // request that has both is a browser request, and its cookie is the more trustworthy of the two.
+  // Only this Request-based resolver accepts it; resolveAccessContextFromPage stays cookie-only,
+  // because a server-rendered page is never loaded by the native client.
+  const bearerContext = await resolveSessionAccessContext(bearerTokenFromRequest(request));
+
+  if (bearerContext) {
+    return bearerContext;
   }
 
   if (isLocalDevelopmentRequest(request.headers)) {

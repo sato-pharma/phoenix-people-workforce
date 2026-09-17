@@ -19,6 +19,7 @@ import {
 import { authenticateLoginId, normalizeLoginId } from "@/lib/auth/credentials";
 import { isIpBlocked } from "@/lib/auth/ip-blocklist";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { isNativeClientRequest } from "@/lib/auth/native-session";
 import {
   createSessionToken,
   phoenixSessionCookieName,
@@ -477,9 +478,22 @@ export async function POST(request: Request) {
       }).catch(() => undefined);
     }
 
+    // The native app has no cookie jar we control, so it needs the token itself. Returned ONLY to a
+    // caller that declares itself native (src/lib/auth/native-session.ts explains the trade), and
+    // it is the same token, on the same clock, as the cookie set below — not a longer-lived one.
+    // `landingPath` saves the app a round trip working out where this role starts.
+    const nativeSession = isNativeClientRequest(request.headers)
+      ? {
+          expiresAt: new Date(Date.now() + maxAgeSeconds * 1000).toISOString(),
+          landingPath: resolveLandingPathForRole(user.role),
+          sessionToken: token,
+        }
+      : null;
+
     const response = payload.responseMode === "redirect"
       ? NextResponse.redirect(getRedirectUrl(request, resolveLandingPathForRole(user.role)), 303)
       : NextResponse.json({
+          ...(nativeSession ?? {}),
           user: {
             hrId: user.hrId,
             loginId: user.loginId,

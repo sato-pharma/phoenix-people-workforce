@@ -42,6 +42,11 @@ const eslintConfig = defineConfig([
     // never be linted by this project's CI (they produce thousands of unrelated findings).
     ".codex-worktrees/**",
     "_wt-*/**",
+    // The native Android app. Linted by its own `expo lint` config inside mobile/, not by the
+    // Next.js rule set — eslint-config-next's React and import rules assume a DOM and a Next
+    // router, neither of which exists in React Native, so every screen would report findings
+    // for code that is correct. Same rationale as the worktree ignores above.
+    "mobile/**",
     ".playwright-cli/**",
     ".alt-git-objects/**",
     ".vercel/**",

@@ -483,6 +483,12 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/employees/**", permission: { resource: "employees", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST", "DELETE"], pattern: "/api/employee-portal/profile-photo", permission: { resource: "employee_profile", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PATCH"], pattern: "/api/employee-portal/account-activation", permission: [{ resource: "account_activation", action: "read" }, { resource: "account_activation", action: "update" }], csrfRequired: true }),
+  // The portal home screen as JSON, for the native Android app. It asserts exactly what
+  // `app/employee-portals/page.tsx` asserts and returns what the same domain service returned, so
+  // the two clients cannot disagree; no audit row, like its sibling portal GETs, because reading
+  // your own landing screen is not an access event. The route drops `latestPayslip` before
+  // answering — no payslip belongs on any landing surface for any role.
+  sessionApi({ methods: readOnly, pattern: "/api/employee-portals/home", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/excuses/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/exports", permission: { resource: "probation", action: "export" }, guard: "domain-helper" }),
   // Split for the same reason the hiring pack below is: the blanket said `read` for a PATCH that

@@ -1726,6 +1726,7 @@ import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
+import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5893,6 +5894,11 @@ await runTest(
 await runTest(
   "no share token in tracked docs: a run of 43+ base64url characters mixing upper case, lower case and digits fails, and the failure names only file, line and the first 6 characters",
   runDocsShareTokenGuardTests,
+);
+
+await runTest(
+  "native bearer session: only a well-formed Bearer header yields a token (Basic, bare and empty all yield null), and the native-client marker is presence-based so a browser never receives a session token in the response body",
+  runNativeSessionBearerTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
