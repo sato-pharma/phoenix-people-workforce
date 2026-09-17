@@ -507,6 +507,7 @@ import { runWeeklyFileTotalsSelfCheckTests } from "./weekly-file-totals-self-che
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
+import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -2724,6 +2725,10 @@ await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
 await runTest(
   "weekly stock export: one TOTAL row per tab, no SUM under units, weeks of cover, products or depots, and every total matches the screen",
   runWeeklyStockWorkbookTotalsTests,
+);
+await runTest(
+  "weekly sales export Week Comparison: the TOTAL row never adds stock across weeks (Stock Units TOTAL is empty; Sales Value and Sales Units still SUM)",
+  runWeeklyWeekComparisonStockTotalTests,
 );
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
