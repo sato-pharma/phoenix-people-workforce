@@ -73,7 +73,13 @@ export function buildPortalMonthPace(input: {
   const { bound, lineCode } = input;
   const areaSet = input.areaCodes ? new Set(input.areaCodes.map((code) => code.toUpperCase())) : null;
   const productSet = input.productCodes ? new Set(input.productCodes.map((code) => code.toUpperCase())) : null;
-  const areaNameOf = (code: string | null | undefined) => input.areaNames.get(String(code ?? "").trim().toUpperCase()) ?? null;
+  // loadAreaNameMap hands back the code itself for a blank master name; that is no name, so a weekly
+  // row's own name still gets its turn.
+  const areaNameOf = (code: string | null | undefined) => {
+    const key = String(code ?? "").trim().toUpperCase();
+    const name = input.areaNames.get(key)?.trim() ?? "";
+    return name && name.toUpperCase() !== key ? name : null;
+  };
 
   const targetRows = filterRowsForBound(input.achievement, bound).filter((row) => {
     if (row.lineCode !== lineCode || !row.hasTarget) return false;

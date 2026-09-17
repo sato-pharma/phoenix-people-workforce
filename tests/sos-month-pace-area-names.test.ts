@@ -149,6 +149,24 @@ export function runSosMonthPaceAreaNamesTests() {
     everyRow.push(...result.rows);
   }
 
+  // ── A master row with a blank name: loadAreaNameMap hands back the code in its place ──────────
+  {
+    const result = pace({
+      lineCode: "pedia",
+      bound: { kind: "line", lineCodes: new Set(["pedia"]) },
+      areaCodes: null,
+      areaNames: new Map([["UE9", "UE9"]]),
+      achievement: [targetRow({ lineCode: "pedia", areaCode: "UE9", productCode: "PD01", targetValue: 8000 })],
+      weeklyReps: [weeklyRep({ areaCode: "UE9", areaName: "Beni Suef", lineName: "Pedia", value: 1200 })],
+    });
+    assert.equal(
+      rowFor(result.rows, "UE9").areaName,
+      "Beni Suef",
+      "a code the master hands back for a blank name is no name, so the weekly row's own name labels the area",
+    );
+    everyRow.push(...result.rows);
+  }
+
   // ── The builder: a name that is only the code again is not a name ────────────────────────────
   {
     const result = buildMonthPace({
