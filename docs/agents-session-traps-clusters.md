@@ -137,7 +137,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 **Parallel sessions**
 
-- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A lock's dead PID proves NOTHING — it is the hook's own parent shell, so every lock has one; staleness is AGE >2h, and even a stale one does not prove the folder is unattended. Resolve by MERGING, never discarding.
+- **A parallel session can collide with NO git trace at all** — `gh pr list`, `git log` and `git worktree list` were all clean while another session edited the same file. Read the SessionStart working-tree line as a collision signal. A lock's dead PID proves NOTHING — it is the hook's own parent shell, so every lock has one; staleness is AGE — over 2h since its last refresh (a live session refreshes on every Bash, PowerShell, Edit or Write call) — and even a stale one does not prove the folder is unattended. Resolve by MERGING, never discarding.
 - **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.** Before executing a protected action on a terse approval, check how many sessions are live, say so, and re-verify the target immediately before acting. `mergedBy` naming the owner is NOT evidence of a human click.
 
 **Worktrees** (see also §5)
@@ -174,7 +174,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 **Machine ceiling**
 
-- **A freeze leaves NO dump** — an EMPTY Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is COMMIT, not RAM; §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
+- **A freeze leaves NO dump** — an EMPTY Windows Minidump folder is the EXPECTED signature, and the tell is `dwm.exe` dying `0xC00001AD`. The ceiling is FREE RAM, not commit — the pagefile is fixed at 64 GB, so commit rarely binds (measured 2026-09-17); §5 carries the mechanics and the live-read rule. **Never judge a process by `VirtualSize`.**
 - **Two decoys sit on that diagnosis:** `nvlddmkm` is what dies when the compositor is starved, not the cause; but the `node.exe` figures in **Event 2004 ARE real**. The largest leak so far is a throwaway ExcelJS probe (22 → 41 GB in 40s, off-heap). Delete such probes when done.
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it", `git grep BREAK-`.
 - **`Agent` with `isolation: "remote"` from a desktop session can run LOCALLY, with no notice of the fallback** — the helper lands in `.claude/worktrees/agent-<id>` on this laptop, so it is no way past the RAM floor. Read the helper's own reported paths before telling the owner work ran in the cloud: an `F:\` path means it did not. `agent-isolation-remote-ran-locally-in-a-worktree`

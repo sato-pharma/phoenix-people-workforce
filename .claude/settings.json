@@ -17,7 +17,19 @@
           {
             "type": "command",
             "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/trap-injector.mjs\" 2>/dev/null || true",
-            "shell": "bash"
+            "shell": "bash",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/session-lock.mjs\" beat \"$DIR\" 2>/dev/null || true",
+            "shell": "bash",
+            "timeout": 5
           }
         ]
       }
@@ -132,7 +144,6 @@
       "Bash(rg *.env*)",
       "Bash(sed *.env*)",
       "Bash(awk *.env*)",
-      "Bash(Get-Content *.env*)",
       "PowerShell(Get-Content *.env*)",
       "PowerShell(Select-String *.env*)"
     ],

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -111,7 +114,146 @@ function testNoShippedTextTeachesThePidRule() {
   );
 }
 
+/*
+ * AGE OF WHAT. Until 2026-09-17 the lock was written once, at SessionStart, and never touched again —
+ * so its age was the SESSION's age, not how long it had been idle. Sessions here run for hours or
+ * days; every one past two hours left a lock reading abandoned while it was still editing, and a
+ * second session opening that folder was told nothing. The hook now refreshes the lock on every
+ * Bash, PowerShell, Edit or Write call ("beat"), and age is measured from the last refresh.
+ *
+ * These run the real hook as a subprocess against throwaway folders, exactly as settings.json runs it.
+ */
+
+type LockFile = { sessionId?: string; startedAt?: string; refreshedAt?: string };
+
+function runLockHook(mode: "start" | "beat" | "end", folder: string, sessionId: string): string {
+  return execFileSync(process.execPath, [resolve(HOOK), mode, folder], {
+    input: JSON.stringify({ session_id: sessionId }),
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 30000,
+  });
+}
+
+const lockOf = (folder: string): LockFile =>
+  JSON.parse(readFileSync(join(folder, ".claude", "session.lock"), "utf8")) as LockFile;
+
+/** Backdates the lock as if its holder had written it `hours` ago and never refreshed it since. */
+function ageLock(folder: string, hours: number) {
+  const then = new Date(Date.now() - hours * 3_600_000).toISOString();
+  const lock = lockOf(folder);
+  writeFileSync(
+    join(folder, ".claude", "session.lock"),
+    JSON.stringify({ ...lock, startedAt: then, refreshedAt: then }, null, 2),
+  );
+}
+
+const warns = (output: string) => /ACTIVE in this exact working directory/.test(output);
+
+function testALiveLongSessionStillWarnsASecondOne(root: string) {
+  const folder = join(root, "long-session");
+  mkdirSync(folder);
+  runLockHook("start", folder, "long");
+  ageLock(folder, 3);
+  const started = lockOf(folder).startedAt;
+
+  // Three hours in, the session runs a command.
+  runLockHook("beat", folder, "long");
+  const refreshed = lockOf(folder);
+  assert.equal(refreshed.sessionId, "long", "a beat keeps the lock with the session that holds it");
+  assert.equal(refreshed.startedAt, started, "a beat keeps the session's own start time");
+  assert.ok(
+    Date.now() - Date.parse(refreshed.refreshedAt ?? "") < 60_000,
+    "a beat on a lock last refreshed hours ago must refresh it now",
+  );
+
+  assert.ok(
+    warns(runLockHook("start", folder, "second")),
+    "a session STARTED three hours ago that is still running commands must still warn a second session "
+      + "opening its folder — the lock's age is time since its last refresh, not since the session began",
+  );
+  assert.equal(lockOf(folder).sessionId, "long", "a warned second session must not take the lock");
+}
+
+function testABeatNeverTakesAFreshLockAndReclaimsAStaleOne(root: string) {
+  const folder = join(root, "contested");
+  mkdirSync(folder);
+  runLockHook("start", folder, "holder");
+
+  runLockHook("beat", folder, "intruder");
+  assert.equal(lockOf(folder).sessionId, "holder", "a beat from another session must never take a FRESH lock");
+
+  ageLock(folder, 3);
+  runLockHook("beat", folder, "intruder");
+  const reclaimed = lockOf(folder);
+  assert.equal(reclaimed.sessionId, "intruder", "a live session's beat takes over a lock idle for over two hours");
+  assert.ok(
+    Date.now() - Date.parse(reclaimed.startedAt ?? "") < 60_000,
+    "a takeover starts its own clock rather than inheriting the abandoned session's start",
+  );
+
+  const beforeAnonymous = readFileSync(join(folder, ".claude", "session.lock"), "utf8");
+  execFileSync(process.execPath, [resolve(HOOK), "beat", folder], { input: "{}", encoding: "utf8" });
+  assert.equal(
+    readFileSync(join(folder, ".claude", "session.lock"), "utf8"),
+    beforeAnonymous,
+    "a beat with no session id proves no ownership and must write nothing",
+  );
+}
+
+function testTheLockIsPerFolder(root: string) {
+  const primary = join(root, "primary");
+  const worktree = join(primary, ".claude", "worktrees", "nested-session");
+  mkdirSync(worktree, { recursive: true });
+
+  runLockHook("start", primary, "primary-session");
+  assert.equal(
+    warns(runLockHook("start", worktree, "worktree-session")),
+    false,
+    "a session in a worktree must not be warned about the primary checkout's lock — even one nested inside it",
+  );
+  assert.equal(lockOf(primary).sessionId, "primary-session", "the primary's lock is untouched");
+  assert.equal(lockOf(worktree).sessionId, "worktree-session", "the worktree holds its own lock");
+}
+
+function testTheHeartbeatIsWired() {
+  const settings = JSON.parse(readFileSync(".claude/settings.json", "utf8")) as {
+    hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ command?: string; timeout?: number }> }>>;
+  };
+  const entries = (event: string, mode: string) =>
+    (settings.hooks?.[event] ?? []).flatMap((group) =>
+      (group.hooks ?? [])
+        .filter((h) => (h.command ?? "").includes(`session-lock.mjs\\" ${mode} \\"$DIR\\"`)
+          || (h.command ?? "").includes(`session-lock.mjs" ${mode} "$DIR"`))
+        .map((h) => ({ ...h, matcher: group.matcher ?? "" })),
+    );
+
+  for (const [event, mode] of [["SessionStart", "start"], ["SessionEnd", "end"], ["PreToolUse", "beat"]] as const) {
+    const found = entries(event, mode);
+    assert.equal(found.length, 1, `session-lock.mjs ${mode} must be registered exactly once as a ${event} hook`);
+    assert.ok(
+      (found[0].command ?? "").includes("${CLAUDE_PROJECT_DIR"),
+      `the ${event} lock hook must resolve its folder from CLAUDE_PROJECT_DIR — the session's own worktree`,
+    );
+  }
+  const beat = entries("PreToolUse", "beat")[0];
+  for (const tool of ["Bash", "PowerShell", "Edit", "Write"]) {
+    assert.ok(beat.matcher.split("|").includes(tool), `the lock heartbeat must fire on ${tool}, but matches "${beat.matcher}"`);
+  }
+  assert.ok(typeof beat.timeout === "number" && beat.timeout <= 10, "the heartbeat runs on every tool call, so it needs a short timeout");
+}
+
 export function runSessionLockStalenessIsAgeTests() {
   testTheHookDecidesByAge();
   testNoShippedTextTeachesThePidRule();
+  testTheHeartbeatIsWired();
+
+  const root = mkdtempSync(join(tmpdir(), "phx-session-lock-"));
+  try {
+    testALiveLongSessionStillWarnsASecondOne(root);
+    testABeatNeverTakesAFreshLockAndReclaimsAStaleOne(root);
+    testTheLockIsPerFolder(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }

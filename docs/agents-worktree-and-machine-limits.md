@@ -868,6 +868,77 @@ probe passes."* repo-doctor pages at `per_page=1000`, the largest page GoTrue al
 shape that trips it. So the command most likely to hit that production landmine is the one presented
 as local housekeeping. `--no-auth` skips the leg; every other section is unaffected.
 
+## Three §5 hooks re-measured against the machine — 2026-09-17
+
+### The commit limit no longer floats
+
+The section above records the pagefile as `32768/65536 MB — a range`, which is why §5 said the commit
+limit FLOATS and told sessions to budget against commit. Re-read at 19:35 Cairo on 2026-09-17:
+`Win32_PageFileSetting` shows `C:\pagefile.sys` at **65,536 MB initial AND maximum**, and
+`AutomaticManagedPagefile` is `False`. The commit limit is therefore a fixed **79.8 GB**. At that
+moment **26.3 GB** was committed while physical RAM was down to **2,193 MB free**, with 15 sessions open.
+So commit headroom reads green long after RAM has gone, and RAM is the thing that runs out.
+
+§5 now leads with FREE RAM. The thresholds did not move: the heavy-job gate refuses at 5,000 MB and
+2,600 MB, `mem-watchdog.ps1` reaps idle dev servers at 1,800 MB, and any node job is refused at 500 MB.
+**Not changed:** `scripts/new-session.mjs --status` still prints only the commit charge, and its
+header comment still says commit, not RAM, is what freezes the machine. Its 6 GB free-commit refusal
+is still a valid guard. It is just no longer the one that bites.
+
+### The xlsx backup is running, although it was recorded as retired
+
+#3619 (2026-09-09, 23:52 Cairo) recorded that the owner had retired the hourly copy and its Telegram
+alert, and §5 has said "NO automatic backup" since. On 2026-09-17 both scheduled tasks are **enabled
+and running**:
+
+- `Phoenix xlsx Snapshot - Hourly` last ran at 19:30 with result 0. Its log line read *"nothing new;
+  all 246 sheet(s) are already in a snapshot"*.
+- `Phoenix xlsx Snapshot - Failure Alert` also last ran at 19:30 with result 0.
+
+`~/.claude/scripts/xlsx-snapshot.log` shows runs on every day from 09-09 to 09-17 (20 on 09-10 alone).
+Nothing records whether he re-armed it or the retirement never reached the machine. This PR changed
+nothing about the tasks. It only corrects the sentence that told sessions nothing was covered.
+
+What it COVERS, read from `xlsx-snapshot.cmd`, `xlsx-snapshot-watch.ps1` and
+`scripts/repo-doctor-xlsx-snapshot.mjs`:
+
+- **Source:** the PRIMARY checkout's `xlsx/` (`F:\Phoenix Workforce\phoenix-workforce`). It takes
+  files at the top of that folder only (`statEntries` keeps `isFile()` entries, with no recursion),
+  and only untracked ones, because git already holds the tracked ones.
+- **Code:** extracted from `origin/main` on every run, never the checkout's branch.
+- **Destination:** `F:\PHX backup\05-data-files\xlsx-snapshot-<date>`, with each copy verified by
+  SHA-256. An absent destination is refused, never created.
+- **Alert:** the watch reads the task's own recorded result, so a run killed mid-flight reaches
+  Telegram. So does a disabled or deleted task.
+
+What it does NOT cover:
+
+- **Subfolders** of `xlsx/`, and **every worktree's** `xlsx/`.
+- **Hours the laptop is asleep or off.** `StartWhenAvailable` catches up on wake, and a missed run is
+  never alerted, by design.
+- **The disk.** C:, D:, E: and F: are partitions of ONE physical disk (Samsung PM981a NVMe, 512 GB),
+  so the backup fails with the source.
+
+`Phoenix xlsx Tripwire - At Logon` is a third task. It is not a backup: it captures the process
+behind a deletion and restores TRACKED files from git.
+
+### A live session now refreshes its lock
+
+The lock was written once, at SessionStart, and its age was the only staleness test. So its age was
+the SESSION's age: any session running past two hours (the norm here) left a lock that read
+abandoned while it was still editing. A second session opening that folder was not warned.
+`session-lock.mjs beat` now runs on PreToolUse for Bash, PowerShell, Edit and Write. It rewrites
+`refreshedAt` at most every five minutes, and staleness is measured from that field. A beat takes
+over a lock only when the lock is missing or stale, never a fresh one held by another session.
+
+The lock was already per folder: settings.json passes `CLAUDE_PROJECT_DIR`, the session's own
+worktree. That is now pinned too. `tests/session-lock-staleness-is-age.test.ts` runs the real hook
+against throwaway folders.
+
+**Outside the repository:** `~/.claude/scripts/claude-hygiene.mjs` judged a lock by `startedAt` alone.
+That was the weekly `--fix` pass, the one that once deleted live locks. It was changed the same day
+to read `refreshedAt` first.
+
 ## `AGENTS.md` §5 Session, worktree, and parallel-work safety — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.

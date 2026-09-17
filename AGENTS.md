@@ -194,7 +194,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - Show **human-readable names**, never raw codes or IDs, in both UI and chat.
 - **Never truncate text with an ellipsis.** Where it collides with the no-horizontal-scroll rule, wrapping wins.
 - Give only recommendations grounded in a real confirmed need. **Never pad a list to hit a number.**
-- **Open every reply with ONE recommended next step — FIRST, not last, and not repeated at the end.** A reply that asks nothing of him needs none. `recommendation-goes-first-not-last`
+- **Open EVERY reply with one `Next step:` line — FIRST, not last, and not repeated at the end.** It names only what needs him; when nothing does, it reads "nothing waits on you — <what finished>", with no quoted words. `recommendation-goes-first-not-last`
 
 **How to take work**
 
@@ -282,7 +282,7 @@ Full account: `docs/agents-owner-rules.md` §4.1.
 Before editing, run `git status`, `git branch --show-current`, `git log -1 --oneline`,
 `git worktree list`. Account: `docs/agents-worktree-and-machine-limits.md`.
 
-- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A crashed session's lock self-expires after 2 hours, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.)
+- Use one working tree per active session. **Never two interactive sessions in one folder** — the SessionStart lock warning is a hard stop. (A live session refreshes its lock on every Bash, PowerShell, Edit or Write call; a crashed one's self-expires 2 hours after its last refresh, and that AGE is the ONLY staleness test — the lock's `pid` is the hook's own parent shell, so EVERY lock names a dead PID.)
 - Start new work from the latest `origin/main` on a focused `codex/<task>` branch unless told otherwise.
 - Never run `git clone`, `git init`, or anything that recreates the primary repository's `.git`.
 - Never discard, overwrite, clean, reset or revert changes you did not create. Treat unexpected changes as the owner's work; classify and preserve a dirty tree.
@@ -295,14 +295,14 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`, only after approval** — its gate asks the merged PR, because **a squash-merged branch legitimately holds commits `main` does not.**
 - **`git worktree remove` leaves a HUSK nothing in git can see** — run `pnpm run repo:doctor` after any removal; `--fix` deletes only zero-file husks.
 - **`repo:doctor` lists memory files with no index line** (`--deep` for all) and writes nothing except `--snapshot-xlsx` (outside the repo) — **but by default it pages the PRODUCTION GoTrue admin API**; `--no-auth` skips that.
-- **`xlsx/` is gitignored and has NO automatic backup** — never tell the owner the sheets are covered.
+- **`xlsx/` is gitignored and its hourly backup has holes — never call a sheet covered without checking.** Covered: untracked sheets at the top of the PRIMARY's `xlsx/`, copied to `F:\PHX backup\05-data-files`, with a Telegram alert on a failed or killed run. Not: subfolders, worktree `xlsx/` folders, hours the laptop is off (caught up on wake, never alerted), or a disk failure (same SSD).
 - **Worktree payload (path COUNT) is what makes this checkout slow** — retire merged worktrees and clear husks; do not tune `tsconfig`/`eslint`.
 
 **Machine limits.** RAM is 16 GB. One dev server at a time, ever; one typecheck/build at a time
-locally — parallel validation belongs to CI. **The binding limit is the Windows COMMIT charge, and it
-FLOATS** — read it live (`node scripts/new-session.mjs --status`), never budget against a remembered
-figure. 🔴 **Commit headroom can stay GREEN while physical RAM runs out — read FREE RAM, never the
-session count.** `~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or `ci` under
+locally — parallel validation belongs to CI. 🔴 **FREE RAM is what binds, not the commit charge** — the
+pagefile is FIXED at 64 GB (commit limit ~80 GB), so commit headroom stays GREEN while physical RAM
+runs out. Read free RAM live, never a remembered figure or the session count.
+`~/.claude/hooks/heavy-job-gate.mjs` refuses a cold typecheck, build or `ci` under
 **5,000 MB** and lint or tests under **2,600 MB** — it does NOT gate a dev server (since 2026-09-12);
 under **1,800 MB** `mem-watchdog.ps1` reaps idle dev servers; under **500 MB** any node job. **Stop a dev server (by port) before closing a session; a statusline count is not a guard.**
 
@@ -337,7 +337,7 @@ If a task requires no protected action, complete it without asking.
 - Creating, updating or reviewing Pull Requests (merging requires approval)
 - Resolving merge conflicts on the working branch
 - Creating database migration files, testing migrations locally or in non-production
-- Running Supabase CLI commands that do NOT modify production
+- Supabase reads and writes on staging AND production, `apply_migration` included — §8's grant (announce a destructive or bulk production change first)
 - Updating documentation, configuration or CI/CD configuration
 - Deploying or testing in local, preview, development or staging environments
 - Investigating logs, errors or infrastructure (GitHub, Railway, Supabase)
@@ -345,7 +345,7 @@ If a task requires no protected action, complete it without asking.
 
 **PROTECTED ACTIONS (stop and require separate, explicit approval before):**
 1. Merging any branch or Pull Request into `main` or any production branch.
-2. Running or applying any database migration against the production database/environment.
+2. Running or applying any database migration against the production database/environment — **except through the Supabase MCP servers or CLI, which §8 pre-authorizes.**
 
 **Both are pre-approved while §6.1 AUTORUN is armed.**
 
@@ -363,8 +363,8 @@ arming authorizes ONE session (§2.1, Parallel sessions). The guard hook matches
 so when he arms a long plan without it, say in one line that you are treating it as armed.
 
 **While armed, BOTH protected actions are pre-approved** — merging to `main` and applying a
-production migration. **Do not re-ask, do not re-warn, and do not treat a phase boundary as a
-checkpoint.** **The run stops ONCE: after the last phase AND the cleanup are done.** Absorb and keep
+production migration (through Supabase, §8 pre-authorizes that armed or not). **Do not re-ask, do not
+re-warn, and do not treat a phase boundary as a checkpoint.** **The run stops ONCE: after the last phase AND the cleanup are done.** Absorb and keep
 going through: a red CI check (fix, push again); a merge conflict (resolve it); a business-fact
 question (park it, then ask all at the end in chat as multiple choice, §4 — an xlsx only for a long per-item list); a blocked phase (finish
 every other phase, then name it); a choice you could make yourself (prefer the reversible option).

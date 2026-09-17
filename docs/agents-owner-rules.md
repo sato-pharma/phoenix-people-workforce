@@ -2772,6 +2772,24 @@ Every Pedia target since February sits on Fayoum alone: September is 988 units a
 
 ⚠ **The September split between the two is HIS to give.** The two obvious bases disagree almost exactly in reverse — the last separately-set targets (January and February) put Fayoum at 69%, while sales since February put it at 32% — and the sales series is untrustworthy here because one rep has covered both areas throughout, swinging hard and twice going negative on returns. Do not derive it.
 
+## Every reply opens with its next step, even when nothing waits on him — owner rules, 2026-09-07 and 2026-09-15
+
+The 2026-09-07 amendment moved the next step to the TOP of the reply (the account is in the §4 text
+below). The 2026-09-15 rule, *"it keeps me in a loop"*, changed what the line may say:
+
+- The work is finished first.
+- The line names only what needs him: a decision, an approval, a click only he can make, or
+  information only he has.
+- When nothing needs him, the line still appears and reads **"nothing waits on you — <what
+  finished>"**, with no quoted words.
+
+It has no quoted words because the words in curly quotes become his prompt suggestion. On 2026-09-16
+he typed a Claude-written line back because it had been offered as ghost text.
+
+AGENTS.md §4 kept "A reply that asks nothing of him needs none" until 2026-09-17. That contradicted
+the user-level rule loaded into every session (`~/.claude/CLAUDE.md`), and a session reading §4 alone
+would drop the line. §4 now carries the 2026-09-15 form.
+
 ## `AGENTS.md` §4 Standing owner rules — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
