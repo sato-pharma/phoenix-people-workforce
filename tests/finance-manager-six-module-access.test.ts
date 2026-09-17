@@ -9,7 +9,7 @@ import {
   permissionMatrix,
   type AccessContext,
 } from "../src/lib/auth/permissions.ts";
-import { canViewAdminCoreAnalytics, canViewAdminDetailedAnalytics } from "../src/lib/analytics/portal-access.ts";
+import { canOpenClosingDetailsPage } from "../src/lib/sales/closing-details-page-access.ts";
 import { canAccessCompanyOrganogram, canAccessHeadOffice } from "../src/lib/reports/organogram.ts";
 import { canManageCompanyCalendar, canPublishCompanyWide } from "../src/lib/calendar/logic.ts";
 import { canExportPayslipDocument } from "../src/lib/payroll/payslip-center.ts";
@@ -37,7 +37,6 @@ import { canViewHeadOfficeLine, canViewRestrictedProducts } from "../src/lib/sal
 
 const EXPORT_ROUTE = "app/api/sales/monthly-closing/export/route.ts";
 const CLOSING_WORKSPACE_PAGE = "app/(admin)/sales/monthly-closing/page.tsx";
-const ANALYTICS_HUB_PAGE = "app/(admin)/admin/analytics/page.tsx";
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
@@ -97,28 +96,18 @@ export async function runFinanceManagerSixModuleAccessTests() {
       "publishing a closing is not a finance-consumer act",
   );
 
-  // ── 3. Analytics: core tier only ─────────────────────────────────────────────────────────────
+  // ── 3. Analytics: the export page only ───────────────────────────────────────────────────────
+  // The Sales Analytics module around that page was retired on 2026-09-17 (owner), together with
+  // its hub, its tiles and the detailed tier. The export page stayed, because it is his.
   assert.equal(
-    canViewAdminCoreAnalytics("Finance Manager"),
+    canOpenClosingDetailsPage("Finance Manager"),
     true,
     "/admin/analytics/monthly-closing/details is the ONLY page that renders his Export XLSX button",
   );
   assert.equal(
-    canViewAdminDetailedAnalytics("Finance Manager"),
-    false,
-    "Executive Comparison and Cross-Source Reconciliation stay CEO / Super Admin",
-  );
-  const analyticsHub = read(ANALYTICS_HUB_PAGE);
-  assert.ok(
-    analyticsHub.includes("SALES_ANALYTICS_SALES_RESOURCE_ROLES"),
-    "the hub filters tiles by its OWN local list, not by canViewAdminCoreAnalytics — without a " +
-      "sales-resource list he passes the page gate and sees zero cards",
-  );
-  assert.equal(
     await canAccess(fm, "weekly_sales", "read"),
     false,
-    "he holds no weekly_sales grant, so the Weekly Analytics tile must never be offered to him — it " +
-      "would 403 on arrival",
+    "he holds no weekly_sales grant, so no weekly view may be offered to him — it would 403 on arrival",
   );
 
   // ── 4. Restricted products stay locked (owner: keep confidential excluded) ───────────────────

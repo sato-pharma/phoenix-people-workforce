@@ -509,6 +509,7 @@ import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
 import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
+import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -956,14 +957,11 @@ import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
 import { runClosingDetailsRegionBasisTests } from "./closing-details-region-basis.test.ts";
-import { runAnalyticsOrganogramRegionsTests } from "./analytics-organogram-regions.test.ts";
 import { runSosRegionBasisTests } from "./sos-region-basis.test.ts";
 import { runMonthlyDashboardWorkbookTests } from "./monthly-dashboard-workbook.test.ts";
 import { runCustomerDirectoryRollupTests } from "./customer-directory-rollup.test.ts";
 import { runWeeklySalesPaginationTests } from "./weekly-sales-pagination.test.ts";
 import { runNavBadgeStoreTests } from "./nav-badge-store.test.ts";
-import { runAnalyticsValidationTests } from "./analytics-validation.test.ts";
-import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.ts";
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
@@ -977,10 +975,8 @@ import { runPediaTargetTemplateAndUploadFoldTests } from "./pedia-target-templat
 import { runSosDashboardBlockedBatchTotalsTests } from "./sos-dashboard-blocked-batch-totals.test.ts";
 import { runSosDashboardGeographyIsLiveForEveryViewerTests } from "./sos-dashboard-geography-is-live-for-every-viewer.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
-import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
-import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
-import { runAnalyticsClosingGeographyScopeTests } from "./analytics-closing-geography-scope.test.ts";
-import { runAnalyticsFailureNotZeroTests } from "./analytics-failure-not-zero.test.ts";
+import { runSosDashboardFailureNotZeroTests } from "./sos-dashboard-failure-not-zero.test.ts";
+import { runSalesAnalyticsRetiredTests } from "./sales-analytics-retired.test.ts";
 import { runSupabasePaginationGuardsTests } from "./supabase-pagination-guards.test.ts";
 import { runSosUiTruthTests } from "./sos-ui-truth.test.ts";
 import { runSosDataCoverageTests } from "./sos-data-coverage.test.ts";
@@ -1036,10 +1032,6 @@ import { runSosWarehouseAreaDoesNotBlockBrickFillTests } from "./sos-warehouse-a
 import { runSosIngestionRemainderTests } from "./sos-ingestion-remainder.test.ts";
 import { runSalesScopeBlankRegionFailClosedTests } from "./sales-scope-blank-region-fail-closed.test.ts";
 import { runSosUiTruthRemainderTests } from "./sos-ui-truth-remainder.test.ts";
-import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
-import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
-import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
-import { runAnalyticsMultiSelectTimeFiltersTests } from "./analytics-multi-select-time-filters.test.ts";
 import { runSalesMarketingLineScopeTests } from "./sales-marketing-line-scope.test.ts";
 import { runApprovalsHubCompletionTests } from "./approvals-hub-completion.test.ts";
 import { runApprovalsHubEmployeeContextGuardTests } from "./approvals-hub-employee-context-guard.test.ts";
@@ -2739,6 +2731,10 @@ await runTest(
   "weekly sales export Week Comparison: the TOTAL row never adds stock across weeks (Stock Units TOTAL is empty; Sales Value and Sales Units still SUM)",
   runWeeklyWeekComparisonStockTotalTests,
 );
+await runTest(
+  "weekly sales Combined Report: the TOTAL rows never add stock across periods or units across products (unit TOTALs are empty; Sales Value and Rows still add)",
+  runWeeklyCombinedReportUnitTotalsTests,
+);
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
 await runTest("sales restricted products (LA003/LA004)", runSalesRestrictedProductsTests);
@@ -3490,15 +3486,9 @@ await runTest(
   "the Closing Details tab offers and filters the SAME regions the Closing Matrix beside it is grouped by, its area list cascades off that same basis, and its access gate stays geographic so a region-scoped viewer's tab is never emptied",
   runClosingDetailsRegionBasisTests,
 );
-await runTest(
-  "the analytics region breakdowns file every area under the district the ORGANOGRAM gives it for that line and month, collapsing the line back out losslessly, while the geographic code stays on the row as the dimension access was applied in",
-  runAnalyticsOrganogramRegionsTests,
-);
 await runTest("monthly sales dashboard workbook export", runMonthlyDashboardWorkbookTests);
 await runTest("weekly-sales-pagination", runWeeklySalesPaginationTests);
 await runTest("nav-badge store", runNavBadgeStoreTests);
-await runTest("analytics validation helpers", runAnalyticsValidationTests);
-await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests);
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
@@ -3532,10 +3522,11 @@ await runTest(
     + "last, so the later row is rejected by name)",
   runPediaTargetTemplateAndUploadFoldTests,
 );
-await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
-await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
-await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);
-await runTest("analytics failure is never rendered as a zero", runAnalyticsFailureNotZeroTests);
+await runTest("the SoS dashboard never renders or caches a failed load as a zero, and the SFE IMS view never falls back to the calendar month", runSosDashboardFailureNotZeroTests);
+await runTest(
+  "the Sales Analytics module stays retired: its pages are gone, every old address redirects to the page the owner chose, and nothing links back in",
+  runSalesAnalyticsRetiredTests,
+);
 await runTest("supabase pagination guards (no unordered pages, no row ceilings, no swallowed page errors)", runSupabasePaginationGuardsTests);
 await runTest("SoS UI truth (brick coverage denominator, export matches the screen)", runSosUiTruthTests);
 await runTest("SoS data coverage (missing months + per-distributor gaps are visible)", runSosDataCoverageTests);
@@ -3575,7 +3566,7 @@ await runTest('Badge tone contrast (every tone meets WCAG AA for small text, bot
 await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
-await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
+await runTest('analytics area scope v2 (one active alias target)', runAnalyticsAreaScopeV2Tests);
 await runTest('SoS latent guards + decisions of record', runSosLatentGuardsTests);
 await runTest('SoS Direct counts toward achievement (targets were set including it)', runSosDirectInAchievementTests);
 await runTest('SoS Direct reaches its region DM (not a rep), and UE-1/UE-2 exist to tag', runSosDirectToDmTests);
@@ -3586,11 +3577,7 @@ await runTest('SoS coded-path cross-area guard (blank-brick auto-fill never cros
 await runTest('SoS warehouse area (Main Store) never blocks a known brick from filling', runSosWarehouseAreaDoesNotBlockBrickFillTests);
 await runTest('SoS ingestion remainder (Direct value, blank-customer info, office bad units)', runSosIngestionRemainderTests);
 await runTest('sales scope fails closed on a blank region with no seat areas', runSalesScopeBlankRegionFailClosedTests);
-await runTest('SoS UI truth remainder (headline vs breakdowns, territory target dedup, filtered footer)', runSosUiTruthRemainderTests);
-await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
-await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
-await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
-await runTest("analytics multi-select time filters (period/channel/week/year)", runAnalyticsMultiSelectTimeFiltersTests);
+await runTest('SoS UI truth remainder (headline vs breakdowns, territory target dedup)', runSosUiTruthRemainderTests);
 await runTest("sales-marketing ROI line scope (product/region/distributor leak lock)", runSalesMarketingLineScopeTests);
 await runTest("approvals hub completion (deep-link render + canonical actor + history scope)", runApprovalsHubCompletionTests);
 await runTest("approvals hub employee context (a 403 body never becomes context state, so HR Operations does not crash the hub on an employee she may approve for but not read)", runApprovalsHubEmployeeContextGuardTests);
@@ -5129,7 +5116,7 @@ await runTest(
   "weekly sales depot detail (gap-aware average per week, units never above one product, a rep's own share adds up to his page, export is the screen)",
   runWeeklySalesDepotDetailTests,
 );
-await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API, its three workbooks and the Sales Analytics weekly pages; every manager role still passes)", runWeeklyTerritoryGateTests);
+await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API and its three workbooks; every manager role still passes)", runWeeklyTerritoryGateTests);
 await runTest(
   "weekly sales unit totals appear only for one product (the Sales Units and Stock Units tiles, the Units column on a region or distributor cut, the export's Summary and Week Comparison)",
   runWeeklyUnitsOneProductTests,

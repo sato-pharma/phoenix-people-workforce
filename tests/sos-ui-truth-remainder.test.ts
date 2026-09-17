@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import { buildPortalSalesDashboardMetrics, buildSalesDashboardView } from "../src/lib/sales/metrics.ts";
 
@@ -14,11 +12,7 @@ import { buildPortalSalesDashboardMetrics, buildSalesDashboardView } from "../sr
 //    line for an employee, so a raw sum multiplies the territory target by the echo factor and
 //    understates achievement by exactly that factor.
 // 3. FOOTER TOTAL. analytics-data-table rendered the caller's full-dataset `totals` under
-//    search-filtered rows.
-
-function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-}
+//    search-filtered rows. (That table went with the Sales Analytics module, retired 2026-09-17.)
 
 // Two rows for the same employee/territory/period/product — the row echo that inflates a raw sum —
 // plus one C-O1 row that every breakdown excludes.
@@ -81,18 +75,6 @@ export function runSosUiTruthRemainderTests() {
     assert.equal(Number(ab1.sales), 1149, "sales DO sum across every row — only the target is echoed");
   }
 
-  // ── 3. The footer total follows the filtered rows ───────────────────────────
-  {
-    const table = code(readFileSync(join(process.cwd(), "src/components/analytics/analytics-data-table.tsx"), "utf8"));
-    assert.match(table, /const isFilteredView = query\.trim\(\)\.length > 0;/, "the table must know it is filtered");
-    assert.match(table, /const effectiveTotals = useMemo\(/, "totals must be recomputed when filtered");
-    assert.match(table, /"Total \(filtered\)"/, "a filtered total must say so, never pose as the whole");
-    assert.ok(
-      !/\{totals && pageRows\.length > 0 && <MobileRow/.test(table),
-      "the mobile total must use effectiveTotals too, or the two views disagree",
-    );
-    // A column the caller deliberately left out of totals (an average, a ratio) must not acquire a
-    // meaningless sum when the view is filtered.
-    assert.match(table, /if \(totals\[key\] == null\) continue;/, "only re-sum keys the caller totalled");
-  }
+  // (3 pinned the filtered footer total in the Sales Analytics data table, retired with that module
+  // on 2026-09-17.)
 }

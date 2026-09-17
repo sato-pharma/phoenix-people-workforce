@@ -166,8 +166,8 @@ function nameFromSegments(segments: readonly string[]): string | null {
  *
  * A row is matched by prefix, so one row claims everything beneath it — and taking its label
  * would then name every page under it identically. Measured 2026-09-04, that is not a corner
- * case: fifteen pages under `/employee-portals/sales-analytics` would all have opened a tab
- * called "Sales Analytics", and four under `/employee-portals/marketing-requests` a tab called
+ * case: fifteen pages under `/employee-portals/sales-analytics` (a module retired on 2026-09-17)
+ * would all have opened a tab called "Sales Analytics", and four under `/employee-portals/marketing-requests` a tab called
  * "Marketing Requests". Since the tab exists to tell pages apart, the part of the address BELOW
  * the row is the part that has to speak.
  *

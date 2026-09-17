@@ -19,8 +19,11 @@ import {
 // other areas with their figures, and the workbooks named his managers. His own screen
 // (/employee-portals/weekly-sales) is the only weekly view meant for him. The grant stays; the role
 // gate is what refuses him, so this pins the gate at every door AND pins that no manager lost the door
-// with him, and that the portal Sales Analytics hub no longer shows him a Weekly tile that would only
-// send him away.
+// with him.
+//
+// The three portal Sales Analytics weekly pages, and the hub whose Weekly tile this also pinned, were
+// deleted when the owner retired that module on 2026-09-17; their addresses now redirect to his own
+// screen (tests/sales-analytics-retired.test.ts), so the four admin routes are every door left.
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
@@ -55,12 +58,6 @@ const WORK_AFTER_THE_GATE = [
   "loadWeeklyAreaSplitIndex(",
   "listMasterAreas(",
   "loadMonthlyTargets(",
-] as const;
-
-const ANALYTICS_PAGES = [
-  "../app/employee-portals/sales-analytics/weekly-sales/page.tsx",
-  "../app/employee-portals/sales-analytics/weekly-sales/detail/page.tsx",
-  "../app/employee-portals/sales-analytics/weekly-sales/by-distributor/page.tsx",
 ] as const;
 
 export function runWeeklyTerritoryGateTests() {
@@ -120,16 +117,7 @@ export function runWeeklyTerritoryGateTests() {
     );
   }
 
-  // ── 3. the portal Sales Analytics weekly pages ──────────────────────────────────────────────
-  for (const path of ANALYTICS_PAGES) {
-    const source = readSource(path);
-    const refusal = source.search(
-      /if \(!canViewPortalCoreAnalytics\(access\.role\) \|\| !isWeeklyTerritoryViewerRole\(access\.role\)\) \{\s*redirect\(/,
-    );
-    assert.ok(refusal > 0, `${path} sends a Medical Rep away`);
-    const scope = source.indexOf("resolveAnalyticsViewerScope(access)");
-    assert.ok(scope > refusal, `${path} sends him away before any weekly scope is resolved or rendered`);
-  }
+  // (3 pinned the same refusal on the three portal Sales Analytics weekly pages, retired 2026-09-17.)
 
   // ── 4. his own screen is untouched ──────────────────────────────────────────────────────────
   const ownScreen = readSource("../app/employee-portals/weekly-sales/page.tsx");
@@ -137,19 +125,5 @@ export function runWeeklyTerritoryGateTests() {
     ownScreen,
     /territory-gate|isWeeklyTerritoryViewerRole|"weekly_sales"/,
     "the rep's own Weekly Sales screen does not ride on weekly_sales or the territory gate",
-  );
-
-  // ── 5. the Sales Analytics hub stops offering him the door ──────────────────────────────────
-  // A Weekly tile that sends him back to his landing page would read as a broken link.
-  const hub = readSource("../app/employee-portals/sales-analytics/page.tsx");
-  assert.match(
-    hub,
-    /isWeeklyTerritoryViewerRole\(access\.role\)\s*\?\s*CORE_MODULES\s*:\s*CORE_MODULES\.filter\(\(mod\) => mod\.href !== "\/employee-portals\/sales-analytics\/weekly-sales"\)/,
-    "the Sales Analytics hub drops the Weekly tile for a Medical Rep",
-  );
-  assert.match(
-    hub,
-    /const modules = canViewPortalDetailedAnalytics\(access\.role\)\s*\?\s*\[\.\.\.coreModules, \.\.\.DETAILED_MODULES\]\s*:\s*coreModules;/,
-    "the Sales Analytics hub renders the core tiles without the Weekly one for a Medical Rep",
   );
 }

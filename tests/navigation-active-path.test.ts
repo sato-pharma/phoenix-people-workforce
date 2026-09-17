@@ -553,8 +553,8 @@ export function runNavigationActivePathTests() {
       // it back into his Cmd+K under a "People Management" heading he was removed from, which is
       // exactly how "Archived ROI Tracking" and "/admin/deductions" survived their hubs being hidden.
       "/resignations",
-      // Weekly Analytics: he passes canViewAdminCoreAnalytics but holds no weekly_sales grant, so
-      // this card would be a guaranteed 403. The two sales-resource analytics cards below are his.
+      // Weekly Analytics: he held no weekly_sales grant, so this card would have been a guaranteed
+      // 403. The Sales Analytics module was retired on 2026-09-17; this keeps the card from returning.
       "/admin/analytics/weekly-sales",
     ],
     "Finance Manager's hub cards must stay trimmed (owner, 2026-08-10)",

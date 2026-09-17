@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 
-import { computeAnalyticsViewerScope, scopeAnalyticsDimensions, scopeAnalyticsFilters } from "../src/lib/analytics/scope.ts";
-import type { AnalyticsDimensions } from "../src/lib/analytics/service.ts";
 import {
   applyLineRegionScope,
   computeSalesAccessScope,
@@ -372,43 +370,8 @@ export function runDmSeatAreaScopeTests() {
     "detail rows: an empty area set fails closed",
   );
 
-  // ── Analytics ──────────────────────────────────────────────────────────────
-  const analytics = computeAnalyticsViewerScope(dmScope, new Map([["alex-bhr", "AB"]]));
-  assert.deepEqual([...(analytics.allowedAreaCodes ?? [])].sort(), ["AB1", "AB2", "AB3", "AB4", "AB5", "D16"], "analytics carries the area bound");
-  assert.deepEqual([...(analytics.allowedRegionCodes ?? [])].sort(), ["AB", "D1"], "analytics regions come from the areas, not the region name");
-
-  const analyticsFilters = scopeAnalyticsFilters({ lines: [], regions: [], products: [], areas: [] }, analytics);
-  assert.equal(analyticsFilters.empty, false);
-  assert.deepEqual(
-    [...analyticsFilters.filters.areas!].sort(),
-    ["AB1", "AB2", "AB3", "AB4", "AB5", "D16"],
-    "p_areas is pushed down so the SQL itself is area-bounded",
-  );
-  const foreignArea = scopeAnalyticsFilters({ lines: [], regions: [], products: [], areas: ["D11"] }, analytics);
-  assert.equal(foreignArea.empty, true, "selecting a sibling DM's area fails closed");
-
-  const dims: AnalyticsDimensions = {
-    periods: [],
-    weeks: [],
-    distributors: [],
-    lines: ["CNS"],
-    families: [],
-    regions: [
-      { code: "AB", name: "Alex-BHR" },
-      { code: "D1", name: "Delta (1)" },
-    ],
-    areas: [
-      { areaCode: "AB1", areaName: "Alex East", regionCode: "AB", regionName: "Alex-BHR" },
-      { areaCode: "D16", areaName: "Kafr El-Sheikh 1", regionCode: "D1", regionName: "Delta (1)" },
-      { areaCode: "D11", areaName: "Qalubeya", regionCode: "D1", regionName: "Delta (1)" },
-    ],
-    products: [],
-  } as unknown as AnalyticsDimensions;
-  assert.deepEqual(
-    scopeAnalyticsDimensions(dims, analytics).areas.map((area) => area.areaCode).sort(),
-    ["AB1", "D16"],
-    "the area dropdown offers his own areas only — not the sibling's in the shared region",
-  );
+  // (The Analytics block pinned the same area bound in the Sales Analytics module's scope, retired
+  // with that module on 2026-09-17.)
 
   // ── Portal SoS filter visibility ───────────────────────────────────────────
   const line = new Set(["cns"]);

@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { adminNavigationSections, hubPageItemGroups } from "../src/config/system-navigation.ts";
-import { canViewAdminCoreAnalytics } from "../src/lib/analytics/portal-access.ts";
 import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { permissionActions, permissionMatrix, permissionResources } from "../src/lib/auth/permissions.ts";
 import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import { canOpenClosingDetailsPage } from "../src/lib/sales/closing-details-page-access.ts";
 
 const FINANCE: PhoenixRole = "Finance Manager";
 const CLOSING_HREF = "/admin/analytics/monthly-closing/details";
@@ -90,11 +90,17 @@ export function runFinanceManagerMonthlyClosingRowTests() {
     "the closing details page asserts sales:read — without it the row 403s instead of rendering",
   );
 
-  // ── Gate 2: canViewAdminCoreAnalytics, or the page redirects to /admin/analytics ──
+  // ── Gate 2: canOpenClosingDetailsPage, or the page sends him to his landing page ──
+  // The page's own role set since the Sales Analytics module around it was retired (2026-09-17).
   assert.equal(
-    canViewAdminCoreAnalytics(FINANCE),
+    canOpenClosingDetailsPage(FINANCE),
     true,
-    "the closing details page redirects anyone outside ADMIN_CORE_ANALYTICS_ROLES — dropping him there turns this row into a bounce",
+    "the closing details page redirects anyone outside its role set — dropping him there turns this row into a bounce",
+  );
+  assert.match(
+    readFileSync(new URL("../app/(admin)/admin/analytics/monthly-closing/details/page.tsx", import.meta.url), "utf8"),
+    /if \(!canOpenClosingDetailsPage\(access\.role\)\) redirect\(/,
+    "the closing details page must gate entry on canOpenClosingDetailsPage, the set asserted above",
   );
 
   // ── The boundary that makes the destination choice correct ─────────────────

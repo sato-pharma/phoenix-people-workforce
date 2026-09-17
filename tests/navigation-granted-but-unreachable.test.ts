@@ -96,9 +96,6 @@ const PORTAL_REGISTRY = path.join(
   "components/employee-portal/employee-portal-nav-registry.ts",
 );
 
-/** The delisted analytics module — one owner ruling, recorded once, covering 29 routes. */
-const DELISTED_PREFIXES = ["/admin/analytics", "/employee-portals/sales-analytics"] as const;
-
 type GapKind =
   | "delisted-by-ruling"
   | "shell-mirror-of-a-linked-route"
@@ -273,8 +270,10 @@ export async function runNavigationGrantedButUnreachableTests(): Promise<void> {
       (file) => !file.endsWith(`app${href}/page.tsx`) && !file.includes("system-navigation"),
     );
     let kind: GapKind;
-    if (DELISTED_PREFIXES.some((prefix) => href.startsWith(prefix))) kind = "delisted-by-ruling";
-    else if (gate.portalTwin !== null && offeredToAnyone.has(gate.portalTwin)) {
+    // No prefix is bucketed delisted-by-ruling any more: the one that was, the Sales Analytics module
+    // (29 routes), was retired on 2026-09-17 and its pages deleted. The hub pages the backlog still
+    // records as delisted-by-ruling are reported here under the bucket the lines below choose.
+    if (gate.portalTwin !== null && offeredToAnyone.has(gate.portalTwin)) {
       kind = "shell-mirror-of-a-linked-route";
     } else if (linkers.length > 0) kind = "linked-from-a-component";
     else if (gate.unreadable.length > 0) kind = "second-gate-unreadable";

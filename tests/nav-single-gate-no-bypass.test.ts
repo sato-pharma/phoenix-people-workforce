@@ -128,8 +128,9 @@ export function runNavSingleGateNoBypassTests() {
   );
   assert.equal(navigationItemVisible(permissioned, { "sales:read": true }, superAdmin), true);
 
-  // `roles: []` means NOBODY, and the waiver must not resurrect it. This is the exact shape of the
-  // delisted portal Sales Analytics entry, which pairs it with excludedRoles for that reason.
+  // `roles: []` means NOBODY, and the waiver must not resurrect it. This was the exact shape of the
+  // delisted portal Sales Analytics entry, which paired it with excludedRoles for that reason (the
+  // entry went when the owner retired the module on 2026-09-17; the pattern stays pinned).
   assert.equal(
     navigationItemVisible({ roles: [], excludedRoles: [superAdmin] }, {}, superAdmin),
     false,
@@ -138,7 +139,8 @@ export function runNavSingleGateNoBypassTests() {
   assert.equal(navigationItemVisible({ roles: [] }, {}, otherRole), false, "roles: [] must mean nobody");
 
   // ── 4. The delisted page is offered to NO role, in any mode ────────────────
-  // Measured before and after this change: zero. It is the one entry relying on the pairing above.
+  // Measured before and after this change: zero. It was the one entry relying on the pairing above;
+  // since the 2026-09-17 retirement its address only redirects, and this keeps it off every rail.
   for (const role of phoenixRoles) {
     const lookup = buildPermissionLookup(permissionMatrix, role);
     for (const mode of MODES) {

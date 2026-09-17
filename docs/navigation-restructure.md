@@ -259,7 +259,7 @@ role in that shell**. They are reported here and deliberately left alone:
 | `/admin/early-birds` | an admin href in the portal array — the slip above |
 | `/employee-portals/marketing-requests/control` | names only Super Admin and SFE Manager, both admin-shell roles |
 | `/employee-portals/marketing-requests/customer-database` | same |
-| `/employee-portals/sales-analytics` | same shape |
+| `/employee-portals/sales-analytics` | same shape (the row and the module went on 2026-09-17) |
 | `/leave-management/vacation-control` | same shape |
 
 The middle two deserve a look by someone allowed to touch that file: they are real pages, gated to
