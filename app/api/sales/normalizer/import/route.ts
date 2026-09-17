@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { isPostgresUniqueViolation } from "@/lib/sales/contracts";
+import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { normalizeUploadedFile, persistNormalizedBatch } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -42,6 +42,12 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    }
+    // A refusal the save step wrote for the user (the same workbook under another period).
+    // clientSafeErrorMessage would hide it: a workflow error carrying details reads as
+    // infrastructure there, so this sentence would become "Failed to import." behind a 500.
+    if (error instanceof SalesWorkflowError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
     // DB backstop (source_of_sales_one_validated_batch_per_period): a validated batch for this
     // distributor + month already exists. Direct import skips the in-app dedup, so surface it clearly

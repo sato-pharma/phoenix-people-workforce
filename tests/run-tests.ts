@@ -1701,6 +1701,7 @@ import { runClosingPerformanceReviewExportGateTests } from "./closing-performanc
 import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
+import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5747,6 +5748,11 @@ await runTest(
 await runTest(
   "a large sales workbook's storage path is honoured only from the importer upload-url minted it for: another importer's slot, a path outside incoming/<owner>/<upload id>/<file>, traversal and extra segments answer 400 before any download or delete",
   runSalesImportUploadPathTests,
+);
+
+await runTest(
+  "the same workbook under another period is refused on its name AND figures, in the save step of every monthly upload screen: two months of a large all-Arabic workbook (both stored as .xlsx) and a distributor's fixed monthly file name load, the IS-S pair stays refused",
+  runDuplicateUploadNameAndFiguresTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

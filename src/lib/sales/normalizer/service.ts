@@ -4,6 +4,7 @@ import { systemIdentity } from "@/config/system-settings";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
+import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
@@ -419,6 +420,17 @@ export async function persistNormalizedBatch(input: {
   const totalQty = rows.reduce((s, r) => s + (Number.isFinite(r.qty) ? r.qty : 0), 0);
   const totalBonus = rows.reduce((s, r) => s + (Number.isFinite(r.bonusQty) ? r.bonusQty : 0), 0);
   const totalValue = rows.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0);
+
+  // The same workbook already loaded under another period: refuse before the batch row exists, with
+  // exactly the figures the insert below stores (see import-duplicate-guard.ts).
+  await assertNotADuplicateUpload({
+    distributorCode: input.distributorCode,
+    fileName: input.fileName,
+    period,
+    totalRows: rows.length,
+    totalQty: Number(totalQty.toFixed(6)),
+    totalValue: Number(totalValue.toFixed(6)),
+  });
 
   const batchInsert = await supabase
     .from("source_of_sales_import_batches")

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { buildCodedBuffer, learnFromImportHistory } from "@/lib/sales/normalizer/service";
@@ -99,6 +100,12 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    }
+    // A refusal the save step wrote for the user (the same workbook under another period, a locked
+    // period). clientSafeErrorMessage would hide it: a workflow error carrying details reads as
+    // infrastructure there, so this sentence would become "Failed to import." behind a 500.
+    if (error instanceof SalesWorkflowError) {
+      return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
     return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to import.") }, { status: 500 });
   }
