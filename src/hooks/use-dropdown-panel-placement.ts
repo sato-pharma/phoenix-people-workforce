@@ -13,6 +13,10 @@ import { measureDropdownPanel } from "@/lib/ui/dropdown-panel-placement";
  * Wire all four: `detailsRef` and `onToggle` on the `<details>`, `onSummaryClick` on its `<summary>`,
  * and `panelStyle` on the panel, which must be `absolute left-0`.
  *
+ * Destructure the result; never keep it as `panel` and read `panel.x`. The react-hooks/refs lint folds
+ * every property read into the object it came from, and `ref={panel.detailsRef}` makes that object a
+ * ref, so `panel.panelStyle` and the handlers each fail as a ref read during render.
+ *
  * The placement is measured in the summary's click handler, BEFORE the click opens the details, so
  * the panel is never painted in the wrong place first. `toggle` fires only after the details has
  * opened, and a frame can paint in between. `onToggle` measures again however the details was opened,

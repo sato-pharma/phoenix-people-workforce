@@ -130,9 +130,9 @@ function wrappingProblems(rel: string, expressions: string[]): string[] {
 function panelProblems(rel: string): string[] {
   const source = read(rel);
   const problems: string[] = [];
-  const panel = source.match(/<div\s+className="(absolute left-0 top-full [^"]*)"\s+style=\{panel\.panelStyle\}/);
+  const panel = source.match(/<div\s+className="(absolute left-0 top-full [^"]*)"\s+style=\{panelStyle\}/);
   if (!panel) {
-    problems.push(`${rel}: the panel must be \`absolute left-0\` and wear \`style={panel.panelStyle}\`, the measured placement.`);
+    problems.push(`${rel}: the panel must be \`absolute left-0\` and wear \`style={panelStyle}\`, the measured placement.`);
   } else {
     const classes = panel[1].split(/\s+/);
     // The fallback until the first measurement: never wider than the trigger, which is on the screen.
@@ -144,11 +144,13 @@ function panelProblems(rel: string): string[] {
   // Inside the zoomed `main`, 100vw is not compensated, and a width taken from the viewport says nothing
   // about where the trigger stands.
   if (/100vw/.test(source)) problems.push(`${rel}: a width taken from \`100vw\` is back; the panel is measured instead.`);
+  // The hook's result is destructured. Kept as `panel`, every `panel.x` read fails react-hooks/refs
+  // (the account is in the hook's comment), and lint is a required check.
   const wiring = [
-    [/const panel = useDropdownPanelPlacement\(\);/, "calls useDropdownPanelPlacement()"],
-    [/<details\s[^>]*ref=\{panel\.detailsRef\}/, "gives the <details> `ref={panel.detailsRef}`"],
-    [/<details\s[^>]*onToggle=\{panel\.onToggle\}/, "gives the <details> `onToggle={panel.onToggle}`"],
-    [/<summary\s[^>]*onClick=\{panel\.onSummaryClick\}/, "gives the <summary> `onClick={panel.onSummaryClick}`"],
+    [/const \{[^}]*\} = useDropdownPanelPlacement\(\);/, "destructures useDropdownPanelPlacement()"],
+    [/<details\s[^>]*ref=\{detailsRef\}/, "gives the <details> `ref={detailsRef}`"],
+    [/<details\s[^>]*onToggle=\{onToggle\}/, "gives the <details> `onToggle={onToggle}`"],
+    [/<summary\s[^>]*onClick=\{onSummaryClick\}/, "gives the <summary> `onClick={onSummaryClick}`"],
   ] as const;
   for (const [pattern, what] of wiring) {
     if (!pattern.test(source)) problems.push(`${rel}: the dropdown no longer ${what}.`);

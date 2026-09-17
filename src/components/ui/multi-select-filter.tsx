@@ -59,7 +59,7 @@ export function MultiSelectFilter({
   disabled = false,
 }: MultiSelectFilterProps) {
   const [query, setQuery] = React.useState("");
-  const panel = useDropdownPanelPlacement();
+  const { detailsRef, onSummaryClick, onToggle, panelStyle } = useDropdownPanelPlacement();
 
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   const normalizedQuery = query.trim().toLowerCase();
@@ -77,13 +77,13 @@ export function MultiSelectFilter({
 
   return (
     <details
-      ref={panel.detailsRef}
+      ref={detailsRef}
       className={cn("group relative", disabled && "pointer-events-none opacity-50", className)}
-      onToggle={panel.onToggle}
+      onToggle={onToggle}
     >
       <summary
         className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-3 border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden"
-        onClick={panel.onSummaryClick}
+        onClick={onSummaryClick}
       >
         <span className="min-w-0">
           <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
@@ -109,7 +109,7 @@ export function MultiSelectFilter({
 
       <div
         className="absolute left-0 top-full z-50 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-lg"
-        style={panel.panelStyle}
+        style={panelStyle}
       >
         {/* Mode toggle + bulk actions */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line p-2">

@@ -21,7 +21,7 @@ export function RoiMultiSelect({
   onChange: (next: string[]) => void;
 }) {
   const [query, setQuery] = React.useState("");
-  const panel = useDropdownPanelPlacement();
+  const { detailsRef, onSummaryClick, onToggle, panelStyle } = useDropdownPanelPlacement();
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   const normalized = query.trim().toLowerCase();
   const visible = normalized
@@ -34,10 +34,10 @@ export function RoiMultiSelect({
   }
 
   return (
-    <details ref={panel.detailsRef} className="group relative" onToggle={panel.onToggle}>
+    <details ref={detailsRef} className="group relative" onToggle={onToggle}>
       <summary
         className="flex min-h-[58px] cursor-pointer list-none items-center justify-between gap-3 border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden"
-        onClick={panel.onSummaryClick}
+        onClick={onSummaryClick}
       >
         <span className="min-w-0">
           <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
@@ -53,7 +53,7 @@ export function RoiMultiSelect({
         <ChevronDown className="h-4 w-4 shrink-0 text-phx-ink-faint transition group-open:rotate-180" />
       </summary>
 
-      <div className="absolute left-0 top-full z-30 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-lg" style={panel.panelStyle}>
+      <div className="absolute left-0 top-full z-30 mt-2 w-[320px] max-w-full border border-phx-line bg-white shadow-lg" style={panelStyle}>
         <div className="flex items-center justify-end gap-2 border-b border-phx-line p-2 text-phx-xs font-black">
           <button type="button" aria-label={`Select all ${label}`} className="text-phx-ink-soft transition hover:text-phx-accent" onClick={() => onChange(options.map((option) => option.value))}>
             All
