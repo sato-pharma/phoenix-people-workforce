@@ -20,9 +20,11 @@
 //
 // WHAT THIS FILE MUST NOT BECOME. These labels are for DISPLAY. They are never
 // written back to `ireports360_visits.visit_type_description` — the CRM master's
-// vacation dataset selects on `.ilike("visit_type_description", "%vacation%")`,
-// so storing the label "Vacations & Leaves" would silently pull all 1,659
-// public-holiday and casual-leave rows into the Vacations dataset.
+// Visit Type filter matches the vendor's own descriptions on that column (see
+// CRM_VISIT_TYPE_OPTIONS), so a stored label would change what a filter returns.
+// The Vacations dataset once matched `%vacation%` there too, and storing the
+// label "Vacations & Leaves" would have pulled all 1,659 public-holiday and
+// casual-leave rows into it; it selects on code -4 since 2026-09-14.
 //
 // They are also NOT attendance or payroll semantics. Whether a code counts as a
 // working day or as leave is decided by the one visit-type table in
@@ -139,37 +141,45 @@ export function resolveVisitTypeLabel(
  * Day / Vacations & Leaves / Meetings / Admin Work its comment routes it to, and
  * a -30 row displays "Pharmacy Visit" or "Regular". Selecting these returns every
  * row of that code, which is the useful answer; the per-row label stays honest.
+ *
+ * "Training" is the one vendor entry that selects by code as well: its -16 visits
+ * display as Training but are stored as "Unknown", so a text match returned only
+ * the -9 half. On production (2026-09-17) the stored "Training" description sat on
+ * -9 rows only (298 of 298), so selecting -9 and -16 drops nothing the text found.
  */
 export const CRM_VISIT_TYPE_FILTER_CODES: ReadonlyMap<string, readonly number[]> = new Map<
   string,
   readonly number[]
 >([
+  ["Training", [TRAINING_TYPE, UNLABELED_TRAINING_TYPE]],
   ["Vacations & Leaves", [HOLIDAY_TYPE, CASUAL_LEAVE_TYPE]],
   ["Meetings", [MEETING_TYPE]],
   ["Admin Work", [ADMIN_WORK_TYPE]],
   ["Business Review (BRM)", [BRM_TYPE]],
   ["Unlabeled Field Visit", [UNLABELED_FIELD_VISIT_TYPE]],
-  ["Unlabeled Training", [UNLABELED_TRAINING_TYPE]],
   ["Sales / Leave Day", [AMBIGUOUS_TYPE]],
 ]);
 
 /**
  * Fixed options for the Visit Type dropdown: the vendor's documented enum, which
  * is matched against the stored description, followed by the Phoenix-resolved
- * codes above, which are matched against the numeric column.
+ * codes above, which are matched against the numeric column. "Training" appears
+ * in both lists and is offered once, in its vendor position.
  *
  * "Unknown" is deliberately NOT here any more. It was never a kind of visit —
  * it was seven different kinds of visit wearing one name.
  */
 export const CRM_VISIT_TYPE_OPTIONS: readonly string[] = [
-  "Regular Visit",
-  "Campaign (Prospection)",
-  "Meeting",
-  "Group Meeting",
-  "Conference",
-  "Training",
-  "Health Day",
-  "Traveling",
-  "Annual Vacation",
-  ...CRM_VISIT_TYPE_FILTER_CODES.keys(),
+  ...new Set([
+    "Regular Visit",
+    "Campaign (Prospection)",
+    "Meeting",
+    "Group Meeting",
+    "Conference",
+    "Training",
+    "Health Day",
+    "Traveling",
+    "Annual Vacation",
+    ...CRM_VISIT_TYPE_FILTER_CODES.keys(),
+  ]),
 ];

@@ -1596,7 +1596,8 @@ function applyMasterFilters(
     // rows. The free-text box below had the same defect and is no longer paren-stripped either — it
     // quotes the value instead (see ilikeAnyFilter), which keeps parentheses matchable AND safe.
     // The Phoenix-resolved entries have no distinct stored description to match on — the vendor
-    // sends the same string "Unknown" for all seven codes — so they select on the numeric column.
+    // sends the same string "Unknown" for every undocumented code — so they select on the numeric
+    // column. "Training" does too, because its -16 half is stored as "Unknown".
     const codes = CRM_VISIT_TYPE_FILTER_CODES.get(visitType);
     q = codes ? q.in("visit_type", [...codes]) : q.eq("visit_type_description", visitType);
   }

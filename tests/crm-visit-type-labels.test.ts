@@ -6,6 +6,7 @@ import {
   classifyVisit,
   resolveVisitTypeLabel,
 } from "../src/lib/crm/visit-types.ts";
+import { describeCrmDay } from "../src/lib/attendance/crm-day-maps.ts";
 
 // iReports360 documents nine visit-type codes. It also sends seven it never documented, and for
 // every one of those the `visitTypeDescription` it sends is the literal string "Unknown".
@@ -96,10 +97,56 @@ export function runCrmVisitTypeLabelTests() {
   }
 
   // Every undocumented code must be reachable from the dropdown, exactly once.
-  const covered = [...CRM_VISIT_TYPE_FILTER_CODES.values()].flat().sort((a, b) => a - b);
+  const allFilterCodes = [...CRM_VISIT_TYPE_FILTER_CODES.values()].flat();
+  assert.equal(new Set(allFilterCodes).size, allFilterCodes.length, "no code may sit under two filter entries");
+  const covered = allFilterCodes
+    .filter((code) => (UNDOCUMENTED_CODES as readonly number[]).includes(code))
+    .sort((a, b) => a - b);
   assert.deepEqual(
     covered,
     [...UNDOCUMENTED_CODES].sort((a, b) => a - b),
     "the code-based filter entries must cover all eight undocumented codes, with no duplicates",
   );
+  assert.equal(
+    new Set(CRM_VISIT_TYPE_OPTIONS).size,
+    CRM_VISIT_TYPE_OPTIONS.length,
+    "the Visit Type dropdown must not offer the same entry twice",
+  );
+
+  // Filtering the CRM master on "Training" must return the -16 visits too. They display as Training
+  // but are stored as "Unknown", so the vendor text match returned only the -9 half (298 of the 352
+  // training visits on production, 2026-09-17), and the screen undercounted what it showed.
+  assert.deepEqual(
+    [...(CRM_VISIT_TYPE_FILTER_CODES.get("Training") ?? [])].sort((a, b) => a - b),
+    [-16, -9],
+    'the "Training" filter must select both training codes (-9 and -16) by code, not by the stored text',
+  );
+
+  // The attendance day detail shows the same label the CRM screens do: a -16 day reads "Training",
+  // never the vendor's "Unknown". A real vendor description is still shown as sent.
+  const dayRow = (visitType: number, description: string | null, comment: string | null) => ({
+    visit_date: "2026-09-14",
+    visit_type: visitType,
+    visit_type_description: description,
+    comment,
+    customer_name: null,
+    agent_hr_id: "B-1",
+    double_hr_id: null,
+  });
+  assert.equal(
+    describeCrmDay([dayRow(-16, "Unknown", "Training")]),
+    "Training: Training",
+    'a -16 day in the attendance CRM activity must read "Training", not "Unknown"',
+  );
+  assert.equal(
+    describeCrmDay([dayRow(-19, "Unknown", "Weekly meeting")]),
+    "Meetings: Weekly meeting",
+    "an undocumented code takes its shared display label in the day detail",
+  );
+  assert.equal(
+    describeCrmDay([dayRow(-15, "Health Day", "Clinic day")]),
+    "Health Day: Clinic day",
+    "a real vendor description is shown as sent",
+  );
+  assert.equal(describeCrmDay([dayRow(0, null, null)]), "Visit", "a regular visit with no description still reads Visit");
 }

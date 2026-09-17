@@ -44,6 +44,7 @@ import {
   CRM_WORKING_VISIT_TYPE_CODES,
   crmVisitTypeMeaningStrict,
 } from "@/lib/crm/visit-type-meaning";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
 
@@ -96,14 +97,22 @@ type CrmDayVisitRow = {
 
 /** Short human-readable label for the CRM entry that won a day (regular > CP > AV, same
  * precedence as the classification loop below) — so a consumer showing "CRM field visit" can
- * also show WHAT it was (e.g. "Meeting: Digital marketing meeting") instead of a bare boolean. */
-function describeCrmDay(rows: CrmDayVisitRow[]): string | null {
+ * also show WHAT it was (e.g. "Meeting: Digital marketing meeting") instead of a bare boolean.
+ * A stored "Unknown" takes the shared display label (a -16 day reads "Training: …"); every other
+ * stored description is shown as the vendor sent it. Display only — the day's meaning comes from
+ * the strict lookup above, never from this text. */
+export function describeCrmDay(rows: CrmDayVisitRow[]): string | null {
   const regular = rows.find((row) => Number(row.visit_type ?? 0) === 0);
   const campaign = rows.find((row) => CRM_CAMPAIGN_VISIT_TYPES.has(Number(row.visit_type ?? 0)));
   const leave = rows.find((row) => CRM_LEAVE_VISIT_TYPES.has(Number(row.visit_type ?? 0)));
   const winner = regular ?? campaign ?? leave;
   if (!winner) return null;
-  const label = winner.visit_type_description?.trim() || (regular ? "Visit" : null);
+  const stored = winner.visit_type_description?.trim();
+  const label = stored
+    ? resolveVisitTypeLabel(Number(winner.visit_type ?? 0), stored, winner.comment)
+    : regular
+      ? "Visit"
+      : null;
   const detail = (winner.customer_name?.trim() || winner.comment?.trim() || "").slice(0, 120);
   if (!label) return detail || null;
   return detail ? `${label}: ${detail}` : label;

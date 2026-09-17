@@ -131,7 +131,9 @@ export async function runAttendanceManagerViewAccessTests() {
     "system scope must see the whole company",
   );
   // `scope: "company"` on its own NO LONGER grants whole-company attendance (changed 2026-08-10).
-  // scopeForRole returns "company" for exactly Super Admin, CEO and Finance Manager; the first two
+  // scopeForRole then returned "company" for exactly Super Admin, CEO and Finance Manager (HR
+  // Operations joined on 2026-08-29 and keeps self + direct reports in this LIST scoper — its
+  // one-person grant is canViewEmployeeAttendanceReport's alone); the first two
   // are named explicitly in the bypass, and the third must be self-only — so the scope arm was
   // admitting one role by accident and nobody by design. Asserted through a named role rather than
   // a bare scope, because a bare `scope: "company"` context now correctly falls to the
