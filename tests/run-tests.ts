@@ -506,6 +506,7 @@ import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
 import { runWeeklyPosValueRowTests } from "./weekly-pos-value-row-is-not-units.test.ts";
 import { runWeeklyFileTotalsSelfCheckTests } from "./weekly-file-totals-self-check.test.ts";
 import { runWeeklyEgdMissingStockTests } from "./weekly-egd-missing-stock.test.ts";
+import { runWeeklyVerifySheetMatchTests } from "./weekly-verify-sheet-match.test.ts";
 import { runWeeklySalesAccessTests } from "./weekly-sales-access.test.ts";
 import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
@@ -2728,6 +2729,7 @@ await runTest("weekly sales import", runWeeklySalesImportTests);
 await runTest("weekly POS value row is not units", runWeeklyPosValueRowTests);
 await runTest("weekly file totals self-check", runWeeklyFileTotalsSelfCheckTests);
 await runTest("weekly EGD: a workbook with no readable stock blocks instead of storing zero", runWeeklyEgdMissingStockTests);
+await runTest("weekly verification screen reads the same sheets as the import and reports a missing sheet as MISSING", runWeeklyVerifySheetMatchTests);
 await runTest("weekly sales access", runWeeklySalesAccessTests);
 await runTest("weekly stock dashboard", runWeeklyStockDashboardTests);
 await runTest(
