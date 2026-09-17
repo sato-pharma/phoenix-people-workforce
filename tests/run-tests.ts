@@ -1698,6 +1698,7 @@ import { runClosingDetailsPublicationGateTests } from "./closing-details-publica
 import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
 import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
+import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5731,6 +5732,11 @@ await runTest(
 await runTest(
   "workbook integrity checker reads an openpyxl workbook: an absolute relationship target resolves from the package root and Target may precede Id, so a correct file is CLEAN while a dangling target, a defined name past the data and a table past the data are still reported — the same verdicts as the ExcelJS spelling",
   runCheckWorkbookIntegrityAbsoluteTargetsTests,
+);
+
+await runTest(
+  "a large sales workbook's storage path is honoured only from the importer upload-url minted it for: another importer's slot, a path outside incoming/<owner>/<upload id>/<file>, traversal and extra segments answer 400 before any download or delete",
+  runSalesImportUploadPathTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
