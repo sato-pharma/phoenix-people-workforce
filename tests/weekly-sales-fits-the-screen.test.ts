@@ -4,15 +4,27 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 import {
+  branchComparisonColumns,
   breakdownColumns,
   completenessColumns,
   fieldForceLeagueColumns,
   fieldForceProductColumns,
+  rankColumns,
+  weekComparisonColumns,
+  zeroStockColumns,
 } from "../src/components/sales/weekly/weekly-table-widths.ts";
 
-// THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), pinned for the managers' Weekly
-// Sales: the dashboard's Distribution tab and its Field Force tab, which the portal and the admin shell
-// render alike.
+// THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), pinned for Weekly Sales: the
+// managers' dashboard (its Distribution tab and its Field Force tab, which the portal and the admin
+// shell render alike), and the admin shell's own Weekly Sales Dashboard.
+//
+// THE ADMIN DASHBOARD. On 2026-09-17 the admin shell's dashboard (weekly-dashboard-view-impl.tsx) still
+// broke both rules after the managers' version was fixed: the Week-by-week comparison sat in an
+// `overflow-x-auto` box, the ranked tables and Branches comparison sat over `min-w-[620px]` and
+// `min-w-[760px]`, the trend tooltip over `min-w-[200px]`, and the file carried 37 `rounded*` classes.
+// Its chart labels were cut with "..." and two legend names with `truncate`. Its four tables now declare
+// their widths the same way (sortable headers count as head cells), each becomes cards below md, and
+// its chart labels wrap whole.
 //
 // WHY THIS FILE EXISTS. On 2026-09-16 the owner found both rules broken on this page. The dashboard's
 // Breakdown table and upload completeness matrix sat in `hidden overflow-x-auto md:block` boxes, so a
@@ -25,7 +37,8 @@ import {
 // names wrap, and phones keep their cards.
 //
 // WHAT IT PINS.
-//   1. No class string in either file draws a round corner, a scroll box, a width floor or an ellipsis.
+//   1. No class string in any of the three files draws a round corner, a scroll box, a width floor or an
+//      ellipsis, and no label is cut by appending "..." to it.
 //   2. Every <table> is `w-full table-fixed` and opens with a <colgroup>. Its <col>s, its head row and a
 //      body row have the same shape: one entry per cell, under the same conditions, with the same
 //      per-week or per-month lists. Every colSpan spans exactly that shape, the widths come from the
@@ -37,6 +50,7 @@ import {
 
 const DASHBOARD = "src/components/sales/weekly/portal-weekly-dashboard-impl.tsx";
 const FIELD_FORCE = "src/components/sales/weekly/portal-weekly-field-force-view.tsx";
+const ADMIN_DASHBOARD = "src/components/sales/weekly/weekly-dashboard-view-impl.tsx";
 
 /** `weekly_sales_rows_week_number_chk`: a week number is 1 to 4, so no view has more than four weeks. */
 const MAX_WEEKS = 4;
@@ -83,6 +97,10 @@ function classStringProblems(source: ts.SourceFile): string[] {
       ts.isTemplateTail(node)
         ? node.text
         : null;
+    // `${name.slice(0, 17)}...`: text that continues a substitution with an ellipsis is a label cut short.
+    if ((ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) && /^(\.\.\.|…)/.test(node.text)) {
+      problems.push(`${source.fileName}:${lineOf(source, node)} cuts a label with "${node.text}"; let it wrap instead.`);
+    }
     if (text !== null) {
       for (const token of text.split(/\s+/)) {
         if (!token) continue;
@@ -165,7 +183,42 @@ const TABLES: TableSpec[] = [
     widthsCall: "completenessColumns(months.length)",
     cases: range(1, MAX_MONTHS).map((months) => ({ env: { months }, widths: completenessColumns(months) })),
   },
+  {
+    name: "Admin ranked table (By region, By product, By distributor)",
+    file: ADMIN_DASHBOARD,
+    owner: "RankTable",
+    bodyRowOwner: "RankTable",
+    widthsCall: "rankColumns()",
+    cases: [{ env: {}, widths: rankColumns() }],
+  },
+  {
+    name: "Admin Branches comparison",
+    file: ADMIN_DASHBOARD,
+    owner: "BranchComparisonTable",
+    bodyRowOwner: "BranchComparisonTable",
+    widthsCall: "branchComparisonColumns()",
+    cases: [{ env: {}, widths: branchComparisonColumns() }],
+  },
+  {
+    name: "Admin Week-by-week comparison",
+    file: ADMIN_DASHBOARD,
+    owner: "WeekComparisonTable",
+    bodyRowOwner: "WeekComparisonTable",
+    widthsCall: "weekComparisonColumns()",
+    cases: [{ env: {}, widths: weekComparisonColumns() }],
+  },
+  {
+    name: "Admin Stock on hand watchlist",
+    file: ADMIN_DASHBOARD,
+    owner: "ZeroStockTable",
+    bodyRowOwner: "ZeroStockTable",
+    widthsCall: "zeroStockColumns()",
+    cases: [{ env: {}, widths: zeroStockColumns() }],
+  },
 ];
+
+/** The elements that render one cell of each kind. A `SortableTh` is a <th> holding a sort button. */
+const CELL_TAGS: Record<string, string[]> = { col: ["col"], th: ["th", "SortableTh"], td: ["td"] };
 
 function isJsx(node: ts.Node): node is JsxNode {
   return ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node);
@@ -245,7 +298,7 @@ function returnedCell(callback: ts.Expression | undefined, isCell: (node: ts.Nod
 }
 
 function slotsOf(container: ts.JsxElement, cellTag: string, where: string, problems: string[]): Slot[] {
-  const isCell = (node: ts.Node): node is JsxNode => isJsx(node) && tagOf(node) === cellTag;
+  const isCell = (node: ts.Node): node is JsxNode => isJsx(node) && (CELL_TAGS[cellTag] ?? [cellTag]).includes(tagOf(node));
   const keyOf = (cell: JsxNode): string | null => {
     if (cellTag !== "col") return null;
     const key = colKey(cell);
@@ -373,10 +426,11 @@ function tableProblems(sources: Map<string, ts.SourceFile>): string[] {
     }
 
     // The league's band rows live in its owner and the opened row in RepRow, which holds the product
-    // grid as a component, so the grid's own cells are never counted here.
+    // grid as a component, so the grid's own cells are never counted here. A `TableNoResults` is the
+    // empty-search row, one cell spanning the table.
     const span = spanOf(cols);
     for (const root of new Set([owner, bodyOwner])) {
-      for (const cell of [...allTags(root, "td"), ...allTags(root, "th")]) {
+      for (const cell of [...allTags(root, "td"), ...allTags(root, "th"), ...allTags(root, "TableNoResults")]) {
         const attribute = attributeOf(cell, "colSpan");
         if (!attribute) continue;
         const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : undefined;
@@ -420,7 +474,7 @@ function tableProblems(sources: Map<string, ts.SourceFile>): string[] {
 }
 
 export function runWeeklySalesFitsTheScreenTests() {
-  const sources = new Map([DASHBOARD, FIELD_FORCE].map((file) => [file, parse(file)] as const));
+  const sources = new Map([DASHBOARD, FIELD_FORCE, ADMIN_DASHBOARD].map((file) => [file, parse(file)] as const));
 
   const classProblems = [...sources.values()].flatMap(classStringProblems);
   assert.deepEqual(
