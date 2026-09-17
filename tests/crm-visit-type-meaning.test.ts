@@ -51,6 +51,19 @@ const OLD_LITERAL_ANSWERS: ReadonlyArray<OldAnswers> = [
   { code: -30, name: "Unlabelled field visit", fwc: "CP", leaver: undefined, dayMap: "CP" },
 ];
 
+/**
+ * RULINGS MADE AFTER THE THREE COPIES WERE MERGED — each one a deliberate change of answer, so it
+ * is listed here and never folded into the frozen table above.
+ *
+ * -16 first appeared 2026-09-12; its first 54 visits (8 reps, to 2026-09-17) were all commented
+ * "Training" and the vendor labels it "Unknown". Before the ruling the strict lookups returned
+ * undefined, so the attendance day map judged those days on fingerprint timing alone. The owner
+ * ruled it Training — a working day — on 2026-09-17, so it now cancels a deduction as -9 does.
+ */
+const LATER_RULINGS: ReadonlyArray<{ code: number; name: string; meaning: "AV" | "CP"; ruled: string }> = [
+  { code: -16, name: "Training (vendor labels it Unknown)", meaning: "CP", ruled: "2026-09-17" },
+];
+
 /** The 16th production code: a regular visit. #1 counts it (never looked up); #2 and #3 returned undefined. */
 const REGULAR = { code: 0, leaver: undefined as Status, dayMap: undefined as Status };
 
@@ -89,16 +102,25 @@ export function runCrmVisitTypeMeaningTests() {
   assert.equal(crmDayVisitTypeStatus(REGULAR.code), REGULAR.dayMap, "a regular visit (0) is never looked up in the day map");
   assert.equal(leaverVisitTypeStatus(REGULAR.code), REGULAR.leaver, "a regular visit (0) is never looked up by the leaver ruling");
 
-  // ---- THE TABLE IS EXACTLY THE 15 PRODUCTION NEGATIVES ----------------------
+  // ---- LATER OWNER RULINGS ---------------------------------------------------
+  for (const { code, name, meaning, ruled } of LATER_RULINGS) {
+    assert.equal(crmVisitTypeMeaningStrict(code), meaning, `${name} (${code}) must read ${meaning} in the shared table (owner ruling ${ruled})`);
+    assert.equal(crmDayVisitTypeStatus(code), meaning, `${name} (${code}): the attendance day map must read ${meaning}, so the day cancels a deduction`);
+    assert.equal(crmVisitTypeMeaningLenient(code), meaning, `${name} (${code}): the Field Workforce Compliance matrix must read ${meaning}`);
+    assert.equal(leaverVisitTypeStatus(code) ?? "CP", meaning, `${name} (${code}): the payroll leaver ruling must read ${meaning}`);
+  }
+
+  // ---- THE TABLE IS EXACTLY THE 15 PRODUCTION NEGATIVES PLUS THE LATER RULINGS ----
+  const classifiedCodes = [...OLD_LITERAL_ANSWERS.map((entry) => entry.code), ...LATER_RULINGS.map((entry) => entry.code)];
   assert.deepEqual(
     [...CRM_CLASSIFIED_NON_REGULAR_VISIT_TYPES].sort((a, b) => a - b),
-    OLD_LITERAL_ANSWERS.map((entry) => entry.code).sort((a, b) => a - b),
-    "the shared table must classify exactly the 15 non-regular codes production has produced",
+    [...classifiedCodes].sort((a, b) => a - b),
+    "the shared table must classify exactly the 15 original non-regular codes plus each later owner ruling",
   );
   assert.deepEqual(
     [...CRM_DAY_CLASSIFIED_VISIT_TYPES].sort((a, b) => a - b),
-    [0, ...OLD_LITERAL_ANSWERS.map((entry) => entry.code)].sort((a, b) => a - b),
-    "the sync alert's recognized set must be the same 16 codes it was before",
+    [0, ...classifiedCodes].sort((a, b) => a - b),
+    "the sync alert's recognized set must be the table's codes plus the regular visit (0)",
   );
   for (const code of CRM_WORKING_VISIT_TYPE_CODES) {
     assert.equal(CRM_LEAVE_VISIT_TYPE_CODES.has(code), false, `${code} cannot be both leave and working time`);

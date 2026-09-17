@@ -119,6 +119,13 @@ import {
 import { classifyMemoryReachabilityAcrossRefs, memoryReachabilityLines } from "./memory-index-reachability.mjs";
 import { classifyBranchPr, listBranchPrs } from "./branch-pr-state.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
+import {
+  classifyLooseObjects,
+  classifyMaintenanceConfig,
+  classifyMaintenanceLock,
+  parseGitConfigList,
+  parseLooseObjectCount,
+} from "./repo-doctor-git-maintenance.mjs";
 import { archivePushTarget, listArchiveRefs, strandedArchives } from "./repo-doctor-archive-refs.mjs";
 import { classifySupabaseLink } from "./repo-doctor-supabase-link.mjs";
 import { sessionHoldReason } from "./repo-doctor-session-hold.mjs";
@@ -1574,6 +1581,49 @@ if (snapshotXlsx || deep) {
   if (autoloadedIndexBytes === null) {
     console.log("  MEMORY.md is NOT counted above — this checkout has no session memory directory.");
   }
+}
+
+// WHETHER GIT'S OWN MAINTENANCE RUNS HERE, AND WHETHER IT MAY DELETE WHAT SESSIONS SHARE.
+//
+// Found 2026-09-17: `objects/maintenance.lock` had sat in the common git directory since
+// 2026-08-10, and while it exists every `git maintenance run` does nothing and exits 0 — the
+// automatic one commits start, and one typed by hand. 13,456 loose objects (179 MiB) and 396 loose
+// ref files had piled up with no error anywhere. The repair has a trap of its own: git 2.55's
+// default automatic run executes `git rerere gc` over the one rerere cache every session shares,
+// so the data-deleting tasks are pinned off in config, and this section reads the pin back.
+// Classification lives in repo-doctor-git-maintenance.mjs so a test can drive every branch.
+//
+// Reads the COMMON git directory: the lock, the objects and the config belong to the repository,
+// not to whichever worktree runs the report.
+//
+// READ-ONLY, and it never touches the exit code — the same reasoning as the sections above. It
+// PRINTS the removal and config commands rather than running them.
+{
+  console.log("");
+  console.log("GIT MAINTENANCE (whether git's own cleanup runs here, and whether it may delete shared state)");
+
+  const lockPath = path.join(commonDir, "objects", "maintenance.lock");
+  let lockMtimeMs = null;
+  let lockError = null;
+  try {
+    lockMtimeMs = fs.statSync(lockPath).mtimeMs;
+  } catch (error) {
+    // Not found is the healthy answer. Any other failure means we could not look, and must not
+    // collapse into "no lock" — that is the stall this section exists to catch.
+    if (error?.code !== "ENOENT") lockError = error?.code ?? String(error);
+  }
+  for (const line of classifyMaintenanceLock({ lockPath, lockMtimeMs, lockError, nowMs: Date.now() }).lines) {
+    console.log(line);
+  }
+
+  // `--list -z`, never `--get-regexp "^maintenance"`: that one exits 1 when nothing matches, and
+  // git() returns null for any non-zero exit, so "no pins at all" (the dangerous default) would be
+  // indistinguishable from "git failed". `--list` exits 0 whenever the config is readable.
+  const configVerdict = classifyMaintenanceConfig(parseGitConfigList(git(["config", "--list", "-z"])));
+  for (const line of configVerdict.lines) console.log(line);
+
+  const looseVerdict = classifyLooseObjects(parseLooseObjectCount(git(["count-objects", "-v"])));
+  for (const line of looseVerdict.lines) console.log(line);
 }
 
 // ── mutating modes: --fix (husks) and --strip-idle (build caches) ──────────────────

@@ -137,6 +137,23 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // money at all. The two privileged acts on the module stay shut - pinning is sales:import,
   // publishing a public preview link is sales:export, and she holds neither.
   "src/lib/territory-management/service.ts",
+  // Names HR Operations in canViewEmployeeAttendanceReport, added 2026-09-17 on the owner's ruling
+  // that she sees the requester's attendance and leave history beside the requests she approves in
+  // the Approvals Hub. Reviewed verdict: it GRANTS reach — one person's attendance report, anyone —
+  // and is listed for exactly that reason.
+  //
+  // It hands her nothing her job description withholds. time_attendance ("ops 2 — Attendance, Leave
+  // & Working-Time Administration") already composes attendance:MAINTAIN and leave:MAINTAIN onto
+  // the seat, and people_records gives her employees:read, which already opens the WHOLE-COMPANY
+  // Fingerprint Report (canAccessFingerprintReport) with every employee's punches and deductions.
+  // Before this string she approved leave blind: the hub's context panel answered 403, because the
+  // per-person check fell back to direct reports and she is nobody's manager.
+  //
+  // Named by string rather than by canAccess(access, "attendance", "read"): the Finance Manager
+  // holds attendance:read and is SELF-ONLY by the owner's 2026-08-10 instruction, so a permission
+  // check here would have handed every employee's workbook back to him. The bulk list scoper in the
+  // same file is deliberately unchanged, and HR Advisory is not here.
+  "src/lib/attendance/employee-attendance.ts",
   "src/components/admin/access-control-manager.tsx",
   "src/components/admin/workflow-registry-manager.tsx",
   // Names both seats in the Retention Register's confidentiality notice, added 2026-09-01.

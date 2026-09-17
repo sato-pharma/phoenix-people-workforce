@@ -20,6 +20,7 @@ export {
   periodColumnLabel,
   periodColumnLabels,
   periodLabel,
+  periodMonthEnd,
   periodShortLabel,
   quartersInWindow,
   windowLabel,
