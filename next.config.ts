@@ -266,6 +266,23 @@ const nextConfig: NextConfig = {
     // import sites in app/ or src/ — this project's UI primitives are
     // hand-rolled, not radix wrappers, so it was dead config.
     optimizePackageImports: ["lucide-react", "recharts"],
+    // NO TURBOPACK FILESYSTEM CACHE FOR `next build`, added 2026-09-17. Next 16.3 turned it
+    // ON by default, and nothing here ever reads it back: CI starts every run on a fresh
+    // runner with no .next restore (ci.yml deleted that cache on 2026-08-29), and the
+    // Dockerfile's `RUN pnpm run build` has no cache mount, so Railway discards it too.
+    // Writing it is pure cost, and the build waits for the write to finish before it exits.
+    //
+    // MEASURED on CI's Build step, successful runs either side of the 16.2.11 -> 16.3.3 bump
+    // (#3559, 2026-09-09): 19 runs before, median 3.2 min, max 4.3; 20 runs after, median
+    // 4.0 min, max 7.1. Compilation itself did not move (~2.7-3.0 min both sides). The whole
+    // difference is the new "Finished writing to filesystem cache" line, which logged 49s to
+    // 4.4 min depending on the runner's disk, and a slow write also stretches "Collecting
+    // page data" (21s -> 80s) because the two contend for the same disk.
+    //
+    // A build cache only speeds up the NEXT build that reads it; it is not part of what this
+    // build ships. If a restore is ever added (a CI cache step or a Docker cache mount),
+    // measure before turning this back on. `next dev` has its own flag and is unaffected.
+    turbopackFileSystemCacheForBuild: false,
     // DEV-ONLY MEMORY SETTINGS, added 2026-09-09. Production config is byte-identical to
     // what it was before this block: `next build` and `next start` both run with
     // NODE_ENV=production, so neither flag is ever set for them.
