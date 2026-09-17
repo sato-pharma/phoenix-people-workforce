@@ -965,6 +965,7 @@ import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runSosPharmacyActionsTests } from "./sos-pharmacy-actions.test.ts";
+import { runSosMonthPaceAreaNamesTests } from "./sos-month-pace-area-names.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
@@ -3494,6 +3495,7 @@ await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests)
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("portal source-of-sales pharmacy actions (stopped / dropping / new) + weekly month pace", runSosPharmacyActionsTests);
+await runTest("the portal Source of Sales month-pace strip names every area from the area master, never its code: an area with a target and no weekly row reads Sohag1 (not UE5), a direct-orders-only area reads its name, a code handed over as a name gives way, and an area with no name anywhere reads \"Unnamed area\" and keeps its money", runSosMonthPaceAreaNamesTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
 await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
