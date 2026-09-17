@@ -27,6 +27,14 @@ name: CI
 # MEASURED RESULT: 308s -> 235s (-24%). My pre-change estimate of ~166s was WRONG; it
 # assumed the cache fix would cut the 143s build, and it did not. The build is now the
 # dominant remaining term. Extra cost is one more parallel runner; no gate is relaxed.
+#
+# SAME IDEA AGAIN, 2026-09-17: inefficiency 2 was still there, one level down, inside
+# `validate`. `pnpm run test` shared nothing but node_modules with the build it ran in front
+# of, and was 96s and 98s of a 364s and 371s job on runs 35258637196 and 35257651146. It is
+# the `test` job now, which lands under `typecheck` and therefore off the critical path;
+# `validate` drops to ~268s and the wall clock with it. Full reasoning on that job — INCLUDING
+# that `test` has to be added to branch protection's required checks, because `validate` is
+# required and no longer runs the tests.
 
 # NO `paths-ignore` ON `pull_request`, DELIBERATELY (2026-08-12). It used to skip this whole
 # workflow for docs-only PRs, and ci-docs-fallback.yml existed to satisfy the required checks that
@@ -101,9 +109,10 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
-  # Structural checks + unit tests + build + login smoke test, in one job. The smoke test
-  # lives here (rather than in a downstream job) purely to avoid shipping .next between
-  # runners — see note 1 in the header. Everything it used to verify, it still verifies.
+  # Structural checks + build + login smoke test, in one job. The smoke test lives here
+  # (rather than in a downstream job) purely to avoid shipping .next between runners — see
+  # note 1 in the header. The unit tests left for the `test` job on 2026-09-17; everything
+  # else this job ever verified, it still verifies.
   #
   # THE JOB ALWAYS RUNS AND ALWAYS REPORTS. `needs: changes` sequences it; it is never `if`-ed out,
   # because a skipped job reports no status and a required check with no status blocks a PR
@@ -222,6 +231,16 @@ jobs:
         # high or critical finding still fails the build. See scripts/ci-dependency-audit.mjs.
         run: node scripts/ci-dependency-audit.mjs
 
+      # THE TEST SUITE IS NOT IN THIS JOB ANY MORE — it is the `test` job below (2026-09-17).
+      # `pnpm run test` reads nothing `validate` produces: it ran in front of the build and the
+      # smoke test and needs neither, so a quarter of the slowest required check was serial for
+      # no reason. The measurement and the reasoning are on that job.
+      #
+      # IT ONLY GATES ANYTHING IF BRANCH PROTECTION NAMES `test`. `validate` is a required
+      # check and no longer runs the tests; until `test` is required too, a PR whose tests are
+      # red shows four green required checks and merges. That is the spare-key-under-the-mat
+      # hole the header describes, arriving from the other side.
+
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
       # It restored fine, it hit more often than the note that used to sit here claimed, and it
@@ -268,10 +287,6 @@ jobs:
       # 4.4 min. Nothing restores it (see the deleted cache above), so next.config.ts sets
       # `turbopackFileSystemCacheForBuild: false`. The measurement is on that line. If that log line
       # ever reappears in this step, the flag has been lost.
-
-      - name: Test
-        if: steps.detect.outputs.docs_only != 'true'
-        run: pnpm run test
 
       - name: Build
         if: steps.detect.outputs.docs_only != 'true'
@@ -514,10 +529,91 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
+  # Split out of `validate` on 2026-09-17, the third application of the same idea as `lint`
+  # and `typecheck` above: `pnpm run test` shares nothing with the build but node_modules.
+  #
+  # MEASURED on the two most recent code PRs before the split, runs 35258637196 and
+  # 35257651146 — `validate`'s Test step was 96s and 98s of a 364s and 371s job, and it sat
+  # in front of a 184s/190s build that does not read a single thing it produces. Standing on
+  # its own this job pays ~33s of setup it did not pay before (checkout, corepack, node,
+  # install — measured off `typecheck`, which has the same preamble) and lands near 135s,
+  # under `typecheck`'s 164s/176s, so it does not become the new critical path. `validate`
+  # drops to ~268s/273s and the run's wall clock with it. Extra cost is one more parallel
+  # runner; no gate is relaxed and no step is skipped.
+  #
+  # NO `needs:` AND NO `if:` ON THE JOB, deliberately, for the reason given on `validate`:
+  # a skipped job reports no status, and a required check with no status blocks a PR forever.
+  # Only the expensive steps are conditional.
+  #
+  # THIS JOB GATES NOTHING UNTIL BRANCH PROTECTION LISTS `test` AS A REQUIRED CHECK. It is
+  # not a detail to get to later: the same commit that created this job took the tests out of
+  # `validate`, which IS required, so between the two changes a red test suite blocks nothing
+  # at all. The required names are set on the repository, not in this file, and only the owner
+  # can add one.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # depth 2 is enough: for a pull_request, GitHub checks out the MERGE commit, whose
+          # first parent is the base branch. `HEAD^1..HEAD` is therefore exactly this PR's
+          # changed files, with no need to fetch the base branch separately.
+          fetch-depth: 2
+
+      # Answered inline, per job — see the note on this step in `validate`.
+      - name: Detect whether this PR is documentation only
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -u
+          answer() { echo "docs_only=$1" >> "$GITHUB_OUTPUT"; echo "docs_only=$1 ($2)"; exit 0; }
+
+          [ "$EVENT_NAME" = "pull_request" ] || answer false "not a pull_request — always run everything"
+          git rev-parse --verify HEAD^2 >/dev/null 2>&1 || answer false "HEAD is not a merge commit; cannot identify the PR's files"
+
+          files="$(git diff --name-only HEAD^1 HEAD)" || answer false "git diff failed"
+          [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
+
+          echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
+          if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
+            answer false "code or config changed"
+          fi
+          answer true "documentation only"
+
+
+      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
+      - name: Enable Corepack (pnpm)
+        if: steps.detect.outputs.docs_only != 'true'
+        run: corepack enable
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.docs_only != 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        if: steps.detect.outputs.docs_only != 'true'
+        run: pnpm install --frozen-lockfile
+
+      # No typegen and no build in front of it: tests/run-tests.ts is run straight by node
+      # with --experimental-strip-types, exactly as it was when this step lived in `validate`.
+      - name: Test
+        if: steps.detect.outputs.docs_only != 'true'
+        run: pnpm run test
+
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
     runs-on: ubuntu-latest
-    needs: [validate, lint, typecheck]
+    # `test` joined this list when it was split out of `validate` (2026-09-17) — dropping it
+    # here would have quietly stopped the full E2E suite waiting on the unit tests.
+    needs: [validate, lint, typecheck, test]
     timeout-minutes: 60
 
     steps:
