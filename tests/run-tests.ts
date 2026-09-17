@@ -512,6 +512,7 @@ import { runWeeklyStockDashboardTests } from "./weekly-stock-dashboard.test.ts";
 import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-totals.test.ts";
 import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
+import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-paging.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -2745,6 +2746,10 @@ await runTest(
 await runTest(
   "weekly sales Combined Report: the TOTAL rows never add stock across periods or units across products (unit TOTALs are empty; Sales Value and Rows still add)",
   runWeeklyCombinedReportUnitTotalsTests,
+);
+await runTest(
+  "weekly sales Combined Report: every product row of the selected uploads is read past PostgREST's 1,000-row cap (paged on id), and Generated is Cairo local time, never UTC",
+  runWeeklyCombinedReportPagingTests,
 );
 await runTest("monthly closing region scope", runMonthlyClosingRegionScopeTests);
 await runTest("monthly closing details", runMonthlyClosingDetailsTests);
