@@ -72,6 +72,7 @@ import {
   type KpiFacets,
   type KpiFilterState,
 } from "@/lib/crm/kpis-filters";
+import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { keepMedicalRepsOnly } from "@/lib/crm/medical-rep";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -495,6 +496,18 @@ export type KpisBoard = {
     pharmacyReported: number;
     pharmacyReportedRate: number | null;
   };
+  /**
+   * THE OVERALL KPI — the four measures above consolidated into one percentage, plus the line that
+   * spells out the arithmetic with these numbers in it (owner, 2026-09-17: "you must show in a line
+   * how it is calculated").
+   *
+   * It REPLACES NOTHING. Every figure in `totals` is untouched and every tile, column, band and
+   * podium still reads exactly as it did — the owner's instruction was "let them separated as they
+   * are and consolidate". Built from `totals` and nothing else, so the one number and the four it
+   * came from can never disagree. See `crm/kpi-index.ts` for the cap, the exclusions, and why
+   * forming this figure never forms the banned combined call rate.
+   */
+  kpiIndex: KpiIndex;
   amTarget: number;
   pmTarget: number;
   /** Null — no owner-set pharmacy target exists yet. See KpiRepRow.pharmacyAttainmentPct. */
@@ -977,6 +990,16 @@ export async function getKpisBoard(input: {
       pharmacyReported: 0,
       pharmacyReportedRate: null,
     },
+    // Nothing to score on an empty board, so the index is null and its own line says so — an
+    // absence, never a 0% that would read as "the field force did nothing".
+    kpiIndex: kpiIndexOf({
+      coveragePct: 0,
+      frequencyPct: 0,
+      hasMeasurablePlan: false,
+      amAttainmentPct: null,
+      pmAttainmentPct: null,
+      hasCallRate: false,
+    }),
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
@@ -1169,6 +1192,16 @@ export async function getKpisBoard(input: {
   // joiner carries only the days he was employed (rule 4), and multiplying would charge him the rest.
   const denominator = totals.repWorkingDays;
   const teamCoveragePct = pct(totals.visitedDoctors, totals.plannedDoctors);
+  // Hoisted out of the `totals` literal below so the OVERALL KPI averages the very numbers the
+  // tiles print. Computed twice — once for the tile, once for the average — is how the one figure
+  // and the four beside it would drift the first time either expression changed.
+  const teamFrequencyPct = phoenix
+    ? pct(totals.onPlanDoctors, totals.gradedDoctors)
+    : pct(totals.onPlanDoctors, totals.plannedDoctors);
+  const teamAmAttainmentPct =
+    denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null;
+  const teamPmAttainmentPct =
+    denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null;
 
   return {
     ...empty,
@@ -1220,18 +1253,25 @@ export async function getKpisBoard(input: {
       overDoctors: totals.overDoctors,
       // ONE denominator under both plan KPIs — the window's whole list. See the header.
       // Under the Phoenix rules frequency is judged over GRADED doctors only (rule 7).
-      frequencyPct: phoenix
-        ? pct(totals.onPlanDoctors, totals.gradedDoctors)
-        : pct(totals.onPlanDoctors, totals.plannedDoctors),
+      frequencyPct: teamFrequencyPct,
       // Two scores, never their blend — the owner's rule. See `attainmentPct`.
-      amAttainmentPct:
-        denominator > 0 ? Math.round((totals.amVerified / (denominator * AM_CALL_RATE_TARGET)) * 100) : null,
-      pmAttainmentPct:
-        denominator > 0 ? Math.round((totals.pmVerified / (denominator * PM_CALL_RATE_TARGET)) * 100) : null,
+      amAttainmentPct: teamAmAttainmentPct,
+      pmAttainmentPct: teamPmAttainmentPct,
       pharmacyVerified: totals.pharmacyVerified,
       pharmacyRate: denominator > 0 ? totals.pharmacyVerified / denominator : null,
       pharmacyReported: totals.pharmacyReported,
       pharmacyReportedRate: denominator > 0 ? totals.pharmacyReported / denominator : null,
     },
+    // THE OVERALL KPI (owner, 2026-09-17). The four team figures above, each capped at its own
+    // standard and averaged with equal weight — and the printed line that proves it. AM and PM
+    // enter as two separate measures, so no combined call rate is formed on the way here.
+    kpiIndex: kpiIndexOf({
+      coveragePct: teamCoveragePct,
+      frequencyPct: teamFrequencyPct,
+      hasMeasurablePlan: totals.plannedDoctors > 0,
+      amAttainmentPct: teamAmAttainmentPct,
+      pmAttainmentPct: teamPmAttainmentPct,
+      hasCallRate: totals.reps > 0,
+    }),
   };
 }

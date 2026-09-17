@@ -86,11 +86,27 @@ const MEASURED: Record<TableName, MeasuredColumn[]> = {
     { head: "Frequency", needPx: 113 },
     { head: "AM", needPx: 67 },
     { head: "PM", needPx: 67 },
+    // Added 2026-09-17 with the Overall column, and measured rather than chosen:
+    // `node scripts/measure-kpis-table-heads.mjs`, a harness rebuilt from this component's own class
+    // strings and both shells' real `thead th` CSS. The head governs by 26px (93px against a 67px
+    // cell on Segoe UI), so this need is a head reading, which is the kind that harness reproduces
+    // to the pixel: it re-measures Coverage at 105 against the recorded 104 and Frequency at 113
+    // against 113 before it will report anything. 101px is the widest of the four families (Arial,
+    // the no-stack fallback); 93px is Segoe UI, the family the 2026-09-16 needs are in. The wider
+    // one is recorded deliberately — a need recorded too large only makes this pin stricter, and can
+    // never hide an overflow.
+    { head: "Overall", needPx: 101 },
   ],
 };
 
+/**
+ * The components that ARE one cell. A tag missing from these is reported rather than skipped: a
+ * skipped cell would make the <col> count add up while the table had one more column than the
+ * colgroup, which is the defect this file was written for. So a new cell component belongs here —
+ * `OverallCell` (2026-09-17) wraps a MeasureCell the way RepCell wraps a name.
+ */
 const HEAD_CELLS = new Set(["th", "KpiSortableTh", "RepNameTh"]);
-const BODY_CELLS = new Set(["td", "RepCell", "MeasureCell"]);
+const BODY_CELLS = new Set(["td", "RepCell", "MeasureCell", "OverallCell"]);
 
 type JsxNode = ts.JsxElement | ts.JsxSelfClosingElement;
 
