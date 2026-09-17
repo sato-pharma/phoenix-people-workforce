@@ -131,6 +131,11 @@ export type WeeklyExcludedBranch = {
   branchName: string;
   /** PS stock matrix only — the 1-based column this depot sat in */
   branchColumnIndex: number | null;
+  /**
+   * The distinct items (normalised code | name) this depot's held-out rows carried. Its units add them,
+   * so the screen shows those units only while they are one item's (unit-totals.ts).
+   */
+  itemKeys: string[];
   /** distinct source sheet rows dropped */
   rows: number;
   /** net units (sales − returns) that did NOT enter the totals */

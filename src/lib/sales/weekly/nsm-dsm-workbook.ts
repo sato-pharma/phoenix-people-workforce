@@ -38,6 +38,7 @@ import {
   type WeeklyManagerIndex,
 } from "@/lib/sales/weekly/manager-attribution";
 import type { WeeklyFactExportRow } from "@/lib/sales/weekly/types";
+import { weeklyHoldsStockWithNoSales, type WeeklyProductMovement } from "@/lib/sales/weekly/unit-totals";
 
 // ── palette ─────────────────────────────────────────────────────────────────────
 // Deliberately quieter than the BI workbook's slate slabs: this one is printed, and a manager
@@ -336,17 +337,23 @@ function buildGroups(
   let groups = [...byKey.values()];
 
   if (tab === "stock") {
-    // Branches holding stock that sold NOTHING this period. Filtered on the EXACT floats, before
-    // rounding: a branch with 0.4 units of sales has sold something, and rounding it to zero would
-    // put it on a sheet whose whole point is that these branches sold nothing.
+    // Branches holding stock that sold NOTHING this period, on the EXACT floats, before rounding —
+    // and PRODUCT BY PRODUCT (weeklyHoldsStockWithNoSales). Units of different products are never
+    // added, so one product's returns can no longer cancel another product's sales and put a branch
+    // that is selling on a sheet whose whole point is that these branches sold nothing.
     groups = groups.filter((group) => {
-      let sold = 0;
-      let stock = 0;
+      const products = new Map<string, WeeklyProductMovement>();
       for (const [key, value] of group.exact) {
-        if (key.endsWith("||M")) sold += value;
-        if (key.endsWith("||S")) stock += value;
+        const split = key.lastIndexOf("||");
+        const measure = key.slice(split + 2);
+        if (measure !== "M" && measure !== "S") continue;
+        const productCode = key.slice(0, split);
+        const product = products.get(productCode) ?? { netUnits: 0, stockUnits: 0 };
+        if (measure === "M") product.netUnits += value;
+        else product.stockUnits += value;
+        products.set(productCode, product);
       }
-      return sold < 0.5 && stock > 0.5;
+      return weeklyHoldsStockWithNoSales(products.values());
     });
     for (const group of groups) {
       let value = 0;

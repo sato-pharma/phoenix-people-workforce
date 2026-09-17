@@ -15,6 +15,7 @@ import type {
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
+import { weeklyProductKeysAreOne } from "@/lib/sales/weekly/unit-totals";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -28,6 +29,8 @@ import { verifyColumns } from "./weekly-table-widths";
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
+/** Hover text on a unit figure held back because it would add different products. */
+const UNITS_NOT_ADDED_TITLE = "Units of different products are never added";
 const darkHead = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white";
 
 // Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
@@ -781,8 +784,11 @@ export function WeeklyUploadWorkspace({
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalNetQty)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
+                  {/* A batch's Net and Stock units add every product in its sheet, and this list does not
+                      know how many products a batch holds, so it never prints them (units of different
+                      products are never added, unit-totals.ts). The upload's own panel shows them for one. */}
+                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-faint" title={UNITS_NOT_ADDED_TITLE}>—</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
                       {retagId === batch.id ? (
@@ -1148,12 +1154,15 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
 
 function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
   const rows = items.reduce((sum, item) => sum + item.rows, 0);
-  const netQty = items.reduce((sum, item) => sum + item.netQty, 0);
+  // Each row is one item's own units. Their sum adds different items, so it is printed only for one.
+  const netQty = weeklyProductKeysAreOne(items.map((item) => `${item.itemCode}|${item.itemName}`))
+    ? items.reduce((sum, item) => sum + item.netQty, 0)
+    : null;
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
       <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
-        Excluded on purpose ({items.length}) — {num(rows)} rows, {num(netQty)} net units kept out of the numbers
+        Excluded on purpose ({items.length}) — {num(rows)} rows{netQty === null ? "" : `, ${num(netQty)} net units`} kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
@@ -1188,13 +1197,17 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
 
 function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] }) {
   const rows = branches.reduce((sum, branch) => sum + branch.rows, 0);
+  // A depot's units add every item it held out, so they print only while those are one item's: per row
+  // for that row, and across every depot for the sum in the heading.
+  const sumIsOneItem = weeklyProductKeysAreOne(branches.flatMap((branch) => branch.itemKeys));
   const netQty = branches.reduce((sum, branch) => sum + branch.netQty, 0);
   const stockQty = branches.reduce((sum, branch) => sum + branch.stockQty, 0);
+  const heldOutUnits = sumIsOneItem ? `, ${num(netQty)} net and ${num(stockQty)} stock units` : "";
 
   return (
     <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
       <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
-        Branches excluded on purpose ({branches.length}) — {num(rows)} rows, {num(netQty)} net and {num(stockQty)} stock units kept out of the numbers
+        Branches excluded on purpose ({branches.length}) — {num(rows)} rows{heldOutUnits} kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
@@ -1213,8 +1226,12 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
                 <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
                 <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{branch.branchName || "—"}</td>
                 <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.netQty)}</td>
-                <td className="py-1 text-right tabular-nums text-phx-ink-2">{num(branch.stockQty)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">
+                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.netQty) : "—"}
+                </td>
+                <td className="py-1 text-right tabular-nums text-phx-ink-2">
+                  {weeklyProductKeysAreOne(branch.itemKeys) ? num(branch.stockQty) : "—"}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1382,6 +1399,10 @@ function ValidationResultPanel({
   const hasFailures = result.failedRows > 0;
   const t = result.totals;
   const tw = result.thisWeekOnly;
+  // Every unit figure below except By product adds the upload's products, so it prints only while the
+  // upload holds ONE product (owner, 2026-09-17); otherwise a dash holds its place.
+  const unitsAreOneProduct = weeklyProductKeysAreOne(result.byProduct.map((p) => p.productCode || p.productName));
+  const units = (value: number) => (unitsAreOneProduct ? num(value) : "—");
   const weekMismatch =
     result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
 
@@ -1428,15 +1449,19 @@ function ValidationResultPanel({
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-phx-ink">
-            <span>Net units: <span className="text-phx-accent">{num(tw.netQty)}</span></span>
+            <span>Net units: <span className="text-phx-accent">{units(tw.netQty)}</span></span>
             <span className="text-xs font-medium text-phx-ink-soft">
               {tw.priorWeekStart
-                ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
+                ? unitsAreOneProduct
+                  ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
+                  : `= this sheet − previous sheet of the month (${tw.priorWeekStart})`
                 : "first sheet of the month — equals the full cumulative figure"}
             </span>
           </div>
           <div className="mt-1 text-xs font-medium text-phx-ink-faint">
-            Stock {num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.
+            {unitsAreOneProduct
+              ? `Stock ${num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.`
+              : `This sheet holds ${result.byProduct.length} products, and units of different products are never added — each product's own units are under By product.`}
           </div>
         </div>
       )}
@@ -1488,10 +1513,10 @@ function ValidationResultPanel({
       <div className="grid grid-cols-2 gap-px bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
-        <Metric label="Sales units" value={num(t.salesQty)} />
-        <Metric label="Return units" value={num(t.returnQty)} />
-        <Metric label="Net units" value={num(t.netQty)} accent />
-        <Metric label="Stock units" value={num(t.stockQty)} />
+        <Metric label="Sales units" value={units(t.salesQty)} />
+        <Metric label="Return units" value={units(t.returnQty)} />
+        <Metric label="Net units" value={units(t.netQty)} accent />
+        <Metric label="Stock units" value={units(t.stockQty)} />
       </div>
 
       {/* Summary tables */}
@@ -1509,7 +1534,7 @@ function ValidationResultPanel({
           head={["Branch", "Sales", "Return", "Net", "Stock"]}
           rows={result.byBranch.map((b) => [
             b.branchName || b.branchCode,
-            num(b.salesQty), num(b.returnQty), num(b.netQty), num(b.stockQty),
+            units(b.salesQty), units(b.returnQty), units(b.netQty), units(b.stockQty),
           ])}
         />
         <SummaryTable
@@ -1517,7 +1542,7 @@ function ValidationResultPanel({
           head={["Region", "Sales", "Return", "Net", "Stock"]}
           rows={result.byRegion.map((r) => [
             r.regionName || r.regionCode,
-            num(r.salesQty), num(r.returnQty), num(r.netQty), num(r.stockQty),
+            units(r.salesQty), units(r.returnQty), units(r.netQty), units(r.stockQty),
           ])}
         />
       </div>

@@ -17,6 +17,9 @@ import {
 // added different products, which are never added (unit-totals.ts). The owner chose blank (2026-09-17):
 // the unit TOTALs are empty, and Sales Value (and the Summary's Rows) still add up.
 //
+// A PERIOD'S OWN Net and Stock Units add every product that upload carried, too. The owner chose a dash
+// (2026-09-17): a period row prints its units only while the upload holds ONE product.
+//
 // Judged on the EMITTED file (written, then read back), never on the rows handed to the builder.
 
 const PERIODS: BatchSummaryItem[] = [
@@ -42,6 +45,17 @@ const PERIODS: BatchSummaryItem[] = [
     totalSalesValue: 6500,
     totalStockQty: 50,
   },
+  {
+    id: "batch-week-0",
+    distributorCode: "SD1",
+    distributorName: "Sample Distributor",
+    weekStart: "2026-08-30",
+    status: "published",
+    totalRows: 4,
+    totalNetQty: 90,
+    totalSalesValue: 4500,
+    totalStockQty: 35,
+  },
 ];
 
 const PRODUCTS = new Map<string, BatchProductItem[]>([
@@ -59,6 +73,8 @@ const PRODUCTS = new Map<string, BatchProductItem[]>([
       { productCode: "P2", productName: "Product Two 250 mg", netQty: 60, salesValue: 1500, stockQty: 20 },
     ],
   ],
+  // The one-product upload: its own units are one product's, so they print.
+  ["batch-week-0", [{ productCode: "P1", productName: "Product One 500 mg", netQty: 90, salesValue: 4500, stockQty: 35 }]],
 ]);
 
 async function combinedReport(): Promise<ExcelJS.Workbook> {
@@ -109,20 +125,29 @@ export async function runWeeklyCombinedReportUnitTotalsTests() {
   const stockUnits = columnOf(summary, summaryHeader, "Stock Units");
   const rows = columnOf(summary, summaryHeader, "Rows");
 
-  // Positive controls: both periods print their own units, so the checks below cannot pass on a sheet
-  // too thin to break, and the TOTAL row sits right under the last period. The report lists the newest
-  // period first.
-  const periodRows = [summaryHeader + 1, summaryHeader + 2].map((n) => summary.getRow(n));
+  // A period row's units print only for a one-product upload. The two-product periods hold a dash, and
+  // the one-product period is the positive control, so the check cannot pass by dashing every row. The
+  // report lists the newest period first, and the TOTAL row sits right under the last period.
+  const periodRows = [summaryHeader + 1, summaryHeader + 2, summaryHeader + 3].map((n) => summary.getRow(n));
   assert.deepEqual(
     periodRows.map((row) => [row.getCell(netUnits).value, row.getCell(stockUnits).value]),
-    [[160, 50], [200, 65]],
-    "each period still prints its own Net Units and Stock Units",
+    [["—", "—"], ["—", "—"], [90, 35]],
+    "Combined Report Summary: a period that holds two products must not print its units added together",
   );
-  assert.equal(summaryTotal.number, summaryHeader + 3, "the Summary's TOTAL row sits under the last period");
+  for (const row of periodRows) {
+    assert.equal(row.getCell(netUnits).alignment?.horizontal, "right", `${row.getCell(netUnits).address}: Net Units stays right-aligned`);
+    assert.equal(row.getCell(stockUnits).alignment?.horizontal, "right", `${row.getCell(stockUnits).address}: Stock Units stays right-aligned`);
+  }
+  assert.deepEqual(
+    periodRows.map((row) => row.getCell(salesValue).value),
+    [6500, 8000, 4500],
+    "every period still prints its Sales Value",
+  );
+  assert.equal(summaryTotal.number, summaryHeader + 4, "the Summary's TOTAL row sits under the last period");
 
   // Sales Value and Rows are flows and counts: they still add up.
-  assert.equal(summaryTotal.getCell(salesValue).value, 14500, "the Summary's Sales Value TOTAL adds the periods");
-  assert.equal(summaryTotal.getCell(rows).value, 22, "the Summary's Rows TOTAL adds the periods");
+  assert.equal(summaryTotal.getCell(salesValue).value, 19000, "the Summary's Sales Value TOTAL adds the periods");
+  assert.equal(summaryTotal.getCell(rows).value, 26, "the Summary's Rows TOTAL adds the periods");
 
   assertEmptyTotal(
     summaryTotal.getCell(stockUnits),
@@ -142,7 +167,9 @@ export async function runWeeklyCombinedReportUnitTotalsTests() {
     const sheetNet = columnOf(sheet, header, "Net Units");
     const sheetValue = columnOf(sheet, header, "Sales Value (EGP)");
     const sheetStock = columnOf(sheet, header, "Stock Units");
-    const productRows = [header + 1, header + 2].map((n) => sheet.getRow(n));
+    const productCount = total.number - header - 1;
+    assert.ok(productCount >= 1, `sheet "${sheet.name}": lists its products`);
+    const productRows = Array.from({ length: productCount }, (_, i) => sheet.getRow(header + 1 + i));
 
     assert.ok(
       productRows.every((row) => typeof row.getCell(sheetNet).value === "number" && typeof row.getCell(sheetStock).value === "number"),

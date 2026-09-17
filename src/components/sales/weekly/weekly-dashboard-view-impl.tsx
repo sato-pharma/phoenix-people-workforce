@@ -1244,7 +1244,8 @@ function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparis
 
 /**
  * The Stock on hand watchlist. A branch's stock adds its products, so the stock column, its bars and the
- * header total are there only while the selection is one product; without them the branches list by name.
+ * header total are there only while the selection is one product; without them the branches keep the
+ * order they arrive in, biggest stock VALUE first (weeklyZeroSalesBranches).
  */
 function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStock: boolean }) {
   const table = useSortableTable(rows, {
@@ -1256,7 +1257,7 @@ function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStoc
         : []),
     ],
     searchAccessors: [(row) => row.branchName, (row) => row.regionName],
-    initialSort: showStock ? { key: "stockUnits", dir: "desc" } : { key: "branchName", dir: "asc" },
+    initialSort: showStock ? { key: "stockUnits", dir: "desc" } : null,
     secondarySort: { key: "branchName", accessor: (row) => row.branchName, type: "string" },
   });
   const max = showStock ? visibleMax(table.rows, (row) => row.stockUnits) : 1;

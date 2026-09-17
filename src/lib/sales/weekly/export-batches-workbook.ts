@@ -12,6 +12,7 @@ import {
   VALUE_FMT,
   sanitizeSheetName,
 } from "@/lib/sales/sales-workbook-kit";
+import { weeklyProductKeysAreOne } from "@/lib/sales/weekly/unit-totals";
 
 export type BatchSummaryItem = {
   id: string;
@@ -76,15 +77,23 @@ export async function buildBatchesExportWorkbook(
       { label: "Stock Units", numFmt: UNITS_FMT, right: true, width: 13 },
       { label: "Rows", numFmt: UNITS_FMT, right: true, width: 10 },
     ],
-    rows: sorted.map((b) => [
-      b.weekStart ?? "—",
-      b.distributorName,
-      b.status,
-      b.totalNetQty,
-      b.totalSalesValue,
-      b.totalStockQty,
-      b.totalRows,
-    ]),
+    // A period's Net and Stock Units add every product it carried, so they are printed only while that
+    // upload holds ONE product (owner, 2026-09-17); otherwise the cells keep their place and hold a dash.
+    // Its per-product sheet below always shows each product's own units.
+    rows: sorted.map((b) => {
+      const oneProduct = weeklyProductKeysAreOne(
+        (productsByBatch.get(b.id) ?? []).map((p) => p.productCode || p.productName),
+      );
+      return [
+        b.weekStart ?? "—",
+        b.distributorName,
+        b.status,
+        oneProduct ? b.totalNetQty : "—",
+        b.totalSalesValue,
+        oneProduct ? b.totalStockQty : "—",
+        b.totalRows,
+      ];
+    }),
     // Only Sales Value and Rows add up (owner, 2026-09-17). The unit TOTALs stay empty: each period's
     // units already add different products, which are never added (unit-totals.ts), and its stock is a
     // snapshot of that week, so adding the periods multiplies the stock on hand.

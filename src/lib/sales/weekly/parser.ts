@@ -1993,7 +1993,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
   // ── resolve + aggregate over the UNION of (product, branch) keys across all sides ─────────────
   const aggregates = new Map<AggKey, Agg>();
   const excluded = new Map<string, { itemCode: string; itemName: string; tally: HeldOutTally }>();
-  const excludedBranches = new Map<string, { rawBranch: string; branchName: string; branchColumnIndex: number | null; tally: HeldOutTally }>();
+  const excludedBranches = new Map<
+    string,
+    { rawBranch: string; branchName: string; branchColumnIndex: number | null; items: Set<string>; tally: HeldOutTally }
+  >();
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
@@ -2009,12 +2012,16 @@ export async function parseWeeklyWorkbookBuffer(input: {
         rawBranch: obs.rawBranchCode || obs.rawBranchName || "",
         branchName: obs.rawBranchName || "",
         branchColumnIndex: obs.posColumnIndex ?? null,
+        items: new Set<string>(),
         tally: emptyHeldOut(),
       };
       // An excluded depot spans the sales and stock sides; whichever landed first may have carried a
       // blank display name or no column index (same late-fill the real aggregate does).
       if (!entry.branchName && obs.rawBranchName) entry.branchName = obs.rawBranchName;
       if (entry.branchColumnIndex == null && obs.posColumnIndex != null) entry.branchColumnIndex = obs.posColumnIndex;
+      // Which items the depot held out, keyed the way the IGNORE path keys an item, so the screen can tell
+      // one product's units from several products' (units of different products are never added).
+      entry.items.add(`${normalizeCode(obs.rawItemCode || "")}|${normalizeKey(obs.rawItemName || "")}`);
       addHeldOut(entry.tally, obs);
       excludedBranches.set(key, entry);
       continue;
@@ -2231,6 +2238,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
         rawBranch: entry.rawBranch,
         branchName: entry.branchName,
         branchColumnIndex: entry.branchColumnIndex,
+        itemKeys: [...entry.items].sort(),
         rows: entry.tally.rows.size,
         netQty: Number(heldOutNet(entry.tally).toFixed(2)),
         stockQty: Number(entry.tally.stockQty.toFixed(2)),
