@@ -557,6 +557,7 @@ import { runDistributorProfileStoreTests } from "./sales-distributor-profile-sto
 import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.test.ts";
 import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
+import { runWeeklyBatchAuditTests } from "./weekly-batch-audit.test.ts";
 import { runWeeklyBranchAreaSplitTests } from "./weekly-branch-area-split.test.ts";
 import { runWeeklyBranchAttributionTests } from "./weekly-branch-attribution.test.ts";
 import { runWeeklyOwnAreaLiftTests } from "./weekly-own-area-lift.test.ts";
@@ -2841,6 +2842,10 @@ await runTest("distributor profile store (editable merge + validation)", runDist
 await runTest("weekly column profile store (editable merge + validation)", runWeeklyColumnProfileStoreTests);
 await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
+await runTest(
+  "weekly upload delete and re-tag each write an audit row: who did it, which upload, and the week before and after",
+  runWeeklyBatchAuditTests,
+);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
 await runTest(
   "weekly stock across months: each distributor's latest week in scope, never one month-end per month (tiles, compare delta, both exports; one-month views unchanged)",
