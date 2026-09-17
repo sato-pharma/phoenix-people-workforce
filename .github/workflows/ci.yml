@@ -261,6 +261,13 @@ jobs:
       # branch cannot be staged on Railway without shipping it, because
       # `railway service source connect` is service-level rather than environment-scoped. See
       # AGENTS.md §2.3. CI was the only safe place to ask, and it has now answered.
+      #
+      # ONE LEVER DID APPEAR LATER, AND IT WAS A COST RATHER THAN A SPEED-UP. Next 16.3 (bumped
+      # 2026-09-09, #3559) writes a Turbopack filesystem cache at the end of every `next build` by
+      # default, and the build waits for it: "Finished writing to filesystem cache" logged 49s to
+      # 4.4 min. Nothing restores it (see the deleted cache above), so next.config.ts sets
+      # `turbopackFileSystemCacheForBuild: false`. The measurement is on that line. If that log line
+      # ever reappears in this step, the flag has been lost.
 
       - name: Test
         if: steps.detect.outputs.docs_only != 'true'
