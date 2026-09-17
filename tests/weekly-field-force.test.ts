@@ -198,7 +198,7 @@ export function runWeeklyFieldForceTests() {
     // No split index: nothing is placed by name, so every credit here is a hand mapping.
     areaSplit: null,
     seatIndex: index,
-    weekComparison: [],
+    depotWeekGaps: [],
   });
 
   const mahmoud = built.reps.find((rep) => rep.repName === "Mahmoud Fathy");
@@ -273,7 +273,7 @@ export function runWeeklyFieldForceTests() {
     ],
     areaSplit: null,
     seatIndex: index,
-    weekComparison: [],
+    depotWeekGaps: [],
   });
   const exactRep = allocated.reps.find((rep) => rep.repName === "Mahmoud Fathy");
   assert.equal(exactRep?.exactValue, 400, "only the hand-mapped row counts as exact credit");
@@ -339,7 +339,7 @@ export function runWeeklyFieldForceTests() {
     rows: [factRow({ areaCode: "AB1", salesValue: 100, salesUnits: 1 })],
     areaSplit: null,
     seatIndex: { byLineArea: new Map(), seats: [] },
-    weekComparison: [],
+    depotWeekGaps: [],
   });
   assert.equal(
     noSeats.seatIndexUnavailable,
