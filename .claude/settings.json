@@ -32,6 +32,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}\"; node \"$DIR/.claude/hooks/primary-write-guard.mjs\" 2>/dev/null || true",
+            "shell": "bash"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
