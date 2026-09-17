@@ -414,6 +414,22 @@ export function runMailboxComplianceMonitorTests() {
     );
   }
 
+  // ── …and every UPDATE or DELETE must carry a predicate ─────────────────────────────────
+  // PostgREST applies an update with no filter to the WHOLE TABLE, and it answers 200. The write
+  // that replaces an app password would then seal ONE mailbox's new credential over every
+  // monitored mailbox in the company — every other row left holding a password that opens a
+  // mailbox it does not belong to, with the originals unrecoverable (they are sealed blobs, not
+  // something a backup of this table can be diffed against). Nothing about that failure is visible
+  // from the response, so the predicate is pinned rather than trusted.
+  for (const write of writes) {
+    if (!/\.(update|delete)\s*\(/.test(write)) continue;
+    assert.ok(
+      /\.(eq|match|in)\s*\(/.test(write),
+      `every mailbox-monitor UPDATE/DELETE must name the rows it touches — this one would hit the ` +
+        `whole table:\n${write}`,
+    );
+  }
+
   // ── The audit row is written BEFORE the health update, in both failure paths ────────────
   // markHealth can throw: the supabase client turns its own 15s abort into a thrown "Supabase
   // request timed out." (src/lib/supabase/server.ts). Awaited first, that throw skipped the
@@ -468,16 +484,45 @@ export function runMailboxComplianceMonitorTests() {
     "the candidate must be tested against the stored mailbox's own host, port and address",
   );
 
+  // A refused candidate must leave with NOTHING written. Ordering the test before the seal is
+  // only half of it: a rejection that fell through to the UPDATE would store a password the mail
+  // server has just refused, over one that may still work — and this path exists precisely because
+  // the row's own credential is the thing in doubt.
+  const storeAt = replaceBody.indexOf(".update(");
+  assert.notEqual(storeAt, -1, "replaceMonitorPassword must write the new credential");
+  const refusalAt = replaceBody.indexOf("throw new MailboxMonitorError(`Could not connect");
+  assert.notEqual(refusalAt, -1, "replaceMonitorPassword must refuse a candidate the mailbox rejected");
+  assert.ok(
+    candidateTestAt < refusalAt && refusalAt < sealAt,
+    "a rejected candidate must throw BEFORE the password is sealed and written",
+  );
+
   // A REJECTED candidate must not touch the health columns. They describe the credential the row
   // is HOLDING; a typo in a replacement says nothing about it. Marking the monitor `failing` here
-  // would report a working mailbox as broken on the strength of a mistyped form field — which is
-  // why this is the one connection test in the module that deliberately ends without markHealth.
+  // would report a working mailbox as broken on the strength of a mistyped form field. Scoped to
+  // the path BEFORE the write: banning markHealth across the whole function would also forbid the
+  // proven-replacement path from using it, which is a legitimate health update and the one place
+  // this function is entitled to make one.
   assert.equal(
-    replaceBody.includes("markHealth("),
+    replaceBody.slice(0, storeAt).includes("markHealth("),
     false,
-    "replaceMonitorPassword must never write the health columns — a rejected candidate is not "
-      + "evidence about the credential the row still holds",
+    "replaceMonitorPassword must not write the health columns before the credential is stored — a "
+      + "rejected candidate is not evidence about the credential the row still holds",
   );
+
+  // The write names its row. Covered by the table-wide predicate sweep above as well; pinned by
+  // name here because THIS is the update that would seal one mailbox's password over every other.
+  assert.ok(
+    /\.eq\("id",\s*id\)/.test(replaceBody),
+    "the replacement must be written to the monitor it names, never to an unfiltered table",
+  );
+
+  // The SUCCESS row is written after the credential is stored. Written first it claims a
+  // replacement that a throwing sealSecret or a refused UPDATE never made — and on a compliance
+  // log about a mailbox credential, overstating what happened is the wrong way round to be wrong.
+  const okAuditAt = replaceBody.indexOf("detail: { ok: true }");
+  assert.notEqual(okAuditAt, -1, "a proven replacement must leave its own access-log row");
+  assert.ok(storeAt < okAuditAt, "the { ok: true } audit row must follow the write, never precede it");
 
   // Both refusals are audited before they throw — the rule refuseAdd enforces on the add path.
   const replaceAuditAt = replaceBody.indexOf("await logAccess(");
@@ -523,6 +568,48 @@ export function runMailboxComplianceMonitorTests() {
     "the rate limit must be consumed BEFORE the IMAP login is attempted",
   );
 
+  // ── …and so does every OTHER route that ends in a live login ────────────────────────────
+  // All five of these log in to a real employee's mailbox with the stored credential, and not one
+  // of them checks the row's status first — the dashboard leaves Open and Re-check enabled on a
+  // failing row, so a mailbox whose app password has been revoked can be sent failed login after
+  // failed login by ordinary clicking. Yahoo/Turbify locks an account out for that, and a
+  // locked-out mailbox is the ONE thing that would make compliance reading visible to the person
+  // whose mail is being read. A ceiling on one of the five is not a ceiling, which is why this
+  // sweeps every path rather than pinning the one that was fixed first.
+  const imapPaths = [
+    { call: "listMonitorFolders(", label: "opening a mailbox", route: "[id]/route.ts" },
+    { call: "replaceMonitorPassword(", label: "replacing the app password", route: "[id]/route.ts" },
+    { call: "recheckMonitor(", label: "a bare re-check", route: "[id]/route.ts" },
+    { call: "listMonitorMessages(", label: "listing a folder", route: "[id]/messages/route.ts" },
+    { call: "openMonitorMessage(", label: "opening a message", route: "[id]/message/route.ts" },
+  ];
+  for (const path of imapPaths) {
+    const routeSource = readFileSync(
+      new URL(`../app/api/admin/mailbox-monitor/${path.route}`, import.meta.url),
+      "utf8",
+    );
+    const callAt = routeSource.indexOf(`await ${path.call}`);
+    assert.notEqual(callAt, -1, `${path.label}: could not find the call in ${path.route}`);
+    const ceilingAt = routeSource.lastIndexOf("await assertMailboxImapCeiling(", callAt);
+    assert.notEqual(
+      ceilingAt,
+      -1,
+      `${path.label} is a live IMAP login with no rate ceiling in front of it (${path.route}) — ` +
+        `enough failed logins lock the mailbox out, and a locked-out mailbox is how the owner ` +
+        `finds out they are being read`,
+    );
+  }
+  // The add path logs in too, before any monitor row exists to key a ceiling on — so it carries
+  // its own, and this is the assertion that notices if it is ever removed.
+  const collectionRouteSource = readFileSync(
+    new URL("../app/api/admin/mailbox-monitor/route.ts", import.meta.url),
+    "utf8",
+  );
+  const addCeilingAt = collectionRouteSource.indexOf("assertApiRateLimit(");
+  const addCallAt = collectionRouteSource.indexOf("await addMonitor(");
+  assert.notEqual(addCeilingAt, -1, "the add path must consume a rate ceiling");
+  assert.ok(addCeilingAt < addCallAt, "the add path's ceiling must be consumed before the IMAP login");
+
   // ── markHealth must not be able to throw ────────────────────────────────────────────────
   // Ordering alone is not the whole defence. A health update is metadata ABOUT an operation, never
   // the operation the caller asked for, so its failure must never surface as the caller's error.
@@ -534,6 +621,20 @@ export function runMailboxComplianceMonitorTests() {
   assert.ok(
     /\btry\s*\{/.test(markHealthBody) && /\bcatch\s*\(/.test(markHealthBody),
     "markHealth must guard its write — an unguarded throw pre-empts both the audit row and the caller's error",
+  );
+
+  // markHealth writes to the row it was given, and only while that row still holds the credential
+  // the caller tested. A failing read and a password replacement race: the read starts, the app
+  // password is replaced and the row goes active, the read finally times out — and an unconditional
+  // update then stamps `failing` plus a stale last_error over a credential that has just been
+  // proven to work, on the one line the dashboard shows a human.
+  assert.ok(
+    /\.match\(predicate\)/.test(markHealthBody) && /predicate[\s\S]{0,40}\bid\b/.test(markHealthBody),
+    "markHealth must key its update on the monitor id",
+  );
+  assert.ok(
+    /sealed_password/.test(markHealthBody),
+    "markHealth must be able to write only while the row still holds the credential that was tested",
   );
 
   // ── last_error goes through the SAME gate as the audit reason ────────────────────────

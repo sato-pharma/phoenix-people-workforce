@@ -6,6 +6,7 @@ import {
   mailboxMonitorErrorResponse,
   type MailboxMonitorRouteAccess,
 } from "@/lib/mailbox-monitor/route-errors";
+import { assertMailboxImapCeiling } from "@/lib/mailbox-monitor/route-limits";
 import { listMonitorMessages } from "@/lib/mailbox-monitor/service";
 
 export const runtime = "nodejs";
@@ -21,6 +22,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "read");
     const { id } = await context.params;
+    // Every folder click is another live IMAP login with the stored credential — the folder list in
+    // the reader is a row of buttons, so this is the cheapest path to hammer. route-limits.ts holds
+    // why a ceiling on one of these paths is not a ceiling.
+    await assertMailboxImapCeiling({
+      actor: access.loginId ?? access.hrId,
+      monitorId: id,
+      request,
+      scope: "mailbox-monitor:list-messages",
+    });
     const folder = request.nextUrl.searchParams.get("folder") || "INBOX";
     const limitRaw = Number(request.nextUrl.searchParams.get("limit"));
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 50;

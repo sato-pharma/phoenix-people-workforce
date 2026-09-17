@@ -21,6 +21,7 @@ import type {
   AddMailboxMonitorInput,
   ImportConfiguredResult,
   ImportableMailbox,
+  MailboxAccessAction,
   MailboxConnection,
   MailboxFolder,
   MailboxMessageDetail,
@@ -122,7 +123,7 @@ async function logAccess(entry: {
   monitorId: string | null;
   emailAddress: string | null;
   actorHrId: string | null;
-  action: string;
+  action: MailboxAccessAction;
   folder?: string | null;
   messageUid?: string | number | null;
   detail?: Record<string, unknown> | null;
@@ -193,7 +194,13 @@ function connectionFromRow(row: MonitorRow): MailboxConnection {
  */
 async function markHealth(
   id: string,
-  patch: { status?: MailboxMonitorStatus; ok?: boolean; error?: string | null },
+  patch: {
+    status?: MailboxMonitorStatus;
+    ok?: boolean;
+    error?: string | null;
+    // Only write if the row still holds THIS sealed password — see the note on the predicate below.
+    onlyIfSealedPassword?: string;
+  },
 ): Promise<void> {
   const now = new Date().toISOString();
   const update: Record<string, unknown> = { last_checked_at: now, updated_at: now };
@@ -206,8 +213,16 @@ async function markHealth(
   // renders, on a single non-wrapping line, so leaving it uncapped meant the one protection the
   // cap was written for was missing from the one place a human reads.
   if (patch.error !== undefined) update.last_error = failureReason(patch.error);
+  // A failure is evidence about the credential that FAILED, and only that one. A read and a
+  // password replacement overlap easily — the owner clicks Open on a failing mailbox, then repairs
+  // it in the panel while the read is still timing out — and keyed on the id alone the read's
+  // `failing` lands on top of the fresh credential, showing a mailbox as broken seconds after it
+  // was fixed. Keyed also on the sealed blob the caller actually used, a stale verdict matches no
+  // row at all and quietly does nothing, which is exactly what a stale verdict is worth.
+  const predicate: Record<string, string> = { id };
+  if (patch.onlyIfSealedPassword) predicate.sealed_password = patch.onlyIfSealedPassword;
   try {
-    const { error } = await db().from(MONITORS_TABLE).update(update).eq("id", id);
+    const { error } = await db().from(MONITORS_TABLE).update(update).match(predicate);
     if (error) {
       logError("Failed to update mailbox monitor health", {
         error,
@@ -436,7 +451,7 @@ export async function recheckMonitor(id: string, actorHrId: string | null): Prom
   if (test.ok) {
     await markHealth(id, { ok: true, status: "active" });
   } else {
-    await markHealth(id, { error: test.error, status: "failing" });
+    await markHealth(id, { error: test.error, onlyIfSealedPassword: row.sealed_password, status: "failing" });
   }
   const refreshed = await loadRow(id);
   const names = await resolveEmployeeNames([refreshed.employee_hr_id ?? ""]);
@@ -493,14 +508,16 @@ export async function replaceMonitorPassword(
     secure: row.imap_secure,
     user: row.email_address,
   });
-  await logAccess({
-    action: "replace_password",
-    actorHrId,
-    detail: test.ok ? { ok: true } : failureDetail(test.error, { ok: false }),
-    emailAddress: row.email_address,
-    monitorId: id,
-  });
   if (!test.ok) {
+    // Audited before the throw — the rule refuseAdd enforces on the add path: a guard that throws
+    // without a row cannot be counted afterwards.
+    await logAccess({
+      action: "replace_password",
+      actorHrId,
+      detail: failureDetail(test.error, { ok: false }),
+      emailAddress: row.email_address,
+      monitorId: id,
+    });
     // Diagnostic: the reason has nowhere else to live. Nothing was written to the row, so there is
     // no last_error to read it back from afterwards — exactly the add path's 422.
     throw new MailboxMonitorError(`Could not connect with that app password: ${test.error}`, 422, {
@@ -509,7 +526,10 @@ export async function replaceMonitorPassword(
   }
 
   const now = new Date().toISOString();
-  const { error } = await db()
+  // `.select("*")` returns the written row, so the refreshed monitor comes back from the write
+  // itself rather than from a second read — one fewer round trip, and no window in which another
+  // admin's edit lands between the two and is returned as if it were this request's result.
+  const { data, error } = await db()
     .from(MONITORS_TABLE)
     .update({
       last_checked_at: now,
@@ -519,10 +539,27 @@ export async function replaceMonitorPassword(
       status: "active",
       updated_at: now,
     })
-    .eq("id", id);
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
   if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
+  // Nothing came back: the monitor was removed between the load and the write. A 404, not a fault.
+  if (!data) throw new MailboxMonitorError("Mailbox monitor not found.", 404);
 
-  const updated = await loadRow(id);
+  // The SUCCESS row is written AFTER the credential is stored, never before it. Written first, it
+  // claimed a replacement that a throwing sealSecret (a missing MAILBOX_MONITOR_SECRET) or a
+  // refused UPDATE never actually made — and on a compliance log about a mailbox credential, a row
+  // that overstates what happened is the wrong way round to be wrong. addMonitor orders it the
+  // same way: write the row, then record it.
+  await logAccess({
+    action: "replace_password",
+    actorHrId,
+    detail: { ok: true },
+    emailAddress: row.email_address,
+    monitorId: id,
+  });
+
+  const updated = data as MonitorRow;
   const names = await resolveEmployeeNames([updated.employee_hr_id ?? ""]);
   return rowToMonitor(updated, updated.employee_hr_id ? names.get(updated.employee_hr_id) ?? null : null);
 }
@@ -532,7 +569,7 @@ export async function replaceMonitorPassword(
 async function withMonitorRead<T>(
   id: string,
   actorHrId: string | null,
-  action: string,
+  action: MailboxAccessAction,
   meta: { folder?: string | null; messageUid?: string | number | null },
   run: (connection: MailboxConnection, row: MonitorRow) => Promise<T>,
 ): Promise<T> {
@@ -563,7 +600,7 @@ async function withMonitorRead<T>(
       messageUid: meta.messageUid ?? null,
       monitorId: id,
     });
-    await markHealth(id, { error: message, status: "failing" });
+    await markHealth(id, { error: message, onlyIfSealedPassword: row.sealed_password, status: "failing" });
     throw new MailboxMonitorError(
       `Could not read the mailbox — it may have been closed or the app password revoked. (${message})`,
       502,

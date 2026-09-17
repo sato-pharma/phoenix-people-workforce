@@ -6,6 +6,7 @@ import {
   mailboxMonitorErrorResponse,
   type MailboxMonitorRouteAccess,
 } from "@/lib/mailbox-monitor/route-errors";
+import { assertMailboxImapCeiling } from "@/lib/mailbox-monitor/route-limits";
 import { openMonitorMessage } from "@/lib/mailbox-monitor/service";
 
 export const runtime = "nodejs";
@@ -26,6 +27,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (!Number.isFinite(uid) || uid <= 0) {
       return NextResponse.json({ message: "A valid message uid is required." }, { status: 400 });
     }
+    // Reading a message is one more live login, and it is the one an admin repeats fastest — a
+    // click per row down a folder listing. route-limits.ts holds the reason all five paths are
+    // bounded, not just the one that paid for it.
+    await assertMailboxImapCeiling({
+      actor: access.loginId ?? access.hrId,
+      monitorId: id,
+      request,
+      scope: "mailbox-monitor:open-message",
+    });
     const message = await openMonitorMessage(id, folder, uid, access.hrId ?? access.loginId ?? null);
     if (!message) return NextResponse.json({ message: "That message no longer exists." }, { status: 404 });
     return NextResponse.json({ message });
