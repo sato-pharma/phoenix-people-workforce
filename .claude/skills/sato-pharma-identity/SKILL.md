@@ -8,15 +8,18 @@ description: Sato Pharma's visual identity — the "SHARP" design system (navy i
 Everything needed to reproduce the Sato Pharma look in a new place: real artwork, licensed
 fonts, exact tokens, and the working code the two live products use.
 
-Skill folder: `.claude/skills/sato-pharma-identity/` in the Phoenix Workforce repository (a copy of
-the owner's machine-wide skill, so worktrees and cloud sessions have it too). The full pack — with
-the satopharma.com website images, product photos and a sample certificate — is kept at
-`F:\Sato Identity\` on the owner's laptop only.
+Skill folder: this skill exists in two copies that must stay word-for-word identical — the owner's
+machine-wide copy at `C:/Users/satoh/.claude/skills/sato-pharma-identity/`, and
+`.claude/skills/sato-pharma-identity/` in the Phoenix Workforce repository, so worktrees and cloud
+sessions have it too. When both load, the machine-wide copy wins, so a change goes into both. The
+full pack — with the satopharma.com website images, product photos and a sample certificate — is
+kept at `F:\Sato Identity\` on the owner's laptop only.
 
 ## Inside Phoenix Workforce — read this first
 
 This skill is Sato Pharma's identity for the Future Talents certificates, the business card, the
-website and new stand-alone pieces. **It does not restyle Phoenix.** Inside this repository:
+website and new stand-alone pieces. **It does not restyle Phoenix.** When the work is inside the
+Phoenix Workforce repository:
 
 - **Company documents keep the house identity `SATO-DIS-2026-01`** (`src/lib/hiring-pack/house-identity.ts`),
   with its three logo blues and the INK RULE (no filled areas). Do not swap in this skill's single
