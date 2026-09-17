@@ -147,13 +147,21 @@ What it protects you from, and what to do if you read the sources by hand instea
 ## 8 · Read main's own CI
 
 ```bash
-gh run list --branch main --workflow ci.yml --limit 5 --json headSha,status,conclusion,url
+REPO=Gawish-1997/phoenix-people-workforce
+gh api "repos/$REPO/actions/runs?head_sha=<merge sha>&per_page=30" --jq '
+  .workflow_runs[]
+  | select(.path == ".github/workflows/ci.yml")
+  | "\(.name) | \(.event) | \(.status)/\(.conclusion // "-") | \(.html_url)"'
 ```
 
-Find the merge sha. Runs on `main` are grouped by commit and never cancelled, so every merge has its
-own verdict — and **a red `main` still builds, ships and serves perfectly**, so this is the only
-place that failure appears. For a docs-only PR it is the first time the tests ran at all. The
-verifier reads this too; do it by hand only when it could not.
+**Ask by sha — do not scan `gh run list`.** That list is eventually consistent: it dropped a run that
+existed, in the minute another commit merged, which reads as "main has no verdict" on a commit that
+had already passed. The sha endpoint answered correctly for the same commit at the same moment.
+
+Runs on `main` are grouped by commit and never cancelled, so every merge has its own verdict — and
+**a red `main` still builds, ships and serves perfectly**, so this is the only place that failure
+appears. For a docs-only PR it is the first time the tests ran at all. The verifier reads this too;
+do it by hand only when it could not.
 
 ## 9 · Report, in Cairo time
 
