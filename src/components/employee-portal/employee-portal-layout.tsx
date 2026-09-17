@@ -57,6 +57,7 @@ import {
   BookUser,
   TrendingUp,
   Package,
+  Sunrise,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -251,6 +252,7 @@ function buildEmployeePortalSections({
   showBusinessReviewTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
+  showEarlyBirdsTab = false,
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showDirectOrdersTab = false,
@@ -365,6 +367,12 @@ function buildEmployeePortalSections({
         // `showMyVisitsTab`/`isPortalHrOfficeStaff` (navigation.ts) is always true/false now and
         // no portal role is excluded.
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
+        // Directly under My Visits because it is the same data read competitively: My Visits is what
+        // I did, Early Birds is how the START of those days ranks against the district. The board had
+        // no portal rail row at all until 2026-09-18 — only a catalog entry in system-navigation.ts,
+        // which this rail does not read (see the header of buildEmployeePortalSections' own memory:
+        // the portal sidebar is built here, by hand). Its admin twin is /admin/early-birds.
+        ...(showEarlyBirdsTab ? [{ href: "/employee-portals/early-birds", label: "Early Birds", icon: Sunrise }] : []),
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM. My Visits
         // above stays: it is the always-on self view every portal role keeps.
         ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),

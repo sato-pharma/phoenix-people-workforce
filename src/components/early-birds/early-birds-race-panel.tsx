@@ -60,25 +60,30 @@ function RaceRow({
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
-          {score.name}
+        {/* flex-wrap, and the name itself breaks. A five-part Egyptian name runs ~200px at 12px/700
+            while this column is ~150px on a phone once the rank chip and the right-hand figures
+            have taken their share — so on `whitespace-nowrap` it ran under the median-start column.
+            The two chips keep their own nowrap: they are two characters each, and breaking "×4"
+            across lines would read worse than the overflow it prevents. */}
+        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-bold text-slate-900" dir="auto">
+          <span className="min-w-0 break-words">{score.name}</span>
           {isViewer && (
-            <span className="whitespace-nowrap bg-orange-500 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-white">
+            <span className="shrink-0 whitespace-nowrap bg-orange-500 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-white">
               You
             </span>
           )}
           {winCount > 1 && (
             <span
-              className="whitespace-nowrap bg-slate-700 px-1 py-0.5 text-phx-3xs font-black text-white"
+              className="shrink-0 whitespace-nowrap bg-slate-700 px-1 py-0.5 text-phx-3xs font-black text-white"
               title={`Won ${winCount} fortnights`}
             >
               ×{winCount}
             </span>
           )}
         </p>
-        <div className="mt-1 flex items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-2">
           <StreakStrip score={score} />
-          <span className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400 sm:hidden">
+          <span className="text-phx-2xs font-semibold text-slate-400 sm:hidden">
             {beforeNineCount(score)}/{score.daysWithSubmission} days before 09:00
           </span>
         </div>
@@ -148,8 +153,8 @@ export function EarlyBirdsRacePanel({
       <SectionHead
         title="The Race"
         right={
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
-            <Sunrise className="h-3.5 w-3.5 text-orange-400" />
+          <span className="inline-flex min-w-0 items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
+            <Sunrise className="h-3.5 w-3.5 shrink-0 text-orange-400" />
             {scores.length} reps
           </span>
         }

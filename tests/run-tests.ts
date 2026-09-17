@@ -1582,6 +1582,7 @@ import { runWeeklyUnitsAcrossProductsFollowupsTests } from "./weekly-units-acros
 import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
+import { runEarlyBirdsBoardWrapsTests } from "./early-birds-board-wraps.test.ts";
 import { runPortalChromeNeverClipsTextTests } from "./portal-chrome-never-clips-text.test.ts";
 import { runShellChromeOverflowsTests } from "./shell-chrome-overflows.test.ts";
 import { runPortalRailScrollsNeverSquashesTests } from "./portal-rail-scrolls-never-squashes.test.ts";
@@ -5216,6 +5217,10 @@ await runTest(
 );
 
 await runTest("stars of the fortnight card wraps on a phone (no whitespace-nowrap, no truncate, no overflow-x-auto)", runEarlyBirdsFortnightCardWrapsTests);
+await runTest(
+  "early birds board wraps and stays square (winner names break, no fixed-width hall-of-fame column, no rounded corner)",
+  runEarlyBirdsBoardWrapsTests,
+);
 await runTest(
   "portal chrome never clips text (header role label, MM intel tiles, GlanceStrip columns)",
   runPortalChromeNeverClipsTextTests,

@@ -100,7 +100,9 @@ export function EarlyBirdsBoard({
           title={`This fortnight · ${data.period.label}`}
           right={
             action ?? (
-              <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
+              // No nowrap: SectionHead's bar is overflow-hidden, so a chip that cannot wrap is
+              // CLIPPED rather than scrolled — invisible to a scrollWidth check (AGENTS.md §4).
+              <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
                 {data.scopeLabel}
               </span>
             )

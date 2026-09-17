@@ -25,7 +25,11 @@ export function EarlyBirdsDistrictSwitcher({
           <Link
             key={district.hrIdKey}
             href={`${basePath}?district=${encodeURIComponent(district.hrId)}`}
-            className={`whitespace-nowrap border px-2 py-1 text-phx-xs font-bold ${
+            // A "district" here is its MANAGER'S full name, so these chips carry the same four-
+            // and five-part Egyptian names the rest of the board does — and a Super Admin sees one
+            // chip per district in the company. `max-w-full` + `break-words` keeps the longest of
+            // them inside the row it wrapped onto instead of running off the screen.
+            className={`max-w-full break-words border px-2 py-1 text-phx-xs font-bold ${
               active
                 ? "border-orange-300 bg-orange-50 text-orange-700"
                 : "border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-600"
