@@ -94,7 +94,7 @@ cost, the deploy path or the region.
 
 **Memory slugs that this section was the only pointer for.** `scripts/memory-index-reachability.mjs` scans **this file** and matches the **backticked** form, so these stay here whatever happens to the prose above — deleting one orphans that memory unless `MEMORY.md` also links it. They are a reachability roster, not a reading list; the hook each belongs to travels with its cluster.
 
-`tz-africa-cairo-silently-returns-utc-in-msys` · `looking-at-a-generated-workbook-two-ways-that-lie` · `a-manual-scheduled-task-run-leaves-no-trace` · `main-is-not-the-primary-checkout` · `a-missing-table-answers-pgrst205-not-42p01` · `attribution-rollup-fingerprint-ignores-the-sales-data` · `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38` · `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url` · `census-client-errors-by-stack-not-message` · `typecheck-incremental-false-green` · `the-test-suite-runs-with-production-credentials-and-app-env-production` · `tailwind-merge-strips-custom-named-font-sizes` · `bilingual-bodies-need-direction-per-line-not-per-block` · `ireports360-timestamps-cairo-local-mislabeled-utc` · `verify-the-emitted-artifact-never-the-source` · `at-slash-lib-shadows-src-lib-via-tsconfig-paths` · `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded` · `collapsed-browser-pane-reads-zero`
+`tz-africa-cairo-silently-returns-utc-in-msys` · `looking-at-a-generated-workbook-two-ways-that-lie` · `a-manual-scheduled-task-run-leaves-no-trace` · `main-is-not-the-primary-checkout` · `a-missing-table-answers-pgrst205-not-42p01` · `attribution-rollup-fingerprint-ignores-the-sales-data` · `offer-chain-was-live-in-the-registry-with-a-hole-past-approval` · `ats-candidate-children-one-has-no-fk-and-one-is-a-view` · `cv-extraction-reads-governorate-but-never-applies-it` · `the-medical-rep-cv-schema-reads-12-fields-universal-reads-38` · `a-cv-import-overwrote-a-candidates-whole-identity` · `the-email-import-allowlist-holds-an-inbox-not-a-sender` · `cv-file-is-in-ats-files-not-cv-external-url` · `census-client-errors-by-stack-not-message` · `typecheck-incremental-false-green` · `the-test-suite-runs-with-production-credentials-and-app-env-production` · `tailwind-merge-strips-custom-named-font-sizes` · `bilingual-bodies-need-direction-per-line-not-per-block` · `ireports360-timestamps-cairo-local-mislabeled-utc` · `verify-the-emitted-artifact-never-the-source` · `at-slash-lib-shadows-src-lib-via-tsconfig-paths` · `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded` · `collapsed-browser-pane-reads-zero` · `agent-isolation-remote-ran-locally-in-a-worktree`
 
 ### 2.2 The memory index
 
@@ -157,7 +157,7 @@ cost, the deploy path or the region.
 ## 3. Stable Environment Facts
 
 Lookup facts, not behaviour. **The full list — Railway services and region, domains, the production
-scheduler and the four Actions crons, the outbox-drain check, CI secrets, environment meanings — is
+scheduler and the five Actions crons, the outbox-drain check, CI secrets, environment meanings — is
 in `docs/environment.md` "Stable environment facts"; read it before touching deploy, staging, cron,
 domains, the region or a Supabase ref.**
 
@@ -247,7 +247,7 @@ words, incidents, measurements, pre-image tables): `docs/agents-owner-rules.md`.
 - **Every weekly report and export MUST set `excludeUnmapped`, and an export must MATCH the screen** — label, never silently drop. The Weekly Summarized Report's LAYOUT AND SCOPE are locked; its ink is the house identity.
 - 🔴 **A typed payroll Addition (incentive, bonus, overtime) has NO ceiling** — owner, 2026-09-15: no refuse, no flag, no "large addition" warning; never re-propose one. `typed-payroll-additions-have-no-ceiling`
 - **The system FLAGS an expense; it NEVER auto-rejects one.** Never auto-publish a deductions month or approve a batch yourself; a same-day CRM check reads zero — never report it as measured.
-- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days.** `-4` is the only leave type, and only **FWC** reaches salary.
+- **CRM visit types `-5` (Public Holiday), `-6` (Casual Leave) and `-16` (Training, vendor-labelled "Unknown") are WORKING days.** `-4` is the only leave type, and only **FWC** reaches salary.
 - **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and inactive leavers stay prorated with zero allowances; a regional employee travelling TO Cairo earns no outstation per-diem; DSM and Medical Rep titles auto-provision their real role (the title-governance guard is DELIBERATELY relaxed for those two).
 - **Social-insurance Form 1 prints exactly as the Authority issues it** — nothing Phoenix wrote on page 2, duplex.
 - **The organogram XLSX keeps its Mobile column** (his override) — do not remove it.

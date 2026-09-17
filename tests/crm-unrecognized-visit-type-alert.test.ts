@@ -24,10 +24,10 @@ function row(overrides: Partial<Row>): Row {
 
 /**
  * Every visit type production has ever produced, verified against the live database 2026-08-21:
- * type 0 plus fifteen negatives. If this list and CRM_DAY_CLASSIFIED_VISIT_TYPES ever disagree,
+ * type 0 plus fifteen negatives, and -16 (first seen 2026-09-12, ruled Training 2026-09-17). If this list and CRM_DAY_CLASSIFIED_VISIT_TYPES ever disagree,
  * the alert would either cry wolf on a real code or stay silent on a new one.
  */
-const PRODUCTION_VISIT_TYPES = [0, -1, -2, -4, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30];
+const PRODUCTION_VISIT_TYPES = [0, -1, -2, -4, -5, -6, -7, -8, -9, -11, -12, -15, -16, -19, -20, -21, -30];
 
 export function runCrmUnrecognizedVisitTypeAlertTests() {
   const recentSinceIso = "2026-08-07";

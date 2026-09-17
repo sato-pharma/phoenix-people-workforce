@@ -1870,6 +1870,47 @@ repository holds 200+ entries other sessions rely on.
 uncommitted work onto the new branch by itself, touches no shared stack, and the entire failure mode
 does not arise.
 
+## git's own maintenance stops silently on a leftover lock, and its defaults delete shared state — 2026-09-17
+
+**What was found.** `objects/maintenance.lock` sat in the primary's `.git` from 2026-08-10 18:31
+Cairo until 2026-09-17: an empty file, left by a maintenance run that never finished cleanly. By then
+the repository held 13,456 loose objects (179 MiB, beside 187 MiB of packs), 396 loose ref files and
+a commit-graph five days stale. There was no `gc.log`, no error and no failing exit code anywhere.
+
+**Why nothing said so.** Measured on git 2.55.0.windows.3 in a throwaway repository: while that lock
+exists, `git maintenance run` does nothing, prints nothing and exits 0. That held for the automatic
+run a commit starts (`git maintenance run --auto --quiet --no-detach`) and for a run typed by hand
+with an explicit `--task=loose-objects`. The loose objects stayed exactly where they were.
+
+**The repair has a trap of its own.** Removing the lock lets maintenance run again, and git 2.55's
+DEFAULT automatic run, traced in that throwaway repository with no maintenance config at all,
+executes `git rerere gc`: the instrument the account above rules out, because there is one rerere
+cache for every worktree and session. git's default for a run typed by hand is the geometric
+strategy, which also expires reflog entries, removes worktrees it cannot locate and, when it decides
+on an all-into-one repack, expires unreachable objects (`git help maintenance`, under
+`maintenance.strategy`). An explicit `maintenance.<task>.enabled` beats any strategy.
+
+**What was done.** The lock was removed first, and only named tasks were run on the repository
+(`git maintenance run --task=loose-objects --task=commit-graph --task=pack-refs`, twice). Six
+minutes later, with `.git/config` backed up, the five data-deleting tasks were pinned off: `gc`,
+`geometric-repack`, `rerere-gc`, `reflog-expire` and `worktree-prune`. `prefetch` was pinned off
+too; `loose-objects`, `commit-graph`, `incremental-repack` and `pack-refs` were pinned on. Traced
+with that exact set, an automatic run executed only `pack-objects`, `prune-packed`, the
+multi-pack-index steps and `pack-refs`, and the rerere cache held all 295 entries before and after.
+No count of that cache exists from before the lock came off, so those six unpinned minutes are
+unverified rather than proven harmless. **Pin first, then remove the lock.** Result: loose objects
+13,456 to 0, storage 366 MiB to 215 MiB, loose ref files 396 to 1.
+
+**Twice, on purpose.** The loose-objects task first deletes loose copies that are already packed,
+THEN packs the rest. After the first run all 13,252 remaining objects were both loose and packed
+(`prune-packable: 13252`); the second run deleted them.
+
+**How it is watched now.** `repo-doctor` prints a GIT MAINTENANCE section. It flags a lock older
+than two hours, any of the five tasks not pinned off, and more loose objects than git's own
+`gc.auto` default of 6,700. An unreadable lock, config or object count prints "Do NOT read this as
+clean". Pinned by `tests/repo-doctor-git-maintenance.test.ts`, whose config half runs real
+`git config --list -z`.
+
 ## A killed workflow run is recoverable — relocated from `AGENTS.md` §2.1, 2026-09-09
 
 The hook in `AGENTS.md` is one line. This is the account it stands on, moved here under §2.2's

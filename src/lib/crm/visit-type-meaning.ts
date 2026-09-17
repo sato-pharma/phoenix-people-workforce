@@ -21,6 +21,9 @@
  *   - 2026-08-21: the undocumented codes -7, -19, -20, -21, -30 are working time (CP). Their
  *     meanings were owner-confirmed 2026-07-14 from the reps' comment text; see
  *     src/lib/crm/visit-types.ts for the labels.
+ *   - 2026-09-17: -16 is Training, a working day (CP). The vendor labels it "Unknown"; it first
+ *     appeared on 2026-09-12 and every one of its first 54 visits (8 reps, to 2026-09-17) was
+ *     commented "Training".
  *
  * TWO LOOKUPS, ON PURPOSE — they differ only for a code this table does not list:
  *   - {@link crmVisitTypeMeaningLenient} answers "CP". The Field Workforce Compliance matrix has
@@ -54,6 +57,7 @@ const CRM_VISIT_TYPE_MEANINGS: ReadonlyMap<number, CrmVisitTypeMeaning> = new Ma
   [-11, "CP"], // Meeting
   [-12, "CP"], // Traveling
   [-15, "CP"], // Health Day — clinic work (owner ruling 2026-08-01)
+  [-16, "CP"], // Training — the vendor labels it "Unknown" (owner ruling 2026-09-17)
   [-19, "CP"], // Meetings
   [-20, "CP"], // Admin Work
   [-21, "CP"], // Business Review (BRM)

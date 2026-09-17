@@ -26,6 +26,17 @@ export function periodLabel(period: string): string {
   return `${MONTH_NAMES[Number(period.slice(5, 7)) - 1]} ${period.slice(0, 4)}`;
 }
 
+/** "2026-09" -> "2026-09-30": the last calendar day of a period, for an inclusive upper bound on a
+ *  `date` column. Never a hardcoded "-31" — Postgres rejects "2026-09-31" outright, and every
+ *  source here swallows a failed read as "no data", so a window ending in a 30-day month or in
+ *  February silently read as zero coaching reports (production, September 2026). */
+export function periodMonthEnd(period: string): string {
+  const year = Number(period.slice(0, 4));
+  const month = Number(period.slice(5, 7));
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${period}-${String(lastDay).padStart(2, "0")}`;
+}
+
 /** "2026-01" -> "Jan". Column headers only, where the window already states the year. */
 export function periodShortLabel(period: string): string {
   if (!isReviewPeriod(period)) return period;

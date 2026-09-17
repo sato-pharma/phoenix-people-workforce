@@ -48,6 +48,7 @@ import { CAMPAIGN_TYPE, REGULAR_TYPE, classifyVisit } from "@/lib/crm/visit-type
 
 import { hrKey } from "./attribution";
 import type { ReviewWindow } from "../period";
+import { periodMonthEnd } from "../period-format";
 
 /** The columns the fold needs. Deliberately narrow: `comment` is the one big text column on this
  *  table and pulling it across the window would multiply the payload for a label that only two
@@ -138,13 +139,6 @@ const EMPTY: VisitsLoad = {
   excludedAgentRows: 0,
 };
 
-/** Last day of a YYYY-MM, for the inclusive upper bound on `visit_date`. */
-function endOfMonth(period: string): string {
-  const year = Number(period.slice(0, 4));
-  const month = Number(period.slice(5, 7));
-  return `${period}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, "0")}`;
-}
-
 export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> {
   let raw: VisitRow[] = [];
   let excludedCrmIds: number[] = [];
@@ -154,7 +148,7 @@ export async function loadVisitFacts(window: ReviewWindow): Promise<VisitsLoad> 
       queryVisits<VisitRow>({
         columns: VISIT_COLUMNS,
         dateFrom: `${window.from}-01`,
-        dateTo: endOfMonth(window.to),
+        dateTo: periodMonthEnd(window.to),
         includeResignedAgents: true,
       }),
       getEffectiveExcludedAgentCrmIds(),

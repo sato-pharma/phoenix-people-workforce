@@ -616,6 +616,7 @@ import { runTargetsRollupAchievementTests } from "./targets-rollup-achievement.t
 import { runClosingAndTargetsAgreeTests } from "./closing-and-targets-agree.test.ts";
 import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scope.test.ts";
 import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
+import { runBusinessReviewMonthEndTests } from "./business-review-month-end.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -1596,6 +1597,7 @@ import { runSessionLockStalenessIsAgeTests } from "./session-lock-staleness-is-a
 import { runRepoDoctorOrphanedFoldersTests } from "./repo-doctor-orphaned-folders.test.ts";
 import { runRepoDoctorXlsxSnapshotTests } from "./repo-doctor-xlsx-snapshot.test.ts";
 import { runRepoDoctorSessionHoldTests } from "./repo-doctor-session-hold.test.ts";
+import { runRepoDoctorGitMaintenanceTests } from "./repo-doctor-git-maintenance.test.ts";
 import { runWorktreeLivenessTests } from "./worktree-liveness.test.ts";
 import { runCrmClientTimeoutsTests } from "./crm-client-timeouts.test.ts";
 import { runOutstationMobileWizardStaleCalculationTests } from "./outstation-mobile-wizard-stale-calculation.test.ts";
@@ -3862,6 +3864,10 @@ await runTest(
   runBusinessReviewWindowAndCoverageTests,
 );
 await runTest(
+  "business review month end (a window's upper date bound is the month's real last day: \"2026-09-31\" is not a date, Postgres refuses it, and the swallowed failure showed September's five coaching reports as zero; no source may hardcode day 28-31 in a bound)",
+  runBusinessReviewMonthEndTests,
+);
+await runTest(
   "business review portal scope (every one of the 27 viewers in the committed access map resolves to a real scope rather than a link that lands on \"no access\", a grant is refused the moment the live session role disagrees with the snapshot it was written from, no HR ID and an HR ID outside the map are both denied with a reason that says whether it is a fault or the Medical Rep design, every district a viewer is handed exists in that line's dataset, and a seat filter with nothing in it shows an empty page rather than falling through to the whole company)",
   runBusinessReviewPortalScopeTests,
 );
@@ -5229,6 +5235,11 @@ await runTest("repo-doctor offers only what --strip-idle will actually reclaim",
 await runTest(
   "repo-doctor never offers a worktree a live session is standing in",
   runRepoDoctorSessionHoldTests,
+);
+await runTest(
+  "repo-doctor reports a stale git maintenance lock (every maintenance run then does nothing and exits 0), an unpinned "
+    + "data-deleting maintenance task (git's default automatic run executes rerere gc over the shared cache), and a loose-object backlog",
+  runRepoDoctorGitMaintenanceTests,
 );
 
 await runTest(

@@ -212,9 +212,10 @@ export type AttendanceReportTarget = {
  * He keeps his OWN report in full: /workspace/fingerprint-report is bound to access.hrId and passes
  * the self check that runs before this gate.
  *
- * Note the removal is not achievable by narrowing `scope` alone: scopeForRole returns "company" for
+ * Note the removal is not achievable by narrowing `scope` alone: scopeForRole returned "company" for
  * exactly Super Admin, CEO and Finance Manager, and the first two are named explicitly in the
- * disjunctions below — so the scope arm existed only for him anyway.
+ * disjunctions below — so the scope arm existed only for him anyway. HR Operations joined that
+ * scope on 2026-08-29; the scope arm was not restored, and its one-person view is a named role line.
  */
 const SELF_ONLY_ATTENDANCE_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["Finance Manager"]);
 
@@ -232,6 +233,12 @@ export function isSelfOnlyAttendanceViewer(context: Pick<AccessContext, "role">)
  *    CRUD; Training Manager: read) but no traditional direct-report chain to fall
  *    back on, same gap class as the Head Office line-vs-reporting-edge issue fixed
  *    elsewhere for these roles (see [[company-org-structure-head-office]]).
+ *  - HR Operations — anyone, for ONE person at a time (owner ruling 2026-09-17). It approves leave
+ *    and excuse requests in the Approvals Hub, whose context panel reads this check, and it already
+ *    reads every employee's punches and deductions on the whole-company Fingerprint Report
+ *    (canAccessFingerprintReport → employees:read). Before the ruling the panel answered 403 for
+ *    every request it was asked to approve. The bulk list scoper below is deliberately NOT widened:
+ *    the ruling covered the per-person view, and the bulk exports keep their existing scope.
  *  - any other manager — their DIRECT reports only (target.managerHrId === caller).
  *
  * Pure + exact-match; the security boundary for the manager view. Guests / no-scope
@@ -265,7 +272,9 @@ export function canViewEmployeeAttendanceReport(
     context.role === "Super Admin" ||
     context.role === "CEO" ||
     context.role === "SFE Manager" ||
-    context.role === "Training Manager"
+    context.role === "Training Manager" ||
+    // One person's report, for the requests HR Operations approves — see the doc comment above.
+    context.role === "HR Operations"
   ) {
     return true;
   }
@@ -411,7 +420,10 @@ export async function loadAttendanceDirectReports(
 /**
  * hrIds `context` may see in bulk attendance exports/reports: `null` means no
  * restriction (whole company). Mirrors `canViewEmployeeAttendanceReport`'s bypass
- * (self / whole-company viewers / direct reports only) for list-scoped callers.
+ * (self / whole-company viewers / direct reports only) for list-scoped callers, with ONE
+ * deliberate difference: HR Operations. The owner's 2026-09-17 ruling opened any one person's
+ * report to it and did not cover bulk lists, so here it keeps self + direct reports. That path
+ * reads Supabase and is not unit-tested; do not "align" the two without a ruling on the lists.
  * Direct-report hrIds come back from `loadAttendanceDirectReports` normalized via
  * permissions.normalizeHrId (lowercase) — re-normalize with normalizeAttendanceHrId
  * (UPPERCASE) here since that's what fingerprint-report.ts/roster.ts compare against.
@@ -422,8 +434,9 @@ export async function resolveAttendanceScopeHrIds(context: AccessContext): Promi
   }
   const selfOnlyCaller = normalizeAttendanceHrId(context.hrId);
   // Same self-only carve-out as canViewEmployeeAttendanceReport, applied to the LIST scoper so the
-  // two cannot disagree: one decides "may I see this person", the other decides "which people does
-  // this report cover", and a role held out of one but not the other is a hole. Returns his own
+  // two cannot disagree on it: one decides "may I see this person", the other decides "which people
+  // does this report cover", and a role held out of one but not the other is a hole. (HR Operations
+  // is the one deliberate difference, and in the safe direction — see the doc comment.) Returns his own
   // HR_ID rather than null (null means "no restriction, whole company").
   if (isSelfOnlyAttendanceViewer(context)) {
     if (!selfOnlyCaller) throw new Error("Forbidden: attendance access denied.");

@@ -3,8 +3,11 @@
  * that decides whether a response actually carries it.
  *
  * Why the guard exists: `/api/approvals-hub/employee-context` answers 403 to a caller who may
- * approve for an employee but may not read that employee's attendance — HR Operations, whose scope
- * is "company" rather than "system", on anyone outside her own direct reports. The error body is a
+ * approve for an employee but may not read that employee's attendance. The case that crashed was
+ * HR Operations, whose scope is "company" rather than "system", on anyone outside its own direct
+ * reports; the owner ruled on 2026-09-17 that HR Operations reads any one person's context
+ * (canViewEmployeeAttendanceReport), so that 403 is gone, but any other approver without that reach
+ * still gets one and the guard stays. The error body is a
  * truthy object (`{ error: "forbidden", message: "Forbidden." }`) with no `attendance` and no
  * arrays, so casting the response blind put it into component state and every `.length` read threw
  * during render. That crashed the whole hub to its error boundary, once per selection: 22 times in
