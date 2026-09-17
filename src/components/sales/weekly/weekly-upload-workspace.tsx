@@ -20,6 +20,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
+import { verifyColumns } from "./weekly-table-widths";
 
 
 // No money formatter here on purpose: this whole screen — Validate preview AND the stored-upload
@@ -1609,7 +1610,7 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
   };
   const pill = map[status] ?? map.uncertain;
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${pill.cls}`} title={note || undefined}>
+    <span className={`inline-flex items-center px-2 py-0.5 text-phx-xs font-black ${pill.cls}`} title={note || undefined}>
       {pill.label}
     </span>
   );
@@ -1618,59 +1619,101 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
 function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResult; verified: boolean; onConfirm: () => void }) {
   const drift = result.verdict === "drift";
   const missingSheet = result.columns.some((col) => col.status === "missing");
+  // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4): a fixed table from md up, with File
+  // and Col merged into one column, and cards below md. Pinned by tests/weekly-sales-fits-the-screen.test.ts.
+  const columns = verifyColumns();
   return (
-    <div className={`mt-3 ${card}`}>
+    <div className="mt-3 border border-phx-line bg-white shadow-sm">
       <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
         {missingSheet ? "A sheet the import reads is missing from this file — review carefully" : drift ? "Possible column drift — review carefully" : "Columns look consistent"}
-        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
+        <span className={`ml-auto inline-flex items-center px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
           {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
         </span>
       </div>
 
       {result.aiNote && (
-        <p className="border-b border-phx-line bg-phx-paper px-4 py-2 text-xs font-semibold text-phx-ink-2">{result.aiNote}</p>
+        <p className="break-words border-b border-phx-line bg-phx-paper px-4 py-2 text-xs font-semibold text-phx-ink-2">{result.aiNote}</p>
       )}
 
       {result.files.length > 0 && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-phx-line px-4 py-2 text-xs text-phx-ink-soft">
           {result.files.map((f) => (
-            <span key={`${f.role}-${f.fileName}`}>
+            <span className="min-w-0 break-words" key={`${f.role}-${f.fileName}`}>
               <span className="font-black uppercase tracking-wide text-phx-ink-faint">{f.role}</span> · {f.fileName} → &quot;{f.sheetName}&quot;
             </span>
           ))}
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.data}%` }} />
+            <col style={{ width: `${columns.file}%` }} />
+            <col style={{ width: `${columns.found}%` }} />
+            <col style={{ width: `${columns.expected}%` }} />
+            <col style={{ width: `${columns.status}%` }} />
+          </colgroup>
           <thead className={darkHead}>
             <tr>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">File</th>
-              <th className="px-3 py-2 text-center">Col</th>
-              <th className="px-3 py-2">Found in your file</th>
-              <th className="px-3 py-2">Expected</th>
-              <th className="px-3 py-2">Status</th>
+              <th className="break-words px-3 py-2">Data</th>
+              <th className="break-words px-3 py-2">File · Col</th>
+              <th className="break-words px-3 py-2">Found in your file</th>
+              <th className="break-words px-3 py-2">Expected</th>
+              <th className="break-words px-3 py-2">Status</th>
             </tr>
           </thead>
           <tbody>
             {result.columns.map((col, i) => (
               <tr className="border-t border-[#FFE8D6]" key={`${col.sheetRole}-${col.field}-${i}`}>
-                <td className="px-3 py-1.5 font-bold text-phx-ink">
+                <td className="break-words px-3 py-1.5 font-bold text-phx-ink">
                   {col.label}{col.critical && <span className="ml-1 text-phx-accent">*</span>}
                 </td>
-                <td className="px-3 py-1.5 text-phx-ink-soft">{col.sheetRole}</td>
-                <td className="px-3 py-1.5 text-center tabular-nums text-phx-ink-2">{col.columnIndex}</td>
-                <td className="px-3 py-1.5 text-phx-ink">
+                <td className="break-words px-3 py-1.5 text-phx-ink-soft">
+                  <div>{col.sheetRole}</div>
+                  <div className="tabular-nums text-phx-ink-2">Col {col.columnIndex}</div>
+                </td>
+                <td className="break-words px-3 py-1.5 text-phx-ink">
                   {col.observedHeader || <span className="text-rose-600">— empty —</span>}
                 </td>
-                <td className="px-3 py-1.5 text-phx-ink-faint">{col.expectedHeaderHint}</td>
+                <td className="break-words px-3 py-1.5 text-phx-ink-faint">{col.expectedHeaderHint}</td>
                 <td className="px-3 py-1.5"><StatusPill note={col.note} status={col.status} /></td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-2 p-3 md:hidden">
+        {result.columns.map((col, i) => (
+          <div className="flex overflow-hidden border border-phx-line bg-white" key={`card-${col.sheetRole}-${col.field}-${i}`}>
+            <span className="w-[3px] shrink-0 bg-phx-accent" />
+            <div className="min-w-0 flex-1 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <p className="min-w-0 break-words text-sm font-black text-phx-ink">
+                  {col.label}{col.critical && <span className="ml-1 text-phx-accent">*</span>}
+                </p>
+                <StatusPill note={col.note} status={col.status} />
+              </div>
+              <p className="mt-0.5 break-words text-xs text-phx-ink-soft">
+                {col.sheetRole} · <span className="tabular-nums text-phx-ink-2">Col {col.columnIndex}</span>
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-1.5">
+                <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Found in your file</p>
+                  <p className="break-words text-sm text-phx-ink">
+                    {col.observedHeader || <span className="text-rose-600">— empty —</span>}
+                  </p>
+                </div>
+                <div className="min-w-0 border border-phx-paper-2 bg-phx-paper px-2 py-1.5">
+                  <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">Expected</p>
+                  <p className="break-words text-sm text-phx-ink-faint">{col.expectedHeaderHint}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {result.matrices.length > 0 && (
@@ -1684,7 +1727,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
               {matrix.sampleHeaders.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {matrix.sampleHeaders.map((h, hi) => (
-                    <span className="rounded bg-phx-paper-2 px-1.5 py-0.5 font-medium text-phx-ink-2" key={hi}>{h}</span>
+                    <span className="min-w-0 break-words bg-phx-paper-2 px-1.5 py-0.5 font-medium text-phx-ink-2" key={hi}>{h}</span>
                   ))}
                   {matrix.detectedCount > matrix.sampleHeaders.length && (
                     <span className="px-1 py-0.5 text-phx-ink-faint">+{matrix.detectedCount - matrix.sampleHeaders.length} more</span>
@@ -1710,7 +1753,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
         ) : (
           <>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
+              className="inline-flex h-10 items-center gap-2 bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
               onClick={onConfirm}
               type="button"
             >

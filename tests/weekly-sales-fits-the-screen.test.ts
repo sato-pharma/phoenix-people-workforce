@@ -10,13 +10,22 @@ import {
   fieldForceLeagueColumns,
   fieldForceProductColumns,
   rankColumns,
+  verifyColumns,
   weekComparisonColumns,
   zeroStockColumns,
 } from "../src/components/sales/weekly/weekly-table-widths.ts";
 
 // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4), pinned for Weekly Sales: the
 // managers' dashboard (its Distribution tab and its Field Force tab, which the portal and the admin
-// shell render alike), and the admin shell's own Weekly Sales Dashboard.
+// shell render alike), the admin shell's own Weekly Sales Dashboard, and the verification panel on the
+// admin shell's upload page.
+//
+// THE UPLOAD PAGE'S VERIFICATION PANEL. Also on 2026-09-17 the panel a distributor file's column check
+// opens (VerifyPanel in weekly-upload-workspace.tsx) still sat its six-column table in an
+// `overflow-x-auto` box, and its status pill, "AI checked" chip and header-hint chips were `rounded`.
+// File and Col are now one column, the table is fixed from md up and becomes cards below it, and nothing
+// in the panel is rounded. Only StatusPill and VerifyPanel are held here: the rest of that page is not
+// yet brought into line, so a scan of the whole file would fail on work this pin never claimed.
 //
 // THE ADMIN DASHBOARD. On 2026-09-17 the admin shell's dashboard (weekly-dashboard-view-impl.tsx) still
 // broke both rules after the managers' version was fixed: the Week-by-week comparison sat in an
@@ -38,8 +47,8 @@ import {
 // names wrap, and phones keep their cards.
 //
 // WHAT IT PINS.
-//   1. No class string in any of the three files draws a round corner, a scroll box, a width floor or an
-//      ellipsis, and no label is cut by appending "..." to it.
+//   1. No class string in the three dashboard files or in the upload page's verification panel draws a
+//      round corner, a scroll box, a width floor or an ellipsis, and no label is cut by appending "..." to it.
 //   2. Every <table> is `w-full table-fixed` and opens with a <colgroup>. Its <col>s, its head row and a
 //      body row have the same shape: one entry per cell, under the same conditions, with the same
 //      per-week or per-month lists. Every colSpan spans exactly that shape, the widths come from the
@@ -52,6 +61,15 @@ import {
 const DASHBOARD = "src/components/sales/weekly/portal-weekly-dashboard-impl.tsx";
 const FIELD_FORCE = "src/components/sales/weekly/portal-weekly-field-force-view.tsx";
 const ADMIN_DASHBOARD = "src/components/sales/weekly/weekly-dashboard-view-impl.tsx";
+const UPLOAD_WORKSPACE = "src/components/sales/weekly/weekly-upload-workspace.tsx";
+
+/** What is read of each file: all of it, or only the named functions. */
+const SCANS: { file: string; functions: string[] | null; minTokens: number }[] = [
+  { file: DASHBOARD, functions: null, minTokens: 200 },
+  { file: FIELD_FORCE, functions: null, minTokens: 200 },
+  { file: ADMIN_DASHBOARD, functions: null, minTokens: 200 },
+  { file: UPLOAD_WORKSPACE, functions: ["StatusPill", "VerifyPanel"], minTokens: 100 },
+];
 
 /** `weekly_sales_rows_week_number_chk`: a week number is 1 to 4, so no view has more than four weeks. */
 const MAX_WEEKS = 4;
@@ -86,7 +104,7 @@ function lineOf(source: ts.SourceFile, node: ts.Node): number {
 }
 
 /** Every string a class can be spelled in: string literals, template text, JSX attribute strings. */
-function classStringProblems(source: ts.SourceFile): string[] {
+function classStringProblems(source: ts.SourceFile, roots: ts.Node[], minTokens: number): string[] {
   const problems: string[] = [];
   let tokens = 0;
   const visit = (node: ts.Node): void => {
@@ -114,9 +132,11 @@ function classStringProblems(source: ts.SourceFile): string[] {
     }
     ts.forEachChild(node, visit);
   };
-  visit(source);
+  roots.forEach(visit);
   // Positive control: a file this test failed to read as TSX would otherwise pass with nothing found.
-  if (tokens < 200) problems.push(`${source.fileName}: only ${tokens} class tokens were read; the scan is not seeing the file.`);
+  if (tokens < minTokens) {
+    problems.push(`${source.fileName}: only ${tokens} class tokens were read; the scan is not seeing the file.`);
+  }
   return problems;
 }
 
@@ -216,6 +236,14 @@ const TABLES: TableSpec[] = [
     widthsCall: "zeroStockColumns(showStock)",
     cases: [true, false].map((showStock) => ({ env: { showStock }, widths: zeroStockColumns(showStock) })),
   },
+  {
+    name: "Upload verification panel",
+    file: UPLOAD_WORKSPACE,
+    owner: "VerifyPanel",
+    bodyRowOwner: "VerifyPanel",
+    widthsCall: "verifyColumns()",
+    cases: [{ env: {}, widths: verifyColumns() }],
+  },
 ];
 
 /** The elements that render one cell of each kind. A `SortableTh` is a <th> holding a sort button. */
@@ -258,6 +286,26 @@ function functionNamed(source: ts.SourceFile, name: string): ts.FunctionDeclarat
   return source.statements.find(
     (statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && statement.name?.text === name,
   );
+}
+
+/** The initializers of the module-level consts that the given nodes read by name. */
+function moduleConstsReadBy(source: ts.SourceFile, nodes: ts.Node[]): ts.Node[] {
+  const read = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) read.add(node.text);
+    ts.forEachChild(node, visit);
+  };
+  nodes.forEach(visit);
+  const initializers: ts.Node[] = [];
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && read.has(declaration.name.text) && declaration.initializer) {
+        initializers.push(declaration.initializer);
+      }
+    }
+  }
+  return initializers;
 }
 
 /** The first `const <name> = …` under a node, as its source text on one line. */
@@ -372,12 +420,12 @@ function spanOf(slots: Slot[]): string | null {
   return [base, ...[...guarded].map(([guard, count]) => `(${guard} ? ${count} : 0)`)].join(" + ");
 }
 
-function tableProblems(sources: Map<string, ts.SourceFile>): string[] {
+function tableProblems(sources: Map<string, ts.SourceFile>, roots: Map<string, ts.Node[]>): string[] {
   const problems: string[] = [];
 
-  for (const [file, source] of sources) {
+  for (const file of sources.keys()) {
     const pinned = TABLES.filter((table) => table.file === file).length;
-    const tables = allTags(source, "table").length;
+    const tables = (roots.get(file) ?? []).reduce((count, root) => count + allTags(root, "table").length, 0);
     if (tables !== pinned) {
       problems.push(`${file}: ${tables} <table> elements, but this test pins ${pinned}. Add the new table to TABLES.`);
     }
@@ -484,9 +532,24 @@ function tableProblems(sources: Map<string, ts.SourceFile>): string[] {
 }
 
 export function runWeeklySalesFitsTheScreenTests() {
-  const sources = new Map([DASHBOARD, FIELD_FORCE, ADMIN_DASHBOARD].map((file) => [file, parse(file)] as const));
-
-  const classProblems = [...sources.values()].flatMap(classStringProblems);
+  const sources = new Map<string, ts.SourceFile>();
+  const roots = new Map<string, ts.Node[]>();
+  const classProblems: string[] = [];
+  for (const scan of SCANS) {
+    const source = parse(scan.file);
+    sources.set(scan.file, source);
+    const scanned: ts.Node[] = [];
+    for (const name of scan.functions ?? []) {
+      const found = functionNamed(source, name);
+      if (found) scanned.push(found);
+      else classProblems.push(`${scan.file}: ${name} is gone, so this test cannot hold it.`);
+    }
+    // A class string the functions borrow from a module-level const (`${card}`) is theirs too: the
+    // panel's own box was rounded that way.
+    scanned.push(...moduleConstsReadBy(source, scanned));
+    roots.set(scan.file, scan.functions === null ? [source] : scanned);
+    classProblems.push(...classStringProblems(source, roots.get(scan.file) ?? [], scan.minTokens));
+  }
   assert.deepEqual(
     classProblems,
     [],
@@ -494,7 +557,7 @@ export function runWeeklySalesFitsTheScreenTests() {
       `Square corners only; fit by merging columns, never by a scroll box or a width floor; wrap, never truncate (AGENTS.md §4).`,
   );
 
-  const problems = tableProblems(sources);
+  const problems = tableProblems(sources, roots);
   assert.deepEqual(
     problems,
     [],
