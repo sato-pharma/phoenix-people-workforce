@@ -1,14 +1,14 @@
-// One build of a weekly attendance review week at a time, in this server.
+// One piece of work on a weekly attendance review week at a time, in this server: bringing it up to
+// date (the daily job, or a Refresh click) or releasing it.
 //
-// The daily job and a Build this week click (or two runs of the job) would otherwise interleave on the
-// same week: one skips the employees the other has just created, and when the other then fails, its
-// undo deletes them and nobody builds them again, because Build this week refuses a week that already
-// has a digest in it. With the lock, a second build of the same week starts only after the first has
-// finished, whether it succeeded or failed. Builds of different weeks never wait for each other.
+// A release checks that the days waiting are the days the page showed, then releases them; a refresh
+// running in between would add a day after the check. With the lock, the second starts only after the
+// first has finished, whether it succeeded or failed. Different weeks never wait for each other.
 //
 // The locks live on globalThis, so every route in the process shares one set however the routes are
 // bundled. Production runs one replica (docs/environment.md). A second replica would not share them,
-// and the build's 23505 skip is then all that is left.
+// and the database is then the guard: phx_attendance_sync_digest_days and phx_attendance_release_digest
+// both lock the employee's week, and the release refuses a day the page did not show.
 
 type WeekBuildLocks = Map<string, Promise<void>>;
 

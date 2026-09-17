@@ -13,6 +13,7 @@
 // in digest-service.ts so the shaping can be tested without one.
 
 import type { FingerprintReportRow } from "@/lib/attendance/fingerprint-report.ts";
+import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 
 export type DigestLineStatus = "late" | "short_hours" | "early_leave" | "missing_punch";
 
@@ -170,4 +171,61 @@ function round2(value: number): number {
 
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+export type WeekSyncPlanEntry = {
+  employeeHrId: string;
+  /** The employee's flagged days in the window, one per date, in date order. */
+  lines: BuiltDigestLine[];
+  /** Days in the window the report now returns with nothing to deduct: 0 days, or an approved exception. */
+  clearedDates: string[];
+};
+
+/**
+ * What bringing one week up to date asks of each employee, from the report over the week's days so far
+ * (owner, 2026-09-17 — "Show live, release any time").
+ *
+ * A flagged day is added, or its figures refreshed while it waits for release. A day the report now
+ * clears — an excuse, a leave or a punch that arrived after the day was flagged — is named so a day still
+ * waiting for release can be taken off again. A day the report does not return at all is NEITHER: a
+ * missing row is not proof the day is clean, so it is left as it is.
+ *
+ * Keyed by canonicalHrIdKey, so two spellings of one HR id are one employee. When the report returns one
+ * employee-day twice the larger charge is kept, and a date flagged once is never also cleared: the
+ * database function refuses a week that names a day both ways, which would fail the whole employee.
+ */
+export function planWeekSync(
+  rows: readonly FingerprintReportRow[],
+  window: { startIso: string; throughIso: string },
+): Map<string, WeekSyncPlanEntry> {
+  const flagged = new Map<string, { hrId: string; byDate: Map<string, BuiltDigestLine> }>();
+  const cleared = new Map<string, { hrId: string; dates: Set<string> }>();
+
+  for (const row of rows) {
+    if (row.dateIso < window.startIso || row.dateIso > window.throughIso) continue;
+    const key = canonicalHrIdKey(row.employeeHrId);
+    if (!key) continue;
+    if (isDigestibleRow(row)) {
+      const entry = flagged.get(key) ?? { hrId: row.employeeHrId, byDate: new Map<string, BuiltDigestLine>() };
+      const line = buildDigestLine(row);
+      const existing = entry.byDate.get(line.workDate);
+      if (!existing || line.deductionDays > existing.deductionDays) entry.byDate.set(line.workDate, line);
+      flagged.set(key, entry);
+    } else {
+      const entry = cleared.get(key) ?? { hrId: row.employeeHrId, dates: new Set<string>() };
+      entry.dates.add(row.dateIso);
+      cleared.set(key, entry);
+    }
+  }
+
+  const plan = new Map<string, WeekSyncPlanEntry>();
+  for (const key of new Set([...flagged.keys(), ...cleared.keys()])) {
+    const flaggedEntry = flagged.get(key);
+    const clearedEntry = cleared.get(key);
+    const lines = flaggedEntry ? [...flaggedEntry.byDate.values()].sort((left, right) => left.workDate.localeCompare(right.workDate)) : [];
+    const clearedDates = clearedEntry ? [...clearedEntry.dates].filter((date) => !flaggedEntry?.byDate.has(date)).sort() : [];
+    if (!lines.length && !clearedDates.length) continue;
+    plan.set(key, { employeeHrId: flaggedEntry?.hrId ?? clearedEntry!.hrId, lines, clearedDates });
+  }
+  return plan;
 }

@@ -3006,10 +3006,10 @@ export const attendanceManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: CalendarCheck,
     label: "Weekly Attendance Review",
     description:
-      "Pick a closed week, tick the flagged days to deduct and set their days, then release it — unticked days are cleared, and nothing reaches an employee until it is released here.",
+      "Pick a week — it shows its flagged days up to yesterday — tick the days to deduct and set their days, then release the days so far at any time; unticked days are cleared, and nothing reaches an employee until it is released here.",
     permissions: [{ resource: "attendance", action: "read" }],
     // The page and its APIs gate again on canReviewDisputes (Super Admin or the configured
-    // reviewer list); ticking days, building a week and releasing it are the Super Admin's
+    // reviewer list); ticking days, refreshing a week and releasing it are the Super Admin's
     // alone (canManageWeeklyReview). This row only decides who SEES the link.
     roles: systemAdministratorNavigationRoles,
   },

@@ -1,7 +1,7 @@
 name: Attendance Weekly Digest
 
-# Calls the weekly attendance review's own cron route, which builds the digests for the
-# settlement week that has just CLOSED (waiting for the Super Admin's release), settles days
+# Calls the weekly attendance review's own cron route, which brings every started week of the
+# review month up to date through yesterday (waiting for the Super Admin's release), settles days
 # left unanswered past their deadline to salary, and applies settled answers to payroll.
 #
 # WHY A GITHUB ACTIONS CRON AND NOT cron-job.org. cron-job.org is this repo's production
@@ -17,9 +17,8 @@ name: Attendance Weekly Digest
 # constraint here (the spending cap has been hit once), and the standing cost is
 # synthetic-journeys at roughly 57 min/day; this adds well under one.
 #
-# THE ROUTE IS IDEMPOTENT, which is why daily is safe for a weekly job: generation skips a
-# week it has already built, so the extra six calls each week do nothing but make the new
-# week punctual rather than waiting on one fixed day. It also means a missed or delayed run
+# THE ROUTE IS IDEMPOTENT, which is why twice a day is safe: a second sync of the same days
+# changes nothing, and a released day is never touched. It also means a missed or delayed run
 # — GitHub does not guarantee schedule punctuality — costs nothing at all.
 #
 # IT SENDS NOTHING. Employees are told about a week only when the Super Admin releases it
@@ -31,6 +30,10 @@ on:
     # 03:23 UTC = 06:23 Cairo. Offset off the shared :00/:15/:30/:45 firing minute like
     # every sibling cron here, and clear of migration-drift (07:00) and security-scan (05:17).
     - cron: "23 3 * * *"
+    # 10:23 UTC = 13:23 Cairo. Yesterday's punches reach the fingerprint table late in the
+    # morning, after the first run, so the afternoon run is the one that sees them
+    # (owner, 2026-09-17 — "Show live, release any time").
+    - cron: "23 10 * * *"
   workflow_dispatch:
 
 permissions:
@@ -38,16 +41,16 @@ permissions:
 
 concurrency:
   # One at a time. A manual dispatch beside the scheduled run would be harmless — the route
-  # is idempotent — but two in flight makes the logs ambiguous about which one generated.
+  # is idempotent — but two in flight makes the logs ambiguous about which one synced.
   group: attendance-weekly-digest
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
-      - name: Generate the closed week's digests
+      - name: Bring the review weeks up to date
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
@@ -63,7 +66,7 @@ jobs:
 
           # Body and status captured separately so a non-2xx prints WHAT the route said
           # rather than just a number — a 401 and a 500 need different answers.
-          status=$(curl -sS --max-time 240 \
+          status=$(curl -sS --max-time 290\
             -H "Authorization: Bearer ${CRON_SECRET}" \
             -o response.json -w '%{http_code}' \
             https://phoenix-hr.satopharma.com/api/cron/attendance-weekly-digest)
@@ -79,17 +82,15 @@ jobs:
 
           # A 200 is not success on its own: the route answers 200 with
           # `skipped: "disabled"` when the module is switched off, and 200 with
-          # digestsCreated 0 when the week was already built. Both are correct outcomes,
+          # 0 days added when nothing new was flagged. Both are correct outcomes,
           # so they are reported rather than failed — but they must be legible in the log,
           # because "ran fine, did nothing" is the shape that hid a 13-day outbox stall.
           summary=$(jq -r '
             if .skipped == "disabled" then
-              "Module is disabled — nothing generated. This is a setting, not a failure."
+              "Module is disabled — nothing synced. This is a setting, not a failure."
             else
-              "week \(.generated.week.index // "?") (\(.generated.week.startIso // "?") .. \(.generated.week.endIso // "?")): " +
-              "\(.generated.digestsCreated // 0) digest(s), \(.generated.linesCreated // 0) line(s), " +
-              "\(.generated.skippedExisting // 0) already present, " +
-              "\(.deadline.daysSettledToSalary // 0) overdue day(s) settled to salary, dryRun=\(.dryRun)"
+              ([.synced.weeks[]? | "\(.monthKey) week \(.weekIndex) through \(.throughIso): \(.daysAdded) added, \(.daysUpdated) updated, \(.daysCleared) cleared"] | join("; ")) +
+              " | \(.deadline.daysSettledToSalary // 0) overdue day(s) settled to salary, dryRun=\(.dryRun)"
             end
           ' response.json)
           echo "::notice::${summary}"

@@ -1849,8 +1849,8 @@ He set the new rules on 2026-09-15, first in his own words and then by choosing 
 
 ### 1. Nothing reaches an employee until he releases the week
 
-The daily job (`app/api/cron/attendance-weekly-digest`) builds each closed week as
-**`awaiting_release`** and **sends nothing**. The week then waits on the admin page
+The daily job (`app/api/cron/attendance-weekly-digest`, 06:23 and 13:23 Cairo) brings every started
+week of the review month up to date as **`awaiting_release`** and **sends nothing** (section 5). The week then waits on the admin page
 **Attendance › Weekly Attendance Review** (`/attendance/weekly-review`), which lists every
 employee's flagged days by name.
 
@@ -1858,11 +1858,11 @@ employee's flagged days by name.
 week I want. And in the week I select … I can mark on the days that I want them to be deducted. … I
 want full control." His answers, chosen from options:
 
-- **The week picker** lists every closed week of the **current payroll month** (a paid month stays
-  closed), plus any older week still waiting for release or answers so none is stranded
-  (`listReviewWeeks`). A closed week the daily job never built shows **Build this week**
-  (`buildReviewWeek`), which builds it waiting for release and sends nothing. A trial-run week is
-  read-only.
+- **The week picker** lists every started week of the **review month**, the running one included,
+  with its days up to yesterday. Last month's weeks, and any older week still waiting for release or
+  answers, stay listed so none is stranded (`listReviewWeeks`). **Refresh** (`buildReviewWeek`, route
+  `build`) brings a started week of this month or last month up to date at once and sends nothing. A
+  trial-run week is read-only.
 - **Only the flagged days can be ticked, and every day starts UNTICKED.** An unticked day is
   **cleared at release and never deducted**.
 - **A ticked day's days can be edited, down or UP** ("Raise too"), more than 0 and at most 3 per day
@@ -1875,6 +1875,12 @@ refuses once it is released, in a trial run, or on a day already answered. Relea
 settlement for every unticked day, then opens the week, or voids it when nothing is left (nobody is
 told), or settles it when only days answered before the release step remain. Releasing with nothing
 ticked therefore clears the whole week and notifies nobody. "Remove this day" is gone.
+
+**Release refuses a stale page** (2026-09-17). The page sends the days it shows (`seenLines`). When a
+day waiting now is not among them at the same figure, nobody at all is released: `staleReleaseLines`
+checks every employee first, and `phx_attendance_release_digest` checks again under the row lock
+(errcode `40001`). The daily job adds days to a waiting week, and without this check a day that
+arrived after the page loaded would be cleared on release, unticked, without him ever seeing it.
 
 **A cleared day is never charged, and that needs a record.** The `removed` settlement is what the
 month-end bridge turns into **Do Not Take Action** on that day's fingerprint deduction, and
@@ -1896,24 +1902,23 @@ the Prophet's Birthday and Coptic Easter were missing. The deadline is counted o
 own attendance policy's weekly days off (`resolveActiveAttendancePolicy`), not a company-wide
 default.
 
-**A build that fails is undone.** If a write fails partway through a build, by the daily job or by
-Build this week, `undoPartialBuild` deletes every digest that run created, and their days with them,
-and the error is thrown. A half-built week would look built: Build this week refuses it for good,
-and an employee whose digest lost its days would be released with nothing on it. The undo deletes
-only a digest still waiting for release with no release stamp, so one a Release click reached first
-is kept. If the undo fails too, the error names the week and how many employees were left, because
-that week then needs a person. Checked on production on 2026-09-15, read-only: the digests table has
-no triggers of its own, a digest's days are deleted with it (`on delete cascade`), and a settlement
-or annual-balance charge pointing at it would block the delete rather than be orphaned. A digest the
-failed run has just created has neither.
+**Bringing a week up to date keeps his work** (2026-09-17, replacing the one-shot build and its
+undo). `phx_attendance_sync_digest_days` runs once per employee, in one transaction, under the digest
+row lock that a tick and a release take, plus an advisory lock per employee-week. It adds a new
+flagged day **unticked**. It refreshes the figures of a day still waiting: a day whose days he changed
+keeps his figure, and the tick is kept either way. It takes off a waiting day the report now clears,
+such as an approved excuse, leave or a corrected punch. It never touches a released, answered or
+cleared day, and never adds a day already in another digest of that employee. A day the report does
+not return at all is left alone, because a missing row is not proof the day is clean. When every
+waiting day of an employee is cleared, the digest goes too. An employee who fails does not stop the
+others: the failure is named, and the daily job returns 500.
 
-**Only one build of a week runs at a time** (`withWeekBuildLock`, found by the risk review on
-2026-09-16). Without it, the daily job and a Build this week click on the same week interleave: the
-click skips the employees the job has just created, the job then fails and deletes them, and nobody
-builds them again. The click now checks whether the week is built only after any build of it still
-running has finished. The lock lives in the server process, and production runs one replica. A build
-on a second server (two overlap briefly during a deploy) is caught by the unique key instead: its
-insert answers `23505`, that employee is skipped, and theirs stands.
+**One piece of work on a week at a time** (`withWeekBuildLock`, risk review 2026-09-16, widened
+2026-09-17). The daily job, a Refresh click and a Release of the same week queue in the server
+process. A release checks the days against the page and then releases them, and a refresh running in
+between would add a day after the check. Production runs one replica. Across two (briefly, during a
+deploy) the database is the guard: both functions lock the employee's week, and the release refuses a
+day the page did not show.
 
 **A week mixing trial and real employees** releases the real ones only. The page says how many trial
 employees are skipped.
@@ -1922,10 +1927,10 @@ Only the Release click notifies anyone, and only `releaseWeek` in
 `src/lib/attendance/digest-service.ts` sets `released_at`. The employee page and API return released
 weeks only (`listMyDigests` filters `released_at is not null`). The review page, its list API and
 the dispute inbox are gated by `canReviewDisputes` (Super Admin or the reviewer list), failing
-closed. **Ticking days, building a week and releasing it are the Super Admin's alone**
-(`canManageWeeklyReview`), checked in the mark, build and release routes (403) and again inside
+closed. **Ticking days, refreshing a week and releasing it are the Super Admin's alone**
+(`canManageWeeklyReview`), checked in the mark, refresh (`build`) and release routes (403) and again inside
 `markDigestLine`, `buildReviewWeek` and `releaseWeek`. A named dispute reviewer sees the page
-read-only, with no ticks, Build or Release button, and decides disputes. The reason: leaving a day
+read-only, with no ticks, Refresh or Release button, and decides disputes. The reason: leaving a day
 unticked waives a colleague's deduction with nobody else looking, and a release notifies
 every employee, and "i must approve this" names him. The employee page is self-scoped: any employee
 sees their **own** released weeks, and nobody else's.
@@ -1955,6 +1960,12 @@ production before merging its PR. The new code writes `detected_days`, reads `de
 The migration is additive: the old code ignores the new columns, so the migration can go first
 safely. Its backfill copies each line's days into `detected_days` (25 lines on production on
 2026-09-15), and every line starts unticked.
+
+**Deploy order for live weeks:** apply `20260917120000_weekly_review_live_weeks.sql` to production
+immediately before merging its PR. It drops the 3-argument `phx_attendance_release_digest`, so the old
+code's Release fails between the two steps: do not release a week in that gap. The daily job never
+releases, and the new code calls `phx_attendance_sync_digest_days` and reads `release_round`, which do
+not exist until the migration runs.
 
 **A changed day reaches payroll only when month-end detected the same days** (risk review,
 2026-09-15). The Super Admin's figure is a count of the days the weekly review detected. If the
@@ -2122,12 +2133,46 @@ deduction candidate exists only after its month closes, and a dispute on a late-
 decided well into the month after next. The bridge reads settlements page by page, so days skipped
 as already decided or not yet built can never fill a capped read and hide newer answers.
 
-### 5. Week 4 of every cycle is built
+### 5. Live weeks, calendar months and releases in rounds — owner, 2026-09-17
 
-A cycle runs from the 24th to the 23rd. Its last week closes on the 23rd, so on the 24th the
-calendar is already in the **next** cycle. The builder used to ask only today's cycle, found no
-closed week there, and never built week 4. `latestClosedSettlementWeek` falls back to the previous
-cycle, so week 4 is built on the 24th.
+He reported the review as "not calculating deduction correct and not up to date", and asked for Nahed
+Hattab's fingerprint deduction from 1 September. The per-day figures were right; the weeks were not.
+There were four causes:
+
+- A week was built once, at 06:23 Cairo on the morning after it closed. That is hours before that
+  day's punches arrive, and the week was never looked at again, so a later punch, excuse or leave
+  never reached it.
+- The running week did not exist until it closed.
+- The 31 Aug–6 Sep week was a void trial copy that could never be released.
+- The review ran from the 24th to the 23rd, while month-end payroll runs by calendar month.
+
+His answers, chosen from options:
+
+- **"Show live, release any time."** A week is listed from its first day and holds the days up to
+  **yesterday** (`reviewWeekWindow`). The review month is the month of yesterday
+  (`currentReviewMonth`). He can release the days so far in the middle of the week. Days that arrive
+  later wait for a **second release** of the same week (`release_round` 2, 3 and so on), and at most
+  one real digest per employee-week waits at a time (`attendance_weekly_digests_one_awaiting_idx`).
+  The notice names only the days asked about (`releaseNoticeRange`). The daily job runs at **06:23 and
+  13:23 Cairo** (`.github/workflows/attendance-weekly-digest.yml`), and the afternoon run is the one
+  that sees yesterday's punches. It covers every started week of the month, plus, for the first three
+  days of a month, the last week of the month before (`reviewWeeksToSync`). It reads the fingerprint
+  report once per run.
+- **"Rebuild it as a real week."** Migration `20260917120000_weekly_review_live_weeks.sql` copies the
+  trial digests (void, dry run, never released, with no settlement) and their days into
+  `attendance_backup_20260917.trial_digests` (a dated schema of its own, never `public`), then deletes
+  them. Refresh or the daily job fills the week again, waiting for release. Nothing is sent.
+- **"1–30 September. Keep payroll as it is. From October the weekly review's weeks start on the 1st
+  to match."** `digest-weeks.ts` cuts a calendar month into 1–7, 8–14, 15–21 and the 22nd to the month
+  end. September 2026 is the one transition month: week 2 is 1–6 Sep, week 3 keeps 7–13 Sep because
+  its real digests were already built on those dates, week 4 is 14–23 Sep and week 5 is 24–30 Sep.
+  Nothing before September 2026 is reviewed, because August's last days are in August's month-end
+  deductions.
+- **"Yes, keep ½ day."** The deduction rule itself is unchanged.
+
+**Do not restore** the day-24 weeks (`latestClosedSettlementWeek`, `closedWeeksOfCurrentCycle`), the
+one-shot build with its undo, or a week that appears only once it has closed. They are the superseded
+design, not unfinished work.
 
 ### Known limitations (documented, not fixed)
 
@@ -2149,12 +2194,12 @@ cycle, so week 4 is built on the 24th.
 - **Leave filed after a day was settled does not reopen it.** Once the daily job has settled a day
   to salary, a leave request for that window filed later changes nothing. Leave filed before the
   settlement pauses the window even while it still waits for approval.
-- **A build killed mid-run is not undone.** The undo runs only when a write fails. A server stopped
-  in the middle of a build (a deploy restart) can leave a digest without its days, and Build this
-  week then refuses the week. The daily job adds an employee it finds with no digest, while that
-  week is still the latest closed one, but never the days of a digest that exists. The undo also
-  deletes a day the Super Admin ticked in the seconds between a digest appearing and its build
-  failing; rebuilt, that day comes back unticked.
+- **A day the report stops returning stays as it is.** Only a day the report returns as cleared is
+  taken off. A day missing from the report keeps waiting, and a person unticks it.
+- **A released day is never refreshed.** A later excuse, leave or corrected punch does not change
+  what the employee was asked; the employee can dispute the day.
+- **A stale page releases nobody.** When the daily job adds a day while the page is open, Release is
+  refused for everyone until the page is reloaded.
 - **The review page shows the stored deadline.** The employee's page and the answer path work a
   passed date out again and save it, and the daily job saves every date it moves, so the review page
   is at most one page load or one daily run behind — and never shows a date earlier than the one the

@@ -2,7 +2,8 @@
 // can pin them directly.
 //
 // Owner decision 2026-09-15, replacing the 2026-09-08 "silent" ruling:
-//   • a closed week waits on the admin review page until the Super Admin releases it
+//   • a week waits on the admin review page until the Super Admin releases it — from 2026-09-17 while
+//     it is still running, with later days going out in a second release ("Show live, release any time")
 //   • the employee then chooses, per day: deduct from SALARY, or from ANNUAL BALANCE (the same
 //     number of days, only when the balance covers them)
 //   • after choosing, the employee may dispute the day; the dispute goes to the reviewer
@@ -383,4 +384,59 @@ export function buildDisputeDecidedMessage(input: {
     title: `Attendance dispute rejected — ${formatShortDay(input.workDate)}`,
     message: `Your dispute for ${formatLongDay(input.workDate)} was rejected. ${outcome}${note}`,
   };
+}
+
+/** One day waiting for release as the review page showed it: the line and the days it deducts. */
+export type SeenReleaseLine = { id: number; days: number };
+
+/** More days than any real week holds; a longer list is refused rather than read. */
+export const MAX_SEEN_RELEASE_LINES = 20_000;
+
+/**
+ * The days the page showed when Release was clicked, from the request body. Every entry must be a
+ * positive whole line id and a finite number of days; nothing is guessed or skipped, because the list is
+ * what proves the Super Admin saw every day he is releasing.
+ */
+export function parseSeenReleaseLines(value: unknown): { lines: SeenReleaseLine[]; error: null } | { lines: null; error: string } {
+  if (!Array.isArray(value)) return { lines: null, error: "Reload the page and release again: the days you saw were not sent." };
+  if (value.length > MAX_SEEN_RELEASE_LINES) return { lines: null, error: "Too many days were sent." };
+  const lines: SeenReleaseLine[] = [];
+  for (const entry of value) {
+    const id = Number((entry as { id?: unknown } | null)?.id);
+    const days = Number((entry as { days?: unknown } | null)?.days);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(days) || days < 0) {
+      return { lines: null, error: "Reload the page and release again: a day you saw could not be read." };
+    }
+    lines.push({ id, days });
+  }
+  return { lines, error: null };
+}
+
+/**
+ * The days waiting for release that the page did NOT show as they are now: added since it loaded, or
+ * with different days (owner, 2026-09-17 — release any time, while the daily job keeps adding days). Any
+ * one of them means the Super Admin would release something he never saw, so the release is refused.
+ * Days are compared at 3 decimals, as they are stored. The database function repeats this check under
+ * the week's row lock.
+ */
+export function staleReleaseLines(
+  pending: ReadonlyArray<{ id: number; deductionDays: number }>,
+  seen: readonly SeenReleaseLine[],
+): number[] {
+  const seenDays = new Map(seen.map((line) => [line.id, Math.round(line.days * 1000)]));
+  return pending.filter((line) => seenDays.get(line.id) !== Math.round(line.deductionDays * 1000)).map((line) => line.id);
+}
+
+/**
+ * The dates a release notice names: the first and last day actually asked about. A second release of a
+ * week covers only the days that arrived after the first, so it must not repeat the whole week's dates.
+ * Falls back to the week when no day is listed.
+ */
+export function releaseNoticeRange(
+  askedDays: ReadonlyArray<{ workDate: string }>,
+  week: { weekStart: string; weekEnd: string },
+): { weekStart: string; weekEnd: string } {
+  if (!askedDays.length) return { weekStart: week.weekStart, weekEnd: week.weekEnd };
+  const dates = askedDays.map((day) => day.workDate).sort();
+  return { weekStart: dates[0]!, weekEnd: dates[dates.length - 1]! };
 }
