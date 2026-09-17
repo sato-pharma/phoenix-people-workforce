@@ -46,12 +46,24 @@ import {
   weekComparisonColumns,
   zeroStockColumns,
 } from "@/components/sales/weekly/weekly-table-widths";
+import {
+  weeklyBreakdownUnitsAreOneProduct,
+  weeklyKpiUnitDeltaIsOneProduct,
+  weeklyKpiUnitsAreOneProduct,
+  weeklyWeekComparisonUnitsAreOneProduct,
+} from "@/lib/sales/weekly/unit-totals";
 
 // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4). Every table here is `w-full
 // table-fixed` with its column widths declared in weekly-table-widths.ts, so none can grow past the
 // screen; a long name wraps, and nothing is cut with an ellipsis — the chart labels included. Below md
 // each table becomes a list of cards with its own sort row. No corner is rounded. Pinned by
 // tests/weekly-sales-fits-the-screen.test.ts, the same test that holds the managers' portal version.
+//
+// UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED (owner rule, 2026-08-27; this page, 2026-09-17). Every unit
+// or stock figure here adds rows, so each appears only while the rows it adds are one product's — the
+// tiles and their changes, the Units and Stock columns and cards, the two unit charts and the watchlist's
+// stock. Each asks unit-totals.ts, and the Export Excel follows the same rule. A product row is always one
+// product's, so By product keeps its units. Pinned by tests/weekly-admin-units-one-product.test.ts.
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -295,7 +307,15 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const noData = data.availableWeeks.length === 0;
   const branchRows = data.branchBreakdown ?? [];
   const zeroStockRows = data.zeroSalesBranches ?? [];
-  const zeroStockTotal = zeroStockRows.reduce((total, branch) => total + branch.stockUnits, 0);
+  // Which unit figures are one product's (unit-totals.ts). A table whose unit columns come or go is keyed
+  // on it, so it starts again from its own sort rather than staying ordered by a column no longer shown.
+  const showUnitTiles = weeklyKpiUnitsAreOneProduct(data);
+  const showUnitDeltas = weeklyKpiUnitDeltaIsOneProduct(data);
+  const regionUnits = weeklyBreakdownUnitsAreOneProduct(data, "region");
+  const productUnits = weeklyBreakdownUnitsAreOneProduct(data, "product");
+  const distributorUnits = weeklyBreakdownUnitsAreOneProduct(data, "distributor");
+  const branchUnits = weeklyBreakdownUnitsAreOneProduct(data, "branch");
+  const weekUnits = weeklyWeekComparisonUnitsAreOneProduct(data);
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -470,6 +490,15 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         <p className="text-xs font-semibold text-phx-ink-soft">{data.trackedScope.note}</p>
       )}
 
+      {/* Said on the screen, so a missing Units column never reads as a fault: the strictest test on the
+          page is the week-by-week comparison's, and only a product filter passes it. */}
+      {!noData && !weekUnits && (
+        <p className="text-xs font-semibold text-phx-ink-soft">
+          Units and stock appear only where every figure is one product&apos;s, because units of different
+          products are never added together. Choose one product in the Product filter to see them throughout.
+        </p>
+      )}
+
       {error && (
         <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 shadow-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -486,29 +515,54 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         // below carry the same about-to-be-replaced numbers, and leaving them crisp is what made a
         // pending filter look like an applied one.
         <div className={cn("space-y-4 transition-opacity", loading && "opacity-40")} aria-busy={loading}>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {/* Four tiles, or two while the unit tiles are hidden — laid out for the count actually there. */}
+          <div className={`grid grid-cols-2 gap-3 ${showUnitTiles ? "lg:grid-cols-4" : ""}`}>
             <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Sales value" value={money(data.kpis.salesValue)} delta={data.compare.salesValue} format={money} />
-            <Kpi icon={<Package className="h-4 w-4" />} label="Sales units" value={num(data.kpis.salesUnits)} delta={data.compare.salesUnits} format={num} />
-            <Kpi icon={<Store className="h-4 w-4" />} label="Stock units" value={num(data.kpis.stockUnits)} delta={data.compare.stockUnits} format={num} />
+            {showUnitTiles ? (
+              <Kpi
+                icon={<Package className="h-4 w-4" />}
+                label="Sales units"
+                value={num(data.kpis.salesUnits)}
+                delta={showUnitDeltas ? data.compare.salesUnits : undefined}
+                format={num}
+              />
+            ) : null}
+            {showUnitTiles ? (
+              <Kpi
+                icon={<Store className="h-4 w-4" />}
+                label="Stock units"
+                value={num(data.kpis.stockUnits)}
+                delta={showUnitDeltas ? data.compare.stockUnits : undefined}
+                format={num}
+              />
+            ) : null}
             <Kpi icon={<Store className="h-4 w-4" />} label="Branches" value={num(data.kpis.branchCount)} sub={`${data.kpis.regionCount} regions - ${data.kpis.productCount} products`} />
           </div>
 
-          <DashboardCharts data={data} />
+          <DashboardCharts data={data} showBranchUnits={branchUnits} />
 
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-            <RankTable title="By region (all distributors)" rows={data.regions} />
-            <RankTable title="By product" rows={data.products} />
+            <RankTable key={`region-${regionUnits}`} title="By region (all distributors)" rows={data.regions} showUnits={regionUnits} />
+            <RankTable key={`product-${productUnits}`} title="By product" rows={data.products} showUnits={productUnits} />
           </div>
 
-          <BranchComparisonTable rows={branchRows} />
+          <BranchComparisonTable key={`branch-${branchUnits}`} rows={branchRows} showUnits={branchUnits} />
 
-          {data.distributors.length > 1 && <RankTable maxHeight="max-h-64" title="By distributor" rows={data.distributorBreakdown} />}
+          {data.distributors.length > 1 && (
+            <RankTable
+              key={`distributor-${distributorUnits}`}
+              maxHeight="max-h-64"
+              title="By distributor"
+              rows={data.distributorBreakdown}
+              showUnits={distributorUnits}
+            />
+          )}
 
-          <WeekComparisonTable rows={data.weekComparison} />
+          <WeekComparisonTable rows={data.weekComparison} showUnits={weekUnits} />
 
           <TrendStrip trend={data.trend} selected={[]} />
 
-          <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
+          <ZeroStockTable key={`stock-${branchUnits}`} rows={zeroStockRows} showStock={branchUnits} />
         </div>
       )}
     </div>
@@ -526,17 +580,18 @@ function DeltaPct({ value }: { value: number }) {
 }
 
 // Week-by-week comparison of REAL (de-cumulated) sales: each week minus the previous week of its
-// month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week.
-function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"] }) {
+// month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week. Its units
+// and stock add every week in scope, so they are there only while a product filter pins one product.
+function WeekComparisonTable({ rows, showUnits }: { rows: WeeklyDashboard["weekComparison"]; showUnits: boolean }) {
   if (!rows || rows.length === 0) return null;
-  const columns = weekComparisonColumns();
+  const columns = weekComparisonColumns(showUnits);
   return (
     <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="border-b border-phx-line px-4 py-3">
         <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Week-by-week comparison</h2>
         <p className="mt-0.5 text-xs font-medium text-phx-ink-soft">
-          Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …). Stock is the
-          week&apos;s snapshot, never subtracted.
+          Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …).
+          {showUnits ? " Stock is the week's snapshot, never subtracted." : null}
         </p>
       </div>
       {/* DESKTOP — fixed to its container with every column width declared. This was the page's one
@@ -548,8 +603,8 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
             <col style={{ width: `${columns.week}%` }} />
             <col style={{ width: `${columns.date}%` }} />
             <col style={{ width: `${columns.value}%` }} />
-            <col style={{ width: `${columns.units}%` }} />
-            <col style={{ width: `${columns.stock}%` }} />
+            {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+            {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
             <col style={{ width: `${columns.delta}%` }} />
           </colgroup>
           <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
@@ -558,8 +613,8 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
               <th className="px-2 py-2">Week</th>
               <th className="px-2 py-2">Period date</th>
               <th className="px-2 py-2 text-right">Sales value</th>
-              <th className="px-2 py-2 text-right">Sales units</th>
-              <th className="px-2 py-2 text-right">Stock units</th>
+              {showUnits ? <th className="px-2 py-2 text-right">Sales units</th> : null}
+              {showUnits ? <th className="px-2 py-2 text-right">Stock units</th> : null}
               <th className="px-2 py-2 text-right">vs prev week</th>
             </tr>
           </thead>
@@ -574,10 +629,14 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
                 <td className="break-words px-2 py-2 text-right font-bold tabular-nums text-phx-ink">
                   {row.salesValue == null ? <span className="text-phx-ink-faint">—</span> : money(row.salesValue)}
                 </td>
-                <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">
-                  {row.salesUnits == null ? <span className="text-phx-ink-faint">—</span> : num(row.salesUnits)}
-                </td>
-                <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                {showUnits ? (
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">
+                    {row.salesUnits == null ? <span className="text-phx-ink-faint">—</span> : num(row.salesUnits)}
+                  </td>
+                ) : null}
+                {showUnits ? (
+                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                ) : null}
                 <td className="px-2 py-2 text-right tabular-nums">
                   {row.deltaValuePct == null ? <span className="text-phx-ink-faint">—</span> : <DeltaPct value={row.deltaValuePct} />}
                 </td>
@@ -597,8 +656,8 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
             <div className="mt-2 grid grid-cols-2 gap-2">
               <CardStat label="Period date" value={row.weekStart ?? "—"} />
               <CardStat label="Sales value" value={row.salesValue == null ? "—" : money(row.salesValue)} />
-              <CardStat label="Sales units" value={row.salesUnits == null ? "—" : num(row.salesUnits)} />
-              <CardStat label="Stock units" value={num(row.stockUnits)} />
+              {showUnits ? <CardStat label="Sales units" value={row.salesUnits == null ? "—" : num(row.salesUnits)} /> : null}
+              {showUnits ? <CardStat label="Stock units" value={num(row.stockUnits)} /> : null}
               <CardStat
                 label="vs prev week"
                 value={row.deltaValuePct == null ? "—" : <DeltaPct value={row.deltaValuePct} />}
@@ -743,15 +802,17 @@ function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: nu
   );
 }
 
-function DashboardCharts({ data }: { data: WeeklyDashboard }) {
+/** The two unit charts draw a branch's units and stock, which add its products, so they are there only
+ * while the selection is one product. The value charts always are. */
+function DashboardCharts({ data, showBranchUnits }: { data: WeeklyDashboard; showBranchUnits: boolean }) {
   const branchRows = data.branchBreakdown.slice(0, 10);
   const stockRiskRows = data.zeroSalesBranches.slice(0, 8);
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <HorizontalValueChart rows={data.regions.slice(0, 8)} title="Regional sales value" />
       <ProductMixChart rows={data.products} />
-      <BranchSalesStockChart rows={branchRows} />
-      <ZeroSalesStockChart rows={stockRiskRows} />
+      {showBranchUnits ? <BranchSalesStockChart rows={branchRows} /> : null}
+      {showBranchUnits ? <ZeroSalesStockChart rows={stockRiskRows} /> : null}
     </section>
   );
 }
@@ -940,14 +1001,17 @@ function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
   );
 }
 
+/** A ranked table. `showUnits` is the rule's answer for its cut: a hidden figure neither shows nor sorts. */
 function RankTable({
   title,
   rows,
+  showUnits,
   className,
   maxHeight = "max-h-80",
 }: {
   title: string;
   rows: WeeklyRanked[];
+  showUnits: boolean;
   className?: string;
   maxHeight?: string;
 }) {
@@ -955,8 +1019,12 @@ function RankTable({
     columns: [
       { key: "name", accessor: (row) => row.name, type: "string" },
       { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
-      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showUnits
+        ? [
+            { key: "salesUnits", accessor: (row: WeeklyRanked) => row.salesUnits, type: "number" as const },
+            { key: "stockUnits", accessor: (row: WeeklyRanked) => row.stockUnits, type: "number" as const },
+          ]
+        : []),
       { key: "share", accessor: (row) => row.share, type: "number" },
     ],
     searchAccessors: [(row) => row.name, (row) => row.code],
@@ -964,7 +1032,7 @@ function RankTable({
     secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
-  const columns = rankColumns();
+  const columns = rankColumns(showUnits);
   return (
     <section className={cn("overflow-hidden border border-phx-line bg-white shadow-sm", className)}>
       <PanelTitle
@@ -982,8 +1050,12 @@ function RankTable({
         options={[
           { key: "name", label: "Name" },
           { key: "salesValue", label: "Sales value" },
-          { key: "salesUnits", label: "Units" },
-          { key: "stockUnits", label: "Stock" },
+          ...(showUnits
+            ? [
+                { key: "salesUnits", label: "Units" },
+                { key: "stockUnits", label: "Stock" },
+              ]
+            : []),
           { key: "share", label: "Share" },
         ]}
       />
@@ -994,21 +1066,25 @@ function RankTable({
             <colgroup>
               <col style={{ width: `${columns.name}%` }} />
               <col style={{ width: `${columns.value}%` }} />
-              <col style={{ width: `${columns.units}%` }} />
-              <col style={{ width: `${columns.stock}%` }} />
+              {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+              {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
               <col style={{ width: `${columns.share}%` }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
               <tr>
                 <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
-                <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
-                <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                {showUnits ? (
+                  <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                {showUnits ? (
+                  <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
                 <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
               </tr>
             </thead>
             <tbody>
-              {table.rows.length === 0 && <TableNoResults colSpan={5} filtered={table.isFiltered} />}
+              {table.rows.length === 0 && <TableNoResults colSpan={3 + (showUnits ? 2 : 0)} filtered={table.isFiltered} />}
               {table.rows.map((row) => (
                 <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
                   <td className="px-3 py-2">
@@ -1016,8 +1092,12 @@ function RankTable({
                     <ValueBar value={row.salesValue} max={max} floor={2} />
                   </td>
                   <td className="break-words px-2 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
-                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
-                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                  ) : null}
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  ) : null}
                   <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
                 </tr>
               ))}
@@ -1032,8 +1112,8 @@ function RankTable({
               <ValueBar value={row.salesValue} max={max} floor={2} />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <CardStat label="Sales value" value={money(row.salesValue)} />
-                <CardStat label="Units" value={num(row.salesUnits)} />
-                <CardStat label="Stock" value={num(row.stockUnits)} />
+                {showUnits ? <CardStat label="Units" value={num(row.salesUnits)} /> : null}
+                {showUnits ? <CardStat label="Stock" value={num(row.stockUnits)} /> : null}
                 <CardStat label="Share" value={`${(row.share * 100).toFixed(1)}%`} />
               </div>
             </PhoneCard>
@@ -1044,14 +1124,19 @@ function RankTable({
   );
 }
 
-function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
+/** The Branches comparison. A branch row adds its products, so units and stock follow the rule for it. */
+function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparisonRow[]; showUnits: boolean }) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "name", accessor: (row) => row.name, type: "string" },
       { key: "regionName", accessor: (row) => row.regionName, type: "string" },
       { key: "salesValue", accessor: (row) => row.salesValue, type: "number" },
-      { key: "salesUnits", accessor: (row) => row.salesUnits, type: "number" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showUnits
+        ? [
+            { key: "salesUnits", accessor: (row: WeeklyBranchComparisonRow) => row.salesUnits, type: "number" as const },
+            { key: "stockUnits", accessor: (row: WeeklyBranchComparisonRow) => row.stockUnits, type: "number" as const },
+          ]
+        : []),
       { key: "share", accessor: (row) => row.share, type: "number" },
     ],
     searchAccessors: [(row) => row.name, (row) => row.regionName, (row) => row.code],
@@ -1059,7 +1144,7 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
     secondarySort: { key: "name", accessor: (row) => row.name, type: "string" },
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
-  const columns = branchComparisonColumns();
+  const columns = branchComparisonColumns(showUnits);
   return (
     <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <PanelTitle
@@ -1078,8 +1163,12 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
           { key: "name", label: "Branch" },
           { key: "regionName", label: "Region" },
           { key: "salesValue", label: "Sales value" },
-          { key: "salesUnits", label: "Units" },
-          { key: "stockUnits", label: "Stock" },
+          ...(showUnits
+            ? [
+                { key: "salesUnits", label: "Units" },
+                { key: "stockUnits", label: "Stock" },
+              ]
+            : []),
           { key: "share", label: "Share" },
         ]}
       />
@@ -1090,8 +1179,8 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
               <col style={{ width: `${columns.branch}%` }} />
               <col style={{ width: `${columns.region}%` }} />
               <col style={{ width: `${columns.value}%` }} />
-              <col style={{ width: `${columns.units}%` }} />
-              <col style={{ width: `${columns.stock}%` }} />
+              {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+              {showUnits ? <col style={{ width: `${columns.stock}%` }} /> : null}
               <col style={{ width: `${columns.share}%` }} />
             </colgroup>
             <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
@@ -1099,13 +1188,19 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
                 <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="px-2" />
                 <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
-                <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
-                <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                {showUnits ? (
+                  <SortableTh label="Units" sortKey="salesUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
+                {showUnits ? (
+                  <SortableTh label="Stock" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
+                ) : null}
                 <SortableTh label="Share" sortKey="share" sort={table.sort} onSort={table.toggleSort} align="right" className="px-2" />
               </tr>
             </thead>
             <tbody>
-              {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="branch rows" />}
+              {table.rows.length === 0 && (
+                <TableNoResults colSpan={4 + (showUnits ? 2 : 0)} filtered={table.isFiltered} label="branch rows" />
+              )}
               {table.rows.map((row) => (
                 <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
                   <td className="px-3 py-2">
@@ -1114,8 +1209,12 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
                   </td>
                   <td className="break-words px-2 py-2 font-semibold text-phx-ink-2">{row.regionName}</td>
                   <td className="break-words px-2 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
-                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
-                  <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                  ) : null}
+                  {showUnits ? (
+                    <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                  ) : null}
                   <td className="break-words px-2 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
                 </tr>
               ))}
@@ -1131,8 +1230,8 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
               <ValueBar value={row.salesValue} max={max} floor={2} />
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <CardStat label="Sales value" value={money(row.salesValue)} />
-                <CardStat label="Units" value={num(row.salesUnits)} />
-                <CardStat label="Stock" value={num(row.stockUnits)} />
+                {showUnits ? <CardStat label="Units" value={num(row.salesUnits)} /> : null}
+                {showUnits ? <CardStat label="Stock" value={num(row.stockUnits)} /> : null}
                 <CardStat label="Share" value={`${(row.share * 100).toFixed(1)}%`} />
               </div>
             </PhoneCard>
@@ -1143,20 +1242,27 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
   );
 }
 
-function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalStock: number }) {
+/**
+ * The Stock on hand watchlist. A branch's stock adds its products, so the stock column, its bars and the
+ * header total are there only while the selection is one product; without them the branches list by name.
+ */
+function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStock: boolean }) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "branchName", accessor: (row) => row.branchName, type: "string" },
       { key: "regionName", accessor: (row) => row.regionName, type: "string" },
-      { key: "stockUnits", accessor: (row) => row.stockUnits, type: "number" },
+      ...(showStock
+        ? [{ key: "stockUnits", accessor: (row: WeeklyBranchRow) => row.stockUnits, type: "number" as const }]
+        : []),
     ],
     searchAccessors: [(row) => row.branchName, (row) => row.regionName],
-    initialSort: { key: "stockUnits", dir: "desc" },
+    initialSort: showStock ? { key: "stockUnits", dir: "desc" } : { key: "branchName", dir: "asc" },
     secondarySort: { key: "branchName", accessor: (row) => row.branchName, type: "string" },
   });
-  const max = visibleMax(table.rows, (row) => row.stockUnits);
-  const shownStock = table.isFiltered ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : totalStock;
-  const columns = zeroStockColumns();
+  const max = showStock ? visibleMax(table.rows, (row) => row.stockUnits) : 1;
+  // The rows shown: every row until a search narrows them.
+  const shownStock = showStock ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : null;
+  const columns = zeroStockColumns(showStock);
   return (
     <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
@@ -1169,7 +1275,7 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
             <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
           </div>
           <div className="text-right">
-            <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div>
+            {shownStock !== null ? <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div> : null}
             <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
               {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
             </div>
@@ -1182,7 +1288,7 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
         options={[
           { key: "branchName", label: "Branch" },
           { key: "regionName", label: "Region" },
-          { key: "stockUnits", label: "Stock units" },
+          ...(showStock ? [{ key: "stockUnits", label: "Stock units" }] : []),
         ]}
       />
       <div className="max-h-80 overflow-y-auto">
@@ -1191,25 +1297,35 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
             <colgroup>
               <col style={{ width: `${columns.branch}%` }} />
               <col style={{ width: `${columns.region}%` }} />
-              <col style={{ width: `${columns.stock}%` }} />
+              {showStock ? <col style={{ width: `${columns.stock}%` }} /> : null}
             </colgroup>
             <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
               <tr>
                 <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} />
                 <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
-                <SortableTh label="Stock units" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+                {showStock ? (
+                  <SortableTh label="Stock units" sortKey="stockUnits" sort={table.sort} onSort={table.toggleSort} align="right" />
+                ) : null}
               </tr>
             </thead>
             <tbody>
-              {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="stock-on-hand branches with zero sales" />}
+              {table.rows.length === 0 && (
+                <TableNoResults
+                  colSpan={2 + (showStock ? 1 : 0)}
+                  filtered={table.isFiltered}
+                  label="stock-on-hand branches with zero sales"
+                />
+              )}
               {table.rows.map((branch) => (
                 <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={`${branch.branchCode}-${branch.regionName}`}>
                   <td className="px-3 py-2">
                     <div className="break-words font-semibold text-phx-ink">{branch.branchName}</div>
-                    <ValueBar value={branch.stockUnits} max={max} floor={4} thick />
+                    {showStock ? <ValueBar value={branch.stockUnits} max={max} floor={4} thick /> : null}
                   </td>
                   <td className="break-words px-3 py-2 text-phx-ink-2">{branch.regionName}</td>
-                  <td className="break-words px-3 py-2 text-right tabular-nums font-bold text-phx-ink-2">{num(branch.stockUnits)}</td>
+                  {showStock ? (
+                    <td className="break-words px-3 py-2 text-right tabular-nums font-bold text-phx-ink-2">{num(branch.stockUnits)}</td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -1220,10 +1336,10 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
           {table.rows.map((branch) => (
             <PhoneCard key={`card-${branch.branchCode}-${branch.regionName}`}>
               <p className="break-words text-sm font-black text-phx-ink">{branch.branchName}</p>
-              <ValueBar value={branch.stockUnits} max={max} floor={4} thick />
+              {showStock ? <ValueBar value={branch.stockUnits} max={max} floor={4} thick /> : null}
               <div className="mt-2 grid grid-cols-2 gap-2">
                 <CardStat label="Region" value={branch.regionName} />
-                <CardStat label="Stock units" value={num(branch.stockUnits)} />
+                {showStock ? <CardStat label="Stock units" value={num(branch.stockUnits)} /> : null}
               </div>
             </PhoneCard>
           ))}
