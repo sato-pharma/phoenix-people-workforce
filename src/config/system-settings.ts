@@ -71,6 +71,19 @@ export const systemEmail = {
    */
   satoComposerFromEmail: "hrbp@satopharma.com",
   /**
+   * Where a reply to composer mail lands — the owner's own mailbox, for every sender.
+   *
+   * Owner 2026-09-17: "i want reply to reach omar.anwar@satopharma.com". Reply-To, not From: the
+   * mail still goes out as the HR Business Partner's mailbox above, and the fan-out's visible To
+   * stays that same hrbp@ box (`fanoutVisibleTo` in sendSatoEmail), so nothing a recipient reads
+   * changes — only where their Reply button points.
+   *
+   * 🔴 This address must never be one Resend has suppressed: a suppressed Reply-To is what broke
+   * the 2026-09-13 send. omar.anwar@satopharma.com is the standing admin BCC on every system mail,
+   * so it is a live, deliverable inbox — do not swap it for an untested one.
+   */
+  satoComposerReplyToEmail: "omar.anwar@satopharma.com",
+  /**
    * Reply-To for mail a particular SEAT sends by hand, keyed on the SENDER's role.
    *
    * Owner 2026-09-11, refined when asked: a mail carries the HR Business Partner's address when

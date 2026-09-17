@@ -157,16 +157,53 @@ export function runSatoEmailListsOnlyComposerTests() {
     "the composer must not fall back to the notification sender's From",
   );
 
-  // --- 6. …and its Reply-To — which the fan-out also writes into the visible To — is the same box --
-  // Owner's test send 2026-09-13: From was hrbp@, but a Super Admin send took no seat Reply-To, fell
-  // through to phoenix@satopharma.com, and the fan-out put that suppressed inbox in the visible To.
+  // --- 6. …while a REPLY reaches the owner's own mailbox -----------------------------------------
+  // Owner 2026-09-17: "i want reply to reach omar.anwar@satopharma.com". One address for every
+  // sender, never the seat: on the owner's test send of 2026-09-13 a Super Admin send took no seat
+  // Reply-To, fell through to the suppressed phoenix@satopharma.com, and its replies bounced.
+  assert.match(
+    settings,
+    /satoComposerReplyToEmail:\s*"omar\.anwar@satopharma\.com"/,
+    "a reply to composer mail must reach the owner's mailbox",
+  );
   assert.match(
     satoService,
-    /const replyTo = systemEmail\.satoComposerFromEmail;/,
-    "the composer's Reply-To (and so the neutral visible To) must be the same hrbp@ mailbox for every sender",
+    /const replyTo = systemEmail\.satoComposerReplyToEmail;/,
+    "the composer send must take its Reply-To from systemEmail.satoComposerReplyToEmail, for every sender",
   );
   assert.ok(
     !/seatReplyTo/.test(satoService),
     "the composer must not key Reply-To on the sender's seat — a seat without an entry falls through to a suppressed inbox",
+  );
+
+  // The Reply-To is the owner's, so it must NOT be what the fan-out shows: the visible To stays the
+  // From mailbox. Without fanoutVisibleTo, send-phoenix-email.ts falls back to the resolved Reply-To
+  // and puts the owner's own address in the To line every recipient of a list send reads.
+  assert.match(
+    satoService,
+    /const fanoutVisibleTo = systemEmail\.satoComposerFromEmail;/,
+    "the fan-out's visible To must stay the HR Business Partner's mailbox, not the owner's Reply-To",
+  );
+  assert.ok(
+    /fanoutVisibleTo,/.test(satoSendArgs),
+    "the composer send must pass fanoutVisibleTo — without it the fan-out falls back to the Reply-To",
+  );
+  const sendSource = readFileSync(path.join(REPO_ROOT, "src/lib/email/send-phoenix-email.ts"), "utf8");
+  assert.match(
+    sendSource,
+    /finalTo = \[input\.fanoutVisibleTo\?\.trim\(\) \|\| resolvedReplyTo\];/,
+    "the fan-out must honour fanoutVisibleTo and keep the Reply-To as its fallback for every other sender",
+  );
+
+  // Both halves of the owner's inbox in one assertion: the composer's Reply-To is the same address
+  // send-phoenix-email.ts already BCCs on every system mail, which is why it is known deliverable.
+  // If one is ever repointed, the other must be looked at in the same change.
+  const adminStanding = readFileSync(path.join(REPO_ROOT, "src/lib/email/admin-telegram-mirror.ts"), "utf8");
+  const standingAddress = adminStanding.match(/ADMIN_STANDING_EMAIL = "([^"]+)"/)?.[1];
+  const composerReplyTo = settings.match(/satoComposerReplyToEmail:\s*"([^"]+)"/)?.[1];
+  assert.equal(
+    composerReplyTo,
+    standingAddress,
+    "the composer's Reply-To must be the standing admin inbox — a Reply-To Resend has suppressed is what broke the 2026-09-13 send",
   );
 }

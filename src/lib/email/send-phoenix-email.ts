@@ -64,6 +64,16 @@ export type SendPhoenixEmailInput = {
    * selected titles) from exposing every recipient's address to the others.
    */
   fanoutToBcc?: boolean;
+  /**
+   * The address that stands in the visible To of a fan-out, when it must NOT be the Reply-To.
+   * Only the Sato Email Composer sets it: its replies go to the owner's mailbox while the mail
+   * itself is the HR Business Partner's, and the To line every recipient reads stays hers.
+   * Unset — every other sender — keeps the resolved Reply-To there, exactly as before.
+   *
+   * 🔴 Whatever is passed here is READ BY EVERY RECIPIENT and must be a deliverable mailbox that
+   * Resend has not suppressed: a suppressed visible To is dropped, which is the 2026-09-13 bug.
+   */
+  fanoutVisibleTo?: string;
   from?: string;
   headers?: Record<string, string>;
   /**
@@ -347,7 +357,10 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   if (input.fanoutToBcc && !testingRecipients && finalTo.length > 1) {
     bcc = Array.from(new Set([...finalTo, ...(bcc ?? [])]));
     cc = undefined;
-    finalTo = [resolvedReplyTo];
+    // The Reply-To is the default stand-in, and stays so for every sender that names no other.
+    // A caller whose replies go somewhere other than its own mailbox passes fanoutVisibleTo, so
+    // the address recipients READ and the address their Reply button USES can differ on purpose.
+    finalTo = [input.fanoutVisibleTo?.trim() || resolvedReplyTo];
   }
 
   // Always BCC omar.anwar@satopharma.com on every automated system email (all modules, all
