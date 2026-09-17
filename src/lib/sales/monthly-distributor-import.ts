@@ -1889,9 +1889,10 @@ export async function loadSalesReferenceData(
   options?: { includeCustomerBricks?: boolean },
 ): Promise<SalesReferenceData> {
   const supabase = getSupabaseAdmin();
-  // The customer -> brick crosswalk powers ONLY the import brick auto-fill, and it is large
-  // (tens of thousands of rows paged 1000-at-a-time = many round-trips). Callers that just need
-  // the name masters (e.g. the executive report) pass includeCustomerBricks:false to skip it.
+  // The customer -> brick crosswalk powers ONLY the import brick auto-fill (buildReferenceMaps), and
+  // it is large: 69,217 active rows on 2026-09-15, paged 1000-at-a-time = 70 round-trips, ~3.5 s.
+  // Every caller that needs only the name masters passes includeCustomerBricks:false to skip it;
+  // tests/sales-reference-crosswalk-callers.test.ts pins those callers and the import loaders alike.
   const includeCustomerBricks = options?.includeCustomerBricks ?? true;
   // Paged past PostgREST's 1000-row cap; tolerant of errors (e.g. table absent pre-migration) so
   // a crosswalk failure never blocks a normal coded upload — it just disables the auto-fill.

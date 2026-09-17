@@ -49,7 +49,7 @@ const PHOENIX_BRICK_COLUMNS = ["Brick ID", "Brick ID2"];
 export async function learnFromCleanedFile(distributorCode: string, file: File): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
   const profile = await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
-  const [refs, buffer] = await Promise.all([loadSalesReferenceData(), file.arrayBuffer()]);
+  const [refs, buffer] = await Promise.all([loadSalesReferenceData({ includeCustomerBricks: false }), file.arrayBuffer()]);
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
 

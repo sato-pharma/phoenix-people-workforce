@@ -451,7 +451,8 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   }
   const { sheet, columnMap, headerRow } = located;
 
-  const refs = await loadSalesReferenceData();
+  // Bricks and distributors only — the mappings already stored come from loadExistingCustomerMappings.
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const brickById = new Map<string, BrickRef>(
     (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
   );

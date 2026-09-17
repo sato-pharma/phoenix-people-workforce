@@ -41,7 +41,7 @@ async function main() {
 
   const profile = await resolveDistributorProfile(code);
   if (!profile) { console.error(`No profile for ${code}`); process.exit(1); }
-  const refs = await loadSalesReferenceData();
+  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
 
