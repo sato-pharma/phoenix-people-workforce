@@ -349,6 +349,7 @@ export function runMailboxComplianceMonitorTests() {
     ["a refused enrolment", "async function refuseAdd("],
     ["a failed connection test", "export async function recheckMonitor("],
     ["a failed mailbox read", "async function withMonitorRead<T>("],
+    ["a refused password replacement", "export async function replaceMonitorPassword("],
   ] as const) {
     assert.ok(
       topLevelBody(serviceSource, declaration).includes("failureDetail("),
@@ -438,6 +439,89 @@ export function runMailboxComplianceMonitorTests() {
     "const refreshed = await loadRow(id);",
   );
   assertAuditBeforeHealth("withMonitorRead's catch", '"Mailbox read failed."', "Could not read the mailbox");
+
+  // ── Replacing an app password proves the candidate BEFORE it displaces the stored one ────
+  // A mailbox reaching this path is usually already failing — that is what the path is for — so
+  // writing the new password first and testing afterwards would trade a credential known to be
+  // dead for one not known to be alive, with no way back to either.
+  const replaceBody = topLevelBody(serviceSource, "export async function replaceMonitorPassword(");
+  const candidateTestAt = replaceBody.indexOf("await testMailboxConnection(");
+  const sealAt = replaceBody.indexOf("sealSecret(");
+  assert.notEqual(candidateTestAt, -1, "replaceMonitorPassword must connection-test the candidate");
+  assert.notEqual(sealAt, -1, "replaceMonitorPassword must seal the password before storing it");
+  assert.ok(
+    candidateTestAt < sealAt,
+    "the replacement must be proven against the live mailbox BEFORE it is sealed and written",
+  );
+  assert.ok(
+    /sealed_password:\s*sealSecret\(/.test(replaceBody),
+    "sealed_password must be written through sealSecret — a raw app password must never reach a row",
+  );
+
+  // The candidate is tested against the row's OWN connection. This endpoint accepts a password,
+  // never a host: taking one from the caller would turn a Super Admin form into a way to point a
+  // stored mailbox at an attacker's IMAP server and harvest the login.
+  assert.ok(
+    /host:\s*row\.imap_host/.test(replaceBody)
+      && /port:\s*row\.imap_port/.test(replaceBody)
+      && /user:\s*row\.email_address/.test(replaceBody),
+    "the candidate must be tested against the stored mailbox's own host, port and address",
+  );
+
+  // A REJECTED candidate must not touch the health columns. They describe the credential the row
+  // is HOLDING; a typo in a replacement says nothing about it. Marking the monitor `failing` here
+  // would report a working mailbox as broken on the strength of a mistyped form field — which is
+  // why this is the one connection test in the module that deliberately ends without markHealth.
+  assert.equal(
+    replaceBody.includes("markHealth("),
+    false,
+    "replaceMonitorPassword must never write the health columns — a rejected candidate is not "
+      + "evidence about the credential the row still holds",
+  );
+
+  // Both refusals are audited before they throw — the rule refuseAdd enforces on the add path.
+  const replaceAuditAt = replaceBody.indexOf("await logAccess(");
+  const replaceThrowAt = replaceBody.indexOf("throw new MailboxMonitorError(");
+  assert.notEqual(replaceAuditAt, -1, "replaceMonitorPassword must write an access-log row");
+  assert.notEqual(replaceThrowAt, -1, "replaceMonitorPassword must refuse a bad candidate");
+  assert.ok(replaceAuditAt < replaceThrowAt, "the audit row must be written BEFORE the refusal throws");
+  assert.ok(
+    (replaceBody.match(/await logAccess\(/g) ?? []).length >= 2,
+    "the short-password refusal and the connection result must each leave their own row",
+  );
+
+  // A proven replacement returns the monitor to health. Leaving last_error set would keep the
+  // dashboard printing a failure that has just been fixed, on the one line a human reads.
+  assert.ok(
+    /last_error:\s*null/.test(replaceBody) && /status:\s*"active"/.test(replaceBody),
+    "a proven replacement must clear last_error and return the monitor to active",
+  );
+
+  // ── PATCH's two shapes ──────────────────────────────────────────────────────────────────
+  const idRouteSource = readFileSync(
+    new URL("../app/api/admin/mailbox-monitor/[id]/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    idRouteSource.includes("replaceMonitorPassword("),
+    "PATCH must offer the replacement path, or a revoked mailbox can only be repaired by deleting "
+      + "the monitor — which cuts every access-log row it wrote loose from the row describing it",
+  );
+  // The Re-check button sends no body at all, so the parse is EXPECTED to fail on that path. It
+  // has to be `.catch`: a try block around it would also swallow the CSRF and permission failures.
+  assert.ok(
+    /request\.json\(\)\.catch\(/.test(idRouteSource),
+    "a bare PATCH carries no body — parse it with .catch, never a try block that also covers the guards",
+  );
+  // Each attempt is a live IMAP login against a real mailbox, and Yahoo locks an account out after
+  // enough failures — so the ceiling must be consumed before the login, not after it.
+  const replaceScopeAt = idRouteSource.indexOf('scope: "mailbox-monitor:replace-password"');
+  const replaceCallAt = idRouteSource.indexOf("await replaceMonitorPassword(");
+  assert.notEqual(replaceScopeAt, -1, "the replacement path must have its own rate-limit scope");
+  assert.ok(
+    replaceScopeAt < replaceCallAt,
+    "the rate limit must be consumed BEFORE the IMAP login is attempted",
+  );
 
   // ── markHealth must not be able to throw ────────────────────────────────────────────────
   // Ordering alone is not the whole defence. A health update is metadata ABOUT an operation, never

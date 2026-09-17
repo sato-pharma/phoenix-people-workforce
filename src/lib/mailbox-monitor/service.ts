@@ -443,6 +443,90 @@ export async function recheckMonitor(id: string, actorHrId: string | null): Prom
   return rowToMonitor(refreshed, refreshed.employee_hr_id ? names.get(refreshed.employee_hr_id) ?? null : null);
 }
 
+/**
+ * Replace the stored app password on a monitor that already exists, keeping the row, its id and
+ * its access-log history. Returns the refreshed monitor (never the password).
+ *
+ * This is the path back from a revoked credential. An employee who regenerates or deletes the
+ * `imap` app password on their own mailbox leaves the monitor holding a key that no longer opens
+ * it, and until this existed the only way forward was to Remove the mailbox and add it again —
+ * which detaches every access-log row from the monitor it describes (`ON DELETE SET NULL`), so the
+ * record of who read that mailbox survives with nothing left pointing at it.
+ *
+ * Two properties are worth stating because both are easy to get backwards:
+ *
+ *  1. **The candidate is proven before it displaces anything.** A mailbox arriving here is usually
+ *     already failing, so accepting the new password first and testing afterwards would trade a
+ *     credential known to be dead for one not known to be alive, with the old one gone.
+ *  2. **A failed candidate does NOT touch the health columns.** They describe the credential the
+ *     row is HOLDING; a typo in a replacement says nothing about it. Marking the monitor `failing`
+ *     here would report a working mailbox as broken on the strength of a mistyped form field —
+ *     which is why this is the one connection test in the module that ends without markHealth.
+ */
+export async function replaceMonitorPassword(
+  id: string,
+  rawAppPassword: string,
+  actorHrId: string | null,
+): Promise<MailboxMonitor> {
+  const row = await loadRow(id);
+  // Same normalization as the add path: Yahoo/Turbify displays an app password as four
+  // space-separated blocks, and the IMAP LOGIN wants the 16 characters with no spaces.
+  const appPassword = normalizeAppPassword(rawAppPassword ?? "");
+
+  // Every refusal is audited before it is thrown, for the reason refuseAdd exists on the add path:
+  // a guard that throws without a row cannot be counted afterwards.
+  if (appPassword.length < 6) {
+    await logAccess({
+      action: "replace_password",
+      actorHrId,
+      detail: failureDetail("The replacement app password was empty or too short.", { ok: false }),
+      emailAddress: row.email_address,
+      monitorId: id,
+    });
+    throw new MailboxMonitorError("Paste the new app password.", 400);
+  }
+
+  const test = await testMailboxConnection({
+    host: row.imap_host,
+    password: appPassword,
+    port: row.imap_port,
+    secure: row.imap_secure,
+    user: row.email_address,
+  });
+  await logAccess({
+    action: "replace_password",
+    actorHrId,
+    detail: test.ok ? { ok: true } : failureDetail(test.error, { ok: false }),
+    emailAddress: row.email_address,
+    monitorId: id,
+  });
+  if (!test.ok) {
+    // Diagnostic: the reason has nowhere else to live. Nothing was written to the row, so there is
+    // no last_error to read it back from afterwards — exactly the add path's 422.
+    throw new MailboxMonitorError(`Could not connect with that app password: ${test.error}`, 422, {
+      diagnostic: true,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await db()
+    .from(MONITORS_TABLE)
+    .update({
+      last_checked_at: now,
+      last_error: null,
+      last_ok_at: now,
+      sealed_password: sealSecret(appPassword),
+      status: "active",
+      updated_at: now,
+    })
+    .eq("id", id);
+  if (error) throw new MailboxMonitorError(error.message, 500, { diagnostic: true });
+
+  const updated = await loadRow(id);
+  const names = await resolveEmployeeNames([updated.employee_hr_id ?? ""]);
+  return rowToMonitor(updated, updated.employee_hr_id ? names.get(updated.employee_hr_id) ?? null : null);
+}
+
 /** Wrap a live IMAP read: resolve the connection, run it, log it, and translate a connection
  *  failure into a health downgrade + a clean error (a revoked app password lands here). */
 async function withMonitorRead<T>(

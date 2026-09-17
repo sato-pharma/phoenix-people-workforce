@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Eye,
   Inbox,
+  KeyRound,
   Loader2,
   Lock,
   Mail,
@@ -13,7 +14,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { type FormEvent, useCallback, useState } from "react";
+import { Fragment, type FormEvent, useCallback, useState } from "react";
 import { toast } from "sonner";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
@@ -65,6 +66,57 @@ function monitorTitle(monitor: MailboxMonitor): string {
   return monitor.displayLabel || monitor.employeeName || monitor.emailAddress;
 }
 
+/**
+ * The inline "replace the app password" form, shared by the desktop row and the mobile card so the
+ * two cannot drift. Rendered under the row it belongs to rather than beside the buttons: the
+ * actions already sit in a nowrap row, and an extra input there would push the table into a
+ * horizontal scroll (owner rule — wrapping and stacking win, never a sideways scrollbar).
+ */
+function ReplacePasswordPanel({
+  busy,
+  onCancel,
+  onChange,
+  onSave,
+  value,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onChange: (value: string) => void;
+  onSave: () => void;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+      <p className="text-sm font-semibold text-slate-900">Replace the app password</p>
+      <p className="mt-1 text-xs text-amber-900/90">
+        Generate a new app password on the mailbox — its own security settings, under{" "}
+        <span className="font-semibold">Manage app passwords</span> — and name it exactly{" "}
+        <code className="rounded-md border border-amber-300 bg-white px-1.5 py-0.5 font-bold tracking-[0.12em] text-slate-900">
+          imap
+        </code>
+        . The password stored now keeps working until the new one connects.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Input
+          autoComplete="off"
+          className="w-full sm:w-72"
+          placeholder="the new app password"
+          type="password"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <Button disabled={busy} size="sm" onClick={onSave}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
+          {busy ? "Testing the connection…" : "Save new password"}
+        </Button>
+        <Button disabled={busy} size="sm" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 type ReaderState = {
   monitor: MailboxMonitor;
   folders: MailboxFolder[];
@@ -93,8 +145,13 @@ export function MailboxMonitorDashboard({
   const [displayLabel, setDisplayLabel] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // Per-row busy state (re-check / remove)
+  // Per-row busy state (re-check / remove / replace the app password)
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Which row has its "replace the app password" form open, and what is typed in it. One at a
+  // time, and the field is cleared on every open and close so a pasted credential never lingers.
+  const [replacingId, setReplacingId] = useState<string | null>(null);
+  const [replacementPassword, setReplacementPassword] = useState("");
 
   // Reader
   const [reader, setReader] = useState<ReaderState | null>(null);
@@ -208,6 +265,48 @@ export function MailboxMonitorDashboard({
     }
   }
 
+  function toggleReplace(monitor: MailboxMonitor) {
+    setReplacementPassword("");
+    setReplacingId((previous) => (previous === monitor.id ? null : monitor.id));
+  }
+
+  /**
+   * Swap in a new app password without losing the monitor row. The row keeps its id, so every
+   * access-log row already written about this mailbox stays attached to it — which removing and
+   * re-adding does not (the log survives, but `ON DELETE SET NULL` cuts it loose from the monitor).
+   */
+  async function handleReplacePassword(monitor: MailboxMonitor) {
+    const next = replacementPassword.trim();
+    if (!next) {
+      toast.error("Paste the new app password.");
+      return;
+    }
+    setBusyId(monitor.id);
+    try {
+      const res = await fetch(`/api/admin/mailbox-monitor/${monitor.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appPassword: next }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { monitor?: MailboxMonitor; message?: string };
+      if (!res.ok || !data.monitor) {
+        // Say what did NOT happen. The server never writes a candidate it could not connect with,
+        // but "could not connect" on a screen about a mailbox reads as "the mailbox is broken now"
+        // unless the message rules it out.
+        toast.error(data.message || "Could not connect with that app password.");
+        return;
+      }
+      upsertMonitor(data.monitor);
+      setReplacingId(null);
+      setReplacementPassword("");
+      toast.success(`New app password saved — ${monitorTitle(data.monitor)} is connected again.`);
+    } catch {
+      toast.error("Could not reach the server.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleRemove(monitor: MailboxMonitor) {
     if (!window.confirm(`Stop monitoring ${monitorTitle(monitor)}? The stored app password is deleted. The access log is kept.`)) {
       return;
@@ -222,6 +321,11 @@ export function MailboxMonitorDashboard({
       }
       setMonitors((prev) => prev.filter((row) => row.id !== monitor.id));
       if (reader?.monitor.id === monitor.id) setReader(null);
+      // The row is gone; leaving its replace form open would point a typed credential at nothing.
+      if (replacingId === monitor.id) {
+        setReplacingId(null);
+        setReplacementPassword("");
+      }
       toast.success("Removed.");
     } catch {
       toast.error("Could not reach the server.");
@@ -449,32 +553,58 @@ export function MailboxMonitorDashboard({
                 </thead>
                 <tbody>
                   {monitors.map((monitor) => (
-                    <tr key={monitor.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/70">
-                      <td className="px-6 py-3">
-                        <div className="whitespace-nowrap font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
-                        <div className="whitespace-nowrap text-xs text-slate-500">{monitor.emailAddress}</div>
-                        {monitor.status === "failing" || monitor.status === "revoked" ? (
-                          <div className="whitespace-nowrap text-xs text-rose-600">{monitor.lastError || "Last connection failed."}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3"><StatusPill status={monitor.status} /></td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastOkAt)}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastCheckedAt)}</td>
-                      <td className="px-6 py-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button size="sm" variant="secondary" onClick={() => handleOpen(monitor)}>
-                            <Eye className="h-3.5 w-3.5" />Open
-                          </Button>
-                          <Button disabled={busyId === monitor.id} size="sm" variant="outline" onClick={() => handleRecheck(monitor)}>
-                            {busyId === monitor.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                            Re-check
-                          </Button>
-                          <Button disabled={busyId === monitor.id} size="sm" variant="destructive" onClick={() => handleRemove(monitor)}>
-                            <Trash2 className="h-3.5 w-3.5" />Remove
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+                    <Fragment key={monitor.id}>
+                      <tr
+                        className={cn(
+                          "hover:bg-slate-50/70",
+                          // The open panel is part of this row, so the rule between them comes off.
+                          replacingId === monitor.id ? "" : "border-b border-slate-100 last:border-0",
+                        )}
+                      >
+                        <td className="px-6 py-3">
+                          <div className="whitespace-nowrap font-semibold text-slate-900" dir="auto">{monitorTitle(monitor)}</div>
+                          <div className="whitespace-nowrap text-xs text-slate-500">{monitor.emailAddress}</div>
+                          {monitor.status === "failing" || monitor.status === "revoked" ? (
+                            <div className="whitespace-nowrap text-xs text-rose-600">{monitor.lastError || "Last connection failed."}</div>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3"><StatusPill status={monitor.status} /></td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastOkAt)}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{formatCairo(monitor.lastCheckedAt)}</td>
+                        <td className="px-6 py-3">
+                          {/* Wraps rather than scrolls: four actions do not fit one line at every
+                              width, and a sideways scrollbar is the thing the rule forbids. */}
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => handleOpen(monitor)}>
+                              <Eye className="h-3.5 w-3.5" />Open
+                            </Button>
+                            <Button disabled={busyId === monitor.id} size="sm" variant="outline" onClick={() => handleRecheck(monitor)}>
+                              {busyId === monitor.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                              Re-check
+                            </Button>
+                            <Button disabled={busyId === monitor.id} size="sm" variant="outline" onClick={() => toggleReplace(monitor)}>
+                              <KeyRound className="h-3.5 w-3.5" />Replace app password
+                            </Button>
+                            <Button disabled={busyId === monitor.id} size="sm" variant="destructive" onClick={() => handleRemove(monitor)}>
+                              <Trash2 className="h-3.5 w-3.5" />Remove
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                      {replacingId === monitor.id ? (
+                        <tr className="border-b border-slate-100 last:border-0">
+                          <td className="px-6 pb-4" colSpan={5}>
+                            <ReplacePasswordPanel
+                              busy={busyId === monitor.id}
+                              value={replacementPassword}
+                              onCancel={() => toggleReplace(monitor)}
+                              onChange={setReplacementPassword}
+                              onSave={() => handleReplacePassword(monitor)}
+                            />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -500,10 +630,24 @@ export function MailboxMonitorDashboard({
                       {busyId === monitor.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                       Re-check
                     </Button>
+                    <Button disabled={busyId === monitor.id} size="sm" variant="outline" onClick={() => toggleReplace(monitor)}>
+                      <KeyRound className="h-3.5 w-3.5" />Replace app password
+                    </Button>
                     <Button disabled={busyId === monitor.id} size="sm" variant="destructive" onClick={() => handleRemove(monitor)}>
                       <Trash2 className="h-3.5 w-3.5" />Remove
                     </Button>
                   </div>
+                  {replacingId === monitor.id ? (
+                    <div className="mt-3">
+                      <ReplacePasswordPanel
+                        busy={busyId === monitor.id}
+                        value={replacementPassword}
+                        onCancel={() => toggleReplace(monitor)}
+                        onChange={setReplacementPassword}
+                        onSave={() => handleReplacePassword(monitor)}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
