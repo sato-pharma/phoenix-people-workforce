@@ -1070,7 +1070,13 @@ export function EmployeePortalSidebar({
                 rail: `px-2` plus the sidebar scroller's reserved gutter made it wider than the rail,
                 so it hung past the card's clip and hid the active marker. The nav is the marker's
                 positioning context, which keeps it on the rail's edge at 58px and collapsed alike.
-                Budget: src/config/sidebar-metrics.ts; pinned by tests/shell-chrome-overflows.test.ts. */}
+                Budget: src/config/sidebar-metrics.ts; pinned by tests/shell-chrome-overflows.test.ts.
+
+                Each link is `shrink-0`. The nav is a column flexbox, and a flex item shrinks before its
+                container overflows, so on a short window the links squashed toward their 16px icons,
+                shorter than the 28px marker, before the nav scrolled at all. It scrolls with its bar
+                hidden, by the owner's decision (2026-09-16); pinned by
+                tests/portal-rail-scrolls-never-squashes.test.ts. */}
             <nav className="relative mt-5 flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {sections.map((section) => {
                 const Icon = sectionRailIcon(section.title);
@@ -1079,7 +1085,7 @@ export function EmployeePortalSidebar({
                 return (
                   <Link
                     aria-label={section.title}
-                    className={`flex h-10 w-[52px] items-center justify-center rounded transition ${
+                    className={`flex h-10 w-[52px] shrink-0 items-center justify-center rounded transition ${
                       active ? "bg-white/10 text-white" : "text-white/58 hover:bg-white/8 hover:text-white"
                     }`}
                     href={firstItem.href}

@@ -88,6 +88,11 @@ export const PORTAL_ICON_RAIL = 58;
  * therefore pays for nothing else — no side padding, no scrollbar track (it keeps `overflow-y-auto`,
  * with the bar hidden) — which leaves 3px a side at 58px and 12px a side collapsed.
  *
+ * The bar stays hidden when the nav does scroll — the owner's decision, 2026-09-16. Each link is
+ * `shrink-0`, so a window too short for every section scrolls the nav instead of squashing the links
+ * toward their 16px icons, and a visible classic bar would cost 15px this rail cannot pay.
+ * tests/portal-rail-scrolls-never-squashes.test.ts holds both.
+ *
  * Until 2026-09-16 the nav also carried `px-2` and `.phoenix-employee-sidebar-scroll`, whose
  * `scrollbar-gutter: stable` Chromium counts in the nav's OWN width: 52 + 16 + 10 = 78px, centred
  * in a 58px column. Every portal page from 1024px read scrollWidth 68 > clientWidth 58 on the rail,
