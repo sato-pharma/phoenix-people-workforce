@@ -22,6 +22,7 @@ import {
   WEEKLY_SALES_DETAIL_MOVEMENT_LABELS,
   WEEKLY_SALES_DETAIL_NOTHING,
   WEEKLY_SALES_DETAIL_UNMAPPED_AREA,
+  weeklySalesDetailShowsBasis,
   weeklySalesMovement,
   type WeeklySalesDepotDetailPayload,
   type WeeklySalesDetailAudience,
@@ -415,6 +416,8 @@ export function WeeklySalesDepotDetail({
               : view.distributors.length;
   const hasAnySales = view.availableBranches.length > 0 || view.cells.length > 0;
   const hasUnmappedArea = areaOptions.some((option) => option.code === WEEKLY_SALES_DETAIL_UNMAPPED_AREA);
+  // A manager's figures are whole depots unless his load was lifted and a depot-split share reached him.
+  const managerHasShares = !isRep && weeklySalesDetailShowsBasis(view);
   const shareOfTotal = (part: number) => (kpis.value > 0 ? `${formatShare(part / kpis.value)} of your total` : "Nothing sold yet");
   const drillArea = (code: string) =>
     drill("areas", code.startsWith(`${WEEKLY_SALES_DETAIL_UNMAPPED_AREA}|`) ? WEEKLY_SALES_DETAIL_UNMAPPED_AREA : code);
@@ -427,8 +430,10 @@ export function WeeklySalesDepotDetail({
         <div className="flex gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-phx-md font-semibold text-amber-900">
-            The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and your
-            figures read low. Press Sync now in a moment.
+            {isRep
+              ? "The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and your figures read low."
+              : "The depot-to-area map did not load just now, so depots filed under another region that serve your areas are not counted and your figures read low."}{" "}
+            Press Sync now in a moment.
           </p>
         </div>
       ) : null}
@@ -447,7 +452,13 @@ export function WeeklySalesDepotDetail({
         <>
           {/* KPIs — every total here is a value, never a unit count across products. */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi accent="#F97316" icon={Coins} label="Sales value" value={formatEgp(kpis.value)} sub="Net of returns" />
+            <Kpi
+              accent="#F97316"
+              icon={Coins}
+              label="Sales value"
+              value={formatEgp(kpis.value)}
+              sub={managerHasShares ? `Net of returns · ${formatEgp(kpis.allocatedValue)} allocated` : "Net of returns"}
+            />
             <Kpi
               accent="#0EA5E9"
               icon={CalendarRange}
@@ -625,6 +636,9 @@ export function WeeklySalesDepotDetail({
             {isRep
               ? "A depot mapped to your area by hand credits you exactly. Any other depot has its money spread evenly across the governorates its name states, then evenly again across that governorate's areas on your line, so an allocated share is an allocation of depot shipments, not a record of sales observed in your territory. "
               : "Depots that serve several areas are listed under Area not mapped. "}
+            {managerHasShares
+              ? "A depot filed under another region has its money spread evenly across the governorates its name states, then across their areas on your line, and reaches you only as the share in your own areas, marked Allocated share (Part allocated where the depot's mapping changed inside the period): an allocation of depot shipments, not a record of sales observed in your territory. Every other figure is the depot's whole sale. "
+              : null}
             Products with no Product Master mapping are left out, and Head Office products are not tracked weekly. The
             Monthly Closing remains the official number.
           </p>
@@ -786,7 +800,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
                   <div className="mt-1.5">
                     <MovementBadge movement={cell.movement} />
                   </div>
-                  {isRep ? <BasisNote basis={cell.basis} /> : null}
+                  {isRep || cell.basis !== "whole" ? <BasisNote basis={cell.basis} /> : null}
                 </td>
                 <td className={`${TD_NUM} font-black text-slate-900`}>{formatUnits(cell.units)}</td>
                 <td className={TD_NUM}>{formatEgpFull(cell.value)}</td>
@@ -809,7 +823,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
                   <p className="break-words text-sm font-black text-slate-900">{cell.productName}</p>
                   <p className="break-words text-phx-xs font-bold text-slate-700">{cell.branchName}</p>
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">{cellPlace(cell, isRep)}</p>
-                  {isRep ? <BasisNote basis={cell.basis} /> : null}
+                  {isRep || cell.basis !== "whole" ? <BasisNote basis={cell.basis} /> : null}
                 </div>
                 <MovementBadge movement={cell.movement} />
               </div>

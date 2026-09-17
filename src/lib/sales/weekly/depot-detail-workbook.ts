@@ -4,7 +4,8 @@
 //
 // It exports exactly what the screen shows for the same query: the rows come from the same loader the
 // feed calls, so the viewer's scope travels with them, and a Medical Rep's book holds his own screen and
-// nothing wider (no region tab, no other area).
+// nothing wider (no region tab, no other area). A manager's book carries the "How It Reached You" columns
+// only when a lifted load placed a depot-split share in it — the same test his screen's labels answer.
 //
 // THE TOTAL ROW. addPhoenixTableSheet appends a TOTAL row that SUMs every `numeric` column. So a column
 // is numeric here only when its sum means something: value, average weekly value, share, and counts of
@@ -18,6 +19,7 @@ import { addPhoenixTableSheet, type ExportColumn, type ExportRow } from "@/lib/e
 import {
   WEEKLY_SALES_DETAIL_BASIS_LABELS,
   WEEKLY_SALES_DETAIL_MOVEMENT_LABELS,
+  weeklySalesDetailShowsBasis,
   weeklySalesMovement,
   type WeeklySalesDepotDetailPayload,
   type WeeklySalesDetailAudience,
@@ -110,6 +112,8 @@ export function buildWeeklySalesDepotDetailWorkbook(
 ): ExcelJS.Workbook {
   const { view, scope } = payload;
   const isRep = view.audience === "rep";
+  // A rep's book always says how each figure reached him; a manager's only when a depot-split share is in it.
+  const showBasis = weeklySalesDetailShowsBasis(view);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
   const subtitle = `${scope.summary} · ${scope.periodLabel}`;
@@ -122,7 +126,7 @@ export function buildWeeklySalesDepotDetailWorkbook(
     depot: cell.branchName,
     line: cell.line,
     product: cell.productName,
-    ...(isRep ? { basis: WEEKLY_SALES_DETAIL_BASIS_LABELS[cell.basis], allocatedValue: cell.allocatedValue } : {}),
+    ...(showBasis ? { basis: WEEKLY_SALES_DETAIL_BASIS_LABELS[cell.basis], allocatedValue: cell.allocatedValue } : {}),
     units: cell.units,
     value: cell.value,
     avgWeeklyUnits: orDash(cell.avgWeeklyUnits),
@@ -143,10 +147,10 @@ export function buildWeeklySalesDepotDetailWorkbook(
       { key: "depot", label: "Depot", width: 26 },
       { key: "line", label: "Line", width: 14 },
       { key: "product", label: "Product", width: 26 },
-      ...(isRep ? [{ key: "basis", label: "How It Reached You", width: 18 }] : []),
+      ...(showBasis ? [{ key: "basis", label: "How It Reached You", width: 18 }] : []),
       { key: "units", label: "Net Units", plainNumber: true, width: 11 },
       { key: "value", label: "Sales Value (EGP)", numeric: true, width: 16 },
-      ...(isRep ? [{ key: "allocatedValue", label: "Of Which Allocated (EGP)", numeric: true, width: 18 }] : []),
+      ...(showBasis ? [{ key: "allocatedValue", label: "Of Which Allocated (EGP)", numeric: true, width: 18 }] : []),
       { key: "avgWeeklyUnits", label: "Avg Weekly Units", plainNumber: true, width: 13 },
       { key: "avgWeeklyValue", label: "Avg Weekly Value (EGP)", numeric: true, width: 18 },
       { key: "weeksSold", label: "Weeks Sold", plainNumber: true, width: 10 },
@@ -246,6 +250,7 @@ export function weeklySalesDepotDetailNotes(
   generatedAtCairo: string,
 ): { topic: string; rule: string }[] {
   const isRep = payload.view.audience === "rep";
+  const showBasis = weeklySalesDetailShowsBasis(payload.view);
   return [
     { topic: "Scope", rule: payload.scope.summary },
     { topic: "Period", rule: payload.scope.periodLabel },
@@ -265,20 +270,34 @@ export function weeklySalesDepotDetailNotes(
     },
     { topic: "Weeks sold", rule: "Of the weeks covered, the weeks in which the product sold at that depot." },
     { topic: "Movement", rule: "Sold when more went out than came back over the period; Net returns when more came back." },
-    isRep
-      ? {
-          topic: "How it reached you",
-          rule: "Mapped by hand: the depot is mapped to your area, so its whole sale is yours. Allocated share: the depot's name places it across several areas, and this is your area's even share of it. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
-        }
-      : {
-          topic: "Area not mapped",
-          rule: "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
-        },
-    ...(isRep && payload.allocationUnavailable
+    ...(isRep
+      ? [
+          {
+            topic: "How it reached you",
+            rule: "Mapped by hand: the depot is mapped to your area, so its whole sale is yours. Allocated share: the depot's name places it across several areas, and this is your area's even share of it. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
+          },
+        ]
+      : [
+          ...(showBasis
+            ? [
+                {
+                  topic: "How it reached you",
+                  rule: "Whole depot: the depot is filed under your own region or areas, so its whole sale is shown. Allocated share: the depot is filed under another region, and its name places it across several areas; this is the part that falls in your own areas. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
+                },
+              ]
+            : []),
+          {
+            topic: "Area not mapped",
+            rule: "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
+          },
+        ]),
+    ...(payload.allocationUnavailable
       ? [
           {
             topic: "Allocation missing",
-            rule: "The depot-to-area map did not load when this file was made, so only depots mapped to your area by hand are counted and the figures read low.",
+            rule: isRep
+              ? "The depot-to-area map did not load when this file was made, so only depots mapped to your area by hand are counted and the figures read low."
+              : "The depot-to-area map did not load when this file was made, so depots filed under another region that serve your areas are not counted and the figures read low.",
           },
         ]
       : []),
