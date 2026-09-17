@@ -38,12 +38,18 @@ import {
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
 import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
+import { breakdownColumns, completenessColumns } from "@/components/sales/weekly/weekly-table-widths";
 import type {
   PortalWeeklyComparison,
   PortalWeeklyScopeView,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard, WeeklyRanked } from "@/lib/sales/weekly/types";
+import {
+  weeklyBreakdownUnitsAreOneProduct,
+  weeklyKpiUnitsAreOneProduct,
+  type WeeklyBreakdownCut,
+} from "@/lib/sales/weekly/unit-totals";
 
 type Props = {
   initialData: WeeklyDashboard;
@@ -98,7 +104,7 @@ function formatCycleMonth(code: string): string {
 }
 
 type MultiKey = "months" | "weeks" | "regions" | "products" | "lines" | "distributors";
-type DetailView = "product" | "region" | "distributor";
+type DetailView = WeeklyBreakdownCut;
 
 const EMPTY_SELECTION: string[] = [];
 const EMPTY_INT_SELECTION: string[] = [];
@@ -285,6 +291,9 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
 
   const isEmpty = data.kpis.salesValue === 0 && data.kpis.salesUnits === 0;
   const isProductScoped = scope.role === "Product Manager" || scope.role === "Group Product Manager";
+  // Units of different products are never added (owner rule): the unit tiles appear only while the
+  // selection is one product, and the Export follows the same test (unit-totals.ts).
+  const showUnitTiles = weeklyKpiUnitsAreOneProduct(data);
 
   // Upload status chip — derived from sources vs distributors list
   const uploadedCount = new Set(data.sources.map((s) => s.distributorCode)).size;
@@ -371,7 +380,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+                  className="inline-flex items-center gap-1.5 bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
                 >
                   <RotateCcw className="h-3 w-3" />
                   Reset {activeFilterCount}
@@ -388,27 +397,28 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   return (
     <div className="space-y-5">
       {/* Scope bar */}
-      <div className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
           <div className="min-w-0">
             <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
-            <p className="whitespace-nowrap text-sm font-black text-slate-900">{scope.scopeSummary}</p>
+            {/* A scope lists every area it covers, so it wraps: a phone is narrower than most of them. */}
+            <p className="break-words text-sm font-black text-slate-900">{scope.scopeSummary}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
             Sync now
           </button>
           {totalDistributors > 0 ? (
             <span
-              className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
+              className={`hidden items-center gap-1.5 whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
                 allUploaded
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -420,7 +430,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
           ) : null}
           {loading ? (
             <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
+              <span className="h-1.5 w-1.5 animate-pulse bg-orange-500" />
               Updating
             </span>
           ) : null}
@@ -439,8 +449,11 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
         </>
       ) : activeTab === "distribution" ? (
         <>
-          {/* KPI strip */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          {/* KPI strip. The two unit tiles are one product's units or nothing (see showUnitTiles), so the
+              grid is laid out for whichever count of tiles is actually there. */}
+          <div
+            className={`grid grid-cols-2 gap-3 ${showUnitTiles ? "lg:grid-cols-3 xl:grid-cols-6" : "lg:grid-cols-4"}`}
+          >
             <StatTile
               accent="#F97316"
               icon={Coins}
@@ -455,8 +468,12 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
                   : null
               }
             />
-            <StatTile accent="#0EA5E9" icon={Boxes} label="Sales Units" value={formatNumber(data.kpis.salesUnits)} sub="net of returns" />
-            <StatTile accent="#8B5CF6" icon={Package} label="Stock Units" value={formatNumber(data.kpis.stockUnits)} />
+            {showUnitTiles ? (
+              <>
+                <StatTile accent="#0EA5E9" icon={Boxes} label="Sales Units" value={formatNumber(data.kpis.salesUnits)} sub="net of returns" />
+                <StatTile accent="#8B5CF6" icon={Package} label="Stock Units" value={formatNumber(data.kpis.stockUnits)} />
+              </>
+            ) : null}
             <StatTile accent="#22C55E" icon={Truck} label="Distributors" value={formatNumber(data.kpis.distributorCount)} />
             <StatTile accent="#F59E0B" icon={MapPin} label="Regions" value={formatNumber(data.kpis.regionCount)} />
             <StatTile accent="#14B8A6" icon={Layers} label="Products" value={formatNumber(data.kpis.productCount)} />
@@ -609,7 +626,7 @@ function WeeklyTabBar({
     { key: "detail", label: "Depot Detail", hint: "Every product at every depot", icon: Building2 },
   ];
   return (
-    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
       <div className="flex flex-col sm:flex-row">
         {tabs.map((tab) => {
           const isActive = active === tab.key;
@@ -630,7 +647,7 @@ function WeeklyTabBar({
                 }`}
               />
               <span
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ${
+                className={`flex h-8 w-8 shrink-0 items-center justify-center ${
                   isActive ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-400"
                 }`}
               >
@@ -678,14 +695,14 @@ function Section({
 }) {
   return (
     <div
-      className={`rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 ${
+      className={`border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60 ${
         overflowVisible ? "relative z-30 overflow-visible" : "overflow-hidden"
       } ${className ?? ""}`}
     >
-      <div className="flex items-center justify-between gap-3 rounded-t-sm border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
+          <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
         </div>
         {action ?? <span className="h-1.5 w-10 bg-orange-500/80" />}
       </div>
@@ -710,18 +727,19 @@ function StatTile({
   delta?: number | null;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+    <div className="group relative overflow-hidden border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
       <span className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5" style={{ backgroundColor: accent }} />
+      {/* Two tiles share a phone's width and the tile clips, so every line wraps rather than being cut. */}
       <div className="p-3.5 sm:p-4">
-        <div className="flex items-center justify-between">
-          <span className="flex h-7 w-7 items-center justify-center rounded-sm" style={{ backgroundColor: `${accent}1A`, color: accent }}>
+        <div className="flex flex-wrap items-center justify-between gap-1">
+          <span className="flex h-7 w-7 items-center justify-center" style={{ backgroundColor: `${accent}1A`, color: accent }}>
             <Icon className="h-3.5 w-3.5" />
           </span>
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
-        <p className="mt-2.5 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
-        {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
+        <p className="mt-2.5 break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+        <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
+        {sub ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
       </div>
     </div>
   );
@@ -732,7 +750,7 @@ function DeltaPill({ delta }: { delta: number }) {
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${
         up ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
       }`}
     >
@@ -767,15 +785,15 @@ function MoversStrip({ comparison }: { comparison: PortalWeeklyComparison }) {
 function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"; movers: PortalWeeklyComparison["gainers"] }) {
   if (movers.length === 0) return null;
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-3">
+    <div className="border border-slate-200 bg-white p-3">
       <p className="mb-2 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
-        {tone === "up" ? <ArrowUpRight className="h-3 w-3 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 text-rose-600" />}
-        {title} · vs last month
+        {tone === "up" ? <ArrowUpRight className="h-3 w-3 shrink-0 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 shrink-0 text-rose-600" />}
+        <span className="min-w-0 break-words">{title} · vs last month</span>
       </p>
       <div className="space-y-1.5">
         {movers.map((mover) => (
           <div key={mover.code} className="flex items-center justify-between gap-3">
-            <span className="whitespace-nowrap text-xs font-bold text-slate-800">{mover.label}</span>
+            <span className="min-w-0 break-words text-xs font-bold text-slate-800">{mover.label}</span>
             <span className="flex shrink-0 items-center gap-2">
               <span className="whitespace-nowrap text-phx-xs tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
               <DeltaPill delta={mover.deltaPct} />
@@ -802,7 +820,7 @@ function PremiumTooltip({
   if (!active || !payload || payload.length === 0) return null;
   const title = label ?? payload[0]?.payload?.label ?? payload[0]?.name ?? "";
   return (
-    <div className="rounded-sm border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
+    <div className="border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
       {title ? <p className="mb-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
       {payload.map((entry, index) => (
         <p key={index} className="whitespace-nowrap text-xs font-black tabular-nums text-white">
@@ -1033,6 +1051,10 @@ function WeeklyDetailSection({
 
   const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0) || 1;
   const showDelta = comparison != null;
+  // A product row's units are that product's; a region or distributor row's units add products together,
+  // so its Units column is there only while the whole selection is one product (unit-totals.ts).
+  const showUnits = weeklyBreakdownUnitsAreOneProduct(data, view);
+  const columns = breakdownColumns(showUnits, showDelta);
 
   const tabs: { key: DetailView; label: string }[] = [
     { key: "product", label: "Product" },
@@ -1047,14 +1069,14 @@ function WeeklyDetailSection({
   };
 
   return (
-    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
           <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-sm border border-slate-700">
+          <div className="flex overflow-hidden border border-slate-700">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -1070,7 +1092,7 @@ function WeeklyDetailSection({
           </div>
           <a
             href={`/api/employee-portals/weekly-sales/export?${exportQuery}`}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+            className="inline-flex h-7 items-center gap-1.5 border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
           >
             <Download className="h-3 w-3" />
             Export
@@ -1082,39 +1104,49 @@ function WeeklyDetailSection({
         <div className="p-8 text-center text-sm font-semibold text-slate-400">No rows for this selection.</div>
       ) : (
         <>
-          <div className="hidden overflow-x-auto md:block">
-            <table className="w-full text-left text-sm">
+          {/* DESKTOP — fixed to its container with every column width declared; a long name wraps. */}
+          <div className="hidden md:block">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                <col style={{ width: `${columns.label}%` }} />
+                <col style={{ width: `${columns.value}%` }} />
+                {showUnits ? <col style={{ width: `${columns.units}%` }} /> : null}
+                <col style={{ width: `${columns.share}%` }} />
+                {showDelta ? <col style={{ width: `${columns.delta}%` }} /> : null}
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-2.5 font-black">{viewLabel(view)}</th>
                   <th className="px-4 py-2.5 text-right font-black">Value</th>
-                  <th className="px-4 py-2.5 text-right font-black">Units</th>
-                  <th className="px-4 py-2.5 text-right font-black">Share</th>
-                  {showDelta ? <th className="px-4 py-2.5 text-right font-black">Δ vs last</th> : null}
+                  {showUnits ? <th className="px-2 py-2.5 text-right font-black">Units</th> : null}
+                  <th className="px-2 py-2.5 text-right font-black">Share</th>
+                  {showDelta ? <th className="px-2 py-2.5 text-right font-black">Δ vs last</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.code} className="border-b border-slate-100 transition hover:bg-orange-50/40">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-bold text-slate-900">{row.label}</td>
+                    <td className="break-words px-4 py-2.5 font-bold text-slate-900">{row.label}</td>
                     <td className="px-4 py-2">
-                      <div className="relative ml-auto flex h-7 w-48 max-w-full items-center justify-end overflow-hidden rounded-sm">
+                      <div className="relative ml-auto flex min-h-7 w-48 max-w-full items-center justify-end overflow-hidden">
                         <span
-                          className="absolute inset-y-0 left-0 rounded-sm"
+                          className="absolute inset-y-0 left-0"
                           style={{
                             width: `${Math.max((row.value / maxValue) * 100, 1.5)}%`,
                             background: "linear-gradient(90deg, #EA580C 0%, rgba(249,115,22,0.45) 62%, rgba(249,115,22,0.06) 100%)",
                           }}
                         />
-                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-phx-md font-black tabular-nums text-slate-900">
+                        <span className="relative z-10 min-w-0 break-words pr-2 text-right text-phx-md font-black tabular-nums text-slate-900">
                           {formatEgpFull(row.value)}
                         </span>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-slate-600">{formatNumber(row.units)}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{formatPct(row.share)}</td>
+                    {showUnits ? (
+                      <td className="break-words px-2 py-2.5 text-right tabular-nums text-slate-600">{formatNumber(row.units)}</td>
+                    ) : null}
+                    <td className="break-words px-2 py-2.5 text-right tabular-nums font-semibold text-slate-600">{formatPct(row.share)}</td>
                     {showDelta ? (
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                      <td className="px-2 py-2.5 text-right">
                         {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-phx-xs text-slate-300">—</span>}
                       </td>
                     ) : null}
@@ -1125,16 +1157,16 @@ function WeeklyDetailSection({
           </div>
           <div className="space-y-2 p-3 md:hidden">
             {rows.map((row) => (
-              <div key={row.code} className="flex overflow-hidden rounded-sm border border-slate-200 bg-white">
+              <div key={row.code} className="flex overflow-hidden border border-slate-200 bg-white">
                 <span className="w-[3px] shrink-0 bg-orange-500" />
                 <div className="min-w-0 flex-1 p-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="whitespace-nowrap text-sm font-black text-slate-900">{row.label}</p>
+                    <p className="min-w-0 break-words text-sm font-black text-slate-900">{row.label}</p>
                     {showDelta && row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : null}
                   </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div className={`mt-2 grid gap-2 ${showUnits ? "grid-cols-3" : "grid-cols-2"}`}>
                     <CardStat label="Value" value={formatEgp(row.value)} />
-                    <CardStat label="Units" value={formatNumber(row.units)} />
+                    {showUnits ? <CardStat label="Units" value={formatNumber(row.units)} /> : null}
                     <CardStat label="Share" value={formatPct(row.share)} />
                   </div>
                 </div>
@@ -1149,9 +1181,9 @@ function WeeklyDetailSection({
 
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
+    <div className="min-w-0 border border-slate-100 bg-slate-50 px-2 py-1.5">
+      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="break-words text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
 }
@@ -1178,6 +1210,8 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
   if (data.distributors.length === 0 || months.length === 0) return null;
 
   const weeks = [1, 2, 3, 4];
+  // Each month column holds four 20px marks; the distributor name takes the rest and wraps.
+  const columns = completenessColumns(months.length);
 
   return (
     <Section title="Upload completeness · current period">
@@ -1185,7 +1219,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
       <div className="space-y-2 md:hidden">
         {data.distributors.map((dist) => (
           <div className="border border-slate-100 bg-white px-3 py-2.5" key={`m-${dist.code}`}>
-            <p className="text-phx-md font-semibold text-slate-800">{dist.name}</p>
+            <p className="break-words text-phx-md font-semibold text-slate-800">{dist.name}</p>
             <div className="mt-2 space-y-1.5">
               {months.map((m) => {
                 const done = weeks.filter((w) => uploadedKeys.has(`${dist.code}-${m}-${w}`)).length;
@@ -1197,7 +1231,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
                         const uploaded = uploadedKeys.has(`${dist.code}-${m}-${w}`);
                         return (
                           <span
-                            className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-phx-2xs font-black ${
+                            className={`inline-flex h-5 w-5 items-center justify-center text-phx-2xs font-black ${
                               uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
                             }`}
                             key={w}
@@ -1217,43 +1251,58 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
         ))}
       </div>
 
-      {/* Desktop: full matrix */}
-      <div className="hidden overflow-x-auto md:block">
-        <table className="w-full text-left text-sm">
+      {/* Desktop: the matrix, one column per MONTH holding its four week marks. A column per week was up
+          to twelve columns, which pushed the table past the screen; the week labels now sit in the
+          month's head, directly above the marks they name. */}
+      <div className="hidden md:block">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col style={{ width: `${columns.distributor}%` }} />
+            {months.map((m) => (
+              <col key={m} style={{ width: `${columns.month}%` }} />
+            ))}
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-200 text-phx-2xs uppercase tracking-wide text-slate-500">
-              <th className="whitespace-nowrap px-3 py-2 font-black">Distributor</th>
-              {months.map((m) =>
-                weeks.map((w) => (
-                  <th key={`${m}-w${w}`} className="whitespace-nowrap px-2 py-2 text-center font-black">
-                    {`${formatCycleMonth(m).slice(0, 3)} W${w}`}
-                  </th>
-                )),
-              )}
+              <th className="px-3 py-2 font-black">Distributor</th>
+              {months.map((m) => (
+                <th key={m} className="px-2 py-2 text-center font-black">
+                  <span className="block break-words">{formatCycleMonth(m)}</span>
+                  <span className="mt-1 inline-flex flex-wrap justify-center gap-1">
+                    {weeks.map((w) => (
+                      <span key={w} className="inline-block w-5 text-center text-phx-3xs font-black">
+                        {`W${w}`}
+                      </span>
+                    ))}
+                  </span>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {data.distributors.map((dist) => (
               <tr key={dist.code} className="border-b border-slate-100">
-                <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-800">{dist.name}</td>
-                {months.map((m) =>
-                  weeks.map((w) => {
-                    const key = `${dist.code}-${m}-${w}`;
-                    const uploaded = uploadedKeys.has(key);
-                    return (
-                      <td key={key} className="px-2 py-2 text-center">
-                        <span
-                          className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-phx-2xs font-black ${
-                            uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
-                          }`}
-                          title={uploaded ? "Uploaded" : "Pending"}
-                        >
-                          {uploaded ? "✓" : "·"}
-                        </span>
-                      </td>
-                    );
-                  }),
-                )}
+                <td className="break-words px-3 py-2 font-semibold text-slate-800">{dist.name}</td>
+                {months.map((m) => (
+                  <td key={`${dist.code}-${m}`} className="px-2 py-2 text-center">
+                    <span className="inline-flex flex-wrap justify-center gap-1">
+                      {weeks.map((w) => {
+                        const uploaded = uploadedKeys.has(`${dist.code}-${m}-${w}`);
+                        return (
+                          <span
+                            key={w}
+                            className={`inline-flex h-5 w-5 items-center justify-center text-phx-2xs font-black ${
+                              uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                            }`}
+                            title={`W${w} ${uploaded ? "Uploaded" : "Pending"}`}
+                          >
+                            {uploaded ? "✓" : "·"}
+                          </span>
+                        );
+                      })}
+                    </span>
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -1274,8 +1323,8 @@ function EmptyState({ isProductScoped, isEmpty }: { isProductScoped: boolean; is
       ? "No weekly sales were recorded for your assigned products and this selection."
       : "No weekly sales were recorded for this selection.";
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-slate-200 bg-white p-12 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <span className="flex h-12 w-12 items-center justify-center rounded-sm bg-orange-50 text-orange-500 ring-1 ring-orange-100">
+    <div className="flex flex-col items-center justify-center gap-3 border border-dashed border-slate-200 bg-white p-12 text-center shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <span className="flex h-12 w-12 items-center justify-center bg-orange-50 text-orange-500 ring-1 ring-orange-100">
         <TrendingUp className="h-5 w-5" />
       </span>
       <p className="max-w-md text-sm font-semibold text-slate-600">{message}</p>

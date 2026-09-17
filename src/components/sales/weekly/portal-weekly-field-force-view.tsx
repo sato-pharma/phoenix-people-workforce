@@ -18,8 +18,11 @@
 //     by the branch name. Every rep row therefore carries its exact/allocated mix, and a rep whose
 //     number is mostly allocated is marked so the owner does not manage someone on an estimate.
 //
-//  3. NEVER TRUNCATE, NEVER WRAP (owner rule). Long names stay whole on one line and the table
-//     scrolls sideways instead of clipping. Mobile gets cards, never a squeezed table.
+//  3. FITS THE SCREEN, NEVER TRUNCATED (owner golden rules). Nothing scrolls sideways: each table is
+//     fixed-layout with every column width declared, so it can never grow past its container, and a
+//     long name WRAPS instead (vertical space is free, horizontal is not). It fits by MERGING columns,
+//     never by shrinking type: area, region and district manager sit under the rep's name, and the
+//     share sits under the period total. Mobile gets cards, never a squeezed table. Corners are square.
 
 import { Fragment, useMemo, useState } from "react";
 import {
@@ -38,6 +41,10 @@ import {
   Users,
 } from "lucide-react";
 
+import {
+  fieldForceLeagueColumns,
+  fieldForceProductColumns,
+} from "@/components/sales/weekly/weekly-table-widths";
 import type {
   FieldForceRep,
   PortalWeeklyFieldForce,
@@ -159,6 +166,7 @@ export function PortalWeeklyFieldForceView({
   const fieldValue = totals.value;
   const exactShare = fieldValue > 0 ? totals.exactValue / fieldValue : 0;
   const maxValue = rows.reduce((max, rep) => Math.max(max, rep.value), 0) || 1;
+  const columns = fieldForceLeagueColumns(weeks.length);
 
   return (
     <div className="space-y-5">
@@ -203,7 +211,7 @@ export function PortalWeeklyFieldForceView({
       />
 
       {gapWeeks.size > 0 ? (
-        <div className="flex items-start gap-2.5 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="flex items-start gap-2.5 border border-amber-200 bg-amber-50 px-4 py-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-xs font-semibold text-amber-900">
             {`Week ${[...gapWeeks].join(", ")} follows a week that was never uploaded, so its figure spans the missing week(s) and reads high. Marked with a dot in the table below.`}
@@ -212,11 +220,11 @@ export function PortalWeeklyFieldForceView({
       ) : null}
 
       {/* The league table */}
-      <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+      <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <span className="h-3.5 w-[3px] bg-orange-500" />
-            <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
+            <h2 className="break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
               Medical reps · week by week
             </h2>
           </div>
@@ -227,10 +235,10 @@ export function PortalWeeklyFieldForceView({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Find a rep, area or district"
-                className="w-52 rounded-sm border border-slate-700 bg-slate-800 py-1 pl-7 pr-2 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-orange-500 focus:outline-none"
+                className="w-52 border border-slate-700 bg-slate-800 py-1 pl-7 pr-2 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-orange-500 focus:outline-none"
               />
             </label>
-            <div className="flex overflow-hidden rounded-sm border border-slate-700">
+            <div className="flex overflow-hidden border border-slate-700">
               {([
                 { key: "value", label: "Value" },
                 { key: "name", label: "Name" },
@@ -253,7 +261,7 @@ export function PortalWeeklyFieldForceView({
             <button
               type="button"
               onClick={() => setShowVacant((previous) => !previous)}
-              className={`whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
+              className={`whitespace-nowrap border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
                 showVacant
                   ? "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
                   : "border-orange-500 bg-orange-500 text-white"
@@ -264,34 +272,33 @@ export function PortalWeeklyFieldForceView({
           </div>
         </div>
 
-        {/* DESKTOP — the full grid. Scrolls sideways rather than truncating a name (owner rule). */}
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-[880px] border-collapse">
+        {/* DESKTOP — the full grid, fixed to its container. A long name wraps; nothing scrolls sideways. */}
+        <div className="hidden lg:block">
+          <table className="w-full table-fixed border-collapse">
+            <colgroup>
+              <col style={{ width: `${columns.rep}%` }} />
+              {weeks.map((week) => (
+                <col key={week} style={{ width: `${columns.week}%` }} />
+              ))}
+              <col style={{ width: `${columns.period}%` }} />
+            </colgroup>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="whitespace-nowrap px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                  Medical rep
-                </th>
-                <th className="whitespace-nowrap px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                  Area
-                </th>
-                <th className="whitespace-nowrap px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                  District manager
+                <th className="px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                  Medical rep · Area · District manager
                 </th>
                 {weeks.map((week) => (
                   <th
                     key={week}
-                    className="whitespace-nowrap px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                    className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                    title={gapWeeks.has(week) ? "Includes a week that was never uploaded" : undefined}
                   >
                     {`W${week}`}
-                    {gapWeeks.has(week) ? <span className="ml-1 text-amber-500">•</span> : null}
+                    {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}
                   </th>
                 ))}
-                <th className="whitespace-nowrap px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                  Period
-                </th>
-                <th className="whitespace-nowrap px-3 py-2 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
-                  Share
+                <th className="px-2 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+                  Period · Share
                 </th>
               </tr>
             </thead>
@@ -300,13 +307,13 @@ export function PortalWeeklyFieldForceView({
                 <Fragment key={group.line}>
                   {showLineBands ? (
                     <tr>
-                      <td colSpan={weeks.length + 5} className="bg-slate-900 px-3 py-2">
-                        <div className="flex items-baseline justify-between gap-4">
-                          <span className="flex items-baseline gap-2">
-                            <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
+                      <td colSpan={weeks.length + 2} className="bg-slate-900 px-3 py-2">
+                        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                            <span className="break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
                               {group.line}
                             </span>
-                            <span className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">
+                            <span className="break-words text-phx-2xs font-semibold text-slate-400">
                               {`${formatNumber(group.reps.filter((r) => r.kind === "rep").length)} reps · ${formatNumber(
                                 group.reps.filter((r) => r.kind === "vacant").length,
                               )} vacant`}
@@ -329,13 +336,13 @@ export function PortalWeeklyFieldForceView({
                       {showRegionBands ? (
                         <tr>
                           <td
-                            colSpan={weeks.length + 5}
+                            colSpan={weeks.length + 2}
                             className="border-y border-slate-200 bg-slate-50 px-3 py-1.5"
                           >
-                            <div className="flex items-baseline justify-between gap-4">
-                              <span className="flex items-center gap-2">
-                                <span className="h-2.5 w-[3px] bg-orange-500" />
-                                <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
+                                <span className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
                                   {region.region}
                                 </span>
                               </span>
@@ -372,7 +379,7 @@ export function PortalWeeklyFieldForceView({
             <Fragment key={group.line}>
               {showLineBands ? (
                 <div className="flex items-baseline justify-between gap-3 bg-slate-900 px-4 py-2">
-                  <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
+                  <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-white">
                     {group.line}
                   </span>
                   <span className="whitespace-nowrap text-xs font-black tabular-nums text-white">
@@ -384,9 +391,9 @@ export function PortalWeeklyFieldForceView({
                 <Fragment key={`${group.line}|${region.region}`}>
                   {showRegionBands ? (
                     <div className="flex items-baseline justify-between gap-3 border-y border-slate-200 bg-slate-50 px-4 py-1.5">
-                      <span className="flex items-center gap-2">
-                        <span className="h-2.5 w-[3px] bg-orange-500" />
-                        <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-[3px] shrink-0 bg-orange-500" />
+                        <span className="break-words text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-600">
                           {region.region}
                         </span>
                       </span>
@@ -420,22 +427,22 @@ export function PortalWeeklyFieldForceView({
           /* The scale has to be stated. Shading that looks table-wide but is row-wise would invite
              the exact misreading it exists to prevent — comparing one rep's blue against another's. */
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 px-4 py-2.5">
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-500">
-              <span className="border-b-2 border-orange-400 pb-0.5 font-bold text-slate-900">1,234</span>
-              that rep&rsquo;s strongest week
+            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+              <span className="shrink-0 border-b-2 border-orange-400 pb-0.5 font-bold text-slate-900">1,234</span>
+              <span className="min-w-0 break-words">that rep&rsquo;s strongest week</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-500">
-              <span className="border-b-2 border-dotted border-amber-400 pb-0.5 font-semibold text-slate-700">
+            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+              <span className="shrink-0 border-b-2 border-dotted border-amber-400 pb-0.5 font-semibold text-slate-700">
                 1,234
               </span>
-              spans a week that was never uploaded
+              <span className="min-w-0 break-words">spans a week that was never uploaded</span>
             </span>
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-500">
-              <ArrowUp className="h-2 w-2 text-emerald-500" strokeWidth={4} />
-              <ArrowDown className="h-2 w-2 text-rose-400" strokeWidth={4} />
-              up or down on the week before
+            <span className="inline-flex items-center gap-1.5 text-phx-2xs font-semibold text-slate-500">
+              <ArrowUp className="h-2 w-2 shrink-0 text-emerald-500" strokeWidth={4} />
+              <ArrowDown className="h-2 w-2 shrink-0 text-rose-400" strokeWidth={4} />
+              <span className="min-w-0 break-words">up or down on the week before</span>
             </span>
-            <span className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">
+            <span className="break-words text-phx-2xs font-semibold text-slate-400">
               Weight is read across one rep&rsquo;s own row, never between reps.
             </span>
           </div>
@@ -476,34 +483,47 @@ function RepRow({
           expanded ? "bg-orange-50/60" : ""
         }`}
       >
+        {/* Rep, area and district manager share one column: stacked, they cost height, which is free;
+            side by side they cost width, which pushed this table past the screen. */}
         <td className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
+          <div className="flex items-start gap-2">
             {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+              <ChevronDown className="mt-1 h-3.5 w-3.5 shrink-0 text-orange-500" />
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />
+              <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-300" />
             )}
-            <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm ${tone.chip}`}>
+            <span className={`flex h-6 w-6 shrink-0 items-center justify-center ${tone.chip}`}>
               <UserRound className="h-3 w-3" />
             </span>
-            <span className="whitespace-nowrap text-sm font-black text-slate-900">{rep.label}</span>
-            <AttributionDot rep={rep} />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 break-words text-sm font-black text-slate-900">{rep.label}</span>
+                <AttributionDot rep={rep} />
+              </div>
+              <p className="mt-0.5 break-words text-xs font-semibold text-slate-600">
+                {rep.areaName ?? "—"}
+                {rep.regionName ? (
+                  <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                    {rep.regionName}
+                  </span>
+                ) : null}
+              </p>
+              {rep.managerName ? (
+                <p className="break-words text-xs font-semibold text-slate-500">
+                  <span className="mr-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+                    District manager
+                  </span>
+                  {rep.managerName}
+                </p>
+              ) : null}
+            </div>
           </div>
-        </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-600">
-          {rep.areaName ?? "—"}
-          <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
-            {rep.regionName ?? ""}
-          </span>
-        </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-xs font-semibold text-slate-600">
-          {rep.managerName ?? "—"}
         </td>
         {weeks.map((week, index) => {
           const value = rep.valueByWeek[week] ?? 0;
           const previous = index === 0 ? null : rep.valueByWeek[weeks[index - 1]] ?? 0;
           return (
-            <td key={week} className="whitespace-nowrap px-3 py-2.5 text-right text-xs">
+            <td key={week} className="px-1.5 py-2.5 text-right text-xs">
               <WeekFigure
                 text={value > 0 ? formatEgp(value) : "—"}
                 rank={rankWeek(value, weekPeak)}
@@ -513,27 +533,24 @@ function RepRow({
             </td>
           );
         })}
-        <td className="whitespace-nowrap px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-900">
-          {formatEgp(rep.value)}
-        </td>
-        <td className="px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
+        {/* px-2, not px-3: the sibling tab measured px-3 breaking "EGP 81.2K" onto two lines at 1024px. */}
+        <td className="px-2 py-2.5 text-right">
+          <p className="break-words text-sm font-black tabular-nums text-slate-900">{formatEgp(rep.value)}</p>
+          <div className="mt-1 flex flex-wrap items-center justify-end gap-x-1.5 gap-y-1">
+            <div className="h-1.5 w-12 overflow-hidden bg-slate-100">
               <div
-                className={`h-full rounded-full ${tone.bar}`}
+                className={`h-full ${tone.bar}`}
                 style={{ width: `${Math.max(2, (rep.value / maxValue) * 100)}%` }}
               />
             </div>
-            <span className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-500">
-              {formatPct(share)}
-            </span>
+            <span className="text-phx-2xs font-bold tabular-nums text-slate-500">{formatPct(share)}</span>
           </div>
         </td>
       </tr>
       {expanded ? (
         <tr>
-          <td colSpan={5 + weeks.length} className="bg-slate-50/80 px-3 py-3">
-            <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} />
+          <td colSpan={weeks.length + 2} className="bg-slate-50/80 px-3 py-3">
+            <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} layout="table" />
           </td>
         </tr>
       ) : null}
@@ -547,52 +564,67 @@ function RepRow({
  * Units here and only here — one column of this grid is one product code, which is the only level
  * at which a unit figure means anything (owner rule, 2026-08-27). The row total is that product's
  * own units; there is deliberately no column totalling units across products.
+ *
+ * A fixed table inside the desktop row, cards inside the phone card: the same product figures either
+ * way, and neither can grow past the screen.
  */
 function ProductGrid({
   rep,
   weeks,
   gapWeeks,
+  layout,
 }: {
   rep: FieldForceRep;
   weeks: number[];
   gapWeeks: Set<number>;
+  layout: "table" | "cards";
 }) {
   if (rep.products.length === 0) {
     return <p className="py-2 text-center text-xs font-semibold text-slate-400">No product sales in this period.</p>;
   }
   const maxUnits = rep.products.reduce((max, product) => Math.max(max, product.units), 0) || 1;
+  const columns = fieldForceProductColumns(weeks.length);
 
   return (
-    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white">
-      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
-        <Package className="h-3.5 w-3.5 text-orange-500" />
-        <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-500">
+    <div className="overflow-hidden border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-slate-200 bg-white px-3 py-2">
+        <Package className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+        <p className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-500">
           {`${rep.label} · units per product, week by week`}
         </p>
-        <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+        <span className="min-w-0 break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           {`${rep.products.length} product${rep.products.length === 1 ? "" : "s"} · ${rep.lineName}`}
         </span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[620px] border-collapse">
+      {layout === "table" ? (
+        <table className="w-full table-fixed border-collapse">
+          <colgroup>
+            <col style={{ width: `${columns.product}%` }} />
+            {weeks.map((week) => (
+              <col key={week} style={{ width: `${columns.week}%` }} />
+            ))}
+            <col style={{ width: `${columns.units}%` }} />
+            <col style={{ width: `${columns.value}%` }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/80">
-              <th className="whitespace-nowrap px-3 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-3 py-1.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                 Product
               </th>
               {weeks.map((week) => (
                 <th
                   key={week}
-                  className="whitespace-nowrap px-3 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                  className="px-1.5 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
+                  title={gapWeeks.has(week) ? "Includes a week that was never uploaded" : undefined}
                 >
                   {`W${week}`}
-                  {gapWeeks.has(week) ? <span className="ml-1 text-amber-500">•</span> : null}
+                  {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}
                 </th>
               ))}
-              <th className="whitespace-nowrap px-3 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-2 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                 Units
               </th>
-              <th className="whitespace-nowrap px-3 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <th className="px-2 py-1.5 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                 Value
               </th>
             </tr>
@@ -601,21 +633,14 @@ function ProductGrid({
             {rep.products.map((product) => (
               <tr key={product.productCode} className="border-b border-slate-100 last:border-0">
                 <td className="px-3 py-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-sky-400"
-                        style={{ width: `${Math.max(3, (product.units / maxUnits) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="whitespace-nowrap text-xs font-bold text-slate-800">{product.productName}</span>
-                  </div>
+                  <span className="block break-words text-xs font-bold text-slate-800">{product.productName}</span>
+                  <UnitsBar units={product.units} maxUnits={maxUnits} />
                 </td>
                 {weeks.map((week, index) => {
                   const units = product.unitsByWeek[week] ?? 0;
                   const previous = index === 0 ? null : product.unitsByWeek[weeks[index - 1]] ?? 0;
                   return (
-                    <td key={week} className="whitespace-nowrap px-3 py-1.5 text-right text-xs">
+                    <td key={week} className="px-1.5 py-1.5 text-right text-xs">
                       <WeekFigure
                         text={units > 0 ? formatNumber(units) : "—"}
                         rank={rankWeek(units, peakOf(weeks, product.unitsByWeek))}
@@ -625,20 +650,69 @@ function ProductGrid({
                     </td>
                   );
                 })}
-                <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs font-black tabular-nums text-slate-900">
+                <td className="px-2 py-1.5 text-right text-xs font-black tabular-nums text-slate-900">
                   {formatNumber(product.units)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right text-xs font-bold tabular-nums text-slate-500">
+                <td className="px-2 py-1.5 text-right text-xs font-bold tabular-nums text-slate-500">
                   {formatEgp(product.value)}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {rep.products.map((product) => {
+            const peak = peakOf(weeks, product.unitsByWeek);
+            return (
+              <div key={product.productCode} className="px-3 py-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-xs font-black text-slate-900">{product.productName}</p>
+                    <UnitsBar units={product.units} maxUnits={maxUnits} />
+                  </div>
+                  <div className="text-right">
+                    <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">
+                      {`${formatNumber(product.units)} units`}
+                    </p>
+                    <p className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
+                      {formatEgp(product.value)}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {weeks.map((week, index) => {
+                    const units = product.unitsByWeek[week] ?? 0;
+                    const previous = index === 0 ? null : product.unitsByWeek[weeks[index - 1]] ?? 0;
+                    return (
+                      <WeekChip
+                        key={week}
+                        week={week}
+                        text={units > 0 ? formatNumber(units) : "—"}
+                        rank={rankWeek(units, peak)}
+                        gap={gapWeeks.has(week)}
+                        direction={weekDirection(units, previous, gapWeeks.has(week))}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       <p className="border-t border-slate-100 px-3 py-1.5 text-phx-2xs font-semibold text-slate-400">
         Units are shown per product only — units of different products are never added together.
       </p>
+    </div>
+  );
+}
+
+/** The product's units against the rep's biggest product: a scale bar under the product name. */
+function UnitsBar({ units, maxUnits }: { units: number; maxUnits: number }) {
+  return (
+    <div className="mt-1 h-1.5 w-12 max-w-full overflow-hidden bg-slate-100">
+      <div className="h-full bg-sky-400" style={{ width: `${Math.max(3, (units / maxUnits) * 100)}%` }} />
     </div>
   );
 }
@@ -664,13 +738,13 @@ function RepCard({
   return (
     <div className="px-4 py-3">
       <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-3 text-left">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm ${tone.chip}`}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center ${tone.chip}`}>
             <UserRound className="h-3.5 w-3.5" />
           </span>
-          <div className="min-w-0">
-            <p className="whitespace-nowrap text-sm font-black text-slate-900">{rep.label}</p>
-            <p className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-black text-slate-900">{rep.label}</p>
+            <p className="break-words text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
               {[rep.areaName, rep.regionName, rep.managerName].filter(Boolean).join(" · ") || rep.lineName}
             </p>
           </div>
@@ -690,32 +764,22 @@ function RepCard({
       <div className="mt-2 flex flex-wrap gap-1.5">
         {weeks.map((week, index) => {
           const value = rep.valueByWeek[week] ?? 0;
-          const rank = rankWeek(value, weekPeak);
           const previous = index === 0 ? null : rep.valueByWeek[weeks[index - 1]] ?? 0;
-          const direction = weekDirection(value, previous, gapWeeks.has(week));
           return (
-            <span
+            <WeekChip
               key={week}
-              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-2xs tabular-nums ${
-                rank.text
-              } ${rank.peak ? "ring-1 ring-orange-300" : ""} ${
-                gapWeeks.has(week) ? "ring-1 ring-amber-300" : ""
-              }`}
-            >
-              <span className="text-slate-400">{`W${week}`}</span>
-              {direction === "up" ? (
-                <ArrowUp className="h-2 w-2 shrink-0 text-emerald-500" strokeWidth={4} />
-              ) : direction === "down" ? (
-                <ArrowDown className="h-2 w-2 shrink-0 text-rose-400" strokeWidth={4} />
-              ) : null}
-              {value > 0 ? formatEgp(value) : "—"}
-            </span>
+              week={week}
+              text={value > 0 ? formatEgp(value) : "—"}
+              rank={rankWeek(value, weekPeak)}
+              gap={gapWeeks.has(week)}
+              direction={weekDirection(value, previous, gapWeeks.has(week))}
+            />
           );
         })}
       </div>
       {expanded ? (
         <div className="mt-3">
-          <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} />
+          <ProductGrid rep={rep} weeks={weeks} gapWeeks={gapWeeks} layout="cards" />
         </div>
       ) : null}
     </div>
@@ -784,20 +848,53 @@ function WeekFigure({
   gap: boolean;
   direction: "up" | "down" | null;
 }) {
+  // Wraps rather than spilling into the next column: on the narrowest desktop the arrow drops above the
+  // figure first, and only a figure wider than its whole column breaks at its space.
   return (
-    <span className="inline-flex items-center justify-end gap-1 whitespace-nowrap">
+    <span className="inline-flex flex-wrap items-center justify-end gap-x-1">
       {direction === "up" ? (
         <ArrowUp className="h-2 w-2 shrink-0 text-emerald-500" strokeWidth={4} />
       ) : direction === "down" ? (
         <ArrowDown className="h-2 w-2 shrink-0 text-rose-400" strokeWidth={4} />
       ) : null}
       <span
-        className={`inline-block whitespace-nowrap tabular-nums ${rank.text} ${
+        className={`inline-block min-w-0 break-words tabular-nums ${rank.text} ${
           rank.peak ? "border-b-2 border-orange-400 pb-0.5" : ""
         } ${gap ? "border-b-2 border-dotted border-amber-400 pb-0.5" : ""}`}
       >
         {text}
       </span>
+    </span>
+  );
+}
+
+/** One week as a chip on a phone card: the same ink, arrow and marks as a table cell. */
+function WeekChip({
+  week,
+  text,
+  rank,
+  gap,
+  direction,
+}: {
+  week: number;
+  text: string;
+  rank: WeekRank;
+  gap: boolean;
+  direction: "up" | "down" | null;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap bg-slate-50 px-1.5 py-0.5 text-phx-2xs tabular-nums ${
+        rank.text
+      } ${rank.peak ? "ring-1 ring-orange-300" : ""} ${gap ? "ring-1 ring-amber-300" : ""}`}
+    >
+      <span className="text-slate-400">{`W${week}`}</span>
+      {direction === "up" ? (
+        <ArrowUp className="h-2 w-2 shrink-0 text-emerald-500" strokeWidth={4} />
+      ) : direction === "down" ? (
+        <ArrowDown className="h-2 w-2 shrink-0 text-rose-400" strokeWidth={4} />
+      ) : null}
+      {text}
     </span>
   );
 }
@@ -821,7 +918,7 @@ function AttributionDot({ rep }: { rep: FieldForceRep }) {
   return (
     <span
       title={`${formatPct(1 - exactShare)} of this figure is allocated from depot names, not mapped by hand.`}
-      className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-700"
+      className="inline-flex items-center gap-1 whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-700"
     >
       Allocated
     </span>
@@ -846,15 +943,15 @@ function AttributionStrip({
     { label: "Reached no rep", value: unattributedValue, className: "bg-slate-300", tone: "text-slate-500" },
   ];
   return (
-    <div className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+    <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
       <div className="flex items-center gap-2 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
-        <span className="h-3.5 w-[3px] bg-orange-500" />
-        <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
+        <span className="h-3.5 w-[3px] shrink-0 bg-orange-500" />
+        <h2 className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">
           How these numbers reached a rep
         </h2>
       </div>
       <div className="space-y-3 p-4">
-        <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="flex h-2 w-full overflow-hidden bg-slate-100">
           {parts.map((part) => (
             <div
               key={part.label}
@@ -866,9 +963,9 @@ function AttributionStrip({
         </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           {parts.map((part) => (
-            <div key={part.label} className="flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${part.className}`} />
-              <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-wide text-slate-500">
+            <div key={part.label} className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <span className={`h-2 w-2 shrink-0 ${part.className}`} />
+              <span className="min-w-0 break-words text-phx-2xs font-black uppercase tracking-wide text-slate-500">
                 {part.label}
               </span>
               <span className={`whitespace-nowrap text-xs font-black tabular-nums ${part.tone}`}>
@@ -906,25 +1003,27 @@ function FieldTile({
   sub?: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+    <div className="group relative overflow-hidden border border-slate-200 bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
       <span
         className="absolute inset-x-0 top-0 h-1 transition-all duration-200 group-hover:h-1.5"
         style={{ backgroundColor: accent }}
       />
+      {/* Two tiles share a phone's width, so every line here wraps: the tile clips, and a clipped
+          label is a truncated one. */}
       <div className="p-3.5 sm:p-4">
         <span
-          className="flex h-7 w-7 items-center justify-center rounded-sm"
+          className="flex h-7 w-7 items-center justify-center"
           style={{ backgroundColor: `${accent}1A`, color: accent }}
         >
           <Icon className="h-3.5 w-3.5" />
         </span>
-        <p className="mt-2.5 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
+        <p className="mt-2.5 break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
           {label}
         </p>
-        <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">
+        <p className="mt-0.5 break-words text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">
           {value}
         </p>
-        {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
+        {sub ? <p className="mt-0.5 break-words text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
       </div>
     </div>
   );
@@ -938,8 +1037,8 @@ function FieldForceEmpty({
   scopeSummary: string;
 }) {
   return (
-    <div className="rounded-sm border border-slate-200 bg-white p-10 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
-      <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-sm bg-orange-50 text-orange-500">
+    <div className="border border-slate-200 bg-white p-10 text-center shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
+      <span className="mx-auto flex h-11 w-11 items-center justify-center bg-orange-50 text-orange-500">
         <Layers className="h-5 w-5" />
       </span>
       <p className="mt-3 text-sm font-black text-slate-900">
