@@ -120,6 +120,7 @@ status, give it its own line.
 - **Verify a 375px mobile layout with NO dev server.** — `verify-a-mobile-layout-without-a-dev-server`
 - **A freeze leaves NO dump** — `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** — `an-interrupted-session-leaves-the-tree-deliberately-broken`
+- **`Agent` with `isolation: "remote"` from a desktop session can run LOCALLY, with no notice of the fallback** — `agent-isolation-remote-ran-locally-in-a-worktree` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 

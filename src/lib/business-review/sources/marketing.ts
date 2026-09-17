@@ -21,6 +21,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 
 import type { ReviewWindow } from "../period";
+import { periodMonthEnd } from "../period-format";
 
 export type MarketingBucket = "committed" | "pending";
 
@@ -45,14 +46,6 @@ export type MarketingLoad = {
   unattributableRows: number;
 };
 
-/** The last day of a YYYY-MM, so the `pay_date` filter is inclusive of the closing month. */
-function endOfMonth(period: string): string {
-  const year = Number(period.slice(0, 4));
-  const month = Number(period.slice(5, 7));
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return `${period}-${String(lastDay).padStart(2, "0")}`;
-}
-
 export async function loadMarketingFacts(window: ReviewWindow): Promise<MarketingLoad> {
   const supabase = getSupabaseAdmin();
 
@@ -65,7 +58,7 @@ export async function loadMarketingFacts(window: ReviewWindow): Promise<Marketin
           .select("id, requester_hr_id, line_id, area_id, status, estimated_cost, pay_date")
           .not("pay_date", "is", null)
           .gte("pay_date", `${window.from}-01`)
-          .lte("pay_date", endOfMonth(window.to)),
+          .lte("pay_date", periodMonthEnd(window.to)),
       "id",
     );
   } catch {

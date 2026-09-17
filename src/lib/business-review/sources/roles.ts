@@ -33,6 +33,7 @@ import type { MarketingLoad } from "./marketing";
 import type { OutstationLoad } from "./outstation";
 import type { VisitsLoad } from "./visits";
 import type { ReviewWindow } from "../period";
+import { periodMonthEnd } from "../period-format";
 
 export type ReviewDirectoryEntry = {
   hrId: string;
@@ -171,7 +172,7 @@ async function loadCoachingFacts(window: ReviewWindow): Promise<CoachingFact[]> 
           .select("id, coach_hr_id, medical_rep_hr_id, coaching_date")
           .not("coaching_date", "is", null)
           .gte("coaching_date", `${window.from}-01`)
-          .lte("coaching_date", `${window.to}-31`),
+          .lte("coaching_date", periodMonthEnd(window.to)),
       "id",
     );
     const facts: CoachingFact[] = [];
