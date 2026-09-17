@@ -1697,6 +1697,7 @@ import { runVacationPendingAttachmentPathTests } from "./vacation-pending-attach
 import { runClosingDetailsPublicationGateTests } from "./closing-details-publication-gate.test.ts";
 import { runClosingPerformanceReviewExportGateTests } from "./closing-performance-review-export-gate.test.ts";
 import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
+import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -5726,6 +5727,11 @@ await runTest(
 await runTest(
   "sign-in throttle tells an office from an attacker: an address where different colleagues signed in today gets ten failures per colleague (max 150) before everyone behind it is refused, an unknown address stays at fifteen, and only successful sign-ins count as colleagues",
   runLoginSharedNetworkThrottleTests,
+);
+
+await runTest(
+  "workbook integrity checker reads an openpyxl workbook: an absolute relationship target resolves from the package root and Target may precede Id, so a correct file is CLEAN while a dangling target, a defined name past the data and a table past the data are still reported — the same verdicts as the ExcelJS spelling",
+  runCheckWorkbookIntegrityAbsoluteTargetsTests,
 );
 
 await runTest(
