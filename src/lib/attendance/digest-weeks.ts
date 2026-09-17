@@ -13,9 +13,13 @@
 //
 // SEPTEMBER 2026 is the one month in between. Week 3 (7–13 Sep) had already been built on the old
 // cycle, so its dates stay exactly as they are; week 4 keeps the old cycle's 14–23 Sep; and a fifth week,
-// 24–30 Sep, closes the month so no day is lost before October. The old cycle's week 1 (24–30 Aug) and
-// the 31 August day of its week 2 are August's: those days are already in August's month-end
-// deductions, so September's review starts on 1 September. Nothing before September 2026 is reviewed.
+// 24–30 Sep, closes the month so no day is lost before October.
+//
+// AUGUST 2026 is reviewed too (owner, 2026-09-17, after the live weeks shipped: "build starting from 1
+// august"), as an ordinary calendar month: 1–7, 8–14, 15–21 and 22–31 Aug. Its fingerprint days were
+// still Pending in August's month-end deductions when he asked (50 days, none decided, nothing
+// published), so an answer reaches the same candidate through the bridge and is never a second charge.
+// Nothing before August 2026 is reviewed.
 //
 // "Show live, release any time" (owner, 2026-09-17). A week is listed from its first day, while it is
 // still running, and holds the days up to YESTERDAY: today has not finished being worked, and its
@@ -42,8 +46,11 @@ export type ReviewWeekWindow = SettlementWeek & {
   throughIso: string;
 };
 
-/** The first month the review covers. */
-export const FIRST_REVIEW_MONTH = "2026-09";
+/** The first month the review covers (owner, 2026-09-17: "build starting from 1 august"). */
+export const FIRST_REVIEW_MONTH = "2026-08";
+
+/** The month between the old day-24 cycle and calendar months. */
+export const TRANSITION_REVIEW_MONTH = "2026-09";
 
 /** September 2026, the month between the old day-24 cycle and calendar months. */
 export const SEPTEMBER_2026_WEEKS: readonly SettlementWeek[] = Object.freeze([
@@ -63,13 +70,13 @@ function parseMonthKey(monthKey: string): { year: number; month: number } {
 }
 
 /**
- * The weeks of one review month. A month before September 2026 has none. September 2026 is the
- * transition table above; every later month is 1–7, 8–14, 15–21 and 22 to its last day.
+ * The weeks of one review month. A month before August 2026 has none. September 2026 is the
+ * transition table above; every other month is 1–7, 8–14, 15–21 and 22 to its last day.
  */
 export function tileReviewMonth(monthKey: string): SettlementWeek[] {
   const { year, month } = parseMonthKey(monthKey);
   if (monthKey < FIRST_REVIEW_MONTH) return [];
-  if (monthKey === FIRST_REVIEW_MONTH) return SEPTEMBER_2026_WEEKS.map((week) => ({ ...week }));
+  if (monthKey === TRANSITION_REVIEW_MONTH) return SEPTEMBER_2026_WEEKS.map((week) => ({ ...week }));
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return [

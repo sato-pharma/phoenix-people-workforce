@@ -67,12 +67,25 @@ export function runAttendanceWeeklyDigestTests() {
   );
   assert.equal(tileReviewMonth("2027-02").at(-1)?.endIso, "2027-02-28", "the last week ends on the month's own last day");
   assert.equal(tileReviewMonth("2028-02").at(-1)?.endIso, "2028-02-29", "…in a leap year too");
+  // Owner, 2026-09-17, after the live weeks shipped: "build starting from 1 august". August is an
+  // ordinary calendar month — its fingerprint days were still Pending in month-end deductions.
   assert.deepEqual(
-    tileReviewMonth("2026-08"),
-    [],
-    "nothing before September 2026 is reviewed: August's days are already in August's month-end deductions",
+    tileReviewMonth("2026-08").map((week) => [week.index, week.startIso, week.endIso]),
+    [
+      [1, "2026-08-01", "2026-08-07"],
+      [2, "2026-08-08", "2026-08-14"],
+      [3, "2026-08-15", "2026-08-21"],
+      [4, "2026-08-22", "2026-08-31"],
+    ],
+    "the review starts on 1 August 2026, in calendar weeks",
   );
-  for (const monthKey of ["2026-09", "2026-10", "2026-11", "2027-02", "2027-12"]) {
+  assert.deepEqual(tileReviewMonth("2026-07"), [], "nothing before August 2026 is reviewed");
+  assert.equal(
+    tileReviewMonth("2026-08").at(-1)!.endIso,
+    addDays(tileReviewMonth("2026-09")[0]!.startIso, -1),
+    "August's last week ends the day before September's first week starts — no day between them is lost",
+  );
+  for (const monthKey of ["2026-08", "2026-09", "2026-10", "2026-11", "2027-02", "2027-12"]) {
     const monthWeeks = tileReviewMonth(monthKey);
     const lastDay = new Date(Date.UTC(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)), 0)).getUTCDate();
     assert.equal(monthWeeks[0]!.startIso, `${monthKey}-01`, `${monthKey} starts on the 1st, the day payroll's month starts`);
