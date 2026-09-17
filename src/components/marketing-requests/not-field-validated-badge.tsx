@@ -9,6 +9,7 @@ const LABELS: Record<FieldEvidenceGap, string> = {
   desk: "Desk entry — not GPS field-validated",
   inferred: "Inferred — not GPS field-validated",
   mixed: "Not GPS field-validated",
+  second_code: "Backfilled — not GPS field-validated",
 };
 
 /**
@@ -20,6 +21,8 @@ const TITLES: Record<FieldEvidenceGap, string> = {
   desk: "Entered at a desk from a map search — no complete field capture on this customer or on its shop",
   inferred: "Inferred from historical marketing requests — no complete field capture on this customer or on its shop",
   mixed: "Part inferred from history, part desk-entered — no complete field capture on this customer or on its shop",
+  second_code:
+    "A second distributor code added on 2026-09-08, its status copied from this customer's other link to the same shop — no complete field capture on this customer or on its shop",
 };
 
 /**
@@ -37,9 +40,14 @@ const TITLES: Record<FieldEvidenceGap, string> = {
  *     In production this is 11 links across 6 customers, which is EVERY `sfe_validated` link there
  *     is. Five of those customers hold a coordinate and no photo, so on the Customer Database they
  *     read as field-proven while the coordinate came off a map, not off a phone in the street.
+ *   - `second_code` — added 2026-09-17. The 2026-09-08 hand backfill wrote 81 links adding a
+ *     second distributor code onto pairings that already existed, copying each pairing's status.
+ *     Its note never said "no field evidence", so every one read as a live capture and cleared the
+ *     badge for 39 customers. It names its own reason only when no inferred or desk link is in view,
+ *     because otherwise that link's origin IS its origin.
  *
- * Both writers were honest in their own `validation_notes`; this is the same admission, in the same
- * words, on the screens where the claim is actually made.
+ * The first two writers were honest in their own `validation_notes`; this is the same admission, in
+ * the same words, on the screens where the claim is actually made.
  *
  * What those notes CANNOT say is what happened afterwards. They are written once and never
  * rewritten, while a capture can arrive later on either half — a customer has always been

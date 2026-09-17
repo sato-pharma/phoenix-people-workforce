@@ -719,6 +719,13 @@ export type MarketingValidationReportRow = {
    */
   inferredFromHistory: boolean;
   pharmacy: MarketingPharmacy;
+  /**
+   * True when this link is one of the 81 the 2026-09-08 hand backfill wrote: a second distributor
+   * code added onto a pairing that already existed, its status copied from that pairing's existing
+   * link. No field evidence of its own — without this flag it read as a live capture and cleared
+   * the badge for 39 customers whose other links are unproven.
+   */
+  secondCodeBackfill: boolean;
   validationNotes: string | null;
   validationStatus: MarketingValidationStatus;
 };
@@ -814,6 +821,8 @@ export type MarketingCustomerDatabaseRow = {
   pharmacyId: string;
   pharmacyName: string;
   rowId: string;
+  /** The 2026-09-08 second-code backfill. Pairs with `deskValidated` and `inferredFromHistory`. */
+  secondCodeBackfill: boolean;
   validationStatus: MarketingValidationStatus;
   vendorPharmacyCode: string | null;
   venueType: VenueType;

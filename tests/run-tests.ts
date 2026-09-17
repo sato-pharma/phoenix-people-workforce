@@ -692,6 +692,7 @@ import { runMarketingPharmacyLicenseVerdictTests } from "./marketing-pharmacy-li
 // Registered beside its marketing siblings rather than appended at the end of the file: this
 // one pins the daily nudge to the SAME rule the badge draws, so a PR editing either sees both.
 import { runMarketingFieldCaptureBacklogTests } from "./marketing-field-capture-backlog.test.ts";
+import { runMarketingFieldCaptureGapsTests } from "./marketing-field-capture-gaps.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
 import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
 import { runPositionVacancyStatusIntegrityTests } from "./position-vacancy-status-integrity.test.ts";
@@ -3010,6 +3011,10 @@ await runTest(
 await runTest(
   "marketing field-capture backlog (the daily nudge reuses the badge's own rule so it can never chase a proven customer; one real visit clears every link; the rep who owns it is chased before their manager; a customer with neither is reported, not dropped; one rep is one bucket whatever the hr_id casing; a list holding both kinds is described as a split rather than claimed whole as his; and 51 recipients never means email)",
   runMarketingFieldCaptureBacklogTests,
+);
+await runTest(
+  "marketing field-capture gaps (a 2026-09-08 second-code backfill link carries no field evidence of its own, so it can no longer clear the badge or drop the nudge beside an unproven link; and a rep or manager who has left is never nudged — the customer falls through to an active manager, then to its area)",
+  runMarketingFieldCaptureGapsTests,
 );
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
