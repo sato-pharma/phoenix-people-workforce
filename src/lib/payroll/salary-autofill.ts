@@ -1,3 +1,4 @@
+import { resolveStandardSalaryAllowances, STANDARD_FUEL_ALLOWANCE } from "@/lib/payroll/allowance-policy";
 import { roundCurrency } from "@/lib/payroll/money";
 import { calculateBaseSalary, calculateBasicSalary } from "@/lib/payroll/policy";
 import { computeStatutory } from "@/lib/payroll/statutory/calculator";
@@ -35,8 +36,12 @@ import type { StatutoryConfig } from "@/lib/payroll/statutory/types";
  * takes its parameters as an argument rather than reading payroll_statutory_config.
  */
 
-/** Every role carries the same fuel allowance. */
-export const DEFAULT_FUEL_ALLOWANCE = 500;
+/**
+ * The fuel allowance every role carries: payroll's own standard, so the form and
+ * payroll cannot disagree on it. An employee with a fuel allowance the owner
+ * approved personally gets that figure instead (resolveTitleAllowances).
+ */
+export const DEFAULT_FUEL_ALLOWANCE = STANDARD_FUEL_ALLOWANCE;
 
 /** Roles with no explicit entry below - office staff, all on the same figure. */
 export const DEFAULT_EXTRA_COST_OF_LIVING = 1500;
@@ -72,12 +77,28 @@ export type TitleAllowances = {
   fuelAllowance: number;
 };
 
-/** The allowances a job title carries. Unknown titles get the office default. */
-export function resolveTitleAllowances(jobTitle: string | null | undefined): TitleAllowances {
+/**
+ * The allowances a job title carries. Unknown titles get the office default.
+ *
+ * The HR id brings in what payroll's own rule decides for one named employee:
+ * someone who draws no allowances at all, or a fuel allowance the owner approved
+ * personally. The form has to fill the figure payroll pays, because payroll reads
+ * the base this form derives and adds its OWN allowances on top: fill 500 for an
+ * employee payroll pays 2,000, and her base, and so her pay, rise by 1,500.
+ */
+export function resolveTitleAllowances(
+  jobTitle: string | null | undefined,
+  employeeHrId?: string | null,
+): TitleAllowances {
+  const payroll = resolveStandardSalaryAllowances({ employeeHrId, jobTitle });
+  if (payroll.extraCostOfLiving === 0 && payroll.fuelAllowance === 0) {
+    return { extraCostOfLiving: 0, fuelAllowance: 0 };
+  }
+
   const key = normalizeTitle(jobTitle);
   return {
     extraCostOfLiving: EXTRA_COST_OF_LIVING_BY_TITLE[key] ?? DEFAULT_EXTRA_COST_OF_LIVING,
-    fuelAllowance: DEFAULT_FUEL_ALLOWANCE,
+    fuelAllowance: payroll.fuelAllowance,
   };
 }
 
@@ -157,7 +178,12 @@ export function grossUpFromBase(
 export type SalaryAutofillInput = {
   netSalary: number;
   jobTitle?: string | null;
-  /** Supplied only when the owner has overridden the title's default. */
+  /** For the allowances payroll sets for one named employee. */
+  employeeHrId?: string | null;
+  /**
+   * Supplied only when the owner has overridden the title's default. null or
+   * absent means the box was left to auto-fill.
+   */
   extraCostOfLiving?: number | null;
   fuelAllowance?: number | null;
 };
@@ -170,6 +196,18 @@ export type SalaryAutofillResult = StatutoryBreakdown & {
   netSalary: number;
 };
 
+/**
+ * A typed allowance, or null when the box was left to auto-fill. The form sends
+ * null for a box nobody typed in, and Number(null) is 0, so null has to be caught
+ * before the conversion: read as a typed zero, it emptied both allowances on every
+ * edit of the net or the title, and the base swallowed them.
+ */
+function typedAllowance(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
 /** The whole chain, from the one number the owner types. */
 export function deriveSalaryFromNet(
   input: SalaryAutofillInput,
@@ -178,13 +216,9 @@ export function deriveSalaryFromNet(
   const netSalary = Number(input.netSalary);
   if (!Number.isFinite(netSalary) || netSalary <= 0) return null;
 
-  const defaults = resolveTitleAllowances(input.jobTitle);
-  const extraCostOfLiving = Number.isFinite(Number(input.extraCostOfLiving))
-    ? Number(input.extraCostOfLiving)
-    : defaults.extraCostOfLiving;
-  const fuelAllowance = Number.isFinite(Number(input.fuelAllowance))
-    ? Number(input.fuelAllowance)
-    : defaults.fuelAllowance;
+  const defaults = resolveTitleAllowances(input.jobTitle, input.employeeHrId);
+  const extraCostOfLiving = typedAllowance(input.extraCostOfLiving) ?? defaults.extraCostOfLiving;
+  const fuelAllowance = typedAllowance(input.fuelAllowance) ?? defaults.fuelAllowance;
 
   // policy.ts owns base and basic - this file must never restate those formulas.
   const baseSalary = calculateBaseSalary({ extraCostOfLiving, fuelAllowance, netSalary });
