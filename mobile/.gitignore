@@ -1,0 +1,56 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+example
+
+# Unused create-expo-app template artwork (react-logo, expo-logo, tutorial screenshots). The app's
+# own icons live in assets/phoenix/ and nothing references these. Left on disk rather than deleted
+# — image files are never deleted in this repo — but not tracked, since a megabyte of Expo sample
+# art in a payroll repository is noise.
+assets/images/
+assets/expo.icon/
+
+# More create-expo-app leftovers, kept on disk but untracked: the template's own LICENSE (which
+# says nothing true about Phoenix code) and a Tailwind-for-react-native-web stylesheet that nothing
+# in this app imports — the app is Android, and its styling comes from src/theme/tokens.ts.
+LICENSE
+src/global.css
+
+# generated native folders
+/ios
+/android

@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Phoenix Workforce",
+    "slug": "phoenix-workforce",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/phoenix/icon.png",
+    "scheme": "phoenix",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#f7f6f3",
+    "android": {
+      "package": "com.satopharma.phoenixworkforce",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0d1015",
+        "foregroundImage": "./assets/phoenix/adaptive-foreground.png"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.satopharma.phoenixworkforce",
+      "supportsTablet": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0d1015",
+          "dark": { "backgroundColor": "#0d1015" },
+          "image": "./assets/phoenix/splash-mark.png",
+          "imageWidth": 120
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
