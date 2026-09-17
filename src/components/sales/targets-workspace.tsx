@@ -569,6 +569,10 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             </div>
           ) : undefined
         }
+        // The ring and the "Measured" aside together never shrink, so beside the headline from 1024px
+        // they left it a 100px column next to the portal sidebar (measured 2026-09-16). They sit under
+        // the headline until 1280px instead.
+        besideFrom="xl"
         footer={
           <>
             <BandChoice

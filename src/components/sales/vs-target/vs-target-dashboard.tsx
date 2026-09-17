@@ -453,9 +453,12 @@ export function VsTargetDashboard({
           Rendered inline rather than through the shared CommandBand because the period/scope
           line has to stay a literal <p> here (tests/section-card-header-fits-a-phone.test.ts).
           SURFACE_CLASS goes FIRST: its `border` would otherwise erase the orange top rule when
-          the class list is merged. */}
+          the class list is merged.
+          The ring and aside go beside the headline from xl, not lg — CommandBand's
+          besideFrom="xl": at 1024px in the portal they left the headline a 132px column, with
+          the stats running under the ring (measured 2026-09-16). */}
       <section className={cn(SURFACE_CLASS, "relative border-t-[3px] border-t-orange-500")}>
-        <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-6 px-5 py-5 sm:px-7 sm:py-6 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-orange-600">{kicker}</p>
             <h1 className="mt-1 text-3xl font-black leading-tight tracking-tight text-slate-900 sm:text-[2.2rem]">
