@@ -51,10 +51,28 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.meetingAmount, 150);
   assert.equal(mapped.other, 25);
   // report_hr_status / report_hr_notes were dropped on 2026-09-19 (owner). The fixture still
-  // plants both, as a row written before the drop would carry them, and the HR column must be
-  // the row's own fallback anyway — nothing reads the pair any more.
-  assert.equal(mapped.hr, "Account Admin", "a planted report_hr_status must not reach the HR column");
+  // plants both, as a row written before the drop would carry them, and nothing reads the pair
+  // any more: the HR Status column is the request's own decision (audit F-26 — it used to fall
+  // back to the employee's name, "Account Admin" here).
+  assert.equal(mapped.hr, "Approved", "the HR Status column is the request's decision, not a planted report_hr_status");
+  assert.notEqual(mapped.hr, mapped.specialist, "the HR Status column must never be the employee's name (F-26)");
   assert.equal(mapped.hrNotes, "", "a planted report_hr_notes must not reach the HR note");
+
+  // The same holds for a request still waiting and for a refused one.
+  for (const [rawStatus, expected] of [
+    ["submitted", "Pending"],
+    ["pending_manager", "Pending"],
+    ["rejected", "Rejected"],
+  ] as const) {
+    const decided = mapOutstationRequestRowToPayrollApproval({
+      employee_name: "Account Admin",
+      id: 7,
+      status: rawStatus,
+      trip_start_date: "2026-05-20T00:00:00.000Z",
+    });
+    assert.equal(decided.hr, expected, `a ${rawStatus} request reads ${expected} under HR Status`);
+    assert.equal(decided.hr, decided.status, "HR Status agrees with the row's Status");
+  }
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay
