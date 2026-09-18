@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { classifyCustomerMapRow, customerMapAuditEntry, customerMapUpsertPayload, parseReconciliationPreviewRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
+import { CUSTOMER_MAP_BLOCKED_ROWS_KEPT, classifyCustomerMapRow, customerMapAuditEntry, customerMapImportBlockedRecord, customerMapUpsertPayload, parseReconciliationPreviewRow, type CustomerMapClassifyContext } from "../src/lib/sales/normalizer/customer-map.ts";
 
 function makeCtx(): CustomerMapClassifyContext {
   return {
@@ -198,5 +199,46 @@ export function runCustomerMapImportTests() {
     assert.ok(e, "a corrected spelling is still an edit someone made");
     assert.equal(e?.action, "edit");
     assert.equal((e?.before as Record<string, unknown>).customer_name, "Nour Pharamcy");
+  }
+
+  // Each import's blocked rows are KEPT on its history record. They used to live only on the screen
+  // until the page reloaded, with just the count saved, so the 969 rows the 6 July 2026 import
+  // blocked could never be read again.
+  {
+    const none = customerMapImportBlockedRecord([]);
+    assert.deepEqual(none.values, { blockedRows: [], blockedRowsKept: 0 });
+    assert.equal(none.note, "", "a clean import says nothing about blocked rows");
+
+    // A database refusal is appended after the sheet's own blocks, so the record re-sorts by row.
+    const record = customerMapImportBlockedRecord([
+      { key: "EG / 1007", reason: 'Brick ID "B999-9" not found in brick master.', row: 23 },
+      { key: "", reason: "Distrub ID is required.", row: 2 },
+      { key: "EG", reason: "duplicate key value violates unique constraint", row: 9 },
+    ]);
+    assert.deepEqual(record.values.blockedRows.map((b) => b.row), [2, 9, 23], "the record lists blocked rows in sheet order");
+    assert.deepEqual(record.values.blockedRows[2], { key: "EG / 1007", reason: 'Brick ID "B999-9" not found in brick master.', row: 23 }, "each row keeps its key and reason");
+    assert.equal(record.values.blockedRowsKept, 3);
+    assert.equal(record.note, " (each listed in this record)");
+
+    // Only a pathological sheet meets the cap, and the record then says so rather than dropping rows quietly.
+    const flood = Array.from({ length: CUSTOMER_MAP_BLOCKED_ROWS_KEPT + 7 }, (_, i) => ({ key: `EG / ${i}`, reason: "Customer code is required.", row: CUSTOMER_MAP_BLOCKED_ROWS_KEPT + 7 - i }));
+    const capped = customerMapImportBlockedRecord(flood);
+    assert.equal(capped.values.blockedRows.length, CUSTOMER_MAP_BLOCKED_ROWS_KEPT);
+    assert.equal(capped.values.blockedRowsKept, CUSTOMER_MAP_BLOCKED_ROWS_KEPT);
+    assert.equal(capped.values.blockedRows[0].row, 1, "the cap keeps the FIRST rows of the sheet");
+    assert.equal(capped.note, ` (the first ${CUSTOMER_MAP_BLOCKED_ROWS_KEPT} listed in this record)`);
+    assert.ok(CUSTOMER_MAP_BLOCKED_ROWS_KEPT >= 969, "the cap must hold the largest real import's blocked rows whole");
+
+    // A runaway cell cannot swell the record past what the audit insert will carry.
+    const long = customerMapImportBlockedRecord([{ key: "K".repeat(5000), reason: "R".repeat(5000), row: 4 }]);
+    assert.equal(long.values.blockedRows[0].key.length, 200);
+    assert.equal(long.values.blockedRows[0].reason.length, 400);
+
+    // Pinned at the one writer: the import's summary record carries the list and the note.
+    const source = readFileSync("src/lib/sales/normalizer/customer-map.ts", "utf8");
+    const writer = source.slice(source.indexOf("export async function importCustomerMap("), source.indexOf("return { audited, backfillSkipped, backfilled, blockedRows"));
+    assert.match(writer, /const blockedRecord = customerMapImportBlockedRecord\(blockedRows\);/, "the import must build the blocked-rows record from every blocked row");
+    assert.match(writer, /newValues: \{[^}]*\.\.\.blockedRecord\.values[^}]*source: "customer_map_import"/, "the customer map import's history record must carry its blocked rows");
+    assert.match(writer, /\$\{blockedRows\.length\} blocked\$\{blockedRecord\.note\}/, "the summary must say the blocked rows are listed in the record");
   }
 }
