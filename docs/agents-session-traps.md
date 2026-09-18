@@ -1940,6 +1940,31 @@ REFUTED — an outage read as a judgement once bought 45 needless opus adjudicat
 
 **Worked example.** `_audit-vault-sos-2026-08-09/recover-run3.mjs`.
 
+## An empty paid stamp read as an unpaid month, and a stamp would not have caught the real shortfall — 2026-09-18
+
+**What was seen.** Twelve approved outstation trips booked to the August 2026 payout (8,811.31 EGP,
+seven employees) carried no `imported_payroll_batch_id`, though the August batch was approved on
+2026-09-08 at 14:43 Cairo. A session reported it to the owner as a possibly unpaid month.
+
+**Why that was wrong.** The column is the paid stamp that `src/lib/automated-payroll/expense-stamp.ts`
+writes when a run is PUBLISHED, and publishing only started writing it on 2026-09-12 (#3786). The
+module says so itself: "HISTORY IS NOT BACKFILLED. The July and August runs stay unmarked", by the
+owner's ruling. On production on 2026-09-18, 0 of all 347 approved trips carried it. Empty on those
+two months is the designed state, not a missed payment.
+
+**What proves a payment.** Each employee's `salary_records.expenses` in that month's `salary_batches`
+row, compared with the payable total of their approved trips (`approved_amount` where HR edited it,
+the claim otherwise). Measured for August: six of the seven matched to the pound. The seventh was paid
+2,155 against 2,665.56 approved, one 510.56 trip short, because the Expenses step figure was typed by
+hand on 2026-09-08 (`automated_payroll_draft_rows.expenses`, `source = inline`) and left that trip out.
+
+**Why the stamp would not have caught it either.** From September on the stamp is written, but
+`planPaidExpenseStamp` marks EVERY approved trip of an employee who was paid any expenses, even when
+the paid figure is lower than those trips. The gap is reported only in `differing`, which lands in
+`automated_payroll_audit` on the run's `published` row, under `detail.expenseStamp.differing`. So a
+stamped trip means "this publish covered this employee", not "this trip was paid in full". Read
+`differing` before telling anyone a month paid what was approved.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
