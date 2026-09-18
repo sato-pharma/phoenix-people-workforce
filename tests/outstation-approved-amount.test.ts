@@ -29,7 +29,6 @@ function approval(overrides: Partial<PayrollExpenseApproval>): PayrollExpenseApp
     km: 0,
     location: "",
     meetingAmount: 0,
-    open: "",
     other: 0,
     payoutMonth: 7,
     payoutYear: 2026,

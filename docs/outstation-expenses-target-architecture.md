@@ -156,7 +156,11 @@ safe primary business key.
 
 **Dead columns dropped:** `open_status` (blank on all 360), the eight `report_*` mirror columns (all
 NULL/0), `geo_trip_routes` (0 rows), `outstation_policy_rules` stays but is **seeded** — it is empty
-today, so every policy read silently falls back to code defaults. `imported_to_payroll_at` /
+today, so every policy read silently falls back to code defaults.
+**Done 2026-09-19** (migration `20260919021059_outstation_f28_drop_dead_items.sql`): `open_status`,
+`report_hr_status`, `report_hr_notes` and `geo_trip_routes` are dropped, and the code that read and
+wrote them is gone. The other six `report_*` columns and `outstation_policy_rules` (now seeded, and
+read by the policy page) turned out to be **live**, so they stay. `imported_to_payroll_at` /
 `_by` / `_batch_id` are replaced by `expense_payroll_links`.
 
 ---

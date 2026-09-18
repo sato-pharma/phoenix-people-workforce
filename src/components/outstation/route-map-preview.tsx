@@ -65,8 +65,6 @@ export function RouteMapPreview({
         offlineCaptured: request.offlineCaptured,
         overnightDays: request.overnightDays,
         reportAmWorkload: request.reportAmWorkload,
-        reportHrNotes: request.reportHrNotes,
-        reportHrStatus: request.reportHrStatus,
         reportMeetingAmount: request.reportMeetingAmount,
         reportOtherAmount: request.reportOtherAmount,
         reportPmWorkload: request.reportPmWorkload,

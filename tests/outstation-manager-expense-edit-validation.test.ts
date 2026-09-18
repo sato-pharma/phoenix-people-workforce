@@ -112,11 +112,21 @@ export function runOutstationManagerExpenseEditValidationTests() {
 
   // ── an explicit null on an optional text field is preserved, not upgraded to a stored value ─
   {
-    const result = buildManagerExpenseAdminPatch({ hrNotes: null });
+    const result = buildManagerExpenseAdminPatch({ notes: null });
     assert.equal(result.ok, true);
     const input = result.ok ? result.input : {};
-    assert.equal("hrNotes" in input, true, "an explicitly-sent field must be present in the patch");
-    assert.equal(input.hrNotes, null, "an explicit null clears the field rather than being dropped");
+    assert.equal("notes" in input, true, "an explicitly-sent field must be present in the patch");
+    assert.equal(input.notes, null, "an explicit null clears the field rather than being dropped");
+  }
+
+  // ── the request-level HR notes and HR status are gone (owner, 2026-09-19) ─────────────────
+  // Their two columns were dropped, so a caller still sending them must not reach a write.
+  {
+    const result = buildManagerExpenseAdminPatch({ hrNotes: "Cleared.", hrStatus: "Approved" });
+    assert.equal(result.ok, true);
+    const input: Record<string, unknown> = result.ok ? result.input : {};
+    assert.equal("hrNotes" in input, false, "the admin edit must not carry hrNotes any more");
+    assert.equal("hrStatus" in input, false, "the admin edit must not carry hrStatus any more");
   }
 
   // ── isOutstationExpenseType / isOutstationTransportationType agree with the builder ────────

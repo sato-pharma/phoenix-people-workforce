@@ -1327,8 +1327,6 @@ export async function calculateOutstationExpense(
     offlineCaptured: Boolean(input.offlineCaptured),
     overnightDays: allowance.overnightDays,
     reportAmWorkload: positiveMoney(input.amWorkload),
-    reportHrNotes: cleanText(input.hrNotes),
-    reportHrStatus: cleanText(input.hrStatus),
     reportMeetingAmount,
     reportOtherAmount,
     reportPmWorkload: positiveMoney(input.pmWorkload),
@@ -1996,8 +1994,6 @@ export async function submitOutstationRequest(
     offline_captured: calculation.offlineCaptured,
     overnight_days: calculation.overnightDays,
     report_am_workload: calculation.reportAmWorkload,
-    report_hr_notes: calculation.reportHrNotes,
-    report_hr_status: calculation.reportHrStatus,
     report_meeting_amount: calculation.reportMeetingAmount,
     report_other_amount: calculation.reportOtherAmount,
     report_pm_workload: calculation.reportPmWorkload,
@@ -2290,8 +2286,6 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     offlineCaptured: Boolean(row.offline_captured),
     overnightDays: numberValue(row.overnight_days),
     reportAmWorkload: numberValue(row.report_am_workload),
-    reportHrNotes: text(row.report_hr_notes) || null,
-    reportHrStatus: text(row.report_hr_status) || null,
     reportMeetingAmount: nullableNumber(row.report_meeting_amount),
     reportOtherAmount: nullableNumber(row.report_other_amount),
     reportPmWorkload: numberValue(row.report_pm_workload),
@@ -3489,8 +3483,6 @@ export async function createManagerExpenseAsAdmin(
       offline_captured: false,
       overnight_days: allowance.overnightDays,
       report_am_workload: positiveMoney(input.amWorkload),
-      report_hr_notes: cleanText(input.hrNotes),
-      report_hr_status: cleanText(input.hrStatus),
       report_meeting_amount: reportMeetingAmount,
       report_other_amount: reportOtherAmount,
       report_pm_workload: positiveMoney(input.pmWorkload),
@@ -3702,10 +3694,6 @@ export async function updateManagerExpenseAsAdmin(
     "amWorkload" in input ? positiveMoney(input.amWorkload) : existing.reportAmWorkload;
   const reportPmWorkload =
     "pmWorkload" in input ? positiveMoney(input.pmWorkload) : existing.reportPmWorkload;
-  const reportHrStatus =
-    "hrStatus" in input ? cleanText(input.hrStatus) : existing.reportHrStatus;
-  const reportHrNotes =
-    "hrNotes" in input ? cleanText(input.hrNotes) : existing.reportHrNotes;
   const reportTripType =
     "tripType" in input
       ? reportTripTypeLabel({
@@ -3793,8 +3781,6 @@ export async function updateManagerExpenseAsAdmin(
     other_amount: input.otherAmount ?? existing.otherAmount ?? 0,
     overnight_days: allowance.overnightDays,
     report_am_workload: reportAmWorkload,
-    report_hr_notes: reportHrNotes,
-    report_hr_status: reportHrStatus,
     report_meeting_amount: reportMeetingAmount,
     report_other_amount: reportOtherAmount,
     report_pm_workload: reportPmWorkload,

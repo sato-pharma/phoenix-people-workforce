@@ -229,8 +229,6 @@ export type OutstationCalculationInput = {
   expenseType: OutstationExpenseType;
   goTicketAmount?: number;
   hasTicketAttachments?: boolean;
-  hrNotes?: string | null;
-  hrStatus?: string | null;
   kilometerReading?: number;
   medicalTripHrId?: string | null;
   medicalTripName?: string | null;
@@ -266,8 +264,6 @@ export type OutstationCalculationResult = OutstationCaptureResult & {
   offlineCaptured: boolean;
   overnightDays: number;
   reportAmWorkload: number;
-  reportHrNotes: string | null;
-  reportHrStatus: string | null;
   reportMeetingAmount: number;
   reportOtherAmount: number;
   reportPmWorkload: number;
@@ -361,8 +357,6 @@ export type OutstationExpenseRequest = {
    * path still accept an `amWorkload`/`pmWorkload` and write these columns. Do not drop either
    * column or its write on the strength of "it is always zero". */
   reportAmWorkload: number;
-  reportHrNotes: string | null;
-  reportHrStatus: string | null;
   /** NULL when no override was recorded; an explicit 0 is a real override. Resolve against the raw
    * `meetingAmount`/`otherAmount` with `outstationReportOverride` — never with `||`, which cannot
    * tell an override of 0 from an absent one. Same shape as `reportTravelCost` below. */
@@ -441,8 +435,6 @@ export type ManagerExpenseAdminInput = {
   durationMinutes: number | null;
   employeeHrId: string;
   expenseType: OutstationExpenseType;
-  hrNotes?: string | null;
-  hrStatus?: string | null;
   meetingAmount?: number | null;
   /**
    * Base64 data URL (`data:<mime>;base64,<payload>`) of an invoice to attach to the Meeting

@@ -127,7 +127,6 @@ export type ExpenseTripRecord = {
   km: number;
   location: string;
   meetingAmount: number;
-  open: string;
   other: number;
   pharmacyVisits?: number;
   pmWorkload: number;

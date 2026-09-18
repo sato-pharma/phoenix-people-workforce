@@ -65,7 +65,8 @@ export async function POST(request: Request) {
     //   pmWorkload        were removed for this reason; the server resolves both from the
     //                     published Double Visit Analytics snapshot.
     //   hrStatus          rendered as the row's `hr` field in the approvals queue. An employee
-    //   hrNotes           does not write the HR column on his own claim.
+    //   hrNotes           does not write the HR column on his own claim. Both were then removed
+    //                     everywhere on 2026-09-19 (owner), columns included.
     //   tripType          a report_trip_type of "meeting" against a zero meeting_amount makes the
     //                     DISPLAYED meeting amount fall back to the whole expected total, which
     //                     then also enters componentTotal — roughly doubling the approver's total.

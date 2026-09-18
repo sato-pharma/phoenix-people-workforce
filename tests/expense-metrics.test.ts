@@ -28,7 +28,6 @@ function expense(input: Partial<PayrollExpenseApproval>): PayrollExpenseApproval
     km: 0,
     location: "",
     meetingAmount: 0,
-    open: "",
     other: 0,
     payoutMonth: 5,
     payoutYear: 2026,

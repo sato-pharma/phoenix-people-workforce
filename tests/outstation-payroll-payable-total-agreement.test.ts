@@ -56,8 +56,6 @@ function baseRequest(overrides: Partial<OutstationExpenseRequest>): OutstationEx
     offlineCaptured: false,
     overnightDays: 1,
     reportAmWorkload: 0,
-    reportHrNotes: null,
-    reportHrStatus: null,
     reportMeetingAmount: null,
     reportOtherAmount: null,
     reportPmWorkload: 0,

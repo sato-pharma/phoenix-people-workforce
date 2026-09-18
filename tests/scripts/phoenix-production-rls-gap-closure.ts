@@ -23,7 +23,6 @@ const targetTables = [
   "employee_locations",
   "geo_bricks",
   "geo_locations",
-  "geo_trip_routes",
   "outstation_expense_requests",
   "outstation_location_audit_logs",
   "outstation_policy_rules",
@@ -49,7 +48,6 @@ const requiredColumns: Record<string, string[]> = {
   employees: ["department_id", "employment_status", "hr_id", "line_id", "manager_hr_id"],
   geo_bricks: ["employee_hr_id", "line"],
   geo_locations: ["line"],
-  geo_trip_routes: ["employee_hr_id"],
   lines: ["id", "name"],
   outstation_expense_requests: ["employee_hr_id", "status"],
   outstation_location_audit_logs: ["employee_hr_id"],
@@ -78,11 +76,6 @@ const fkChecks = [
     childColumn: "employee_hr_id",
     childTable: "employee_probation",
     constraint: "employee_probation_employee_hr_id_fkey",
-  },
-  {
-    childColumn: "employee_hr_id",
-    childTable: "geo_trip_routes",
-    constraint: "geo_trip_routes_employee_hr_id_fkey",
   },
   {
     childColumn: "employee_hr_id",
@@ -419,7 +412,6 @@ async function validatePostApply(sql: postgres.Sql, findings: Finding[]) {
   const expectedConstraints = [
     "employee_locations_employee_hr_id_fkey",
     "employee_probation_employee_hr_id_fkey",
-    "geo_trip_routes_employee_hr_id_fkey",
     "geo_bricks_employee_hr_id_fkey",
     "outstation_expense_requests_employee_hr_id_fkey",
   ];

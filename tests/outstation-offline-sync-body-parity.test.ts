@@ -17,10 +17,14 @@ function bodyFields(source: string): Set<string> {
   );
 }
 
-/** Six fields no employee-submitted claim may carry, on EITHER submit path. Four of them
- * (travelCostAmount, hrStatus, hrNotes, tripType) reach a report_* column that
- * payroll-expense-mapping.ts prefers over the resolved value — see the impact half below, which is
- * what makes their absence from the routes load-bearing rather than cosmetic.
+/** Six fields no employee-submitted claim may carry, on EITHER submit path. Two of them
+ * (travelCostAmount, tripType) reach a report_* column that payroll-expense-mapping.ts prefers
+ * over the resolved value — see the impact half below, which is what makes their absence from the
+ * routes load-bearing rather than cosmetic.
+ *
+ * hrStatus and hrNotes stay on this list although their columns, report_hr_status and
+ * report_hr_notes, were dropped on 2026-09-19 (owner) and nothing reads or writes them now. A
+ * route reading either again would be someone rebuilding an employee-set HR verdict.
  *
  * amWorkload and pmWorkload stay on this list even though neither mapper reads
  * report_am_workload/report_pm_workload any more (2026-09-03 — they are `NOT NULL DEFAULT 0`, so
@@ -126,10 +130,11 @@ export function runOutstationOfflineSyncBodyParityTests() {
     "the same claim, re-typed, must be worth exactly the same — nothing else about the trip changed",
   );
 
-  // The HR column an approver reads is still a lever. The AM/PM visit counts are NOT, any more:
-  // both mappers read the resolved am_workload/pm_workload, so a report_*_workload — even a wildly
-  // wrong one — changes nothing an approver sees. That is why the workload half of this block
-  // asserts the resolved 4/3 rather than the planted 99/98.
+  // Neither the HR column nor the AM/PM visit counts is a lever any more. Both mappers read the
+  // resolved am_workload/pm_workload, so a report_*_workload — even a wildly wrong one — changes
+  // nothing an approver sees; and report_hr_status/report_hr_notes were dropped on 2026-09-19
+  // (owner), so a row still carrying them renders the same fallback as the honest one. That is why
+  // this block asserts the resolved 4/3 and the honest HR column, not the planted values.
   const overriddenReport = mapOutstationRequestRowToPayrollApproval({
     ...honestRow(),
     report_am_workload: 99,
@@ -147,8 +152,27 @@ export function runOutstationOfflineSyncBodyParityTests() {
     3,
     "a planted report_pm_workload must NOT beat the resolved PM count",
   );
-  assert.equal(overriddenReport.hr, "Approved", "report_hr_status is rendered as the row's HR column");
-  assert.equal(overriddenReport.hrNotes, "Cleared.", "report_hr_notes is rendered as the row's HR note");
+  assert.equal(overriddenReport.hr, honest.hr, "a planted report_hr_status must NOT reach the HR column");
+  assert.equal(
+    overriddenReport.hrNotes,
+    honest.hrNotes,
+    "a planted report_hr_notes must NOT reach the HR note",
+  );
+
+  // The calculate preview took both fields too, until 2026-09-19. It is the third body an
+  // employee's own outstation:create reaches, so it is held to the same two bans.
+  const calculateFields = bodyFields(readFileSync("app/api/outstation/calculate/route.ts", "utf8"));
+  assert.ok(
+    calculateFields.has("tripStartDate"),
+    "the calculate route must still read its body — this check is reading the wrong file",
+  );
+  for (const field of ["hrStatus", "hrNotes"]) {
+    assert.equal(
+      calculateFields.has(field),
+      false,
+      `the calculate route must not read body.${field} — the request-level HR note and status were removed`,
+    );
+  }
 
   // ── The gate: NEITHER submit path may be handed any of them ────────────────────────────────
   // Both routes assert the same permission — the submitting employee's own outstation:create —

@@ -50,8 +50,11 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mapped.travelCost, 900);
   assert.equal(mapped.meetingAmount, 150);
   assert.equal(mapped.other, 25);
-  assert.equal(mapped.hr, "Approved");
-  assert.equal(mapped.hrNotes, "Reviewed by HR");
+  // report_hr_status / report_hr_notes were dropped on 2026-09-19 (owner). The fixture still
+  // plants both, as a row written before the drop would carry them, and the HR column must be
+  // the row's own fallback anyway — nothing reads the pair any more.
+  assert.equal(mapped.hr, "Account Admin", "a planted report_hr_status must not reach the HR column");
+  assert.equal(mapped.hrNotes, "", "a planted report_hr_notes must not reach the HR note");
   assert.equal(mapped.amWorkload, 1, "the resolved am_workload, not the zeroed report_am_workload");
   assert.equal(mapped.pmWorkload, 7, "the resolved pm_workload, not the zeroed report_pm_workload");
   // The stay/duration label, unchanged — the approvals report renders it under "Travel Stay

@@ -108,7 +108,7 @@ function mapOutstation(row: OutstationExpenseRequest): MyRequestItem {
       { label: "Trip start", value: row.tripStartDate },
       { label: "Claimed", value: `${Number(row.claimedTotalAmount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP` },
     ],
-    decisionNote: row.reportHrNotes ?? null,
+    decisionNote: null,
   };
 }
 
