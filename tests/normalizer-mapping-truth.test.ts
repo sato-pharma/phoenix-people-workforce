@@ -15,7 +15,9 @@ import { pickConfidence } from "../src/lib/sales/normalizer/pick-confidence.ts";
 //   F4  only a person's pick, an older mapping or a guess at the auto-accept bar teaches the free
 //       steps (a 10% guess saved unreviewed came back as a 90% answer for the next pharmacy)
 //   F5  the history heal and correction step around a locked month instead of failing on it (one
-//       published row cancelled a customer's whole heal)
+//       published row cancelled a customer's whole heal), leaving any sales FILE that touches a
+//       locked month whole (a July file mixes Head Office rows with locked ones, and its totals can
+//       never be rebuilt while the lock stands)
 //   F6  the mapping guard stops calling the re-map of a switched-off row a region move
 //
 // The database halves are pinned on the definition the database will actually have: the LAST
@@ -69,14 +71,16 @@ function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-// The lock trigger's own predicate (phx_reject_write_to_locked_closing), as a row filter.
-const SKIPS_LOCKED_MONTHS = flat(`not exists (
-  select 1
-  from public.monthly_closing_locks l
-  where l.period = r.invoice_period
-    and l.normalized_line = lower(btrim(coalesce(r.official_line, '')))
-    and l.unlocked_at is null
-)`);
+// A sales file that touches a locked month is left whole. Skipping only its locked rows is not enough:
+// every rollup rebuild deletes and re-inserts ALL of a file's rollup rows under the same lock trigger,
+// and a July or August file mixes Head Office rows (never locked) with locked-line rows.
+const JUDGES_EACH_FILE = "where public.sos_import_batch_touches_locked_closing(f.batch_id)";
+const LEAVES_LOCKED_FILES_WHOLE = "and not (r.batch_id = any (v_frozen))";
+// The lock trigger's own match (phx_reject_write_to_locked_closing), on the row's month AND the file's.
+const A_FILE_TOUCHES_A_LOCK = flat(`join public.monthly_closing_locks l
+  on l.unlocked_at is null
+ and l.normalized_line = lower(btrim(coalesce(r.official_line, '')))
+ and l.period in (r.invoice_period, b.period)`);
 
 function aHandChangedPickSavesNoAiConfidence() {
   // Left as the suggestion chose it: the suggestion's confidence describes this brick.
@@ -191,25 +195,40 @@ function aSavedMappingKeepsTheNameAndAddress() {
 }
 
 function theHealStepsAroundALockedMonth() {
+  // What "touches a locked month" means: any row of the file, on its own month or the file's.
+  const judge = effectiveDefinition("sos_import_batch_touches_locked_closing");
+  assert.ok(judge.body.includes(A_FILE_TOUCHES_A_LOCK),
+    `sos_import_batch_touches_locked_closing (latest: ${judge.file}) must match an open lock on the row's line and on the row's `
+      + "month OR the file's month - the fact rollup files every row under the file's month");
+  assert.match(judge.body, /where r\.batch_id = p_batch_id/, `${judge.file}: the judgement is about one whole file`);
+
   for (const name of ["sos_backfill_import_rows_from_customer_map", "sos_reconcile_import_rows_from_customer_map"]) {
     const { file, body } = effectiveDefinition(name);
-    assert.ok(body.includes(SKIPS_LOCKED_MONTHS),
-      `${name} (latest: ${file}) must skip rows in a locked month - the lock trigger rejects the WHOLE statement for one such row, `
-        + "which left 61 Pharma Overseas customers (EGP 599,092 in August) unhealed in every month");
+    assert.ok(body.includes(JUDGES_EACH_FILE) && body.includes(LEAVES_LOCKED_FILES_WHOLE),
+      `${name} (latest: ${file}) must leave a whole file untouched when it touches a locked month - skipping only the locked rows `
+        + "let it change a July Head Office row whose file could then never be rebuilt (\"Monthly closing CNS 2026-07 is LOCKED\")");
   }
-  // The heal is still a gap-filler only.
+  // The heal is still a gap-filler only, and judges only the files it would fill.
   const heal = effectiveDefinition("sos_backfill_import_rows_from_customer_map");
-  assert.match(heal.body, /and \( ?r\.brick_id is null or r\.brick_id = '' ?\)/, `${heal.file}: the heal must still fill a missing brick only`);
+  assert.equal(occurrences(heal.body, "and (r.brick_id is null or r.brick_id = '')"), 2,
+    `${heal.file}: the heal must still fill a missing brick only, and judge only the files holding one - a customer with nothing to heal pays nothing`);
   // The preview counts what the correction will change: both of its queries carry the same filter.
   const preview = effectiveDefinition("sos_count_reconcilable_import_rows");
-  assert.equal(occurrences(preview.body, SKIPS_LOCKED_MONTHS), 2,
-    `${preview.file}: the correction's preview must leave locked months out of both its count and its brick breakdown`);
+  assert.ok(preview.body.includes(JUDGES_EACH_FILE), `${preview.file}: the preview must judge files exactly as the correction does`);
+  assert.equal(occurrences(preview.body, LEAVES_LOCKED_FILES_WHOLE), 2,
+    `${preview.file}: the correction's preview must leave locked files out of both its count and its brick breakdown`);
   // The grants stay service_role only.
   const fixFile = migration(heal.file);
-  for (const name of ["sos_backfill_import_rows_from_customer_map", "sos_reconcile_import_rows_from_customer_map", "sos_count_reconcilable_import_rows"]) {
-    assert.match(fixFile, new RegExp(`revoke execute on function public\\.${name}\\(text, text\\) from public, anon, authenticated;`),
+  const signatures: Array<[string, string]> = [
+    ["sos_backfill_import_rows_from_customer_map", "text, text"],
+    ["sos_reconcile_import_rows_from_customer_map", "text, text"],
+    ["sos_count_reconcilable_import_rows", "text, text"],
+    ["sos_import_batch_touches_locked_closing", "uuid"],
+  ];
+  for (const [name, args] of signatures) {
+    assert.match(fixFile, new RegExp(`revoke execute on function public\\.${name}\\(${args}\\) from public, anon, authenticated;`),
       `${heal.file}: ${name} must stay out of reach of the browser roles`);
-    assert.match(fixFile, new RegExp(`grant execute on function public\\.${name}\\(text, text\\) to service_role;`),
+    assert.match(fixFile, new RegExp(`grant execute on function public\\.${name}\\(${args}\\) to service_role;`),
       `${heal.file}: ${name} must stay callable by the server`);
   }
 }
