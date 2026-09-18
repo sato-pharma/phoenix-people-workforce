@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { readCoordinateInput } from "../src/lib/geo/coordinate-input.ts";
 import {
   pharmacyLicenseFillsTheIdentityGap,
   pharmacyLicensePrompt,
@@ -296,7 +297,9 @@ function testCaptureRefusesAVenueWithNoLocation() {
   );
 
   // The coordinates must be read through a finite check, not `?? null`. A browser that lost its fix
-  // mid-capture sends NaN, which `?? null` passes straight through into the column.
+  // mid-capture sends NaN, which `?? null` passes straight through into the column. The check is the
+  // shared reader since 2026-09-18 (src/lib/geo/coordinate-input.ts): it also reads a blank "" or
+  // " " as no coordinate, where `Number(...)` had made it a finite 0 that passed this refusal.
   assert.doesNotMatch(
     source,
     /captured_latitude:\s*input\.capturedLatitude\s*\?\?\s*null/,
@@ -304,9 +307,11 @@ function testCaptureRefusesAVenueWithNoLocation() {
   );
   assert.match(
     source,
-    /Number\.isFinite\(input\.capturedLatitude\)/,
+    /readCoordinateInput\(input\.capturedLatitude\)/,
     `${PHARMACY_VALIDATION}: NaN is not a location`,
   );
+  assert.equal(readCoordinateInput(Number.NaN), null, "the shared reader refuses NaN");
+  assert.equal(readCoordinateInput(" "), null, "the shared reader refuses a blank coordinate");
 
   // And the rep is told before the round trip, in the SAME sentence — two ends of one check worded
   // separately is how they drift.

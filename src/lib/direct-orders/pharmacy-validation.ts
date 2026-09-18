@@ -22,6 +22,7 @@ import {
   type DirectOrderEvidenceCheck,
 } from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
+import { readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -296,8 +297,13 @@ export async function requestDirectOrderPharmacyValidation(
     validationRoute?: DirectOrderValidationRoute | null;
     /** The distributor invoice as a data URL (JPEG, PNG or PDF). Required on the invoice route. */
     invoiceDataUrl?: string | null;
-    capturedLatitude?: number | null;
-    capturedLongitude?: number | null;
+    /**
+     * The storefront pin exactly as the client posted it. Read below with `readCoordinateInput`,
+     * never pre-parsed by the caller: `Number("")` and `Number(" ")` are 0, so a route that coerced
+     * a blank pin handed this function a finite 0 and the claim was filed at 0°N 0°E.
+     */
+    capturedLatitude?: unknown;
+    capturedLongitude?: unknown;
     capturedAccuracyMeters?: number | null;
     capturedAt?: string | null;
     capturedAddress?: string | null;
@@ -327,16 +333,11 @@ export async function requestDirectOrderPharmacyValidation(
   // the desk looking like a submission that failed the proximity check.
   //
   // Safe to make a refusal: all 6 production validations carry coordinates, so this refuses nothing
-  // anyone has ever legitimately sent. `Number.isFinite` rather than a null check because a browser
-  // that lost its fix mid-capture sends NaN, which `?? null` passes straight through.
-  const capturedLatitude =
-    typeof input.capturedLatitude === "number" && Number.isFinite(input.capturedLatitude)
-      ? input.capturedLatitude
-      : null;
-  const capturedLongitude =
-    typeof input.capturedLongitude === "number" && Number.isFinite(input.capturedLongitude)
-      ? input.capturedLongitude
-      : null;
+  // anyone has ever legitimately sent. Each coordinate is read on its own by the shared reader, so
+  // null, a missing key, NaN, "" and whitespace are all no coordinate, where `Number(...)` made the
+  // blank ones a finite 0 that passed this check.
+  const capturedLatitude = readCoordinateInput(input.capturedLatitude);
+  const capturedLongitude = readCoordinateInput(input.capturedLongitude);
   //
   // THE INVOICE ROUTE IS THE ONE EXCEPTION (owner, 2026-09-14): a distributor invoice validates a
   // pharmacy on its own, and the price is the five-pharmacy limit enforced below — not a pin.

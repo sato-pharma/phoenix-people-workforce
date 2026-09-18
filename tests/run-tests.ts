@@ -1274,6 +1274,7 @@ import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evid
 import { runOutstationDeparturePhotoNullCoordsTests } from "./outstation-departure-photo-null-coords.test.ts";
 import { runOutstationArrivalNullCoordsTests } from "./outstation-arrival-null-coords.test.ts";
 import { runOutstationApproverTripPhotosTests } from "./outstation-approver-trip-photos.test.ts";
+import { runCoordinateParseFollowupsTests } from "./coordinate-parse-followups.test.ts";
 import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
 import { runOutstationDeparturePhotoReminderTests } from "./outstation-departure-photo-reminder.test.ts";
@@ -1743,6 +1744,7 @@ import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
+import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -3925,6 +3927,7 @@ await runTest("outstation departure photo review (distance is flagged not blocke
 await runTest("outstation departure photo with no GPS fix (the web card posts nulls and Number(null) is 0, which stored the photo at 0,0 and flagged it thousands of km from the trip; nulls, missing keys, blanks and non-numbers are NO position, a real single 0 survives, 0,0 and half-pairs read as unknown, and the review never calls an unknown distance far)", runOutstationDeparturePhotoNullCoordsTests);
 await runTest("outstation arrival with no GPS fix (Number(null) is 0, so a null-coordinate body passed capture-location's 'Captured coordinates are required.' 400 and was saved at 0,0, and calculate/submit/sync-offline priced it with no check at all; every arrival route now reads through the shared reader and refuses a missing, blank, half or 0,0 position with that same 400 before the service runs, and an arrival photo with no fix is refused as incomplete, never stamped at 0,0)", runOutstationArrivalNullCoordsTests);
 await runTest("outstation approver sees BOTH photos (the Super Admin approves every outstation expense and could see no departure photo: no admin read path signed it, so its far-from-the-trip flag reached the employee alone; both read paths now sign it, Expense Approvals and the Expense Center panel show arrival and departure full width with time, place and the stored review, a flag reads as a look that never blocks pay, and a photo a role or a pre-rule trip never owed is not called missing)", runOutstationApproverTripPhotosTests);
+await runTest("blank or missing coordinates on the two paths #3993 left out (Number(null), Number(\"\") and Number(\" \") are 0, so the admin outstation edit saved a destination with no coordinates at 0,0 and the direct-order pharmacy validation route filed a blank pin at 0,0 past its missing-pin refusal; both now read through the shared one-value reader, the admin edit is refused with its existing message, and a blank pin reaches the direct-orders refusal as null)", runCoordinateParseFollowupsTests);
 await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
 await runTest("evidence photo watermark panel (grows to hold the location block; nothing is drawn past the bottom edge; shrinks the font rather than truncating)", runEvidencePanelLayoutTests);
 await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
@@ -5984,6 +5987,11 @@ await runTest(
 await runTest(
   "My email is private to each person: the owner comes from the session only and no route reads a person from the request, the compliance monitor can neither reach the personal table nor decrypt a personal app password (its own context-free blobs still open), the email reader is a script-less sandbox, a refused password stops all further logins before the password is opened again, and leavers are purged daily",
   runPersonalMailboxTests,
+);
+
+await runTest(
+  "a tapped notification on the Android app goes where the server's own link says: the portal home and profile open the app's screens, any other Phoenix page (its query kept) opens in the browser, and a link that is not Phoenix's — another host, a look-alike, http, another port, a backslash, a control character, a script, a production link on a staging build — opens nothing; the push context route hands the phone the OneSignal app ID the server sends with",
+  runMobilePushLinkTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
