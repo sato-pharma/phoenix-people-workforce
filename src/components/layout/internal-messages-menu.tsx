@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
-import { PersonalMailboxPanel } from "@/components/layout/personal-mailbox-panel";
+import { PersonalMailboxPanel, type PersonalMailboxOpenRequest } from "@/components/layout/personal-mailbox-panel";
 import { systemUiText } from "@/config/system-settings";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
+import { unreadBadgeLabel } from "@/lib/personal-mailbox/rules";
 import { cn } from "@/lib/utils";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
+import { askForDesktopMailAlerts, usePersonalMailboxAlerts } from "@/hooks/use-personal-mailbox-alerts";
 import { useRepositionOnViewportChange } from "@/hooks/use-reposition-on-viewport-change";
 
 type InternalEmailStatus = "failed" | "not_requested" | "pending" | "sent" | "skipped";
@@ -93,9 +95,11 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  // "My email" is the person's own Turbify mailbox (personal-mailbox-panel.tsx). It only mounts when
-  // chosen, so opening the envelope never logs in to anyone's mailbox by itself.
+  // "My email" is the person's own Turbify mailbox (personal-mailbox-panel.tsx). The panel only
+  // mounts when chosen; the one thing that reads the mailbox in the background is the unread check
+  // below (use-personal-mailbox-alerts.ts), and only for someone who connected it.
   const [tab, setTab] = useState<"internal" | "email">("internal");
+  const [openRequest, setOpenRequest] = useState<PersonalMailboxOpenRequest | null>(null);
   const [messages, setMessages] = useState<InternalMessageView[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -126,6 +130,23 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       }),
     );
   }, []);
+  // A new-mail pop-up's "Open": the envelope opens on My email with that email in the reader. Only
+  // offered while the envelope is drawn — it is hidden on a phone, where the pop-up still tells them.
+  const canOpenEmail = useCallback(() => (buttonRef.current?.getClientRects().length ?? 0) > 0, []);
+  const openNonce = useRef(0);
+  const openEmail = useCallback(
+    (uid: number) => {
+      openNonce.current += 1;
+      repositionPanel();
+      setTab("email");
+      setOpen(true);
+      setOpenRequest({ nonce: openNonce.current, uid });
+    },
+    [repositionPanel],
+  );
+  const { unread: emailUnread } = usePersonalMailboxAlerts({ canOpenEmail, onOpenEmail: openEmail });
+  const badgeLabel = unreadBadgeLabel(unreadCount + (emailUnread ?? 0));
+
   const inboxMessages = useMemo(() => messages.filter((message) => message.direction === "inbox"), [messages]);
   const sentMessages = useMemo(() => messages.filter((message) => message.direction === "sent"), [messages]);
 
@@ -221,21 +242,23 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
     <div className="relative" ref={containerRef}>
       <button
         aria-expanded={open}
-        aria-label="Messages"
+        aria-label={badgeLabel ? `Messages, ${badgeLabel} unread` : "Messages"}
         className={`relative hidden h-9 w-9 items-center justify-center rounded sm:inline-flex ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
         }`}
         onClick={() => {
           repositionPanel();
+          // Opened by hand, the mailbox shows its list — not the email an earlier pop-up opened.
+          setOpenRequest(null);
           setOpen((current) => !current);
         }}
         ref={buttonRef}
         type="button"
       >
         <Mail className="h-[18px] w-[18px]" />
-        {unreadCount > 0 ? (
+        {badgeLabel ? (
           <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white">
-            {unreadCount > 9 ? "9+" : unreadCount}
+            {badgeLabel}
           </span>
         ) : null}
       </button>
@@ -262,16 +285,25 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                     : cn("border-transparent", isAdminMode ? "text-phx-ink-faint hover:bg-[#111111]" : "text-phx-ink-soft hover:bg-phx-paper"),
                 )}
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => {
+                  // A click is the one moment a browser will show its "allow notifications" prompt.
+                  if (key === "email") askForDesktopMailAlerts();
+                  setTab(key);
+                }}
                 role="tab"
                 type="button"
               >
                 {label}
+                {key === "email" && emailUnread ? (
+                  <span className="ml-2 inline-flex items-center bg-phx-accent px-1.5 py-0.5 align-middle text-phx-3xs font-black tracking-normal text-white">
+                    {emailUnread.toLocaleString("en-US")}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
 
-          {tab === "email" ? <PersonalMailboxPanel isAdminMode={isAdminMode} /> : null}
+          {tab === "email" ? <PersonalMailboxPanel isAdminMode={isAdminMode} openRequest={openRequest} /> : null}
 
           <div className={cn("grid xl:grid-cols-[0.95fr_1.05fr]", tab === "internal" ? null : "hidden")}>
             <section className={cn("border-r", isAdminMode ? "border-[#333333]" : "border-phx-line")}>

@@ -9,6 +9,8 @@ import { assertApiRateLimit } from "@/lib/security/api-rate-limit";
 const CEILINGS = {
   /** Pasting an app password: each try is two logins (reading and sending). */
   connect: { limit: 5, windowMs: 10 * 60_000 },
+  /** The envelope's background unread check: every couple of minutes per open tab, so this is roomy. */
+  poll: { limit: 20, windowMs: 60_000 },
   /** Listing, opening and downloading, together. */
   read: { limit: 40, windowMs: 60_000 },
   send: { limit: 10, windowMs: 60_000 },
