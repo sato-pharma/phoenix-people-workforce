@@ -1761,6 +1761,7 @@ import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemptio
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
+import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6051,6 +6052,11 @@ await runTest(
 await runTest(
   "Force logout stops the Phoenix app's notifications on the person's phones: every app install of theirs is deleted at OneSignal with the documented call (one OneSignal no longer holds counts as stopped, any other failure is reported and left for a retry), a phone browser, a computer or anyone else is never touched, a retry stops only what is left, and the logout runs first and is never undone by it",
   runForceLogoutStopsPhoneAppPushTests,
+);
+
+await runTest(
+  "the normalizer's invoice day is a real date or none, never an impossible year: Sofico's BILLINGDATE sent as an Excel serial (46247) and mec's month column (202607), each of which JavaScript reads as a year, give no day, while a text date and an Excel date cell still read to the day and keep their month",
+  runNormalizerInvoiceDayImpossibleYearTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
