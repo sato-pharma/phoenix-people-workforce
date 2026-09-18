@@ -6,15 +6,17 @@
 //
 //   /recruitment                    the admin shell (Super Admin, HR Advisory)
 //   /hr/recruitment                 the HR shell, which proxy.ts rewrites onto the admin page
-//   /employee-portals/recruitment   the portal shell (Talent Acquisition)
+//   /employee-portals/recruitment   the portal shell
 //
 // A link has to stay inside the shell it was pressed in. The (admin) layout sends a portal viewer
 // who asks for an admin address to the portal home, and an HR seat taken from /hr/recruitment to
 // /recruitment loses the HR sidebar mid-task (see `screeningShellPoolHref`). The server cannot see
 // the /hr rewrite, so the browser's own path is the input.
 //
-// No imports at all: the pool, the WhatsApp Applicants list and the screening page are client
-// components, and the tests call this without a database.
+// One import, the shared uuid check, which is itself pure: the pool, the WhatsApp Applicants list
+// and the screening page are client components, and the tests call this without a database.
+
+import { isUuid } from "@/lib/http/uuid";
 
 /** The three recruitment addresses, longest first so a shorter one can never claim a longer path. */
 export const RECRUITMENT_ROOTS = ["/employee-portals/recruitment", "/hr/recruitment", "/recruitment"] as const;
@@ -43,9 +45,6 @@ export function candidatePageHref(root: string, candidateId: string): string {
   return `${root.replace(/\/+$/, "")}${CANDIDATE_PAGE_SEGMENT}/${encodeURIComponent(candidateId)}`;
 }
 
-/** The shape of a candidate id: `ats_candidates.id` is a uuid. */
-const CANDIDATE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * The candidate id from the page's own address, or null when it cannot be one.
  *
@@ -53,6 +52,10 @@ const CANDIDATE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
  * does not come back as "no such row": Postgres refuses the whole query (22P02), which would put an
  * error page where "this candidate is not in the system" belongs. An edited or truncated link is a
  * normal thing to arrive with.
+ *
+ * The check is the shared `isUuid`, which deliberately does not trim. The trimming here happens
+ * first and the trimmed text is what is returned, so the value handed to the database is exactly
+ * the one that passed.
  */
 export function parseCandidatePageId(value: string | string[] | null | undefined): string | null {
   const first = Array.isArray(value) ? value[0] : value;
@@ -62,5 +65,5 @@ export function parseCandidatePageId(value: string | string[] | null | undefined
   } catch {
     return null;
   }
-  return CANDIDATE_ID_PATTERN.test(text) ? text.toLowerCase() : null;
+  return isUuid(text) ? text.toLowerCase() : null;
 }
