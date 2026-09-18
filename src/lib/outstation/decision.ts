@@ -192,6 +192,36 @@ export function outstationTicketEvidenceRejection(input: {
 }
 
 /**
+ * The admin-editable GPS accuracy limit on a submitted outstation claim. A fix whose reported
+ * accuracy is above the limit is held for Super Admin review, and so is a claim whose device
+ * reported no accuracy at all (owner, 2026-09-18): nothing shows it is inside the limit. Neither
+ * rejects: a fuzzy or unreported fix is a review signal, not proof of abuse. A limit of 0 or less
+ * switches the check off, as it always has.
+ *
+ * `capturedAccuracyMeters` must come from readAccuracyInput (src/lib/geo/coordinate-input.ts), so
+ * null means "the device reported none". It used to be `Number(body.capturedAccuracyMeters)`, and
+ * `Number(null)`, `Number("")` and `Number(" ")` are all 0: a claim with no accuracy read as a
+ * perfect 0 m fix and passed this limit.
+ *
+ * The result joins detectedHoldReasons in submitOutstationRequest, so a National Sales Manager's
+ * claim still carries the flag but is never held (nsm-no-hold.ts).
+ */
+export function outstationGpsAccuracyHoldReason(input: {
+  capturedAccuracyMeters: number | null;
+  gpsAccuracyLimitMeters: number;
+}): string | null {
+  const limit = input.gpsAccuracyLimitMeters;
+  if (limit <= 0) return null;
+  if (input.capturedAccuracyMeters === null) {
+    return `The device did not report its GPS accuracy, so the ${limit} m policy limit could not be checked and this request is held for Super Admin review before it moves to payroll.`;
+  }
+  if (input.capturedAccuracyMeters > limit) {
+    return `The captured GPS accuracy (${Math.round(input.capturedAccuracyMeters)} m) is outside the ${limit} m policy limit, so this request is held for Super Admin review before it moves to payroll.`;
+  }
+  return null;
+}
+
+/**
  * Pure system decision for an outstation expense request. Rules, in order:
  *   1. Distance floor — must meet the policy minimum (60 km, 58 km tolerance).
  *   2. Governorate — the destination must be OUTSIDE the residence governorate.

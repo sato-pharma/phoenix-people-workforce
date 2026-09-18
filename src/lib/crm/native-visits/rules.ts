@@ -19,6 +19,7 @@
 
 import { isPlausibleCheckinCoordinate } from "@/lib/crm/checkin-coords";
 import { addDaysIso } from "@/lib/crm/dates";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type NativeVisitContactRule = "required" | "contact_or_prospect" | "none";
@@ -338,7 +339,8 @@ export function parseNativeVisitDraft(
     longitude = null;
   }
   const gpsStatus = classifyNativeVisitGps(latitude, longitude);
-  const accuracy = finiteOrNull(body.accuracyMeters);
+  // Not finiteOrNull, which lets " " through as 0: a blank accuracy is none, never a perfect 0 m.
+  const accuracy = readAccuracyInput(body.accuracyMeters);
   const accuracyMeters = gpsStatus === "missing" || accuracy == null || accuracy < 0 ? null : accuracy;
 
   const deviceRecordedAtRaw = String(body.deviceRecordedAt ?? "").trim();

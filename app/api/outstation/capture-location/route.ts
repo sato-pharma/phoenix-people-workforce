@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { captureOutstationLocation } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -23,7 +24,9 @@ export async function POST(request: Request) {
     // Never `Number(body.capturedLatitude)`: `Number(null)` is 0, which is finite, so a body with
     // no GPS fix passed this 400 and was saved as an arrival at 0°N 0°E.
     const position = readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
-    const capturedAccuracyMeters = Number(body.capturedAccuracyMeters);
+    // Same for the accuracy: `Number(null)`, `Number("")` and `Number(" ")` are 0, a perfect fix the
+    // device never reported. No accuracy is null, and the submit holds it for review.
+    const capturedAccuracyMeters = readAccuracyInput(body.capturedAccuracyMeters);
 
     if (!position) {
       return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
