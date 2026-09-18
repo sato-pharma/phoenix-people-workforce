@@ -96,6 +96,11 @@ export type ScreeningFactsCandidateRow = {
   preferredRegionCode?: string | null;
   /** What they TYPED when their region was not on the list. A place name, not a region label. */
   preferredRegionName?: string | null;
+  /**
+   * The answers to the admin-defined WhatsApp questions, keyed by question key. A tapped answer is
+   * stored as the TITLE of the option tapped. Read only by the four checks, to fill an empty column.
+   */
+  screeningExtraAnswers?: Record<string, unknown> | null;
   yearsExperience?: number | null;
 };
 
@@ -422,6 +427,16 @@ export function unconfirmedCvFactsFromExtraction(
 // "not on file". A missing row and a row nobody has filled in look identical, and the difference
 // matters: one means the reader has the answer, the other means the CV is the only place left to
 // look. A blank cell, or worse a 0, quietly claims the first when the truth is the second.
+//
+// WHAT THE APPLICANT TOLD THE BOT FILLS AN EMPTY CHECK, AND ONLY AN EMPTY ONE. CVs rarely carry
+// these facts. Of 234 medical rep applicants measured on 2026-09-18, 50 had a date of birth on file,
+// 27 a military status and 7 a gender. So from that day the bot asks reps and district managers for
+// their military service and their age, and it has asked office coordinators their age since
+// 2026-09-02. But the checks read the columns alone, so an applicant who had just answered still
+// read "not on file". On that day 102 of the 129 office coordinators who gave an age had no date of
+// birth on file.
+// The column still wins wherever it holds something, exactly as `pick` does above. An answer is
+// shown only where the column is empty, and the hint under it says where it came from.
 
 /**
  * One always-printed screening check. `value` is null for "nothing on file" — the RENDERER writes
@@ -467,6 +482,46 @@ function titleCaseWord(raw: string): string {
 }
 
 /**
+ * The admin-defined WhatsApp questions that answer a check, named by KEY. A key can never change
+ * once saved, because the admin screen refuses it. The wording and the option titles can change, so
+ * the key is the only safe thing to name here. A question switched off later keeps its answers on
+ * the record, so they keep filling the check.
+ */
+const MILITARY_ANSWER_KEY = "field_military_service";
+/** Five bands for reps and district managers, three for office coordinators. The finer one first. */
+const AGE_BAND_ANSWER_KEYS = ["field_age_band", "oc_age_band"] as const;
+
+/** The hint under a check the applicant answered on WhatsApp, where the record itself says nothing. */
+export const SAID_ON_WHATSAPP = "Said on WhatsApp";
+/** The hint under a gender worked out from the military answer. It is inferred, not stated. */
+export const FROM_MILITARY_ANSWER = "From the military answer on WhatsApp";
+
+/**
+ * The gender a WhatsApp military answer implies. This is the owner's rule, 2026-09-18.
+ *
+ * "Not applicable" is the option the bot offers "For female applicants". Each of the other five is
+ * a stage of a service only men owe. An answer this list does not name, such as an option the admin
+ * has since renamed, implies nothing: "not on file" is true there, and a guessed "Male" would not be.
+ * Matched on the words as saved, lower-cased, because the record stores the option's TITLE.
+ */
+const GENDER_BY_MILITARY_ANSWER: ReadonlyMap<string, string> = new Map([
+  ["completed", "Male"],
+  ["exempted", "Male"],
+  ["temporary exemption", "Male"],
+  ["postponed", "Male"],
+  ["serving now", "Male"],
+  ["not applicable", "Female"],
+]);
+
+/** One WhatsApp answer as trimmed text. Own keys only, and only a string is an answer. */
+function whatsAppAnswer(candidate: ScreeningFactsCandidateRow, key: string): string | null {
+  const answers = candidate.screeningExtraAnswers;
+  if (!answers || !Object.prototype.hasOwnProperty.call(answers, key)) return null;
+  const raw = answers[key];
+  return typeof raw === "string" ? text(raw) : null;
+}
+
+/**
  * The four checks, in the order a screener makes them, for one candidate.
  *
  * The degree verdict REUSES `judgeBackground` — the same gate that decides whether a CV may be
@@ -496,21 +551,36 @@ export function candidateScreeningChecks(
   const birthday = text(candidate.dateOfBirth)?.slice(0, 10) ?? null;
   const military = text(candidate.militaryStatus);
 
+  // What they told the bot. Each one is used only where the column above it is empty.
+  const saidMilitary = whatsAppAnswer(candidate, MILITARY_ANSWER_KEY);
+  // The band as they tapped it ("25 to 29"), never turned into a number. A band is not an age.
+  const saidAgeBand = AGE_BAND_ANSWER_KEYS.map((key) => whatsAppAnswer(candidate, key)).find(Boolean) ?? null;
+  const impliedGender = saidMilitary
+    ? (GENDER_BY_MILITARY_ANSWER.get(saidMilitary.toLowerCase().replace(/\s+/g, " ")) ?? null)
+    : null;
+
   return [
     {
       // The evidence, never a bare judgement — the same rule the admin review screen follows.
+      // The degree already reads their WhatsApp answer first: `declaredBackground` IS that answer.
       hint: verdict.evidence ? describeBackgroundVerdict(verdict) : null,
       label: "Degree rule",
       value: degree,
     },
-    { hint: null, label: "Gender", value: gender ? titleCaseWord(gender) : null },
-    {
-      // The date sits under the age so a reader can check the arithmetic, and so a record holding
-      // only an implausible date does not read as though it held nothing.
-      hint: birthday,
-      label: "Age",
-      value: age === null ? null : `${age}`,
-    },
-    { hint: null, label: "Military service", value: military ? titleCaseWord(military) : null },
+    gender
+      ? { hint: null, label: "Gender", value: titleCaseWord(gender) }
+      : { hint: impliedGender ? FROM_MILITARY_ANSWER : null, label: "Gender", value: impliedGender },
+    age === null && saidAgeBand
+      ? { hint: SAID_ON_WHATSAPP, label: "Age", value: saidAgeBand }
+      : {
+          // The date sits under the age so a reader can check the arithmetic, and so a record holding
+          // only an implausible date does not read as though it held nothing.
+          hint: birthday,
+          label: "Age",
+          value: age === null ? null : `${age}`,
+        },
+    military
+      ? { hint: null, label: "Military service", value: titleCaseWord(military) }
+      : { hint: saidMilitary ? SAID_ON_WHATSAPP : null, label: "Military service", value: saidMilitary },
   ];
 }
