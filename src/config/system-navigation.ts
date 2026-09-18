@@ -1985,6 +1985,13 @@ const hrNavigationSectionSeeds = [
       // final dues. It is not offboarding-only: the same register issues the machine on a joiner's
       // first morning, which is why the label names the OBLIGATION rather than either end of it.
       { href: "/hr/devices", icon: Laptop, label: "Device Custody", permissions: [{ resource: "company_devices" }] },
+      // 🔴 `action: "approve"` is the whole point of this row, not decoration. Device Custody above
+      // is paperwork and HR Operations runs it; this one publishes software onto every rep's tablet,
+      // and `approve` is the only action on this resource the matrix reserves to Super Admin. Drop
+      // the action and the link appears for HR Operations and the CEO, who would then reach a page
+      // that redirects them straight back — a dead row in the sidebar of the two seats that use this
+      // module most. The page and all three route handlers assert the same permission.
+      { href: "/hr/devices/managed-play", icon: Store, label: "Managed Google Play", permissions: [{ resource: "company_devices", action: "approve" }] },
       { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
