@@ -25,6 +25,7 @@ import { usePathname } from "next/navigation";
 import type React from "react";
 
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { WorkstationCvPane } from "@/components/recruitment/workstation/workstation-cv-pane";
 import {
   WorkstationNotesTab,
@@ -279,6 +280,12 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
               <ScanLine aria-hidden className="h-3.5 w-3.5" />
               Open in screening
             </ActionLink>
+            {/* Book the interview from the record itself — no trip through screening first (owner,
+                2026-09-18). Draws nothing for anyone the interview calendar is not shared with as an
+                editor. */}
+            <ScheduleInterviewButton
+              candidate={{ id: candidate.id, jobTitle: appliedFor.text, name: displayName }}
+            />
             <ActionLink href={root} title="Back to the candidate pool" tone="ghost">
               <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
               Recruitment

@@ -145,6 +145,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
 import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { ActionLink } from "@/components/recruitment/workstation/workstation-look";
 import { linkedInProfileHref } from "@/lib/recruitment/linkedin-profile";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
@@ -1704,6 +1705,7 @@ function PipelineTab({
               {canViewCandidates && selected.candidateId ? (
                 <FilesSection
                   candidateId={selected.candidateId}
+                  candidateName={selected.candidate?.fullName ?? null}
                   canUpload={canManageCandidates}
                   error={candidateFilesError}
                   files={candidateFiles}
@@ -4933,13 +4935,23 @@ function CandidatesTab({
                   person (the owner asked for it there, 2026-09-18). NOT gated on canManage: it opens a
                   page and changes nothing, and anybody on this panel can already read the email and
                   phone printed above it. It wraps under the reply box's panel when that is opened,
-                  which is `w-full`, and comes back beside the button when it is closed. */}
-              {canManage || linkedInProfileHref(profile.candidate.linkedinUrl) ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {canManage ? <WhatsAppReplyBox candidateId={profile.candidate.id} /> : null}
-                  <LinkedInProfileLink linkedinUrl={profile.candidate.linkedinUrl} />
-                </div>
-              ) : null}
+                  which is `w-full`, and comes back beside the button when it is closed.
+
+                  Schedule interview closes the row (owner, 2026-09-18: "from any screen, any CV"). It
+                  gates itself on the interview calendar's own sharing, not on canManage, and draws
+                  nothing for anyone who cannot book — which is why the row is always mounted and
+                  `empty:hidden` takes its margin back when nothing in it drew. */}
+              <div className="mt-2 flex flex-wrap items-center gap-2 empty:hidden">
+                {canManage ? <WhatsAppReplyBox candidateId={profile.candidate.id} /> : null}
+                <LinkedInProfileLink linkedinUrl={profile.candidate.linkedinUrl} />
+                <ScheduleInterviewButton
+                  candidate={{
+                    id: profile.candidate.id,
+                    jobTitle: profile.candidate.appliedForJobTitle,
+                    name: profile.candidate.fullName,
+                  }}
+                />
+              </div>
             </div>
             <Button variant="ghost" onClick={returnToPool}>
               Close
@@ -5235,6 +5247,15 @@ function CandidatesTab({
             <CvPreviewModal
               downloadUrl={`/api/recruitment/files/${viewCvFile.id}/download`}
               fileName={viewCvFile.fileName}
+              headerActions={
+                <ScheduleInterviewButton
+                  candidate={{
+                    id: profile.candidate.id,
+                    jobTitle: profile.candidate.appliedForJobTitle,
+                    name: profile.candidate.fullName,
+                  }}
+                />
+              }
               mimeType={viewCvFile.mimeType}
               onClose={() => setViewCvFile(null)}
               sidePanel={<CandidateFieldsPanel candidate={profile.candidate} schema={getCvPositionSchema(defaultCvPositionKey)!} />}
@@ -5434,6 +5455,7 @@ function InterviewsSection({
 
 function FilesSection({
   candidateId,
+  candidateName,
   canUpload,
   error,
   files,
@@ -5441,6 +5463,8 @@ function FilesSection({
   onReload,
 }: {
   candidateId: string;
+  /** For the preview's Schedule interview button, which needs a name to put on the calendar. */
+  candidateName: string | null;
   canUpload: boolean;
   error: string | null;
   files: RecruitmentFile[];
@@ -5510,6 +5534,9 @@ function FilesSection({
         <CvPreviewModal
           downloadUrl={`/api/recruitment/files/${previewFile.id}/download`}
           fileName={previewFile.fileName}
+          headerActions={
+            candidateName ? <ScheduleInterviewButton candidate={{ id: candidateId, name: candidateName }} /> : null
+          }
           mimeType={previewFile.mimeType}
           onClose={() => setPreviewFile(null)}
         />

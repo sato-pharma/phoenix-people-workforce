@@ -34,6 +34,7 @@ import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -104,9 +105,12 @@ export default async function EmployeePortalProfilePage() {
     .map((part) => part.charAt(0))
     .join("")
     .toUpperCase();
-  const hasDeviceMapping = access.hrId
-    ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
-    : false;
+  const [hasDeviceMapping, sharedInterviewCalendar] = access.hrId
+    ? await Promise.all([
+        employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
+        hasInterviewCalendarAccess(access).catch(() => false),
+      ])
+    : ([false, false] as [boolean, boolean]);
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,
@@ -114,6 +118,7 @@ export default async function EmployeePortalProfilePage() {
     employee.department,
     employee.hrId,
     hasDeviceMapping,
+    sharedInterviewCalendar,
   );
 
   const employmentRows: Array<{

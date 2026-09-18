@@ -318,6 +318,7 @@ function CandidateCard({
 
       <CandidateCvActions
         candidateId={candidate.id}
+        candidateName={candidate.fullName}
         initialFiles={files}
         showPhoneNumbers={call.mine}
       />
@@ -545,6 +546,7 @@ function SentCandidateCard({
       <div className="flex flex-wrap items-start gap-2">
         <CandidateCvActions
         candidateId={candidate.id}
+        candidateName={candidate.fullName}
         initialFiles={files}
         showPhoneNumbers={call.mine}
       />

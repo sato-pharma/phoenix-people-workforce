@@ -134,6 +134,7 @@ export function CandidateReadCard({
 
       <CandidateCvActions
         candidateId={candidate.id}
+        candidateName={candidate.fullName}
         initialFiles={files}
         showPhoneNumbers={call.mine}
       />

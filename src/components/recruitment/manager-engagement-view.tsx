@@ -16,6 +16,7 @@ import { Download, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import type {
   ManagerCvEngagementCandidate,
@@ -136,6 +137,11 @@ function EngagementCvName({ candidate }: { candidate: ManagerCvEngagementCandida
         <CvPreviewModal
           downloadUrl={`/api/recruitment/manager-engagement/candidates/${candidate.candidateId}/files/${file.id}`}
           fileName={file.fileName}
+          headerActions={
+            candidate.candidateName ? (
+              <ScheduleInterviewButton candidate={{ id: candidate.candidateId, name: candidate.candidateName }} />
+            ) : null
+          }
           mimeType={file.mimeType}
           onClose={() => setOpen(false)}
         />

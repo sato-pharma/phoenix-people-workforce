@@ -93,6 +93,26 @@ other credentials in this file or in Git. Never assume a pasted preview URL is c
 | GOOGLE_CALENDAR_API_KEY | Calendar API key for national holidays |
 | GOOGLE_HOLIDAY_CALENDAR_ID_EG | Egyptian holiday calendar ID |
 
+## Interview Calendar — Zoom (Optional)
+
+A Zoom **Server-to-Server OAuth** app, read by `src/lib/zoom/meetings.ts`. With all four set,
+Phoenix creates the Zoom meeting when an interview is booked on Zoom; with any one missing, the
+booking still saves and the calendar says the meeting was not made. Nothing is ever sent to the
+candidate either way. Set them in Railway only — never in a committed file.
+
+| Variable | Description |
+|---|---|
+| ZOOM_ACCOUNT_ID | The Zoom account the Server-to-Server OAuth app was made in |
+| ZOOM_CLIENT_ID | The app's client id |
+| ZOOM_CLIENT_SECRET | The app's client secret (server only) |
+| ZOOM_HOST_USER | Email of the Zoom user who hosts every interview meeting |
+
+The app needs the scopes for the three calls Phoenix makes — create a meeting for the host, move
+it, and delete it when the interview is cancelled: `meeting:write:meeting:admin`,
+`meeting:update:meeting:admin` and `meeting:delete:meeting:admin` (an older app with classic scopes
+needs only `meeting:write:admin`). Activate the app in the Zoom Marketplace, or every token request
+is refused.
+
 ## Attendance Agent (Optional)
 
 | Variable | Description | Default |

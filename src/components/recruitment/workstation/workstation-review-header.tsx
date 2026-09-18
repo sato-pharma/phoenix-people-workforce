@@ -34,6 +34,7 @@
 
 import { useState } from "react";
 import {
+  CalendarPlus,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -55,6 +56,7 @@ import {
   candidateStatusLabel,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { ManagerPicker, type ManagerPickerOption } from "@/components/recruitment/manager-picker";
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
 import { WhatsAppSendDialog } from "@/components/recruitment/whatsapp-send-dialog";
@@ -250,6 +252,26 @@ export function WorkstationReviewHeader({
           title="Open this applicant's LinkedIn profile in a new tab."
         />
       ) : null}
+      {/* ── SCHEDULE AN INTERVIEW, FROM THE CV ITSELF ───────────────────────────────────────────
+          The owner's words (2026-09-18): "on the CV without any steps … from any screen, any CV".
+          With the ways of reaching the person, before the verdicts: booking a slot decides nothing
+          about the application and tells the candidate nothing — it only puts a name on the
+          interview calendar. Drawn in this strip's own kit; the gate lives in the button, so it is
+          absent for anyone the calendar's owner has not made an editor. */}
+      <ScheduleInterviewButton
+        candidate={{ id: row.id, jobTitle: row.appliedForText, name: row.fullName }}
+        renderTrigger={({ open, pressed, title }) => (
+          <DecisionButton
+            disabled={busy}
+            icon={<CalendarPlus className="h-3.5 w-3.5" />}
+            label="Schedule interview"
+            onClick={open}
+            pressed={pressed}
+            title={title}
+            tone="info"
+          />
+        )}
+      />
       <DecisionButton
         disabled={busy}
         hotkey="S"
