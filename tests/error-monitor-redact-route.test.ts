@@ -113,6 +113,15 @@ export function runErrorMonitorRedactRouteTests() {
     redactSecretsFromRoute("/share/territory/example-token_0002-not-a-credential"),
     "/share/territory/[token]",
   );
+  // The interview calendar's copy link: in the page path, and as `?link=` on the CV addresses.
+  assert.equal(
+    redactSecretsFromRoute("/share/interview-calendar/example-token_0003-not-a-credential?week=2026-09-20"),
+    "/share/interview-calendar/[token]?week=2026-09-20",
+  );
+  assert.equal(
+    redactSecretsFromRoute("/api/recruitment/interview-calendar/bookings/b1/cv?link=example-token_0004"),
+    "/api/recruitment/interview-calendar/bookings/b1/cv?link=[token]",
+  );
   // Case-insensitive: the browser may send a differently-cased path.
   assert.equal(redactSecretsFromRoute("/Password-Setup/ABC123"), "/Password-Setup/[token]");
 

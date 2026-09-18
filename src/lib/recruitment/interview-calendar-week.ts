@@ -25,9 +25,33 @@ export const SLOT_MINUTES = 30;
 /** Sunday = 0 … Thursday = 4. Friday and Saturday are never offered. */
 export const CALENDAR_WEEKDAYS = [0, 1, 2, 3, 4] as const;
 
-/** The lengths the dialog offers. The database allows any multiple of 15 between 15 and 240. */
+/** The lengths the dialog offers as buttons. */
 export const DURATION_CHOICES = [30, 45, 60] as const;
+/**
+ * The longer ones, up to the whole working day — the owner, 2026-09-18: a single interview can run
+ * "from 11 a.m. to 3 p.m.", or all of 9 to 5. Offered from a list beside the buttons.
+ */
+export const LONG_DURATION_CHOICES = [90, 120, 150, 180, 240, 300, 360, 420, 480] as const;
+export const ALL_DURATION_CHOICES: readonly number[] = [...DURATION_CHOICES, ...LONG_DURATION_CHOICES];
 export const DEFAULT_DURATION_MINUTES = 30;
+/** The longest anything on the calendar can run: the whole day, 9:00 AM to 5:00 PM. */
+export const MAX_DURATION_MINUTES = 8 * 60;
+
+/**
+ * An interview SESSION — one meeting for a block of the day, cut into slots a candidate each (the
+ * owner, 2026-09-18: "day 20 from 11 a.m. to 3 p.m." with a candidate every half hour). The slot
+ * lengths it offers; every slot starts on a quarter hour, like every interview.
+ */
+export const SESSION_SLOT_CHOICES = [15, 30, 45, 60] as const;
+export const DEFAULT_SESSION_SLOT_MINUTES = 30;
+
+/** "30 min", "1 h 30 min", "8 h". */
+export function formatDuration(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${rest} min`;
+  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
+}
 
 const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -136,7 +160,7 @@ export function isBookableDay(key: string): boolean {
 export function isBookableWindow(startMinutes: number, durationMinutes: number): boolean {
   if (!Number.isInteger(startMinutes) || !Number.isInteger(durationMinutes)) return false;
   if (startMinutes % 15 !== 0 || durationMinutes % 15 !== 0) return false;
-  if (durationMinutes < 15 || durationMinutes > 240) return false;
+  if (durationMinutes < 15 || durationMinutes > MAX_DURATION_MINUTES) return false;
   return startMinutes >= WORKDAY_START_MINUTES && startMinutes + durationMinutes <= WORKDAY_END_MINUTES;
 }
 

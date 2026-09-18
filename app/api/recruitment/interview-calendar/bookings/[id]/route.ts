@@ -5,7 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import {
   cancelInterviewBooking,
   getInterviewBooking,
-  requireInterviewCalendarRole,
+  interviewCalendarCaller,
   updateInterviewBooking,
 } from "@/lib/recruitment/interview-calendar";
 
@@ -14,14 +14,15 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ id: string }> };
 
-// One interview: read it (a link from an export lands here when its week is not known), move it,
-// or cancel it. Moving and cancelling need Editor or the owner; the domain module decides.
+// One interview: read it (a link from an export lands here when its week is not known), move it —
+// to another time, into a session's slot, or out of one — or cancel it. The domain module checks the
+// level the caller holds on the week it is in, and on the week it moves to.
 export async function GET(request: Request, { params }: Context) {
   try {
     const access = await resolveAccessContext(request);
-    await requireInterviewCalendarRole(access, "view");
+    const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
-    const booking = await getInterviewBooking(id, access.hrId);
+    const booking = await getInterviewBooking(caller, id);
     return NextResponse.json({ booking, success: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return recruitmentApiError(error, "Could not load the interview.");
@@ -33,13 +34,15 @@ export async function PATCH(request: Request, { params }: Context) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
     const body = await readJsonObject(request);
-    const booking = await updateInterviewBooking(access, id, {
+    const booking = await updateInterviewBooking(caller, id, {
       dateKey: body.dateKey,
       durationMinutes: body.durationMinutes,
       notes: body.notes,
       platform: body.platform,
+      sessionId: body.sessionId,
       startMinutes: body.startMinutes,
     });
     return NextResponse.json({ booking, success: true });
@@ -53,8 +56,9 @@ export async function DELETE(request: Request, { params }: Context) {
     const csrfError = assertSameOriginMutation(request);
     if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
+    const caller = await interviewCalendarCaller(access, request);
     const { id } = await params;
-    const result = await cancelInterviewBooking(access, id);
+    const result = await cancelInterviewBooking(caller, id);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     return recruitmentApiError(error, "Could not cancel the interview.");

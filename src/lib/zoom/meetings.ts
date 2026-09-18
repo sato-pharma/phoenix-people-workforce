@@ -18,7 +18,7 @@
 // account with no invitees; its join link sits on the interview for the people who share the
 // calendar to pass on as they see fit.
 //
-// No SDK: three documented REST calls. `fetch` is injectable so the tests can prove the exact
+// No SDK: documented REST calls only. `fetch` is injectable so the tests can prove the exact
 // request without reaching Zoom.
 
 export type ZoomConfig = {
@@ -33,11 +33,14 @@ export type ZoomFetch = (input: string, init?: RequestInit) => Promise<Response>
 export class ZoomRequestError extends Error {
   // NOT a TypeScript parameter property: the test runner strips types and cannot compile one.
   readonly status: number;
+  /** Zoom's own error code, when it sent one (3001: no such meeting or not ended; 124: bad token). */
+  readonly code: number | null;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code: number | null = null) {
     super(message);
     this.name = "ZoomRequestError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -72,9 +75,10 @@ export function resetZoomTokenCacheForTests() {
 }
 
 async function zoomError(response: Response, fallback: string): Promise<ZoomRequestError> {
-  const body = (await response.json().catch(() => null)) as { message?: unknown; reason?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown; reason?: unknown } | null;
   const said = typeof body?.message === "string" ? body.message : typeof body?.reason === "string" ? body.reason : "";
-  return new ZoomRequestError(said ? `${fallback} (${response.status}: ${said})` : `${fallback} (${response.status})`, response.status);
+  const code = typeof body?.code === "number" ? body.code : null;
+  return new ZoomRequestError(said ? `${fallback} (${response.status}: ${said})` : `${fallback} (${response.status})`, response.status, code);
 }
 
 export async function zoomAccessToken(config: ZoomConfig, fetchImpl: ZoomFetch = fetch, now: number = Date.now()): Promise<string> {
@@ -172,4 +176,272 @@ export async function deleteZoomMeeting(config: ZoomConfig, meetingId: string, f
     method: "DELETE",
   });
   if (!response.ok && response.status !== 404) throw await zoomError(response, "Zoom did not delete the meeting");
+}
+
+// ── After the meeting, and around it — the owner's request of 2026-09-18 ───────────────────────
+//
+// "build Zoom attendance, polls, invitation and AI summary into the interview calendar". Each is a
+// documented REST call, covered by the scopes the owner granted the app that day:
+//
+//   invitation     GET  /meetings/{id}/invitation
+//   the meeting    GET  /report/meetings/{id}, else GET /past_meetings/{id}
+//   attendance     GET  /report/meetings/{uuid}/participants, else /past_meetings/{uuid}/participants
+//   AI summary     GET  /meetings/{uuid}/meeting_summary
+//   polls          POST /meetings/{id}/polls, DELETE /meetings/{id}/polls/{pollId}
+//   poll answers   GET  /report/meetings/{id}/polls
+//
+// NOTHING HERE SENDS ANYTHING TO ANYONE. The invitation is TEXT handed back to the screen, for the
+// person who books to copy or pass on themselves.
+
+async function zoomGetJson(config: ZoomConfig, path: string, fallback: string, fetchImpl: ZoomFetch): Promise<Record<string, unknown>> {
+  const token = await zoomAccessToken(config, fetchImpl);
+  const response = await fetchImpl(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` }, method: "GET" });
+  if (!response.ok) throw await zoomError(response, fallback);
+  return ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * A meeting UUID in a path. Zoom's rule: a UUID that begins with "/" or holds "//" is encoded TWICE,
+ * or the request lands on the wrong address and answers 404 for a meeting that exists.
+ */
+export function zoomUuidPath(uuid: string): string {
+  const once = encodeURIComponent(uuid);
+  return uuid.startsWith("/") || uuid.includes("//") ? encodeURIComponent(once) : once;
+}
+
+/** "Not held yet / no such instance" — an empty answer, not a failure. */
+export function isNotHeldYet(error: unknown): boolean {
+  return error instanceof ZoomRequestError && (error.status === 404 || error.code === 3001);
+}
+
+/** The invitation text Zoom writes for a meeting — the one its own "Copy invitation" gives. */
+export async function getZoomMeetingInvitation(config: ZoomConfig, meetingId: string, fetchImpl: ZoomFetch = fetch): Promise<string> {
+  const body = await zoomGetJson(config, `/meetings/${encodeURIComponent(meetingId)}/invitation`, "Zoom did not give the invitation", fetchImpl);
+  const text = typeof body.invitation === "string" ? body.invitation.trim() : "";
+  if (!text) throw new ZoomRequestError("Zoom answered without an invitation", 502);
+  return text;
+}
+
+export type ZoomPastMeeting = { uuid: string; startTime: string | null; endTime: string | null };
+
+function readPastMeeting(body: Record<string, unknown>): ZoomPastMeeting | null {
+  const uuid = typeof body.uuid === "string" ? body.uuid : "";
+  if (!uuid) return null;
+  return {
+    endTime: typeof body.end_time === "string" ? body.end_time : null,
+    startTime: typeof body.start_time === "string" ? body.start_time : null,
+    uuid,
+  };
+}
+
+/**
+ * The last time a meeting was actually held, or null when it has not been (Zoom answers 404, or code
+ * 3001). The report is asked first; if the account's plan does not carry reports, the past-meeting
+ * record answers the same question.
+ */
+export async function getZoomPastMeeting(config: ZoomConfig, meetingId: string, fetchImpl: ZoomFetch = fetch): Promise<ZoomPastMeeting | null> {
+  try {
+    return readPastMeeting(await zoomGetJson(config, `/report/meetings/${encodeURIComponent(meetingId)}`, "Zoom has no report for the meeting", fetchImpl));
+  } catch (error) {
+    if (isNotHeldYet(error)) return null;
+    try {
+      return readPastMeeting(
+        await zoomGetJson(config, `/past_meetings/${encodeURIComponent(meetingId)}`, "Zoom has no record of the meeting being held", fetchImpl),
+      );
+    } catch (second) {
+      if (isNotHeldYet(second)) return null;
+      throw second;
+    }
+  }
+}
+
+export type ZoomAttendee = { name: string; email: string | null; joinedAt: string | null; leftAt: string | null; seconds: number };
+
+/**
+ * Who joined, and for how long — one row per PERSON. Zoom lists a row for every time someone joined,
+ * so a dropped connection and a rejoin read as two; they are summed here, earliest join to latest
+ * leave. Keyed by e-mail when Zoom has one, else by the name shown in the meeting.
+ */
+export function mergeZoomParticipants(rows: ReadonlyArray<Record<string, unknown>>): ZoomAttendee[] {
+  const byPerson = new Map<string, ZoomAttendee>();
+  for (const row of rows) {
+    const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Unnamed participant";
+    const emailRaw = typeof row.user_email === "string" ? row.user_email.trim() : typeof row.email === "string" ? row.email.trim() : "";
+    const email = emailRaw || null;
+    const key = (email ?? `name:${name}`).toLowerCase();
+    const joinedAt = typeof row.join_time === "string" ? row.join_time : null;
+    const leftAt = typeof row.leave_time === "string" ? row.leave_time : null;
+    const seconds = typeof row.duration === "number" && Number.isFinite(row.duration) ? Math.max(0, row.duration) : 0;
+    const seen = byPerson.get(key);
+    if (!seen) {
+      byPerson.set(key, { email, joinedAt, leftAt, name, seconds });
+      continue;
+    }
+    seen.seconds += seconds;
+    if (joinedAt && (!seen.joinedAt || joinedAt < seen.joinedAt)) seen.joinedAt = joinedAt;
+    if (leftAt && (!seen.leftAt || leftAt > seen.leftAt)) seen.leftAt = leftAt;
+  }
+  return [...byPerson.values()].sort((left, right) => (left.joinedAt ?? "").localeCompare(right.joinedAt ?? ""));
+}
+
+async function pagedParticipants(config: ZoomConfig, path: string, fetchImpl: ZoomFetch): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  let pageToken = "";
+  // An interview has a handful of rows; ten pages of 300 is a ceiling, not an expectation.
+  for (let page = 0; page < 10; page += 1) {
+    const query = `?page_size=300${pageToken ? `&next_page_token=${encodeURIComponent(pageToken)}` : ""}`;
+    const body = await zoomGetJson(config, `${path}${query}`, "Zoom did not give the attendance", fetchImpl);
+    if (Array.isArray(body.participants)) rows.push(...(body.participants as Array<Record<string, unknown>>));
+    pageToken = typeof body.next_page_token === "string" ? body.next_page_token : "";
+    if (!pageToken) break;
+  }
+  return rows;
+}
+
+/** Attendance for one held meeting (its instance UUID). The report first; the past-meeting list if not. */
+export async function listZoomMeetingAttendance(config: ZoomConfig, instanceUuid: string, fetchImpl: ZoomFetch = fetch): Promise<ZoomAttendee[]> {
+  try {
+    return mergeZoomParticipants(await pagedParticipants(config, `/report/meetings/${zoomUuidPath(instanceUuid)}/participants`, fetchImpl));
+  } catch (error) {
+    try {
+      return mergeZoomParticipants(await pagedParticipants(config, `/past_meetings/${zoomUuidPath(instanceUuid)}/participants`, fetchImpl));
+    } catch (second) {
+      if (isNotHeldYet(error) && isNotHeldYet(second)) return [];
+      throw second;
+    }
+  }
+}
+
+export type ZoomMeetingSummary = {
+  title: string | null;
+  overview: string | null;
+  details: Array<{ label: string; summary: string }>;
+  nextSteps: string[];
+  content: string | null;
+};
+
+function summaryText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function readZoomSummary(body: Record<string, unknown>): ZoomMeetingSummary {
+  const details = Array.isArray(body.summary_details)
+    ? (body.summary_details as Array<Record<string, unknown>>)
+        .map((item) => ({ label: summaryText(item.label) ?? "", summary: summaryText(item.summary) ?? "" }))
+        .filter((item) => item.label || item.summary)
+    : [];
+  const nextSteps = Array.isArray(body.next_steps)
+    ? (body.next_steps as unknown[]).map((step) => summaryText(step)).filter((step): step is string => Boolean(step))
+    : [];
+  return {
+    content: summaryText(body.summary_content),
+    details,
+    nextSteps,
+    overview: summaryText(body.summary_overview),
+    title: summaryText(body.summary_title),
+  };
+}
+
+/**
+ * The AI Companion's summary of one held meeting, or null when there is none — Zoom writes one only
+ * when AI Companion's meeting summary is switched on for the account and was running in the meeting.
+ */
+export async function getZoomMeetingSummary(config: ZoomConfig, instanceUuid: string, fetchImpl: ZoomFetch = fetch): Promise<ZoomMeetingSummary | null> {
+  try {
+    const summary = readZoomSummary(
+      await zoomGetJson(config, `/meetings/${zoomUuidPath(instanceUuid)}/meeting_summary`, "Zoom did not give the meeting summary", fetchImpl),
+    );
+    return summary.overview || summary.content || summary.details.length > 0 || summary.nextSteps.length > 0 ? summary : null;
+  } catch (error) {
+    if (isNotHeldYet(error)) return null;
+    throw error;
+  }
+}
+
+export type ZoomPollQuestion = { name: string; type: "single" | "multiple" | "short_answer"; answers: string[] };
+
+/**
+ * The poll as Zoom wants it. A written answer makes it an "advanced poll" (poll_type 2); choice
+ * questions alone are a plain poll (poll_type 1), which every account can run.
+ */
+export function zoomPollBody(input: { title: string; questions: readonly ZoomPollQuestion[] }) {
+  const advanced = input.questions.some((question) => question.type === "short_answer");
+  return {
+    anonymous: false,
+    poll_type: advanced ? 2 : 1,
+    questions: input.questions.map((question) =>
+      question.type === "short_answer"
+        ? { answer_required: false, name: question.name.slice(0, 255), type: "short_answer" }
+        : {
+            answer_required: false,
+            answers: question.answers.map((answer) => answer.slice(0, 200)),
+            name: question.name.slice(0, 255),
+            type: question.type,
+          },
+    ),
+    title: input.title.slice(0, 64),
+  };
+}
+
+export async function createZoomPoll(
+  config: ZoomConfig,
+  meetingId: string,
+  input: { title: string; questions: readonly ZoomPollQuestion[] },
+  fetchImpl: ZoomFetch = fetch,
+): Promise<string> {
+  const token = await zoomAccessToken(config, fetchImpl);
+  const response = await fetchImpl(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}/polls`, {
+    body: JSON.stringify(zoomPollBody(input)),
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    method: "POST",
+  });
+  if (!response.ok) throw await zoomError(response, "Zoom did not add the poll");
+  const body = (await response.json().catch(() => ({}))) as { id?: unknown };
+  const id = typeof body.id === "string" || typeof body.id === "number" ? String(body.id) : "";
+  if (!id) throw new ZoomRequestError("Zoom added the poll but did not say which it was", 502);
+  return id;
+}
+
+/** A poll Zoom no longer has is already gone, so a 404 counts as done. */
+export async function deleteZoomPoll(config: ZoomConfig, meetingId: string, pollId: string, fetchImpl: ZoomFetch = fetch): Promise<void> {
+  const token = await zoomAccessToken(config, fetchImpl);
+  const response = await fetchImpl(`${API_BASE}/meetings/${encodeURIComponent(meetingId)}/polls/${encodeURIComponent(pollId)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    method: "DELETE",
+  });
+  if (!response.ok && response.status !== 404) throw await zoomError(response, "Zoom did not remove the poll");
+}
+
+export type ZoomPollAnswer = { participant: string; email: string | null; question: string; answer: string; at: string | null };
+
+/** Every answer given, one row per person per question. Zoom joins a multiple choice with ";". */
+export function readZoomPollAnswers(body: Record<string, unknown>): ZoomPollAnswer[] {
+  const rows: ZoomPollAnswer[] = [];
+  const people = Array.isArray(body.questions) ? (body.questions as Array<Record<string, unknown>>) : [];
+  for (const person of people) {
+    const participant = typeof person.name === "string" && person.name.trim() ? person.name.trim() : "Unnamed participant";
+    const email = typeof person.email === "string" && person.email.trim() ? person.email.trim() : null;
+    const details = Array.isArray(person.question_details) ? (person.question_details as Array<Record<string, unknown>>) : [];
+    for (const detail of details) {
+      rows.push({
+        answer: typeof detail.answer === "string" ? detail.answer : "",
+        at: typeof detail.date_time === "string" ? detail.date_time : null,
+        email,
+        participant,
+        question: typeof detail.question === "string" ? detail.question : "",
+      });
+    }
+  }
+  return rows;
+}
+
+export async function listZoomPollAnswers(config: ZoomConfig, meetingIdOrUuid: string, fetchImpl: ZoomFetch = fetch): Promise<ZoomPollAnswer[]> {
+  try {
+    return readZoomPollAnswers(
+      await zoomGetJson(config, `/report/meetings/${zoomUuidPath(meetingIdOrUuid)}/polls`, "Zoom did not give the poll answers", fetchImpl),
+    );
+  } catch (error) {
+    if (isNotHeldYet(error)) return [];
+    throw error;
+  }
 }

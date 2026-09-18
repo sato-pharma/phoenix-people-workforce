@@ -11,9 +11,13 @@
  * copy is how "WhatsApp" in the email and "whatsapp" on the screen happened in the first place.
  */
 
-/** The two values intake actually writes. Anything else is somebody's own word and is kept verbatim. */
+/**
+ * The values Phoenix writes itself: the two intake channels, and a person added from an empty cell
+ * of the interview calendar. Anything else is somebody's own word and is kept verbatim.
+ */
 const SOURCE_LABELS: Record<string, string> = {
   email: "Email",
+  interview_calendar: "Interview calendar",
   whatsapp: "WhatsApp",
 };
 

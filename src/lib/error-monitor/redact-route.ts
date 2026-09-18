@@ -1,6 +1,6 @@
 // Strips single-use credentials out of a request path before it is stored.
 //
-// Ten route families in this app carry a secret IN THE PATH ITSELF — a password-setup token, an
+// Eleven route families in this app carry a secret IN THE PATH ITSELF — a password-setup token, an
 // unsubscribe token, a share-link token. When one of those pages throws, the error monitor
 // records `route`, and the token goes into `app_error_events` in plaintext, WHILE IT IS STILL
 // VALID: the row is written the moment the page opens, before anybody has used the link. A
@@ -33,6 +33,7 @@ export const CREDENTIAL_ROUTE_PREFIXES: readonly string[] = [
   "/api/share/territory",
   "/password-setup",
   "/share/direct-orders",
+  "/share/interview-calendar",
   "/share/territory",
 ];
 
@@ -54,9 +55,10 @@ const PATH_MATCHERS: readonly RegExp[] = CREDENTIAL_ROUTE_PREFIXES.map(
 );
 
 // Secrets also travel as query parameters. Anchored on `?` or `&` so an ordinary parameter whose
-// name merely ENDS in one of these words (`sortKey=`, `area_code=`) is left alone.
+// name merely ENDS in one of these words (`sortKey=`, `area_code=`) is left alone. `link` is the
+// interview calendar's copy link, carried on the CV and download addresses a browser opens itself.
 const QUERY_MATCHER =
-  /([?&](?:token|access_token|refresh_token|id_token|secret|client_secret|api[-_]?key|key|code|passcode|password|signature|sig)=)[^&#\s]+/gi;
+  /([?&](?:token|access_token|refresh_token|id_token|secret|client_secret|api[-_]?key|key|code|passcode|password|signature|sig|link)=)[^&#\s]+/gi;
 
 /**
  * Replace any credential carried in a request path or query string with `[token]`.

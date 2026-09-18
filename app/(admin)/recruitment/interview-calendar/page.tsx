@@ -5,7 +5,7 @@ import { InterviewCalendarView } from "@/components/recruitment/interview-calend
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { isUuid } from "@/lib/http/uuid";
-import { resolveInterviewCalendarRole } from "@/lib/recruitment/interview-calendar";
+import { interviewCalendarAbilities, resolveInterviewCalendarRole } from "@/lib/recruitment/interview-calendar";
 import { cairoDateKey, isDateKey, upcomingWeekStart } from "@/lib/recruitment/interview-calendar-week";
 import { isZoomConfigured } from "@/lib/zoom/meetings";
 
@@ -57,6 +57,7 @@ export default async function InterviewCalendarPage({
       </div>
       {role ? (
         <InterviewCalendarView
+          abilities={await interviewCalendarAbilities(access)}
           initialOpen={open}
           initialWeek={week}
           role={role}

@@ -34,6 +34,7 @@ import {
 } from "@/lib/recruitment/interview-calendar-types";
 import {
   formatDayLong,
+  formatDuration,
   formatShortDate,
   formatTimeOfDay,
   formatTimeRange,
@@ -88,6 +89,8 @@ function byTime(left: InterviewBooking, right: InterviewBooking): number {
 export function buildInterviewCalendarExportModel(input: {
   weekStart: string;
   bookings: readonly InterviewBooking[];
+  /** The week's sessions — accepted so the route can pass the week as it is read; each booked slot already names its session. */
+  sessions?: readonly unknown[];
   now: Date;
   origin: string;
 }): InterviewCalendarExportModel {
@@ -133,7 +136,9 @@ export function interviewCalendarFilename(model: InterviewCalendarExportModel, f
 }
 
 function cellLine(booking: InterviewBooking): string {
-  const bits = [formatTimeOfDay(booking.startMinutes), `${booking.durationMinutes} min`, PLATFORM_LABEL[booking.platform]];
+  const bits = [formatTimeOfDay(booking.startMinutes), formatDuration(booking.durationMinutes), PLATFORM_LABEL[booking.platform]];
+  // A slot in a session says so: its candidates share the session's one meeting.
+  if (booking.sessionTitle) bits.push(booking.sessionTitle);
   return bits.join(" · ");
 }
 

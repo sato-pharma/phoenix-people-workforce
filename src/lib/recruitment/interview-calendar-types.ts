@@ -86,6 +86,94 @@ export function resolveCalendarRole(input: {
   return input.shareLevel;
 }
 
+const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, owner: 4, viewer: 1 };
+
+/** The higher of two levels; null is no access. */
+export function higherCalendarRole(
+  left: InterviewCalendarRole | null,
+  right: InterviewCalendarRole | null,
+): InterviewCalendarRole | null {
+  if (!left) return right;
+  if (!right) return left;
+  return RANK[left] >= RANK[right] ? left : right;
+}
+
+// ── Copy links ──────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a COPY LINK gives the person holding it — the owner, 2026-09-18, "exactly as Google Sheets":
+ * the link carries a level he chose, and may be limited to one week.
+ *
+ * Holding the link WITHOUT signing in VIEWS — the level he set applies only once the holder signs in
+ * to Phoenix (his choice: "View without sign-in"). So a guest is always a viewer, whatever it says.
+ */
+export type InterviewCalendarLinkGrant = {
+  id: string;
+  /** The level the owner set on the link. */
+  accessLevel: InterviewCalendarAccessLevel;
+  /** The Sunday of the one week it opens, or null for the whole calendar. */
+  weekStart: string | null;
+  /** Whether a holder who has not signed in may open the CVs. */
+  guestCvs: boolean;
+  /** Whether the holder is signed in to Phoenix. */
+  signedIn: boolean;
+};
+
+/** The level a link gives: its own once signed in, Viewer before. */
+export function linkRole(link: Pick<InterviewCalendarLinkGrant, "accessLevel" | "signedIn">): InterviewCalendarAccessLevel {
+  return link.signedIn ? link.accessLevel : "viewer";
+}
+
+/** Whether a link reaches this week at all — every week, for a whole-calendar link. */
+export function linkCoversWeek(link: Pick<InterviewCalendarLinkGrant, "weekStart"> | null, weekStart: string | null): boolean {
+  if (!link) return false;
+  return link.weekStart === null || (weekStart !== null && link.weekStart === weekStart);
+}
+
+/**
+ * Who someone is on ONE week of the calendar. Their own level (the owner, or a share he made) holds
+ * on every week; a link's holds on the week it names, or on all of them when it names none. The
+ * higher of the two wins. `weekStart` null asks about the calendar as a whole, which a week-limited
+ * link does not answer.
+ */
+export function effectiveCalendarRole(
+  input: {
+    own: InterviewCalendarRole | null;
+    link: Pick<InterviewCalendarLinkGrant, "accessLevel" | "signedIn" | "weekStart"> | null;
+  },
+  weekStart: string | null,
+): InterviewCalendarRole | null {
+  const fromLink = input.link && linkCoversWeek(input.link, weekStart) ? linkRole(input.link) : null;
+  return higherCalendarRole(input.own, fromLink);
+}
+
+/** The highest level held ANYWHERE on the calendar — what decides which buttons a screen draws. */
+export function bestCalendarRole(input: {
+  own: InterviewCalendarRole | null;
+  link: Pick<InterviewCalendarLinkGrant, "accessLevel" | "signedIn"> | null;
+}): InterviewCalendarRole | null {
+  return higherCalendarRole(input.own, input.link ? linkRole(input.link) : null);
+}
+
+/** A link as the owner's share dialog shows it. The token is his to copy again, as Sheets allows. */
+export type InterviewCalendarLink = {
+  id: string;
+  token: string;
+  accessLevel: InterviewCalendarAccessLevel;
+  weekStart: string | null;
+  guestCvs: boolean;
+  isActive: boolean;
+  createdAt: string;
+  createdByName: string | null;
+  lastUsedAt: string | null;
+  useCount: number;
+};
+
+/** The link's own address — outside every shell, so it opens with no sign-in. */
+export function interviewCalendarLinkPath(token: string): string {
+  return `/share/interview-calendar/${encodeURIComponent(token)}`;
+}
+
 // ── Platform and Zoom ───────────────────────────────────────────────────────────────────────────
 
 export type InterviewPlatform = "in_office" | "zoom";
@@ -127,8 +215,26 @@ export type InterviewBookingComment = {
 
 export type InterviewBooking = {
   id: string;
-  candidateId: string;
+  /** The recruitment record — or null for someone from outside, kept on the calendar only. */
+  candidateId: string | null;
   candidateName: string;
+  /** Someone from outside Phoenix whom the booker chose NOT to add to Recruitment. */
+  external: boolean;
+  /** The outside person's phone and e-mail — sent only to those who can book, null for others. */
+  externalPhone: string | null;
+  externalEmail: string | null;
+  /** Whether the outside person's CV is kept on the booking. */
+  externalHasCv: boolean;
+  /** That CV's file name and type, so it previews the way a Recruitment CV does. */
+  externalCvFileName: string | null;
+  externalCvMimeType: string | null;
+  /** The session whose slot this interview fills; it then shares that session's one meeting. */
+  sessionId: string | null;
+  sessionTitle: string | null;
+  /** The Zoom meeting the interview is held on exists — its own, or its session's. */
+  hasMeeting: boolean;
+  /** Whether its time is over (Cairo) — Zoom's reports only exist after. */
+  ended: boolean;
   /** The job the CV applied for, when it names one. */
   candidateJobTitle: string | null;
   /** The instant, as stored. */
@@ -166,7 +272,167 @@ export type InterviewCalendarPerson = {
 export type InterviewCalendarMe = {
   role: InterviewCalendarRole | null;
   zoomConnected: boolean;
+  /** May search Recruitment's candidates from an empty cell (needs to be able to read them). */
+  canSearchCandidates?: boolean;
+  /** May add an outside person to Recruitment while booking them (needs to create candidates). */
+  canAddToRecruitment?: boolean;
 };
+
+// ── Sessions ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * An interview SESSION — one meeting for a block of a day, cut into slots, a candidate to each
+ * (the owner, 2026-09-18: "day 20 from 11 a.m. to 3 p.m."). Every slot shares the session's link.
+ */
+export type InterviewSession = {
+  id: string;
+  title: string | null;
+  dateKey: string;
+  startMinutes: number;
+  durationMinutes: number;
+  slotMinutes: number;
+  platform: InterviewPlatform;
+  zoomStatus: InterviewZoomStatus;
+  zoomJoinUrl: string | null;
+  zoomError: string | null;
+  notes: string | null;
+  createdByName: string | null;
+  ended: boolean;
+};
+
+/** Every slot of a session, in order — the start minutes of each. */
+export function sessionSlotStarts(session: Pick<InterviewSession, "startMinutes" | "durationMinutes" | "slotMinutes">): number[] {
+  const starts: number[] = [];
+  if (session.slotMinutes <= 0) return starts;
+  for (let at = session.startMinutes; at + session.slotMinutes <= session.startMinutes + session.durationMinutes; at += session.slotMinutes) {
+    starts.push(at);
+  }
+  return starts;
+}
+
+// ── Polls ───────────────────────────────────────────────────────────────────────────────────────
+
+export type InterviewPollQuestionType = "single" | "multiple" | "short_answer";
+
+export const POLL_QUESTION_TYPE_LABEL: Record<InterviewPollQuestionType, string> = {
+  multiple: "Several answers",
+  short_answer: "Written answer",
+  single: "One answer",
+};
+
+export type InterviewPollQuestion = {
+  name: string;
+  type: InterviewPollQuestionType;
+  /** The choices — two to ten for a choice question, none for a written answer. */
+  answers: string[];
+};
+
+export type InterviewPollSet = {
+  id: string;
+  name: string;
+  questions: InterviewPollQuestion[];
+  updatedAt: string;
+};
+
+export type InterviewPoll = {
+  id: string;
+  title: string;
+  questions: InterviewPollQuestion[];
+  status: "pending" | "created" | "failed";
+  error: string | null;
+  fromSetName: string | null;
+};
+
+/**
+ * A poll as typed, checked. Returns the clean poll or the sentence that says what to fix — shared by
+ * the dialog (to say it before sending) and the server (to refuse it).
+ */
+export function checkPollQuestions(raw: unknown): { questions: InterviewPollQuestion[] } | { error: string } {
+  if (!Array.isArray(raw) || raw.length === 0) return { error: "Add at least one question." };
+  if (raw.length > 25) return { error: "A poll holds up to 25 questions." };
+  const questions: InterviewPollQuestion[] = [];
+  for (const [index, item] of raw.entries()) {
+    const entry = (item ?? {}) as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    const number = index + 1;
+    if (!name) return { error: `Question ${number} has no text.` };
+    if (name.length > 255) return { error: `Question ${number} is longer than 255 characters.` };
+    const type = entry.type;
+    if (type !== "single" && type !== "multiple" && type !== "short_answer") return { error: `Choose what kind of answer question ${number} takes.` };
+    const answers = type === "short_answer"
+      ? []
+      : (Array.isArray(entry.answers) ? entry.answers : []).map((answer) => (typeof answer === "string" ? answer.trim() : "")).filter(Boolean);
+    if (type !== "short_answer" && answers.length < 2) return { error: `Question ${number} needs at least two choices.` };
+    if (answers.length > 10) return { error: `Question ${number} has more than ten choices.` };
+    if (answers.some((answer) => answer.length > 200)) return { error: `A choice in question ${number} is longer than 200 characters.` };
+    questions.push({ answers, name, type });
+  }
+  return { questions };
+}
+
+// ── What Zoom reported ──────────────────────────────────────────────────────────────────────────
+
+export type InterviewAttendee = {
+  name: string;
+  email: string | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  /** Seconds in the meeting, summed over every time this person joined. */
+  seconds: number;
+};
+
+export type InterviewPollAnswer = {
+  participant: string;
+  email: string | null;
+  question: string;
+  answer: string;
+  at: string | null;
+};
+
+export type InterviewMeetingSummary = {
+  title: string | null;
+  overview: string | null;
+  details: Array<{ label: string; summary: string }>;
+  nextSteps: string[];
+  /** Zoom's newer single-text summary, when it sends that instead. */
+  content: string | null;
+};
+
+/** One section of a Zoom report: what it holds, or the sentence that says why it is empty. */
+export type InterviewInsightPart<T> = { data: T | null; note: string | null };
+
+export type InterviewZoomInsights = {
+  /** "not_held" before the interview's time is over; "ready" after, whatever Zoom had. */
+  state: "no_meeting" | "not_held" | "ready";
+  fetchedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  attendance: InterviewInsightPart<InterviewAttendee[]>;
+  polls: InterviewInsightPart<InterviewPollAnswer[]>;
+  summary: InterviewInsightPart<InterviewMeetingSummary>;
+};
+
+// ── WhatsApp, without sending anything ──────────────────────────────────────────────────────────
+
+/**
+ * A WhatsApp "click to chat" address with the text filled in. It OPENS WhatsApp on the person's own
+ * phone or computer; nothing is sent until they press Send there (the owner's rule: Phoenix sends
+ * the candidate nothing). With a phone, the chat opens on that number; without, WhatsApp asks who.
+ */
+export function whatsAppShareUrl(text: string, phone?: string | null): string {
+  const digits = normalizeEgyptianMobile(phone);
+  return `https://wa.me/${digits ?? ""}?text=${encodeURIComponent(text)}`;
+}
+
+/** 01xxxxxxxxx, +201xxxxxxxxx, 00201xxxxxxxxx → 201xxxxxxxxx; anything else international kept as digits. */
+export function normalizeEgyptianMobile(phone: string | null | undefined): string | null {
+  let digits = String(phone ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (/^01[0125]\d{8}$/.test(digits)) return `2${digits}`;
+  if (/^1[0125]\d{8}$/.test(digits)) return `20${digits}`;
+  return digits.length >= 10 && digits.length <= 15 ? digits : null;
+}
 
 /**
  * The calendar's address in whichever shell the browser is in — a link pressed in the HR shell

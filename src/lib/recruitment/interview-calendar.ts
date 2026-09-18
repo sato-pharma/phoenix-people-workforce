@@ -10,46 +10,70 @@
 //   · Phoenix creates the Zoom meeting itself (src/lib/zoom/meetings.ts).
 //   · Sunday to Thursday, 9:00 AM to 5:00 PM, half-hour rows (interview-calendar-week.ts).
 //
-// THIS FILE IS THE LOCK. Every read and write goes through `requireInterviewCalendarRole` before it
-// touches a row, and the tables are service-role only (migration 20260918195837), so there is no
-// other road to them. The screens hide what a level cannot do; they are not what stops it.
+// The same evening he asked for more, and answered each question in chat:
+//
+//   · A COPY LINK "exactly as Google Sheets" — a level (viewer, commenter, editor), the whole calendar
+//     or one week, switched off and on by him. Holding it VIEWS with no sign-in; commenting and
+//     editing take a Phoenix sign-in, which then gives the link's level (interview-calendar-links.ts).
+//   · A Zoom BLOCK ("day 20 from 11 a.m. to 3 p.m.") — both kinds: a SESSION, one meeting cut into
+//     slots of 15 to 60 minutes with a candidate in each; and single interviews up to the whole day.
+//   · Pressable empty cells that book a Phoenix candidate OR someone from outside — a name, a phone,
+//     an e-mail and a CV, added to Recruitment by default or kept on the booking only.
+//   · Zoom's attendance, polls, invitation and AI summary on each interview, for everyone it is
+//     shared with (interview-calendar-zoom-extras.ts).
+//
+// THIS FILE IS THE LOCK. Every read and write resolves who is asking into a CALLER — their own
+// level (owner or a share) and the copy link they hold, if any — and passes `requireCalendarAccess`
+// for the WEEK it touches before it touches a row. The tables are service-role only (migrations
+// 20260918195837 and 20260918215608), so there is no other road to them. The screens hide what a
+// level cannot do; they are not what stops it.
 //
 // WHY THE OWNER IS "THE SUPER ADMIN". The owner is the only account holding that role. Tying
 // ownership to the role rather than to one HR id means the check reads the same fact every other
 // Super Admin gate reads, and survives the id being written in a different case. It is the ROLE, not
 // the scope: a signed-in Super Admin's scope is "company" (isInterviewCalendarOwner explains).
 
-import type { AccessContext } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { createCandidate } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
-import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib/recruitment/files";
+import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
+import { getFileForDownload, listCandidateFiles, uploadCandidateFile, type FileDownload } from "@/lib/recruitment/files";
 import {
+  bestCalendarRole,
+  effectiveCalendarRole,
   interviewCalendarHref,
   isInterviewCalendarAccessLevel,
   isInterviewCalendarOwner,
   isInterviewPlatform,
   resolveCalendarRole,
   roleMeets,
+  sessionSlotStarts,
   type InterviewBooking,
   type InterviewBookingComment,
   type InterviewCalendarAccessLevel,
+  type InterviewCalendarLinkGrant,
   type InterviewCalendarNeed,
   type InterviewCalendarPerson,
   type InterviewCalendarRole,
   type InterviewCalendarShare,
   type InterviewPlatform,
+  type InterviewSession,
   type InterviewZoomStatus,
 } from "@/lib/recruitment/interview-calendar-types";
 import {
-  DURATION_CHOICES,
+  ALL_DURATION_CHOICES,
+  MAX_DURATION_MINUTES,
+  SESSION_SLOT_CHOICES,
   cairoDateKey,
   cairoLocalToUtc,
   cairoMinutesOfDay,
   formatDayLong,
   formatTimeOfDay,
+  formatWeekRange,
   isBookableDay,
   isBookableWindow,
   isDateKey,
@@ -58,6 +82,7 @@ import {
 } from "@/lib/recruitment/interview-calendar-week";
 import {
   createZoomMeeting,
+  createZoomPoll,
   deleteZoomMeeting,
   readZoomConfig,
   updateZoomMeeting,
@@ -65,8 +90,11 @@ import {
 } from "@/lib/zoom/meetings";
 
 const BOOKINGS = "ats_interview_bookings";
+const SESSIONS = "ats_interview_sessions";
 const SHARES = "ats_interview_calendar_shares";
 const COMMENTS = "ats_interview_booking_comments";
+const LINKS = "ats_interview_calendar_links";
+const POLLS = "ats_interview_zoom_polls";
 
 const NOTE_LIMIT = 1000;
 
@@ -98,29 +126,18 @@ function shareLevelFor(rows: readonly ShareRow[], hrId: string | null | undefine
 
 export { isInterviewCalendarOwner };
 
+/** Signed in to Phoenix — a real session, not the guest context a request with no cookie gets. */
+export function isSignedInCaller(access: AccessContext): boolean {
+  return access.source !== "guest" && Boolean(access.loginId || access.hrId);
+}
+
+/** Their OWN level: the owner, or a share he made. A copy link is not this — see the caller below. */
 export async function resolveInterviewCalendarRole(access: AccessContext): Promise<InterviewCalendarRole | null> {
+  if (access.source === "guest") return null;
   const isOwner = isInterviewCalendarOwner(access);
   if (isOwner) return "owner";
   if (!access.hrId) return null;
   return resolveCalendarRole({ isOwner, shareLevel: shareLevelFor(await loadShareRows(), access.hrId) });
-}
-
-const REFUSAL: Record<InterviewCalendarNeed, string> = {
-  book: "Forbidden: only the calendar's owner and its editors can book, move or cancel interviews.",
-  comment: "Forbidden: your access to the interview calendar is view-only.",
-  share: "Forbidden: only the calendar's owner can share it.",
-  view: "Forbidden: the interview calendar has not been shared with you.",
-};
-
-/** The one gate every route calls. Throws a "Forbidden:" error the routes turn into a 403. */
-export async function requireInterviewCalendarRole(
-  access: AccessContext,
-  need: InterviewCalendarNeed,
-): Promise<InterviewCalendarRole> {
-  if (!access.loginId && !access.hrId) throw new Error(REFUSAL.view);
-  const role = await resolveInterviewCalendarRole(access);
-  if (!roleMeets(role, need)) throw new Error(REFUSAL[role ? need : "view"]);
-  return role as InterviewCalendarRole;
 }
 
 /** Whether this person should be offered the calendar at all — the portal sidebar asks this. */
@@ -132,11 +149,136 @@ export async function hasInterviewCalendarAccess(access: AccessContext): Promise
   }
 }
 
+/**
+ * Everything the gate needs about who is asking: their own level, and the copy link they came
+ * through. Resolved once per request, then asked about each week the request touches.
+ */
+export type InterviewCalendarCaller = {
+  access: AccessContext;
+  own: InterviewCalendarRole | null;
+  link: InterviewCalendarLinkGrant | null;
+};
+
+/** The header a caller may carry the link in; the `link` query parameter works the same. */
+export const INTERVIEW_CALENDAR_LINK_HEADER = "x-interview-calendar-link";
+
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{32,128}$/;
+
+export function linkTokenFrom(request: Request | null | undefined): string | null {
+  if (!request) return null;
+  const fromQuery = new URL(request.url).searchParams.get("link");
+  const token = (fromQuery ?? request.headers.get(INTERVIEW_CALENDAR_LINK_HEADER) ?? "").trim();
+  return token || null;
+}
+
+export type InterviewCalendarLinkRow = {
+  id: string;
+  token: string;
+  access_level: string;
+  week_start: string | null;
+  guest_cvs: boolean | null;
+  is_active: boolean | null;
+  created_by_hr_id: string | null;
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+  use_count: number | null;
+};
+
+export const LINK_COLUMNS =
+  "id,token,access_level,week_start,guest_cvs,is_active,created_by_hr_id,created_at,updated_at,last_used_at,use_count";
+
+export async function loadInterviewCalendarLinkByToken(token: string): Promise<InterviewCalendarLinkRow | null> {
+  // A token that could not have been minted is not looked up at all.
+  if (!TOKEN_SHAPE.test(token)) return null;
+  const { data, error } = await recruitmentDb().from(LINKS).select(LINK_COLUMNS).eq("token", token).maybeSingle();
+  if (error) throw error;
+  return (data as InterviewCalendarLinkRow | null) ?? null;
+}
+
+/** The grant a link row gives — none when it is switched off. */
+export function grantFromLinkRow(row: InterviewCalendarLinkRow, signedIn: boolean): InterviewCalendarLinkGrant | null {
+  if (row.is_active === false || !isInterviewCalendarAccessLevel(row.access_level)) return null;
+  return {
+    accessLevel: row.access_level,
+    guestCvs: row.guest_cvs !== false,
+    id: row.id,
+    signedIn,
+    weekStart: row.week_start ? String(row.week_start).slice(0, 10) : null,
+  };
+}
+
+const LINK_OFF = "Forbidden: this link to the interview calendar was switched off, or it does not exist.";
+
+export async function interviewCalendarCaller(access: AccessContext, request?: Request | null): Promise<InterviewCalendarCaller> {
+  const signedIn = isSignedInCaller(access);
+  const own = signedIn || access.source === "system" ? await resolveInterviewCalendarRole(access) : null;
+  const token = linkTokenFrom(request);
+  let link: InterviewCalendarLinkGrant | null = null;
+  if (token) {
+    const row = await loadInterviewCalendarLinkByToken(token);
+    link = row ? grantFromLinkRow(row, signedIn) : null;
+    // A dead link refuses — unless the person holds the calendar in their own right anyway.
+    if (!link && !own) throw new Error(LINK_OFF);
+  }
+  return { access, link, own };
+}
+
+/** A week (its Sunday), the calendar as a whole (null), or "any week at all". */
+export type CalendarWeek = string | null | "any";
+
+export function calendarRoleFor(caller: Pick<InterviewCalendarCaller, "own" | "link">, week: CalendarWeek): InterviewCalendarRole | null {
+  return week === "any" ? bestCalendarRole(caller) : effectiveCalendarRole(caller, week);
+}
+
+const REFUSAL: Record<InterviewCalendarNeed, string> = {
+  book: "Forbidden: only the calendar's owner and its editors can book, move or cancel interviews.",
+  comment: "Forbidden: your access to the interview calendar is view-only.",
+  share: "Forbidden: only the calendar's owner can share it.",
+  view: "Forbidden: the interview calendar has not been shared with you.",
+};
+
+function refusalFor(caller: InterviewCalendarCaller, need: InterviewCalendarNeed, role: InterviewCalendarRole | null, week: CalendarWeek): string {
+  if (!role) {
+    if (caller.link?.weekStart && week !== "any") return `Forbidden: this link opens only the week of ${formatWeekRange(caller.link.weekStart)}.`;
+    if (!caller.link && !isSignedInCaller(caller.access)) return "Forbidden: sign in to Phoenix to open the interview calendar.";
+    return REFUSAL.view;
+  }
+  const linkLevel = caller.link && !caller.link.signedIn ? caller.link.accessLevel : null;
+  if (linkLevel && need !== "share" && roleMeets(linkLevel, need)) {
+    return "Forbidden: sign in to Phoenix to comment or edit — until you do, this link lets you view.";
+  }
+  return REFUSAL[need];
+}
+
+/**
+ * THE ONE GATE. Throws a "Forbidden:" error the routes turn into a 403.
+ *
+ * `week` is the Sunday of the week the request touches — the level a person holds can differ by
+ * week, because a copy link may open one week only. A move checks both the week it leaves and the
+ * week it lands in. `null` asks about the calendar as a whole (sharing it); "any" about anywhere on it.
+ */
+export function requireCalendarAccess(caller: InterviewCalendarCaller, need: InterviewCalendarNeed, week: CalendarWeek): InterviewCalendarRole {
+  const role = calendarRoleFor(caller, week);
+  if (roleMeets(role, need)) return role as InterviewCalendarRole;
+  throw new Error(refusalFor(caller, need, role, week));
+}
+
+/** What a caller may do outside the calendar's own tables, for the screen to draw the right choices. */
+export async function interviewCalendarAbilities(access: AccessContext): Promise<{ canSearchCandidates: boolean; canAddToRecruitment: boolean }> {
+  if (!isSignedInCaller(access)) return { canAddToRecruitment: false, canSearchCandidates: false };
+  const [search, add] = await Promise.all([
+    canAccess(access, "candidates", "read").catch(() => false),
+    canAccess(access, "candidates", "create").catch(() => false),
+  ]);
+  return { canAddToRecruitment: Boolean(add), canSearchCandidates: Boolean(search) };
+}
+
 // ── Names ───────────────────────────────────────────────────────────────────────────────────────
 
 type EmployeeRow = { hr_id: string | null; full_name: string | null; nickname: string | null; job_title: string | null };
 
-async function loadPeople(hrIds: Iterable<string | null | undefined>): Promise<Map<string, InterviewCalendarPerson>> {
+export async function loadPeople(hrIds: Iterable<string | null | undefined>): Promise<Map<string, InterviewCalendarPerson>> {
   const people = new Map<string, InterviewCalendarPerson>();
   const keys = Array.from(new Set(Array.from(hrIds).flatMap((id) => (id ? hrIdLookupKeys(id) : []))));
   if (keys.length === 0) return people;
@@ -153,18 +295,43 @@ async function loadPeople(hrIds: Iterable<string | null | undefined>): Promise<M
   return people;
 }
 
-function personName(people: Map<string, InterviewCalendarPerson>, hrId: string | null | undefined): string | null {
+export function personName(people: Map<string, InterviewCalendarPerson>, hrId: string | null | undefined): string | null {
   const key = canonicalHrIdKey(hrId);
   return key ? people.get(key)?.name ?? null : null;
 }
 
-// ── Bookings: reading ───────────────────────────────────────────────────────────────────────────
+// ── Rows ────────────────────────────────────────────────────────────────────────────────────────
 
 type BookingRow = {
   id: string;
-  candidate_id: string;
+  candidate_id: string | null;
+  session_id: string | null;
   starts_at: string;
   duration_minutes: number;
+  platform: string;
+  zoom_status: string;
+  zoom_meeting_id: string | null;
+  zoom_join_url: string | null;
+  zoom_error: string | null;
+  notes: string | null;
+  external_name: string | null;
+  external_phone: string | null;
+  external_email: string | null;
+  external_cv_file_id: string | null;
+  external_cv_file_name: string | null;
+  external_cv_mime_type: string | null;
+  created_by_hr_id: string | null;
+  updated_by_hr_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type SessionRow = {
+  id: string;
+  title: string | null;
+  starts_at: string;
+  duration_minutes: number;
+  slot_minutes: number;
   platform: string;
   zoom_status: string;
   zoom_meeting_id: string | null;
@@ -181,11 +348,14 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+
+const SESSION_COLUMNS =
+  "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 async function loadCandidates(ids: readonly string[]): Promise<Map<string, CandidateRow>> {
   const byId = new Map<string, CandidateRow>();
-  const unique = Array.from(new Set(ids));
+  const unique = Array.from(new Set(ids.filter(Boolean)));
   // Chunked at 50: a PostgREST `.in()` with several hundred ids answers zero rows and no error.
   for (let index = 0; index < unique.length; index += 50) {
     const { data, error } = await recruitmentDb()
@@ -194,6 +364,17 @@ async function loadCandidates(ids: readonly string[]): Promise<Map<string, Candi
       .in("id", unique.slice(index, index + 50));
     if (error) throw error;
     for (const row of (data ?? []) as CandidateRow[]) byId.set(String(row.id), row);
+  }
+  return byId;
+}
+
+async function loadSessionsById(ids: readonly string[]): Promise<Map<string, SessionRow>> {
+  const byId = new Map<string, SessionRow>();
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  for (let index = 0; index < unique.length; index += 50) {
+    const { data, error } = await recruitmentDb().from(SESSIONS).select(SESSION_COLUMNS).in("id", unique.slice(index, index + 50));
+    if (error) throw error;
+    for (const row of (data ?? []) as SessionRow[]) byId.set(String(row.id), row);
   }
   return byId;
 }
@@ -220,14 +401,43 @@ function asZoomStatus(value: string): InterviewZoomStatus {
   return value === "created" || value === "not_connected" || value === "failed" ? value : "not_needed";
 }
 
-async function hydrate(rows: readonly BookingRow[], viewerHrId: string | null): Promise<InterviewBooking[]> {
+function weekOfInstant(iso: string): string {
+  return weekStartFor(cairoDateKey(new Date(iso)));
+}
+
+function endsAt(startsAt: string, minutes: number): number {
+  return new Date(startsAt).getTime() + Number(minutes) * 60_000;
+}
+
+function mapSession(row: SessionRow, people: Map<string, InterviewCalendarPerson>, now: Date): InterviewSession {
+  const at = new Date(row.starts_at);
+  const platform = asPlatform(row.platform);
+  return {
+    createdByName: personName(people, row.created_by_hr_id),
+    dateKey: cairoDateKey(at),
+    durationMinutes: Number(row.duration_minutes),
+    ended: now.getTime() >= endsAt(row.starts_at, row.duration_minutes),
+    id: row.id,
+    notes: row.notes,
+    platform,
+    slotMinutes: Number(row.slot_minutes),
+    startMinutes: cairoMinutesOfDay(at),
+    title: row.title?.trim() || null,
+    zoomError: platform === "zoom" ? row.zoom_error : null,
+    zoomJoinUrl: platform === "zoom" ? row.zoom_join_url : null,
+    zoomStatus: platform === "zoom" ? asZoomStatus(row.zoom_status) : "not_needed",
+  };
+}
+
+async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCaller, now: Date = new Date()): Promise<InterviewBooking[]> {
   if (rows.length === 0) return [];
-  const [candidates, comments] = await Promise.all([
-    loadCandidates(rows.map((row) => row.candidate_id)),
+  const [candidates, comments, sessions] = await Promise.all([
+    loadCandidates(rows.map((row) => row.candidate_id ?? "")),
     loadComments(rows.map((row) => row.id)),
+    loadSessionsById(rows.map((row) => row.session_id ?? "")),
   ]);
   const people = await loadPeople([...rows.map((row) => row.created_by_hr_id), ...comments.map((comment) => comment.author_hr_id)]);
-  const viewerKey = canonicalHrIdKey(viewerHrId);
+  const viewerKey = canonicalHrIdKey(caller.access.hrId);
 
   const commentsByBooking = new Map<string, InterviewBookingComment[]>();
   for (const comment of comments) {
@@ -244,34 +454,57 @@ async function hydrate(rows: readonly BookingRow[], viewerHrId: string | null): 
 
   return rows.map((row) => {
     const at = new Date(row.starts_at);
-    const candidate = candidates.get(String(row.candidate_id));
-    const platform = asPlatform(row.platform);
+    const dateKey = cairoDateKey(at);
+    const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
+    const session = row.session_id ? sessions.get(String(row.session_id)) : undefined;
+    // A slot in a session is held on the session's one meeting, in the session's place.
+    const platform = session ? asPlatform(session.platform) : asPlatform(row.platform);
+    const meeting = session ?? row;
+    const external = !row.candidate_id;
+    // An outside person's phone and e-mail go only to those who can book: the people arranging it.
+    const reveal = external && roleMeets(effectiveCalendarRole(caller, weekStartFor(dateKey)), "book");
     return {
       bookedByName: personName(people, row.created_by_hr_id),
-      candidateId: String(row.candidate_id),
+      candidateId: row.candidate_id ? String(row.candidate_id) : null,
       candidateJobTitle: candidate?.applied_for_job_title?.trim() || null,
-      candidateName: candidate?.full_name?.trim() || "Unnamed candidate",
+      candidateName: candidate?.full_name?.trim() || row.external_name?.trim() || "Unnamed candidate",
       comments: commentsByBooking.get(row.id) ?? [],
       createdAt: row.created_at,
-      dateKey: cairoDateKey(at),
+      dateKey,
       durationMinutes: Number(row.duration_minutes),
+      ended: now.getTime() >= endsAt(row.starts_at, row.duration_minutes),
+      external,
+      externalEmail: reveal ? row.external_email : null,
+      externalCvFileName: external && row.external_cv_file_id ? row.external_cv_file_name?.trim() || "CV" : null,
+      externalCvMimeType: external && row.external_cv_file_id ? row.external_cv_mime_type ?? null : null,
+      externalHasCv: external && Boolean(row.external_cv_file_id),
+      externalPhone: reveal ? row.external_phone : null,
+      hasMeeting: platform === "zoom" && Boolean(meeting.zoom_meeting_id),
       id: row.id,
       notes: row.notes,
       platform,
+      sessionId: session ? session.id : null,
+      sessionTitle: session ? session.title?.trim() || "Interview session" : null,
       startMinutes: cairoMinutesOfDay(at),
       startsAt: row.starts_at,
       updatedAt: row.updated_at,
       // An office interview never carries a link, whatever the row says (the table forbids it too).
-      zoomError: platform === "zoom" ? row.zoom_error : null,
-      zoomJoinUrl: platform === "zoom" ? row.zoom_join_url : null,
-      zoomStatus: asZoomStatus(row.zoom_status),
+      zoomError: platform === "zoom" ? meeting.zoom_error : null,
+      zoomJoinUrl: platform === "zoom" ? meeting.zoom_join_url : null,
+      zoomStatus: platform === "zoom" ? asZoomStatus(meeting.zoom_status) : "not_needed",
     };
   });
 }
 
-export async function listInterviewBookingsForWeek(weekStart: string, viewerHrId: string | null): Promise<InterviewBooking[]> {
-  if (!isDateKey(weekStart)) throw new Error("Choose a week to show.");
-  const { from, to } = weekInstantRange(weekStartFor(weekStart));
+async function hydrateSessions(rows: readonly SessionRow[], now: Date = new Date()): Promise<InterviewSession[]> {
+  if (rows.length === 0) return [];
+  const people = await loadPeople(rows.map((row) => row.created_by_hr_id));
+  return rows.map((row) => mapSession(row, people, now));
+}
+
+// ── Reading ─────────────────────────────────────────────────────────────────────────────────────
+
+async function bookingsBetween(from: Date, to: Date): Promise<BookingRow[]> {
   const { data, error } = await recruitmentDb()
     .from(BOOKINGS)
     .select(BOOKING_COLUMNS)
@@ -280,15 +513,51 @@ export async function listInterviewBookingsForWeek(weekStart: string, viewerHrId
     .order("starts_at", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return hydrate((data ?? []) as BookingRow[], viewerHrId);
+  return (data ?? []) as BookingRow[];
+}
+
+async function sessionsBetween(from: Date, to: Date): Promise<SessionRow[]> {
+  const { data, error } = await recruitmentDb()
+    .from(SESSIONS)
+    .select(SESSION_COLUMNS)
+    .gte("starts_at", from.toISOString())
+    .lt("starts_at", to.toISOString())
+    .order("starts_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as SessionRow[];
+}
+
+export type InterviewCalendarWeekData = { weekStart: string; bookings: InterviewBooking[]; sessions: InterviewSession[] };
+
+export async function listInterviewCalendarWeek(caller: InterviewCalendarCaller, week: string): Promise<InterviewCalendarWeekData> {
+  if (!isDateKey(week)) throw new Error("Choose a week to show.");
+  const weekStart = weekStartFor(week);
+  requireCalendarAccess(caller, "view", weekStart);
+  const { from, to } = weekInstantRange(weekStart);
+  const [bookings, sessions] = await Promise.all([bookingsBetween(from, to), sessionsBetween(from, to)]);
+  return { bookings: await hydrate(bookings, caller), sessions: await hydrateSessions(sessions), weekStart };
+}
+
+/** Every interview and session on one day, for the dialog's time chips: a taken slot is marked, not hidden. */
+export async function listInterviewCalendarDay(
+  caller: InterviewCalendarCaller,
+  dateKey: string,
+): Promise<{ bookings: InterviewBooking[]; sessions: InterviewSession[] }> {
+  if (!isDateKey(dateKey)) throw new Error("Choose a date.");
+  requireCalendarAccess(caller, "view", weekStartFor(dateKey));
+  const from = cairoLocalToUtc(dateKey, 0);
+  const to = cairoLocalToUtc(dateKey, 24 * 60);
+  const [bookings, sessions] = await Promise.all([bookingsBetween(from, to), sessionsBetween(from, to)]);
+  return { bookings: await hydrate(bookings, caller), sessions: await hydrateSessions(sessions) };
 }
 
 /** A candidate's interviews from today on — the schedule dialog shows them before booking another. */
 export async function listUpcomingInterviewsForCandidate(
+  caller: InterviewCalendarCaller,
   candidateId: string,
-  viewerHrId: string | null,
   now: Date = new Date(),
 ): Promise<InterviewBooking[]> {
+  requireCalendarAccess(caller, "view", "any");
   if (!isUuid(candidateId)) throw new Error("Candidate not found.");
   const todayStart = cairoLocalToUtc(cairoDateKey(now), 0);
   const { data, error } = await recruitmentDb()
@@ -299,20 +568,9 @@ export async function listUpcomingInterviewsForCandidate(
     .order("starts_at", { ascending: true })
     .limit(20);
   if (error) throw error;
-  return hydrate((data ?? []) as BookingRow[], viewerHrId);
-}
-
-/** Every interview on one day, for the dialog's time chips: a taken half hour is marked, not hidden. */
-export async function listInterviewBookingsForDay(dateKey: string, viewerHrId: string | null): Promise<InterviewBooking[]> {
-  if (!isDateKey(dateKey)) throw new Error("Choose a date.");
-  const { data, error } = await recruitmentDb()
-    .from(BOOKINGS)
-    .select(BOOKING_COLUMNS)
-    .gte("starts_at", cairoLocalToUtc(dateKey, 0).toISOString())
-    .lt("starts_at", cairoLocalToUtc(dateKey, 24 * 60).toISOString())
-    .order("starts_at", { ascending: true });
-  if (error) throw error;
-  return hydrate((data ?? []) as BookingRow[], viewerHrId);
+  // Only the weeks this person can see — a one-week link does not reveal the rest of the calendar.
+  const visible = ((data ?? []) as BookingRow[]).filter((row) => roleMeets(calendarRoleFor(caller, weekOfInstant(row.starts_at)), "view"));
+  return hydrate(visible, caller, now);
 }
 
 async function loadBookingRow(bookingId: string): Promise<BookingRow> {
@@ -323,15 +581,49 @@ async function loadBookingRow(bookingId: string): Promise<BookingRow> {
   return data as BookingRow;
 }
 
-export async function getInterviewBooking(bookingId: string, viewerHrId: string | null): Promise<InterviewBooking> {
-  const [booking] = await hydrate([await loadBookingRow(bookingId)], viewerHrId);
+async function loadSessionRow(sessionId: unknown): Promise<SessionRow> {
+  if (typeof sessionId !== "string" || !isUuid(sessionId)) throw new Error("Interview session not found.");
+  const { data, error } = await recruitmentDb().from(SESSIONS).select(SESSION_COLUMNS).eq("id", sessionId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Interview session not found.");
+  return data as SessionRow;
+}
+
+async function sessionBookingRows(sessionId: string): Promise<BookingRow[]> {
+  const { data, error } = await recruitmentDb()
+    .from(BOOKINGS)
+    .select(BOOKING_COLUMNS)
+    .eq("session_id", sessionId)
+    .order("starts_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as BookingRow[];
+}
+
+export async function getInterviewBooking(caller: InterviewCalendarCaller, bookingId: string): Promise<InterviewBooking> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  const [booking] = await hydrate([row], caller);
   return booking;
 }
 
-// ── Bookings: writing ───────────────────────────────────────────────────────────────────────────
+export async function getInterviewSession(
+  caller: InterviewCalendarCaller,
+  sessionId: string,
+): Promise<{ session: InterviewSession; bookings: InterviewBooking[] }> {
+  const row = await loadSessionRow(sessionId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  const [session] = await hydrateSessions([row]);
+  return { bookings: await hydrate(await sessionBookingRows(row.id), caller), session };
+}
+
+// ── Checking what was asked for ─────────────────────────────────────────────────────────────────
+
+export type ExternalPersonInput = { name: string; phone: string | null; email: string | null };
 
 export type InterviewBookingInput = {
-  candidateId: string;
+  /** A Phoenix candidate — or null for someone from outside, described by `external`. */
+  candidateId: string | null;
+  external: ExternalPersonInput | null;
   dateKey: string;
   startMinutes: number;
   durationMinutes: number;
@@ -339,9 +631,48 @@ export type InterviewBookingInput = {
   notes: string | null;
 };
 
+function cleanNotes(value: unknown): string | null {
+  const notes = typeof value === "string" ? value.trim() : "";
+  if (notes.length > NOTE_LIMIT) throw new Error(`Keep the note under ${NOTE_LIMIT} characters.`);
+  return notes || null;
+}
+
+/** Someone from outside Phoenix: a name always; a phone and an e-mail when known. */
+export function validateExternalPerson(raw: unknown): ExternalPersonInput {
+  const entry = (raw ?? {}) as Record<string, unknown>;
+  const name = typeof entry.name === "string" ? entry.name.replace(/\s+/g, " ").trim() : "";
+  if (name.length < 2) throw new Error("Write the name of the person to interview.");
+  if (name.length > 200) throw new Error("Keep the name under 200 characters.");
+  const phone = typeof entry.phone === "string" ? entry.phone.trim() : "";
+  if (phone) {
+    const digits = phone.replace(/\D/g, "");
+    if (phone.length > 40 || digits.length < 7 || digits.length > 15) throw new Error("That phone number does not look right.");
+  }
+  const email = typeof entry.email === "string" ? entry.email.trim() : "";
+  if (email && (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("That e-mail address does not look right.");
+  return { email: email || null, name, phone: phone || null };
+}
+
+/** A single interview's day, time and length. */
+export function validateInterviewTime(input: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown }) {
+  const dateKey = typeof input.dateKey === "string" ? input.dateKey.trim() : "";
+  if (!isDateKey(dateKey)) throw new Error("Choose a date for the interview.");
+  if (!isBookableDay(dateKey)) throw new Error("Interviews are booked Sunday to Thursday only.");
+  const startMinutes = Number(input.startMinutes);
+  const durationMinutes = Number(input.durationMinutes);
+  if (!ALL_DURATION_CHOICES.includes(durationMinutes)) {
+    throw new Error("Choose how long the interview is: 30 minutes up to the whole day (8 hours).");
+  }
+  if (!isBookableWindow(startMinutes, durationMinutes)) {
+    throw new Error("An interview starts at 9:00 AM or later and ends by 5:00 PM.");
+  }
+  return { dateKey, durationMinutes, startMinutes };
+}
+
 /** The request, checked. Every refusal is a sentence the person booking can act on. */
 export function validateInterviewBookingInput(input: {
   candidateId?: unknown;
+  external?: unknown;
   dateKey?: unknown;
   startMinutes?: unknown;
   durationMinutes?: unknown;
@@ -349,27 +680,90 @@ export function validateInterviewBookingInput(input: {
   notes?: unknown;
 }): InterviewBookingInput {
   const candidateId = typeof input.candidateId === "string" ? input.candidateId.trim() : "";
-  if (!isUuid(candidateId)) throw new Error("Choose the candidate to interview.");
+  let external: ExternalPersonInput | null = null;
+  if (candidateId) {
+    if (!isUuid(candidateId)) throw new Error("Choose the candidate to interview.");
+  } else if (input.external) {
+    external = validateExternalPerson(input.external);
+  } else {
+    throw new Error("Choose the candidate to interview.");
+  }
+  const time = validateInterviewTime(input);
+  if (!isInterviewPlatform(input.platform)) throw new Error("Choose In office or Zoom.");
+  return { candidateId: candidateId || null, external, ...time, notes: cleanNotes(input.notes), platform: input.platform };
+}
+
+export type InterviewSessionInput = {
+  title: string | null;
+  dateKey: string;
+  startMinutes: number;
+  durationMinutes: number;
+  slotMinutes: number;
+  platform: InterviewPlatform;
+  notes: string | null;
+};
+
+/** A session: one block of one day, under one meeting, cut into equal slots. */
+export function validateInterviewSessionInput(input: {
+  title?: unknown;
+  dateKey?: unknown;
+  startMinutes?: unknown;
+  durationMinutes?: unknown;
+  slotMinutes?: unknown;
+  platform?: unknown;
+  notes?: unknown;
+}): InterviewSessionInput {
+  const title = typeof input.title === "string" ? input.title.replace(/\s+/g, " ").trim() : "";
+  if (title.length > 120) throw new Error("Keep the session's name under 120 characters.");
   const dateKey = typeof input.dateKey === "string" ? input.dateKey.trim() : "";
-  if (!isDateKey(dateKey)) throw new Error("Choose a date for the interview.");
+  if (!isDateKey(dateKey)) throw new Error("Choose the day of the session.");
   if (!isBookableDay(dateKey)) throw new Error("Interviews are booked Sunday to Thursday only.");
   const startMinutes = Number(input.startMinutes);
   const durationMinutes = Number(input.durationMinutes);
-  if (!(DURATION_CHOICES as readonly number[]).includes(durationMinutes)) {
-    throw new Error("Choose how long the interview is: 30, 45 or 60 minutes.");
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 30 || durationMinutes > MAX_DURATION_MINUTES || durationMinutes % 15 !== 0) {
+    throw new Error("Choose when the session ends: at least 30 minutes after it starts, and by 5:00 PM.");
   }
   if (!isBookableWindow(startMinutes, durationMinutes)) {
-    throw new Error("An interview starts at 9:00 AM or later and ends by 5:00 PM.");
+    throw new Error("A session starts at 9:00 AM or later and ends by 5:00 PM.");
   }
+  const slotMinutes = Number(input.slotMinutes);
+  if (!(SESSION_SLOT_CHOICES as readonly number[]).includes(slotMinutes)) throw new Error("Choose the slot length: 15, 30, 45 or 60 minutes.");
+  if (slotMinutes > durationMinutes) throw new Error("The session is shorter than one slot.");
   if (!isInterviewPlatform(input.platform)) throw new Error("Choose In office or Zoom.");
-  const notes = typeof input.notes === "string" ? input.notes.trim() : "";
-  if (notes.length > NOTE_LIMIT) throw new Error(`Keep the note under ${NOTE_LIMIT} characters.`);
-  return { candidateId, dateKey, durationMinutes, notes: notes || null, platform: input.platform, startMinutes };
+  return { dateKey, durationMinutes, notes: cleanNotes(input.notes), platform: input.platform, slotMinutes, startMinutes, title: title || null };
 }
 
-function zoomTopic(candidateName: string): string {
-  return `Interview · ${candidateName}`;
+// ── An outside person's CV ──────────────────────────────────────────────────────────────────────
+
+export type InterviewCvUpload = { fileName: string; mimeType: string; bytes: Buffer; sizeBytes: number };
+
+export const CV_UPLOAD_LIMIT_BYTES = 10 * 1024 * 1024;
+
+const CV_TYPES: Record<string, string> = {
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  pdf: "application/pdf",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+/** A CV as uploaded, checked: a PDF, a Word document or a picture, up to 10 MB. */
+export function checkCvUpload(upload: InterviewCvUpload): InterviewCvUpload {
+  if (!upload.sizeBytes || upload.bytes.length === 0) throw new Error("The CV file is empty.");
+  if (upload.sizeBytes > CV_UPLOAD_LIMIT_BYTES || upload.bytes.length > CV_UPLOAD_LIMIT_BYTES) throw new Error("The CV is larger than 10 MB.");
+  const extension = /\.([a-z0-9]+)$/i.exec(upload.fileName.trim())?.[1]?.toLowerCase() ?? "";
+  const byExtension = CV_TYPES[extension];
+  const mime = upload.mimeType.toLowerCase();
+  const known = Object.values(CV_TYPES).includes(mime) ? mime : null;
+  const mimeType = known ?? byExtension;
+  if (!mimeType) throw new Error("Upload the CV as a PDF, a Word document or a picture.");
+  const fileName = upload.fileName.trim().replace(/[\\/]+/g, " ").slice(-255) || `cv.${extension || "pdf"}`;
+  return { ...upload, fileName, mimeType };
 }
+
+// ── Zoom, for bookings and sessions alike ──────────────────────────────────────────────────────
 
 type ZoomOutcome = {
   zoom_status: InterviewZoomStatus;
@@ -380,24 +774,87 @@ type ZoomOutcome = {
 
 const OFFICE: ZoomOutcome = { zoom_error: null, zoom_join_url: null, zoom_meeting_id: null, zoom_status: "not_needed" };
 
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
-async function newMeeting(config: ZoomConfig | null, input: InterviewBookingInput, candidateName: string): Promise<ZoomOutcome> {
+async function newMeeting(
+  config: ZoomConfig | null,
+  when: { dateKey: string; startMinutes: number; durationMinutes: number },
+  topic: string,
+): Promise<ZoomOutcome> {
   if (!config) return { zoom_error: null, zoom_join_url: null, zoom_meeting_id: null, zoom_status: "not_connected" };
   try {
-    const meeting = await createZoomMeeting(config, {
-      dateKey: input.dateKey,
-      durationMinutes: input.durationMinutes,
-      startMinutes: input.startMinutes,
-      topic: zoomTopic(candidateName),
-    });
+    const meeting = await createZoomMeeting(config, { ...when, topic });
     return { zoom_error: null, zoom_join_url: meeting.joinUrl, zoom_meeting_id: meeting.id, zoom_status: "created" };
   } catch (error) {
     return { zoom_error: errorText(error), zoom_join_url: null, zoom_meeting_id: null, zoom_status: "failed" };
   }
 }
+
+function interviewTopic(name: string): string {
+  return `Interview · ${name}`;
+}
+
+function sessionTopic(title: string | null): string {
+  return title ? `Interviews · ${title}` : "Interviews";
+}
+
+export type PollOwner = { bookingId: string } | { sessionId: string };
+
+function pollOwnerFilter(owner: PollOwner): [string, string] {
+  return "bookingId" in owner ? ["booking_id", owner.bookingId] : ["session_id", owner.sessionId];
+}
+
+/**
+ * Put every poll that is waiting for a meeting onto the one that now exists. A poll Zoom refuses is
+ * kept, marked failed with Zoom's reason — it never blocks the interview.
+ */
+export async function pushWaitingPolls(config: ZoomConfig | null, owner: PollOwner, meetingId: string | null): Promise<void> {
+  if (!config || !meetingId) return;
+  const [column, id] = pollOwnerFilter(owner);
+  const { data, error } = await recruitmentDb()
+    .from(POLLS)
+    .select("id,title,questions")
+    .eq(column, id)
+    .in("status", ["pending", "failed"]);
+  if (error) throw error;
+  for (const poll of (data ?? []) as Array<{ id: string; title: string; questions: unknown }>) {
+    let patch: Record<string, unknown>;
+    try {
+      const pollId = await createZoomPoll(config, meetingId, {
+        questions: Array.isArray(poll.questions) ? (poll.questions as Parameters<typeof createZoomPoll>[2]["questions"]) : [],
+        title: poll.title,
+      });
+      patch = { error: null, status: "created", zoom_meeting_id: meetingId, zoom_poll_id: pollId };
+    } catch (failure) {
+      patch = { error: errorText(failure), status: "failed", zoom_meeting_id: meetingId, zoom_poll_id: null };
+    }
+    const { error: saveError } = await recruitmentDb()
+      .from(POLLS)
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", poll.id);
+    if (saveError) throw saveError;
+  }
+}
+
+/** The meeting went away (now in the office, or moved into a session): its polls wait for the next. */
+async function unhookPolls(owner: PollOwner): Promise<void> {
+  const [column, id] = pollOwnerFilter(owner);
+  const { error } = await recruitmentDb()
+    .from(POLLS)
+    .update({ error: null, status: "pending", updated_at: new Date().toISOString(), zoom_meeting_id: null, zoom_poll_id: null })
+    .eq(column, id);
+  if (error) throw error;
+}
+
+async function dropMeeting(config: ZoomConfig | null, meetingId: string | null) {
+  // Best effort — a meeting Zoom will not delete is not a reason to refuse the change, and it can do
+  // no harm once nothing in Phoenix points at it.
+  if (meetingId && config) await deleteZoomMeeting(config, meetingId).catch(() => undefined);
+}
+
+// ── Booking ─────────────────────────────────────────────────────────────────────────────────────
 
 async function candidateNameFor(candidateId: string): Promise<string> {
   const candidate = (await loadCandidates([candidateId])).get(candidateId);
@@ -405,27 +862,128 @@ async function candidateNameFor(candidateId: string): Promise<string> {
   return candidate.full_name?.trim() || "Unnamed candidate";
 }
 
-export async function createInterviewBooking(
-  access: AccessContext,
-  raw: Parameters<typeof validateInterviewBookingInput>[0],
-  zoomConfig: ZoomConfig | null = readZoomConfig(),
-): Promise<InterviewBooking> {
-  await requireInterviewCalendarRole(access, "book");
-  const input = validateInterviewBookingInput(raw);
-  const candidateName = await candidateNameFor(input.candidateId);
-  const zoom = input.platform === "zoom" ? await newMeeting(zoomConfig, input, candidateName) : OFFICE;
-  const actor = hrIdForStorage(access.hrId);
+/** What a booking request may carry beyond the interview itself. */
+export type InterviewBookingRequest = Parameters<typeof validateInterviewBookingInput>[0] & {
+  /** Book into a slot of this session instead of on its own; `startMinutes` names the slot. */
+  sessionId?: unknown;
+  /** For someone from outside: also make them a Recruitment candidate (the default), or not. */
+  addToRecruitment?: unknown;
+};
 
+export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
+
+function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly BookingRow[], ignoreBookingId: string | null): void {
+  const at = new Date(session.starts_at);
+  const starts = sessionSlotStarts({
+    durationMinutes: Number(session.duration_minutes),
+    slotMinutes: Number(session.slot_minutes),
+    startMinutes: cairoMinutesOfDay(at),
+  });
+  if (!starts.includes(startMinutes)) throw new Error("Choose one of the session's slots.");
+  const instant = cairoLocalToUtc(cairoDateKey(at), startMinutes).getTime();
+  if (taken.some((row) => row.id !== ignoreBookingId && new Date(row.starts_at).getTime() === instant)) {
+    throw new Error("That slot is already taken — choose another.");
+  }
+}
+
+export async function createInterviewBooking(
+  caller: InterviewCalendarCaller,
+  raw: InterviewBookingRequest,
+  options: { cv?: InterviewCvUpload | null; zoomConfig?: ZoomConfig | null } = {},
+): Promise<InterviewBookingResult> {
+  const zoomConfig = options.zoomConfig === undefined ? readZoomConfig() : options.zoomConfig;
+  const inSession = typeof raw.sessionId === "string" && raw.sessionId.trim() !== "";
+
+  // WHERE and WHEN first — the gate is on the week it lands in, and nothing is written before it.
+  let session: SessionRow | null = null;
+  let input: InterviewBookingInput;
+  if (inSession) {
+    session = await loadSessionRow(raw.sessionId);
+    const at = new Date(session.starts_at);
+    const dateKey = cairoDateKey(at);
+    requireCalendarAccess(caller, "book", weekStartFor(dateKey));
+    const person = validateInterviewBookingInput({
+      candidateId: raw.candidateId,
+      dateKey,
+      durationMinutes: 30,
+      external: raw.external,
+      notes: raw.notes,
+      platform: session.platform,
+      startMinutes: cairoMinutesOfDay(at),
+    });
+    const startMinutes = Number(raw.startMinutes);
+    slotIsFree(session, startMinutes, await sessionBookingRows(session.id), null);
+    input = { ...person, dateKey, durationMinutes: Number(session.slot_minutes), platform: asPlatform(session.platform), startMinutes };
+  } else {
+    input = validateInterviewBookingInput(raw);
+    requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+  }
+  const cv = options.cv ? checkCvUpload(options.cv) : null;
+  const addToRecruitment = raw.addToRecruitment !== false && raw.addToRecruitment !== "false";
+  if (input.external && addToRecruitment) await assertPermission(caller.access, "candidates", "create");
+
+  // WHO — a Phoenix candidate, an outside person made one now, or an outside person kept here only.
+  let candidateId = input.candidateId;
+  let name: string;
+  let notice: string | null = null;
+  const externalColumns: Record<string, string | null> = {};
+  if (candidateId) {
+    name = await candidateNameFor(candidateId);
+  } else if (input.external && addToRecruitment) {
+    const result = await createCandidate(
+      { email: input.external.email, fullName: input.external.name, phone: input.external.phone, source: "interview_calendar" },
+      caller.access,
+    );
+    candidateId = result.candidate.id;
+    name = result.candidate.fullName?.trim() || input.external.name;
+    if (!result.created) {
+      notice = `${name} was already in Recruitment, so the interview is on that record${cv ? " and the CV was added to it" : ""}.`;
+    }
+    if (cv) {
+      await uploadCandidateFile(caller.access, {
+        bytes: cv.bytes,
+        candidateId,
+        fileName: cv.fileName,
+        kind: "cv",
+        mimeType: cv.mimeType,
+        sizeBytes: cv.sizeBytes,
+      });
+    }
+  } else if (input.external) {
+    name = input.external.name;
+    externalColumns.external_name = input.external.name;
+    externalColumns.external_phone = input.external.phone;
+    externalColumns.external_email = input.external.email;
+    if (cv) {
+      const storage = getRecruitmentFileStorage();
+      if (!storage.supportsUpload) throw new Error("CV uploads are not switched on in Phoenix yet, so book without the file.");
+      // Kept on the booking only, reachable through the calendar alone. The storage adapter has no
+      // delete, so cancelling the interview leaves the file in storage with nothing pointing at it.
+      const stored = await storage.uploadFile({ bytes: cv.bytes, fileName: cv.fileName, mimeType: cv.mimeType });
+      if (!stored.driveFileId) throw new Error("The CV could not be stored, so the interview was not booked. Try again.");
+      externalColumns.external_cv_file_id = stored.driveFileId;
+      externalColumns.external_cv_file_name = cv.fileName;
+      externalColumns.external_cv_mime_type = cv.mimeType;
+    }
+  } else {
+    throw new Error("Choose the candidate to interview.");
+  }
+
+  // A slot shares its session's meeting; an interview on its own gets its own.
+  const zoom = session ? OFFICE : input.platform === "zoom" ? await newMeeting(zoomConfig, input, interviewTopic(name)) : OFFICE;
+  const actor = hrIdForStorage(caller.access.hrId);
   const { data, error } = await recruitmentDb()
     .from(BOOKINGS)
     .insert({
-      candidate_id: input.candidateId,
+      candidate_id: candidateId,
       created_by_hr_id: actor,
       duration_minutes: input.durationMinutes,
       notes: input.notes,
       platform: input.platform,
+      session_id: session?.id ?? null,
       starts_at: cairoLocalToUtc(input.dateKey, input.startMinutes).toISOString(),
       updated_by_hr_id: actor,
+      ...externalColumns,
       ...zoom,
     })
     .select(BOOKING_COLUMNS)
@@ -433,131 +991,410 @@ export async function createInterviewBooking(
   if (error) {
     // The meeting was made for a booking that did not save. Take it back rather than leave a stray
     // meeting on the host's Zoom calendar that nothing in Phoenix points at.
-    if (zoom.zoom_meeting_id && zoomConfig) await deleteZoomMeeting(zoomConfig, zoom.zoom_meeting_id).catch(() => undefined);
+    await dropMeeting(zoomConfig, zoom.zoom_meeting_id);
     throw error;
   }
-  const [booking] = await hydrate([data as BookingRow], access.hrId);
-  return booking;
+  const [booking] = await hydrate([data as BookingRow], caller);
+  return { booking, notice };
 }
 
 export async function updateInterviewBooking(
-  access: AccessContext,
+  caller: InterviewCalendarCaller,
   bookingId: string,
-  patch: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown; platform?: unknown; notes?: unknown },
+  patch: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown; platform?: unknown; notes?: unknown; sessionId?: unknown },
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
-  await requireInterviewCalendarRole(access, "book");
   const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
   const at = new Date(row.starts_at);
-  const input = validateInterviewBookingInput({
-    candidateId: row.candidate_id,
-    dateKey: patch.dateKey ?? cairoDateKey(at),
-    durationMinutes: patch.durationMinutes ?? row.duration_minutes,
-    notes: patch.notes === undefined ? row.notes : patch.notes,
-    platform: patch.platform ?? row.platform,
-    startMinutes: patch.startMinutes ?? cairoMinutesOfDay(at),
-  });
-  const moved =
-    input.dateKey !== cairoDateKey(at) ||
-    input.startMinutes !== cairoMinutesOfDay(at) ||
-    input.durationMinutes !== Number(row.duration_minutes);
+  const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
+  const actor = hrIdForStorage(caller.access.hrId);
+  const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
+  const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
+  let update: Record<string, unknown>;
 
-  let zoom: ZoomOutcome;
-  if (input.platform === "in_office") {
-    // Now in the office: the meeting goes. Best effort — a meeting Zoom will not delete is not a
-    // reason to refuse the move, and it can do no harm once nothing in Phoenix points at it.
-    if (row.zoom_meeting_id && zoomConfig) await deleteZoomMeeting(zoomConfig, row.zoom_meeting_id).catch(() => undefined);
-    zoom = OFFICE;
-  } else if (row.zoom_status === "created" && row.zoom_meeting_id) {
-    zoom = { zoom_error: null, zoom_join_url: row.zoom_join_url, zoom_meeting_id: row.zoom_meeting_id, zoom_status: "created" };
-    if (moved) {
-      if (!zoomConfig) {
-        zoom = { ...zoom, zoom_error: "Zoom is no longer connected, so the meeting kept its old time.", zoom_status: "failed" };
-      } else {
-        try {
-          await updateZoomMeeting(zoomConfig, row.zoom_meeting_id, {
-            dateKey: input.dateKey,
-            durationMinutes: input.durationMinutes,
-            startMinutes: input.startMinutes,
-            topic: zoomTopic(await candidateNameFor(row.candidate_id)),
-          });
-        } catch (error) {
-          // The link still works; it is the meeting's time on Zoom that is now wrong. Say so.
-          zoom = { ...zoom, zoom_error: `${errorText(error)} The meeting kept its old time on Zoom.`, zoom_status: "failed" };
+  const targetSessionId = typeof patch.sessionId === "string" && patch.sessionId.trim() ? patch.sessionId.trim() : null;
+  if (targetSessionId) {
+    // INTO a session's slot — the same session or another. It takes that session's meeting, so a
+    // meeting of its own is given up.
+    const session = await loadSessionRow(targetSessionId);
+    const dateKey = cairoDateKey(new Date(session.starts_at));
+    requireCalendarAccess(caller, "book", weekStartFor(dateKey));
+    const startMinutes = patch.startMinutes === undefined ? cairoMinutesOfDay(at) : Number(patch.startMinutes);
+    slotIsFree(session, startMinutes, await sessionBookingRows(session.id), row.id);
+    if (row.zoom_meeting_id) {
+      await dropMeeting(zoomConfig, row.zoom_meeting_id);
+      await unhookPolls({ bookingId: row.id });
+    }
+    update = {
+      duration_minutes: Number(session.slot_minutes),
+      notes,
+      platform: asPlatform(session.platform),
+      session_id: session.id,
+      starts_at: cairoLocalToUtc(dateKey, startMinutes).toISOString(),
+      ...OFFICE,
+    };
+  } else if (row.session_id && !timeChanged && patch.sessionId !== null && patch.platform === undefined) {
+    // Still in its slot — only the note changes.
+    update = { notes };
+  } else {
+    // An interview on its own: moved, lengthened, switched between office and Zoom — or taken OUT
+    // of its session to stand alone, when it gets a meeting of its own.
+    const leavingSession = Boolean(row.session_id);
+    const session = leavingSession ? await loadSessionRow(row.session_id) : null;
+    const input = validateInterviewTime({
+      dateKey: patch.dateKey ?? cairoDateKey(at),
+      durationMinutes: patch.durationMinutes ?? (leavingSession ? Math.max(30, Number(row.duration_minutes)) : row.duration_minutes),
+      startMinutes: patch.startMinutes ?? cairoMinutesOfDay(at),
+    });
+    const platform = patch.platform ?? (session ? session.platform : row.platform);
+    if (!isInterviewPlatform(platform)) throw new Error("Choose In office or Zoom.");
+    requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+    const moved =
+      input.dateKey !== cairoDateKey(at) || input.startMinutes !== cairoMinutesOfDay(at) || input.durationMinutes !== Number(row.duration_minutes);
+
+    let zoom: ZoomOutcome;
+    let fresh = false;
+    if (platform === "in_office") {
+      if (row.zoom_meeting_id) {
+        await dropMeeting(zoomConfig, row.zoom_meeting_id);
+        await unhookPolls({ bookingId: row.id });
+      }
+      zoom = OFFICE;
+    } else if (!leavingSession && row.zoom_meeting_id && (row.zoom_status === "created" || row.zoom_status === "failed")) {
+      zoom = { zoom_error: null, zoom_join_url: row.zoom_join_url, zoom_meeting_id: row.zoom_meeting_id, zoom_status: "created" };
+      if (moved || row.zoom_status === "failed") {
+        if (!zoomConfig) {
+          zoom = { ...zoom, zoom_error: "Zoom is no longer connected, so the meeting kept its old time.", zoom_status: "failed" };
+        } else {
+          try {
+            await updateZoomMeeting(zoomConfig, row.zoom_meeting_id, { ...input, topic: interviewTopic(await nameFor()) });
+          } catch (error) {
+            // The link still works; it is the meeting's time on Zoom that is now wrong. Say so.
+            zoom = { ...zoom, zoom_error: `${errorText(error)} The meeting kept its old time on Zoom.`, zoom_status: "failed" };
+          }
         }
       }
+    } else {
+      // Zoom with no meeting of its own yet — newly switched, out of a session, never connected, or
+      // refused last time. Try now.
+      zoom = await newMeeting(zoomConfig, input, interviewTopic(await nameFor()));
+      fresh = zoom.zoom_status === "created";
     }
-  } else {
-    // Zoom with no meeting yet — newly switched, never connected, or refused last time. Try now.
-    zoom = await newMeeting(zoomConfig, input, await candidateNameFor(row.candidate_id));
+    update = {
+      duration_minutes: input.durationMinutes,
+      notes,
+      platform,
+      session_id: null,
+      starts_at: cairoLocalToUtc(input.dateKey, input.startMinutes).toISOString(),
+      ...zoom,
+    };
+    if (fresh) {
+      const saved = await saveBooking(row.id, { ...update, updated_by_hr_id: actor });
+      await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
+      const [booking] = await hydrate([saved], caller);
+      return booking;
+    }
   }
 
+  const [booking] = await hydrate([await saveBooking(row.id, { ...update, updated_by_hr_id: actor })], caller);
+  return booking;
+}
+
+async function saveBooking(id: string, update: Record<string, unknown>): Promise<BookingRow> {
   const { data, error } = await recruitmentDb()
     .from(BOOKINGS)
-    .update({
-      duration_minutes: input.durationMinutes,
-      notes: input.notes,
-      platform: input.platform,
-      starts_at: cairoLocalToUtc(input.dateKey, input.startMinutes).toISOString(),
-      updated_at: new Date().toISOString(),
-      updated_by_hr_id: hrIdForStorage(access.hrId),
-      ...zoom,
-    })
-    .eq("id", row.id)
+    .update({ ...update, updated_at: new Date().toISOString() })
+    .eq("id", id)
     .select(BOOKING_COLUMNS)
     .single();
   if (error) throw error;
-  const [booking] = await hydrate([data as BookingRow], access.hrId);
-  return booking;
+  return data as BookingRow;
 }
 
 /** Try Zoom again for a Zoom interview that has no meeting. */
 export async function retryInterviewZoomMeeting(
-  access: AccessContext,
+  caller: InterviewCalendarCaller,
   bookingId: string,
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
-  await requireInterviewCalendarRole(access, "book");
   const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  if (row.session_id) throw new Error("This interview is a slot in a session and uses the session's meeting — try again on the session.");
   if (row.platform !== "zoom") throw new Error("This interview is in the office, so it has no Zoom meeting.");
-  if (row.zoom_status === "created" && row.zoom_meeting_id) return getInterviewBooking(row.id, access.hrId);
+  if (row.zoom_status === "created" && row.zoom_meeting_id) return getInterviewBooking(caller, row.id);
   if (!zoomConfig) throw new Error("Zoom is not connected to Phoenix yet.");
-  return updateInterviewBooking(access, bookingId, {}, zoomConfig);
+  return updateInterviewBooking(caller, bookingId, {}, zoomConfig);
 }
 
-/** Cancel: the interview leaves the calendar, its notes with it, and its Zoom meeting is deleted. */
+/** Cancel: the interview leaves the calendar, its notes and polls with it, and its Zoom meeting is deleted. */
 export async function cancelInterviewBooking(
-  access: AccessContext,
+  caller: InterviewCalendarCaller,
   bookingId: string,
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<{ id: string }> {
-  await requireInterviewCalendarRole(access, "book");
   const row = await loadBookingRow(bookingId);
-  if (row.zoom_meeting_id && zoomConfig) await deleteZoomMeeting(zoomConfig, row.zoom_meeting_id).catch(() => undefined);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  // A slot's meeting is the session's and stays; only an interview's own meeting goes with it.
+  if (!row.session_id) await dropMeeting(zoomConfig, row.zoom_meeting_id);
   const { error } = await recruitmentDb().from(BOOKINGS).delete().eq("id", row.id);
   if (error) throw error;
   return { id: row.id };
 }
 
+// ── Sessions ────────────────────────────────────────────────────────────────────────────────────
+
+export async function createInterviewSession(
+  caller: InterviewCalendarCaller,
+  raw: Parameters<typeof validateInterviewSessionInput>[0],
+  zoomConfig: ZoomConfig | null = readZoomConfig(),
+): Promise<InterviewSession> {
+  const input = validateInterviewSessionInput(raw);
+  requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+  const zoom = input.platform === "zoom" ? await newMeeting(zoomConfig, input, sessionTopic(input.title)) : OFFICE;
+  const actor = hrIdForStorage(caller.access.hrId);
+  const { data, error } = await recruitmentDb()
+    .from(SESSIONS)
+    .insert({
+      created_by_hr_id: actor,
+      duration_minutes: input.durationMinutes,
+      notes: input.notes,
+      platform: input.platform,
+      slot_minutes: input.slotMinutes,
+      starts_at: cairoLocalToUtc(input.dateKey, input.startMinutes).toISOString(),
+      title: input.title,
+      updated_by_hr_id: actor,
+      ...zoom,
+    })
+    .select(SESSION_COLUMNS)
+    .single();
+  if (error) {
+    await dropMeeting(zoomConfig, zoom.zoom_meeting_id);
+    throw error;
+  }
+  const [session] = await hydrateSessions([data as SessionRow]);
+  return session;
+}
+
+/**
+ * Move, lengthen, shorten, rename or switch a session. Its booked slots move WITH it, keeping their
+ * place in it. What it refuses rather than guesses: a new slot length while slots are booked, and a
+ * shorter session that would leave a booked slot outside it.
+ */
+export async function updateInterviewSession(
+  caller: InterviewCalendarCaller,
+  sessionId: string,
+  patch: Parameters<typeof validateInterviewSessionInput>[0],
+  zoomConfig: ZoomConfig | null = readZoomConfig(),
+): Promise<InterviewSession> {
+  const row = await loadSessionRow(sessionId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  const at = new Date(row.starts_at);
+  const input = validateInterviewSessionInput({
+    dateKey: patch.dateKey ?? cairoDateKey(at),
+    durationMinutes: patch.durationMinutes ?? row.duration_minutes,
+    notes: patch.notes === undefined ? row.notes : patch.notes,
+    platform: patch.platform ?? row.platform,
+    slotMinutes: patch.slotMinutes ?? row.slot_minutes,
+    startMinutes: patch.startMinutes ?? cairoMinutesOfDay(at),
+    title: patch.title === undefined ? row.title : patch.title,
+  });
+  requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
+
+  const booked = await sessionBookingRows(row.id);
+  if (booked.length > 0 && input.slotMinutes !== Number(row.slot_minutes)) {
+    throw new Error("The slot length can change only while no slot is booked — move or cancel its interviews first.");
+  }
+  const newStart = cairoLocalToUtc(input.dateKey, input.startMinutes).getTime();
+  const shift = newStart - at.getTime();
+  const newEnd = newStart + input.durationMinutes * 60_000;
+  for (const booking of booked) {
+    const start = new Date(booking.starts_at).getTime() + shift;
+    if (start < newStart || start + Number(booking.duration_minutes) * 60_000 > newEnd) {
+      const when = formatTimeOfDay(cairoMinutesOfDay(new Date(booking.starts_at)));
+      throw new Error(`The session would no longer cover the interview booked at ${when} — move it first.`);
+    }
+  }
+
+  const moved = shift !== 0 || input.durationMinutes !== Number(row.duration_minutes);
+  let zoom: ZoomOutcome;
+  let fresh = false;
+  if (input.platform === "in_office") {
+    if (row.zoom_meeting_id) {
+      await dropMeeting(zoomConfig, row.zoom_meeting_id);
+      await unhookPolls({ sessionId: row.id });
+    }
+    zoom = OFFICE;
+  } else if (row.zoom_meeting_id && (row.zoom_status === "created" || row.zoom_status === "failed")) {
+    zoom = { zoom_error: null, zoom_join_url: row.zoom_join_url, zoom_meeting_id: row.zoom_meeting_id, zoom_status: "created" };
+    if (moved || input.title !== row.title || row.zoom_status === "failed") {
+      if (!zoomConfig) {
+        zoom = { ...zoom, zoom_error: "Zoom is no longer connected, so the meeting kept its old time.", zoom_status: "failed" };
+      } else {
+        try {
+          await updateZoomMeeting(zoomConfig, row.zoom_meeting_id, { ...input, topic: sessionTopic(input.title) });
+        } catch (error) {
+          zoom = { ...zoom, zoom_error: `${errorText(error)} The meeting kept its old time on Zoom.`, zoom_status: "failed" };
+        }
+      }
+    }
+  } else {
+    zoom = await newMeeting(zoomConfig, input, sessionTopic(input.title));
+    fresh = zoom.zoom_status === "created";
+  }
+
+  const { data, error } = await recruitmentDb()
+    .from(SESSIONS)
+    .update({
+      duration_minutes: input.durationMinutes,
+      notes: input.notes,
+      platform: input.platform,
+      slot_minutes: input.slotMinutes,
+      starts_at: new Date(newStart).toISOString(),
+      title: input.title,
+      updated_at: new Date().toISOString(),
+      updated_by_hr_id: hrIdForStorage(caller.access.hrId),
+      ...zoom,
+    })
+    .eq("id", row.id)
+    .select(SESSION_COLUMNS)
+    .single();
+  if (error) throw error;
+  // Its slots follow it, in the same place in it.
+  for (const booking of booked) {
+    const { error: slotError } = await recruitmentDb()
+      .from(BOOKINGS)
+      .update({
+        platform: input.platform,
+        starts_at: new Date(new Date(booking.starts_at).getTime() + shift).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", booking.id);
+    if (slotError) throw slotError;
+  }
+  if (fresh) await pushWaitingPolls(zoomConfig, { sessionId: row.id }, zoom.zoom_meeting_id);
+  const [session] = await hydrateSessions([data as SessionRow]);
+  return session;
+}
+
+export async function retryInterviewSessionZoom(
+  caller: InterviewCalendarCaller,
+  sessionId: string,
+  zoomConfig: ZoomConfig | null = readZoomConfig(),
+): Promise<InterviewSession> {
+  const row = await loadSessionRow(sessionId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  if (row.platform !== "zoom") throw new Error("This session is in the office, so it has no Zoom meeting.");
+  if (!zoomConfig) throw new Error("Zoom is not connected to Phoenix yet.");
+  return updateInterviewSession(caller, sessionId, {}, zoomConfig);
+}
+
+/** Cancel a session: its meeting is deleted, and the interviews booked in its slots go with it. */
+export async function cancelInterviewSession(
+  caller: InterviewCalendarCaller,
+  sessionId: string,
+  zoomConfig: ZoomConfig | null = readZoomConfig(),
+): Promise<{ id: string; interviews: number }> {
+  const row = await loadSessionRow(sessionId);
+  requireCalendarAccess(caller, "book", weekOfInstant(row.starts_at));
+  const booked = await sessionBookingRows(row.id);
+  await dropMeeting(zoomConfig, row.zoom_meeting_id);
+  const { error } = await recruitmentDb().from(SESSIONS).delete().eq("id", row.id);
+  if (error) throw error;
+  return { id: row.id, interviews: booked.length };
+}
+
+// ── Whose meeting an interview is held on ──────────────────────────────────────────────────────
+
+export type InterviewMeetingTarget = { kind: "booking" | "session"; id: string };
+
+export type InterviewMeeting = {
+  weekStart: string;
+  platform: InterviewPlatform;
+  /** The Zoom meeting — the booking's own, or its session's. */
+  meetingId: string | null;
+  joinUrl: string | null;
+  startsAt: string;
+  endsAt: string;
+  /** Where its polls live: the session, for a slot or a session; the booking, for one on its own. */
+  pollOwner: PollOwner;
+  /** A slot in a session: its polls, attendance and summary are the session's. */
+  viaSession: boolean;
+  /** An outside person's phone, for WhatsApp — only when the caller can book. */
+  externalPhone: string | null;
+};
+
+export async function resolveInterviewMeeting(caller: InterviewCalendarCaller, target: InterviewMeetingTarget): Promise<InterviewMeeting> {
+  if (target.kind === "session") {
+    const session = await loadSessionRow(target.id);
+    const weekStart = weekOfInstant(session.starts_at);
+    requireCalendarAccess(caller, "view", weekStart);
+    const platform = asPlatform(session.platform);
+    return {
+      endsAt: new Date(endsAt(session.starts_at, session.duration_minutes)).toISOString(),
+      externalPhone: null,
+      joinUrl: platform === "zoom" ? session.zoom_join_url : null,
+      meetingId: platform === "zoom" ? session.zoom_meeting_id : null,
+      platform,
+      pollOwner: { sessionId: session.id },
+      startsAt: session.starts_at,
+      viaSession: false,
+      weekStart,
+    };
+  }
+  const row = await loadBookingRow(target.id);
+  const weekStart = weekOfInstant(row.starts_at);
+  requireCalendarAccess(caller, "view", weekStart);
+  const canBook = roleMeets(calendarRoleFor(caller, weekStart), "book");
+  const externalPhone = !row.candidate_id && canBook ? row.external_phone : null;
+  if (row.session_id) {
+    const session = await loadSessionRow(row.session_id);
+    const platform = asPlatform(session.platform);
+    return {
+      endsAt: new Date(endsAt(session.starts_at, session.duration_minutes)).toISOString(),
+      externalPhone,
+      joinUrl: platform === "zoom" ? session.zoom_join_url : null,
+      meetingId: platform === "zoom" ? session.zoom_meeting_id : null,
+      platform,
+      pollOwner: { sessionId: session.id },
+      startsAt: session.starts_at,
+      viaSession: true,
+      weekStart,
+    };
+  }
+  const platform = asPlatform(row.platform);
+  return {
+    endsAt: new Date(endsAt(row.starts_at, row.duration_minutes)).toISOString(),
+    externalPhone,
+    joinUrl: platform === "zoom" ? row.zoom_join_url : null,
+    meetingId: platform === "zoom" ? row.zoom_meeting_id : null,
+    platform,
+    pollOwner: { bookingId: row.id },
+    startsAt: row.starts_at,
+    viaSession: false,
+    weekStart,
+  };
+}
+
 // ── Comments ────────────────────────────────────────────────────────────────────────────────────
 
-export async function addInterviewComment(access: AccessContext, bookingId: string, body: unknown): Promise<InterviewBooking> {
-  await requireInterviewCalendarRole(access, "comment");
+export async function addInterviewComment(caller: InterviewCalendarCaller, bookingId: string, body: unknown): Promise<InterviewBooking> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "comment", weekOfInstant(row.starts_at));
   const text = typeof body === "string" ? body.trim() : "";
   if (!text) throw new Error("Write the note first.");
   if (text.length > NOTE_LIMIT) throw new Error(`Keep the note under ${NOTE_LIMIT} characters.`);
-  const author = hrIdForStorage(access.hrId);
+  const author = hrIdForStorage(caller.access.hrId);
   if (!author) throw new Error("Forbidden: a note needs a person behind it, and this account has no HR record.");
-  const row = await loadBookingRow(bookingId);
   const { error } = await recruitmentDb().from(COMMENTS).insert({ author_hr_id: author, body: text, booking_id: row.id });
   if (error) throw error;
-  return getInterviewBooking(row.id, access.hrId);
+  return getInterviewBooking(caller, row.id);
 }
 
-// ── Sharing ─────────────────────────────────────────────────────────────────────────────────────
+// ── Sharing with named people ───────────────────────────────────────────────────────────────────
 
-export async function listInterviewCalendarShares(access: AccessContext): Promise<InterviewCalendarShare[]> {
-  await requireInterviewCalendarRole(access, "share");
+export async function listInterviewCalendarShares(caller: InterviewCalendarCaller): Promise<InterviewCalendarShare[]> {
+  requireCalendarAccess(caller, "share", null);
   const rows = await loadShareRows();
   const people = await loadPeople(rows.map((row) => row.hr_id));
   return rows
@@ -575,11 +1412,15 @@ export async function listInterviewCalendarShares(access: AccessContext): Promis
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+/** Text safe inside a PostgREST filter: anything that could break out of one is dropped, not escaped. */
+function filterText(query: unknown): string {
+  return (typeof query === "string" ? query : "").replace(/[,()*%"\\:]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 /** People the owner can share with: current employees, by name. */
-export async function searchInterviewCalendarPeople(access: AccessContext, query: unknown): Promise<InterviewCalendarPerson[]> {
-  await requireInterviewCalendarRole(access, "share");
-  // Anything that could break out of a PostgREST filter is dropped rather than escaped.
-  const text = (typeof query === "string" ? query : "").replace(/[,()*%"\\:]/g, " ").replace(/\s+/g, " ").trim();
+export async function searchInterviewCalendarPeople(caller: InterviewCalendarCaller, query: unknown): Promise<InterviewCalendarPerson[]> {
+  requireCalendarAccess(caller, "share", null);
+  const text = filterText(query);
   if (text.length < 2) return [];
   const { data, error } = await recruitmentDb()
     .from("employees")
@@ -599,16 +1440,16 @@ export async function searchInterviewCalendarPeople(access: AccessContext, query
 }
 
 export async function shareInterviewCalendar(
-  access: AccessContext,
+  caller: InterviewCalendarCaller,
   input: { hrId?: unknown; accessLevel?: unknown },
 ): Promise<InterviewCalendarShare[]> {
-  await requireInterviewCalendarRole(access, "share");
+  requireCalendarAccess(caller, "share", null);
   const level = input.accessLevel;
   if (!isInterviewCalendarAccessLevel(level)) throw new Error("Choose Viewer, Commenter or Editor.");
   const requested = typeof input.hrId === "string" ? input.hrId.trim() : "";
   const person = (await loadPeople([requested])).get(canonicalHrIdKey(requested) ?? "");
   if (!person) throw new Error("That person is not in the employee directory.");
-  if (canonicalHrIdKey(person.hrId) === canonicalHrIdKey(access.hrId)) throw new Error("This is your own calendar already.");
+  if (canonicalHrIdKey(person.hrId) === canonicalHrIdKey(caller.access.hrId)) throw new Error("This is your own calendar already.");
 
   const rows = await loadShareRows();
   const existing = rows.find((row) => canonicalHrIdKey(row.hr_id) === canonicalHrIdKey(person.hrId));
@@ -616,20 +1457,20 @@ export async function shareInterviewCalendar(
   if (existing) {
     const { error } = await recruitmentDb()
       .from(SHARES)
-      .update({ access_level: level, shared_by_hr_id: hrIdForStorage(access.hrId), updated_at: now })
+      .update({ access_level: level, shared_by_hr_id: hrIdForStorage(caller.access.hrId), updated_at: now })
       .eq("hr_id", existing.hr_id);
     if (error) throw error;
   } else {
     const { error } = await recruitmentDb()
       .from(SHARES)
-      .insert({ access_level: level, hr_id: person.hrId, shared_by_hr_id: hrIdForStorage(access.hrId) });
+      .insert({ access_level: level, hr_id: person.hrId, shared_by_hr_id: hrIdForStorage(caller.access.hrId) });
     if (error) throw error;
   }
 
   if (!existing || existing.access_level !== level) {
     await notifyShared(person, level, now);
   }
-  return listInterviewCalendarShares(access);
+  return listInterviewCalendarShares(caller);
 }
 
 /**
@@ -661,8 +1502,8 @@ async function notifyShared(person: InterviewCalendarPerson, level: InterviewCal
   });
 }
 
-export async function unshareInterviewCalendar(access: AccessContext, hrId: string): Promise<InterviewCalendarShare[]> {
-  await requireInterviewCalendarRole(access, "share");
+export async function unshareInterviewCalendar(caller: InterviewCalendarCaller, hrId: string): Promise<InterviewCalendarShare[]> {
+  requireCalendarAccess(caller, "share", null);
   const key = canonicalHrIdKey(hrId);
   const rows = await loadShareRows();
   const existing = rows.find((row) => canonicalHrIdKey(row.hr_id) === key);
@@ -670,31 +1511,74 @@ export async function unshareInterviewCalendar(access: AccessContext, hrId: stri
     const { error } = await recruitmentDb().from(SHARES).delete().eq("hr_id", existing.hr_id);
     if (error) throw error;
   }
-  return listInterviewCalendarShares(access);
+  return listInterviewCalendarShares(caller);
+}
+
+// ── Finding a candidate from an empty cell ──────────────────────────────────────────────────────
+
+export type InterviewCandidateMatch = { id: string; name: string; jobTitle: string | null };
+
+/**
+ * Recruitment's candidates, by name, phone or e-mail — for booking from a pressed cell. It reads
+ * Recruitment itself, so it needs Recruitment's own read grant as well as the right to book: sharing
+ * the calendar is not a key to every applicant in the company.
+ */
+export async function searchInterviewCandidates(caller: InterviewCalendarCaller, query: unknown): Promise<InterviewCandidateMatch[]> {
+  requireCalendarAccess(caller, "book", "any");
+  await assertPermission(caller.access, "candidates", "read");
+  const text = filterText(query);
+  if (text.length < 2) return [];
+  const digits = text.replace(/\D/g, "");
+  const clauses = [`full_name.ilike.*${text}*`, `email.ilike.*${text}*`];
+  if (digits.length >= 5) clauses.push(`phone.ilike.*${digits}*`, `whatsapp.ilike.*${digits}*`);
+  const { data, error } = await recruitmentDb()
+    .from("ats_candidates")
+    .select("id,full_name,applied_for_job_title")
+    .or(clauses.join(","))
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return ((data ?? []) as CandidateRow[]).map((row) => ({
+    id: String(row.id),
+    jobTitle: row.applied_for_job_title?.trim() || null,
+    name: row.full_name?.trim() || "Unnamed candidate",
+  }));
 }
 
 // ── The CVs on the calendar ─────────────────────────────────────────────────────────────────────
 
+const GUEST_CVS_OFF = "Forbidden: the CVs on this link open only after signing in to Phoenix.";
+
+function assertCvsOpenTo(caller: InterviewCalendarCaller) {
+  if (!isSignedInCaller(caller.access) && caller.access.source !== "system" && !caller.link?.guestCvs) throw new Error(GUEST_CVS_OFF);
+}
+
 /**
- * Anyone the calendar is shared with opens the CVs ON it — and only those.
+ * Anyone the calendar is shared with opens the CVs ON it — and only those, in the weeks open to them.
  *
- * Proved per request: the candidate must hold at least one interview on the calendar, and the file
- * must be that candidate's (so a file id cannot be swapped for someone else's document). This is the
- * calendar's own door, beside the recruitment file routes rather than through them, because a viewer
- * may hold no recruitment grant at all: the owner decides who sees these CVs by sharing the calendar.
+ * Proved per request: the candidate must hold an interview in a week this caller can see, and the
+ * file must be that candidate's (so a file id cannot be swapped for someone else's document). This is
+ * the calendar's own door, beside the recruitment file routes rather than through them, because a
+ * viewer may hold no recruitment grant at all: the owner decides who sees these CVs by sharing the
+ * calendar. Someone holding only a link, not signed in, opens them unless the owner switched that off.
  */
-async function assertCandidateOnCalendar(candidateId: string) {
+async function assertCandidateOnCalendar(caller: InterviewCalendarCaller, candidateId: string) {
   if (!isUuid(candidateId)) throw new Error("Candidate not found.");
-  const { data, error } = await recruitmentDb().from(BOOKINGS).select("id").eq("candidate_id", candidateId).limit(1);
+  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at").eq("candidate_id", candidateId).limit(200);
   if (error) throw error;
-  if (!data || data.length === 0) throw new Error("Forbidden: this candidate is not on the interview calendar.");
+  const rows = (data ?? []) as Array<{ starts_at: string }>;
+  if (rows.length === 0) throw new Error("Forbidden: this candidate is not on the interview calendar.");
+  if (!rows.some((row) => roleMeets(calendarRoleFor(caller, weekOfInstant(row.starts_at)), "view"))) {
+    throw new Error("Forbidden: this candidate is not on the part of the calendar open to you.");
+  }
+  assertCvsOpenTo(caller);
 }
 
 export type InterviewCalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
 
-export async function listInterviewCalendarCandidateFiles(access: AccessContext, candidateId: string): Promise<InterviewCalendarFile[]> {
-  await requireInterviewCalendarRole(access, "view");
-  await assertCandidateOnCalendar(candidateId);
+export async function listInterviewCalendarCandidateFiles(caller: InterviewCalendarCaller, candidateId: string): Promise<InterviewCalendarFile[]> {
+  requireCalendarAccess(caller, "view", "any");
+  await assertCandidateOnCalendar(caller, candidateId);
   const files = await listCandidateFiles(candidateId);
   return files.map((file) => ({
     createdAt: file.createdAt,
@@ -706,15 +1590,32 @@ export async function listInterviewCalendarCandidateFiles(access: AccessContext,
 }
 
 export async function getInterviewCalendarCandidateFile(
-  access: AccessContext,
+  caller: InterviewCalendarCaller,
   candidateId: string,
   fileId: string,
 ): Promise<FileDownload | null> {
-  await requireInterviewCalendarRole(access, "view");
-  await assertCandidateOnCalendar(candidateId);
+  requireCalendarAccess(caller, "view", "any");
+  await assertCandidateOnCalendar(caller, candidateId);
   const files = await listCandidateFiles(candidateId);
   if (!files.some((file) => file.id === fileId)) throw new Error("Forbidden: that file does not belong to this candidate.");
   return getFileForDownload(fileId);
+}
+
+/** The CV of someone from outside, kept on their booking alone. */
+export async function getInterviewExternalCv(
+  caller: InterviewCalendarCaller,
+  bookingId: string,
+): Promise<{ bytes: Buffer; mimeType: string; fileName: string }> {
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  assertCvsOpenTo(caller);
+  if (row.candidate_id || !row.external_cv_file_id) throw new Error("This interview has no CV kept on it.");
+  const downloaded = await getRecruitmentFileStorage().downloadFile(row.external_cv_file_id);
+  return {
+    bytes: Buffer.from(downloaded.bytes),
+    fileName: row.external_cv_file_name || downloaded.fileName || "cv",
+    mimeType: row.external_cv_mime_type || downloaded.mimeType || "application/octet-stream",
+  };
 }
 
 // ── Small readers the routes share ──────────────────────────────────────────────────────────────
