@@ -234,6 +234,18 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "send=false/manage=false. The seat can SEND a message from a template but cannot rewrite what " +
     "the templates say — canManageWhatsAppTemplates is system scope only, and the editor is hidden " +
     "from her rather than merely failing server-side, so no row her sidebar offers 403s her halfway",
+  // Added 2026-09-18 with the Interview Calendar row. The owner's own ruling that day: "Only you +
+  // people you share with" — so the gate is the calendar's own sharing, not a permission, and that
+  // is why it cannot be parsed.
+  "/hr/recruitment/interview-calendar":
+    "resolveInterviewCalendarRole(access) — owner for the Super Admin, otherwise the seat holder's " +
+    "row in ats_interview_calendar_shares, otherwise null. Verified by CALLING the predicate for " +
+    "each seat rather than by reading it: isInterviewCalendarOwner is FALSE for both (Advisory " +
+    "scope=self, Operations scope=company — neither is the Super Admin), so with no share row the " +
+    "role is null for both. The row carries permissions: [recruitment], which Advisory holds and " +
+    "Operations does not (recruitment=[]), so only Advisory is offered it. A null role renders a " +
+    "plain 'not been shared with you' notice — never a redirect and never a 403 — and every API " +
+    "route asserts the same gate, so the screen is presentation and never the boundary",
   // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
   // was a card on the /hr/attendance hub, and the hub row that fronted them is gone, so they are
   // rail rows in their own right now. Both verified by CALLING the predicate for each seat rather

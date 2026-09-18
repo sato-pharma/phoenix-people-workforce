@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import { candidatePageHref } from "@/lib/recruitment/candidate-page-link";
 import { screeningHref } from "@/lib/recruitment/screening-link";
@@ -57,7 +58,7 @@ function FilterSelect({
   );
 }
 
-function ApplicantCell({ pool, row }: { pool: string; row: WhatsAppApplicantRow }) {
+function ApplicantCell({ pool, row, titleLabel }: { pool: string; row: WhatsAppApplicantRow; titleLabel: string | null }) {
   return (
     <div className="min-w-0">
       {/* The name opens everything on file for this person — their own page, which links on to
@@ -80,6 +81,12 @@ function ApplicantCell({ pool, row }: { pool: string; row: WhatsAppApplicantRow 
           Typed job title: {row.typedTitle}
         </span>
       ) : null}
+      {/* Book them straight from the list (owner, 2026-09-18: "from WhatsApp application screening
+          tab … any CV"). Absent for anyone the interview calendar is not shared with as an editor. */}
+      <ScheduleInterviewButton
+        candidate={{ id: row.candidateId, jobTitle: row.typedTitle ?? titleLabel, name: row.name }}
+        className="mt-2"
+      />
     </div>
   );
 }
@@ -297,7 +304,7 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
                     {shown.map((row) => (
                       <tr className="border-b border-slate-100 align-top last:border-b-0" key={row.key}>
                         <td className="px-3 py-3">
-                          <ApplicantCell pool={pool} row={row} />
+                          <ApplicantCell pool={pool} row={row} titleLabel={chosenTitle?.label ?? null} />
                         </td>
                         <td className="px-3 py-3">
                           <RegionCell row={row} />
@@ -317,7 +324,7 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
               <ul className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
                 {shown.map((row) => (
                   <li className="space-y-2.5 px-4 py-3 text-sm" key={row.key}>
-                    <ApplicantCell pool={pool} row={row} />
+                    <ApplicantCell pool={pool} row={row} titleLabel={chosenTitle?.label ?? null} />
                     <div>
                       <span className={labelClass}>Region</span>
                       <div className="mt-0.5">

@@ -200,6 +200,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Team Operations
   { label: "Vacancies", fullLabel: "Vacancies", href: "/employee-portals/vacancies", icon: BriefcaseBusiness, flags: ["showVacanciesTab"], permission: { resource: "vacancies", action: "read" } },
   { label: "Candidates", fullLabel: "My Candidates", href: "/employee-portals/recruitment-candidates", icon: UsersRound, flags: ["showMyCandidatesTab"], permission: { resource: "hiring_interviews", action: "read" } },
+  // No `permission`: the page is opened by a share row, not by a grant (src/lib/recruitment/interview-calendar.ts).
+  { label: "Interviews", fullLabel: "Interview Calendar", href: "/employee-portals/interview-calendar", icon: CalendarClock, flags: ["showInterviewCalendarTab"] },
   { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"], permission: { resource: "probation", action: "read" } },
   { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"], permission: { resource: "organogram", action: "read" } },
   // Expenses

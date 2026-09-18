@@ -67,6 +67,11 @@ export type EmployeePortalNavVisibility = {
   // portal (scoped to his own line server-side); Super Admin and CEO reach the same report through
   // the admin twin. The manager being measured never sees it — see manager-cv-engagement.ts.
   showManagerEngagementTab?: boolean;
+  // "Interview Calendar" (/employee-portals/interview-calendar) — the owner's interview calendar,
+  // shown only to someone he SHARED it with (a row in ats_interview_calendar_shares). Not a role
+  // fact at all, so it arrives as data (hasInterviewCalendarAccess, read by the portal shell), the
+  // way hasDeviceMapping does. With no data it is false: nobody is offered a calendar by role.
+  showInterviewCalendarTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
   showPlansTab?: boolean;
@@ -431,6 +436,7 @@ export function resolveEmployeePortalNavVisibility(
   employeeDepartmentName?: string | null | undefined,
   viewerHrId?: string | null | undefined,
   hasDeviceMapping?: boolean,
+  hasInterviewCalendarAccess?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -728,6 +734,9 @@ export function resolveEmployeePortalNavVisibility(
     // The three roles it admits are exactly canViewManagerCvEngagement — kept in step by hand,
     // because that gate lives in a server module this client-consumed helper must not import.
     showManagerEngagementTab: isNationalSalesManager,
+    // Shared with them by the calendar's owner — see hasInterviewCalendarAccess in
+    // src/lib/recruitment/interview-calendar.ts, which the page itself also asks.
+    showInterviewCalendarTab: hasInterviewCalendarAccess === true,
     // Personally device-tracked employees see their own punch history; a head-of-department
     // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).

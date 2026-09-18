@@ -907,6 +907,13 @@ export const adminNavigationSectionSeeds = [
       // title and then by that title's own questions (app/(admin)/recruitment/whatsapp-applicants/
       // page.tsx). Owner, 2026-09-18. Same gate and same clause as Returned CVs above.
       { href: "/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // Interview Calendar — every interview booked from a CV, by week, day and half hour, with PDF
+      // and Excel exports and the owner's own sharing (app/(admin)/recruitment/interview-calendar/
+      // page.tsx). Owner, 2026-09-18. The row is offered where the recruiters work; the calendar
+      // itself admits its owner and whoever he shared it with, and shows anyone else a plain notice
+      // rather than bouncing them. A sharee outside recruitment reaches it from the share notice,
+      // and in the portal from a row that appears only once it is shared with them.
+      { href: "/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
       // CV Sheet Links — the bearer tokens feeding the owner's live CV-lifecycle Google Sheet
       // (app/(admin)/recruitment/cv-lifecycle-sheet/page.tsx). #3102 shipped that whole feature
       // with no UI, so the only token was minted by hand in SQL against production and nothing in
@@ -2057,6 +2064,9 @@ const hrNavigationSectionSeeds = [
       // able to reach it only by typing the address (see WhatsApp Templates below). Same gate as
       // Returned CVs above, and only that seat holds `recruitment`, so HR Operations is never offered it.
       { href: "/hr/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
+      // The HR shell's row for /recruitment/interview-calendar (2026-09-18), for the same reason as
+      // WhatsApp Applicants above. Whether the calendar opens is its own sharing, not this clause.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
       // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
       // `action: "export"` rather than the bare resource used by its neighbours, because that is
       // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers
