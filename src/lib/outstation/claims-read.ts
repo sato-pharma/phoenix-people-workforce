@@ -121,7 +121,6 @@ function mapClaimToPayrollApproval(row: Record<string, unknown>): PayrollExpense
     km: toNumber(row.distance_km),
     location: destination,
     meetingAmount: toNumber(row.meeting_amount),
-    open: "",
     other: toNumber(row.other_amount),
     payoutMonth: toNumber(row.payout_month),
     payoutYear: toNumber(row.payout_year),

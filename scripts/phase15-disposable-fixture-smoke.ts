@@ -253,7 +253,6 @@ function expenseRecord(tripId: string, hrId: string, specialist: string) {
     km: 0,
     location: "PHASE15 Location",
     meetingAmount: 50,
-    open: "",
     other: 0,
     pmWorkload: 0,
     requestType: "Field Visit",

@@ -28,7 +28,6 @@ function trip(overrides: Partial<PayrollExpenseApproval>): PayrollExpenseApprova
     km: 0,
     location: "Alexandria",
     meetingAmount: 0,
-    open: "",
     other: 0,
     payoutMonth: 6,
     payoutYear: 2026,

@@ -254,7 +254,6 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     km: request.distanceFromResidenceKm ?? 0,
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount,
-    open: "",
     other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pmWorkload: outstationWorkloadCount(request.pmWorkload),
@@ -305,8 +304,8 @@ export function mapOutstationRequestRowToPayrollApproval(
   // report_am_workload/report_pm_workload are never read on either side.
   const amWorkload = outstationWorkloadCount(row.am_workload);
   const pmWorkload = outstationWorkloadCount(row.pm_workload);
-  const hrStatus = toText(row.report_hr_status) || toText(row.employee_name);
-  const hrNotes = toText(row.report_hr_notes) || toText(row.eligibility_reason);
+  const hrStatus = toText(row.employee_name);
+  const hrNotes = toText(row.eligibility_reason);
   // The LABEL, and only the label. `report_trip_type` is the report-facing stay/duration wording
   // ("Return same day", "Overnight / 3 days") that `reportTripTypeLabel` in service.ts derives
   // from the trip's own dates — the approvals report renders it under "Travel Stay Type", which
@@ -355,7 +354,6 @@ export function mapOutstationRequestRowToPayrollApproval(
     km: toNumber(row.distance_km ?? row.distance_from_residence_km),
     location: destination,
     meetingAmount,
-    open: "",
     other,
     payoutMonth: payout.month,
     payoutYear: payout.year,

@@ -61,8 +61,6 @@ export async function POST(request: Request) {
       goTicketAmount: Number(body.goTicketAmount ?? 0),
       hasTicketAttachments: Boolean(body.hasTicketAttachments),
       amWorkload: optionalNumber(body.amWorkload),
-      hrNotes: optionalText(body.hrNotes),
-      hrStatus: optionalText(body.hrStatus),
       kilometerReading:
         body.kilometerReading == null ? undefined : Number(body.kilometerReading),
       medicalTripHrId:

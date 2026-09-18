@@ -146,7 +146,6 @@ const expenseReviewColumns: Array<{
   { className: "min-w-[160px]", key: "status", label: "Status" },
   { className: "min-w-[160px]", key: "hr", label: "HR Status" },
   { className: "min-w-[300px]", key: "hrNotes", label: "HR Notes" },
-  { className: "min-w-[120px]", key: "open", label: "Open" },
 ];
 
 // The Employee column is pinned to the left (identity anchor) and the HR-decision
@@ -173,7 +172,6 @@ const expenseDefaultHiddenColumns = new Set<ExpenseReviewColumnKey>([
   "description",
   "hr",
   "hrNotes",
-  "open",
 ]);
 
 const expenseColumnPrefsKey = "phoenix.outstation.expense-review.hidden-columns.v1";

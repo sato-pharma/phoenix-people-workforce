@@ -797,7 +797,6 @@ async function runDirectAppRouteChecks(
         km: 0,
         location: "PHASE27",
         meetingAmount: 0,
-        open: "closed",
         other: 0,
         pmWorkload: 0,
         requestType: "PHASE27",

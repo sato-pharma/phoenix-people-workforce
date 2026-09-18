@@ -121,7 +121,6 @@ const expenseHeaderAliases = {
   ],
   columnHr: ["HR", "HR Notes", "HR Status"],
   columnRecommendation: ["Recommendation", "Manager Recommendation", "HR Recommendation"],
-  columnOpen: ["Open", "Open Status"],
   columnAmWorkload: ["AM Workload", "AM Workload (hrs)"],
   columnPmWorkload: ["PM Workload", "PM Workload (hrs)"],
   columnTripType: [
@@ -159,7 +158,6 @@ const expenseTemplateColumnLabels: Record<keyof typeof expenseHeaderAliases, str
   columnKm: "KM",
   columnLocation: "Destination",
   columnMeeting: "Meeting Amount",
-  columnOpen: "Open",
   columnPmWorkload: "PM Workload",
   columnRecommendation: "Recommendation",
   columnRequestType: "Expense Type",
@@ -696,7 +694,6 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       km: numberValue(rowValueByAlias(...expenseHeaderAliases.columnKm)),
       location,
       meetingAmount,
-      open: text(rowValueByAlias(...expenseHeaderAliases.columnOpen)),
       other: 0,
       pmWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnPmWorkload)),
       requestType: text(rowValueByAlias(...expenseHeaderAliases.columnRequestType)),

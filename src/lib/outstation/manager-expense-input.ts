@@ -214,8 +214,6 @@ export function buildManagerExpenseAdminPatch(body: unknown): ManagerExpenseAdmi
   if (source.durationMinutes !== undefined) {
     input.durationMinutes = optionalNumber(source.durationMinutes);
   }
-  if (source.hrNotes !== undefined) input.hrNotes = optionalText(source.hrNotes);
-  if (source.hrStatus !== undefined) input.hrStatus = optionalText(source.hrStatus);
   if (source.meetingAmount !== undefined) input.meetingAmount = optionalNumber(source.meetingAmount);
 
   // A data URL leaving the field alone is the common case (undefined — most edits touch nothing
