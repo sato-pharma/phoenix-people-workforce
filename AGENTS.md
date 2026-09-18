@@ -404,9 +404,10 @@ automatically; the local branch and worktree survive and still need approval to 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
 `pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The six
-**required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile` — run on the
-PR head commit and block the merge if any is red. **The unit suite is `test`, not `validate`** (split
-out 2026-09-17, #3950) — a doc naming `validate` as where a pinned test runs is stale by that much.
+**required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile` (the Expo
+app's `npm ci` + typecheck, when `mobile/` changed) — run on the PR head commit and block the merge
+if any is red. **The unit suite is `test`, not `validate`** (split out 2026-09-17, #3950) — a doc
+placing a pinned test in `validate` is stale.
 🔴 **That split left `test` OUT of branch protection until 2026-09-18, so every locked-rule test went
 red without blocking a merge** — never take "pinned by a required check" on trust; read the
 protection API. `pnpm run ci` is opt-in: run it **only when the owner names it**.
