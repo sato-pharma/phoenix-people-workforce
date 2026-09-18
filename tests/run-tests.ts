@@ -586,7 +586,7 @@ import { runSalesUploadRefusedRowsTests } from "./sales-upload-refused-rows.test
 import { runSosNumberCellsAutoFixTests } from "./sos-number-cells-auto-fix.test.ts";
 import { runSalesUploadRedatedRowsTests } from "./sales-upload-redated-rows.test.ts";
 import { runSosEuropeanDecimalMisreadTests } from "./sos-european-decimal-misread.test.ts";
-import { runSosMonthlyImportCommaMisreadTests } from "./sos-monthly-import-comma-misread.test.ts";
+import { runProductSourceRowNumberCommaTests, runSosMonthlyImportCommaMisreadTests } from "./sos-monthly-import-comma-misread.test.ts";
 import { runSalesUploadVerificationTests } from "./sales-upload-verification.test.ts";
 import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
@@ -2965,6 +2965,10 @@ await runTest(
 await runTest(
   "the coded importer (Direct, coded sheets, the Normalizer's import) reads \"1.234,56\" as 1234.56 and lists it; a text quantity or value \"1.234\" or \"12,5\" is refused and named, a discount never",
   runSosMonthlyImportCommaMisreadTests,
+);
+await runTest(
+  "a product's Source Row Number \"1,2\" is refused, never saved as row 12; \"1,200\" is still 1200",
+  runProductSourceRowNumberCommaTests,
 );
 await runTest("sales upload verification step (never-stuck invariant)", runSalesUploadVerificationTests);
 await runTest("sales AI header-mismatch explain (privacy + no-op)", runSalesAiExplainTests);
