@@ -31,7 +31,6 @@ import {
 } from "@/lib/outstation/approval-state";
 import { describeImportedHistoryRefusal, planImportedHistoryWrites } from "@/lib/outstation/imported-history";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
-import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
@@ -1429,50 +1428,6 @@ export async function resyncPayrollExpenseStepForRemovedTrips(
 
 /** Columns a caller must select before deleting, so the removed rows can still be resynced. */
 export const EXPENSE_DECISION_SELECT = EXPENSE_DECISION_COLUMNS;
-
-// Best-effort completion alert: when approved expenses are imported into a payroll
-// run, tell each matched employee their expense is now in payroll (in-app + email +
-// Telegram, generic — no amounts). Uses module "outstation" to match the rest of the
-// expense-notification chain (Telegram-enabled, not payroll-sensitive). Idempotent per
-// (batch, employee) so re-running an import never double-notifies. Never throws.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function notifyExpensesAddedToPayroll(input: { batchId: string; hrIds: string[]; month: number; year: number }) {
-  try {
-    const unique = Array.from(new Set(input.hrIds.map((hrId) => String(hrId ?? "").trim()).filter(Boolean)));
-    if (unique.length === 0) return;
-    const period = `${String(input.month).padStart(2, "0")}/${input.year}`;
-    await Promise.allSettled(
-      unique.map((hrId) =>
-        createSystemNotification({
-          actionUrl: "/employee-portals/expenses",
-          category: "general",
-          channels: ["in_app", "email", "telegram", "push"],
-          // Plain template — module "outstation" otherwise frames this in the submit template
-          // ("submitted automatically and requires your review").
-          email: { templateKey: "general" },
-          eventType: "added_to_payroll",
-          message: `Your approved expense has been added to the ${period} payroll run and will be paid with that payroll.`,
-          metadata: {
-            actionUrl: "/employee-portals/expenses",
-            idempotencyKey: `outstation:added_to_payroll:${input.batchId}:${hrId.toUpperCase()}`,
-            month: input.month,
-            period,
-            year: input.year,
-          },
-          module: "outstation",
-          priority: "normal",
-          recipientHrId: hrId,
-          recordId: input.batchId,
-          subjectHrId: hrId,
-          telegram: { buttons: [{ label: "Open Phoenix", url: "/employee-portals/expenses" }] },
-          title: "Your expense was added to payroll",
-        }),
-      ),
-    );
-  } catch (error) {
-    logNotificationSendFailure("payroll.notifyExpensesAddedToPayroll", error);
-  }
-}
 
 export async function importApprovedExpensesToPayroll(input: {
   fileName: string;

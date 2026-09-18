@@ -418,8 +418,8 @@ Two fixes:
 | Submitted | ✔ to employee, Cc manager, Bcc Super Admin | unchanged |
 | **Approved** | **nothing** | notify the employee, with the approved amount and payout month |
 | Returned for correction | does not exist | notify, deep-linked to the editable claim |
-| Rejected | ✔ but links to a page that redirects most roles away | deep-link to the claim |
-| **In payroll / Paid** | `notifyExpensesAddedToPayroll` exists and is **called from nowhere** | wired to the link and paid transitions |
+| Rejected | ✔ in-app, Telegram and push — **never email** (owner, 2026-09-19); links to a page that redirects most roles away | deep-link to the claim |
+| **In payroll / Paid** | **nothing** — the unused `notifyExpensesAddedToPayroll` (which would have emailed the employee) was **deleted 2026-09-19** at the owner's instruction | a new notice, built fresh — ask the owner which channels first |
 
 Every link carries the claim id. Today only the submission email does (F-19, F-20).
 

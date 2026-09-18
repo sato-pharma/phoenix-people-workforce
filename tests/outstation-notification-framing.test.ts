@@ -37,7 +37,6 @@ function code(slice: string) {
  */
 export function runOutstationNotificationFramingTests() {
   const service = source("src/lib/outstation/service.ts");
-  const expenses = source("src/lib/outstation/expenses.ts");
 
   // ── 1. Non-submit events never wear the submit template ──────────────────────────────────
   const reminder = code(functionSlice(service, "export async function sendOutstationDeparturePhotoReminder"));
@@ -50,8 +49,6 @@ export function runOutstationNotificationFramingTests() {
   assert.match(decision, /templateKey: "general"/, "the rejection must pin the plain template");
   const sla = code(functionSlice(service, "export async function runOutstationSlaDaily"));
   assert.match(sla, /templateKey: "general"/, "the overdue reminder must pin the plain template");
-  const addedToPayroll = code(functionSlice(expenses, "async function notifyExpensesAddedToPayroll"));
-  assert.match(addedToPayroll, /templateKey: "general"/, "the added-to-payroll notice must pin the plain template");
   // The submit notice is the one event the submit template was written for; pinning it away would
   // lose the table the manager and the Super Admin read.
   const submit = code(functionSlice(service, "async function notifyOutstationSubmitted"));
