@@ -62,6 +62,7 @@ import {
   type ThroughputSummary,
 } from "@/lib/recruitment/candidate-throughput";
 import { ScreeningFilterBar, ScreeningPageFrame } from "@/components/recruitment/screening-page-client";
+import type { ScreeningFilterCounts } from "@/lib/recruitment/screening-filter-counts";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import { ScreeningWorkstation } from "@/components/recruitment/workstation/screening-workstation";
 import {
@@ -98,6 +99,7 @@ export function WorkstationPageClient({
   canSendToManagers,
   canWriteNotes,
   counts,
+  filterCounts,
   filteredOut,
   hiringManagers,
   notified,
@@ -133,6 +135,8 @@ export function WorkstationPageClient({
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
+  /** How many CVs each filter option would return — the numbers the bar prints in its options. */
+  filterCounts: ScreeningFilterCounts;
   filteredOut: number;
   hiringManagers: WorkspaceManager[];
   notified: ScreeningNotifiedFilter;
@@ -451,6 +455,7 @@ export function WorkstationPageClient({
         <ScreeningFilterBar
           area={shown.area}
           areaOptions={areaOptions}
+          filterCounts={filterCounts}
           notified={shown.notified}
           onChange={goTo}
           onClear={() =>

@@ -32,6 +32,11 @@ import {
 import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
 import { candidateStatuses, candidateStatusLabels, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
+// Pure, and its whole import chain is — see the header of screening-filter.ts. These two fold an
+// area or source the way the counts are keyed, so the bar looks a count up the same way it was
+// tallied rather than by the spelling it happens to be displaying.
+import { screeningAreaKey, screeningSourceKey } from "@/lib/recruitment/screening-filter";
+import type { ScreeningFilterCounts } from "@/lib/recruitment/screening-filter-counts";
 // Type-only, and it has to stay that way: hiring-manager-notify reaches the service-role client, so
 // a value import would drag it into this "use client" bundle and fail the build outright.
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
@@ -81,6 +86,7 @@ export function ScreeningPageClient({
   area,
   areaOptions,
   candidates,
+  filterCounts,
   hiringManagers,
   initialViews,
   notified,
@@ -102,6 +108,15 @@ export function ScreeningPageClient({
   /** The areas applicants in this pool have actually named — the only ones worth offering. */
   areaOptions: string[];
   candidates: Candidate[];
+  /**
+   * How many CVs each filter option would return — see ScreeningFilterBar.
+   *
+   * Required rather than defaulted, deliberately. The bar has TWO homes (this screen and the
+   * workstation) and the note in `goTo` below records what that already cost once: "a fix to one is
+   * half a fix", caught only because the types made the second caller declare itself. A default of
+   * empty counts would have hidden this call site and rendered every option as a disabled "(0)".
+   */
+  filterCounts: ScreeningFilterCounts;
   /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
   hiringManagers: HiringManagerOption[];
   initialViews: CandidateViewMap;
@@ -213,6 +228,7 @@ export function ScreeningPageClient({
       <ScreeningFilterBar
         area={shown.area}
         areaOptions={areaOptions}
+        filterCounts={filterCounts}
         notified={shown.notified}
         onChange={goTo}
         onClear={() =>
@@ -324,6 +340,50 @@ const filterSelectClass = (active: boolean) =>
   );
 
 /**
+ * One option, carrying what picking it would actually give him.
+ *
+ * ── WHY EVERY OPTION NOW WEARS ITS COUNT ────────────────────────────────────────────────────────
+ *
+ * Nine selects, ~68 options, and until now not one of them said whether it held 300 people or
+ * nobody. Since every filter here is a URL, the only way to find out was to pick it and wait out
+ * the round trip — 5 to 12 seconds against the live pool. Looking for the district manager
+ * applicants meant guessing, waiting, reading the "42 of 434" pill, and guessing again. The owner,
+ * 2026-09-18: "i want to reach all those easily by polished working filters".
+ *
+ * A DEAD OPTION IS DISABLED RATHER THAN HIDDEN, and neither is quite free:
+ *
+ *   • Hiding it loses information. "(0)" is the honest answer to "has anybody applied for this
+ *     seat at all", and a list whose length changes between two visits is a list you re-read.
+ *   • Leaving it live spends a 12-second round trip to be shown an empty queue.
+ *
+ * So it stays visible, says 0, and cannot be picked. The one exception is the value the select is
+ * CURRENTLY on: a bookmarked link can name a filter the pool has since emptied, and a disabled
+ * option that is also the selected one still has to render, or the bar would silently misreport
+ * which filter is holding the list down.
+ *
+ * The text is plain, because an `<option>` cannot hold markup in any browser — which is also why
+ * the count rides inside the label rather than in a styled pill like the rest of this bar.
+ */
+function FilterOption({
+  count,
+  label,
+  selected,
+  value,
+}: {
+  count: number | undefined;
+  label: string;
+  selected: boolean;
+  value: string;
+}) {
+  const total = count ?? 0;
+  return (
+    <option disabled={total === 0 && !selected} value={value}>
+      {label} ({total})
+    </option>
+  );
+}
+
+/**
  * "42 of 434 CVs" and the switches that produced the 42.
  *
  * Deliberately its own bar above the session rather than more items in CandidateScreeningSession's
@@ -335,6 +395,7 @@ const filterSelectClass = (active: boolean) =>
 export function ScreeningFilterBar({
   area,
   areaOptions,
+  filterCounts,
   notified,
   onChange,
   onClear,
@@ -352,6 +413,14 @@ export function ScreeningFilterBar({
 }: {
   area: string | null;
   areaOptions: string[];
+  /**
+   * How many CVs each option would return, over the WHOLE pool rather than the narrowed list.
+   *
+   * The whole pool on purpose, and the same choice `areaOptions` makes: a dropdown whose numbers
+   * all collapse to nearly zero the moment you pick one of them cannot be used to change your mind
+   * about the pick. The narrowed figure is the bar's own headline pill, one line above.
+   */
+  filterCounts: ScreeningFilterCounts;
   notified: ScreeningNotifiedFilter;
   onChange: (next: ScreeningHrefOptions) => void;
   onClear: () => void;
@@ -428,11 +497,20 @@ export function ScreeningFilterBar({
           onChange={(event) => onChange({ status: event.target.value ? (event.target.value as CandidateStatus) : null })}
           value={status ?? ""}
         >
+          {/* THE "ANY" ROW CARRIES NO COUNT, on every select here. It is the escape from a
+              narrowing rather than a narrowing, its number is the bar's own headline pill one line
+              above, and printing it would invite reading the list below as a breakdown that sums to
+              it — which it deliberately does not: the windows nest, the star ladder nests, and one
+              candidate can sit in two role families. */}
           <option value="">Any status</option>
           {candidateStatuses.map((value) => (
-            <option key={value} value={value}>
-              {candidateStatusLabels[value]}
-            </option>
+            <FilterOption
+              count={filterCounts.status[value]}
+              key={value}
+              label={candidateStatusLabels[value]}
+              selected={status === value}
+              value={value}
+            />
           ))}
         </select>
       </label>
@@ -455,9 +533,13 @@ export function ScreeningFilterBar({
         >
           <option value="">Any stars</option>
           {screeningRatingFilters.map((value) => (
-            <option key={value} value={value}>
-              {screeningRatingFilterLabels[value]}
-            </option>
+            <FilterOption
+              count={filterCounts.rating[value]}
+              key={value}
+              label={screeningRatingFilterLabels[value]}
+              selected={rating === value}
+              value={value}
+            />
           ))}
         </select>
       </label>
@@ -468,11 +550,21 @@ export function ScreeningFilterBar({
           onChange={(event) => onChange({ seen: event.target.value as ScreeningSeenFilter })}
           value={seen}
         >
-          {(Object.keys(seenFilterLabels) as ScreeningSeenFilter[]).map((value) => (
-            <option key={value} value={value}>
-              {seenFilterLabels[value]}
-            </option>
-          ))}
+          {(Object.keys(seenFilterLabels) as ScreeningSeenFilter[]).map((value) =>
+            value === "any" ? (
+              <option key={value} value={value}>
+                {seenFilterLabels[value]}
+              </option>
+            ) : (
+              <FilterOption
+                count={filterCounts.seen[value]}
+                key={value}
+                label={seenFilterLabels[value]}
+                selected={seen === value}
+                value={value}
+              />
+            ),
+          )}
         </select>
       </label>
       <label className={filterLabelClass(notified !== "any")}>
@@ -482,11 +574,21 @@ export function ScreeningFilterBar({
           onChange={(event) => onChange({ notified: event.target.value as ScreeningNotifiedFilter })}
           value={notified}
         >
-          {(Object.keys(notifiedFilterLabels) as ScreeningNotifiedFilter[]).map((value) => (
-            <option key={value} value={value}>
-              {notifiedFilterLabels[value]}
-            </option>
-          ))}
+          {(Object.keys(notifiedFilterLabels) as ScreeningNotifiedFilter[]).map((value) =>
+            value === "any" ? (
+              <option key={value} value={value}>
+                {notifiedFilterLabels[value]}
+              </option>
+            ) : (
+              <FilterOption
+                count={filterCounts.notified[value]}
+                key={value}
+                label={notifiedFilterLabels[value]}
+                selected={notified === value}
+                value={value}
+              />
+            ),
+          )}
         </select>
       </label>
       <label className={filterLabelClass(received !== null)}>
@@ -500,9 +602,13 @@ export function ScreeningFilterBar({
         >
           <option value="">Any time</option>
           {screeningReceivedFilters.map((value) => (
-            <option key={value} value={value}>
-              {screeningReceivedFilterLabels[value]}
-            </option>
+            <FilterOption
+              count={filterCounts.received[value]}
+              key={value}
+              label={screeningReceivedFilterLabels[value]}
+              selected={received === value}
+              value={value}
+            />
           ))}
         </select>
       </label>
@@ -514,12 +620,26 @@ export function ScreeningFilterBar({
           value={role ?? ""}
         >
           <option value="">Any role</option>
+          {/* THESE COUNTS DO NOT SUM TO THE POOL, and that is the role-mismatch fix showing through.
+              Somebody who applied for a district manager seat off a senior medical rep CV is
+              findable under both families, so he is counted under both — measured on production
+              2026-09-18, 303 of the 649 candidates who stated a job were missing from a filter
+              their own record answered, 55 of them from District Manager alone. */}
           {candidateRoleFamilies.map((family) => (
-            <option key={family} value={family}>
-              {candidateRoleFamilyLabels[family]}
-            </option>
+            <FilterOption
+              count={filterCounts.role[family]}
+              key={family}
+              label={candidateRoleFamilyLabels[family]}
+              selected={role === family}
+              value={family}
+            />
           ))}
-          <option value={SCREENING_UNKNOWN}>No job title on file</option>
+          <FilterOption
+            count={filterCounts.role[SCREENING_UNKNOWN]}
+            label="No job title on file"
+            selected={role === SCREENING_UNKNOWN}
+            value={SCREENING_UNKNOWN}
+          />
         </select>
       </label>
       <label className={filterLabelClass(region !== null)}>
@@ -531,12 +651,26 @@ export function ScreeningFilterBar({
         >
           <option value="">Any region</option>
           {candidateRegionCodes.map((code) => (
-            <option key={code} value={code}>
-              {candidateRegionLabels[code]}
-            </option>
+            <FilterOption
+              count={filterCounts.region[code]}
+              key={code}
+              label={candidateRegionLabels[code]}
+              selected={region === code}
+              value={code}
+            />
           ))}
-          <option value="foreign">{foreignRegionLabel}</option>
-          <option value={SCREENING_UNKNOWN}>No governorate on file</option>
+          <FilterOption
+            count={filterCounts.region.foreign}
+            label={foreignRegionLabel}
+            selected={region === "foreign"}
+            value="foreign"
+          />
+          <FilterOption
+            count={filterCounts.region[SCREENING_UNKNOWN]}
+            label="No governorate on file"
+            selected={region === SCREENING_UNKNOWN}
+            value={SCREENING_UNKNOWN}
+          />
         </select>
       </label>
       <label className={filterLabelClass(area !== null)}>
@@ -547,12 +681,24 @@ export function ScreeningFilterBar({
           value={area ?? ""}
         >
           <option value="">Any area</option>
+          {/* Keyed through screeningAreaKey, never through the displayed spelling. These are strings
+              applicants typed, the options list keeps the FIRST spelling it saw of each, and a count
+              looked up by the display value would read 0 for every row that differed only by case. */}
           {areaOptions.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
+            <FilterOption
+              count={filterCounts.area[screeningAreaKey(value)]}
+              key={value}
+              label={value}
+              selected={area === value}
+              value={value}
+            />
           ))}
-          <option value={SCREENING_UNKNOWN}>No area on file</option>
+          <FilterOption
+            count={filterCounts.area[SCREENING_UNKNOWN]}
+            label="No area on file"
+            selected={area === SCREENING_UNKNOWN}
+            value={SCREENING_UNKNOWN}
+          />
         </select>
       </label>
       {sourceOptions.length > 1 ? (
@@ -565,9 +711,13 @@ export function ScreeningFilterBar({
           >
             <option value="">Any source</option>
             {sourceOptions.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
+              <FilterOption
+                count={filterCounts.source[screeningSourceKey(value)]}
+                key={value}
+                label={value}
+                selected={source === value}
+                value={value}
+              />
             ))}
           </select>
         </label>
