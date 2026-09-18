@@ -118,16 +118,20 @@ export async function listWeeklyProductScopeAssignments(): Promise<Map<string, S
   return byHrId;
 }
 
-/** Replace one person's full set of assigned product codes (delete-then-insert). */
+/**
+ * Replace one person's full set of assigned product codes (delete-then-insert). Only
+ * `product-scope-list.ts` calls this: a save on either product-scope screen writes this list AND the
+ * Scope & Visibility one, so calling it alone would split them again.
+ */
 export async function replaceWeeklyProductScope(
   hrId: string,
   productCodes: string[],
   actorId: string | null,
+  supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
 ): Promise<void> {
   const hrKey = canonicalHrIdKey(hrId);
   if (!hrKey) throw new Error("A valid HR_ID is required.");
   const codes = [...new Set(productCodes.map((code) => code.trim().toUpperCase()).filter(Boolean))];
-  const supabase = getSupabaseAdmin();
 
   const del = await supabase.from("weekly_sales_product_scope").delete().eq("hr_id", hrKey);
   if (del.error) throw new Error(del.error.message);

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { replaceWeeklyProductScope } from "@/lib/sales/weekly/access";
+import { saveWeeklyProductScopeForPerson } from "@/lib/sales/product-scope-list";
 import { loadWeeklyProductScopeAdmin } from "@/lib/sales/weekly/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -39,7 +39,8 @@ export async function PUT(request: Request) {
       : [];
 
     const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    await replaceWeeklyProductScope(hrId, productCodes, actorId);
+    // Also the person's Scope & Visibility list: both screens save one list (owner, 2026-09-18).
+    await saveWeeklyProductScopeForPerson(hrId, productCodes, actorId);
 
     const data = await loadWeeklyProductScopeAdmin();
     return NextResponse.json({ success: true, data, message: "Product access updated." });

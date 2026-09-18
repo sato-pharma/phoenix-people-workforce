@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { listUserScopeOverrides, updateUserScopeOverride } from "@/lib/auth/scope-visibility";
+import { listUserScopeOverrides } from "@/lib/auth/scope-visibility";
+import { hrIdForStorage } from "@/lib/hr-id";
+import { saveScopeVisibilityForLogin } from "@/lib/sales/product-scope-list";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +44,9 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "loginId is required" }, { status: 400 });
     }
 
-    await updateUserScopeOverride({ loginId, lineNames, productCodes, salesScopeOverride });
+    // The products are also the person's Weekly Sales list: both screens save one list (owner, 2026-09-18).
+    const actorId = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    await saveScopeVisibilityForLogin({ loginId, lineNames, productCodes, salesScopeOverride }, actorId);
     return NextResponse.json({ success: true });
   } catch (error) {
     if (isForbiddenError(error)) {
