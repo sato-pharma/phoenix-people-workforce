@@ -38,7 +38,12 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   try {
-    assertSameOriginMutation(request);
+    // 🔴 THE RETURN IS THE CHECK. `assertSameOriginMutation` does not throw — it HANDS BACK a 403
+    // Response when the origin is wrong and undefined when it is right, so calling it and dropping
+    // the answer leaves the route wide open while reading exactly like a guarded one. Mine did, and
+    // tests/csrf-route-coverage caught it by name. Assign it and return it.
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
 
     const access = await resolveAccessContext(request);
     await assertPermission(access, "company_devices", "approve");
