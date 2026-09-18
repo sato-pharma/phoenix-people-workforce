@@ -64,7 +64,8 @@ export type NormalizePreview = {
   // How many distinct unknowns there REALLY are, before PREVIEW_UNKNOWN_LIMIT truncates the three
   // lists above. Without these the UI silently showed the first 500 and looked like the whole job,
   // which is how "the normalizer maps a very small number per click" was invisible from the screen.
-  unknownTotals: { customers: number; products: number; territories: number };
+  // `rows` is the rows a mapping would unblock (see DistinctUnknowns.rowsNeedingMapping).
+  unknownTotals: { customers: number; products: number; territories: number; rows: number };
   // Surfaced to the UI for actionable callouts
   blankCustomerSkipped: number;
   blankCustomerErrors: number;
@@ -343,6 +344,7 @@ export function summarizePreview(
       customers: distinct.customers.length,
       products: distinct.products.length,
       territories: distinct.territories.length,
+      rows: distinct.rowsNeedingMapping,
     },
     ignoredItems: [...ignoredMap.values()],
     blankCustomerSkipped: result.summary.blankCustomerSkipped,

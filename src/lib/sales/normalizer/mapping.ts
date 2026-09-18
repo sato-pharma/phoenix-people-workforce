@@ -46,6 +46,10 @@ export type DistinctUnknowns = {
   blankCustomerErrors: number;
   // Exceptions that block import but have no rawTerritory or rawCustomerCode (column-mismatch ghost).
   darkCount: number;
+  // Rows a mapping would unblock: an unknown product, territory or pharmacy stands on them. A row with
+  // a BLANK product is not one of them — no mapping gives it a product — which is why a pharmacy-only
+  // file used to show every one of its rows as "needs mapping", however many pharmacies were mapped.
+  rowsNeedingMapping: number;
 };
 
 function tokens(value: string): Set<string> {
@@ -71,7 +75,11 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
   const productMap = new Map<string, DistinctUnknown>();
   const territoryMap = new Map<string, DistinctUnknown>();
   const customerMap = new Map<string, DistinctUnknown>();
+  let rowsNeedingMapping = 0;
   for (const ex of exceptions) {
+    const productGap = (ex.reason === "product" || ex.reason === "both") && !!ex.rawProduct;
+    const placeGap = (ex.reason === "brick" || ex.reason === "both") && !!(ex.rawTerritory || ex.rawCustomerCode);
+    if (productGap || placeGap) rowsNeedingMapping += 1;
     if ((ex.reason === "product" || ex.reason === "both") && ex.rawProduct) {
       let entry = productMap.get(ex.rawProduct);
       if (!entry) {
@@ -111,7 +119,7 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
   const blankCustomerErrors = exceptions.filter((e) => e.reason === "blank_customer").length;
 
   const sorted = (m: Map<string, DistinctUnknown>) => [...m.values()].sort((a, b) => b.count - a.count);
-  return { customers: sorted(customerMap), products: sorted(productMap), territories: sorted(territoryMap), darkCount, blankCustomerErrors };
+  return { customers: sorted(customerMap), products: sorted(productMap), territories: sorted(territoryMap), darkCount, blankCustomerErrors, rowsNeedingMapping };
 }
 
 // ── write path (insert-if-absent, validated against the masters) ──
