@@ -141,6 +141,49 @@ export async function listCandidateViews(viewerHrId: string | null | undefined):
   );
 }
 
+/** One person's reading of one CV, as the candidate's own page lists it. */
+export type CandidateViewer = CandidateView & { viewerHrId: string };
+
+/**
+ * Everybody who has opened ONE CV, most recent reader first — the candidate page's "Opened by".
+ *
+ * The same rows as the two readers around it, asked the third way: by candidate. One candidate has
+ * one row per person who ever opened them, a handful at most, so this is a single read with no
+ * paging. A missing table answers "nobody", exactly as the queue behaves before the migration.
+ */
+export async function listViewersOfCandidate(candidateId: string): Promise<CandidateViewer[]> {
+  const { data, error } = await recruitmentDb()
+    .from("ats_candidate_views")
+    .select("viewer_hr_id,first_seen_at,last_seen_at,view_count")
+    .eq("candidate_id", candidateId)
+    .order("last_seen_at", { ascending: false });
+
+  if (error) {
+    if (isMissingRelation(error)) return [];
+    throw error;
+  }
+
+  const rows = (data ?? []) as Array<{
+    viewer_hr_id?: string | null;
+    first_seen_at?: string | null;
+    last_seen_at?: string | null;
+    view_count?: number | null;
+  }>;
+
+  const viewers: CandidateViewer[] = [];
+  for (const row of rows) {
+    const viewerHrId = row.viewer_hr_id ? String(row.viewer_hr_id) : null;
+    if (!viewerHrId) continue;
+    viewers.push({
+      firstSeenAt: String(row.first_seen_at ?? ""),
+      lastSeenAt: String(row.last_seen_at ?? row.first_seen_at ?? ""),
+      viewCount: Number(row.view_count ?? 1),
+      viewerHrId,
+    });
+  }
+  return viewers;
+}
+
 /**
  * Who ELSE has opened each of these CVs — the other half of "have I read this".
  *

@@ -569,8 +569,11 @@ async function loadRequisitionJobTitleByCandidate(ids: string[]): Promise<Map<st
  * to the database for the CV extraction and the requisition, so those two run against ~120 ids
  * rather than all 555. That ordering is what makes reading `extracted_fields` affordable at all:
  * it is 1.1 MB across the table, and every round trip from here crosses the Atlantic.
+ *
+ * Exported for the candidate's own page (candidate-record.ts), so its "Applying for" gives the same
+ * answer as the pool row the name was pressed on.
  */
-async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
+export async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
   if (candidates.length === 0) return;
   const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
   for (const candidate of candidates) {

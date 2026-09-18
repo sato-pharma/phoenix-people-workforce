@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { cairoDate } from "@/lib/format/cairo-datetime";
+import { candidatePageHref } from "@/lib/recruitment/candidate-page-link";
 import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
   applicantMatches,
@@ -59,11 +60,13 @@ function FilterSelect({
 function ApplicantCell({ pool, row }: { pool: string; row: WhatsAppApplicantRow }) {
   return (
     <div className="min-w-0">
-      {/* A new tab, so the filtered list is still here when the CV is closed. */}
+      {/* The name opens everything on file for this person — their own page, which links on to
+          screening for a decision. A new tab, so the filtered list is still here when it is closed. */}
       <Link
         className="block break-words font-semibold text-slate-900 hover:text-orange-600 hover:underline"
         dir="auto"
-        href={screeningHref(pool, { candidate: row.candidateId })}
+        href={candidatePageHref(pool, row.candidateId)}
+        prefetch={false}
         rel="noopener"
         target="_blank"
       >

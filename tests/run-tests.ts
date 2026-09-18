@@ -212,6 +212,7 @@ import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.tes
 import { runCvIntakeDigest6hTests } from "./cv-intake-digest-6h.test.ts";
 import { runRecruitmentCandidateRatingTests } from "./recruitment-candidate-rating.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
+import { runRecruitmentCandidatePageTests } from "./recruitment-candidate-page.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
@@ -2244,6 +2245,10 @@ await runTest(
 await runTest(
   "recruitment candidate pool table (the intake envelope becomes a name, the action strip is one line, and duplicates show on the desktop row)",
   runRecruitmentCandidatePoolTableTests,
+);
+await runTest(
+  "recruitment candidate page (pressing a candidate's name opens everything on file for them, read-only, in the shell it was pressed in)",
+  runRecruitmentCandidatePageTests,
 );
 await runTest(
   "recruitment labels (a stored code never reaches a screen as one: no \"REQ FILLED\", no \"Hr Interview\", no \"Cv\")",
