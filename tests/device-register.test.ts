@@ -12,6 +12,17 @@ import {
   isReturnCondition,
   parseAmount,
 } from "../src/lib/devices/service.ts";
+import {
+  DEVICE_NEEDS_AN_IDENTITY,
+  DeviceIdentityCorrectionError,
+  imeiFieldHolds,
+  imeisMatch,
+  parseTypedImei,
+  planIdentityCorrection,
+  type IdentityCorrectionRequest,
+  type IdentityEntry,
+} from "../src/lib/devices/device-identity.ts";
+import { permissionMatrix, phoenixRoles } from "../src/lib/auth/permissions.ts";
 import type { CompanyDevice, DeviceStatus, HolderEmploymentState } from "../src/lib/devices/types.ts";
 
 /**
@@ -647,6 +658,345 @@ function testTheApiIsDeclaredInTheAccessRegistry(): void {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// Correcting an existing entry's serial number and IMEI
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * WHY THIS EXISTS. `createDevice` wrote an entry's serial and IMEI once and nothing could change
+ * them, so a wrong IMEI stayed wrong for good — and Rep Tablets' "the register has a different
+ * IMEI" warning (`register_differs`) told the operator to dial *#06# with no screen to act on the
+ * answer. The correction is Super Admin only and needs a reason (owner, 2026-09-18).
+ */
+const ENTRY: IdentityEntry = {
+  assetTag: "PHX-TAB-0007",
+  id: "device-7",
+  imei: "351234567890124",
+  serialNumber: "R52W1234ABC",
+};
+
+/** The sentence a correction is refused with — or a failure if it was not refused, or refused as a 500. */
+function refusal(run: () => unknown): string {
+  let caught: unknown = null;
+  try {
+    run();
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(
+    caught instanceof DeviceIdentityCorrectionError,
+    caught === null
+      ? "expected the correction to be refused, and it was accepted"
+      : `a caller-wrong correction must refuse with DeviceIdentityCorrectionError (the route answers it 400), got ${String(caught)}`,
+  );
+  return caught.message;
+}
+
+/** A correction saved from an editor that opened on `current` as it is — what the register sends. */
+function correct(
+  current: IdentityEntry,
+  request: Pick<IdentityCorrectionRequest, "serialNumber" | "imei" | "reason">,
+  others: readonly IdentityEntry[],
+) {
+  return planIdentityCorrection(
+    current,
+    { ...request, shownImei: current.imei, shownSerialNumber: current.serialNumber },
+    others,
+  );
+}
+
+/** An IMEI as typed is read as its digits; anything that is not 14 or 15 digits is refused. */
+function testATypedImeiIsReadAsItsDigits(): void {
+  assert.equal(parseTypedImei("35-123456-789012-3"), "351234567890123");
+  assert.equal(parseTypedImei(" 35 123456 789012 3 "), "351234567890123");
+  assert.equal(parseTypedImei("35.123456.789012.3"), "351234567890123");
+  assert.equal(parseTypedImei("35123456789012"), "35123456789012", "14 digits — the check digit left off — is an IMEI the register has always carried");
+  assert.equal(parseTypedImei("٣٥١٢٣٤٥٦٧٨٩٠١٢٣"), "351234567890123", "Arabic-Indic digits are the same digits");
+  assert.equal(parseTypedImei("   "), null, "a blank IMEI is no IMEI, not a malformed one");
+  assert.equal(parseTypedImei(null), null);
+  assert.match(refusal(() => parseTypedImei("35123456789012O")), /not an IMEI/, "a letter O typed for a zero is refused, never dropped");
+  assert.match(refusal(() => parseTypedImei("3512345678901")), /13 digits/);
+  assert.match(refusal(() => parseTypedImei("3512345678901234")), /16 digits/);
+}
+
+/**
+ * THE HEADLINE. Another entry's IMEI is refused when the DIGITS match, however either was typed.
+ * `uq_company_devices_imei` compares `lower(imei)` — text — so it lets "35-123456-789012-3" and
+ * "351234567890123" sit on two entries; this is the check that does not.
+ */
+function testAnImeiAnotherEntryHoldsIsRefusedOnDigits(): void {
+  assert.notEqual(
+    "35-123456-789012-3".toLowerCase(),
+    "351234567890123".toLowerCase(),
+    "the database's unique index compares these as different text — which is why this check is on digits",
+  );
+
+  const dashed: IdentityEntry = { assetTag: "PHX-TAB-0003", id: "device-3", imei: "35-123456-789012-3", serialNumber: "R52W0003" };
+  const message = refusal(() =>
+    correct(
+      ENTRY,
+      { imei: "351234567890123", reason: "Typed wrong at registration", serialNumber: ENTRY.serialNumber },
+      [ENTRY, dashed],
+    ),
+  );
+  assert.match(message, /PHX-TAB-0003/, "the refusal names the entry that already holds the IMEI");
+
+  const checkDigitDropped: IdentityEntry = { ...dashed, imei: "35123456789012" };
+  refusal(() =>
+    correct(
+      ENTRY,
+      { imei: "351234567890123", reason: "Typed wrong at registration", serialNumber: ENTRY.serialNumber },
+      [checkDigitDropped],
+    ),
+  );
+  assert.ok(imeisMatch("35123456789012", "351234567890123"), "14 digits match their own 15-digit IMEI");
+  assert.ok(!imeisMatch("35123456789012", "351234567890993"), "and nothing else");
+}
+
+/**
+ * The other entry's IMEI field is FREE TEXT — the register form and the bulk import store what they
+ * are given. A label, a dual-SIM phone's second IMEI or Arabic-Indic digits must not hide the IMEI
+ * it holds: reduced to one number they did ("IMEI1: 351…" is sixteen digits, the "1" kept; a
+ * dual-SIM pair is thirty; Arabic-Indic digits are no digits at all), and the text-based unique
+ * index lets every one of them through.
+ */
+function testAnImeiIsFoundWhereverAnotherEntryWroteIt(): void {
+  const request = { imei: "351234567890123", reason: "Dialled *#06# on the tablet", serialNumber: ENTRY.serialNumber };
+  const shapes: Array<[string, string]> = [
+    ["IMEI1: 351234567890123", "a labelled IMEI"],
+    ["351234567890123 / 351234567890131", "the first of a dual-SIM pair"],
+    ["351234567890131 / 35-123456-789012-3", "the second of a dual-SIM pair, dashed"],
+    ["٣٥١٢٣٤٥٦٧٨٩٠١٢٣", "Arabic-Indic digits"],
+    ["35123456789012", "the check digit left off"],
+  ];
+  for (const [field, shape] of shapes) {
+    const holder: IdentityEntry = { assetTag: "PHX-PHN-0002", id: "device-2", imei: field, serialNumber: "RF8N0002" };
+    assert.ok(imeiFieldHolds(field, request.imei), `${shape} holds the IMEI: ${field}`);
+    assert.match(
+      refusal(() => correct(ENTRY, request, [ENTRY, holder])),
+      /PHX-PHN-0002 already holds the IMEI/,
+      `${shape} is refused, naming the entry that holds it: ${field}`,
+    );
+  }
+  assert.ok(!imeiFieldHolds("351234567890131 / 356938035643809", "351234567890123"), "a different pair does not hold it");
+  assert.ok(!imeiFieldHolds(null, "351234567890123"));
+}
+
+/**
+ * An IMEI left exactly as it is stored is kept as it is — never read as one number. Otherwise a
+ * dual-SIM phone's serial could not be fixed without deleting one of its IMEIs from the register.
+ */
+function testAStoredImeiThatIsNotOneNumberSurvivesASerialFix(): void {
+  const dualSim: IdentityEntry = { ...ENTRY, imei: "351234567890123 / 351234567890131" };
+  const plan = correct(dualSim, { imei: ` ${dualSim.imei} `, reason: "Serial read off the box", serialNumber: "R52W1234ABD" }, [dualSim]);
+  assert.equal(plan.imei, dualSim.imei);
+  assert.equal(plan.imeiChanged, false);
+  assert.equal(plan.serialChanged, true);
+}
+
+/**
+ * The editor sends the pair it opened on, and a save is refused when the entry holds something else
+ * now. Rep Tablets copies a tablet's IMEI into an empty register entry by itself; a correction saved
+ * from a form opened before that copy would have erased it, with no refusal.
+ */
+function testAFormOpenedOnOldValuesIsRefused(): void {
+  const beforeTheCopy = { imei: "", reason: "Serial read off the box", serialNumber: "R52W1234ABD" };
+  const message = refusal(() =>
+    planIdentityCorrection(ENTRY, { ...beforeTheCopy, shownImei: null, shownSerialNumber: ENTRY.serialNumber }, [ENTRY]),
+  );
+  assert.match(message, /PHX-TAB-0007 changed after this form was opened/);
+  assert.match(message, /IMEI 351234567890124/, "the refusal shows what the entry holds now");
+  refusal(() =>
+    planIdentityCorrection(
+      ENTRY,
+      { ...beforeTheCopy, imei: ENTRY.imei, shownImei: ENTRY.imei, shownSerialNumber: "R52W0000" },
+      [ENTRY],
+    ),
+  );
+  // Missing reads as "nothing recorded": a caller that leaves the pair out is refused, not waved through.
+  refusal(() =>
+    planIdentityCorrection(ENTRY, { ...beforeTheCopy, shownImei: undefined, shownSerialNumber: undefined }, [ENTRY]),
+  );
+
+  const route = readFileSync("app/api/devices/identity/route.ts", "utf8");
+  assert.match(route, /shownSerialNumber: textOrNull\(payload\?\.shownSerialNumber\)/);
+  assert.match(route, /shownImei: textOrNull\(payload\?\.shownImei\)/);
+  const workspace = readFileSync("src/components/devices/device-register-workspace.tsx", "utf8");
+  assert.match(workspace, /shownSerialNumber: shown\.serialNumber,\s*shownImei: shown\.imei,/, "the editor sends the pair it opened on");
+  assert.match(workspace, /setShown\(\{ serialNumber: device\.serialNumber, imei: device\.imei \}\)/, "taken again each time it opens");
+}
+
+/** Serial numbers compare on letters and digits, ignoring case, spaces and dashes. */
+function testASerialAnotherEntryHoldsIsRefused(): void {
+  const other: IdentityEntry = { assetTag: "PHX-LAP-0011", id: "device-11", imei: null, serialNumber: "hs1-a2b3" };
+  const message = refusal(() =>
+    correct(ENTRY, { imei: ENTRY.imei, reason: "Serial read off the box", serialNumber: "HS1A2B3" }, [other]),
+  );
+  assert.match(message, /PHX-LAP-0011/);
+}
+
+/** The entry being corrected is never its own duplicate — adding a dropped check digit is allowed. */
+function testTheEntryIsNotItsOwnDuplicate(): void {
+  const current: IdentityEntry = { ...ENTRY, imei: "35123456789012" };
+  const plan = correct(
+    current,
+    { imei: "351234567890123", reason: "Added the check digit from *#06#", serialNumber: current.serialNumber },
+    [current],
+  );
+  assert.equal(plan.imei, "351234567890123");
+  assert.equal(plan.imeiChanged, true);
+  assert.equal(plan.serialChanged, false);
+}
+
+/** A written reason is required (owner, 2026-09-18), and kept to a length somebody can read. */
+function testAReasonIsRequired(): void {
+  for (const reason of [undefined, null, "", "   "]) {
+    assert.match(
+      refusal(() => correct(ENTRY, { imei: "351234567890125", reason, serialNumber: ENTRY.serialNumber }, [ENTRY])),
+      /Say why/,
+    );
+  }
+  refusal(() =>
+    correct(ENTRY, { imei: "351234567890125", reason: "x".repeat(501), serialNumber: ENTRY.serialNumber }, [ENTRY]),
+  );
+  const plan = correct(
+    ENTRY,
+    { imei: "351234567890125", reason: "  Dialled *#06# on the tablet  ", serialNumber: ENTRY.serialNumber },
+    [ENTRY],
+  );
+  assert.equal(plan.reason, "Dialled *#06# on the tablet");
+}
+
+/** `company_devices_identifiable`: a serial number or an IMEI must remain, in the same sentence as `createDevice`. */
+function testACorrectionKeepsTheDeviceIdentifiable(): void {
+  assert.equal(
+    refusal(() => correct(ENTRY, { imei: " ", reason: "Clearing both", serialNumber: "" }, [ENTRY])),
+    DEVICE_NEEDS_AN_IDENTITY,
+  );
+  const service = readFileSync("src/lib/devices/service.ts", "utf8");
+  assert.ok(
+    service.includes(DEVICE_NEEDS_AN_IDENTITY),
+    "createDevice and the correction refuse an unidentifiable device with one sentence",
+  );
+
+  const serialOnly = correct(ENTRY, { imei: "", reason: "The IMEI belonged to another tablet", serialNumber: ENTRY.serialNumber }, [ENTRY]);
+  assert.equal(serialOnly.imei, null, "removing one of the two is allowed while the other remains");
+  assert.equal(serialOnly.serialNumber, ENTRY.serialNumber);
+}
+
+/**
+ * Only what changed changes. An unchanged pair is refused rather than audited as a change, and an
+ * IMEI whose digits are unchanged keeps the text already stored — fixing a serial does not quietly
+ * rewrite a dashed IMEI into bare digits.
+ */
+function testOnlyWhatChangedIsWritten(): void {
+  assert.match(
+    refusal(() => correct(ENTRY, { imei: ENTRY.imei, reason: "No change", serialNumber: ` ${ENTRY.serialNumber} ` }, [ENTRY])),
+    /nothing to correct/,
+  );
+
+  const dashed: IdentityEntry = { ...ENTRY, imei: "35-123456-789012-4" };
+  const plan = correct(
+    dashed,
+    { imei: "351234567890124", reason: "Serial read off the box", serialNumber: "R52W1234ABD" },
+    [dashed],
+  );
+  assert.equal(plan.imei, "35-123456-789012-4");
+  assert.equal(plan.imeiChanged, false);
+  assert.equal(plan.serialChanged, true);
+
+  const typed = correct(ENTRY, { imei: "35 123456 789012 5", reason: "Dialled *#06#", serialNumber: ENTRY.serialNumber }, [ENTRY]);
+  assert.equal(typed.imei, "351234567890125", "a changed IMEI is stored as its digits");
+}
+
+/**
+ * The service refuses before it writes, writes the REQUIRED audit row with the old values BEFORE
+ * the entry changes, and changes it only while it still holds what was read.
+ */
+function testTheCorrectionIsAuditedBeforeTheEntryChanges(): void {
+  const service = readFileSync("src/lib/devices/service.ts", "utf8");
+  const start = service.indexOf("export async function correctDeviceIdentity(");
+  assert.ok(start !== -1, "correctDeviceIdentity must exist in the register's service");
+  const body = service.slice(start, service.indexOf("\nexport ", start + 1));
+
+  const planned = body.indexOf("planIdentityCorrection(");
+  const audited = body.indexOf("await writeRequiredAuditLog({");
+  const updated = body.indexOf(".update(");
+  assert.ok(planned !== -1 && audited !== -1 && updated !== -1);
+  assert.ok(planned < audited, "every refusal happens before anything is written");
+  assert.ok(audited < updated, "the audit row is written BEFORE the register changes — no audit row, no change");
+  assert.match(body, /oldValues: \{ serialNumber: row\.serial_number, imei: row\.imei \}/, "the audit row keeps the old values");
+  assert.match(body, /newValues: \{ serialNumber: plan\.serialNumber, imei: plan\.imei, reason: plan\.reason \}/);
+  // The change's own record is the REQUIRED writer. The best-effort one may appear only in the
+  // failure path, after the update, to say a correction the first row announced did not land.
+  const failurePath = body.indexOf("} catch (failure) {", updated);
+  const bestEffort = body.indexOf("writeAuditLog(");
+  assert.ok(failurePath !== -1, "a correction that fails after its audit row is caught");
+  assert.ok(
+    bestEffort === -1 || bestEffort > failurePath,
+    "the best-effort audit writer would let the change land without its record — only the failure row may use it",
+  );
+  const failure = body.slice(failurePath);
+  assert.match(failure, /was not applied/, "the failure row says the correction did not land");
+  assert.match(failure, /const unchanged = !updateSent \|\| failure instanceof DeviceIdentityCorrectionError;/);
+  assert.match(failure, /throw failure;/, "and the failure still reaches the person who pressed Save");
+  assert.ok(body.indexOf("updateSent = true;") < body.indexOf('await update.select("id")'));
+  assert.match(body, /update\.is\("serial_number", null\)/, "the update is conditional on the serial still being what was read");
+  assert.match(body, /update\.eq\("imei", row\.imei\)/, "and on the IMEI still being what was read");
+  assert.doesNotMatch(body, /\.upsert\(|\.insert\(|\.delete\(/);
+  assert.match(
+    service,
+    /\.select\("id,asset_tag,serial_number,imei"\)[\s\S]{0,120}\.range\(/,
+    "the duplicate check reads the whole register page by page, never a first page",
+  );
+}
+
+/** The route: CSRF first, then the Super Admin permission, before the body is read or anything written. */
+function testTheCorrectionRouteIsGuardedBeforeAnyWrite(): void {
+  const route = readFileSync("app/api/devices/identity/route.ts", "utf8");
+  const csrf = route.indexOf("assertSameOriginMutation(request)");
+  const permission = route.indexOf('assertPermission(access, "company_devices", "approve")');
+  const body = route.indexOf("request.json(");
+  const write = route.indexOf("await correctDeviceIdentity(");
+  assert.ok(csrf !== -1 && permission !== -1 && body !== -1 && write !== -1);
+  assert.ok(csrf < permission, "the same-origin check runs first");
+  assert.ok(permission < body && permission < write, "the permission is asserted before the body is read or anything written");
+  assert.doesNotMatch(
+    route,
+    /"company_devices", "(update|create)"/,
+    "HR Operations' update/create grant must not open this route — it is Super Admin only",
+  );
+  assert.match(route, /error instanceof DeviceIdentityCorrectionError\) return \{ message: error\.message, status: 400 \}/);
+}
+
+/** Declared as an audited, CSRF-guarded mutation on `company_devices:approve`. */
+function testTheCorrectionIsDeclaredInTheAccessRegistry(): void {
+  const registry = readFileSync("src/lib/security/access-registry.ts", "utf8");
+  const rows = registry.split("\n").filter((line) => line.includes('pattern: "/api/devices/identity"'));
+  assert.equal(rows.length, 1, "one declaration for the correction route");
+  const [row] = rows;
+  assert.ok(row.includes('methods: ["POST"]'));
+  assert.ok(row.includes("csrfRequired: true"), "the correction must be CSRF-guarded");
+  assert.ok(row.includes('audit: { classification: "mutation", required: true }'), "and its audit row required");
+  assert.ok(row.includes('permission: { resource: "company_devices", action: "approve" }'), "on the Super Admin's action");
+}
+
+/** `company_devices:approve` is the Super Admin's alone — the owner's answer to who may correct. */
+function testOnlyTheSuperAdminMayCorrect(): void {
+  const holders = phoenixRoles.filter((role) => (permissionMatrix[role]?.company_devices ?? []).includes("approve"));
+  assert.deepEqual(holders, ["Super Admin"]);
+
+  const page = readFileSync("app/(admin)/devices/page.tsx", "utf8");
+  assert.match(page, /canCorrectIdentity = await canAccess\(access, "company_devices", "approve"\)/);
+  const workspace = readFileSync("src/components/devices/device-register-workspace.tsx", "utf8");
+  assert.match(workspace, /fetch\("\/api\/devices\/identity"/);
+  assert.match(workspace, /correctIdentity=\{canCorrectIdentity \? correctIdentity : null\}/);
+
+  // Rep Tablets' warning links to the correction instead of leaving the operator with no screen.
+  const repTablets = readFileSync("src/components/devices/rep-tablets-console.tsx", "utf8");
+  assert.match(repTablets, /href: `\/devices\?correct=\$\{encodeURIComponent\(row\.registerDeviceId\)\}`/);
+}
+
 export function runDeviceRegisterTests(): void {
   testAnActiveHoldersDeviceIsNotFlagged();
   testALeaversDeviceIsFlaggedAndAged();
@@ -671,6 +1021,20 @@ export function runDeviceRegisterTests(): void {
   testThePrintLinkCarriesTheDeviceAndPicksTheRightForm();
   testTheResourceIsDeclaredAndScoped();
   testTheApiIsDeclaredInTheAccessRegistry();
+  testATypedImeiIsReadAsItsDigits();
+  testAnImeiAnotherEntryHoldsIsRefusedOnDigits();
+  testAnImeiIsFoundWhereverAnotherEntryWroteIt();
+  testAStoredImeiThatIsNotOneNumberSurvivesASerialFix();
+  testAFormOpenedOnOldValuesIsRefused();
+  testASerialAnotherEntryHoldsIsRefused();
+  testTheEntryIsNotItsOwnDuplicate();
+  testAReasonIsRequired();
+  testACorrectionKeepsTheDeviceIdentifiable();
+  testOnlyWhatChangedIsWritten();
+  testTheCorrectionIsAuditedBeforeTheEntryChanges();
+  testTheCorrectionRouteIsGuardedBeforeAnyWrite();
+  testTheCorrectionIsDeclaredInTheAccessRegistry();
+  testOnlyTheSuperAdminMayCorrect();
 }
 
 // Silences the unused-import lint for a type used only in a cast above.

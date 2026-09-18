@@ -235,8 +235,11 @@ const MATCHED_BY_LABEL: Record<NonNullable<ManagedTabletRow["matchedBy"]>, strin
   serial: "Matched by serial number",
 };
 
-function attentionLines(row: ManagedTabletRow): Array<{ tone: "bad" | "warn"; text: string }> {
-  const lines: Array<{ tone: "bad" | "warn"; text: string }> = [];
+/** One thing wrong with a tablet, and — where a screen can fix it — where that screen is. */
+type AttentionLine = { tone: "bad" | "warn"; text: string; link?: { href: string; label: string } };
+
+function attentionLines(row: ManagedTabletRow): AttentionLine[] {
+  const lines: AttentionLine[] = [];
   if (row.enrolledWithAnotherTabletsCode) {
     lines.push({
       text: `Enrolled with the code made for ${row.assetTag}, but its serial number is not that tablet's. Check which tablet this is before it is handed over.`,
@@ -249,8 +252,17 @@ function attentionLines(row: ManagedTabletRow): Array<{ tone: "bad" | "warn"; te
       tone: "bad",
     });
   } else if (row.imeiStatus === "register_differs") {
+    // Never corrected from here: the tablet's word is not taken over a number somebody typed. A
+    // person dials *#06#, and if the register is the wrong one, corrects it on the register's own
+    // row — Super Admin only, with a reason, audited with the old value (`/api/devices/identity`).
     lines.push({
-      text: `The custody register has IMEI ${row.registerImei} for ${row.assetTag}, but the tablet reports ${row.imei}. The register is left as it is — dial *#06# on the tablet to see which is right.`,
+      link: row.registerDeviceId
+        ? {
+            href: `/devices?correct=${encodeURIComponent(row.registerDeviceId)}`,
+            label: `Correct the IMEI of ${row.assetTag} in the custody register`,
+          }
+        : undefined,
+      text: `The custody register has IMEI ${row.registerImei} for ${row.assetTag}, but the tablet reports ${row.imei}. Dial *#06# on the tablet to see which is right — if the register is wrong, correct it there.`,
       tone: "warn",
     });
   } else if (row.imeiStatus === "held_back") {
@@ -356,6 +368,14 @@ function TabletRules({ row }: { row: ManagedTabletRow }) {
               key={line.text}
             >
               {line.text}
+              {line.link ? (
+                <>
+                  {" "}
+                  <Link className="font-black text-slate-900 underline underline-offset-2 hover:text-slate-700" href={line.link.href}>
+                    {line.link.label}
+                  </Link>
+                </>
+              ) : null}
             </li>
           ))}
         </ul>
