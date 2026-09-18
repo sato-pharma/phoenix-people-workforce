@@ -933,10 +933,14 @@ function readAsMessage(label: string, cell: SheetNumber): string {
   return `${label} "${cell.readFrom}" was read as ${cell.value.toLocaleString("en-US", { maximumFractionDigits: 6 })}.`;
 }
 
+// A product's Source Row Number. A comma counts only between whole groups of three ("1,200"): "1,2" was
+// read as row 12 with its comma dropped, and is refused now like any other unreadable row number.
 function parseOptionalInteger(value: unknown) {
   const text = normalizeDisplay(value);
   if (!text) return null;
-  const parsed = Number(text.replace(/,/g, ""));
+  const written = normalizeNumberText(text);
+  if (misplacedComma(written)) return Number.NaN;
+  const parsed = Number(written.replace(/,/g, ""));
   return Number.isInteger(parsed) && parsed > 0 ? parsed : Number.NaN;
 }
 

@@ -179,3 +179,30 @@ export async function runSosMonthlyImportCommaMisreadTests() {
     assert.throws(() => product("12,5"), SalesWorkflowError, 'a Factory Price "12,5" is refused, never saved as 125');
   }
 }
+
+// The product's Source Row Number shared the same blind comma strip: "1,2" was saved as row 12. The form's
+// field is a number input, so only a direct call to the products API could send one; production held no
+// source row number on any of its 30 products on 2026-09-18, so nothing is re-read.
+export function runProductSourceRowNumberCommaTests() {
+  const rowNumber = (sourceRowNumber: string | number | null) =>
+    normalizeSourceOfSalesProductInput({
+      factoryPrice: 10,
+      family: "Family",
+      familyCode: "FA",
+      line: "Pedia",
+      productCode: "P-X",
+      productName: "Product X",
+      source: "Source",
+      sourceRowNumber,
+    }).sourceRowNumber;
+
+  assert.throws(() => rowNumber("1,2"), SalesWorkflowError, 'a Source Row Number "1,2" is refused, never saved as row 12');
+  assert.throws(() => rowNumber("12,5"), SalesWorkflowError, 'a Source Row Number "12,5" is refused, never saved as row 125');
+  assert.equal(rowNumber("1,200"), 1200, "a comma between whole groups of three is a thousands separator");
+  assert.equal(rowNumber("12"), 12);
+  assert.equal(rowNumber(12), 12, "the number the form sends is taken as it is");
+  assert.equal(rowNumber("١٢"), 12, "Arabic-Indic digits are read, as everywhere else in the importer");
+  assert.equal(rowNumber(""), null, "an empty row number stays empty");
+  assert.equal(rowNumber(null), null);
+  assert.throws(() => rowNumber("1.5"), SalesWorkflowError, "a row number is still a positive whole number");
+}
