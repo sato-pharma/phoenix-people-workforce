@@ -1127,4 +1127,56 @@ export async function runRecruitmentScreeningPageTests() {
     `the screening overlay must carry no rounded-* class at all -- the square-edge golden rule. ` +
       `Found: ${roundedInSession.join(", ")}`,
   );
+
+  // ── The stat strip fits the screen, because `shrink-0` is not on it ───────
+  //
+  // MEASURED ON PRODUCTION, 2026-09-18, at 375px: main reported scrollWidth 480 against clientWidth
+  // 375, and the one element past the right edge was WorkHeader's figures strip -- 464px wide,
+  // right edge at 480, holding "1079 in the pool / 868 you have not opened / +189 this week".
+  // It carried `flex-wrap`, so it looked like it should have wrapped. It could not: `shrink-0` pins
+  // a flex item at its own content width, so the strip was never made narrow enough to need a
+  // second line and pushed the page sideways instead. That is the failure the fits-the-screen
+  // golden rule names in as many words -- `shrink-0` makes an inner `flex-wrap` inert.
+  //
+  // Removing it cost nothing above the fold, measured the same day at 1440px with and without:
+  // 371px wide, 13px tall, left edge 1043 -- byte-identical, because `flex-shrink` does nothing
+  // until there is no room. Afterwards main read 375 of 375 on the phone.
+  //
+  // WHY THIS IS A SOURCE PIN AND NOT A MEASUREMENT. The real check is scrollWidth > clientWidth in a
+  // browser at 375px, and this suite has no browser. So it pins the CAUSE instead of the symptom,
+  // which is only worth anything because the cause was measured rather than guessed: the class that
+  // did it is named, and the two classes that do the wrapping are required to stay.
+  const workHeader = read("src/components/recruitment/workstation/workstation-look.tsx");
+  const figuresStrip = /<div className="(flex[^"]*)">\{figures\}<\/div>/.exec(workHeader);
+  assert.ok(figuresStrip, "WorkHeader must still render its figures in one classed flex strip");
+  const stripClasses = figuresStrip[1].split(/\s+/);
+
+  assert.ok(
+    !stripClasses.includes("shrink-0"),
+    "the figures strip must carry NO shrink-0 -- it pinned the strip at 464px inside a 375px " +
+      "viewport and scrolled the screening page sideways. Classes found: " + figuresStrip[1],
+  );
+  // The two that do the work. Dropping either brings the overflow straight back: without
+  // `flex-wrap` there is no second line to wrap onto, and without `min-w-0` the strip cannot be
+  // sized below the min-content width of its own line, which is the same 464px floor by another
+  // route.
+  for (const required of ["flex-wrap", "min-w-0"] as const) {
+    assert.ok(
+      stripClasses.includes(required),
+      "the figures strip must keep " + required + " -- it is what lets three figures become two " +
+        "lines on a phone instead of one line wider than the phone. Classes found: " + figuresStrip[1],
+    );
+  }
+
+  // AND THE GENERAL FORM, so the same mistake cannot land on a sibling of that strip. Any element in
+  // this file that asks to wrap and refuses to shrink is the identical bug wearing a different name.
+  const inertWraps = [...workHeader.matchAll(/className="([^"]*\bflex-wrap\b[^"]*)"/g)]
+    .map((hit) => hit[1])
+    .filter((classes) => classes.split(/\s+/).includes("shrink-0"));
+  assert.deepEqual(
+    inertWraps,
+    [],
+    "no element in workstation-look.tsx may pair flex-wrap with shrink-0 -- the wrap is inert and " +
+      "the page scrolls sideways. Found: " + inertWraps.join(" | "),
+  );
 }
