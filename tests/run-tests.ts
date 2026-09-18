@@ -802,6 +802,7 @@ import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
 import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
+import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -3302,6 +3303,11 @@ await runTest(
   + "side-loaded apps and only defaults or list order are not drift, and an enrolled tablet is "
   + "matched to the custody register by its code, serial or IMEI with a wrong-code tablet flagged)",
   runTabletEnrollmentTests,
+);
+await runTest(
+  "rep tablets add themselves to the custody register (next PHX-TAB number, only tablets on the "
+  + "rep rules, never a second entry for a serial or IMEI already registered)",
+  runTabletAutoRegisterTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
