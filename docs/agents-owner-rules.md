@@ -2772,6 +2772,26 @@ Every Pedia target since February sits on Fayoum alone: September is 988 units a
 
 ⚠ **The September split between the two is HIS to give.** The two obvious bases disagree almost exactly in reverse — the last separately-set targets (January and February) put Fayoum at 69%, while sales since February put it at 32% — and the sales series is untrustworthy here because one rep has covered both areas throughout, swinging hard and twice going negative on returns. Do not derive it.
 
+## No distributor's bonus is counted from September — owner rule, 2026-09-18
+
+His words, profanity left out: *"logged and published months, we can't touch them. So if you already calculated bonus in August … don't touch it. Starting from September, never a bonus in any … distributor is counted."* It restates what he said on 2026-09-07, the ruling that also took the discount factor out: *"we neglect the bonus and the value in any distributor sheet, we take the units and multiply by factory"* (quoted in `src/lib/sales/monthly-closing-details.ts`).
+
+### The rule
+
+- From the September 2026 closing on, a distributor's bonus (free goods) is never counted, as units or as value, in ANY distributor, not only El Qema.
+- A row's PAID units always count. A bonus cell is never a reason to drop them: the sale is its units × the factory price, whatever the bonus column holds.
+- August and every earlier published month keep exactly what they published, even where a bonus was counted. Never re-import, re-stamp or correct those rows to apply this rule ("A PUBLISHED AND ANNOUNCED MONTH IS NEVER CORRECTED", §4). The date is the mechanism.
+
+### What the code does, measured 2026-09-18 on `main` at 29c45a7
+
+- The monthly normalizer (`src/lib/sales/normalizer/engine.ts`) and the older monthly importer (`src/lib/sales/monthly-distributor-import.ts`) both set every row's `bonusQty` to 0, so no bonus UNITS reach a closing.
+- The gap is the whole-row flag. A profile's `bonusColumns` makes the engine skip a row whose bonus cell is non-empty, as free goods. For EPDA's two books, bulk and pharmacies (`EP-BK`, `EP-PHS`: `is_bonus`, a 0/1 flag on a free-goods line) that is right. For El Qema (`بونص`), the column holds a bonus QUANTITY on a line that also carries paid units, so a filled cell would drop the paid units — the opposite of this rule. It has never fired: El Qema's August book had 64 rows, 8,768 packs, none ignored. The fix is PR #4028, opened the same day: El Qema's `بونص` stops being a skip flag, so paid units always import and the bonus adds nothing, while EPDA's flag stays.
+- The weekly report keeps POS bonus units apart on a synthetic line with `qty: 0`, never priced. It is not a closing figure.
+
+### The trap
+
+The fix changes how a sheet is READ, so it reaches only uploads made after it ships. Re-importing an August sheet to "pick up" the new reading would restate a published month, which is exactly what he forbade. A published month keeps its rows as they were imported.
+
 ## Every reply opens with its next step, and always ends in words he can send — owner rules, 2026-09-07, 2026-09-15 and 2026-09-18
 
 The 2026-09-07 amendment moved the next step to the TOP of the reply (the account is in the §4 text
