@@ -1,15 +1,22 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import type { ScreeningQuestion } from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
+import { parseScreeningFilters, screeningHref } from "../src/lib/recruitment/screening-link.ts";
 import {
   ANSWERED_ALL,
   ANSWERED_FILTER_KEY,
   ANSWERED_NOT_ALL,
   applicantMatches,
+  parseWhatsAppApplicantSearch,
   REGION_FILTER_KEY,
   REGION_NOT_KNOWN,
   REGION_OUTSIDE_EGYPT,
   TYPED_ANSWER_VALUE,
+  whatsAppApplicantSearchCandidateIds,
+  whatsAppApplicantSearchLabel,
+  whatsAppApplicantSearchParam,
   whatsAppApplicantsPoolHref,
   type WhatsAppApplicantRow,
 } from "../src/lib/recruitment/whatsapp-applicant-filters.ts";
@@ -407,6 +414,141 @@ function runPoolHrefTests() {
   assert.equal(whatsAppApplicantsPoolHref("/recruitment/screening"), "/recruitment");
 }
 
+function read(relativePath: string): string {
+  return readFileSync(path.join(process.cwd(), relativePath), "utf8");
+}
+
+function runScreeningHandOffTests() {
+  // THE HAND-OFF TO THE SCREENING PAGE. The owner, 2026-09-18: "based on my filters, I can go to
+  // screening page and only show those I filtered." The link carries the SEARCH, never a list of
+  // names, and the screening page runs it again over the same rows. So the rule that matters is
+  // that the two pages find the same people.
+  const built = view({
+    candidates: [
+      candidate({ full_name: "Cairo, 25 to 30", governorate: "Cairo", id: "a" }),
+      candidate({ full_name: "Giza, 25 to 30", governorate: "Giza", id: "b" }),
+      candidate({ full_name: "Cairo, never answered the age", governorate: "Cairo", id: "c" }),
+      candidate({ full_name: "Cairo rep", governorate: "Cairo", id: "d" }),
+    ],
+    questions: [question()],
+    sessions: [
+      session({ candidate_id: "a", extra_answers: { oc_age_band: "25 to 30" }, wa_id: "1" }),
+      session({ candidate_id: "b", extra_answers: { oc_age_band: "25 to 30" }, wa_id: "2" }),
+      session({ candidate_id: "c", completed_at: null, extra_current_question_key: "oc_age_band", wa_id: "3" }),
+      session({ candidate_id: "d", extra_answers: { oc_age_band: "25 to 30" }, job_title_family: "medical_rep", wa_id: "4" }),
+    ],
+  });
+  const ownersSearch = { [REGION_FILTER_KEY]: "CA", "extra:oc_age_band": "25 to 30" };
+
+  const param = whatsAppApplicantSearchParam("office_coordinator", ownersSearch);
+  assert.equal(param, "title=office_coordinator&extra%3Aoc_age_band=25+to+30&region=CA");
+  assert.equal(
+    whatsAppApplicantSearchParam("office_coordinator", { "extra:oc_age_band": "25 to 30", [REGION_FILTER_KEY]: "CA" }),
+    param,
+    "one search is one link, whatever order its filters were picked in",
+  );
+  assert.equal(
+    whatsAppApplicantSearchParam("office_coordinator", { [REGION_FILTER_KEY]: "", "extra:oc_age_band": "" }),
+    "title=office_coordinator",
+    "a filter left on Any is not part of the search",
+  );
+
+  const search = parseWhatsAppApplicantSearch(param);
+  assert.ok(search, "the link reads back");
+  assert.equal(search.title, "office_coordinator");
+  assert.deepEqual({ ...search.selections }, ownersSearch);
+  assert.deepEqual(
+    [...whatsAppApplicantSearchCandidateIds(built.rows, search)],
+    built.rows.filter((row) => applicantMatches(row, "office_coordinator", ownersSearch)).map((row) => row.candidateId),
+    "the screening page finds exactly the people this page listed",
+  );
+  assert.deepEqual([...whatsAppApplicantSearchCandidateIds(built.rows, search)], ["a"]);
+  const wholeTitle = parseWhatsAppApplicantSearch(whatsAppApplicantSearchParam("office_coordinator", {}));
+  assert.ok(wholeTitle);
+  assert.deepEqual(
+    [...whatsAppApplicantSearchCandidateIds(built.rows, wholeTitle)].sort(),
+    ["a", "b", "c"],
+    "a title with no filters is everyone under it, finished or not, and nobody from another title",
+  );
+
+  // The link is typed into an address bar as easily as it is clicked, so it is untrusted.
+  assert.equal(parseWhatsAppApplicantSearch(null), null);
+  assert.equal(parseWhatsAppApplicantSearch(""), null);
+  assert.equal(parseWhatsAppApplicantSearch("region=CA"), null, "a search naming no job title narrows nothing");
+  assert.equal(parseWhatsAppApplicantSearch("title=%20%20"), null, "and neither does a blank one");
+  const hostile = parseWhatsAppApplicantSearch("title=office_coordinator&__proto__=x&constructor=y");
+  assert.ok(hostile);
+  assert.equal(Object.getPrototypeOf(hostile.selections), null, "the filters sit on a null prototype");
+  assert.equal(({} as Record<string, unknown>).x, undefined, "so a key spelled __proto__ changes no other object");
+  assert.deepEqual(
+    [...whatsAppApplicantSearchCandidateIds(built.rows, hostile)],
+    [],
+    "and, like a filter on a question nobody answered, it matches nobody",
+  );
+
+  // In words for the screening page's header: this page's own names, in this page's order, never a code.
+  assert.deepEqual(whatsAppApplicantSearchLabel(built, search), {
+    filters: ["Region: Cairo", "How old are you? 25 to 30"],
+    title: "Office Coordinator",
+  });
+  assert.deepEqual(
+    whatsAppApplicantSearchLabel(built, { selections: { "extra:oc_english_level": "Good" }, title: "office_coordinator" }),
+    { filters: ["A filter this page no longer offers: Good"], title: "Office Coordinator" },
+    "a filter this page stopped offering still narrows the list, so it is still named",
+  );
+  assert.equal(
+    whatsAppApplicantSearchLabel(built, { selections: {}, title: "astronaut" }).title,
+    "A job title nobody has applied for",
+  );
+
+  // THE SCREENING PAGE'S HALF. The search travels as one parameter, and the screening link keeps it.
+  assert.equal(
+    screeningHref("/recruitment", { whatsapp: param }),
+    "/recruitment/screening?whatsapp=title%3Doffice_coordinator%26extra%253Aoc_age_band%3D25%2Bto%2B30%26region%3DCA",
+    "the search is one parameter, encoded once more so its own & and = cannot leak into the screening link",
+  );
+  assert.equal(parseScreeningFilters({ whatsapp: param }).whatsapp, param, "and reads it back unchanged");
+  assert.equal(parseScreeningFilters({ whatsapp: "  " }).whatsapp, null);
+  assert.equal(
+    screeningHref("/hr/recruitment", { candidate: "cand-1", status: "new", whatsapp: param }),
+    "/hr/recruitment/screening?status=new&whatsapp=title%3Doffice_coordinator%26extra%253Aoc_age_band%3D25%2Bto%2B30%26region%3DCA&candidate=cand-1",
+    "it composes with the screening page's own filters under either shell, and the open CV still comes last",
+  );
+
+  // Every piece of the chain has to pass it on, or the pile silently widens back to everyone.
+  const station = read("src/components/recruitment/workstation/workstation-page-client.tsx");
+  for (const [name, source] of [
+    ["admin", read("app/(admin)/recruitment/screening/page.tsx")],
+    ["portal", read("app/employee-portals/recruitment/screening/page.tsx")],
+  ] as const) {
+    assert.match(source, /whatsapp=\{workspace\.whatsapp\}/, `the ${name} screening page must pass the search on`);
+    assert.match(
+      source,
+      /whatsAppSearchLabel=\{workspace\.whatsAppSearchLabel\}/,
+      `the ${name} screening page must pass the search's words on`,
+    );
+  }
+  assert.match(station, /whatsapp: next\.whatsapp !== undefined \? next\.whatsapp : whatsapp,/, "changing a filter keeps the search");
+  assert.match(station, /whatsapp: null,/, "and Clear drops it with the rest");
+  assert.match(
+    read("src/components/recruitment/whatsapp-applicants-search.tsx"),
+    /href=\{screeningHref\(pool, \{ whatsapp: whatsAppApplicantSearchParam\(title, selections\) \}\)\}/,
+    "the button on this page carries exactly the search on screen",
+  );
+  // The pile opens on everyone the search found, not on the "New CVs" tab, which would hide the ones
+  // already read or decided that the WhatsApp page had just listed.
+  assert.match(
+    read("src/components/recruitment/workstation/screening-workstation.tsx"),
+    /const pileIsChosen = vacancyId !== null \|\| whatsAppSearch !== null;/,
+  );
+  // Filed and decided CVs included, because the WhatsApp page lists them too.
+  assert.match(
+    read("src/lib/recruitment/screening-workspace.ts"),
+    /const whatsAppMatches = whatsAppIds \? allCandidates\.filter\(\(candidate\) => whatsAppIds\.has\(candidate\.id\)\) : null;/,
+  );
+  assert.match(read("src/lib/recruitment/screening-workspace.ts"), /const pool = seatQueue \?\? whatsAppMatches \?\? reviewPool;/);
+}
+
 export function runRecruitmentWhatsAppApplicantsTests() {
   runProgressTests();
   runRegionTests();
@@ -414,4 +556,5 @@ export function runRecruitmentWhatsAppApplicantsTests() {
   runFilterTests();
   runMatchTests();
   runPoolHrefTests();
+  runScreeningHandOffTests();
 }

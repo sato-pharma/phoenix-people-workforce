@@ -188,6 +188,7 @@ export async function runRecruitmentScreeningPageTests() {
     source: null,
     status: null,
     vacancy: null,
+    whatsapp: null,
   };
   assert.deepEqual(parseScreeningFilters({}), nothing, "a bare link narrows nothing");
   assert.deepEqual(parseScreeningFilters(), nothing, "no params at all narrows nothing");

@@ -13,6 +13,7 @@ import { cairoDate } from "@/lib/format/cairo-datetime";
 import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
   applicantMatches,
+  whatsAppApplicantSearchParam,
   whatsAppApplicantsPoolHref,
   type WhatsAppApplicantFilter,
   type WhatsAppApplicantRow,
@@ -232,6 +233,20 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
                 {filtered ? `${matches.length} of ${chosenTitle.count}` : chosenTitle.count}
               </span>
             </div>
+            {/* THE SAME PEOPLE ON THE SCREENING PAGE. The owner, 2026-09-18: "based on my filters, I
+                can go to screening page and only show those I filtered." The link carries the search,
+                and the screening page runs it again. A new tab, like a CV, so this list stays put. */}
+            {matches.length > 0 ? (
+              <Link
+                className="border border-orange-600 bg-orange-600 px-2 py-1 text-xs font-semibold text-white hover:bg-orange-700"
+                href={screeningHref(pool, { whatsapp: whatsAppApplicantSearchParam(title, selections) })}
+                rel="noopener"
+                target="_blank"
+                title="Open exactly these people on the screening page, in a new tab"
+              >
+                Screen {matches.length === 1 ? "this CV" : `these ${matches.length} CVs`}
+              </Link>
+            ) : null}
             {filtered ? (
               <button
                 className="border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"

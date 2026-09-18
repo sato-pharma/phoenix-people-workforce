@@ -97,6 +97,7 @@ import type {
   WorkspaceVacancy,
 } from "@/lib/recruitment/screening-workspace-types";
 import type { VacancyApplicantStats } from "@/lib/recruitment/vacancy-applicants";
+import type { WhatsAppApplicantSearchLabel } from "@/lib/recruitment/whatsapp-applicant-filters";
 
 export function WorkstationPageClient({
   area,
@@ -128,6 +129,8 @@ export function WorkstationPageClient({
   vacancies,
   vacancy,
   vacancyStats,
+  whatsapp,
+  whatsAppSearchLabel,
 }: {
   area: string | null;
   areaOptions: string[];
@@ -180,6 +183,13 @@ export function WorkstationPageClient({
   /** The open seat the link names, or null. The one narrowing that carries an id — see the header. */
   vacancy: number | null;
   vacancyStats: VacancyApplicantStats[];
+  /**
+   * A search handed over by the WhatsApp Applicants page, still encoded, or null. Carried on every
+   * link this page builds, like every other narrowing, so changing a filter here keeps it.
+   */
+  whatsapp: string | null;
+  /** That search in words: the job title and each filter picked. Printed, never a code. */
+  whatsAppSearchLabel: WhatsAppApplicantSearchLabel | null;
 }) {
   const router = useRouter();
   const [fullBleed, setFullBleed] = useState(false);
@@ -271,6 +281,7 @@ export function WorkstationPageClient({
     source,
     status,
     vacancy,
+    whatsapp,
   };
   const [shown, showImmediately] = useOptimistic(
     serverNarrowing,
@@ -294,6 +305,7 @@ export function WorkstationPageClient({
     shown.notified === "any" ? null : shown.notified,
     shown.seen === "any" ? null : shown.seen,
     shown.vacancy,
+    shown.whatsapp,
   ].filter((value) => value !== null && value !== undefined && value !== "").length;
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
@@ -320,8 +332,9 @@ export function WorkstationPageClient({
         source,
         status,
         vacancy,
+        whatsapp,
       }),
-    [area, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy],
+    [area, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy, whatsapp],
   );
   // The same pile with no CV named: the list itself. It is where a CV's own page goes back to.
   const listHref = screeningHref(shellPoolHref, {
@@ -335,6 +348,7 @@ export function WorkstationPageClient({
     source,
     status,
     vacancy,
+    whatsapp,
   });
 
   const goTo = useCallback(
@@ -350,6 +364,7 @@ export function WorkstationPageClient({
         source: next.source !== undefined ? next.source : source,
         status: next.status !== undefined ? next.status : status,
         vacancy: next.vacancy !== undefined ? next.vacancy : vacancy,
+        whatsapp: next.whatsapp !== undefined ? next.whatsapp : whatsapp,
       });
       // BOTH INSIDE THE ONE TRANSITION. The optimistic value lives exactly as long as the navigation
       // it belongs to: dispatched outside it, React drops it on the very next render and the
@@ -373,6 +388,7 @@ export function WorkstationPageClient({
       source,
       status,
       vacancy,
+      whatsapp,
     ],
   );
 
@@ -404,6 +420,11 @@ export function WorkstationPageClient({
     return () => window.removeEventListener("keydown", onKey);
   }, [focus, fullBleed, leaveFocus]);
 
+  // THE PILE'S NAME, in the header and on the one-line strips that stand in for it. A seat names
+  // itself; a search handed over by the WhatsApp Applicants page names its job title.
+  const pileTitle =
+    seatLabel ?? (whatsAppSearchLabel ? `WhatsApp applicants · ${whatsAppSearchLabel.title}` : "CV screening");
+
   const workstation = (
     <ScreeningWorkstation
       canDecide={canDecide}
@@ -418,6 +439,7 @@ export function WorkstationPageClient({
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
       onSelectVacancy={(next) => goTo({ vacancy: next })}
+      onLeaveWhatsAppSearch={() => goTo({ whatsapp: null })}
       ownPage={ownPage}
       poolSize={poolSize}
       positionSuggestions={positionSuggestions}
@@ -426,6 +448,9 @@ export function WorkstationPageClient({
       vacancies={vacancies}
       vacancyId={vacancy}
       vacancyStats={vacancyStats}
+      whatsAppSearch={
+        whatsAppSearchLabel ? [whatsAppSearchLabel.title, ...whatsAppSearchLabel.filters].join(" · ") : null
+      }
     />
   );
 
@@ -476,9 +501,11 @@ export function WorkstationPageClient({
           subtitle={
             seatLabel
               ? "Every undecided CV for this seat — filed to its folder, chosen on WhatsApp, or named in an email. Why each one is here is printed under their name."
-              : "The whole pool. Narrow it to one pile, or to one vacant seat, from the work queue on the left."
+              : whatsAppSearchLabel
+                ? whatsAppSearchSubtitle(whatsAppSearchLabel)
+                : "The whole pool. Narrow it to one pile, or to one vacant seat, from the work queue on the left."
           }
-          title={seatLabel ?? "CV screening"}
+          title={pileTitle}
         />
       )}
 
@@ -501,6 +528,7 @@ export function WorkstationPageClient({
               source: null,
               status: null,
               vacancy: null,
+              whatsapp: null,
             })
           }
           pending={pending}
@@ -541,7 +569,7 @@ export function WorkstationPageClient({
             line on a phone. */}
         {ownPage && !fullBleed && !focus ? (
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-white px-3 py-1.5">
-            <Eyebrow>{seatLabel ?? "CV screening"}</Eyebrow>
+            <Eyebrow>{pileTitle}</Eyebrow>
             <span className="flex flex-wrap items-center gap-1.5">
               <ActionLink href={listHref} title="The whole screening list, in this tab" tone="ghost">
                 <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
@@ -560,7 +588,7 @@ export function WorkstationPageClient({
         ) : null}
         {fullBleed && !focus ? (
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-white px-3 py-1.5">
-            <Eyebrow>{seatLabel ?? "CV screening"}</Eyebrow>
+            <Eyebrow>{pileTitle}</Eyebrow>
             <span className="flex items-center gap-1.5">
               <Action
                 onClick={enterFocus}
@@ -589,6 +617,15 @@ export function WorkstationPageClient({
       </div>
     </ScreeningPageFrame>
   );
+}
+
+/**
+ * The header's second line for a search handed over by the WhatsApp Applicants page: the filters
+ * picked, then what the pile holds. The job title is already in the header's name above it.
+ */
+function whatsAppSearchSubtitle(label: WhatsAppApplicantSearchLabel): string {
+  const pile = "Everyone that search found on the WhatsApp Applicants page, including CVs already filed or decided.";
+  return label.filters.length > 0 ? `${label.filters.join(" · ")}. ${pile}` : pile;
 }
 
 /**

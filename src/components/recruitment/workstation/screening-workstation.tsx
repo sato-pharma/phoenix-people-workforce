@@ -167,12 +167,14 @@ export function ScreeningWorkstation({
   ownPage,
   poolSize,
   onSelectVacancy,
+  onLeaveWhatsAppSearch,
   positionSuggestions,
   rows,
   seatLabel,
   vacancies,
   vacancyId,
   vacancyStats,
+  whatsAppSearch,
 }: {
   /**
    * May this reader decide candidates — the gate on both the single verdict and the bulk one.
@@ -223,19 +225,31 @@ export function ScreeningWorkstation({
   rows: readonly WorkspaceCandidateRow[];
   /** Go to — or leave — seat mode. A navigation, because the seat is in the link. */
   onSelectVacancy: (vacancyId: number | null) => void;
+  /** Drop the WhatsApp Applicants search. A navigation too, because the search is in the link. */
+  onLeaveWhatsAppSearch: () => void;
   /** The seat being screened, in words. Printed above the list so the pile names itself. */
   seatLabel: string | null;
   vacancies: readonly WorkspaceVacancy[];
   /** The seat the link names, or null for the ordinary queue. */
   vacancyId: number | null;
   vacancyStats: readonly VacancyApplicantStats[];
+  /**
+   * The search handed over by the WhatsApp Applicants page, in words (the job title, then each
+   * filter picked), or null. Printed above the list with the one-press way out.
+   */
+  whatsAppSearch: string | null;
 }) {
   // "New" is the right default for the ordinary queue and the WRONG one for a seat. The seat pile
   // the server just built is everything UNDECIDED for that seat, and plenty of it has been looked at
   // before — a CV filed to the area folder months ago is not new. Opening a bookmarked seat link on
   // the "New" tab would show a fraction of the pile with the rail beside it reporting the whole of
   // it, which is the one thing this mode must never do.
-  const [queue, setQueue] = useState<ScreeningWorkQueue>(vacancyId === null ? "new" : "all");
+  //
+  // The same for a WhatsApp Applicants search. That page listed everyone its filters found, and the
+  // owner asked for exactly those here ("only show those I filtered"). On "New" the people already
+  // read or decided would be missing from a list that page had just shown in full.
+  const pileIsChosen = vacancyId !== null || whatsAppSearch !== null;
+  const [queue, setQueue] = useState<ScreeningWorkQueue>(pileIsChosen ? "all" : "new");
   const [search, setSearch] = useState("");
   // The CV in the link wins on arrival; otherwise the top of the queue, exactly as before. An id
   // that is not in this pile selects nothing and the effect below falls back to the first row.
@@ -1161,7 +1175,7 @@ export function ScreeningWorkstation({
                 // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
                 // for that seat the filed CVs are read back in and the email applicants are matched.
                 onSelectVacancy(next);
-                setQueue(next === null ? "new" : "all");
+                setQueue(next === null && whatsAppSearch === null ? "new" : "all");
                 setQueueOpen(false);
                 setMobilePane("list");
               }}
@@ -1312,7 +1326,26 @@ export function ScreeningWorkstation({
             <Action
               onClick={() => {
                 onSelectVacancy(null);
-                setQueue("new");
+                setQueue(whatsAppSearch === null ? "new" : "all");
+              }}
+              tone="quiet"
+            >
+              Show everyone
+            </Action>
+          </Band>
+        ) : null}
+
+        {/* ── A SEARCH FROM THE WHATSAPP APPLICANTS PAGE ──────────────────────────────────────────
+            Named here as well as in the page header, because full bleed hides that header and this
+            line is then the only thing saying why the pile is short. The way out is one press, as it
+            is for a seat. Wraps at 375px rather than scrolling sideways; no ellipsis, no code. */}
+        {whatsAppSearch && !ownPage ? (
+          <Band tone="accent">
+            <BandSays>WhatsApp applicants: {whatsAppSearch}</BandSays>
+            <Action
+              onClick={() => {
+                onLeaveWhatsAppSearch();
+                setQueue(vacancyId === null ? "new" : "all");
               }}
               tone="quiet"
             >

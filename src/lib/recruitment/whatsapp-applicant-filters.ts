@@ -5,7 +5,9 @@
 // WhatsApp bot's questions. A job title is chosen first, and that title's own questions then appear as
 // filters. whatsapp-applicants.ts builds every row and every filter once, on the server. This file is
 // the half the browser needs, so it stays PURE and imports nothing. The client component filters on
-// every change without a round trip, and a test can pin the matching rule without a database.
+// every change without a round trip, and a test can pin the matching rule without a database. The
+// screening page uses it too: a link from this page carries the search there (see
+// `whatsAppApplicantSearchParam`), and the screening queue re-runs the same match on the server.
 
 /** Where the Region column's answer came from, in the owner's order of trust. */
 export type WhatsAppApplicantRegionSource = "whatsapp" | "cv" | "cv_unconfirmed";
@@ -136,4 +138,108 @@ export function applicantMatches(
     if (own(row.values, key) !== wanted) return false;
   }
   return true;
+}
+
+/**
+ * A search on this page, carried to the screening page in one link parameter.
+ *
+ * The owner, 2026-09-18: "based on my filters, I can go to screening page and only show those I
+ * filtered." The link carries the SEARCH, never a list of names. The screening page re-runs
+ * `applicantMatches` over the same rows on the server. So the link stays short however many people
+ * match: 250 candidate ids would be about 9 KB of address, which together with the sign-in cookies is
+ * more than a server accepts in one request. A saved link also keeps meaning "these filters" as new
+ * people answer.
+ *
+ * One parameter, holding a query string of its own: `title=office_coordinator&region=CA&...`. The
+ * screening page keeps it as an opaque string and passes it on untouched when one of its own filters
+ * changes, so it needs to know nothing about the questions behind it.
+ */
+export type WhatsAppApplicantSearch = { title: string; selections: WhatsAppApplicantSelections };
+
+/** The job title's own key inside the parameter. No filter is called this (see the keys above). */
+const SEARCH_TITLE_KEY = "title";
+
+export function whatsAppApplicantSearchParam(title: string, selections: WhatsAppApplicantSelections): string {
+  const params = new URLSearchParams();
+  params.set(SEARCH_TITLE_KEY, title);
+  // Sorted, so one search always spells one link, whatever order its filters were picked in.
+  for (const key of Object.keys(selections).sort()) {
+    const value = own(selections, key);
+    if (key !== SEARCH_TITLE_KEY && value) params.set(key, value);
+  }
+  return params.toString();
+}
+
+/**
+ * The search back out of the parameter, or null when it names no job title.
+ *
+ * Untrusted, like every other part of an address. Nothing is checked against the questions here,
+ * because this file cannot see them. A filter or an answer that nobody gave simply matches nobody,
+ * which is what `applicantMatches` already does with it. The selections sit on a null prototype, so
+ * a key spelled `__proto__` is an ordinary filter that matches nobody, never a change to every object.
+ */
+export function parseWhatsAppApplicantSearch(value: string | null | undefined): WhatsAppApplicantSearch | null {
+  if (!value) return null;
+  const params = new URLSearchParams(value);
+  const title = params.get(SEARCH_TITLE_KEY)?.trim();
+  if (!title) return null;
+  const selections: Record<string, string> = Object.create(null);
+  params.forEach((wanted, key) => {
+    if (key !== SEARCH_TITLE_KEY && wanted) selections[key] = wanted;
+  });
+  return { selections, title };
+}
+
+/** Who a search finds, as candidate ids. The same rule the page's own list uses, so the two agree. */
+export function whatsAppApplicantSearchCandidateIds(
+  rows: readonly WhatsAppApplicantRow[],
+  search: WhatsAppApplicantSearch,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (applicantMatches(row, search.title, search.selections)) ids.add(row.candidateId);
+  }
+  return ids;
+}
+
+/** A search in words, for the screening page's header. */
+export type WhatsAppApplicantSearchLabel = {
+  /** The job title, as the title filter names it. */
+  title: string;
+  /** Each chosen filter as its question and the answer picked, in the order the page lists them. */
+  filters: string[];
+};
+
+/**
+ * Put a search into words, using the names the WhatsApp page itself shows, never a code.
+ *
+ * A filter or an answer the page no longer offers is still listed, under the words it arrived in,
+ * because it is still narrowing the list. Hiding it would leave a short list with no reason shown.
+ */
+export function whatsAppApplicantSearchLabel(
+  view: Pick<WhatsAppApplicantsView, "filtersByTitle" | "titles">,
+  search: WhatsAppApplicantSearch,
+): WhatsAppApplicantSearchLabel {
+  const title = view.titles.find((entry) => entry.value === search.title)?.label ?? "A job title nobody has applied for";
+  const filters = Object.prototype.hasOwnProperty.call(view.filtersByTitle, search.title)
+    ? view.filtersByTitle[search.title]
+    : [];
+  const phrase = (question: string, answer: string) =>
+    question.trimEnd().endsWith("?") ? `${question} ${answer}` : `${question}: ${answer}`;
+
+  const words: string[] = [];
+  const named = new Set<string>();
+  for (const filter of filters) {
+    const wanted = own(search.selections, filter.key);
+    if (!wanted) continue;
+    named.add(filter.key);
+    const answer = filter.options.find((option) => option.value === wanted)?.label ?? wanted;
+    words.push(phrase(filter.label, answer));
+  }
+  for (const key of Object.keys(search.selections).sort()) {
+    const wanted = own(search.selections, key);
+    if (!wanted || named.has(key)) continue;
+    words.push(phrase("A filter this page no longer offers", wanted));
+  }
+  return { filters: words, title };
 }
