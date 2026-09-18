@@ -82,24 +82,27 @@ export function runCoordinateParseFollowupsTests() {
 
   // Real destinations still get through, exactly as sent.
   const real = editDestination(30.7865, 31.0004);
-  assert.ok(real.ok, "a real destination is accepted");
-  assert.equal(real.input.destination?.latitude, 30.7865, "the latitude is kept exactly");
-  assert.equal(real.input.destination?.longitude, 31.0004, "the longitude is kept exactly");
-  assert.equal(real.input.destination?.label, "El-Geish St, Tanta, Gharbia", "the label rides along");
+  assert.equal(real.ok, true, "a real destination is accepted");
+  const realDestination = real.ok ? real.input.destination : undefined;
+  assert.equal(realDestination?.latitude, 30.7865, "the latitude is kept exactly");
+  assert.equal(realDestination?.longitude, 31.0004, "the longitude is kept exactly");
+  assert.equal(realDestination?.label, "El-Geish St, Tanta, Gharbia", "the label rides along");
 
   const typed = editDestination("30.7865", " 31.0004 ");
-  assert.ok(typed.ok, "non-blank numeric strings are real coordinates");
-  assert.equal(typed.input.destination?.latitude, 30.7865);
-  assert.equal(typed.input.destination?.longitude, 31.0004);
+  assert.equal(typed.ok, true, "non-blank numeric strings are real coordinates");
+  const typedDestination = typed.ok ? typed.input.destination : undefined;
+  assert.equal(typedDestination?.latitude, 30.7865);
+  assert.equal(typedDestination?.longitude, 31.0004);
 
   const singleZero = editDestination(0, 31.0004);
-  assert.ok(singleZero.ok, "a single real 0 is a coordinate and survives");
-  assert.equal(singleZero.input.destination?.latitude, 0);
+  assert.equal(singleZero.ok, true, "a single real 0 is a coordinate and survives");
+  assert.equal(singleZero.ok ? singleZero.input.destination?.latitude : undefined, 0);
 
   // An edit that never mentions the destination leaves the stored one alone, as before.
   const untouched = buildManagerExpenseAdminPatch({ notes: "only this changed" });
-  assert.ok(untouched.ok);
-  assert.equal("destination" in untouched.input, false, "no destination key when none was sent");
+  assert.equal(untouched.ok, true);
+  const untouchedInput = untouched.ok ? untouched.input : {};
+  assert.equal("destination" in untouchedInput, false, "no destination key when none was sent");
 
   // ── The shared one-value reader ───────────────────────────────────────────────
   for (const [label, value] of [
