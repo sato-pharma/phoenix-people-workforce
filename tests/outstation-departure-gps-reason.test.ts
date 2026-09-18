@@ -6,7 +6,7 @@ import type { OutstationDepartureEvidenceMetadata } from "../src/lib/outstation/
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A departure photo on file with no GPS position says so to the approver, in three words.
+// A departure photo on file with no GPS position says so to the approver, with its cause in a few words.
 //
 // Owner, 2026-09-18, on Saad Salama's 1 September departure photo, saved with no position:
 // "the system must record the reason". The approver saw only "Location unavailable". The same day
@@ -60,7 +60,11 @@ export function runOutstationDepartureGpsReasonTests() {
   assert.equal(saad.locationLabel, null, "and not the bare 'Location unavailable' beside it");
   assert.ok(saad.url, "the photo itself is still shown");
   // Owner, 2026-09-18: "tell the short and the benefit only". The fact, no history, no guessed cause.
-  assert.equal(DEPARTURE_PHOTO_NO_GPS_NOTE, "No GPS location.", "the note is the fact only, no story");
+  assert.equal(
+    DEPARTURE_PHOTO_NO_GPS_NOTE,
+    "No GPS location. The phone did not report why.",
+    "the note is the fact and its cause only, never a story or a guessed cause",
+  );
 
   // "No position" is the domain's own: half a pair and the old failed-fix 0,0 count too.
   assert.equal(
