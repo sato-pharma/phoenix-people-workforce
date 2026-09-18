@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { WorkstationPageClient } from "@/components/recruitment/workstation/workstation-page-client";
 import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
+import { parseOpenCandidateId, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
 import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
 export const dynamic = "force-dynamic";
@@ -44,10 +44,16 @@ export default async function RecruitmentScreeningPage({
     <PageContainer>
       <Suspense
         fallback={
-          <AppRouteLoadingState
-            description="Loading the CVs and where you left off."
-            title="Loading Screening"
-          />
+          // A CV opened in its own tab says so while it loads — "where you left off" is the list's
+          // sentence, and the list is the tab this one was opened from.
+          parseOpenCandidateId(filters.candidate) ? (
+            <AppRouteLoadingState description="Loading this candidate's CV and details." title="Opening the CV" />
+          ) : (
+            <AppRouteLoadingState
+              description="Loading the CVs and where you left off."
+              title="Loading Screening"
+            />
+          )
         }
       >
         <ScreeningContent access={access} filters={filters} />
@@ -105,6 +111,7 @@ async function ScreeningContent({
       filteredOut={workspace.filteredOut}
       hiringManagers={workspace.hiringManagers}
       notified={workspace.notified}
+      openRow={workspace.openRow}
       overdueManagerFeedback={workspace.overdueManagerFeedback}
       poolHref="/recruitment"
       poolSize={workspace.poolSize}
@@ -113,7 +120,9 @@ async function ScreeningContent({
       received={workspace.received}
       region={workspace.region}
       role={workspace.role}
-      rows={workspace.rows}
+      // A CV's own page draws `openRow` and nothing else, so the list is not sent to it — a
+      // thousand rows the tab would throw away, on every CV opened.
+      rows={parseOpenCandidateId(filters.candidate) ? [] : workspace.rows}
       seen={workspace.seen}
       source={workspace.source}
       sourceOptions={workspace.sourceOptions}

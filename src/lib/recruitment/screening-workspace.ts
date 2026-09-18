@@ -72,6 +72,7 @@ import {
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { normalizeNameForMatch, normalizePhone } from "@/lib/recruitment/candidate-matching";
 import {
+  parseOpenCandidateId,
   parseScreeningFilters,
   type ScreeningNotifiedFilter,
   type ScreeningQueueFilters,
@@ -120,6 +121,22 @@ export type {
 
 export type ScreeningWorkspace = {
   rows: WorkspaceCandidateRow[];
+  /**
+   * THE CV THE LINK NAMES, built whether or not the pile still holds it. Null when the link names
+   * none, or names a record that no longer exists at all.
+   *
+   * A CV pressed in the list opens in its OWN TAB (owner, 2026-09-18), and that tab has to show the
+   * CV that was pressed — never a neighbour. The pile cannot promise that: the link carries the
+   * list's filters, and between the press and this read the CV can leave them. The "not opened yet"
+   * pile is the owner's own bookmark, and reading a CV is exactly what takes it out of that pile; a
+   * decision takes it out of "New"; filing takes it off the pool. Each of those used to land the new
+   * tab on whichever CV was first in the pile instead.
+   *
+   * Its own field rather than a row slipped into `rows`, because every count on the page is taken
+   * over `rows` and this row must not move any of them — `candidate` says which CV is OPEN, never
+   * which CVs EXIST (see screening-link.ts).
+   */
+  openRow: WorkspaceCandidateRow | null;
   counts: WorkQueueCounts;
   /** Of the pending manager sends, how many are past the nudge threshold. Beside, never instead. */
   overdueManagerFeedback: number;
@@ -272,6 +289,8 @@ export async function loadScreeningWorkspace(
   // READ FIRST, because the pool itself now depends on it: a link naming one vacant seat builds a
   // different pool from the ordinary queue. Pure, cheap, and no round trip - see screening-link.ts.
   const narrowing = parseScreeningFilters(filters);
+  // Which CV the link opens, if any. Never part of `narrowing` — see `openRow` on the return type.
+  const openCandidateId = parseOpenCandidateId(filters.candidate);
 
   // Fired together, not in sequence: six of these seven are independent, and awaiting them one at a
   // time is the difference between one round trip and seven on a page that is already the slowest in
@@ -395,8 +414,18 @@ export async function loadScreeningWorkspace(
   //
   // Together with the comments: neither reads the other, and this page already waits on one Atlantic
   // round trip more than it should.
+  //
+  // The CV the link opens is looked up in EVERY candidate, not in the pool — see `openRow`.
+  const openCandidate = openCandidateId
+    ? (allCandidates.find((candidate) => candidate.id === openCandidateId) ?? null)
+    : null;
   const [comments, viewerNames] = await Promise.all([
-    summarizeCommentsByCandidate(pool.map((candidate) => candidate.id)),
+    // Plus the CV the link opens, which may have left the pool — or its tab says "no notes" on a CV
+    // that has them. Only once it is known to EXIST: the id arrives from a URL, and a string that is
+    // not a real candidate must never reach a query.
+    summarizeCommentsByCandidate(
+      [...new Set([...pool.map((candidate) => candidate.id), ...(openCandidate ? [openCandidate.id] : [])])],
+    ),
     // Claim holders too, or 'B-10 is reading this' shows a code where the owner's rule is names.
     resolveViewerNames([...otherViewers.values()].flat().concat([...liveClaims.values()].map((c) => c.viewerHrId))),
   ]);
@@ -672,6 +701,17 @@ export async function loadScreeningWorkspace(
     }
   }
 
+  // THE CV THE LINK OPENS: the row the list already built when the pile still holds it, otherwise
+  // the same `rowFor` over the record itself, so its tab reads exactly as its row would have. Built
+  // AFTER the counts' inputs and outside `rows`, so no figure on the page moves because of it.
+  let openRow: WorkspaceCandidateRow | null = null;
+  if (openCandidate) {
+    openRow = rowsById.get(openCandidate.id) ?? rowFor(openCandidate);
+    if (!rowsById.has(openCandidate.id)) {
+      openRow.vacancyIds = vacancyIdsFor(openRow, openCandidate, openVacancies, vacancyStatsById);
+    }
+  }
+
   const { counts, overdueManagerFeedback } = tallyWorkQueues(
     rows,
     (row) => ({
@@ -711,6 +751,7 @@ export async function loadScreeningWorkspace(
     filterCounts,
     filteredOut: pool.length - rows.length,
     hiringManagers,
+    openRow,
     overdueManagerFeedback,
     poolSize: pool.length,
     positionSuggestions,
