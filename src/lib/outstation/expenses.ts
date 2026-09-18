@@ -785,6 +785,19 @@ export async function listUnifiedOutstationExpenses(
   year: number | undefined,
   reportId: string | undefined,
   accessContext: AccessContext,
+  options: {
+    /**
+     * Read the legacy tables even when the `expense_claims` mirror is switched on — for the Expense
+     * Approvals screen, which WRITES to those tables and must read back what it just wrote.
+     *
+     * Served from the mirror, that screen showed a decision undone after every Save (2026-09-18:
+     * two trips approved at 22:57 Cairo came back Pending, because the mirror was last rebuilt at
+     * 22:51). Worse, the mirror carries no report id, no workload and no route, and Save posts the
+     * rows it read — so each Save re-stamped every imported trip onto a brand-new report and wrote
+     * the mirror's blanks over the originals. An editor has to read the table it edits.
+     */
+    readLegacyTables?: boolean;
+  } = {},
 ) {
   // ── PHASE 2 read switch (OFF by default) ───────────────────────────────────────────────────
   // `expense_claims` already holds the same trips this union produces, and
@@ -812,9 +825,15 @@ export async function listUnifiedOutstationExpenses(
   // making the default-OFF path do new work at runtime that the default-off promise said it would
   // not. `expenseClaimsReadEnabled` therefore lives in `claims-read-flag.ts`, which imports
   // nothing, so asking the question costs nothing and pulls in nothing.
-  if (!reportId && expenseClaimsReadEnabled()) {
-    const { listExpenseClaims } = await import("@/lib/outstation/claims-read");
-    return listExpenseClaims(month, year, accessContext);
+  //
+  // An editor that asked for the legacy tables never reaches the switch at all (see
+  // `readLegacyTables`). The guard line inside is pinned verbatim by
+  // tests/outstation-claims-read-flag.test.ts, so this condition wraps it rather than joining it.
+  if (!options.readLegacyTables) {
+    if (!reportId && expenseClaimsReadEnabled()) {
+      const { listExpenseClaims } = await import("@/lib/outstation/claims-read");
+      return listExpenseClaims(month, year, accessContext);
+    }
   }
 
   const [historicalExpenses, requestExpenses] = await Promise.all([

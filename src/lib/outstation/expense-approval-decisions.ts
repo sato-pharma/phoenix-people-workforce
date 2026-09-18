@@ -63,6 +63,8 @@ export type OutstationRequestDecisionAction =
   | "reject"
   /** Already in the decided state; only the payable figure / reason moved. */
   | "amount"
+  /** The decision and the figure are unchanged; only HR's written comment moved. */
+  | "comment"
   /** Nothing changed — do not re-run the workflow, do not write an audit row. */
   | "skip"
   /** Refused, with a reason the reviewer can act on. */
@@ -89,6 +91,12 @@ export type OutstationRequestDecisionPlan = {
  * PENDING, and the outstation workflow registry has no transition back to pending from a decided
  * request — accepting one already moved money into payroll. Making one up here would be a new
  * payroll state transition wearing the clothes of a UI fix.
+ *
+ * A comment-only edit is its own action, never a skip (2026-09-18). The queue shows a request's
+ * comment from `approval_reason` and counts an edited one as an unsaved decision, so skipping it
+ * meant Save reported "Approvals saved.", wrote nothing, and the reload put the old text back — the
+ * reviewer's reply simply vanished. `storedComment` is what the queue read; left undefined, the
+ * comment is not compared at all.
  */
 export function planOutstationRequestDecision(input: {
   claimedTotal: number;
@@ -100,6 +108,7 @@ export function planOutstationRequestDecision(input: {
     status: string | null | undefined;
   };
   storedApprovedAmount: number | null | undefined;
+  storedComment?: string | null;
 }): OutstationRequestDecisionPlan {
   const currentLabel = outstationStatusLabel(input.currentStatus);
   const currentState =
@@ -138,6 +147,10 @@ export function planOutstationRequestDecision(input: {
     const amountMoved =
       stored === null ? nextAmount !== null : nextAmount === null || Math.abs(stored - nextAmount) > 0.005;
     if (amountMoved) return { action: "amount" };
+  }
+
+  if (input.storedComment !== undefined && comment !== String(input.storedComment ?? "").trim()) {
+    return { action: "comment" };
   }
 
   return { action: "skip" };

@@ -57,6 +57,7 @@ export function runOutstationExpenseApprovalDecisionsTests() {
     comment?: string;
     status?: string;
     stored?: number | null;
+    storedComment?: string | null;
     total?: number;
     was: string;
   }) =>
@@ -70,6 +71,7 @@ export function runOutstationExpenseApprovalDecisionsTests() {
         status: input.status ?? "",
       },
       storedApprovedAmount: input.stored ?? null,
+      storedComment: input.storedComment,
     });
 
   {
@@ -152,6 +154,41 @@ export function runOutstationExpenseApprovalDecisionsTests() {
       "amount",
       "clearing a deduction back to the full claim is a write, not a no-op",
     );
+  }
+
+  // ── A comment-only reply is saved, never skipped (2026-09-18) ──────────────
+  // The owner typed a reply on a decided trip, pressed Save, was told "Approvals saved.", and the
+  // reload put the old text back: an unchanged decision and figure planned as "skip", so the comment
+  // was never written anywhere.
+  {
+    assert.equal(
+      plan({ approved: true, comment: "Checked with the manager.", storedComment: "", was: "accepted_by_admin" }).action,
+      "comment",
+      "a new comment on an approved trip is written",
+    );
+    assert.equal(
+      plan({
+        approved: false,
+        comment: "No ticket, and the photo is from the wrong day.",
+        status: "Rejected",
+        storedComment: "No ticket.",
+        was: "rejected_by_admin",
+      }).action,
+      "comment",
+      "an edited rejection reason is written",
+    );
+    assert.equal(
+      plan({ approved: true, comment: "  Same note.  ", storedComment: "Same note.", was: "accepted_by_admin" }).action,
+      "skip",
+      "an unchanged comment (whitespace aside) is still a no-op, so Save stays idempotent",
+    );
+    assert.equal(
+      plan({ approved: true, comment: "Anything.", was: "accepted_by_admin" }).action,
+      "skip",
+      "a caller that does not pass the stored comment keeps the old behaviour",
+    );
+    const cleared = plan({ approved: false, comment: "", status: "Rejected", storedComment: "No ticket.", was: "rejected_by_admin" });
+    assert.equal(cleared.action, "blocked", "clearing a rejection's reason is refused, never written as blank");
   }
 
   // ── The trimmed figure survives a reload ───────────────────────────────────

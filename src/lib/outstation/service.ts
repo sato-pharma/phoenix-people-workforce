@@ -51,6 +51,7 @@ import {
   outstationTicketEvidenceRejection,
   type OutstationCampaignRuleOutcome,
 } from "@/lib/outstation/decision";
+import { overnightStayEvidenceHoldReason } from "@/lib/outstation/overnight-evidence";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -1834,6 +1835,13 @@ export async function submitOutstationRequest(
       ? `This offline capture synced ${Math.round(offlineSyncDelayHours)} hours after it was taken, beyond the ${offlineSyncLimitHours}-hour policy window, so it is held for Super Admin review before it moves to payroll.`
       : null;
 
+  // Only an overnight stay joins two days (owner, 2026-09-18) — see overnight-evidence.ts.
+  const overnightEvidenceHoldReason = overnightStayEvidenceHoldReason({
+    arrivalCapturedAt: storedCarEvidenceMetadata?.capturedAt ?? null,
+    tripEndDate: calculation.tripEndDate,
+    tripStartDate: calculation.tripStartDate,
+  });
+
   /**
    * The system FLAGS, it never REJECTS. (Owner rule, 2026-08-09.)
    *
@@ -1861,6 +1869,7 @@ export async function submitOutstationRequest(
   // should read first, and this list is joined into the reason the queue renders.
   const detectedHoldReasons = [
     eligibilityFlagReason,
+    overnightEvidenceHoldReason,
     campaignRejectionReason,
     campaignHoldReason,
     calculation.governorateReviewRequired ? governorateReviewReason : null,
@@ -4051,12 +4060,54 @@ async function writeOutstationRequestPayableAmount(input: {
 }
 
 /**
+ * Writes HR's comment onto a request without touching its decision.
+ *
+ * `approval_reason` is the column the approvals queue reads a request's comment back from, so a
+ * reply HR types there has to land in it — writing it only to the linked payroll row (what the
+ * payable-figure path does) left the queue showing the old text after the reload, as if the reply
+ * had never been saved (2026-09-18). A note moves no money, so this writes the one column and an
+ * audit row, and deliberately runs no workflow transition, payroll push or notification.
+ *
+ * The column is NOT NULL, so a cleared comment is stored as an empty string.
+ */
+async function writeOutstationRequestDecisionNote(input: {
+  access: AccessContext;
+  comment: string;
+  request: OutstationExpenseRequest;
+}): Promise<void> {
+  const next = cleanText(input.comment) ?? "";
+  const previous = cleanText(input.request.approvalReason) ?? "";
+  if (next === previous) return;
+
+  await assertOutstationAdminAccess(input.access, "approve");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({ approval_reason: next, updated_at: new Date().toISOString() })
+    .eq("id", input.request.id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Outstation request state changed. Refresh and retry.");
+
+  await writeRequiredAuditLog({
+    actorLoginId: input.access.loginId ?? resolveEmployeeIdentityId(input.access) ?? "system",
+    entityId: String(input.request.id),
+    entityType: "outstation_request",
+    newValues: { approvalReason: next },
+    oldValues: { approvalReason: previous },
+    summary: `Outstation request ${input.request.id}: HR comment updated from Expense Approvals.`,
+  });
+}
+
+/**
  * Applies Expense Approvals decisions to Phoenix-submitted outstation requests.
  *
  * The screen submits its whole visible record set on every Save, so most rows arriving here are
  * unchanged — `planOutstationRequestDecision` filters those to "skip" and they never reach the
- * workflow, never re-push payroll and never write an audit row. Only a genuine state change or a
- * moved payable figure does anything.
+ * workflow, never re-push payroll and never write an audit row. Only a genuine state change, a
+ * moved payable figure or an edited comment does anything.
  *
  * Each row is decided independently: one refusal does not abandon the rest of the batch, and every
  * refusal comes back named so the queue can say which trip was not written and why. Approve and
@@ -4099,12 +4150,25 @@ export async function applyOutstationRequestExpenseDecisions(input: {
           status: record.status,
         },
         storedApprovedAmount: linked?.approvedAmount ?? null,
+        storedComment: existing.approvalReason,
       });
 
       if (plan.action === "skip") continue;
       if (plan.action === "blocked") {
         skipped.push({ reason: plan.reason ?? "this decision is not supported here", tripId: record.tripId });
         continue;
+      }
+
+      if (plan.action === "comment") {
+        await writeOutstationRequestDecisionNote({ access: input.access, comment: hrComment, request: existing });
+        applied += 1;
+        continue;
+      }
+
+      // The payable-figure write below carries the reason only onto the linked payroll row, which
+      // the queue does not read a request's comment from — so a trim's reason is written here too.
+      if (plan.action === "amount") {
+        await writeOutstationRequestDecisionNote({ access: input.access, comment: hrComment, request: existing });
       }
 
       if (plan.action === "reject") {

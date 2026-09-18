@@ -1413,6 +1413,13 @@ export function MobileOutstationWizard({
             <div className="flex min-h-11 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-800">
               {durationSummary}
             </div>
+            {/* Only an overnight stay joins two days (owner, 2026-09-18 — see overnight-evidence.ts). */}
+            {tripStartDate && tripEndDate && tripStartDate < tripEndDate ? (
+              <p className="mt-2 text-xs font-semibold text-slate-500">
+                Two dates mean you stayed away overnight. If you came home the same day, choose one date
+                and file each day as its own trip.
+              </p>
+            ) : null}
           </Field>
 
           <Field label="From">

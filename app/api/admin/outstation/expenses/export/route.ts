@@ -80,7 +80,11 @@ export async function GET(request: Request) {
     };
     const search = url.searchParams.get("search") ?? "";
 
-    const records = await listUnifiedOutstationExpenses(undefined, undefined, undefined, access);
+    // The same legacy-table read the Expense Approvals screen makes, so the file and the screen it
+    // was downloaded from cannot disagree while the `expense_claims` mirror waits for its rebuild.
+    const records = await listUnifiedOutstationExpenses(undefined, undefined, undefined, access, {
+      readLegacyTables: true,
+    });
     const rows = buildExpenseApprovalExportRows(records, filters, search);
     const employeeLabel = expenseApprovalExportEmployeeLabel(records, filters.employee);
 
