@@ -134,3 +134,76 @@ export async function apiGetData<T>(path: string, token: string | null): Promise
   const payload = await apiRequest<{ data: T; success: boolean }>(path, { token });
   return payload.data;
 }
+
+/**
+ * A file part as React Native's `FormData` accepts it.
+ *
+ * React Native implements `FormData.append` with an extra overload the DOM does not have: given
+ * `{ uri, name, type }` it streams the file straight off disk, so a 3 MB photo never has to be read
+ * into JavaScript memory as a Blob first. TypeScript's lib.dom `FormData` knows nothing about that
+ * overload, which is why the cast below exists — it is a gap in the type declarations, not a trick.
+ */
+type NativeFilePart = { name: string; type: string; uri: string };
+
+/**
+ * Upload a file to a Phoenix route that reads `multipart/form-data`.
+ *
+ * 🔴 DO NOT SET `content-type` HERE. `fetch` generates the multipart boundary itself and writes the
+ * header to match; setting it by hand produces a header whose boundary does not match the body, and
+ * the server then parses zero parts and answers "An image file is required." — a 400 that reads like
+ * a missing file when the file was there all along.
+ *
+ * The timeout is longer than the default: this is bytes over a field connection, not a JSON read,
+ * and 20 seconds is short enough to fail a rep mid-upload on ordinary 3G.
+ */
+export async function apiUpload<T>(
+  path: string,
+  options: { field?: string; file: NativeFilePart; timeoutMs?: number; token: string | null },
+): Promise<T> {
+  const { field = "file", file, timeoutMs = 60_000, token } = options;
+
+  const form = new FormData();
+  form.append(field, file as unknown as Blob);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}${path}`, {
+      body: form,
+      headers: {
+        accept: "application/json",
+        "x-phoenix-client": nativeClientId,
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      method: "POST",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new NetworkError("The upload took too long. Try again where the signal is better.");
+    }
+    throw new NetworkError("No connection. The photo was not sent — try again.");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const raw = await response.text();
+  let parsed: unknown = null;
+  if (raw.length > 0) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      if (!response.ok) throw new ApiError(`Server error (${response.status}).`, response.status);
+      throw new ApiError("The server sent an unreadable response.", response.status);
+    }
+  }
+
+  if (!response.ok) {
+    const { code, message } = errorMessageFrom(parsed, `Upload failed (${response.status}).`);
+    throw new ApiError(message, response.status, code);
+  }
+
+  return parsed as T;
+}

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
 import { phoenixSessionCookieName } from "@/lib/auth/session-token";
 import {
+  isNativeClientMutationRequest,
   isSameOriginMutationRequest,
   requiresCsrfProtection,
 } from "@/lib/security/csrf";
@@ -173,6 +174,14 @@ function securityProxy(request: NextRequest): NextResponse | null {
   }
 
   if (!requiresCsrfProtection(request)) {
+    return null;
+  }
+
+  // The native app, which sends no Origin because it is not a browser. Checked BEFORE the origin
+  // test rather than folded into it, so `isSameOriginMutationRequest` keeps answering exactly the
+  // question its name asks. See `isNativeClientMutationRequest` for why this is not a weakening —
+  // in short, the header cannot be set cross-site and a cookie request never qualifies.
+  if (isNativeClientMutationRequest(request.headers)) {
     return null;
   }
 

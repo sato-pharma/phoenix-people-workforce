@@ -39,6 +39,14 @@
           "image": "./assets/phoenix/splash-mark.png",
           "imageWidth": 120
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Phoenix uses the camera so you can take your profile photo.",
+          "microphonePermission": false,
+          "photosPermission": false
+        }
       ]
     ],
     "experiments": {

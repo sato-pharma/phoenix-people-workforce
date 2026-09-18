@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { logStructured } from "@/lib/observability/log";
-import { isSameOriginMutationRequest } from "@/lib/security/csrf";
+import {
+  isNativeClientMutationRequest,
+  isSameOriginMutationRequest,
+} from "@/lib/security/csrf";
 import {
   isAllowedPhoenixOrigin,
   normalizeOrigin,
@@ -27,6 +30,11 @@ function plainRequestIsSameOrigin(request: Request) {
 export function assertSameOriginMutation(request: Request) {
   if ("nextUrl" in request && isSameOriginMutationRequest(request as NextRequest)) return null;
   if (plainRequestIsSameOrigin(request)) return null;
+  // The native app. Both refusal sites have to agree — the proxy only guards `isSecurityProxyPath`,
+  // so a route outside that set is refused HERE and nowhere else, and an exemption applied at one
+  // site and not the other would let the app write to some routes and not others, with no pattern a
+  // person could see. See `isNativeClientMutationRequest` for why this is safe.
+  if (isNativeClientMutationRequest(request.headers)) return null;
 
   // The SECOND refusal site, logged for the same reason as the one in proxy.ts and with the same
   // shape. Both are needed: the proxy only guards the paths in `isSecurityProxyPath`, so a route

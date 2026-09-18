@@ -1737,6 +1737,7 @@ import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-a
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
+import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5960,6 +5961,11 @@ await runTest(
 await runTest(
   "the Phoenix universal upload template: the obligatory columns are distributor, customer code, name and address with two helper columns, it sits beside the distributors in the picker and never inside the profiled list, a filled sheet resolves to the REAL distributor and may carry SEVERAL (each becoming its own batch, the name carrying down a block, an unknown one refused by name), the emitted workbook carries the dropdowns and the VLOOKUP auto-codes, and one preview carries 2,000 unknowns per kind while reporting the true total",
   runSosPhoenixTemplateTests,
+);
+
+await runTest(
+  "the native app may write, and nothing else gained anything: a request declaring x-phoenix-client with NO session cookie skips the origin check at BOTH refusal sites, while the same header alongside a session cookie is still refused 403 — the cookie clause is what keeps the exemption from becoming 'any request that sets a header skips CSRF'",
+  runNativeClientCsrfExemptionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
