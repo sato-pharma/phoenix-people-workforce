@@ -146,7 +146,7 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       // "Location unavailable" beside the reason would say the same thing twice, less well.
       locationLabel: departureGpsMissingReason ? null : text(departureMeta?.capturedLocationLabel),
       missingNote: missingNote("Departure photo", departurePath, departureUrl, notOwed),
-      refusedTries,
+      refusedTries: [] as typeof refusedTries,
       retakeCount: Number.isFinite(version) ? Math.max(0, Math.trunc(version) - 1) : 0,
       review: text(departureMeta?.summary),
       sourceNote: null,
