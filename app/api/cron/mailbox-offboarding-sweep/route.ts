@@ -6,6 +6,7 @@ import { runMailboxOffboardingSweep } from "@/lib/mailbox-offboarding/sweep";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
+import { purgeDepartedPersonalMailboxes } from "@/lib/personal-mailbox/service";
 import { assertCronAuthorized } from "@/lib/security/cron-auth";
 
 export const runtime = "nodejs";
@@ -43,6 +44,10 @@ export const maxDuration = 60;
  * Retry-After. Its result is reported separately in the response and it drives NO alarm of its own
  * — see runDepartedAccessSweep for why a lagging flag is not an open door, and why its failure must
  * not turn the mailbox switch red, which answers a different question.
+ *
+ * AND IT FORGETS LEAVERS' "MY EMAIL" CONNECTIONS, right after the departed-access sweep has turned
+ * their logins off: a sealed app password must not outlive its owner's access to Phoenix. Same
+ * reasoning as above — best-effort, never throws, reported in the response, drives no alarm.
  */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request, "cron/mailbox-offboarding-sweep");
@@ -51,6 +56,7 @@ export async function GET(request: Request) {
     // First, because it is the cheap one and it never throws — a leaver whose last working day has
     // arrived should not keep a live login for the length of the mailbox sweep.
     const access = await runDepartedAccessSweep();
+    const personalMailboxes = await purgeDepartedPersonalMailboxes();
     const result = await runMailboxOffboardingSweep();
     // Keyed on the error COUNT, not on whether this threw. The sweep catches its own failures and
     // carries on (sweep.ts) — including the worst case, where it could not read the register at all
@@ -62,7 +68,7 @@ export async function GET(request: Request) {
       result.errors > 0 ? "fail" : "success",
       result.errors > 0 ? `${result.errors} error(s) during the sweep` : undefined,
     );
-    return NextResponse.json({ success: true, ...result, departedAccess: access });
+    return NextResponse.json({ success: true, ...result, departedAccess: access, personalMailboxes });
   } catch (error) {
     await pingDeadMansSwitch(
       "phoenix-mailbox-offboarding-sweep",

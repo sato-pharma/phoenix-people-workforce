@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, Mail, RefreshCw, Search, Send, XCircle } from "lucide-react";
 
+import { PersonalMailboxPanel } from "@/components/layout/personal-mailbox-panel";
 import { systemUiText } from "@/config/system-settings";
 import { placeAnchoredPanel, type PanelPlacement } from "@/lib/navigation/panel-position";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,9 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  // "My email" is the person's own Turbify mailbox (personal-mailbox-panel.tsx). It only mounts when
+  // chosen, so opening the envelope never logs in to anyone's mailbox by itself.
+  const [tab, setTab] = useState<"internal" | "email">("internal");
   const [messages, setMessages] = useState<InternalMessageView[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -239,173 +243,200 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       {open ? (
         <div
           className={cn(
-            "absolute left-0 top-full z-30 mt-1.5 grid overflow-hidden rounded border shadow-lg xl:grid-cols-[0.95fr_1.05fr]",
+            "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
             isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
           )}
           style={{ marginLeft: placement.offsetLeft, width: placement.width }}
         >
-          <section className={cn("border-r", isAdminMode ? "border-[#333333]" : "border-phx-line")}>
-            <div className={cn("flex items-start justify-between gap-3 border-b px-4 py-3", isAdminMode ? "border-[#333333]" : "border-phx-line")}>
-              <div>
-                <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>Internal Messages</p>
-                <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
-                  Inbox and sent messages for this account.
-                </p>
-              </div>
+          <div className={cn("flex border-b", isAdminMode ? "border-[#333333]" : "border-phx-line")} role="tablist">
+            {([
+              ["internal", "Phoenix messages"],
+              ["email", "My email"],
+            ] as const).map(([key, label]) => (
               <button
-                aria-label="Refresh messages"
-                className={cn("flex h-8 w-8 items-center justify-center rounded", isAdminMode ? "text-phx-ink-faint hover:bg-[#111111]" : "text-phx-ink-soft hover:bg-phx-paper")}
-                onClick={() => void loadMessages()}
+                aria-selected={tab === key}
+                className={cn(
+                  "flex-1 border-b-2 px-4 py-2.5 text-xs font-black uppercase tracking-[0.12em]",
+                  tab === key
+                    ? "border-phx-accent text-phx-accent-press"
+                    : cn("border-transparent", isAdminMode ? "text-phx-ink-faint hover:bg-[#111111]" : "text-phx-ink-soft hover:bg-phx-paper"),
+                )}
+                key={key}
+                onClick={() => setTab(key)}
+                role="tab"
                 type="button"
               >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {label}
               </button>
-            </div>
+            ))}
+          </div>
 
-            <div className="max-h-[520px] overflow-auto p-3">
-              {error ? (
-                <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
-                  {error}
-                </div>
-              ) : null}
-              {success ? (
-                <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
-                  {success}
-                </div>
-              ) : null}
+          {tab === "email" ? <PersonalMailboxPanel isAdminMode={isAdminMode} /> : null}
 
-              <div className="mb-2 flex items-center gap-2">
-                <span className="rounded bg-phx-accent-soft px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
-                  Inbox {inboxMessages.length}
-                </span>
-                <span className={cn("rounded px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-phx-ink-faint" : "bg-phx-paper text-phx-ink-soft")}>
-                  Sent {sentMessages.length}
-                </span>
+          <div className={cn("grid xl:grid-cols-[0.95fr_1.05fr]", tab === "internal" ? null : "hidden")}>
+            <section className={cn("border-r", isAdminMode ? "border-[#333333]" : "border-phx-line")}>
+              <div className={cn("flex items-start justify-between gap-3 border-b px-4 py-3", isAdminMode ? "border-[#333333]" : "border-phx-line")}>
+                <div>
+                  <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>Internal Messages</p>
+                  <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
+                    Inbox and sent messages for this account.
+                  </p>
+                </div>
+                <button
+                  aria-label="Refresh messages"
+                  className={cn("flex h-8 w-8 items-center justify-center rounded", isAdminMode ? "text-phx-ink-faint hover:bg-[#111111]" : "text-phx-ink-soft hover:bg-phx-paper")}
+                  onClick={() => void loadMessages()}
+                  type="button"
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                </button>
               </div>
 
-              {messages.length === 0 ? (
-                <div className={cn("rounded px-4 py-8 text-center text-sm", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
-                  {loading ? "Loading messages..." : "No internal messages yet."}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {messages.map((message) => (
-                    <article
-                      className={cn(
-                        "rounded border px-3 py-2.5",
-                        isAdminMode ? "border-[#1f2937] bg-[#0B0B0B]" : "border-phx-line bg-[#FCFDFE]",
-                      )}
-                      key={message.id}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className={cn("whitespace-nowrap text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>{message.subject}</p>
-                          <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
-                            {message.direction === "inbox" ? `From ${message.sender.name}` : `To ${message.recipient.name}`}
-                          </p>
-                        </div>
-                        <span className="shrink-0 rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase text-phx-accent-press">
-                          {message.direction}
-                        </span>
-                      </div>
-                      <p className={cn("mt-2 line-clamp-2 text-xs leading-5", isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2")}>{message.body}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs">
-                        <span className={isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint"}>{formatMessageTime(message.createdAt)}</span>
-                        <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
-                          {message.emailStatus === "sent" ? <CheckCircle2 className="h-3 w-3" /> : message.emailStatus === "failed" ? <XCircle className="h-3 w-3" /> : null}
-                          {emailStatusText(message.emailStatus, message.emailError)}
-                        </span>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="p-4">
-            <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>Send Message</p>
-            <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
-              {systemUiText.internalMessageComposerDescription}
-            </p>
-
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Recipient</span>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
-                  <input
-                    className={cn(
-                      "h-10 w-full rounded border pl-9 pr-3 text-sm font-semibold outline-none",
-                      isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line",
-                    )}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setRecipientQuery(value);
-                      setForm((current) => ({ ...current, recipient: value }));
-                    }}
-                    placeholder="Search name, HR ID, login, or email"
-                    value={recipientQuery}
-                  />
-                  {recipientLoading ? <Loader2 className="absolute right-3 top-3.5 h-4 w-4 animate-spin text-phx-accent" /> : null}
-                </div>
-                {recipients.length > 0 ? (
-                  <div className={cn("mt-2 max-h-40 overflow-auto rounded border p-1", isAdminMode ? "border-[#333333] bg-[#0B0B0B]" : "border-phx-line bg-white")}>
-                    {recipients.map((recipient) => (
-                      <button
-                        className={cn("block w-full rounded px-3 py-2 text-left text-xs font-semibold", isAdminMode ? "text-[#D4DDE8] hover:bg-[#111111]" : "text-phx-ink hover:bg-phx-paper")}
-                        key={recipient.id}
-                        onClick={() => selectRecipient(recipient)}
-                        type="button"
-                      >
-                        {recipient.label}
-                      </button>
-                    ))}
+              <div className="max-h-[520px] overflow-auto p-3">
+                {error ? (
+                  <div className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                    {error}
                   </div>
                 ) : null}
-              </label>
+                {success ? (
+                  <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+                    {success}
+                  </div>
+                ) : null}
 
-              <label className="block">
-                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Subject</span>
-                <input
-                  className={cn("h-10 w-full rounded border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
-                  onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
-                  placeholder="Message subject"
-                  value={form.subject}
-                />
-              </label>
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="rounded bg-phx-accent-soft px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
+                    Inbox {inboxMessages.length}
+                  </span>
+                  <span className={cn("rounded px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-phx-ink-faint" : "bg-phx-paper text-phx-ink-soft")}>
+                    Sent {sentMessages.length}
+                  </span>
+                </div>
 
-              <label className="block">
-                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Message</span>
-                <textarea
-                  className={cn("min-h-28 w-full resize-y rounded border px-3 py-2.5 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
-                  onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
-                  placeholder="Write the internal message..."
-                  value={form.body}
-                />
-              </label>
+                {messages.length === 0 ? (
+                  <div className={cn("rounded px-4 py-8 text-center text-sm", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
+                    {loading ? "Loading messages..." : "No internal messages yet."}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {messages.map((message) => (
+                      <article
+                        className={cn(
+                          "rounded border px-3 py-2.5",
+                          isAdminMode ? "border-[#1f2937] bg-[#0B0B0B]" : "border-phx-line bg-[#FCFDFE]",
+                        )}
+                        key={message.id}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className={cn("whitespace-nowrap text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>{message.subject}</p>
+                            <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
+                              {message.direction === "inbox" ? `From ${message.sender.name}` : `To ${message.recipient.name}`}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase text-phx-accent-press">
+                            {message.direction}
+                          </span>
+                        </div>
+                        <p className={cn("mt-2 line-clamp-2 text-xs leading-5", isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2")}>{message.body}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs">
+                          <span className={isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint"}>{formatMessageTime(message.createdAt)}</span>
+                          <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
+                            {message.emailStatus === "sent" ? <CheckCircle2 className="h-3 w-3" /> : message.emailStatus === "failed" ? <XCircle className="h-3 w-3" /> : null}
+                            {emailStatusText(message.emailStatus, message.emailError)}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
 
-              <label className={cn("flex items-center gap-2 rounded border px-3 py-2 text-xs font-bold", isAdminMode ? "border-[#333333] text-[#D4DDE8]" : "border-phx-line text-phx-ink-2")}>
-                <input
-                  checked={form.sendEmail}
-                  className="h-4 w-4 accent-phx-accent"
-                  onChange={(event) => setForm((current) => ({ ...current, sendEmail: event.target.checked }))}
-                  type="checkbox"
-                />
-                Also send as email when recipient email exists
-              </label>
+            <section className="p-4">
+              <p className={cn("text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>Send Message</p>
+              <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
+                {systemUiText.internalMessageComposerDescription}
+              </p>
 
-              <button
-                className="inline-flex h-10 w-full items-center justify-center rounded bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={sending}
-                onClick={() => void sendMessage()}
-                type="button"
-              >
-                {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-                Send Message
-              </button>
-            </div>
-          </section>
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Recipient</span>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
+                    <input
+                      className={cn(
+                        "h-10 w-full rounded border pl-9 pr-3 text-sm font-semibold outline-none",
+                        isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line",
+                      )}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRecipientQuery(value);
+                        setForm((current) => ({ ...current, recipient: value }));
+                      }}
+                      placeholder="Search name, HR ID, login, or email"
+                      value={recipientQuery}
+                    />
+                    {recipientLoading ? <Loader2 className="absolute right-3 top-3.5 h-4 w-4 animate-spin text-phx-accent" /> : null}
+                  </div>
+                  {recipients.length > 0 ? (
+                    <div className={cn("mt-2 max-h-40 overflow-auto rounded border p-1", isAdminMode ? "border-[#333333] bg-[#0B0B0B]" : "border-phx-line bg-white")}>
+                      {recipients.map((recipient) => (
+                        <button
+                          className={cn("block w-full rounded px-3 py-2 text-left text-xs font-semibold", isAdminMode ? "text-[#D4DDE8] hover:bg-[#111111]" : "text-phx-ink hover:bg-phx-paper")}
+                          key={recipient.id}
+                          onClick={() => selectRecipient(recipient)}
+                          type="button"
+                        >
+                          {recipient.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </label>
+
+                <label className="block">
+                  <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Subject</span>
+                  <input
+                    className={cn("h-10 w-full rounded border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
+                    onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
+                    placeholder="Message subject"
+                    value={form.subject}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Message</span>
+                  <textarea
+                    className={cn("min-h-28 w-full resize-y rounded border px-3 py-2.5 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
+                    onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}
+                    placeholder="Write the internal message..."
+                    value={form.body}
+                  />
+                </label>
+
+                <label className={cn("flex items-center gap-2 rounded border px-3 py-2 text-xs font-bold", isAdminMode ? "border-[#333333] text-[#D4DDE8]" : "border-phx-line text-phx-ink-2")}>
+                  <input
+                    checked={form.sendEmail}
+                    className="h-4 w-4 accent-phx-accent"
+                    onChange={(event) => setForm((current) => ({ ...current, sendEmail: event.target.checked }))}
+                    type="checkbox"
+                  />
+                  Also send as email when recipient email exists
+                </label>
+
+                <button
+                  className="inline-flex h-10 w-full items-center justify-center rounded bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={sending}
+                  onClick={() => void sendMessage()}
+                  type="button"
+                >
+                  {sending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                  Send Message
+                </button>
+              </div>
+            </section>
+          </div>
         </div>
       ) : null}
     </div>

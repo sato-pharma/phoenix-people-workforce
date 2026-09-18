@@ -871,6 +871,15 @@ export const accessRegistry = [
   // (Phase 1, no write actions). Role gate lives in the domain helper
   // (assertPharmacyMasterAccess); Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/pharmacy-master/candidates", permission: null, guard: "domain-helper" }),
+  // "My email" in the envelope — each person's OWN Turbify mailbox, connected once with their own
+  // app password. `permission: null` for the same reason as the personal layout below: every route
+  // derives the owner from the session (src/lib/personal-mailbox/service.ts) and accepts no id, so
+  // there is nothing to grant — being signed in is the whole requirement, and the guard rejects on
+  // access.source. No role, Super Admin included, can reach another person's mailbox through here.
+  // Audit is deliberately not required: a Phoenix-side trail of who emailed whom would be the very
+  // monitoring this feature promises not to do.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST", "DELETE"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
   // there is no resource to gate on, because the route can only ever read or write the CALLER'S

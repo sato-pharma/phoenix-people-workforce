@@ -1692,6 +1692,7 @@ import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-ca
 
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
 import { runSecretBoxTests } from "./secret-box.test.ts";
+import { runPersonalMailboxTests } from "./personal-mailbox.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
@@ -5976,6 +5977,11 @@ await runTest(
 await runTest(
   "the Android app's departure-photo stamp is the portal's: the Cairo time, every location fallback, the wrapped lines, the panel geometry and every draw call's text, baseline, font, ink, shadow and gradient stop match drawEvidenceWatermark, and the JPEG quality, title, reference, routes, timeouts, size limit and watermark file are the portal card's own",
   runMobileEvidenceStampParityTests,
+);
+
+await runTest(
+  "My email is private to each person: the owner comes from the session only and no route reads a person from the request, the compliance monitor can neither reach the personal table nor decrypt a personal app password (its own context-free blobs still open), the email reader is a script-less sandbox, a refused password stops all further logins before the password is opened again, and leavers are purged daily",
+  runPersonalMailboxTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
