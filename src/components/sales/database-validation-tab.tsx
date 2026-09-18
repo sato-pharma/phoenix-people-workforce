@@ -103,10 +103,19 @@ function TerritoryCell({ names }: { names: CustomerMapNames }) {
   );
 }
 
-export function DatabaseValidationTab({ headerGrid, nameIndex }: { headerGrid: HeaderGrid; nameIndex: CustomerMapNameIndex }) {
+export function DatabaseValidationTab({
+  headerGrid,
+  nameIndex,
+  openingDistributor,
+}: {
+  headerGrid: HeaderGrid;
+  nameIndex: CustomerMapNameIndex;
+  openingDistributor: string;
+}) {
   const distributors = headerGrid.rows.map((r) => ({ code: r.distributorCode, name: r.distributorName }));
   const [headerFilter, setHeaderFilter] = useState("ALL");
-  const [custFilter, setCustFilter] = useState(distributors[0]?.code ?? "ALL");
+  // Opens on the first distributor with customers (pickOpeningCustomerDistributor), not an empty one.
+  const [custFilter, setCustFilter] = useState(openingDistributor);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loadingCust, setLoadingCust] = useState(false);
   const [exporting, setExporting] = useState(false);

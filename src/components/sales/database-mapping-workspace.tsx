@@ -71,6 +71,7 @@ const MASTER_ICONS: Record<MasterKey, LucideIcon> = {
 };
 
 type Props = {
+  initialCustomerDistributor: string;
   initialError: string | null;
   initialHeaderGrid: HeaderGrid;
   initialRows: Record<MasterKey, MasterRowRecord[]>;
@@ -755,7 +756,7 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   );
 }
 
-export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, initialRows }: Props) {
+export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialError, initialHeaderGrid, initialRows }: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
   const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(MASTER_ORDER[0]);
   const [downloadingMaster, setDownloadingMaster] = useState(false);
@@ -875,7 +876,11 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
         </div>
 
         {activeDef === null ? (
-          <DatabaseValidationTab headerGrid={initialHeaderGrid} nameIndex={customerMapNameIndex} />
+          <DatabaseValidationTab
+            headerGrid={initialHeaderGrid}
+            nameIndex={customerMapNameIndex}
+            openingDistributor={initialCustomerDistributor}
+          />
         ) : (
           <MasterTab
             allRows={rowsByMaster}
