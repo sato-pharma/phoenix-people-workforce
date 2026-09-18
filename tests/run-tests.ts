@@ -1774,6 +1774,7 @@ import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-lab
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
+import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6128,6 +6129,11 @@ await runTest(
 await runTest(
   "the Monthly Sales wizard's closing-complete figure weighs each step by today's share of sales, never the weight frozen when the run opened: May 2026 with 5 of 17 steps confirmed reads 62%, not 95%, and 100% only when every step is confirmed or skipped",
   runMonthlySalesRunLiveWeightsTests,
+);
+
+await runTest(
+  "a flat sales sheet keeps a stated Target Units when Factory Price is missing: 120 units stay 120 with a zero Target Value and a note naming the missing price, never a zeroed target under a note saying the sheet gave none",
+  runSalesFlatSheetKeepsStatedTargetUnitsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

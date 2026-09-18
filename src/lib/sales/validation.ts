@@ -163,22 +163,42 @@ export function parseSalesRow(
   if (targetUnitsHasValue && !Number.isFinite(record.targetUnits)) validationNotes.push("FAIL: Cannot import this sales row because Target Units is not numeric.");
   if (targetValueHasValue && !Number.isFinite(sheetTargetValue)) validationNotes.push("FAIL: Cannot import this sales row because Target Value is not numeric.");
 
+  // A target the sheet states is kept even when Factory Price is missing — the flat sheet does not
+  // require a price. Only the half that would need the price is left at zero, and the note says so.
+  // This used to fall through to "both empty": a row with Target Units and no price imported with
+  // zero target under a note claiming the sheet gave none.
+  const hasFactoryPrice = Number.isFinite(record.factoryPrice) && record.factoryPrice > 0;
   if (targetValueHasValue && Number.isFinite(sheetTargetValue)) {
     record.targetValue = sheetTargetValue;
     if (!targetUnitsHasValue) {
-      record.targetUnits =
-        Number.isFinite(record.factoryPrice) && record.factoryPrice > 0
-          ? sheetTargetValue / record.factoryPrice
-          : 0;
-      validationNotes.push("WARN: Target Units is empty. The system derived it from Target Value and Factory Price.");
+      if (hasFactoryPrice) {
+        record.targetUnits = sheetTargetValue / record.factoryPrice;
+        validationNotes.push("WARN: Target Units is empty. The system derived it from Target Value and Factory Price.");
+      } else {
+        record.targetUnits = 0;
+        validationNotes.push(
+          `WARN: Row ${rowNumber}, Target Units is empty and Factory Price is missing, so Target Units cannot be worked out. The row keeps the sheet's Target Value ${sheetTargetValue} with zero Target Units.`
+        );
+      }
     }
-  } else if (targetUnitsHasValue && Number.isFinite(record.targetUnits) && Number.isFinite(record.factoryPrice) && record.factoryPrice > 0) {
-    record.targetValue = record.targetUnits * record.factoryPrice;
-    validationNotes.push("WARN: Target Value is empty. The system derived it from Target Units and Factory Price.");
-  } else {
+  } else if (targetUnitsHasValue && Number.isFinite(record.targetUnits)) {
+    if (hasFactoryPrice) {
+      record.targetValue = record.targetUnits * record.factoryPrice;
+      validationNotes.push("WARN: Target Value is empty. The system derived it from Target Units and Factory Price.");
+    } else {
+      record.targetValue = 0;
+      validationNotes.push(
+        `WARN: Row ${rowNumber}, Target Value is empty and Factory Price is missing, so Target Value cannot be worked out. The row keeps the sheet's Target Units ${record.targetUnits} with zero Target Value.`
+      );
+    }
+  } else if (!targetUnitsHasValue && !targetValueHasValue) {
     record.targetUnits = 0;
     record.targetValue = 0;
     validationNotes.push("WARN: Target Units and Target Value are empty. The system imported this row with zero target.");
+  } else {
+    // A target cell that is not a number: it already failed the row above, so no second note.
+    record.targetUnits = 0;
+    record.targetValue = 0;
   }
 
   if (!record.employeeHrId && !record.employeeCrmId && !record.employeeLookupKey) {
