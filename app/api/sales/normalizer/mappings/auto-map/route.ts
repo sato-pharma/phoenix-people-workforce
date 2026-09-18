@@ -14,11 +14,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// God-mode auto-mapping: runs the full customer suggestion pipeline SERVER-SIDE (propagation →
-// AI → geographic scoring — the client never gets to assert a confidence), auto-applies only the
-// suggestions that clear the multi-signal gate in auto-apply.ts, and parks the rest for manual
-// review. Applied mappings are saved with source='auto', full audit, and historical-row backfill;
-// the existing soft-delete on the Mapping Database page is the undo.
+// God-mode auto-mapping: runs the full customer suggestion pipeline SERVER-SIDE (free steps →
+// stored AI answers → AI → geographic scoring — the client never gets to assert a confidence),
+// auto-applies only the suggestions that clear the multi-signal gate in auto-apply.ts, and parks the
+// rest for manual review. Applied mappings are saved with source='auto', full audit, and
+// historical-row backfill; the existing soft-delete on the Mapping Database page is the undo.
+// `freeOnly: true` stops before the AI, exactly as it does on the ai-suggest route.
 
 const MAX_UNKNOWNS = 300;
 
@@ -29,18 +30,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
     await assertPermission(access, "sales", "import");
-    if (!hasAiKey()) {
+
+    const body = (await request.json().catch(() => ({}))) as { distributorCode?: string; freeOnly?: boolean; unknowns?: AiUnknown[] };
+    const freeOnly = body.freeOnly === true;
+    if (!freeOnly && !hasAiKey()) {
       return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable auto-mapping." }, { status: 400 });
     }
-
-    const body = (await request.json().catch(() => ({}))) as { distributorCode?: string; unknowns?: AiUnknown[] };
     const distributorCode = String(body.distributorCode ?? "").trim();
     if (!distributorCode) return NextResponse.json({ success: false, error: "distributorCode is required." }, { status: 400 });
     const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, MAX_UNKNOWNS);
     if (unknowns.length === 0) return NextResponse.json({ success: true, data: { applied: [], parked: [], backfilled: 0 } });
 
     const actor = access.loginId ?? "system";
-    const { suggestions } = await suggestCustomerBricks(unknowns);
+    const { suggestions } = await suggestCustomerBricks(unknowns, { ai: !freeOnly });
     const min = autoAcceptMin();
     const { accepted, parked } = partitionAutoApply(suggestions, min);
 

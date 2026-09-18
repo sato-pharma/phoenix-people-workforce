@@ -1,9 +1,11 @@
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
-import { aiSuggest, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
+import { aiSuggest, aiSuggestModel, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import type { PropagationEvidence } from "@/lib/sales/normalizer/auto-apply";
 import { loadBrickCentroids } from "@/lib/sales/normalizer/brick-centroids";
+import { readStoredAiAnswers, storeAiAnswers } from "@/lib/sales/normalizer/customer-ai-answers";
+import { answerFromFreeSteps, buildFreeStepIndexes, groupIdenticalPharmacies } from "@/lib/sales/normalizer/customer-free-steps";
 import { normalizeCustomerNameKey } from "@/lib/sales/normalizer/customer-normalize";
-import { buildPropagationIndex, propagateSuggestions, type MappedCustomerRow, type PropagatedSuggestion } from "@/lib/sales/normalizer/customer-propagate";
+import type { MappedCustomerRow, PropagatedSuggestion } from "@/lib/sales/normalizer/customer-propagate";
 import { NO_KEY_CONFIDENCE, scoreCustomerBrick, type GeoSignals } from "@/lib/sales/normalizer/geo-validate";
 import { pharmacyGeoKey, resolvePharmacyGeo } from "@/lib/sales/normalizer/pharmacy-geocode";
 import { loadSalesReferenceData, type SalesBrickReference } from "@/lib/sales/monthly-distributor-import";
@@ -14,16 +16,24 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // auto-map route (which additionally partitions + saves). Server-side end to end — the client
 // never gets to assert a confidence.
 //
-//   1. deterministic cross-distributor propagation (customer-propagate.ts)
-//   2. AI for the remainder, with historical mappings as reference context
-//   3. geographic scoring for EVERY suggestion (geo-validate.ts) — cache-first pharmacy
+//   1. the free steps (customer-free-steps.ts): identical pharmacies grouped, then the same address
+//      as mapped pharmacies, a twin already mapped, and one of our brick names in the pharmacy name
+//   2. AI answers already paid for (customer-ai-answers.ts)
+//   3. the AI for the rest, with historical mappings as reference context — only when the caller
+//      asks for it. The workspace first sends every customer for the free answers alone, then sends
+//      the AI only what that pass left unanswered
+//   4. geographic scoring for EVERY suggestion (geo-validate.ts) — cache-first pharmacy
 //      geocoding + brick centroid distance tiers replace the AI's self-reported confidence
+
+// Where a suggestion came from. "propagated" is a twin; "address" and "place" are the other two
+// free steps; "ai" is the AI, asked now or answering from before.
+export type CustomerSuggestionSource = "ai" | "address" | "place" | "propagated";
 
 export type CustomerSuggestion = {
   raw: string;
   code: string;
   confidence?: number;
-  source: "ai" | "propagated";
+  source: CustomerSuggestionSource;
   matchedFrom?: PropagatedSuggestion["matchedFrom"];
   signals?: GeoSignals;
   propagation?: PropagationEvidence;
@@ -52,7 +62,7 @@ type CustomerMapDbRow = {
  *
  * It is read by CUSTOMER_MAP_READERS keyset walks at once. One walk is 70 round trips of up to 1,000
  * rows — about 4 seconds, of which the database spends ~6 ms a page — and AI suggest and Auto-map
- * repeat the load for every group of 20 customers the workspace sends. The walks hand over at the ids
+ * repeat the load for every group of customers the workspace sends. The walks hand over at the ids
  * a quarter, half and three quarters of the way through the map, not at even id steps, because the
  * ids are bunched: on 2026-09-15 four rows in five sat in the lowest and highest eighths of the id
  * span. Those cut points only balance the work. The ranges are contiguous and the last is open-ended
@@ -118,10 +128,19 @@ async function customerMapCuts(): Promise<number[]> {
   );
 }
 
-export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ suggestions: CustomerSuggestion[]; bricks: Map<string, SalesBrickReference> }> {
+export type CustomerSuggestOptions = {
+  // false: the free steps and the stored AI answers only. No AI call, so no AI key is needed.
+  ai?: boolean;
+};
+
+export async function suggestCustomerBricks(
+  unknowns: AiUnknown[],
+  options: CustomerSuggestOptions = {},
+): Promise<{ suggestions: CustomerSuggestion[]; bricks: Map<string, SalesBrickReference> }> {
+  const useAi = options.ai !== false;
   // Only the brick master is read from the reference data. The customer→brick crosswalk that
   // loadSalesReferenceData() pages by default is a second pass over the whole customer map — 70
-  // offset pages, ~3.5 s — that nothing here reads, and it was paid again for every group of 20.
+  // offset pages, ~3.5 s — that nothing here reads, and it was paid again for every group sent.
   const [refs, customerMapRows] = await Promise.all([
     loadSalesReferenceData({ includeCustomerBricks: false }),
     loadActiveCustomerMap(),
@@ -131,30 +150,58 @@ export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ su
     code: b.brickId,
     label: [b.brickName, [b.areaName, b.regionName].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
   }));
+  // Only bricks that still exist in the master — the map can hold retired ids.
+  const isLiveBrick = (code: string) => brickMap.has(code);
 
-  // 1. Deterministic propagation — resolved twins skip the AI entirely.
-  let propagated: PropagatedSuggestion[] = [];
-  let aiUnknowns = unknowns;
-  if (customerMapRows.length > 0) {
-    const mapped: MappedCustomerRow[] = customerMapRows.map((r) => ({
-      address: String(r.address ?? ""),
-      brickId: String(r.brick_id ?? "").trim(),
-      customerCode: String(r.customer_code ?? ""),
-      customerName: String(r.customer_name ?? ""),
-      distributorCode: String(r.distributor_code ?? ""),
-    }));
-    const index = buildPropagationIndex(mapped);
-    // Only propagate bricks that still exist in the master — the map can hold retired ids.
-    propagated = propagateSuggestions(unknowns, index).filter((p) => brickMap.has(p.code));
-    const propagatedRaws = new Set(propagated.map((p) => p.raw));
-    aiUnknowns = unknowns.filter((u) => !propagatedRaws.has(u.raw));
+  // 1. The free steps, once per distinct pharmacy.
+  const groups = groupIdenticalPharmacies(unknowns);
+  const representatives = groups.map((g) => g.representative);
+  const mapped: MappedCustomerRow[] = customerMapRows.map((r) => ({
+    address: String(r.address ?? ""),
+    brickId: String(r.brick_id ?? "").trim(),
+    customerCode: String(r.customer_code ?? ""),
+    customerName: String(r.customer_name ?? ""),
+    distributorCode: String(r.distributor_code ?? ""),
+  }));
+  const indexes = buildFreeStepIndexes(
+    mapped,
+    (refs.bricks ?? []).map((b) => ({ areaCode: String(b.areaCode ?? "").trim().toUpperCase(), brickId: b.brickId, brickName: b.brickName })),
+  );
+  const answered = new Map<string, CustomerSuggestion>();
+  for (const [raw, answer] of answerFromFreeSteps(representatives, indexes, isLiveBrick)) {
+    answered.set(raw, answer.source === "propagated"
+      ? {
+          code: answer.code,
+          confidence: answer.confidence,
+          matchedFrom: answer.matchedFrom,
+          // Carried so auto-apply.ts can accept a deterministic twin that has no geocode to judge.
+          propagation: { addressCorroborated: answer.addressCorroborated } satisfies PropagationEvidence,
+          raw,
+          source: "propagated",
+        }
+      : { code: answer.code, confidence: answer.confidence, raw, source: answer.source });
   }
 
-  // 2. Reference aliases for the AI: historical import rows + the customer map, deduped on the
-  // normalized pharmacy name so respellings don't eat the limited reference budget.
-  const supabase = getSupabaseAdmin();
-  const referenceAliases: AiReferenceAlias[] = [];
-  if (aiUnknowns.length > 0) {
+  // 2. AI answers already paid for, keyed by pharmacy text. A customer with no name (the AI was
+  // shown only its code) has an empty key, so it is never stored and never read back.
+  const model = aiSuggestModel();
+  const keyOf = new Map(groups.map((g) => [g.representative.raw, g.key]));
+  let rest = representatives.filter((u) => !answered.has(u.raw));
+  if (model && rest.length > 0) {
+    const stored = await readStoredAiAnswers(rest.map((u) => keyOf.get(u.raw) ?? ""), model);
+    for (const u of rest) {
+      const code = stored.get(keyOf.get(u.raw) ?? "");
+      if (code && isLiveBrick(code)) answered.set(u.raw, { code, raw: u.raw, source: "ai" });
+    }
+    rest = rest.filter((u) => !answered.has(u.raw));
+  }
+
+  // 3. The AI, for what is left, only when the caller asks for it.
+  if (useAi && rest.length > 0) {
+    // Reference aliases for the AI: historical import rows + the customer map, deduped on the
+    // normalized pharmacy name so respellings don't eat the limited reference budget.
+    const supabase = getSupabaseAdmin();
+    const referenceAliases: AiReferenceAlias[] = [];
     const seen = new Set<string>();
     const push = (raw: string, code: string) => {
       const r = String(raw ?? "").trim();
@@ -181,26 +228,21 @@ export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ su
       const text = [String(row.customer_name ?? "").trim(), String(row.address ?? "").trim()].filter(Boolean).join(" | ");
       push(text, String(row.brick_id ?? ""));
     }
+
+    const aiSuggestions = await aiSuggest("customer", rest, candidates, referenceAliases.length ? referenceAliases : undefined);
+    for (const s of aiSuggestions) answered.set(s.raw, { ...s, source: "ai" });
+    if (model) await storeAiAnswers(aiSuggestions.map((s) => ({ brickId: s.code, pharmacyKey: keyOf.get(s.raw) ?? "" })), model);
   }
 
-  const aiSuggestions = aiUnknowns.length > 0
-    ? await aiSuggest("customer", aiUnknowns, candidates, referenceAliases.length ? referenceAliases : undefined)
-    : [];
+  // Every customer code gets its pharmacy's answer.
+  let suggestions: CustomerSuggestion[] = [];
+  for (const group of groups) {
+    const answer = answered.get(group.representative.raw);
+    if (!answer) continue;
+    for (const member of group.members) suggestions.push({ ...answer, raw: member.raw });
+  }
 
-  let suggestions: CustomerSuggestion[] = [
-    ...propagated.map((p) => ({
-      code: p.code,
-      confidence: p.confidence,
-      matchedFrom: p.matchedFrom,
-      // Carried so auto-apply.ts can accept a deterministic twin that has no geocode to judge.
-      propagation: { addressCorroborated: p.addressCorroborated } satisfies PropagationEvidence,
-      raw: p.raw,
-      source: "propagated" as const,
-    })),
-    ...aiSuggestions.map((s) => ({ ...s, source: "ai" as const })),
-  ];
-
-  // 3. Geographic scoring — replaces AI self-reported confidence and validates propagation
+  // 4. Geographic scoring — replaces AI self-reported confidence and validates every free answer
   // (blend: geo confirms → boost capped at 97, geo contradicts → demote to 45).
   if (suggestions.length > 0) {
     const unknownMap = new Map(unknowns.map((u) => [u.raw, u]));
@@ -221,7 +263,7 @@ export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ su
         if (!brick || !u) return s;
         const geo = pharmacyGeoByKey.get(pharmacyGeoKey(u.rawName ?? u.raw, u.rawAddress ?? "")) ?? null;
         const { confidence, signals } = scoreCustomerBrick(geo, brick, centroids.get(s.code));
-        if (s.source === "propagated") {
+        if (s.source !== "ai") {
           const base = s.confidence ?? 90;
           const blended = confidence >= 80
             ? Math.min(97, Math.max(base, confidence))

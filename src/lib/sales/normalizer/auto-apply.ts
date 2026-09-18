@@ -33,7 +33,8 @@ export type PropagationEvidence = {
 
 export type AutoApplyCandidate = {
   confidence?: number;
-  source?: "ai" | "propagated";
+  // "address" and "place" are the free steps in customer-free-steps.ts; "propagated" is a twin.
+  source?: "ai" | "address" | "place" | "propagated";
   signals?: GeoSignals;
   propagation?: PropagationEvidence;
 };
@@ -64,7 +65,9 @@ export function shouldAutoAccept(
   if (typeof confidence !== "number") return false;
   const signals = candidate.signals;
 
-  // Path 2 — textual. Reached only when there is no usable geocode to judge against.
+  // Path 2 — textual. Reached only when there is no usable geocode to judge against. Twins only:
+  // an address match or a place in the name is ONE textual signal, so it never saves itself
+  // without a geocode that agrees.
   if (!signals || !signals.geocoded) {
     return candidate.source === "propagated"
       && candidate.propagation?.addressCorroborated === true
@@ -73,12 +76,14 @@ export function shouldAutoAccept(
 
   // Path 1 — geographic.
   if (confidence < min) return false;
-  if (candidate.source === "propagated") {
-    // Deterministic twin + geographic corroboration.
+  if (candidate.source === "propagated" || candidate.source === "address") {
+    // Deterministic twin, or the same address as mapped pharmacies (measured more accurate than
+    // the AI), + geographic corroboration.
     return (signals.distanceKm != null && signals.distanceKm < 15) || signals.markazMatch;
   }
-  if (candidate.source === "ai") {
-    // AI alone needs the strongest geographic proof: pharmacy within 5 km of the brick centroid.
+  if (candidate.source === "ai" || candidate.source === "place") {
+    // The AI, and a place in the name (measured exactly as accurate as the AI, never more), need
+    // the strongest geographic proof: pharmacy within 5 km of the brick centroid.
     return signals.distanceKm != null && signals.distanceKm < 5;
   }
   return false;

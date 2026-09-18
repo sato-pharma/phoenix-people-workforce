@@ -20,9 +20,11 @@ export const maxDuration = 300;
 // Returns {raw, code, confidence?, source?, matchedFrom?, signals?} pairs the client uses to
 // pre-fill the dropdowns. No DB write.
 //
-// Customer kind delegates to the shared pipeline in customer-suggest.ts (propagation → AI →
-// geographic scoring) — the same pipeline the auto-map route uses, so what the operator previews
-// is exactly what auto-apply would evaluate. Product/territory go straight to the AI, unchanged.
+// Customer kind delegates to the shared pipeline in customer-suggest.ts (free steps → stored AI
+// answers → AI → geographic scoring) — the same pipeline the auto-map route uses, so what the
+// operator previews is exactly what auto-apply would evaluate. `freeOnly: true` stops before the
+// AI: the workspace sends every customer that way first, then only the rest with the AI. Product
+// and territory go straight to the AI, unchanged.
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -30,17 +32,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
     await assertPermission(access, "sales", "import");
-    if (!hasAiKey()) {
+
+    const body = (await request.json().catch(() => ({}))) as { freeOnly?: boolean; kind?: AiKind; unknowns?: AiUnknown[] };
+    const kind: AiKind = body.kind === "territory" ? "territory" : body.kind === "customer" ? "customer" : "product";
+    // The free customer pass needs no AI key; everything else does.
+    const freeOnly = kind === "customer" && body.freeOnly === true;
+    if (!freeOnly && !hasAiKey()) {
       return NextResponse.json({ success: false, error: "AI is not configured. Add an OPENAI_API_KEY to enable suggestions." }, { status: 400 });
     }
-
-    const body = (await request.json().catch(() => ({}))) as { kind?: AiKind; unknowns?: AiUnknown[] };
-    const kind: AiKind = body.kind === "territory" ? "territory" : body.kind === "customer" ? "customer" : "product";
     const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, 300);
     if (unknowns.length === 0) return NextResponse.json({ success: true, data: { suggestions: [] } });
 
     if (kind === "customer") {
-      const { suggestions } = await suggestCustomerBricks(unknowns);
+      const { suggestions } = await suggestCustomerBricks(unknowns, { ai: !freeOnly });
       return NextResponse.json({ success: true, data: { suggestions } });
     }
 

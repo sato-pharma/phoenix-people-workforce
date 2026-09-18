@@ -4,8 +4,9 @@ import { join } from "node:path";
 
 import { keysetRanges } from "../src/lib/supabase/paginated.ts";
 
-// AI suggest and Auto-map send a distributor file's customers in groups of 20 (#3862), so everything
-// the customer pipeline loads is paid once per group — 26 times for a file of 520 customers. On
+// AI suggest and Auto-map send a distributor file's customers in groups (20 a request in #3862; since
+// 2026-09-18, 100 a request for the free pass and 60 pharmacies for the AI pass), so everything the
+// customer pipeline loads is paid once per group — 26 times for a file of 520 customers at 20. On
 // 2026-09-15 two loads were more than half of each 14-second request:
 //
 //   3.5 s  loadSalesReferenceData() paged its customer→brick crosswalk, 70 offset pages over the

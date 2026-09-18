@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Database, Download, History, Layers, Loader2, MapPin, Package, Save, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Database, Download, History, Layers, Loader2, MapPin, Package, Save, Signpost, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -9,6 +9,7 @@ type IconType = typeof Sparkles;
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
 import { Button } from "@/components/ui/button";
+import { packCustomersByPharmacy } from "@/lib/sales/normalizer/customer-request-packing";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -47,20 +48,48 @@ type UnknownKind = "p" | "t" | "c";
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
 
-type CustomerSuggestionRow = { raw: string; code: string; confidence?: number; source?: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } };
+// Where a customer suggestion came from: the AI, or one of the free steps (customer-free-steps.ts).
+type CustomerSuggestionSource = "ai" | "address" | "place" | "propagated";
+type CustomerSuggestionRow = { raw: string; code: string; confidence?: number; source?: CustomerSuggestionSource; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } };
 
-// Customers go to the server in small groups. Each call runs the whole pipeline — the 50,000-row
-// customer map, the AI and a live geocode per new pharmacy — so ~300 customers in ONE request ran past
-// 40 seconds. On 2026-09-15 a hop between the browser and Railway cut that request at 41 s and answered
-// 502 while the server was still working (Railway logged "client closed"), so finished suggestions
-// never arrived. Small groups keep every call short, show progress, and also reach the customers past
-// the 300 each route reads from a single request.
-const CUSTOMER_REQUEST_SIZE = 20;
+// Customers go to the server in groups, in two passes (owner, 2026-09-18: "make it by steps", and
+// "group them and don't duplicate the work"):
+//
+//   1. FREE — every customer, CUSTOMER_FREE_REQUEST_SIZE a request, with `freeOnly`. The server answers
+//      what the map itself can (customer-free-steps.ts) and what the AI already answered before, and
+//      makes no AI call. On the 3,348 unmapped Pharma Overseas pharmacies of 2026-09-18 this answered
+//      1,646 of them.
+//   2. AI — only what pass 1 left unanswered or could not reach, CUSTOMER_AI_REQUEST_SIZE distinct
+//      pharmacies a request. Identical pharmacies travel together (customer-request-packing.ts), so
+//      the AI is asked once for all their codes.
+//
+// Why the sizes. Every request loads the 50,000-row customer map (~4 s) and geocodes new pharmacies,
+// and an AI call takes ~6 s. On 2026-09-15 a hop between the browser and Railway cut a request of
+// ~300 customers at 41 s and answered 502 while the server was still working (Railway logged
+// "client closed"), so finished suggestions never arrived — which is why the AI pass went down to
+// 20 a request. 20 a request cost 2.4 times as much per pharmacy as 60, because every AI call re-sends
+// the same ~15,000-token brick list (measured 2026-09-18: $1.29 against $0.54 per 1,000 pharmacies,
+// no more accurate). 60 is one AI call a request; a request that is cut is not lost either, because
+// the server keeps every answer it finishes (customer-ai-answers.ts) and the retry reads them free.
+// The free pass makes no AI call, so it can take more a request. Neither passes the 300 a route reads.
+const CUSTOMER_FREE_REQUEST_SIZE = 100;
+const CUSTOMER_AI_REQUEST_SIZE = 60;
+const ROUTE_MAX_CUSTOMERS = 300;
 
 function inGroups<T>(list: readonly T[], size: number): T[][] {
   const groups: T[][] = [];
   for (let i = 0; i < list.length; i += size) groups.push(list.slice(i, i + size));
   return groups;
+}
+
+// Exactly the fields the customer pipeline reads.
+function customerPayload(u: Unknown) {
+  return { raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory };
+}
+
+// "1,646 answered free, 1,702 by the AI" — for the notices after a customer run.
+function customerSourceSplit(free: number, ai: number) {
+  return `${free.toLocaleString("en-US")} answered free (same address, known twin or place in the name), ${ai.toLocaleString("en-US")} by the AI`;
 }
 
 // Groups used to run strictly one after another, so 400 customers meant 20 round trips end to end —
@@ -195,7 +224,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   function resetParts() { setParts([]); setActivePart(0); }
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [aiConfidence, setAiConfidence] = useState<Record<string, number>>({});
-  const [aiOrigin, setAiOrigin] = useState<Record<string, { source: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }>>({});
+  const [aiOrigin, setAiOrigin] = useState<Record<string, { source: CustomerSuggestionSource; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -424,43 +453,61 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     setBusy("ai"); setError(null); setNotice(null);
     try {
       let filled = 0;
+      let customerSplit = "";
       const failures: string[] = [];
-      for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"], ["customer", preview.unknownCustomers, "c"]] as const) {
+      // One request to the suggest route. Guard the parse: a timed-out / crashed function returns a
+      // non-JSON platform page, so a bare res.json() would throw "Unexpected token 'A' … is not valid
+      // JSON". Surface the real status instead.
+      const post = async (body: object): Promise<{ suggestions: CustomerSuggestionRow[] } | { failed: string }> => {
+        try {
+          const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify(body), headers: { "Content-Type": "application/json" }, method: "POST" });
+          const json = await res.json().catch(() => null) as { success?: boolean; data?: { suggestions?: CustomerSuggestionRow[] }; error?: string } | null;
+          if (!res.ok || !json?.success || !json.data) return { failed: json?.error ?? failedStatusReason(res.status) };
+          return { suggestions: json.data.suggestions ?? [] };
+        } catch (e) {
+          return { failed: requestErrorMessage(e, "the request failed") };
+        }
+      };
+      for (const [kind, list, prefix] of [["product", preview.unknownProducts, "p"], ["territory", preview.unknownTerritories, "t"]] as const) {
         if (list.length === 0) continue;
-        const groups = kind === "customer" ? inGroups(list, CUSTOMER_REQUEST_SIZE) : [list];
-        let failedRows = 0; let reason = "";
-        let doneGroups = 0;
-        // Several groups in flight at once. Each stays small (a short request, its own failure), but
-        // the list no longer waits for one round trip to finish before the next one starts.
-        await inPool(groups, GROUP_CONCURRENCY, async (group) => {
-          // One group failing must not throw away the groups before or after it.
-          try {
-            const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: group.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
-            // Guard the parse: a timed-out / crashed function returns a non-JSON platform page, so a
-            // bare res.json() would throw "Unexpected token 'A' … is not valid JSON". Surface the real status instead.
-            const json = await res.json().catch(() => null) as { success?: boolean; data?: { suggestions?: CustomerSuggestionRow[] }; error?: string } | null;
-            if (!res.ok || !json?.success || !json.data) {
-              failedRows += group.length;
-              reason = json?.error ?? failedStatusReason(res.status);
-              return;
-            }
-            const sugg = json.data.suggestions ?? [];
-            if (sugg.length === 0) return;
-            filled += sugg.length;
-            if (kind === "customer") applyCustomerSuggestions(sugg);
-            else setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
-          } catch (e) {
-            failedRows += group.length;
-            reason = requestErrorMessage(e, "the request failed");
-          } finally {
-            doneGroups += 1;
-            if (groups.length > 1) setNotice(`AI suggest — ${Math.min(doneGroups * CUSTOMER_REQUEST_SIZE, list.length)} of ${list.length} customers done…`);
-          }
+        const result = await post({ kind, unknowns: list.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })) });
+        if ("failed" in result) { failures.push(`${list.length} of ${list.length} ${kind} rows — ${result.failed.replace(/\.$/, "")}`); continue; }
+        filled += result.suggestions.length;
+        setPicks((p) => { const n = { ...p }; result.suggestions.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
+      }
+      const customers = preview.unknownCustomers;
+      if (customers.length > 0) {
+        const answered = new Set<string>();
+        let free = 0; let ai = 0;
+        const take = (rows: CustomerSuggestionRow[]) => {
+          applyCustomerSuggestions(rows);
+          for (const s of rows) { answered.add(s.raw); if (s.source === "ai") ai += 1; else free += 1; }
+          filled += rows.length;
+        };
+        // Pass 1 — free. A group that fails here is not an error yet: pass 2 runs the free steps again.
+        // Several groups are in flight at once; one failing never throws away the groups around it.
+        let checked = 0;
+        await inPool(inGroups(customers, CUSTOMER_FREE_REQUEST_SIZE), GROUP_CONCURRENCY, async (group) => {
+          const result = await post({ freeOnly: true, kind: "customer", unknowns: group.map(customerPayload) });
+          if (!("failed" in result)) take(result.suggestions);
+          checked += group.length;
+          setNotice(`AI suggest — free steps: ${checked.toLocaleString("en-US")} of ${customers.length.toLocaleString("en-US")} customers checked, ${free.toLocaleString("en-US")} answered…`);
         });
-        if (failedRows) failures.push(`${failedRows} of ${list.length} ${kind} rows — ${reason.replace(/\.$/, "")}`);
+        // Pass 2 — the AI, for what pass 1 left.
+        const forAi = customers.filter((u) => !answered.has(u.raw));
+        let failedRows = 0; let reason = ""; let asked = 0;
+        await inPool(packCustomersByPharmacy(forAi, CUSTOMER_AI_REQUEST_SIZE, ROUTE_MAX_CUSTOMERS), GROUP_CONCURRENCY, async (group) => {
+          const result = await post({ kind: "customer", unknowns: group.map(customerPayload) });
+          if ("failed" in result) { failedRows += group.length; reason = result.failed; }
+          else take(result.suggestions);
+          asked += group.length;
+          setNotice(`AI suggest — ${free.toLocaleString("en-US")} answered free; the AI is on ${asked.toLocaleString("en-US")} of the ${forAi.length.toLocaleString("en-US")} left…`);
+        });
+        if (failedRows) failures.push(`${failedRows} of ${customers.length} customer rows — ${reason.replace(/\.$/, "")}`);
+        customerSplit = ` Customers: ${customerSourceSplit(free, ai)}.`;
       }
       if (failures.length) setError(`AI suggest failed for ${failures.join("; ")}. Click AI suggest again to retry them.`);
-      if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
+      if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.${customerSplit}`);
       else setNotice(failures.length ? null : "AI found no confident matches — map them by hand.");
     } catch (e) { setError(e instanceof Error ? e.message : "AI suggest failed."); }
     finally { setBusy(null); }
@@ -471,18 +518,16 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     setBusy("automap"); setError(null); setNotice(null);
     try {
       const customers = preview.unknownCustomers;
-      const groups = inGroups(customers, CUSTOMER_REQUEST_SIZE);
       let applied = 0; let parked = 0; let backfilled = 0; let minConfidence: number | undefined;
       let failedRows = 0; let reason = "";
-      let doneGroups = 0;
-      await inPool(groups, GROUP_CONCURRENCY, async (group) => {
-        // Each group is saved and audited on its own, so a failed group leaves every earlier one applied.
+      const answered = new Set<string>();
+      let free = 0; let ai = 0;
+      // One request to the auto-map route. Each is saved and audited on its own, so a failed request
+      // leaves every earlier one applied.
+      const post = async (group: Unknown[], freeOnly: boolean): Promise<string | null> => {
         try {
           const res = await fetch("/api/sales/normalizer/mappings/auto-map", {
-            body: JSON.stringify({
-              distributorCode: effectiveDistributorCode,
-              unknowns: group.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })),
-            }),
+            body: JSON.stringify({ distributorCode: effectiveDistributorCode, freeOnly, unknowns: group.map(customerPayload) }),
             headers: { "Content-Type": "application/json" },
             method: "POST",
           });
@@ -491,32 +536,44 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
             error?: string;
             success?: boolean;
           } | null;
-          if (!res.ok || !json?.success || !json.data) {
-            failedRows += group.length;
-            reason = json?.error ?? failedStatusReason(res.status);
-            return;
-          }
+          if (!res.ok || !json?.success || !json.data) return json?.error ?? failedStatusReason(res.status);
           // Parked suggestions pre-fill the dropdowns for manual review; applied ones are saved already.
-          applyCustomerSuggestions([...(json.data.applied ?? []), ...(json.data.parked ?? [])]);
+          const rows = [...(json.data.applied ?? []), ...(json.data.parked ?? [])];
+          applyCustomerSuggestions(rows);
+          for (const s of rows) { answered.add(s.raw); if (s.source === "ai") ai += 1; else free += 1; }
           applied += json.data.applied?.length ?? 0;
           parked += json.data.parked?.length ?? 0;
           backfilled += Number(json.data.backfilled ?? 0);
           minConfidence = json.data.minConfidence ?? minConfidence;
+          return null;
         } catch (e) {
-          failedRows += group.length;
-          reason = requestErrorMessage(e, "the request failed");
-        } finally {
-          doneGroups += 1;
-          if (groups.length > 1) setNotice(`Auto-map — ${Math.min(doneGroups * CUSTOMER_REQUEST_SIZE, customers.length)} of ${customers.length} customers done, ${applied} applied so far…`);
+          return requestErrorMessage(e, "the request failed");
         }
+      };
+      // Pass 1 — free. A group that fails here is not an error yet: pass 2 runs the free steps again.
+      let checked = 0;
+      await inPool(inGroups(customers, CUSTOMER_FREE_REQUEST_SIZE), GROUP_CONCURRENCY, async (group) => {
+        await post(group, true);
+        checked += group.length;
+        setNotice(`Auto-map — free steps: ${checked.toLocaleString("en-US")} of ${customers.length.toLocaleString("en-US")} customers checked, ${applied.toLocaleString("en-US")} applied so far…`);
+      });
+      // Pass 2 — the AI, for what pass 1 left.
+      const forAi = customers.filter((u) => !answered.has(u.raw));
+      let asked = 0;
+      await inPool(packCustomersByPharmacy(forAi, CUSTOMER_AI_REQUEST_SIZE, ROUTE_MAX_CUSTOMERS), GROUP_CONCURRENCY, async (group) => {
+        const failed = await post(group, false);
+        if (failed) { failedRows += group.length; reason = failed; }
+        asked += group.length;
+        setNotice(`Auto-map — the AI is on ${asked.toLocaleString("en-US")} of the ${forAi.length.toLocaleString("en-US")} customers the free steps left, ${applied.toLocaleString("en-US")} applied so far…`);
       });
       const healed = backfilled ? `, healed ${backfilled} historical row(s)` : "";
+      const split = free + ai > 0 ? ` Suggestions: ${customerSourceSplit(free, ai)}.` : "";
       if (applied > 0) {
-        setNotice(`Auto-mapped ${applied} customer(s) (gate ≥${minConfidence ?? 95}%)${healed}. ${parked} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
+        setNotice(`Auto-mapped ${applied} customer(s) (gate ≥${minConfidence ?? 95}%)${healed}. ${parked} parked for your review — undo any auto-mapping from the Mapping Database page.${split} Refreshing coverage...`);
         const p = await analyze(true, { quietFailure: true });
         if (p) setNotice(`Auto-mapped ${applied} customer(s)${healed}. ${p.unknownCustomers.length} customer(s) still need manual mapping.`);
       } else {
-        setNotice(failedRows === customers.length ? null : `Nothing cleared the auto-map gate — ${parked} suggestion(s) pre-filled for manual review instead.`);
+        setNotice(failedRows === customers.length ? null : `Nothing cleared the auto-map gate — ${parked} suggestion(s) pre-filled for manual review instead.${split}`);
       }
       // Set after the coverage refresh, which clears the error line.
       if (failedRows) setError(`Auto-map failed for ${failedRows} of ${customers.length} customers — ${reason.replace(/\.$/, "")}. Everything counted as applied is saved; click Auto-map again for the rest.`);
@@ -1083,6 +1140,14 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                           : "Matched from an existing mapping"}
                                       >
                                         <Layers aria-hidden="true" className="h-3 w-3" />known twin
+                                      </span>
+                                    ) : aiOrigin[`c:${u.raw}`]?.source === "address" ? (
+                                      <span className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600" title="Same address as pharmacies you already mapped">
+                                        <MapPin aria-hidden="true" className="h-3 w-3" />address match
+                                      </span>
+                                    ) : aiOrigin[`c:${u.raw}`]?.source === "place" ? (
+                                      <span className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600" title="The pharmacy's name holds this brick's place name">
+                                        <Signpost aria-hidden="true" className="h-3 w-3" />place in name
                                       </span>
                                     ) : null}
                                   </span>
