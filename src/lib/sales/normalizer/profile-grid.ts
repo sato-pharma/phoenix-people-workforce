@@ -1,3 +1,4 @@
+import { FREE_GOODS_FLAG_SHORT_LABEL } from "@/lib/sales/normalizer/free-goods-flag";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
 
 // The "Database Validation" header grid: for each distributor, which RAW column feeds each unified
@@ -17,7 +18,9 @@ export const HEADER_GRID_COLUMNS: HeaderGridColumn[] = [
   { key: "brick", label: "Brick ID" },
   { key: "product", label: "Product ID" },
   { key: "qty", label: "Qty" },
-  { key: "bonus", label: "B. Qty" },
+  // Not the coded sheet's "B. Qty", which is always 0: this raw column is a free-goods FLAG that skips
+  // the whole row and feeds no quantity (free-goods-flag.ts).
+  { key: "bonus", label: FREE_GOODS_FLAG_SHORT_LABEL },
   { key: "value", label: "Value" },
   { key: "discount", label: "Discount%" },
   { key: "date", label: "Invoice Date" },

@@ -1768,6 +1768,7 @@ import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
+import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6090,6 +6091,11 @@ await runTest(
 await runTest(
   "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
   runNormalizerBonusNeverDropsPaidUnitsTests,
+);
+
+await runTest(
+  "a distributor profile's bonus column is named for what it does: the editor, the Database Validation grid and the master workbook call it a free-goods flag that skips the whole row, the editor warns never to map a bonus count there, and no field key, DB column or coded-sheet header moved with the label",
+  runProfileFreeGoodsFlagLabelTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

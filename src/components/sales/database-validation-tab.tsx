@@ -114,7 +114,7 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
             {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
           </SearchableSelect>
         )}
-        description="For each distributor, which raw column in their sheet feeds each Phoenix header. Area & Region are derived from the Brick; Distrub ID is the distributor's own code."
+        description="For each distributor, which raw column in their sheet feeds each Phoenix header. Area & Region are derived from the Brick; Distrub ID is the distributor's own code. Free-goods flag feeds no quantity: a row it marks is skipped whole, so a bonus count is never mapped there."
         title="Distributor → Phoenix header mapping"
       >
         <div className="overflow-x-auto p-4 md:p-5">

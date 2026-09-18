@@ -8,9 +8,11 @@ import { MappingAuditHistory } from "@/components/sales/mapping-audit-history";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { EditableProfile, ProfileFieldKey } from "@/lib/sales/normalizer/distributor-profile-store";
+import { FREE_GOODS_FLAG_HINT, FREE_GOODS_FLAG_LABEL } from "@/lib/sales/normalizer/free-goods-flag";
 
 // Field labels mirror PROFILE_FIELDS in the (server-only) store — duplicated here so this client
 // component never imports the server module. Order matches the editor form + the DB columns.
+// A `hint` renders under the label, above the input.
 const FIELDS: { key: ProfileFieldKey; label: string; hint?: string }[] = [
   { key: "productCodeColumns", label: "Product Code" },
   { key: "productNameColumns", label: "Product Name" },
@@ -21,7 +23,9 @@ const FIELDS: { key: ProfileFieldKey; label: string; hint?: string }[] = [
   { key: "dateColumns", label: "Invoice Date" },
   { key: "valueColumns", label: "Value" },
   { key: "discountColumns", label: "Discount %" },
-  { key: "bonusColumns", label: "Bonus Qty" },
+  // A free-goods FLAG that drops the whole row, never a bonus count: a saved mapping replaces the
+  // built-in one whole, so a bonus count typed here would drop paid units (free-goods-flag.ts).
+  { key: "bonusColumns", label: FREE_GOODS_FLAG_LABEL, hint: FREE_GOODS_FLAG_HINT },
   { key: "areaIdColumns", label: "Area / Territory" },
   { key: "brickIdColumns", label: "Brick ID" },
   { key: "branchCodeColumns", label: "Branch Code" },
@@ -218,6 +222,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               return (
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
                 <span className="text-phx-xs font-bold text-phx-ink-2">{f.label}</span>
+                {f.hint ? <span className="text-phx-2xs font-semibold leading-snug text-phx-warn">{f.hint}</span> : null}
                 <input className="h-8 rounded-[6px] border border-phx-line px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
