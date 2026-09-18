@@ -628,24 +628,34 @@ export async function deleteTerritoryAlias(input: { actorLoginId: string; normal
 
 // ── Excel bulk round-trip ──
 
+// 🔴 THE LIST MUST CARRY EVERY UNKNOWN THE SCREEN SHOWS — SoS audit, confirmed high. It used to write
+// products and territories only, and the upload read back only those two types, so an unknown
+// pharmacy (the per-customer crosswalk, the reliable path when a distributor's area text is junk)
+// could not be mapped offline at all: it was absent from the file, and a customer row typed into it
+// by hand was dropped on upload. Customer rows now go out with the name, address and area text the
+// screen shows, and their Phoenix Code is a Brick ID, learned under the list's distributor.
 export function buildUnmappedWorkbook(distinct: DistinctUnknowns): Promise<ExcelJS.Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
   const sheet = workbook.addWorksheet("Unmapped");
-  const header = sheet.addRow(["Type", "Raw code", "Raw name", "Count", "Suggestion code", "Phoenix Code (fill)"]);
+  const header = sheet.addRow(["Type", "Raw code", "Raw name", "Count", "Suggestion code", "Phoenix Code (fill)", "Raw address", "Raw area"]);
   header.font = { bold: true, color: { argb: "FFFFFFFF" } };
   header.eachCell((c) => { c.fill = { fgColor: { argb: "FF0B0B0B" }, pattern: "solid", type: "pattern" }; });
   distinct.products.forEach((u) => sheet.addRow(["product", u.raw, u.rawName, u.count, u.suggestionCode ?? "", u.suggestionCode ?? ""]));
   distinct.territories.forEach((u) => sheet.addRow(["territory", u.raw, u.rawName, u.count, "", ""]));
-  [10, 24, 32, 8, 16, 20].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
+  distinct.customers.forEach((u) => sheet.addRow(["customer", u.raw, u.rawName, u.count, "", "", u.rawAddress ?? "", u.rawTerritory ?? ""]));
+  [10, 24, 32, 8, 16, 20, 40, 20].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
   return workbook.xlsx.writeBuffer();
 }
 
-export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number }> {
+const UNMAPPED_LIST_TYPES = new Set<MappingInput["type"]>(["product", "territory", "customer"]);
+
+/** The mappings a filled unmapped list carries: every row whose Phoenix Code was filled in. */
+export async function parseUnmappedWorkbook(buffer: ArrayBuffer | Buffer, distributorCode?: string): Promise<MappingInput[]> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
-  if (!sheet) return { saved: 0, skipped: 0, invalid: 0 };
+  if (!sheet) return [];
   const idx: Record<string, number> = {};
   sheet.getRow(1).eachCell({ includeEmpty: false }, (c, col) => { idx[String(c.text).trim().toLowerCase()] = col; });
   const typeCol = idx["type"]; const rawCol = idx["raw code"]; const fillCol = idx["phoenix code (fill)"];
@@ -653,10 +663,18 @@ export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, di
   const mappings: MappingInput[] = [];
   for (let r = 2; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    const type = String(row.getCell(typeCol)?.text ?? "").trim().toLowerCase();
+    const type = String(row.getCell(typeCol)?.text ?? "").trim().toLowerCase() as MappingInput["type"];
     const raw = String(row.getCell(rawCol)?.text ?? "").trim();
     const code = String(row.getCell(fillCol)?.text ?? "").trim();
-    if ((type === "product" || type === "territory") && raw && code) mappings.push({ code, distributorCode, raw, type });
+    if (UNMAPPED_LIST_TYPES.has(type) && raw && code) mappings.push({ code, distributorCode, raw, type });
   }
+  return mappings;
+}
+
+export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number }> {
+  const mappings = await parseUnmappedWorkbook(buffer, distributorCode);
+  if (mappings.length === 0) return { saved: 0, skipped: 0, invalid: 0 };
+  // Customer rows keep saveMappings' protective default: an existing crosswalk row is corrected, but
+  // an owner ruling (confidence 100) is never overwritten from a file.
   return saveMappings(mappings);
 }
