@@ -99,7 +99,11 @@ function oneSignal(): OneSignalApi | null {
   return loadedSdk;
 }
 
-/** What `push_subscriptions.user_agent` records for this phone. Read by a person, never parsed. */
+/**
+ * What `push_subscriptions.user_agent` records for this phone. It must keep starting with
+ * "Phoenix Workforce app": Force logout finds this app's subscriptions by those words
+ * (`isPhoenixAppPushSubscription` in the web app), because a phone browser's row is `mobile` too.
+ */
 function describeThisDevice(): string {
   const app = `Phoenix Workforce app ${Constants.expoConfig?.version ?? ""}`.trim();
   const model = [Device.manufacturer, Device.modelName].filter(Boolean).join(" ");

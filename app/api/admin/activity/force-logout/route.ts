@@ -32,15 +32,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const result = await forceLogoutUser(hrId, reason);
+    const phoneSummary = result.phonePush
+      ? `phone app notifications stopped on ${result.phonePush.stopped} phone(s)${result.phonePush.failed ? `, not stopped on ${result.phonePush.failed}` : ""}`
+      : "phone app notifications could not be stopped";
 
     await writeAuditLog({
       actorLoginId: access.loginId ?? null,
       entityType: "user_activity_access",
       entityId: hrId,
-      summary: `Force-logout: revoked ${result.revokedCount} session(s) for ${hrId}. Reason: ${reason}`,
+      summary: `Force-logout: revoked ${result.revokedCount} session(s) for ${hrId}; ${phoneSummary}. Reason: ${reason}`,
     });
 
-    return NextResponse.json({ ok: true, revokedCount: result.revokedCount });
+    return NextResponse.json({ ok: true, phonePush: result.phonePush, revokedCount: result.revokedCount });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });

@@ -8,6 +8,7 @@ import {
   computeEngagement,
 } from "@/lib/activity/engagement";
 import { resolveActivityModule } from "@/lib/activity/modules";
+import { stopPhoneAppPushForEmployee, type PhoneAppPushStopResult } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
 import type {
   ActivityAnomaly,
@@ -1049,7 +1050,12 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
 // ── Admin actions ─────────────────────────────────────────────────────────────
 
 /**
- * Revoke every active session for an HR ID immediately (force-logout).
+ * Revoke every active session for an HR ID immediately (force-logout), then stop
+ * the Phoenix app's notifications on their phones.
+ *
+ * The phone half (stopPhoneAppPushForEmployee) runs after the sessions are
+ * revoked and never undoes them. If it fails, the logout still stands,
+ * `phonePush` comes back null, and pressing Force logout again retries it.
  *
  * `app_sessions.hr_id` stores the value VERBATIM as it was supplied at login
  * (see createAppSession in @/lib/auth/app-sessions), which in production means
@@ -1072,7 +1078,12 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
  * The two tables genuinely disagree, and "normalise everything one way" breaks
  * whichever side you do not look at.
  */
-export async function forceLogoutUser(hrId: string, reason: string): Promise<{ revokedCount: number }> {
+export type ForceLogoutResult = {
+  phonePush: PhoneAppPushStopResult | null;
+  revokedCount: number;
+};
+
+export async function forceLogoutUser(hrId: string, reason: string): Promise<ForceLogoutResult> {
   const normalized = normalizeHrId(hrId);
   if (!normalized) throw new Error("Invalid HR ID");
   const supabase = getSupabaseAdmin();
@@ -1083,7 +1094,17 @@ export async function forceLogoutUser(hrId: string, reason: string): Promise<{ r
     .is("revoked_at", null)
     .select("id");
   if (error) throw new Error(`Force logout failed: ${error.message}`);
-  return { revokedCount: data?.length ?? 0 };
+
+  let phonePush: PhoneAppPushStopResult | null = null;
+  try {
+    phonePush = await stopPhoneAppPushForEmployee(hrId);
+  } catch (pushError) {
+    logError("Force logout could not stop the phone app's notifications", {
+      error: pushError,
+      labels: { event: "force_logout_phone_app_push_failed" },
+    });
+  }
+  return { phonePush, revokedCount: data?.length ?? 0 };
 }
 
 // ── Live feed (lightweight — online users + last 15 min events) ───────────────
