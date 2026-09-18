@@ -5,7 +5,7 @@
 // request goes to /api/messages/mailbox/**, which works out whose mailbox it is from the session
 // alone — there is nothing on this screen (or in any request it makes) that names a mailbox.
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   KeyRound,
@@ -25,6 +25,8 @@ import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import {
   MAX_ATTACHMENT_TOTAL_BYTES,
   MAX_ATTACHMENTS,
+  PERSONAL_MAILBOX_CHANGED_EVENT,
+  PERSONAL_MAILBOX_READ_EVENT,
   quoteForReply,
   readerDocument,
   replyRecipients,
@@ -60,6 +62,9 @@ type View =
   | { kind: "compose"; draft: Draft; back: { kind: "list" } | { kind: "read"; uid: number } };
 
 const emptyDraft: Draft = { body: "", cc: "", files: [], inReplyTo: null, references: [], subject: "", to: "" };
+
+/** "Open this inbox email" from a new-mail pop-up. `nonce` makes the same email openable twice. */
+export type PersonalMailboxOpenRequest = { uid: number; nonce: number };
 
 class RequestError extends Error {
   readonly status: number;
@@ -141,10 +146,25 @@ function Notice({ tone, children }: { tone: "error" | "success"; children: React
   );
 }
 
-export function PersonalMailboxPanel({ isAdminMode }: { isAdminMode: boolean }) {
+export function PersonalMailboxPanel({
+  isAdminMode,
+  openRequest = null,
+}: {
+  isAdminMode: boolean;
+  openRequest?: PersonalMailboxOpenRequest | null;
+}) {
   const colors = palette(isAdminMode);
   const [state, setState] = useState<PersonalMailboxState | null>(null);
   const [stateError, setStateError] = useState<string | null>(null);
+
+  // Connecting, reconnecting and disconnecting change what the envelope's unread watch should do.
+  const applyConnectionChange = useCallback(
+    (next: PersonalMailboxState) => {
+      setState(next);
+      window.dispatchEvent(new Event(PERSONAL_MAILBOX_CHANGED_EVENT));
+    },
+    [setState],
+  );
 
   // `setState` is listed although React keeps it stable: it is also handed to the child cards below,
   // which makes the React Compiler infer it as a dependency (react-hooks/preserve-manual-memoization).
@@ -192,7 +212,9 @@ export function PersonalMailboxPanel({ isAdminMode }: { isAdminMode: boolean }) 
   }
 
   if (!state.connected) {
-    return <ConnectCard colors={colors} emailAddress={state.emailAddress} onConnected={setState} reconnect={false} />;
+    return (
+      <ConnectCard colors={colors} emailAddress={state.emailAddress} onConnected={applyConnectionChange} reconnect={false} />
+    );
   }
 
   if (state.status === "needs_reconnect") {
@@ -201,9 +223,9 @@ export function PersonalMailboxPanel({ isAdminMode }: { isAdminMode: boolean }) 
         <div className="px-4 pt-4">
           <Notice tone="error">{state.lastError ?? "Turbify refused your saved app password."}</Notice>
         </div>
-        <ConnectCard colors={colors} emailAddress={state.emailAddress} onConnected={setState} reconnect />
+        <ConnectCard colors={colors} emailAddress={state.emailAddress} onConnected={applyConnectionChange} reconnect />
         <div className={cn("border-t px-4 py-3", colors.border)}>
-          <DisconnectButton colors={colors} onDisconnected={setState} />
+          <DisconnectButton colors={colors} onDisconnected={applyConnectionChange} />
         </div>
       </div>
     );
@@ -213,8 +235,9 @@ export function PersonalMailboxPanel({ isAdminMode }: { isAdminMode: boolean }) 
     <Mailbox
       colors={colors}
       emailAddress={state.emailAddress}
-      onDisconnected={setState}
+      onDisconnected={applyConnectionChange}
       onNeedsReconnect={handleNeedsReconnect}
+      openRequest={openRequest}
     />
   );
 }
@@ -411,11 +434,13 @@ function Mailbox({
   emailAddress,
   onDisconnected,
   onNeedsReconnect,
+  openRequest,
 }: {
   colors: Palette;
   emailAddress: string;
   onDisconnected: (state: PersonalMailboxState) => void;
   onNeedsReconnect: () => void;
+  openRequest: PersonalMailboxOpenRequest | null;
 }) {
   const [folder, setFolder] = useState<PersonalMailboxFolder>("inbox");
   const [messages, setMessages] = useState<PersonalMailboxSummary[]>([]);
@@ -424,7 +449,43 @@ function Mailbox({
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [view, setView] = useState<View>({ kind: "list" });
+  // Opened from a new-mail pop-up: straight to that inbox email.
+  const [view, setView] = useState<View>(() => (openRequest ? { kind: "read", uid: openRequest.uid } : { kind: "list" }));
+  const [handledNonce, setHandledNonce] = useState(openRequest?.nonce ?? 0);
+  // Emails a pop-up opened: they were unread when announced, even if their row is not listed yet.
+  const [alertedUids, setAlertedUids] = useState<number[]>(openRequest ? [openRequest.uid] : []);
+  const messagesRef = useRef<PersonalMailboxSummary[]>([]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // A later pop-up's "Open" while the mailbox is already showing. Adjusting state while rendering
+  // (not in an effect) is React's own pattern for reacting to a changed prop.
+  if (openRequest && openRequest.nonce !== handledNonce) {
+    setHandledNonce(openRequest.nonce);
+    setAlertedUids((current) => [...current, openRequest.uid]);
+    if (folder !== "inbox") {
+      setMessages([]);
+      setNextBefore(null);
+      setLoaded(false);
+      setFolder("inbox");
+    }
+    setNotice(null);
+    setView({ kind: "read", uid: openRequest.uid });
+  }
+
+  // Tells the envelope its unread count is one lower when the email just opened was unread.
+  const handleOpened = useCallback(
+    (uid: number) => {
+      const row = messagesRef.current.find((entry) => entry.uid === uid);
+      const wasUnread = folder === "inbox" && (row ? !row.seen : alertedUids.includes(uid));
+      if (wasUnread) window.dispatchEvent(new Event(PERSONAL_MAILBOX_READ_EVENT));
+      setAlertedUids((current) => current.filter((entry) => entry !== uid));
+      setMessages((current) => current.map((entry) => (entry.uid === uid ? { ...entry, seen: true } : entry)));
+    },
+    [alertedUids, folder],
+  );
 
   const fail = useCallback(
     (failure: unknown, fallback: string) => {
@@ -572,9 +633,7 @@ function Mailbox({
             key={`${folder}:${view.uid}`}
             onBack={() => setView({ kind: "list" })}
             onFailure={fail}
-            onOpened={(uid) =>
-              setMessages((current) => current.map((row) => (row.uid === uid ? { ...row, seen: true } : row)))
-            }
+            onOpened={handleOpened}
             onReply={startReply}
             uid={view.uid}
           />

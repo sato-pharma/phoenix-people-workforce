@@ -35,6 +35,7 @@ import {
   listFolderPage,
   openFolderMessage,
   readFolderAttachment,
+  readInboxStatus,
   verifyImapLogin,
 } from "@/lib/personal-mailbox/imap";
 import {
@@ -51,6 +52,7 @@ import { composeMessage, sendComposedMessage, verifySmtpLogin } from "@/lib/pers
 import type {
   PersonalMailboxCredential,
   PersonalMailboxFolder,
+  PersonalMailboxInboxStatus,
   PersonalMailboxMessage,
   PersonalMailboxPage,
   PersonalMailboxSendInput,
@@ -65,6 +67,13 @@ const SECRET_OPTIONS = { context: PERSONAL_MAILBOX_SECRET_CONTEXT } as const;
 /** last_ok_at is a "still working" marker, not an audit trail — refresh it at most this often. */
 const LAST_OK_REFRESH_MS = 10 * 60_000;
 const MAX_ERROR_LENGTH = 400;
+/**
+ * Every open Phoenix tab asks for the unread count every couple of minutes. One answer serves all of
+ * a person's tabs for this long, so three open tabs cost one login, not three. It holds counts,
+ * senders and subjects, in this server's memory only, and never the password.
+ */
+const INBOX_STATUS_CACHE_MS = 90_000;
+const inboxStatusCache = new Map<string, { at: number; value: Promise<PersonalMailboxInboxStatus> }>();
 
 function readFailure(error: unknown): string {
   return `Your mailbox did not answer: ${describeImapError(error)}.`;
@@ -292,6 +301,7 @@ export async function connectPersonalMailbox(
       { onConflict: "owner_key" },
     );
   if (error) throw error;
+  forgetInboxStatus(owner);
   return getPersonalMailboxState(owner);
 }
 
@@ -419,6 +429,7 @@ export async function disconnectPersonalMailbox(owner: PersonalMailboxOwner): Pr
     .eq("owner_key", owner.key)
     .eq("owner_login_id", owner.loginId);
   if (error) throw error;
+  forgetInboxStatus(owner);
   return { connected: false, emailAddress: owner.emailAddress };
 }
 
@@ -498,8 +509,58 @@ export async function openPersonalMailboxMessage(
   const message = await withCredential(owner, readFailure, (credential) =>
     openFolderMessage(credential, folder, uid),
   );
+  // Opening marks it read, so the cached unread count is now one too high.
+  forgetInboxStatus(owner);
   if (!message) throw new PersonalMailboxError("That email is no longer in this folder.", 404);
   return message;
+}
+
+function inboxCacheKey(owner: PersonalMailboxOwner): string {
+  return `${owner.key}|${owner.loginId}`;
+}
+
+function forgetInboxStatus(owner: PersonalMailboxOwner): void {
+  inboxStatusCache.delete(inboxCacheKey(owner));
+}
+
+async function checkInbox(owner: PersonalMailboxOwner): Promise<PersonalMailboxInboxStatus> {
+  try {
+    const status = await withCredential(owner, readFailure, (credential) => readInboxStatus(credential));
+    return { kind: "ok", ...status };
+  } catch (error) {
+    if (error instanceof PersonalMailboxError) {
+      if (error.statusCode === 404) return { kind: "not_connected" };
+      // withCredential refuses a refused or out-of-date connection BEFORE any login (the lockout rule).
+      if (error.statusCode === 409) return { kind: "needs_reconnect" };
+      // The mail server did not answer. A background check stays quiet about it: the person hears
+      // about it when they open the mailbox, and that path records it in the error monitor.
+      if (error.diagnostic) return { kind: "unavailable" };
+    }
+    throw error;
+  }
+}
+
+/**
+ * The envelope's unread count and new-mail alerts: how many inbox emails are unread and the newest
+ * few of them. Read-only, and answered from the short cache above when another tab asked a moment
+ * ago, so however many tabs are open a person's mailbox sees at most one login per cache window.
+ */
+export async function readPersonalMailboxInboxStatus(owner: PersonalMailboxOwner): Promise<PersonalMailboxInboxStatus> {
+  const key = inboxCacheKey(owner);
+  const now = Date.now();
+  const cached = inboxStatusCache.get(key);
+  if (cached && now - cached.at < INBOX_STATUS_CACHE_MS) return cached.value;
+  for (const [entryKey, entry] of inboxStatusCache) {
+    if (now - entry.at >= INBOX_STATUS_CACHE_MS) inboxStatusCache.delete(entryKey);
+  }
+  const value = checkInbox(owner);
+  const entry = { at: now, value };
+  inboxStatusCache.set(key, entry);
+  // A failure is never served to the next tab as though it were an answer.
+  value.catch(() => {
+    if (inboxStatusCache.get(key) === entry) inboxStatusCache.delete(key);
+  });
+  return value;
 }
 
 export async function readPersonalMailboxAttachment(

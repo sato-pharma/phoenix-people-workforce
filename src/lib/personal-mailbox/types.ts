@@ -44,6 +44,35 @@ export type PersonalMailboxPage = {
   nextBefore: number | null;
 };
 
+/** One unread email as a new-mail alert shows it: who and what about, never the body. */
+export type PersonalMailboxAlertItem = {
+  uid: number;
+  fromName: string | null;
+  fromAddress: string | null;
+  subject: string | null;
+  date: string | null;
+};
+
+/**
+ * The inbox at a glance, for the envelope's unread count and new-mail alerts. `watermark` is the UID
+ * the NEXT email to arrive will get (IMAP UIDNEXT), so anything at or above an earlier watermark is
+ * new since then; `uidValidity` changes only when Turbify renumbers the folder, and a renumbered
+ * folder is compared from scratch.
+ */
+export type PersonalMailboxInboxStatus =
+  | { kind: "not_connected" }
+  | { kind: "needs_reconnect" }
+  /** The mail server did not answer this time. The envelope keeps its last count and asks later. */
+  | { kind: "unavailable" }
+  | {
+      kind: "ok";
+      unread: number;
+      uidValidity: string;
+      watermark: number;
+      /** The newest unread emails, newest first, at most PERSONAL_MAILBOX_ALERT_LIMIT of them. */
+      newestUnread: PersonalMailboxAlertItem[];
+    };
+
 export type PersonalMailboxAttachment = {
   index: number;
   filename: string | null;

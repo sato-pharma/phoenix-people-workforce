@@ -2,6 +2,7 @@
 // directly (tests/personal-mailbox.test.ts) and the envelope's client component can import it too.
 
 import type {
+  PersonalMailboxAlertItem,
   PersonalMailboxFolder,
   PersonalMailboxMessage,
   PersonalMailboxSendInput,
@@ -28,6 +29,18 @@ export const MAX_ATTACHMENT_TOTAL_BYTES = 15 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 10;
 /** Inline images (a signature logo) are embedded into the reader up to this much in total. */
 export const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024;
+
+/** How many of the newest unread emails one inbox check brings back for new-mail alerts. */
+export const PERSONAL_MAILBOX_ALERT_LIMIT = 5;
+/**
+ * How often an open Phoenix tab asks whether new email arrived. Each ask is one read-only login on
+ * the person's own mailbox; the server answers repeat asks from its short cache instead.
+ */
+export const PERSONAL_MAILBOX_POLL_MS = 2 * 60_000;
+/** Fired on `window` when the person connects, reconnects or disconnects, so the envelope re-checks. */
+export const PERSONAL_MAILBOX_CHANGED_EVENT = "phx:personal-mailbox-changed";
+/** Fired on `window` when an unread inbox email is opened, so the envelope's count drops by one. */
+export const PERSONAL_MAILBOX_READ_EVENT = "phx:personal-mailbox-read";
 
 /** Thrown for every expected refusal. `diagnostic` marks the ones worth an error-monitor row. */
 export class PersonalMailboxError extends Error {
@@ -295,4 +308,59 @@ export function parseMessageIdList(raw: string | null | undefined): string[] {
     if (/^<[^<>\s]{1,250}>$/.test(part) && !ids.includes(part)) ids.push(part);
   }
   return ids.slice(-20);
+}
+
+/** Where the envelope last stood in someone's inbox. Kept in that person's own browser. */
+export type MailAlertBaseline = { uidValidity: string; watermark: number };
+
+/** Read a stored baseline back; anything malformed is no baseline (and so announces nothing). */
+export function parseMailAlertBaseline(raw: string | null | undefined): MailAlertBaseline | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as { uidValidity?: unknown; watermark?: unknown };
+    if (typeof value.uidValidity !== "string" || !value.uidValidity) return null;
+    if (typeof value.watermark !== "number" || !Number.isInteger(value.watermark) || value.watermark < 0) return null;
+    return { uidValidity: value.uidValidity, watermark: value.watermark };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which unread emails arrived since the last look, newest first: the ones worth a pop-up. The first
+ * look announces nothing (no baseline yet, or a folder Turbify renumbered), because two thousand old
+ * unread emails are not news. The watermark only ever moves forward, so one email is announced once.
+ */
+export function newUnreadSince(
+  baseline: MailAlertBaseline | null,
+  status: { uidValidity: string; watermark: number; newestUnread: PersonalMailboxAlertItem[] },
+): { fresh: PersonalMailboxAlertItem[]; next: MailAlertBaseline } {
+  if (baseline === null || baseline.uidValidity !== status.uidValidity) {
+    return { fresh: [], next: { uidValidity: status.uidValidity, watermark: status.watermark } };
+  }
+  const fresh = status.newestUnread
+    .filter((item) => item.uid >= baseline.watermark)
+    .sort((a, b) => b.uid - a.uid);
+  return {
+    fresh,
+    next: { uidValidity: status.uidValidity, watermark: Math.max(baseline.watermark, status.watermark) },
+  };
+}
+
+/** The envelope badge: the exact count up to 99, then "99+". No unread email shows no badge. */
+export function unreadBadgeLabel(count: number | null | undefined): string | null {
+  if (typeof count !== "number" || !Number.isFinite(count) || count < 1) return null;
+  return count > 99 ? "99+" : String(Math.floor(count));
+}
+
+/** The pop-up's words for newly arrived email: sender and subject in full, never shortened. */
+export function newMailAlertText(fresh: PersonalMailboxAlertItem[]): { title: string; body: string } | null {
+  const latest = fresh[0];
+  if (!latest) return null;
+  const sender = latest.fromName?.trim() || latest.fromAddress?.trim() || "Unknown sender";
+  const subject = latest.subject?.trim() || "(no subject)";
+  if (fresh.length === 1) return { body: subject, title: `New email from ${sender}` };
+  // A check brings back at most PERSONAL_MAILBOX_ALERT_LIMIT, so a full list may be the top of more.
+  const count = fresh.length >= PERSONAL_MAILBOX_ALERT_LIMIT ? `${PERSONAL_MAILBOX_ALERT_LIMIT} or more` : String(fresh.length);
+  return { body: `Latest from ${sender}: ${subject}`, title: `${count} new emails` };
 }
