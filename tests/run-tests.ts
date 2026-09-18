@@ -1763,6 +1763,7 @@ import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parit
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
+import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6062,6 +6063,11 @@ await runTest(
 await runTest(
   "the normalizer's invoice day is a real date or none, never an impossible year: Sofico's BILLINGDATE sent as an Excel serial (46247) and mec's month column (202607), each of which JavaScript reads as a year, give no day, while a text date and an Excel date cell still read to the day and keep their month",
   runNormalizerInvoiceDayImpossibleYearTests,
+);
+
+await runTest(
+  "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
+  runNormalizerBonusNeverDropsPaidUnitsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
