@@ -465,9 +465,16 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
     }
   }
 
+  // A customer mapping carries the pharmacy's name and address from the sheet: the server stores them
+  // on the mapping where its own fields are blank, so the next pharmacy can be matched against it.
   const readyMapped = groups.flatMap((g) => g.items
     .filter((u) => !excluded[mapKey(g.type, u.raw)] && confirmed[mapKey(g.type, u.raw)] && (selected[mapKey(g.type, u.raw)] ?? "").trim())
-    .map((u) => ({ type: g.type, raw: u.raw, code: selected[mapKey(g.type, u.raw)].trim() })));
+    .map((u) => ({
+      type: g.type,
+      raw: u.raw,
+      code: selected[mapKey(g.type, u.raw)].trim(),
+      ...(g.type === "customer" ? { name: u.rawName, address: u.rawAddress } : {}),
+    })));
   const readyExcluded = groups
     .filter((g) => g.type === "product")
     .flatMap((g) => g.items
