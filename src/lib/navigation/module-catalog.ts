@@ -87,6 +87,7 @@ export const MODULE_LABELS: Record<PermissionResource, string> = {
   user_activity: "User Activity",
   user_admin: "User Administration",
   vacancies: "Vacancies",
+  visual_aids: "Visual Aids",
   weekly_plans: "Weekly & Monthly Plans",
   weekly_sales: "Weekly Sales",
   workflow_registry: "Workflow Registry",

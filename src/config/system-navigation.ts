@@ -52,6 +52,7 @@ import {
   MessageSquareText,
   Network,
   PlusCircle,
+  Presentation,
   Radar,
   ReceiptText,
   Scale,
@@ -1712,6 +1713,30 @@ const employeePortalNavigationSectionSeeds = [
     label: "Market Awareness",
   },
   {
+    id: "employee-visual-aids",
+    items: [
+      {
+        href: "/employee-portals/visual-aids",
+        icon: Presentation,
+        label: "Visual Aids",
+        // The flyers a rep shows a doctor on the tablet (owner, 2026-09-18). Mirrors
+        // VISUAL_AIDS_PORTAL_ROLES (src/lib/visual-aids/rules.ts), which is what actually draws the
+        // portal link — these seeds do not. UX only: every /api/visual-aids route asserts
+        // visual_aids and then narrows to the viewer's own line.
+        permissions: [{ resource: "visual_aids", action: "read" }],
+        roles: [
+          "Medical Rep",
+          "District Manager",
+          "Regional Manager",
+          "National Sales Manager",
+          "Group Product Manager",
+          "Marketing Manager",
+        ],
+      },
+    ],
+    label: "Visual Aids",
+  },
+  {
     id: "employee-marketing-requests",
     items: [
       {
@@ -3337,6 +3362,14 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO", "Marketing Manager", "Group Product Manager", "Finance Manager"],
   },
   {
+    href: "/admin/visual-aids",
+    icon: Presentation,
+    label: "Visual Aids",
+    description: "The flyers and visual aids reps show doctors on their tablets — upload one against a line, retire it, or replace it with a newer version.",
+    permissions: [{ resource: "visual_aids", action: "update" }],
+    roles: ["Super Admin", "Marketing Manager", "Group Product Manager"],
+  },
+  {
     href: "/admin/marketing-requests/roi-tracking",
     icon: ChartColumnBig,
     label: "ROI Tracking",
@@ -4615,6 +4648,9 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           // than under ROI, which is where a reporting-shaped name would have put it. Naming it
           // here is what stops it being appended silently to the FIRST band.
           "/admin/market-awareness",
+          // Visual Aids is marketing MATERIAL the field uses, managed like a request's artwork, so it
+          // sits beside Market Awareness rather than being appended silently to the first band.
+          "/admin/visual-aids",
         ],
       },
       {

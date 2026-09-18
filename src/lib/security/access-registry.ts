@@ -1283,6 +1283,17 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Visual Aids (owner, 2026-09-18). A rep and his DM, RM and NSM read the ACTIVE aids of their own
+  // line — the line check lives in src/lib/visual-aids/service.ts, below the permission. Marketing
+  // Manager, GPM and Super Admin upload (create) and retire or replace (update); nobody deletes. The
+  // upload-url POST mints a one-time signed Storage URL and writes no row, so it carries no audit of
+  // its own: the create or replace that records the file writes the required audit row.
+  sessionApi({ methods: ["GET"], pattern: "/api/visual-aids", permission: { resource: "visual_aids", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/visual-aids", permission: { resource: "visual_aids", action: "create" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/visual-aids/upload-url", permission: { resource: "visual_aids", action: "create" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/visual-aids/:id/retire", permission: { resource: "visual_aids", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/visual-aids/:id/replace", permission: { resource: "visual_aids", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["GET"], pattern: "/api/visual-aids/:id/file", permission: { resource: "visual_aids", action: "read" } }),
   // Correcting an existing entry's serial number and IMEI — the one path that REPLACES an identity
   // somebody recorded, so it is Super Admin only (`company_devices:approve`, owner decision
   // 2026-09-18), not the `update` HR Operations issues and returns with. A written reason is

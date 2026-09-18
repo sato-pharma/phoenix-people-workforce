@@ -238,6 +238,10 @@ export type AuditEntityType =
   | "vacation_request"
   | "vacation_retention_purge"
   | "vacation_weekly_off_policy"
+  // Visual Aids (2026-09-18): a flyer uploaded, retired, or replaced by a newer version. REQUIRED —
+  // what a rep holds up in front of a doctor is promotional material for a prescription medicine,
+  // so who put it there and who took it down must never be a blank.
+  | "visual_aid"
   | "weekly_plan"
   // A weekly sales upload deleted or re-tagged: the only record of who did it and which upload it was.
   | "weekly_sales_batch"
