@@ -18,18 +18,17 @@ are in [docs/agents-incident-history.md](agents-incident-history.md).
 - 🔴 **A `schedule:` line is a REQUEST, not a rate — GitHub starts these crons hours late and skips most of the half-hourly one.** Measured 2026-09-10 → 09-17: `deploy-drift-check.yml` started 5–7 times per Cairo day (47 in the week, against 48 a day asked for), so a stranded deploy can sit unflagged for hours; `security-scan.yml` started 4–5¼ h after 05:17 UTC every day, `migration-drift-check.yml` 4½–7 h after 07:00 UTC, and the digest's 03:23 run 4½–6 h late. **A quiet drift check is not proof production matches `main` — read `/api/healthz` `revision`.** The digest route is idempotent, so its lateness costs nothing; anything that must fire ON TIME belongs on cron-job.org, not here.
 - **There IS a live Railway `staging` environment**, same project, service `phoenix-people-workforce`, at `https://phoenix-people-workforce-staging.up.railway.app`. Its service source tracks git branch `main` (not the branch named `staging`), and its `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project — safe as a real verification target.
 - Vercel: fully legacy/decommissioned — never deploy to or verify against it.
-- **Supabase project refs — the complete list `list_projects` returns.** Two of these four belong to this app; the other two do not, and are listed so an unfamiliar ref is identifiable instead of alarming.
+- **Supabase project refs — the complete list `list_projects` returns.** Two of these three belong to this app; the third does not, and is listed so an unfamiliar ref is identifiable instead of alarming.
 
   | Ref | Name | Region | Org | What it is |
   | --- | --- | --- | --- | --- |
   | `ozucdzovmcqvepbozvqf` | Phoenix HR | eu-central-1 | `rovnkzmhokgsruftjsaw` | **PRODUCTION** — real payroll data |
   | `cifwmndunmlxjhyjugxa` | Phoenix-HR-Staging | eu-central-1 | `rovnkzmhokgsruftjsaw` | **STAGING** |
-  | `plleofqyfbknvwcotzqo` | Future Talents Hub | eu-north-1 | `rovnkzmhokgsruftjsaw` | unrelated to this app |
-  | `mlbpzvaanusdejqnimst` | the owner's personal project | eu-central-1 | **`xadcyivhxyjtehyheowl`** | unrelated — **different organization** |
+  | `plleofqyfbknvwcotzqo` | Future Talents Hub | eu-north-1 | **`tvweawmrjrekvepkcxzs`** | unrelated to this app — **different organization** |
 
   **Dead refs — treat any doc, memory, or prompt still naming one as stale:** `izhmxvgiktiafqusolot` and `oaifhavixhdtwmseshff`. Neither is returned by `list_projects` any more.
 
-  **Neither region nor org is a guard** — three of the four are `eu-central-1`, and both named MCP servers see **all four**. Resolve with `list_projects` before acting (`AGENTS.md` §8).
+  **Neither region nor org is a guard** — two of the three are `eu-central-1`, and `supabase-production` sees **all three**. Resolve with `list_projects` before acting (`AGENTS.md` §8).
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY`: the staging service-role key, used by `ci.yml`'s login-smoke step and both staging legs of `migration-drift-check.yml`. **There is no `preview-smoke` job** — the smoke test is a step inside `validate`.
 - **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
 

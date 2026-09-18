@@ -42,7 +42,7 @@ export function runSupabaseProjectRefsTests() {
     .filter((m): m is RegExpExecArray => m !== null)
     .map((m) => ({ ref: m[1], rest: m[2] }));
 
-  assert.equal(rows.length, 4, "AGENTS.md section 3 must list exactly the four projects the account can see");
+  assert.equal(rows.length, 3, "AGENTS.md section 3 must list exactly the three projects the account can see");
 
   const production = rows.filter((r) => /\*\*PRODUCTION\*\*/.test(r.rest));
   const staging = rows.filter((r) => /\*\*STAGING\*\*/.test(r.rest));
@@ -50,7 +50,7 @@ export function runSupabaseProjectRefsTests() {
 
   assert.equal(production.length, 1, "exactly one row may be marked PRODUCTION");
   assert.equal(staging.length, 1, "exactly one row may be marked STAGING");
-  assert.equal(unrelated.length, 2, "two of the four projects are unrelated to this app");
+  assert.equal(unrelated.length, 1, "one of the three projects is unrelated to this app");
 
   // ── 2. THE CLASSIFIER AGREES WITH THE DOC ──────────────────────────────────
   assert.equal(PRODUCTION_REF, production[0].ref, "repo-doctor-supabase-link.mjs production ref is stale");
