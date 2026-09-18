@@ -4,13 +4,14 @@
 //   node scripts/backup-source-of-sales.mjs "F:/Phoenix Workforce/source-of-sales-backup-YYYYMMDD"
 //
 // - Self-loads .env.local (so the service-role key stays on this machine).
-// - Pulls each table in full (PostgREST db-max-rows is unset on this project) with a
-//   keyset fallback for very large tables, and writes <table>.json + _manifest.json.
+// - Pulls every table in scripts/lib/source-of-sales-tables.mjs in full, the rollups included,
+//   and writes <table>.json + _manifest.json.
 // - Read-only: it never writes to the database.
 
 import { createClient } from "@supabase/supabase-js";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { BACKUP_TABLES, NOT_BACKED_UP } from "./lib/source-of-sales-tables.mjs";
 
 function loadEnvLocal() {
   const path = resolve(process.cwd(), ".env.local");
@@ -38,30 +39,18 @@ if (!OUT) { console.error("Pass an output folder, e.g. \"F:/Phoenix Workforce/so
 
 const supabase = createClient(URL, KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
-// [table, primaryKey] — ordered child -> parent so the same file list can drive a restore.
-// PostgREST caps responses at 1000 rows, so EVERY table is paged by its PK (stable order,
-// no skips/overlaps) until a short page is returned.
-const TABLES = [
-  ["source_of_sales_import_rows", "id"],
-  ["source_of_sales_import_summaries", "id"],
-  ["source_of_sales_import_batches", "id"],
-  ["source_of_sales_customer_map", "id"],
-  ["source_of_sales_territory_aliases", "id"],
-  ["source_of_sales_bricks", "brick_id"],
-  ["source_of_sales_blocks", "block_code"],
-  ["source_of_sales_area_aliases", "id"],
-  ["source_of_sales_areas", "area_code"],
-  ["source_of_sales_area_regions", "area_code"],
-  ["source_of_sales_region_aliases", "id"],
-  ["source_of_sales_regions", "region_code"],
-  ["source_of_sales_product_aliases", "id"],
-  ["source_of_sales_products", "product_code"],
-  ["source_of_sales_distributor_profile", "distributor_code"],
-  ["source_of_sales_distributors", "distributor_code"],
-  ["source_of_sales_reference_issues", "id"],
-];
+// Every table the restore needs, from the one shared list (scripts/lib/source-of-sales-tables.mjs).
+// Until 2026-09-18 this file kept its own list of seventeen tables and left out every rollup the
+// dashboards and the closing read, so a restore could not bring them back.
+//
+// PostgREST caps responses at 1000 rows, so EVERY table is paged in a stable order until a short
+// page comes back: by its key when that is one column, and by every key column with offsets when
+// the key spans several.
+async function fetchAll(table, key) {
+  return key.length === 1 ? fetchByKeyset(table, key[0]) : fetchByOffset(table, key);
+}
 
-async function fetchAll(table, pk) {
+async function fetchByKeyset(table, pk) {
   const rows = [];
   const pageSize = 1000;
   let lastPk = null;
@@ -81,21 +70,36 @@ async function fetchAll(table, pk) {
   return rows;
 }
 
+async function fetchByOffset(table, key) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    let query = supabase.from(table).select("*");
+    for (const column of key) query = query.order(column, { ascending: true });
+    const { data, error } = await query.range(from, from + pageSize - 1);
+    if (error) throw new Error(`${table}: ${error.message}`);
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
+}
+
 mkdirSync(OUT, { recursive: true });
 const manifest = [];
 let total = 0;
-for (const [table, pk] of TABLES) {
-  const rows = await fetchAll(table, pk);
+for (const { table, key } of BACKUP_TABLES) {
+  const rows = await fetchAll(table, key);
   writeFileSync(`${OUT}/${table}.json`, JSON.stringify(rows));
   manifest.push({ table, rows: rows.length });
   total += rows.length;
-  console.log(`${table.padEnd(38)} ${rows.length}`);
+  console.log(`${table.padEnd(44)} ${rows.length}`);
 }
 writeFileSync(`${OUT}/_manifest.json`, JSON.stringify({
   exportedAtUtc: new Date().toISOString(),
   source: URL,
   totalRows: total,
   tables: manifest,
+  notBackedUp: NOT_BACKED_UP,
 }, null, 2));
 console.log(`\nTOTAL ROWS BACKED UP: ${total}`);
 console.log(`Folder: ${OUT}`);

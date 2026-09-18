@@ -1018,6 +1018,7 @@ import { runSosUiTruthTests } from "./sos-ui-truth.test.ts";
 import { runSosDataCoverageTests } from "./sos-data-coverage.test.ts";
 import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
 import { runSosImportSummariesRefreshTests } from "./sos-import-summaries-refresh.test.ts";
+import { runSosBackupCoversEveryTableTests } from "./sos-backup-covers-every-table.test.ts";
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
@@ -3759,6 +3760,7 @@ await runTest("SoS UI truth (brick coverage denominator, export matches the scre
 await runTest("SoS data coverage (missing months + per-distributor gaps are visible)", runSosDataCoverageTests);
 await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes the rollup)", runSosRollupSqlTruthTests);
 await runTest("SoS import summaries refresh (the dashboard's own aggregate is never frozen)", runSosImportSummariesRefreshTests);
+await runTest("SoS backup covers every table, and a restore rebuilds the rollups", runSosBackupCoversEveryTableTests);
 await runTest("SoS backfill matches the empty-string brick sentinel, not just NULL", runSosBackfillEmptyBrickSentinelTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
