@@ -248,7 +248,44 @@ It is the **same signed token** the browser keeps in its `phoenix_session` cooki
 absolute lifetime, revoked the same way by "Log out everywhere". `src/lib/auth/native-session.ts`
 in the repo root explains the one thing that genuinely differs, and what would harden it.
 
+## Working without a signal
+
+A rep in a pharmacy basement still sees their figures. The last good answer from each endpoint is
+kept on the device, and served **only** when the phone could not reach Phoenix at all.
+
+🔴 **The cache is never silent.** Cached data always arrives stamped with when it was taken, and the
+screen says so above the numbers — "Showing what was last loaded, at 12:04 today" — before they are
+read rather than after scrolling past them. A screen that renders cached data without saying so is a
+defect, not a style choice. That notice is deliberately not red: being offline with labelled data is
+the app working, not an incident.
+
+Three rules decide when it is used:
+
+| Situation | What happens | Why |
+| --- | --- | --- |
+| The request never landed (`NetworkError`) | Serve the cache, labelled | The phone is the problem, and the figures were true when taken |
+| The server answered and said no (`ApiError`, e.g. a 500) | Show the error, never the cache | Stale figures on top of a live fault hide the fault behind data that looks fine |
+| A 401/403 | Sign out and **clear the cache** | The session is over; nothing of that employee's should stay readable on the handset |
+
+It is also dropped on a deliberate sign-out, and anything older than **12 hours** is not served at
+all — that is the session's own absolute lifetime, and a KPI from two days ago is not a degraded
+version of today's, it is a different number.
+
+**It lives in the OS keystore, not AsyncStorage**, for the same reason the token does: AsyncStorage
+is a plaintext file inside the app sandbox. What is cached is not a credential, but it is the
+employee's own KPI, leave and sales data, and there is no reason to hold it to a lower standard than
+the token sitting beside it. That costs no new dependency — `expo-secure-store` was already here.
+
+The keystore's price is a **2,048-byte ceiling per value** on Android, so `offline-cache.ts` refuses
+anything over 1,600 bytes rather than truncating it, and simply does not cache that endpoint. A
+portal snapshot is a few hundred bytes of scalars, so this is headroom — but a future screen wanting
+to cache a long list needs a different store and must not quietly squeeze into this one.
+
 ## What is not here yet
 
-Offline, push notifications, camera and GPS. All four exist in the web portal and all four need
-native equivalents in this app — they are the next phases, not oversights.
+Push notifications, camera and GPS. All three exist in the web portal and all three need native
+equivalents in this app — they are the next phases, not oversights.
+
+🔴 **Push notifications are gated on the app signing key**, not on code: Firebase has to be
+registered with the **app signing** key's fingerprint, never the upload key's. See the signing
+section above before starting that phase.

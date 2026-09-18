@@ -203,6 +203,39 @@ export function ErrorNotice({ message }: { message: string }) {
   );
 }
 
+/**
+ * Says the figures below were taken earlier, because the phone could not reach Phoenix.
+ *
+ * DELIBERATELY NOT RED. Being offline with labelled data is not a failure — the app is working, and
+ * a rep standing in a pharmacy basement with no signal is having an ordinary day, not an incident.
+ * `ErrorNotice` is for something that went wrong and needs acting on; this is a statement of fact
+ * about what is on screen, so it takes the quiet surface treatment and a left rule for structure.
+ *
+ * It is not dismissable, on purpose. The one thing that makes a cache honest is that its age is
+ * always visible, so a tap must not be able to hide it while the stale numbers stay.
+ */
+export function OfflineNotice({ takenAt }: { takenAt: string }) {
+  const palette = usePalette();
+  return (
+    <View
+      style={{
+        backgroundColor: palette.surface2,
+        borderColor: palette.lineStrong,
+        borderLeftWidth: 3,
+        borderRadius: radius,
+        borderWidth: hairline,
+        gap: space.xs,
+        padding: space.md,
+      }}
+    >
+      <Text style={[type.bodyStrong, { color: palette.ink2 }]}>No connection</Text>
+      <Text style={[type.meta, { color: palette.inkSoft }]}>
+        {`Showing what was last loaded, at ${takenAt}. Pull down to try again.`}
+      </Text>
+    </View>
+  );
+}
+
 export function LoadingScreen({ label = "Loading…" }: { label?: string }) {
   const palette = usePalette();
   return (

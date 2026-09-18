@@ -2,6 +2,7 @@ import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ApiError, apiRequest } from "./api";
+import { clearCache } from "./offline-cache";
 
 /**
  * Who is signed in, and where the proof of it lives.
@@ -14,6 +15,11 @@ import { ApiError, apiRequest } from "./api";
  * The token is the same signed session token the web app keeps in an HttpOnly cookie, on the same
  * 12-hour absolute clock, revocable the same way. Nothing here extends a session; this layer only
  * stores one, attaches it, and throws it away the moment the server stops accepting it.
+ *
+ * ENDING A SESSION ALSO DROPS THE OFFLINE CACHE. `offline-cache.ts` keeps the last answer from each
+ * endpoint so a rep out of signal still sees their figures, and those figures belong to the session
+ * that fetched them. Both exits — a deliberate sign-out and a server-rejected one — clear it here,
+ * so no path out of a session can leave one employee's data readable on the handset.
  */
 
 export type PhoenixUser = {
@@ -145,6 +151,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // lapses on its own clock. Doing it the other way round leaves a live token on a phone whose
     // owner believes they signed out.
     await clearStoredSession();
+    await clearCache();
     setState({ status: "signed-out" });
 
     if (token) {
@@ -154,6 +161,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const handleExpiredSession = useCallback(async () => {
     await clearStoredSession();
+    await clearCache();
     setState({ status: "signed-out" });
   }, []);
 

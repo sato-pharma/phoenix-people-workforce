@@ -1,7 +1,8 @@
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Card, ErrorNotice, LoadingScreen, MicroLabel, StatTile } from "@/components/ui";
+import { Card, ErrorNotice, LoadingScreen, MicroLabel, OfflineNotice, StatTile } from "@/components/ui";
+import { describeCachedAt } from "@/lib/offline-cache";
 import { useSession } from "@/lib/session";
 import { usePhoenixQuery } from "@/lib/use-phoenix-query";
 import { space, type } from "@/theme/tokens";
@@ -22,7 +23,8 @@ export default function PortalHomeScreen() {
   const palette = usePalette();
   const insets = useSafeAreaInsets();
   const { user } = useSession();
-  const { data, error, loading, refresh, refreshing } = usePhoenixQuery<PortalHome>("/api/employee-portals/home");
+  const { cachedAt, data, error, loading, refresh, refreshing } =
+    usePhoenixQuery<PortalHome>("/api/employee-portals/home");
 
   if (loading) {
     return <LoadingScreen label="Loading your command center…" />;
@@ -55,6 +57,10 @@ export default function PortalHomeScreen() {
           <Text style={[type.meta, { color: palette.inkSoft }]}>{subtitle}</Text>
         ) : null}
       </View>
+
+      {/* Above the figures, never below them: the age of what follows has to be read before the
+          numbers are, not discovered after scrolling past them. */}
+      {cachedAt ? <OfflineNotice takenAt={describeCachedAt(cachedAt)} /> : null}
 
       {error ? <ErrorNotice message={error} /> : null}
 
