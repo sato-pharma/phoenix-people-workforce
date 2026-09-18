@@ -6,13 +6,13 @@ import type { OutstationDepartureEvidenceMetadata } from "../src/lib/outstation/
 import { stripComments } from "./support/comment-strip.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// A departure photo on file with no GPS position says so, and says why, to the approver.
+// A departure photo on file with no GPS position says so to the approver, in three words.
 //
 // Owner, 2026-09-18, on Saad Salama's 1 September departure photo, saved with no position:
 // "the system must record the reason". The approver saw only "Location unavailable". The same day
 // the owner ruled "Refuse the photo" (#4007): a departure photo with no location is refused at
 // capture and nothing is stored, so no new one can reach an approver. What is left is the one
-// already on file, whose reason nothing recorded, and it must say that plainly, never a guess.
+// already on file, whose reason nothing recorded. It says only the fact, never a history or a guess.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PHOTOS_COMPONENT = "src/components/outstation/trip-evidence-photos.tsx";
@@ -50,17 +50,17 @@ function departurePhoto(meta: OutstationDepartureEvidenceMetadata | null, path: 
 }
 
 export function runOutstationDepartureGpsReasonTests() {
-  // ── Headline: Saad Salama's photo tells the approver there is no GPS, and why ────
+  // ── Headline: Saad Salama's photo tells the approver there is no GPS ─────────────
   const saad = departurePhoto(saadDeparture());
   assert.equal(
     saad.gpsMissingReason,
     DEPARTURE_PHOTO_NO_GPS_NOTE,
-    "a departure photo on file with no position tells the approver there is no GPS and that the reason was not recorded",
+    "a departure photo on file with no position tells the approver there is no GPS",
   );
   assert.equal(saad.locationLabel, null, "and not the bare 'Location unavailable' beside it");
   assert.ok(saad.url, "the photo itself is still shown");
-  assert.match(DEPARTURE_PHOTO_NO_GPS_NOTE, /^No GPS location\./, "the note leads with what is missing");
-  assert.match(DEPARTURE_PHOTO_NO_GPS_NOTE, /reason was not recorded/, "and says the reason was never recorded, never a guess");
+  // Owner, 2026-09-18: "tell the short and the benefit only". The fact, no history, no guessed cause.
+  assert.equal(DEPARTURE_PHOTO_NO_GPS_NOTE, "No GPS location.", "the note is the fact only, no story");
 
   // "No position" is the domain's own: half a pair and the old failed-fix 0,0 count too.
   assert.equal(

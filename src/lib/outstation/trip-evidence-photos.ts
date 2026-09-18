@@ -63,10 +63,9 @@ export type ApproverTripPhotosInput = {
  * What the approver reads under a departure photo on file with no GPS position (owner, 2026-09-18:
  * "the system must record the reason"). Since the same day such a photo is refused at capture and
  * nothing is stored (departure-photo-location.ts), so only one saved before then reaches here, and
- * nothing recorded why its position was missing. Said plainly, never guessed.
+ * nothing recorded why its position was missing. Owner, same day: short, the fact only, no history.
  */
-export const DEPARTURE_PHOTO_NO_GPS_NOTE =
-  "No GPS location. The phone sent no position with this photo, and the reason was not recorded: it was saved before Phoenix began refusing a departure photo without a location.";
+export const DEPARTURE_PHOTO_NO_GPS_NOTE = "No GPS location.";
 
 function text(value: string | null | undefined): string | null {
   const trimmed = typeof value === "string" ? value.trim() : "";
