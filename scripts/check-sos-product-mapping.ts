@@ -28,6 +28,11 @@
 // bottles of Rispadex syrup for seven straight months is not a sales fact, it is a mapping bug.
 // This is the check that would have caught the incident in week one.
 //
+// It judges EACH MONTH on its own units. It used to add every month together, so once the
+// distributor had sold the product in ANY month, a zero month could never be reported again: the
+// corrected July alone hid March to June, the four months Overseas sold exactly zero Rispadex
+// syrup, and would have hidden the same mis-map had it returned in any later month.
+//
 // CHECK 3 (added 2026-08-09) catches a THIRD, unrelated failure mode: one distributor code
 // stored under two different exact-case spellings — "DIRECT" and "Direct" both live in
 // production today, on different lines. Nothing here loses or double-counts a unit (every
@@ -49,6 +54,8 @@ import { createClient } from "@supabase/supabase-js";
 export type AliasRow = { alias: string; distributor_code: string | null; product_code: string };
 export type SalesRow = {
   distributor_code: string | null;
+  /** The month the invoice belongs to (YYYY-MM). CHECK 2 judges each month on its own. */
+  invoice_period?: string | null;
   official_line: string | null;
   product_code: string | null;
   qty: number;
@@ -64,6 +71,8 @@ export type ZeroSalesFinding = {
   distributorCode: string;
   distributorPctOfLine: number;
   line: string;
+  /** The month the zero was found in; empty when the rows carried no month. */
+  period: string;
   productCode: string;
   productPctOfLine: number;
   productUnitsElsewhere: number;
@@ -129,6 +138,11 @@ export function findDuplicateItemCodes(rows: readonly AliasRow[]): DuplicateCode
  * stock the full range; `minProductShare` keeps a niche SKU from flagging against everyone. A
  * tender-only SKU legitimately shows zero at retail distributors, which is why the defaults are
  * not tighter — this check is a prompt to look, not a verdict.
+ *
+ * Each month is judged against its OWN units: the distributor's share, the product's share and
+ * the zero are all measured within that month. Adding months together let one month with sales
+ * hide every zero month. A distributor with no rows in a month is not judged for it: not every
+ * distributor uploads every month. Newest month first, the one about to close.
  */
 export function findZeroSalesGaps(
   rows: readonly SalesRow[],
@@ -137,6 +151,33 @@ export function findZeroSalesGaps(
   const minDistributorShare = options.minDistributorShare ?? 0.02;
   const minProductShare = options.minProductShare ?? 0.01;
 
+  const byPeriod = new Map<string, SalesRow[]>();
+  for (const row of rows) {
+    const period = (row.invoice_period ?? "").trim();
+    const monthRows = byPeriod.get(period) ?? [];
+    monthRows.push(row);
+    byPeriod.set(period, monthRows);
+  }
+
+  const out: ZeroSalesFinding[] = [];
+  for (const [period, monthRows] of byPeriod) {
+    out.push(...zeroSalesGapsInOneMonth(monthRows, period, minDistributorShare, minProductShare));
+  }
+  return out.sort(
+    (a, b) =>
+      b.period.localeCompare(a.period) ||
+      a.line.localeCompare(b.line) ||
+      b.productUnitsElsewhere - a.productUnitsElsewhere ||
+      a.distributorCode.localeCompare(b.distributorCode),
+  );
+}
+
+function zeroSalesGapsInOneMonth(
+  rows: readonly SalesRow[],
+  period: string,
+  minDistributorShare: number,
+  minProductShare: number,
+): ZeroSalesFinding[] {
   // line -> distributor -> product -> units
   const byLine = new Map<string, Map<string, Map<string, number>>>();
   const lineUnits = new Map<string, number>();
@@ -183,6 +224,7 @@ export function findZeroSalesGaps(
           distributorCode: distributor,
           distributorPctOfLine: Math.round((1000 * dUnits) / total) / 10,
           line,
+          period,
           productCode: product,
           productPctOfLine: Math.round((1000 * pUnits) / total) / 10,
           productUnitsElsewhere: Math.round(pUnits),
@@ -190,12 +232,7 @@ export function findZeroSalesGaps(
       }
     }
   }
-  return out.sort(
-    (a, b) =>
-      a.line.localeCompare(b.line) ||
-      b.productUnitsElsewhere - a.productUnitsElsewhere ||
-      a.distributorCode.localeCompare(b.distributorCode),
-  );
+  return out;
 }
 
 /**
@@ -266,7 +303,7 @@ async function main() {
   const sales = await fetchAll<SalesRow>((from, to) =>
     supabase
       .from("source_of_sales_import_rows")
-      .select("distributor_code,official_line,product_code,qty")
+      .select("distributor_code,invoice_period,official_line,product_code,qty")
       .range(from, to),
   );
   const distributors = await fetchAll<DistributorRow>((from, to) =>
@@ -292,13 +329,14 @@ async function main() {
 
   const gaps = findZeroSalesGaps(sales);
   console.log(
-    `\n[sos-mapping] CHECK 2 — product with zero units at a distributor that carries the line: ${gaps.length} case(s)`,
+    `\n[sos-mapping] CHECK 2 — product with zero units in a month at a distributor that carries the line that month: ` +
+      `${gaps.length} case(s), newest month first`,
   );
   for (const g of gaps) {
     console.log(
-      `   ${g.line.padEnd(14)} ${g.distributorCode.padEnd(8)} ${g.productCode.padEnd(8)} ` +
+      `   ${(g.period || "no month").padEnd(8)} ${g.line.padEnd(14)} ${g.distributorCode.padEnd(8)} ${g.productCode.padEnd(8)} ` +
         `distributor ${String(g.distributorPctOfLine).padStart(5)}% of line, product ${String(g.productPctOfLine).padStart(5)}% ` +
-        `(${g.productUnitsElsewhere} units sold elsewhere)`,
+        `(${g.productUnitsElsewhere} units sold elsewhere that month)`,
     );
   }
   if (gaps.length) {
