@@ -15,6 +15,8 @@ import {
 } from "../src/lib/sales/normalizer/phoenix-template.ts";
 import { buildPhoenixTemplateWorkbook } from "../src/lib/sales/normalizer/phoenix-template-workbook.ts";
 import { normalizeRows } from "../src/lib/sales/normalizer/engine.ts";
+import { distinctUnknowns } from "../src/lib/sales/normalizer/mapping.ts";
+import { mappingLeft, mappingLeftPhrase, needsMappingTabLabel, stillNeedMappingSentence } from "../src/lib/sales/normalizer/mapping-left.ts";
 import { listNormalizerDistributors, listNormalizerSourceOptions } from "../src/lib/sales/normalizer/service.ts";
 import { PREVIEW_UNKNOWN_LIMIT, recognitionErrorMessage, summarizePreview } from "../src/lib/sales/recognize.ts";
 import type { Crosswalks, NormalizeException, NormalizeResult } from "../src/lib/sales/normalizer/types.ts";
@@ -384,6 +386,49 @@ function thePreviewCarries2000UnknownsAndTellsTheTruthAboutTheRest() {
   assert.equal(preview.distributorCode, "PS", "the preview carries the RESOLVED distributor back to every route");
 }
 
+function whatIsLeftToMapDropsAsPharmaciesAreSaved() {
+  // The owner's file on 2026-09-18: a pharmacy list with no product on any row. He saved 1,487
+  // pharmacies and the tab still read "2000 codes (28,800 rows)" — the cut list had refilled to 2,000
+  // from the 3,348 still unmapped, and every product-less row counted as needing mapping. Here 2,100
+  // pharmacies are still unmapped and 900 are mapped already.
+  const stillUnmapped = Array.from({ length: 2100 }, (_, i): NormalizeException => ({ ...unmappedCustomer(i), reason: "both" }));
+  const alreadyMapped = Array.from({ length: 900 }, (_, i): NormalizeException => ({ ...unmappedCustomer(5000 + i), reason: "product" }));
+  const result: NormalizeResult = {
+    coded: [],
+    distributorCode: "PS",
+    exceptions: [...stillUnmapped, ...alreadyMapped],
+    ignoredRows: [],
+    blankCustomerRows: [],
+    customerBrickCorrections: [],
+    summary: { brickResolved: 900, blankCustomerSkipped: 0, fullyCoded: 0, ignored: 0, productResolved: 0, totalRows: 3000 },
+  };
+
+  const preview = summarizePreview("PS", "Overseas", result, []);
+  assert.equal(preview.unknownCustomers.length, PREVIEW_UNKNOWN_LIMIT, "the list itself still stops at 2,000");
+  assert.equal(preview.unknownTotals.rows, 2100, "a mapped pharmacy's product-less row is not waiting on any mapping");
+  const left = mappingLeft(preview);
+  assert.deepEqual(left, { codes: 2100, pharmacies: 2100, products: 0, rows: 2100, territories: 0 });
+  assert.equal(needsMappingTabLabel(preview), "Needs mapping — 2,100 pharmacies left (2,100 rows)", "the tab counts what is left, not the cut list and not every row");
+  assert.equal(stillNeedMappingSentence(left), "2,100 pharmacies still need mapping.", "the line after Save says the true number too");
+
+  // Once every pharmacy is mapped nothing is left, whatever the product-less rows and ignored items say.
+  const done = summarizePreview("PS", "Overseas", { ...result, exceptions: alreadyMapped, summary: { ...result.summary, ignored: 12 } }, []);
+  assert.equal(needsMappingTabLabel(done), "Needs mapping — nothing left (12 ignored)");
+  assert.equal(stillNeedMappingSentence(mappingLeft(done)), "Everything is mapped now.");
+
+  // A row counts once, and only when a mapping would unblock it.
+  const rows = distinctUnknowns([
+    { ...unmappedCustomer(1), rawProduct: "583450", reason: "product" },
+    { ...unmappedCustomer(2), rawProduct: "583450", reason: "both" },
+    { ...unmappedCustomer(3), reason: "unparseable_qty" },
+    { ...unmappedCustomer(4), rawCustomerCode: "", reason: "brick" },
+  ], []);
+  assert.equal(rows.rowsNeedingMapping, 2, "an unknown product or place counts; a bad quantity or a row with nothing to map it by does not");
+
+  assert.equal(mappingLeftPhrase({ pharmacies: 1, products: 2, territories: 1 }), "1 pharmacy, 2 products and 1 territory");
+  assert.equal(stillNeedMappingSentence({ codes: 1, pharmacies: 1, products: 0, rows: 1, territories: 0 }), "1 pharmacy still needs mapping.");
+}
+
 // ── 7. Every refusal is a sentence, not a shrug ──────────────────────────────────────────────────
 function aRefusalSaysWhatIsWrong() {
   assert.equal(
@@ -421,5 +466,6 @@ export async function runSosPhoenixTemplateTests() {
   await theDownloadedFileCarriesTheDropdownsAndTheAutoCodes();
   await afillOfTheRealFileResolvesItsDistributor();
   thePreviewCarries2000UnknownsAndTellsTheTruthAboutTheRest();
+  whatIsLeftToMapDropsAsPharmaciesAreSaved();
   aRefusalSaysWhatIsWrong();
 }
