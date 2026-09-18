@@ -20,9 +20,10 @@ import {
 // The table set here is derived from the migrations rather than written out, so a Source of Sales
 // table added later fails this test until the shared list says what happens to it.
 
-// Live in production (pg_class, 2026-09-18) but created outside supabase/migrations, so the scan
-// below cannot see them. They stay in the backup; the stale-entry check skips them.
-const CREATED_OUTSIDE_MIGRATIONS = new Set(["source_of_sales_brick_move_files"]);
+// Live in production (pg_class) but created outside supabase/migrations, so the scan below cannot
+// see them. They stay in the backup; the stale-entry check skips them. Empty since #4059 committed
+// 20260918150000, the migration that creates source_of_sales_brick_move_files.
+const CREATED_OUTSIDE_MIGRATIONS = new Set<string>();
 
 function readSource(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
