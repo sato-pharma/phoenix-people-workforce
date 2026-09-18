@@ -1769,6 +1769,7 @@ import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
+import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6096,6 +6097,11 @@ await runTest(
 await runTest(
   "a distributor profile's bonus column is named for what it does: the editor, the Database Validation grid and the master workbook call it a free-goods flag that skips the whole row, the editor warns never to map a bonus count there, and no field key, DB column or coded-sheet header moved with the label",
   runProfileFreeGoodsFlagLabelTests,
+);
+
+await runTest(
+  "the normalizer reads mec's month column \"شهر\" as the month: \"202607\" is July 2026, as text or a number cell, and it decides over the invoice's own date (a 25 July invoice marked 202608 is August), so a file inside one month resolves to it with none picked by hand, a file crossing mec's cut-off is refused as two named months, no mec row claims a day, and \"202613\" gives no month",
+  runNormalizerMecMonthColumnTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

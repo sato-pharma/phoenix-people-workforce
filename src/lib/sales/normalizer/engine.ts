@@ -114,6 +114,13 @@ function excelSerialParts(text: string): { y: number; m: number; d: number } | n
 // Timezone-safe YYYY-MM. dayFirst disambiguates DD-MM-YYYY vs MM-DD-YYYY when both parts are <= 12
 // (e.g. "08-04-2026" is 8 April in DD-MM, but August in MM-DD). The caller detects the column's
 // orientation from values that can't be ambiguous (a part > 12) — see detectDayFirst.
+//
+// A SIX-DIGIT WHOLE NUMBER is a month written YYYYMM: mec's date column is its month "شهر" ("202607"),
+// per the Headers Mapping, and JavaScript read it as the YEAR 202607 ("202607-01"). It is read as
+// 2026-07 now, by the owner's decision on 2026-09-18 — "شهر" decides a mec row's month, even though it
+// is NOT the invoice's calendar month: on production, invoices dated the 25th or later already carry
+// the NEXT month (25 Jul → 202608; 25–31 Aug → 202609 — 5 of 13 rows), so a mec file spanning that
+// cut-off resolves to two months. It carries no day, so dateFrom still answers null for it.
 function periodFrom(value: unknown, dayFirst?: boolean): string | null {
   const ym = (y: number, m: number) => (Number.isInteger(y) && y >= 1900 && m >= 1 && m <= 12 ? `${y}-${String(m).padStart(2, "0")}` : null);
   if (value instanceof Date) return ym(value.getUTCFullYear(), value.getUTCMonth() + 1);
@@ -121,6 +128,8 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
   if (!text) return null;
   const serial = excelSerialParts(text);
   if (serial) return ym(serial.y, serial.m);
+  const yyyymm = text.match(/^(\d{4})(\d{2})$/);
+  if (yyyymm) return ym(Number(yyyymm[1]), Number(yyyymm[2]));
   const iso = text.match(/^(\d{4})[-/.](\d{1,2})/);
   if (iso) return ym(Number(iso[1]), Number(iso[2]));
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
@@ -152,8 +161,9 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
  * A cell holding only digits reaches the `new Date(text)` fallback below, and JavaScript reads a bare
  * number as a YEAR: mec's date column is the month "شهر" ("202607") and was stored as 202607-01-01
  * (13 rows on production, 2026-09-18). A month is not a day, so the answer is null — "the sheet
- * carries no date" — never an impossible year. Sofico's BILLINGDATE serial ("46247") was stored the
- * same way (46247-01-01, 166 rows); it is now read as the real day it is, by excelSerialParts above.
+ * carries no date" — never an impossible year; periodFrom reads it as the month. Sofico's BILLINGDATE
+ * serial ("46247") was stored the same way (46247-01-01, 166 rows); it is now read as the real day it
+ * is, by excelSerialParts above.
  */
 function dateFrom(value: unknown, dayFirst?: boolean): string | null {
   const ymd = (y: number, m: number, d: number) =>
