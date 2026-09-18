@@ -33,13 +33,14 @@ import {
   ShieldAlert,
   Trash2,
   TriangleAlert,
+  Usb,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
 import type { ManagedTabletRow, ManagedTabletTone } from "@/lib/devices/managed-tablets";
-import type { EnrollmentResult, RepTabletsState } from "@/lib/devices/rep-tablets-service";
+import type { EnrollmentResult, ImeiRecordResult, RepTabletsState } from "@/lib/devices/rep-tablets-service";
 import type { EnrollmentValidity } from "@/lib/devices/tablet-enrollment";
 import type { OwnerAppInstallType } from "@/lib/devices/tablet-policy";
 import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
@@ -56,7 +57,17 @@ const INPUT_CLASS =
   "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
 
 // ---------------------------------------------------------------------------------------------
-// Talking to the three routes
+// WebUSB — only the few members this page reads. The DOM lib does not declare `navigator.usb`.
+// ---------------------------------------------------------------------------------------------
+
+type UsbDeviceInfo = { serialNumber?: string; manufacturerName?: string; productName?: string };
+type UsbNavigator = Navigator & {
+  usb?: { requestDevice(options: { filters: Array<Record<string, number>> }): Promise<UsbDeviceInfo> };
+};
+type UsbRegistered = { registerDeviceId: string; assetTag: string; created: boolean };
+
+// ---------------------------------------------------------------------------------------------
+// Talking to the four routes
 // ---------------------------------------------------------------------------------------------
 
 class RequestFailure extends Error {
@@ -232,6 +243,31 @@ function attentionLines(row: ManagedTabletRow): Array<{ tone: "bad" | "warn"; te
       tone: "bad",
     });
   }
+  if (row.imeiStatus === "on_another_tablet") {
+    lines.push({
+      text: `The custody register records this tablet's IMEI on ${row.imeiRecordedOn}. Check which tablet this is before it is handed over.`,
+      tone: "bad",
+    });
+  } else if (row.imeiStatus === "register_differs") {
+    lines.push({
+      text: `The custody register has IMEI ${row.registerImei} for ${row.assetTag}, but the tablet reports ${row.imei}. The register is left as it is — dial *#06# on the tablet to see which is right.`,
+      tone: "warn",
+    });
+  } else if (row.imeiStatus === "held_back") {
+    lines.push({
+      text: row.enrolledWithAnotherTabletsCode
+        ? "Its IMEI is not copied into the register until it is clear which tablet this is."
+        : row.serialNumber
+          ? `The register has no serial number for ${row.assetTag} to confirm this is it, so its IMEI is not copied into the register.`
+          : `The tablet has not reported a serial number to confirm it is ${row.assetTag}, so its IMEI is not copied into the register yet.`,
+      tone: "warn",
+    });
+  } else if (row.imeiStatus === "contested") {
+    lines.push({
+      text: `Another enrolled tablet is matched to ${row.assetTag}, or reports the same IMEI, so this IMEI is not copied into the register until that is sorted out.`,
+      tone: "warn",
+    });
+  }
   if (!row.onRepPolicy) {
     lines.push({ text: "Not on the rep tablet rules.", tone: "warn" });
   } else if (row.policyUpToDate === false) {
@@ -255,6 +291,18 @@ function TabletIdentity({ row }: { row: ManagedTabletRow }) {
           S/N {row.serialNumber}
         </p>
       ) : null}
+      {row.imei ? (
+        <p className="mt-0.5 break-words text-[11px] font-bold text-slate-700">
+          <span dir="ltr">IMEI {row.imei}</span>
+          {row.imeiStatus === "to_record" ? (
+            <span className="font-semibold text-slate-500"> · not in the register yet</span>
+          ) : null}
+        </p>
+      ) : (
+        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+          {row.imeiStatus === "none" ? "Reports no IMEI — a Wi-Fi-only tablet has none" : "IMEI not reported yet"}
+        </p>
+      )}
       <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
         {row.androidVersion ? `Android ${row.androidVersion}` : "Android version not reported yet"}
         {row.securityPatchLevel ? ` · security patch ${cairoDate(row.securityPatchLevel)}` : ""}
@@ -334,6 +382,18 @@ function TabletTimes({ row }: { row: ManagedTabletRow }) {
   );
 }
 
+function imeiCopiedText(result: ImeiRecordResult): string | null {
+  const tags = result.recorded.map((entry) => entry.assetTag);
+  if (tags.length === 0) return null;
+  if (tags.length === 1) return `Copied ${tags[0]}'s IMEI into the custody register, as the tablet reports it.`;
+  return `Copied the IMEIs of ${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]} into the custody register, as the tablets report them.`;
+}
+
+function imeiFailedText(result: ImeiRecordResult): string | null {
+  if (result.failed.length === 0) return null;
+  return result.failed.map((entry) => `${entry.assetTag}: ${entry.message}`).join(" · ");
+}
+
 // ---------------------------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------------------------
@@ -363,6 +423,9 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<EnrollmentResult | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbError, setUsbError] = useState<string | null>(null);
+  const [usbNotice, setUsbNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // One read of the page, shared by the first load and every refresh. It sets state only inside
@@ -402,6 +465,47 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
       current = false;
     };
   }, [enterpriseBound, readState]);
+
+  // An IMEI a tablet reports that its register entry does not hold yet is copied in by the page
+  // itself, so nobody types fifteen digits off a Settings screen. Once per entry per visit: a copy
+  // that fails is shown, never retried in a loop. The ref only stops the page asking twice — what
+  // the page shows comes from state. Like the first load, state is set only in the callbacks.
+  const imeiAsked = useRef(new Set<string>());
+  const [imeiSettled, setImeiSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const [imeiNotice, setImeiNotice] = useState<string | null>(null);
+  const [imeiError, setImeiError] = useState<string | null>(null);
+  const imeiPending = useMemo(
+    () => [
+      ...new Set(
+        (data?.tablets ?? []).flatMap((row) =>
+          row.imeiStatus === "to_record" && row.registerDeviceId ? [row.registerDeviceId] : [],
+        ),
+      ),
+    ],
+    [data],
+  );
+  const imeiCopying = imeiPending.filter((id) => !imeiSettled.has(id)).length;
+
+  useEffect(() => {
+    const unasked = imeiPending.filter((id) => !imeiAsked.current.has(id));
+    if (unasked.length === 0) return;
+    for (const id of unasked) imeiAsked.current.add(id);
+    void requestJson<ImeiRecordResult>("/api/devices/tablets/imei", {})
+      .then((result) => {
+        // A later pass that copies nothing new keeps the earlier notice; its failures replace the
+        // earlier ones, because the server tries every entry still missing an IMEI on each pass.
+        const copied = imeiCopiedText(result);
+        setImeiNotice((previous) => copied ?? previous);
+        setImeiError(imeiFailedText(result));
+        return readState(() => true);
+      })
+      .catch((caught: unknown) => {
+        setImeiError(messageOf(caught, "Could not copy the tablets' IMEIs into the custody register."));
+      })
+      .finally(() => {
+        setImeiSettled((previous) => new Set([...previous, ...unasked]));
+      });
+  }, [imeiPending, readState]);
 
   // The expiry line turns into "expired" on its own while the code is on screen.
   useEffect(() => {
@@ -458,13 +562,13 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
 
   const effectiveValidity: EnrollmentValidity = validFor ?? data?.defaultValidity ?? "24h";
 
-  const makeCode = useCallback(async () => {
+  const makeCode = useCallback(async (forTablet?: string) => {
     setEnrollBusy(true);
     setEnrollError(null);
     setEnrollment(null);
     try {
       const created = await requestJson<EnrollmentResult>("/api/devices/tablets/enrollment", {
-        registerDeviceId: target || null,
+        registerDeviceId: (forTablet ?? target) || null,
         validFor: effectiveValidity,
       });
       setNow(Date.now());
@@ -475,6 +579,45 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
       setEnrollBusy(false);
     }
   }, [effectiveValidity, target]);
+
+  // Plug the tablet in, pick it once in the browser's USB chooser: its serial number comes from the
+  // USB descriptor (no Developer mode), Phoenix files it under the next PHX-TAB number, and the
+  // tablet's own one-time QR code is made straight away.
+  const connectUsb = useCallback(async () => {
+    setUsbError(null);
+    setUsbNotice(null);
+    const usb = (navigator as UsbNavigator).usb;
+    if (!usb) {
+      setUsbError("This browser cannot read USB devices. Open this page in Chrome or Edge on a computer.");
+      return;
+    }
+    let picked: UsbDeviceInfo;
+    try {
+      picked = await usb.requestDevice({ filters: [] });
+    } catch {
+      return; // The chooser was closed without picking a tablet.
+    }
+    setUsbBusy(true);
+    try {
+      const registered = await requestJson<UsbRegistered>("/api/devices/tablets/usb", {
+        manufacturer: picked.manufacturerName ?? null,
+        model: picked.productName ?? null,
+        serialNumber: picked.serialNumber ?? null,
+      });
+      setUsbNotice(
+        registered.created
+          ? `Added to the custody register as ${registered.assetTag}. Its QR code is below.`
+          : `Already in the custody register as ${registered.assetTag}. Its QR code is below.`,
+      );
+      await load();
+      setTarget(registered.registerDeviceId);
+      await makeCode(registered.registerDeviceId);
+    } catch (caught) {
+      setUsbError(messageOf(caught, "Could not add the tablet to the custody register."));
+    } finally {
+      setUsbBusy(false);
+    }
+  }, [load, makeCode]);
 
   const qr = useMemo(() => {
     if (!enrollment) return null;
@@ -777,14 +920,28 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
                   </select>
                 </Field>
                 <div className="flex flex-wrap gap-2 md:col-span-2">
-                  <button className={PRIMARY_BUTTON} disabled={enrollBusy} onClick={() => void makeCode()} type="button">
+                  <button className={PRIMARY_BUTTON} disabled={enrollBusy || usbBusy} onClick={() => void makeCode()} type="button">
                     {enrollBusy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <QrCode aria-hidden className="size-4" />}
                     {enrollBusy ? "Making the code…" : "Make the QR code"}
                   </button>
+                  <button className={SECONDARY_BUTTON} disabled={enrollBusy || usbBusy} onClick={() => void connectUsb()} type="button">
+                    {usbBusy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Usb aria-hidden className="size-4" />}
+                    {usbBusy ? "Reading the tablet…" : "Connect a tablet by USB"}
+                  </button>
                 </div>
+                <p className="text-[11px] font-semibold text-slate-500 md:col-span-2">
+                  Plug the tablet into this computer, press Connect and pick it in the list. Phoenix reads its serial
+                  number, adds it to the custody register under the next PHX-TAB number and makes its QR code. A tablet
+                  that enrolls with an &ldquo;Any rep tablet&rdquo; code is added by itself too, the next time this page
+                  loads.
+                </p>
               </div>
             )}
 
+            {usbError ? <ErrorBox message={usbError} title="The tablet was not added" /> : null}
+            {usbNotice ? (
+              <p className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{usbNotice}</p>
+            ) : null}
             {enrollError ? <ErrorBox message={enrollError} title="No code was made" /> : null}
 
             {enrollment ? (
@@ -893,11 +1050,43 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
               </button>
             </div>
 
+            {data.autoRegistered.length > 0 ? (
+              <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                Added to the custody register by themselves: {data.autoRegistered.join(", ")}.
+              </p>
+            ) : null}
+            {data.autoRegisterError ? (
+              <div className="mt-4">
+                <WarningBox title="A tablet was not added to the register">
+                  <p>{data.autoRegisterError}</p>
+                </WarningBox>
+              </div>
+            ) : null}
+
             {data.registerError ? (
               <div className="mt-4">
                 <WarningBox title="The custody register could not be read">
                   <p>The tablets are listed without their asset tags and holders. {data.registerError}</p>
                 </WarningBox>
+              </div>
+            ) : null}
+
+            {imeiCopying > 0 || imeiNotice || imeiError ? (
+              <div className="mt-4 space-y-3">
+                {imeiCopying > 0 ? (
+                  <p className="flex items-center gap-2 border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] font-bold text-slate-600">
+                    <Loader2 aria-hidden className="size-4 shrink-0 animate-spin" />
+                    {imeiCopying === 1
+                      ? "Copying the IMEI one tablet reports into the custody register…"
+                      : `Copying the IMEIs ${imeiCopying} tablets report into the custody register…`}
+                  </p>
+                ) : null}
+                {imeiNotice ? (
+                  <p className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                    {imeiNotice}
+                  </p>
+                ) : null}
+                {imeiError ? <ErrorBox message={imeiError} title="Some IMEIs were not copied into the register" /> : null}
               </div>
             ) : null}
 

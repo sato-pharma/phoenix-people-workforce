@@ -24,6 +24,11 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 // au.sos_area_crosswalk to a canonical area, which with the line resolves to a REP seat, whose
 // current occupant is the rep. That is the chain this module uses, and it is the same one the
 // monthly closing attributes through.
+//
+// VALUE is the closing's too (owner, 2026-09-18). The RPC prices a distributor row at its paid
+// units x factory price and keeps a direct order's own value. It never reads the value a distributor
+// typed into its sheet, and bonus units never count. Until then this tab alone added up the sheet's
+// value: El Qema's August Pedia sales read 1,888,898.40 EGP here against 2,367,360.00 in the closing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** How a slice of sales reached (or failed to reach) a person. */

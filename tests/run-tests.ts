@@ -595,6 +595,7 @@ import { runDecidedForMeTests } from "./decided-for-me.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
+import { runSalesChannelsByRepClosingValueTests } from "./sales-channels-by-rep-closing-value.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
@@ -803,6 +804,7 @@ import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
 import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
+import { runTabletAutoRegisterTests } from "./tablet-auto-register.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -1764,6 +1766,7 @@ import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
+import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2960,6 +2963,10 @@ await runTest("sales upload verification step (never-stuck invariant)", runSales
 await runTest("sales AI header-mismatch explain (privacy + no-op)", runSalesAiExplainTests);
 await runTest("sales linkage gate (one engine)", runSalesLinkageTests);
 await runTest("sales channels by rep (stems derived, restricted fail-closed, unattributed kept)", runSalesChannelsByRepTests);
+await runTest(
+  "channels by rep values a distributor row at paid units x factory price and a direct order at its own value, as the closing does",
+  runSalesChannelsByRepClosingValueTests,
+);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("units are units — no discount factor", runUnitsAreUnitsNoDiscountFactorTests);
@@ -3308,6 +3315,11 @@ await runTest(
   + "side-loaded apps and only defaults or list order are not drift, and an enrolled tablet is "
   + "matched to the custody register by its code, serial or IMEI with a wrong-code tablet flagged)",
   runTabletEnrollmentTests,
+);
+await runTest(
+  "rep tablets add themselves to the custody register (next PHX-TAB number, only tablets on the "
+  + "rep rules, never a second entry for a serial or IMEI already registered)",
+  runTabletAutoRegisterTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
@@ -6068,6 +6080,11 @@ await runTest(
 await runTest(
   "the normalizer reads Sofico's Excel serial billing dates as the real date, month and day together: BILLINGDATE 46247 is 13 Aug 2026, so an all-August file resolves to August with no month picked by hand, the days either side land in July and September, Sofico Tender reads the same, and mec's six-digit month is never taken for a serial",
   runNormalizerSoficoExcelSerialDateTests,
+);
+
+await runTest(
+  "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
+  runNormalizerBonusNeverDropsPaidUnitsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

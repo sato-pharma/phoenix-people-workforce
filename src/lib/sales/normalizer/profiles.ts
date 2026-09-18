@@ -267,7 +267,16 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     // distributor transparent enough to report it, and left the closing comparing unlike with unlike.
     // The 64 rows already imported were corrected in production the same day (pre-image in
     // `qema_discount_backup_20260907`).
-    bonusColumns: ["بونص"],
+    //
+    // NO bonusColumns either, and that is also a decision — 2026-09-18. `بونص` is a bonus COUNT that
+    // sits beside the paid `الكمية` on the same invoice line; it is not a flag. The engine reads
+    // `bonusColumns` as EPDA's `is_bonus`, a flag marking the WHOLE line as free goods, and drops any
+    // row whose cell is not 0. Mapped here, a line of 120 paid packs carrying 12 bonus packs would lose
+    // all 120 — and a bonus of 1 looks exactly like the flag. The owner's rule is the opposite: "we neglect
+    // the bonus and the value in any distributor sheet, we take the units and multiply by factory"
+    // (2026-09-07). The bonus is ignored, never used to drop paid units. It had not yet fired: every
+    // row of the one El Qema batch (August, 64 rows, 8,768 packs) carries `بونص` = 0, and 0 were
+    // ignored. The cell is still kept in `raw_row`, as every heading the file sends is.
     fingerprintColumns: ["رقم الفاتورة", "اجمالى جمهور", "ACCOUNT_ID"],
   },
   {

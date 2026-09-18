@@ -451,7 +451,9 @@ export function normalizeRows(
     }
 
     // Bonus/free-goods flag: skip rows marked as bonus deliveries.
-    // These are free-goods shipments, not real sales — counting them inflates the numbers.
+    // These are free-goods shipments, not real sales — counting them inflates the numbers. The WHOLE
+    // row goes, so a profile may list only a flag column here, never a bonus count that sits beside
+    // paid units (see DistributorProfile.bonusColumns).
     if (profile.bonusColumns?.length) {
       const flag = firstValue(row, header, profile.bonusColumns);
       if (flag && flag !== "0" && flag.toLowerCase() !== "false") {

@@ -15,7 +15,16 @@
  * A tablet that matches nothing is listed too: an enrolled device the register does not know is
  * exactly the thing a custody register exists to surface.
  *
- * READ-ONLY. Nothing here changes a device.
+ * THE IMEI COMES FROM THE TABLET, NOT FROM A PERSON. Every rep tablet reports its IMEI to Google
+ * (`statusReportingSettings.networkInfoEnabled` in the rep-tablet policy), so nobody has to dial
+ * *#06# and type fifteen digits into the register. `imeisToRecord` decides which reported IMEIs
+ * may be copied into the register, and it is deliberately narrow: only into an entry that holds NO
+ * IMEI, and never while the match itself is in doubt. An IMEI somebody typed is never replaced —
+ * where it disagrees with what the tablet reports, the row says so and a person decides which is
+ * wrong.
+ *
+ * READ-ONLY. Nothing here changes a device, and nothing here writes the register — the copy is
+ * `recordReportedImei` in the register's own service.
  */
 
 import { callAndroidManagement } from "@/lib/devices/android-web-app";
@@ -176,6 +185,32 @@ const NON_COMPLIANCE_LABELS: Record<string, string> = {
 
 export type ManagedTabletTone = "ok" | "warn" | "bad";
 
+/**
+ * What the page can say about a tablet's IMEI, and whether it may be copied into the register.
+ *
+ * - `not_reported`      — no network report from the tablet yet; it comes with the first status report.
+ * - `none`              — the tablet reported its network but no IMEI. A Wi-Fi-only tablet has none.
+ * - `unmatched`         — an IMEI, but no register entry to hold it.
+ * - `in_register`       — the register already holds it for this tablet.
+ * - `to_record`         — the register entry holds no IMEI, so this one is copied in.
+ * - `register_differs`  — the register entry holds a different IMEI. Never overwritten.
+ * - `on_another_tablet` — the register holds this IMEI on a different entry.
+ * - `held_back`         — only the enrollment code says which entry this is: the tablet's serial is
+ *                         not the entry's, or it reported none to compare. Not copied on a code alone.
+ * - `contested`         — another enrolled tablet would write a different IMEI into the same entry,
+ *                         or this same IMEI into a different one.
+ */
+export type ImeiStatus =
+  | "not_reported"
+  | "none"
+  | "unmatched"
+  | "in_register"
+  | "to_record"
+  | "register_differs"
+  | "on_another_tablet"
+  | "held_back"
+  | "contested";
+
 export type ManagedTabletRow = {
   /** Google's resource name. A React key only — never shown. */
   key: string;
@@ -188,6 +223,13 @@ export type ManagedTabletRow = {
   enrolledWithAnotherTabletsCode: boolean;
   model: string;
   serialNumber: string | null;
+  /** The IMEI the tablet reports to Google, digits only. Null when it has reported none. */
+  imei: string | null;
+  imeiStatus: ImeiStatus;
+  /** For `register_differs`: the IMEI the register holds for this tablet, as it was typed. */
+  registerImei: string | null;
+  /** For `on_another_tablet`: the asset tag of the register entry that already holds this IMEI. */
+  imeiRecordedOn: string | null;
   androidVersion: string | null;
   securityPatchLevel: string | null;
   stateLabel: string;
@@ -240,6 +282,77 @@ function isRepPolicy(policyName: string | undefined): boolean {
   return (policyName ?? "").split("/").pop() === REP_TABLET_POLICY_ID;
 }
 
+type ImeiFacts = Pick<ManagedTabletRow, "imei" | "imeiStatus" | "registerImei" | "imeiRecordedOn">;
+
+/**
+ * The reported IMEI against the register, for one tablet.
+ *
+ * Another entry already holding this IMEI outranks everything else: the register then says this
+ * tablet is a different one, whatever matched it, and copying the IMEI would only put the same
+ * number on two entries. `uq_company_devices_imei` compares the text as typed, so it would not
+ * catch "35-123456-789012-3" against "351234567890123" — this comparison, on digits, does.
+ *
+ * An IMEI is copied only onto an entry the tablet's own serial number confirms. A code scanned
+ * from the wrong tablet's sheet names the wrong entry, and nothing typed by a person would then
+ * show the mistake — the register would simply carry another tablet's IMEI.
+ */
+function reportedImeiFacts(
+  device: AmapiDevice,
+  match: RegisterMatch | null,
+  serialConfirmed: boolean,
+  register: readonly RegisterTablet[],
+): ImeiFacts {
+  const nothingElse = { imeiRecordedOn: null, registerImei: null };
+  const imei = normalizeImei(device.networkInfo?.imei);
+  if (!imei) return { ...nothingElse, imei: null, imeiStatus: device.networkInfo ? "none" : "not_reported" };
+
+  const elsewhere = register.find((entry) => {
+    if (entry.id === match?.entry.id) return false;
+    const registered = normalizeImei(entry.imei);
+    return registered !== null && imeisMatch(registered, imei);
+  });
+  if (elsewhere) return { ...nothingElse, imei, imeiRecordedOn: elsewhere.assetTag, imeiStatus: "on_another_tablet" };
+  if (!match) return { ...nothingElse, imei, imeiStatus: "unmatched" };
+
+  const typed = match.entry.imei?.trim() || null;
+  if (typed) {
+    const registered = normalizeImei(typed);
+    if (registered !== null && imeisMatch(registered, imei)) return { ...nothingElse, imei, imeiStatus: "in_register" };
+    return { ...nothingElse, imei, imeiStatus: "register_differs", registerImei: typed };
+  }
+  return { ...nothingElse, imei, imeiStatus: serialConfirmed ? "to_record" : "held_back" };
+}
+
+function addToSet(map: Map<string, Set<string>>, key: string, value: string) {
+  const values = map.get(key) ?? new Set<string>();
+  values.add(value);
+  map.set(key, values);
+}
+
+/**
+ * Two enrolled tablets writing different IMEIs into one entry, or one IMEI into two entries, is a
+ * mix-up nothing here can settle — so neither is copied, and each row says why. The same tablet
+ * listed twice (a re-enrollment after a reset leaves Google a second record) reports the same IMEI
+ * for the same entry, and is not a conflict.
+ */
+function holdBackContestedImeis(rows: ManagedTabletRow[]) {
+  const imeisByEntry = new Map<string, Set<string>>();
+  const entriesByImei = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.imeiStatus !== "to_record" || !row.registerDeviceId || !row.imei) continue;
+    addToSet(imeisByEntry, row.registerDeviceId, row.imei);
+    addToSet(entriesByImei, row.imei, row.registerDeviceId);
+  }
+  for (const row of rows) {
+    if (row.imeiStatus !== "to_record" || !row.registerDeviceId || !row.imei) continue;
+    const contested =
+      (imeisByEntry.get(row.registerDeviceId)?.size ?? 0) > 1 || (entriesByImei.get(row.imei)?.size ?? 0) > 1;
+    if (!contested) continue;
+    row.imeiStatus = "contested";
+    if (row.tone === "ok") row.tone = "warn";
+  }
+}
+
 export function buildManagedTabletRows(
   devices: readonly AmapiDevice[],
   register: readonly RegisterTablet[],
@@ -252,6 +365,7 @@ export function buildManagedTabletRows(
     const registerSerial = normalizeSerial(match?.entry.serialNumber);
     const enrolledWithAnotherTabletsCode =
       match?.matchedBy === "enrollment" && serial !== null && registerSerial !== null && serial !== registerSerial;
+    const imeiFacts = reportedImeiFacts(device, match, serial !== null && serial === registerSerial, register);
 
     const state = device.appliedState || device.state || "";
     const stateLabel = STATE_LABELS[state] ?? (state ? titleCaseWords(state) : "Not reported yet");
@@ -266,10 +380,21 @@ export function buildManagedTabletRows(
     const stateTone: ManagedTabletTone =
       state === "ACTIVE" ? "ok" : state === "LOST" || state === "DISABLED" ? "bad" : "warn";
     let tone: ManagedTabletTone = "ok";
-    if (state !== "ACTIVE" || !compliant || !onRepPolicy || !match || enrolledWithAnotherTabletsCode) tone = "warn";
-    if (stateTone === "bad" || enrolledWithAnotherTabletsCode) tone = "bad";
+    if (
+      state !== "ACTIVE" ||
+      !compliant ||
+      !onRepPolicy ||
+      !match ||
+      enrolledWithAnotherTabletsCode ||
+      imeiFacts.imeiStatus === "register_differs" ||
+      imeiFacts.imeiStatus === "held_back"
+    ) {
+      tone = "warn";
+    }
+    if (stateTone === "bad" || enrolledWithAnotherTabletsCode || imeiFacts.imeiStatus === "on_another_tablet") tone = "bad";
 
     return {
+      ...imeiFacts,
       androidVersion: device.softwareInfo?.androidVersion?.trim() || null,
       assetTag: match?.entry.assetTag ?? null,
       compliant,
@@ -293,6 +418,7 @@ export function buildManagedTabletRows(
       tone,
     };
   });
+  holdBackContestedImeis(rows);
 
   // What needs attention first, then by asset tag; tablets the register does not know sort last
   // within their group so a known tablet is never pushed off the top by a stranger.
@@ -302,6 +428,21 @@ export function buildManagedTabletRows(
     if (!left.assetTag !== !right.assetTag) return left.assetTag ? -1 : 1;
     return (left.assetTag ?? left.serialNumber ?? "").localeCompare(right.assetTag ?? right.serialNumber ?? "");
   });
+}
+
+export type ImeiToRecord = { registerDeviceId: string; assetTag: string; imei: string };
+
+/** The reported IMEIs that may be copied into the register — one per entry, only where it holds none. */
+export function imeisToRecord(rows: readonly ManagedTabletRow[]): ImeiToRecord[] {
+  const seen = new Set<string>();
+  const records: ImeiToRecord[] = [];
+  for (const row of rows) {
+    if (row.imeiStatus !== "to_record" || !row.registerDeviceId || !row.assetTag || !row.imei) continue;
+    if (seen.has(row.registerDeviceId)) continue;
+    seen.add(row.registerDeviceId);
+    records.push({ assetTag: row.assetTag, imei: row.imei, registerDeviceId: row.registerDeviceId });
+  }
+  return records;
 }
 
 export type EnrollableTablet = {
