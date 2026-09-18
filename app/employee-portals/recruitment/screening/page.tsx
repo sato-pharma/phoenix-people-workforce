@@ -142,6 +142,8 @@ async function ScreeningContent({
       vacancies={workspace.vacancies}
       vacancy={workspace.vacancy}
       vacancyStats={workspace.vacancyStats}
+      whatsapp={workspace.whatsapp}
+      whatsAppSearchLabel={workspace.whatsAppSearchLabel}
     />
   );
 }

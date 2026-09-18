@@ -61,6 +61,16 @@ export type ScreeningQueueFilters = {
    */
   vacancy?: string | string[] | undefined;
   /**
+   * A SEARCH FROM THE WHATSAPP APPLICANTS PAGE: one job title and that title's own question filters,
+   * handed over by that page's "Screen these" link (owner, 2026-09-18: "based on my filters, I can go
+   * to screening page and only show those I filtered").
+   *
+   * One opaque string, spelled and read by whatsapp-applicant-filters.ts. It is not decoded here
+   * because this file's imports are pinned to the four vocabularies above (see the header). The
+   * queue only has to carry it forward when one of its own filters changes, and the loader decodes it.
+   */
+  whatsapp?: string | string[] | undefined;
+  /**
    * WHICH CV IS OPEN — the one thing on this screen that had no address until 2026-09-18.
    *
    * Every filter here is a link on purpose, so "screen the New Medical Rep CVs in Tanta I have not
@@ -160,6 +170,11 @@ export type ScreeningQueueNarrowing = {
   rating: ScreeningRatingFilter | null;
   /** The open seat being screened, or null for the ordinary whole-pool queue. */
   vacancy: number | null;
+  /**
+   * The WhatsApp Applicants search this pile came from, still encoded, or null for the ordinary
+   * queue. The loader decodes it. A value it cannot read narrows nothing, like any other filter here.
+   */
+  whatsapp: string | null;
 };
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
@@ -257,6 +272,7 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
     source: firstParam(filters.source),
     status: normalizeCandidateStatus(firstParam(filters.status)),
     vacancy: parseVacancy(firstParam(filters.vacancy)),
+    whatsapp: firstParam(filters.whatsapp),
   };
 }
 
@@ -273,6 +289,8 @@ export type ScreeningHrefOptions = {
   source?: string | null;
   /** An open seat's vacancy id, or null to leave seat mode and go back to the whole pool. */
   vacancy?: number | null;
+  /** A WhatsApp Applicants search, encoded by `whatsAppApplicantSearchParam`, or null to drop it. */
+  whatsapp?: string | null;
   /** The CV to open on arrival. Not a filter — the queue is identical with or without it. */
   candidate?: string | null;
 };
@@ -351,6 +369,7 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.rating) params.set("rating", options.rating);
   if (options.source) params.set("source", options.source);
   if (options.vacancy) params.set("vacancy", String(options.vacancy));
+  if (options.whatsapp) params.set("whatsapp", options.whatsapp);
   // LAST, so the filters read first in the address bar and the long id sits at the end where it is
   // out of the way of a person reading the URL to see what the pile is.
   if (options.candidate) params.set("candidate", options.candidate);

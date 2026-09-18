@@ -105,6 +105,15 @@ import {
   type SeatQueueCandidate,
   type SeatQueueMatch,
 } from "@/lib/recruitment/vacancy-seat-queue";
+import {
+  parseWhatsAppApplicantSearch,
+  whatsAppApplicantSearchCandidateIds,
+  whatsAppApplicantSearchLabel,
+  whatsAppApplicantSearchParam,
+  type WhatsAppApplicantSearchLabel,
+  type WhatsAppApplicantsView,
+} from "@/lib/recruitment/whatsapp-applicant-filters";
+import { loadWhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicants-loader";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -193,6 +202,14 @@ export type ScreeningWorkspace = {
    * is showing without the client looking an id up in a list. Null outside seat mode.
    */
   seatLabel: string | null;
+  /**
+   * The WhatsApp Applicants search this pile was narrowed to, as the link carries it, or null.
+   * Echoed so every link the page builds keeps it. Null as well when the link carried one naming no
+   * job title, because then it narrowed nothing. See `whatsAppApplicantSearchParam`.
+   */
+  whatsapp: string | null;
+  /** That search in words, for the header. Null when there is none. */
+  whatsAppSearchLabel: WhatsAppApplicantSearchLabel | null;
 };
 
 function text(value: string | null | undefined): string | null {
@@ -291,6 +308,9 @@ export async function loadScreeningWorkspace(
   const narrowing = parseScreeningFilters(filters);
   // Which CV the link opens, if any. Never part of `narrowing` — see `openRow` on the return type.
   const openCandidateId = parseOpenCandidateId(filters.candidate);
+  // A search carried over from the WhatsApp Applicants page, or null. Read here, where the page's
+  // rows can be loaded, because screening-link.ts may not import anything that reaches a database.
+  const whatsAppSearch = parseWhatsAppApplicantSearch(narrowing.whatsapp);
 
   // Fired together, not in sequence: six of these seven are independent, and awaiting them one at a
   // time is the difference between one round trip and seven on a page that is already the slowest in
@@ -306,6 +326,7 @@ export async function loadScreeningWorkspace(
     interviewToday,
     decisionHistory,
     rowFindings,
+    whatsAppView,
   ] = await Promise.all([
     // WITHOUT the repeating CV blocks. Nothing below reads them, and on production they are 59%
     // of the bytes this read moves — see CANDIDATE_COLUMNS_WITHOUT_REPEATING_BLOCKS.
@@ -329,6 +350,9 @@ export async function loadScreeningWorkspace(
     // Three CV findings per candidate, projected rather than read whole — 105 kB against the
     // 1,549 kB the full extraction blob would cost. See loadRowFindings.
     loadRowFindings(),
+    // The WhatsApp Applicants page's own rows, and only when the link carries a search from it. The
+    // same loader that page uses, so both pages find the same people.
+    whatsAppSearch ? loadWhatsAppApplicantsView() : Promise.resolve<WhatsAppApplicantsView | null>(null),
   ]);
 
   // A DECIDED shelved CV leaves the workstation exactly as it leaves the queue: the whole purpose of
@@ -373,12 +397,26 @@ export async function loadScreeningWorkspace(
     };
   };
 
+  // A SEARCH FROM THE WHATSAPP APPLICANTS PAGE. The owner, 2026-09-18: "based on my filters, I can
+  // go to screening page and only show those I filtered." The same match that page runs, over the
+  // same rows, so the two pages name the same people. Null when the link carries no search.
+  //
+  // Drawn from EVERY candidate, filed and decided ones included, because that page lists everyone
+  // who started the questions whatever has happened to their CV since. Drawn from the review pool,
+  // this pile would read 47 where that page said 52, with nothing on screen to say why. This page's
+  // own filters (status, stars and the rest) still narrow it after, like any other pile. With a seat
+  // picked as well, the seat is read over these people only, so that pile and its count on the rail
+  // both mean "of this search".
+  const whatsAppIds =
+    whatsAppSearch && whatsAppView ? whatsAppApplicantSearchCandidateIds(whatsAppView.rows, whatsAppSearch) : null;
+  const whatsAppMatches = whatsAppIds ? allCandidates.filter((candidate) => whatsAppIds.has(candidate.id)) : null;
+
   // WHY EACH CV IS IN THIS SEAT'S PILE, in the words the row prints. Empty outside seat mode.
   const seatReasons = new Map<string, string>();
   let seatQueue: Candidate[] | null = null;
   if (seat) {
     seatQueue = [];
-    for (const candidate of allCandidates) {
+    for (const candidate of whatsAppMatches ?? allCandidates) {
       // A DECIDED CV NEVER COMES BACK. Rejected, already with a manager, or hired - somebody has
       // finished with the record, and re-offering it is work the reader has already done.
       if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
@@ -394,14 +432,15 @@ export async function loadScreeningWorkspace(
     }
   }
 
-  const pool = seatQueue ?? reviewPool;
+  const pool = seatQueue ?? whatsAppMatches ?? reviewPool;
 
-  // THE WIDER BASIS, for everything that must not shrink because one seat was picked: the duplicate
-  // index, the filter dropdowns and the vacancy rail. In the default mode this IS the pool, so
-  // nothing about that path changes.
-  const poolBasis = seatQueue
-    ? [...new Map([...reviewPool, ...seatQueue].map((candidate) => [candidate.id, candidate])).values()]
-    : reviewPool;
+  // THE WIDER BASIS, for everything that must not shrink because one seat or one WhatsApp search was
+  // picked: the duplicate index, the filter dropdowns and the vacancy rail. In the default mode this
+  // IS the pool, so nothing about that path changes.
+  const poolBasis =
+    pool === reviewPool
+      ? reviewPool
+      : [...new Map([...reviewPool, ...pool].map((candidate) => [candidate.id, candidate])).values()];
 
   // WHO HAS THIS CV is already resolved — listCandidates overlays the send trail onto every
   // candidate it returns, so `managerNotified` and `sentFor` are the newest of (row stamp, send
@@ -660,7 +699,9 @@ export async function loadScreeningWorkspace(
         vacancyId: vacancy.id,
       });
     }
-    for (const candidate of poolBasis) {
+    // Over the WhatsApp search's people when there is one, the same population the seat queue was
+    // read from above, so a seat's count on the rail is the pile it opens.
+    for (const candidate of whatsAppMatches ?? poolBasis) {
       if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
       const input = seatInputFor(candidate);
       const read = new Set(vacanciesForCandidate(input, openVacancies));
@@ -765,6 +806,11 @@ export async function loadScreeningWorkspace(
     vacancyStats: openVacancies
       .map((vacancy) => vacancyStatsById.get(vacancy.id))
       .filter((stats): stats is VacancyApplicantStats => Boolean(stats)),
+    // Spelled back the one way the WhatsApp page spells it, so a link edited by hand is tidied rather
+    // than carried on as typed. Null when it named no job title, since then it narrowed nothing.
+    whatsapp: whatsAppSearch ? whatsAppApplicantSearchParam(whatsAppSearch.title, whatsAppSearch.selections) : null,
+    whatsAppSearchLabel:
+      whatsAppSearch && whatsAppView ? whatsAppApplicantSearchLabel(whatsAppView, whatsAppSearch) : null,
   };
 }
 
