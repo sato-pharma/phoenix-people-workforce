@@ -82,13 +82,22 @@ export function canSendWhatsAppTemplate(access: Pick<AccessContext, "role" | "sc
 
 // WhatsApp message templates — WRITING, EDITING and DELETING them.
 //
-// Narrower than sending, on purpose, and narrower than any other gate in this file: system scope
-// only. A template is the wording every recruiter then sends in the company's name, so editing one
-// changes what everybody says, to everybody, from that moment on. That is the same reasoning the
-// WhatsApp screening-question wording is gated on (admin:update, Super Admin only), and the two
-// must stay aligned — they are the two places where one person's typing becomes the company's voice.
+// Narrower than sending, on purpose, and narrower than any other gate in this file: the Super Admin
+// (the owner himself) or a system context only. A template is the wording every recruiter then
+// sends in the company's name, so editing one changes what everybody says, to everybody, from that
+// moment on. That is the same reasoning the WhatsApp screening-question wording is gated on
+// (admin:update, Super Admin only), and the two must stay aligned — they are the two places where
+// one person's typing becomes the company's voice. The write routes assert admin:update, which
+// hardBoundaryAllowedActions grants to Super Admin alone, so this and the API admit the same people.
+//
+// THE ROLE, NOT THE SCOPE, IS WHAT A SIGNED-IN OWNER CARRIES. `scopeForRole` gives a Super Admin
+// session "company", exactly as it gives the CEO, the Finance Manager and HR Operations; "system"
+// is only ever the synthetic `systemAccessContext`. Until 2026-09-18 this was a scope-only test, so
+// the editor was hidden from the one person the API let save — the same defect
+// isInterviewCalendarOwner was caught with. Pinned by tests/whatsapp-template-manage-gate.test.ts
+// against contexts built by `createAccessContext`, the way a real session builds them.
 export function canManageWhatsAppTemplates(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return access.scope === "system";
+  return access.scope === "system" || access.role === "Super Admin";
 }
 
 // Contact-details review — accepting an email or phone the AI read off a CV onto the candidate.

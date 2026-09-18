@@ -1798,6 +1798,7 @@ import { runMonthlySalesRunSkipHoldsOnlyWhileTrueTests } from "./monthly-sales-r
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 import { runNormalizerUnmappedListCustomersTests } from "./normalizer-unmapped-list-customers.test.ts";
 import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-failed-rows.test.ts";
+import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6257,6 +6258,11 @@ await runTest(
 await runTest(
   "the weekly Upload filled list names each pick's sheet row and keeps every row it could not save in the upload's history record, product sheet first, in sheet order; before the fix the notice named only the first three failures and no record held any",
   runWeeklyUnmappedListFailedRowsTests,
+);
+
+await runTest(
+  "the signed-in Super Admin (B-10, scope company) is handed the WhatsApp template editor, exactly the people the write routes' admin:update admits; HR Advisory still sends but never edits, and HR Operations, the CEO and the Finance Manager never edit; before the fix the gate was system scope only and hid the editor from everyone",
+  runWhatsAppTemplateManageGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

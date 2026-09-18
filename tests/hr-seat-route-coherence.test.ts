@@ -232,8 +232,9 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "roles: [\"HR Advisory\"] so Operations is never offered it. Verified by CALLING both predicates " +
     "for both seats rather than by reading them: Advisory send=true/manage=false, Operations " +
     "send=false/manage=false. The seat can SEND a message from a template but cannot rewrite what " +
-    "the templates say — canManageWhatsAppTemplates is system scope only, and the editor is hidden " +
-    "from her rather than merely failing server-side, so no row her sidebar offers 403s her halfway",
+    "the templates say — canManageWhatsAppTemplates admits the Super Admin and system scope only " +
+    "(Advisory is scope=self and not the Super Admin), and the editor is hidden from her rather " +
+    "than merely failing server-side, so no row her sidebar offers 403s her halfway",
   // Added 2026-09-18 with the Interview Calendar row. The owner's own ruling that day: "Only you +
   // people you share with" — so the gate is the calendar's own sharing, not a permission, and that
   // is why it cannot be parsed.
