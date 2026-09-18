@@ -2,9 +2,12 @@ import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { deleteOneSignalSubscription, onesignalAppId, onesignalRestApiKey } from "@/lib/notifications/push";
 import { TELEGRAM_CONNECT_TOKEN_TTL_MINUTES, buildTelegramDeepLinkFromToken, hashTelegramToken, resolveTelegramBotUsername } from "@/lib/notifications/telegram";
 import { withPushOptInNudgeDismissed } from "@/lib/notifications/push-opt-in-nudge-rules";
+import { logError } from "@/lib/observability/log";
 // Re-exported for existing callers/tests — the rules themselves live in push-opt-in-nudge-rules.ts
 // (no server-only imports) so the "use client" nudge card can depend on the RULE without pulling
 // this whole server module (getSupabaseAdmin, writeAuditLog, `crypto`) into the browser bundle.
@@ -540,4 +543,92 @@ export async function upsertPushSubscription(
     if (tableMissing(error)) return { skipped: true };
     throw error;
   }
+}
+
+// How the Phoenix app names itself in `push_subscriptions.user_agent` (describeThisDevice in
+// mobile/src/lib/push.tsx). A phone browser records `device_type = 'mobile'` too, so this prefix
+// is what tells the app's subscription apart from one.
+const PHOENIX_APP_DEVICE_PREFIX = "Phoenix Workforce app";
+
+export function isPhoenixAppPushSubscription(row: { device_type?: unknown; user_agent?: unknown }) {
+  return row.device_type === "mobile" && String(row.user_agent ?? "").startsWith(PHOENIX_APP_DEVICE_PREFIX);
+}
+
+export type PhoneAppPushStopResult = {
+  /** App subscriptions OneSignal would not delete. Their rows are left as they were. */
+  failed: number;
+  /** Phones where the app was receiving Phoenix notifications and no longer is. */
+  stopped: number;
+};
+
+/**
+ * Stops Phoenix notifications in the Phoenix app on every phone this employee has, by deleting
+ * each app subscription at OneSignal. Force logout calls it.
+ *
+ * Revoking the sessions does not do this by itself. To the app, a revoked session looks exactly
+ * like one that lapsed, so the app leaves push alone and a lost phone would keep showing this
+ * employee's notifications. A deleted subscription stops delivery at once, and the app cannot
+ * bring it back without a sign-in: it starts OneSignal only after the server accepts its session.
+ * When the employee signs in again, the OneSignal SDK creates a new subscription, the app reports
+ * it, and notifications resume.
+ *
+ * Browsers are left alone, phone browsers included. OneSignal's web SDK re-creates a deleted
+ * subscription only when that subscription changes, and signing in again as the same person
+ * changes nothing, so a deleted one would stay silent after the person came back.
+ *
+ * Every app row is deleted whatever its status here; `stopped` counts the ones marked as
+ * receiving. A row is marked unsubscribed only once OneSignal confirms, so running this again
+ * after a failure retries exactly what is left.
+ */
+export async function stopPhoneAppPushForEmployee(
+  hrId: string,
+  client: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<PhoneAppPushStopResult> {
+  const result: PhoneAppPushStopResult = { failed: 0, stopped: 0 };
+  const hrIdKeys = hrIdLookupKeys(hrId);
+  // Without OneSignal this server sends no push either, so there is nothing to stop.
+  if (hrIdKeys.length === 0 || !onesignalAppId() || !onesignalRestApiKey()) return result;
+
+  const { data, error } = await client
+    .from("push_subscriptions")
+    .select("onesignal_subscription_id,status,device_type,user_agent")
+    .in("hr_id", hrIdKeys)
+    .eq("device_type", "mobile");
+  if (error) {
+    if (tableMissing(error)) return result;
+    throw new Error(`Could not read the phone push subscriptions: ${error.message}`);
+  }
+
+  const receiving = new Map<string, boolean>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const subscriptionId = String(row.onesignal_subscription_id ?? "").trim();
+    if (!subscriptionId || !isPhoenixAppPushSubscription(row)) continue;
+    receiving.set(subscriptionId, receiving.get(subscriptionId) === true || row.status === "subscribed");
+  }
+
+  const subscriptionIds = [...receiving.keys()];
+  const outcomes = await Promise.allSettled(subscriptionIds.map((subscriptionId) => deleteOneSignalSubscription(subscriptionId)));
+  const stoppedIds: string[] = [];
+  outcomes.forEach((outcome, index) => {
+    if (outcome.status === "rejected") {
+      result.failed += 1;
+      logError("Phone app push subscription could not be deleted", {
+        error: outcome.reason,
+        labels: { event: "phone_app_push_stop_failed" },
+      });
+    } else if (receiving.get(subscriptionIds[index])) {
+      stoppedIds.push(subscriptionIds[index]);
+    }
+  });
+
+  if (stoppedIds.length > 0) {
+    const now = new Date().toISOString();
+    const { error: updateError } = await client
+      .from("push_subscriptions")
+      .update({ status: "unsubscribed", unsubscribed_at: now, updated_at: now })
+      .in("onesignal_subscription_id", stoppedIds);
+    if (updateError) throw new Error(`Phone app push was stopped at OneSignal but not recorded here: ${updateError.message}`);
+  }
+  result.stopped = stoppedIds.length;
+  return result;
 }

@@ -159,3 +159,81 @@ export async function sendPushNotification(input: PushSendInput): Promise<PushSe
 
   return { providerMessageId: payload?.id || undefined };
 }
+
+export type OneSignalSubscriptionDeleteOutcome = "already-gone" | "deleted";
+
+// The api.onesignal.com endpoints answer errors as objects ({ code, title }), where the legacy
+// send endpoint above answers strings, so errorMessageFromPayload would print "[object Object]".
+function oneSignalErrorDetail(payload: { errors?: unknown } | null) {
+  const errors = payload?.errors;
+  if (Array.isArray(errors)) {
+    return cleanErrorText(
+      errors
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return String(entry);
+          const { code, title } = entry as { code?: unknown; title?: unknown };
+          const parts = [title, code].map((part) => String(part ?? "").trim()).filter(Boolean);
+          return parts.length ? parts.join(" / ") : JSON.stringify(entry);
+        })
+        .join("; "),
+    );
+  }
+  if (errors && typeof errors === "object") return cleanErrorText(JSON.stringify(errors));
+  return null;
+}
+
+// OneSignal answers a subscription it no longer holds with a 404 that names it:
+// {"errors":[{"code":"subscription-0","title":"Subscription not found"}]}. That is the state the
+// caller asked for. Any other 404 (a wrong app id, a moved endpoint) deleted nothing.
+function isSubscriptionNotFound(payload: { errors?: unknown } | null) {
+  const errors = payload?.errors;
+  if (!Array.isArray(errors)) return false;
+  return errors.some((entry) => {
+    if (typeof entry === "string") return /subscription not found/i.test(entry);
+    if (!entry || typeof entry !== "object") return false;
+    const { code, title } = entry as { code?: unknown; title?: unknown };
+    return /^subscription/i.test(String(code ?? "")) || /subscription not found/i.test(String(title ?? ""));
+  });
+}
+
+// Delete one device's push subscription at OneSignal, which stops delivery to that device at
+// once. "already-gone" means OneSignal no longer holds it, which is what the caller wanted.
+//
+// Deleted rather than disabled: OneSignal Android SDKs before 5.10.1 turn a subscription disabled
+// over REST back on the next time the app opens. A deleted one comes back only when the SDK
+// creates a new one, which the Phoenix app lets it do only after a sign-in (see
+// stopPhoneAppPushForEmployee in settings.ts).
+export async function deleteOneSignalSubscription(subscriptionId: string): Promise<OneSignalSubscriptionDeleteOutcome> {
+  const appId = onesignalAppId();
+  const apiKey = onesignalRestApiKey();
+  if (!appId || !apiKey) throw new Error("OneSignal is not configured.");
+  const id = subscriptionId.trim();
+  if (!id) throw new Error("Push subscription id is missing.");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), onesignalTimeoutMs());
+  let response: Response;
+  let payload: { errors?: unknown } | null;
+  try {
+    response = await fetch(`https://api.onesignal.com/apps/${encodeURIComponent(appId)}/subscriptions/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Key ${apiKey}` },
+      method: "DELETE",
+      signal: controller.signal,
+    });
+    // Read inside the timer's scope, for the reason sendPushNotification gives.
+    payload = (await response.json().catch(() => null)) as { errors?: unknown } | null;
+    if (controller.signal.aborted) throw new Error("OneSignal request timed out.");
+  } catch (error) {
+    if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+      throw new Error("OneSignal request timed out.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (response.ok) return "deleted";
+  if (response.status === 404 && isSubscriptionNotFound(payload)) return "already-gone";
+  const detail = oneSignalErrorDetail(payload);
+  throw new Error(`OneSignal could not delete the push subscription (HTTP ${response.status})${detail ? `: ${detail}` : "."}`);
+}

@@ -1750,6 +1750,7 @@ import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
+import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6006,6 +6007,11 @@ await runTest(
 await runTest(
   "a tapped notification on the Android app goes where the server's own link says: the portal home and profile open the app's screens, any other Phoenix page (its query kept) opens in the browser, and a link that is not Phoenix's — another host, a look-alike, http, another port, a backslash, a control character, a script, a production link on a staging build — opens nothing; the push context route hands the phone the OneSignal app ID the server sends with",
   runMobilePushLinkTests,
+);
+
+await runTest(
+  "Force logout stops the Phoenix app's notifications on the person's phones: every app install of theirs is deleted at OneSignal with the documented call (one OneSignal no longer holds counts as stopped, any other failure is reported and left for a retry), a phone browser, a computer or anyone else is never touched, a retry stops only what is left, and the logout runs first and is never undone by it",
+  runForceLogoutStopsPhoneAppPushTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

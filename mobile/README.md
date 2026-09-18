@@ -410,10 +410,26 @@ OneSignal and tells Phoenix the device no longer reaches that employee, while th
 works. A session that runs out on its 12-hour clock leaves push alone: the same person is still
 holding the phone, and ending push there would silence their notifications twice a day.
 
-🔴 **"Log out everywhere" does not stop notifications on a phone.** To the app, a revoked session
-looks like a lapsed one, so push is left alone, and a lost phone keeps showing that employee's
-notifications. Stopping them today means deleting that phone's subscription in OneSignal —
-`push_subscriptions` holds its ID, on the row with device type `mobile`.
+**"Log out everywhere" stops the app's notifications, from the server.** To the app a revoked
+session looks like a lapsed one, so the app cannot tell that it should stop, and a lost phone
+would keep showing that employee's notifications. Force logout on the Activity dashboard therefore
+deletes the OneSignal subscription of every Phoenix app install that employee has, which stops
+delivery at once, and marks those `push_subscriptions` rows unsubscribed
+(`stopPhoneAppPushForEmployee` in `src/lib/notifications/settings.ts`). Opening the app does not
+bring the subscription back, because the app starts OneSignal only after the server accepts its
+session. Once the employee signs in again, OneSignal creates a new subscription, the app reports it,
+and notifications resume. The dashboard says how many phones it stopped, and pressing Force logout again
+retries any it could not.
+
+- It finds the app's rows by the "Phoenix Workforce app" description the app records, because a
+  phone browser's row carries device type `mobile` too. Browsers are left alone: OneSignal's web SDK
+  does not re-create a deleted subscription when the same person signs in again, so a browser would
+  stay silent after they came back.
+- Revoking sessions by hand in SQL does none of this. Only the dashboard's Force logout does.
+- One case stays open. A lost phone that is never opened again is still signed in to OneSignal as
+  that employee. If Android hands it a new push token in the background, OneSignal's SDK can create
+  a new subscription for it. That phone then receives whatever Phoenix sends that employee's other
+  devices.
 
 **Not in Expo Go.** OneSignal is a native module that Expo Go does not contain. There the app runs
 without push, and Profile says "Expo Go cannot receive notifications. The installed app can." Push

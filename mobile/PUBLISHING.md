@@ -189,3 +189,9 @@ this repo can do.
   read "On", then press the push test in the web portal's notification settings, which sends only to
   whoever presses it. Its link is the portal profile, so tapping it should open the app's Profile
   screen.
+- **Force logout silencing a real phone.** The server side is tested with OneSignal stubbed out and
+  has never run against a handset. Once a build delivers notifications, use a phone signed in as
+  someone who can be logged out: Force logout from the Activity dashboard should report one phone
+  stopped, and the push test pressed in a browser signed in as that person should no longer reach
+  the phone. After they sign in on the phone again, Profile should read "On" and the push test
+  should arrive.

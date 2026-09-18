@@ -388,7 +388,7 @@ function ForceLogoutDialog({
           <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
           <h3 className="mt-0.5 text-base font-black text-phx-ink">{name}</h3>
           <p className="mt-1 text-xs text-phx-ink-soft">
-            All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action.
+            All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action. The Phoenix app on their phone stops showing notifications until they sign in again.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -424,6 +424,17 @@ function ForceLogoutDialog({
       </div>
     </div>
   );
+}
+
+// What happened to the Phoenix app's notifications on the person's phones. null means the server
+// could not get through that step at all; the sessions are revoked either way.
+function phoneAppPushNote(phonePush: { failed: number; stopped: number } | null | undefined) {
+  if (phonePush === undefined) return "";
+  if (phonePush === null) return " The Phoenix app's notifications on their phone could not be stopped; press Force logout again to retry.";
+  const notes: string[] = [];
+  if (phonePush.stopped > 0) notes.push(`Phoenix app notifications stopped on ${phonePush.stopped} phone${phonePush.stopped === 1 ? "" : "s"}.`);
+  if (phonePush.failed > 0) notes.push(`${phonePush.failed} phone${phonePush.failed === 1 ? "" : "s"} could not be stopped; press Force logout again to retry.`);
+  return notes.length ? ` ${notes.join(" ")}` : "";
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -499,9 +510,14 @@ export function ActivityControlDashboard({
         headers: { "Content-Type": "application/json", "x-phoenix-csrf": "1" },
         body: JSON.stringify({ hrId: forceLogoutTarget.hrId, reason }),
       });
-      const body = (await res.json()) as { ok?: boolean; revokedCount?: number; message?: string };
+      const body = (await res.json()) as {
+        ok?: boolean;
+        phonePush?: { failed: number; stopped: number } | null;
+        revokedCount?: number;
+        message?: string;
+      };
       if (!res.ok) throw new Error(body.message ?? "Force logout failed");
-      setForceLogoutFeedback(`${forceLogoutTarget.name} has been logged out (${body.revokedCount ?? 0} session${(body.revokedCount ?? 0) === 1 ? "" : "s"} terminated).`);
+      setForceLogoutFeedback(`${forceLogoutTarget.name} has been logged out (${body.revokedCount ?? 0} session${(body.revokedCount ?? 0) === 1 ? "" : "s"} terminated).${phoneAppPushNote(body.phonePush)}`);
       setForceLogoutTarget(null);
       // Refresh live feed immediately.
       setTimeout(fetchLive, 1000);
