@@ -1271,9 +1271,15 @@ export const accessRegistry = [
   // The READ writes nothing, so it declares no audit row. The two WRITES each write a REQUIRED audit
   // row after Google answers — the enrollment one records who made a code, for which tablet and for
   // how long, and never the code itself, which stays a live credential until it expires.
+  //
+  // `/imei` is the third write: the page posts it by itself after a load finds a tablet whose IMEI
+  // the register lacks. It reads no body — which IMEIs go where is decided on the server from
+  // Google's list and the register — writes only into an entry holding no IMEI, and each IMEI
+  // written carries its own REQUIRED audit row, written before the register changes.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/tablets", permission: { resource: "company_devices", action: "approve" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/policy", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
