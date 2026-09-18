@@ -29,6 +29,8 @@ import {
   sumClosingRowTotal,
 } from "@/lib/sales/monthly-closing-matrix-cells";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { misplacedComma, needsAGuess, normalizeNumberText } from "@/lib/sales/normalizer/number-text";
+import { numberProblem } from "@/lib/sales/normalizer/row-messages";
 import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -888,13 +890,47 @@ function rawImportRow(row: ExcelJS.Row, headerMap: HeaderMap) {
   );
 }
 
+// A cell Excel stores as a number is taken as it is. Text goes through normalizeNumberText first, so a
+// form with one meaning only is read ("1.234,56" is 1234.56, "١٢٠" is 120), and a comma is dropped only
+// where it separates whole groups of three ("1,200"). Anywhere else ("12,5": 12.5 or 125?) the text is
+// unreadable. This used to strip every comma blind, so "1.234,56" was read as 1.23456 and "12,5" as 125,
+// with nothing said (owner, 2026-09-18) — the defect the Normalizer's engine had in its parseNum.
 function parseNumber(value: unknown, options?: { emptyAsZero?: boolean }) {
   const text = normalizeDisplay(value);
   if (!text && options?.emptyAsZero) return 0;
   if (!text) return Number.NaN;
   if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
-  const parsed = Number(text.replace(/,/g, ""));
+  const written = normalizeNumberText(text);
+  if (misplacedComma(written)) return Number.NaN;
+  const parsed = Number(written.replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+// A quantity or value cell of a sales sheet, read by parseNumber with one rule more: a TEXT cell with
+// two readings is refused and named, not guessed at — "1.234" (1.234 or 1234?) as well as "12,5". A
+// cell Excel stores as a number is never refused: 1.234 is 1.234 however it prints. The Direct channel
+// follows the same rule (owner, 2026-09-18: refuse it like the distributors), and so does the
+// Normalizer's engine (needsAGuess there). `readFrom` keeps a cell that was read only after
+// normalizeNumberText rewrote it, so the row says what it read.
+type SheetNumber = { value: number; problem: string | null; readFrom: string | null };
+
+function readSheetNumber(raw: unknown, options?: { emptyAsZero?: boolean }): SheetNumber {
+  const value = parseNumber(raw, options);
+  const text = normalizeDisplay(raw);
+  if (!text || typeof raw === "number") return { value, problem: null, readFrom: null };
+  const written = normalizeNumberText(text);
+  if (needsAGuess(written)) return { value: Number.NaN, problem: numberProblem(written), readFrom: null };
+  return { value, problem: null, readFrom: Number.isFinite(value) && written !== text ? text : null };
+}
+
+// "Qty "12,5" could mean 12.5 or 125, so it is not guessed." when the cell was refused for a guess;
+// the message the row has always carried otherwise.
+function unreadableCellMessage(label: string, raw: unknown, cell: SheetNumber, fallback: string): string {
+  return cell.problem ? `${label} "${normalizeDisplay(raw)}" ${cell.problem}.` : fallback;
+}
+
+function readAsMessage(label: string, cell: SheetNumber): string {
+  return `${label} "${cell.readFrom}" was read as ${cell.value.toLocaleString("en-US", { maximumFractionDigits: 6 })}.`;
 }
 
 function parseOptionalInteger(value: unknown) {
@@ -914,8 +950,15 @@ function parseOptionalInteger(value: unknown) {
 // NEGATIVE row value; a negative cell like "-25" would instead INFLATE it (1 - (-0.25) = 1.25). A
 // real discount can be neither negative (a surcharge) nor over 100% (free/negative price), so we
 // clamp to [0, 1] and surface a warning at the call site so the bad cell is visible, not silent.
+//
+// The cell goes through normalizeNumberText like a quantity, so "12,5٪" or "1.234,56" is not read with
+// its comma dropped. A comma anywhere but between whole groups of three leaves the cell unreadable, which
+// here means no discount, exactly as for "abc": since 2026-09-07 a discount multiplies nothing, so it
+// gets no new refusal (owner, 2026-09-18).
 export function parseDiscount(value: unknown): { rate: number; outOfRange: boolean } {
-  const text = normalizeDisplay(value).replace(/%/g, "").replace(/,/g, "");
+  const written = normalizeNumberText(normalizeDisplay(value)).replace(/%/g, "");
+  if (misplacedComma(written)) return { rate: 0, outOfRange: false };
+  const text = written.replace(/,/g, "");
   if (!text) return { rate: 0, outOfRange: false };
   const parsed = Number(text);
   if (!Number.isFinite(parsed) || parsed === 0) return { rate: 0, outOfRange: false };
@@ -1497,7 +1540,8 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     let regionCode = normalizeCode(rawRegionCode);
     const productCode = normalizeCode(rawProductCode);
     const rowDistributorCode = normalizeCode(rawDistributorCode);
-    const parsedQty = parseNumber(rawQty);
+    const qtyCell = readSheetNumber(rawQty);
+    const parsedQty = qtyCell.value;
     // Whole-line bonus flag (e.g. is_bonus = 1 in EPDA exports): the row is a free-goods
     // delivery, not a sale. Skip it entirely — free units are never counted as sales qty.
     const rawBonusFlag = valueAtHeader(row, headerMap, headerMap.template.bonusFlagField);
@@ -1555,8 +1599,9 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     // neglected, the distributor sheet's own Value/Net column is ignored, and since 2026-09-07 the
     // per-row discount is ignored too — the owner struck that factor out of the whole system. The
     // Direct channel remains the one exception, the only sheet whose own Value column is truth.
+    const valueCell = readSheetNumber(rawSheetValue, { emptyAsZero: true });
     const value = isDirect
-      ? parseNumber(rawSheetValue, { emptyAsZero: true })
+      ? valueCell.value
       : Number.isFinite(qty)
         ? qty * (productReference?.factoryPrice ?? 0)
         : Number.NaN;
@@ -1652,7 +1697,13 @@ async function parseDistributorSalesWorkbookBuffer(input: {
         `Distributor code must be ${selectedDistributorCode} for the selected distributor.`,
       );
     }
-    if (!Number.isFinite(qty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, "Qty must be numeric.");
+    // A text quantity with two readings ("12,5", "1.234") is refused by name; one read only after it was
+    // rewritten ("1.234,56" as 1234.56) is listed, never blocking, so a person can still catch it.
+    if (!Number.isFinite(qty)) {
+      addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, unreadableCellMessage("Qty", rawQty, qtyCell, "Qty must be numeric."));
+    } else if (qtyCell.readFrom) {
+      addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, readAsMessage("Qty", qtyCell), "warning");
+    }
     if (!period) addIssue(rowIssues, rowNumber, headerMap.template.fields.invoiceDate, rawInvoiceDate, "Invoice Date must be a valid date.");
     // Direct is the one channel whose VALUE comes straight from the sheet (see above), so it is the
     // one place an unreadable value cell can reach `value` unnoticed. For every other channel, value
@@ -1664,8 +1715,12 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     // Without this check that NaN reaches the DB insert unflagged and is silently zeroed there
     // (`value: Number.isFinite(row.value) ? row.value : 0`), so the row looks successfully imported
     // while its sale value has vanished.
+    //
+    // The same two-readings rule as the quantity above: a text value "1.234" or "12,5" is refused by name.
     if (isDirect && !Number.isFinite(value) && normalizeDisplay(rawSheetValue)) {
-      addIssue(rowIssues, rowNumber, headerMap.template.valueField ?? "Value", rawSheetValue, "Value must be numeric.");
+      addIssue(rowIssues, rowNumber, headerMap.template.valueField ?? "Value", rawSheetValue, unreadableCellMessage("Value", rawSheetValue, valueCell, "Value must be numeric."));
+    } else if (isDirect && valueCell.readFrom) {
+      addIssue(rowIssues, rowNumber, headerMap.template.valueField ?? "Value", rawSheetValue, readAsMessage("Value", valueCell), "warning");
     }
 
     if (productCode && !isNotAvailable(rawProductCode) && !productReference) {

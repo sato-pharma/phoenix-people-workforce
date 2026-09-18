@@ -53,8 +53,9 @@ function hasLetters(written: string): boolean {
 // Why a number cell cannot be read, in the terms the person will recognise in their sheet. Only forms
 // normalizeNumberText refuses to guess at reach here: it has already read everything with one meaning.
 // A number-typed cell is never refused, so "1.234" arriving here was text, and two readings is the
-// truth about it (engine's parseNum, needsAGuess).
-function numberProblem(written: string): string {
+// truth about it (engine's parseNum, needsAGuess). The coded importer names its refused cells with it
+// too (monthly-distributor-import's readSheetNumber), so both readers say the same thing.
+export function numberProblem(written: string): string {
   if (hasLetters(written)) return "has letters in it";
   if (/^\(.*\)$/.test(written)) return "is in brackets";
   const readings = twoReadings(written);
