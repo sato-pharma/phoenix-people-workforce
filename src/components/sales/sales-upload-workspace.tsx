@@ -17,6 +17,7 @@ import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import type { BulkSlotStage } from "@/lib/sales/bulk-import-gating";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
+import { periodToAutoFill } from "@/lib/sales/upload-period-autofill";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +34,7 @@ type Props = {
 export type Reconciliation = { rowsRead: number; rowsCoded: number; rowsIgnored: number; rowsBlankCustomer: number; rowsBlocked: number; totalQty: number; totalValue: number };
 type UnknownItem = { count: number; raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type IgnoredItem = { raw: string; displayName: string; count: number; totalQty: number };
-type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null };
+type Preview = { summary: { totalRows: number; fullyCoded: number }; unknownProducts: UnknownItem[]; unknownTerritories: UnknownItem[]; unknownCustomers: UnknownItem[]; ignoredItems?: IgnoredItem[]; period: string | null; periods?: { period: string; rows: number }[] };
 type Severity = "error" | "warning" | "info";
 type Finding = { code: string; severity: Severity; title: string; detail: string; count: number; sampleRows: number[]; sampleProducts?: string[]; fixHint?: string };
 export type ValidationReport = { ok: boolean; errorCount: number; warningCount: number; infoCount: number; findings: Finding[] };
@@ -755,8 +756,10 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       const res = await postSalesUpload("/api/sales/sales-upload/analyze", file, { distributorCode, period });
       const payload = await readJson<AnalyzeResponse>(res);
       setAnalysis(payload);
-      // Auto-fill the period dropdowns if the server detected one and the user hasn't set one yet.
-      if (payload.data?.period && !period) applyAutoDetectedPeriod(payload.data.period);
+      // Auto-fill the period dropdowns when the sheet holds one month and the user hasn't set one yet.
+      // A multi-month sheet is left blank: picking the month is the operator's choice.
+      const detectedPeriod = periodToAutoFill(payload.data, period);
+      if (detectedPeriod) applyAutoDetectedPeriod(detectedPeriod);
       if (!payload.success) setError(payload.error ?? "Validation failed.");
     } catch (e) { setError(e instanceof Error ? e.message : "Validation failed."); }
     finally { setBusy(null); analyzingRef.current = false; }
