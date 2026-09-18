@@ -156,9 +156,15 @@ it reaches a phone only in a new binary with a higher `versionCode` — there is
 
 - Create the company Google account.
 - Sign the Managed Google Play agreement, or create the enterprise.
-- Create the Expo account that EAS builds under.
-- **Give OneSignal its Android credentials** — without them the app is built, installed and signed in,
-  and no notification ever arrives:
+- Create the Expo account that EAS builds under. **Done 2026-09-18:** the organization **Phoenix Sato
+  CRM** (`@phoenix-sato-crm`) owns the project `@phoenix-sato-crm/phoenix-workforce`, and `app.json`
+  carries its `owner` and `extra.eas.projectId`. Expo's sign-up also made an empty starter project,
+  **Omar**. It is not this app: never link its id, whatever Expo's "Get started" page suggests.
+- **Give OneSignal its Android credentials.** **Done 2026-09-18:** the key came from the Firebase
+  project **Phoenix Workforce Push**, which sits outside the Google Cloud organisation, so step 3's
+  policy never applied, and OneSignal's Google Android (FCM) platform reads Active. The steps stay
+  here for the day the key is replaced. Without the credentials the app is built, installed and
+  signed in, and no notification ever arrives:
   1. Create a Firebase project and, under its service accounts, generate the **Cloud Messaging (FCM
      v1) service-account key** — a JSON file.
   2. Upload that file to the **same OneSignal app the web portal already uses**: Settings → Push &
@@ -184,8 +190,8 @@ this repo can do.
   nothing here confirms whether the managed Play iframe asks for it. If it does, the table above is
   the answer.
 - **A notification arriving on a real phone.** The tap rules are tested and the app typechecks in CI,
-  but no build carrying OneSignal has run on a handset — that waits on the Firebase key and a first
-  EAS build. The first check, once both exist: sign in on the phone, allow notifications, see Profile
+  but no build carrying OneSignal has run on a handset yet. The Firebase key is in place since
+  2026-09-18, so what remains is installing a first EAS build. The first check, once one is on a phone: sign in on the phone, allow notifications, see Profile
   read "On", then press the push test in the web portal's notification settings, which sends only to
   whoever presses it. Its link is the portal profile, so tapping it should open the app's Profile
   screen.
