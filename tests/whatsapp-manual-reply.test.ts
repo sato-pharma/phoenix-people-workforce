@@ -119,8 +119,8 @@ export function runWhatsAppManualReplyTests() {
   );
   assert.match(
     read("src/components/recruitment/workstation/screening-workstation.tsx"),
-    /canReply=\{canDecide\}/,
-    "canDecide IS recruitment:update on this page — see the two screening route files that set it",
+    /canReply=\{canReply\}/,
+    "canReply IS recruitment:update on this page — see the two screening route files that set it. It rode on canDecide until 2026-09-18, when deciding moved to candidates:update",
   );
 
   const poolDrawer = read("src/components/recruitment/recruitment-workspace.tsx");

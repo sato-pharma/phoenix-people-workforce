@@ -155,6 +155,7 @@ type PendingUndo = {
 export function ScreeningWorkstation({
   canDecide,
   candidateHref,
+  canReply,
   openCandidateId,
   canSendToManagers,
   canWriteNotes,
@@ -183,8 +184,14 @@ export function ScreeningWorkstation({
    * Its own prop rather than a second use of `canWriteNotes`, even though the two are the same
    * value today. They answer different questions, and the day notes are gated separately from
    * decisions, a shared prop would move who can reject fifty CVs without anybody editing this file.
+   * `candidates: update`, the grant every verdict route asserts.
    */
   canDecide: boolean;
+  /**
+   * May this reader answer an applicant on WhatsApp — `recruitment: update`, the reply route's own
+   * grant. It rode on `canDecide` until 2026-09-18.
+   */
+  canReply: boolean;
   /**
    * The address of one CV in this queue, so every row can be a real link.
    *
@@ -1452,7 +1459,8 @@ export function ScreeningWorkstation({
               <>
                 <WorkstationReviewHeader
                   busy={busy}
-                  canReply={canDecide}
+                  canDecide={canDecide}
+                  canReply={canReply}
                   canSend={canSendToManagers}
                   decided={decided[selected.id] ?? null}
                   error={actionError}
