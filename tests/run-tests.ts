@@ -1777,6 +1777,7 @@ import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-lab
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
 import { runDatabaseMappingTablesFitTests } from "./database-mapping-tables-fit.test.ts";
+import { runDatabaseMappingCustomerMapNamesTests } from "./database-mapping-customer-map-names.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 
@@ -6147,6 +6148,11 @@ await runTest(
 await runTest(
   "every Database Mapping table fits the screen: the master rows table merges its locked columns into one identity cell, hangs each parent lookup under the code it resolves from and shares Status between Active and Updated, so every master is at most five columns totalling 100%, while the customer map (address in full, wrapping) and both blocked-rows tables are table-fixed over a colgroup, with no sideways scroller, nowrap, min-width floor or ellipsis, and mobile gets cards",
   runDatabaseMappingTablesFitTests,
+);
+
+await runTest(
+  "the Database Mapping customer map shows names, never codes: brick, area, region and distributor resolve against the master rows the page holds (inactive rows included), a code the master does not know stays visible and flagged, and the workbook export keeps its codes for re-import",
+  runDatabaseMappingCustomerMapNamesTests,
 );
 
 await runTest(
