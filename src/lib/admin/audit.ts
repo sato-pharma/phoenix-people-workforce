@@ -176,6 +176,9 @@ export type AuditEntityType =
   // step was done. Written BEFORE the state changes, carrying the old values, so a later
   // reopen corrects the register without erasing what was previously asserted.
   | "mailbox_offboarding"
+  // Handing a new hire's app password to Phoenix from the New Hire Mailboxes page, or ruling that
+  // they need no company mailbox. The row carries the address and the outcome, NEVER the password.
+  | "new_hire_mailbox"
   | "marketing_customer"
   // A venue merge is neither a customer nor a request change: it retires one physical place in
   // favour of another and moves every link between them. audit_logs has no CHECK on entity_type

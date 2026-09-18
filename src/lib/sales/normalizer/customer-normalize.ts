@@ -57,6 +57,22 @@ export function normalizeCustomerNameKey(value: unknown): string {
   return tokens.length > 0 ? tokens[tokens.length - 1] : "";
 }
 
+/**
+ * One key per distinct pharmacy TEXT — what the customer AI is shown: the name, the address and the
+ * distributor's governorate/area text, each folded the same way. Two customer codes with the same
+ * key are the same question, so the pipeline answers it once (owner, 2026-09-18: "group them and
+ * don't duplicate the work") and the AI-answer store never pays for it twice.
+ *
+ * Empty when the name normalizes to nothing: the AI is then shown the customer CODE instead of a
+ * name, and two different codes are never the same question. This is not pharmacyGeoKey, which is
+ * the stored geocode cache key and must never change.
+ */
+export function customerPharmacyKey(name: unknown, address: unknown, territory: unknown): string {
+  const nameKey = normalizeCustomerNameKey(name);
+  if (!nameKey) return "";
+  return [nameKey, foldCustomerNameText(address), foldCustomerNameText(territory)].join(" | ");
+}
+
 // Normalized address tokens (length >= 2) for overlap scoring between two addresses.
 export function customerAddressTokens(value: unknown): Set<string> {
   return new Set(

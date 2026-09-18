@@ -15,13 +15,12 @@ import * as ImagePicker from "expo-image-picker";
  * to wrap each of them in a try/catch ends up reporting "something went wrong" for all three. The
  * result is a discriminated union instead: the screen matches on it and says the one true thing.
  *
- * WHAT IT DOES NOT DO YET. No location, no watermark. The web app's live photo burns the time, the
- * address, the Phoenix brick/area/region and the coordinates into the image before upload, and its
- * capture opens the camera and the location together because a venue photo without a fix proves
- * nothing about a place. That belongs to the evidence flows — venue validation, the direct-order
- * storefront, the outstation departure photo — and to the GPS phase alongside them. A profile photo
- * is not evidence of a place, so it needs none of it. 🔴 Do NOT wire this module into an evidence
- * flow as it stands: it would produce a picture the desk has no way to trust.
+ * NO LOCATION, NO WATERMARK — BY ITSELF. This module only opens the camera. An evidence photo
+ * also needs the time, the place and the coordinates burnt into it before upload, the way the web
+ * app's live photo does, and that is `evidence-photo.ts`: it asks for location first, calls this,
+ * then stamps the result with `evidence-burn.ts`. 🔴 Never upload what this returns as EVIDENCE
+ * directly — an unstamped picture is one the desk has no way to trust. A profile photo is not
+ * evidence of a place, so it goes up as it is.
  */
 
 /** Matches `MAX_EMPLOYEE_PHOTO_BYTES` in `src/lib/employees/employee-photo.ts`. */
@@ -70,14 +69,27 @@ function fallbackFileName(mimeType: string): string {
 /**
  * Open the camera and return what the person took.
  *
- * `quality` is 0.7 rather than 1: an unchanged 12-megapixel JPEG routinely clears 5 MB, which the
- * server refuses outright, and a profile photo renders at a fraction of that size anyway. Refusing
- * after the fact would mean the rep framed a photo, waited, and then got told no — so the shrink
- * happens before they can hit the ceiling. The explicit size check below still stands, because
- * `quality` is a hint to the encoder and not a guarantee about the resulting file.
+ * `quality` defaults to 0.7 rather than 1: an unchanged 12-megapixel JPEG routinely clears 5 MB,
+ * which the server refuses outright, and a profile photo renders at a fraction of that size anyway.
+ * Refusing after the fact would mean the rep framed a photo, waited, and then got told no — so the
+ * shrink happens before they can hit the ceiling. The explicit size check below still stands,
+ * because `quality` is a hint to the encoder and not a guarantee about the resulting file.
+ *
+ * An evidence photo passes `quality: 1` and `maxBytes: null`. It is never uploaded as taken: the
+ * stamp redraws it at 1280 pixels and encodes it once, so the camera's own file is the best input
+ * and its size is no longer the upload's size. At exactly 1 the picker hands back the camera's file
+ * untouched, rotation tag included, and Skia applies that tag when it decodes; below 1 the picker
+ * turns the pixels upright itself and drops the tag. Either way the stamped photo comes out upright.
  */
 export async function capturePhoto(
-  options: { allowsEditing?: boolean; aspect?: [number, number] } = {},
+  options: {
+    allowsEditing?: boolean;
+    aspect?: [number, number];
+    /** The largest file accepted, in bytes. `null` skips the check. Defaults to `MAX_PHOTO_BYTES`. */
+    maxBytes?: number | null;
+    /** 0 to 1. Defaults to 0.7; see above. */
+    quality?: number;
+  } = {},
 ): Promise<CaptureOutcome> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
@@ -89,7 +101,7 @@ export async function capturePhoto(
     ...(options.aspect ? { aspect: options.aspect } : {}),
     // "images" only. A video would sail past the size ceiling and no Phoenix surface takes one.
     mediaTypes: "images",
-    quality: 0.7,
+    quality: options.quality ?? 0.7,
   });
 
   if (result.canceled) return { status: "cancelled" };
@@ -105,8 +117,9 @@ export async function capturePhoto(
   }
 
   const byteSize = typeof asset.fileSize === "number" ? asset.fileSize : null;
-  if (byteSize !== null && byteSize > MAX_PHOTO_BYTES) {
-    return { byteSize, limitBytes: MAX_PHOTO_BYTES, status: "too-large" };
+  const limitBytes = options.maxBytes === undefined ? MAX_PHOTO_BYTES : options.maxBytes;
+  if (limitBytes !== null && byteSize !== null && byteSize > limitBytes) {
+    return { byteSize, limitBytes, status: "too-large" };
   }
 
   return {

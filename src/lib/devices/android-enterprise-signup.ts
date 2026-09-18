@@ -1,10 +1,10 @@
 /**
  * Binding Phoenix to an Android Enterprise — the one prerequisite everything else waits on.
  *
- * `ANDROID_MANAGEMENT_ENTERPRISE_NAME` is set nowhere, so today every call in `android-web-app.ts`
- * and `managed-play-iframe.ts` raises `AndroidManagementNotConfiguredError` before it reaches
- * Google. This module is how that binding comes into existence, and it exists because the
- * alternative was a note telling the owner to run two curl commands by hand.
+ * Until `ANDROID_MANAGEMENT_ENTERPRISE_NAME` is set, every call in `android-web-app.ts` and
+ * `managed-play-iframe.ts` raises `AndroidManagementNotConfiguredError` before it reaches Google.
+ * This module is how that binding comes into existence, and it exists because the alternative was
+ * a note telling the owner to run two curl commands by hand.
  *
  * THE FLOW, AND THE TRAP IN THE MIDDLE OF IT.
  *
@@ -44,10 +44,15 @@ import {
 export const SIGNUP_URL_NAME_COOKIE = "phx_amapi_signup";
 
 /**
- * Ten minutes. Long enough to read Google's enrolment screens without hurrying, short enough that a
- * cookie naming a half-finished signup does not outlive the attempt.
+ * One hour. 🔴 TEN MINUTES WAS TOO SHORT, AND IT COST THE FIRST REAL SIGNUP (2026-09-18). Google's
+ * email-first enrolment sends a confirmation to the company mailbox and creates the account, and
+ * the owner's first pass came back 12 minutes 41 seconds after his click — to a cookie that had
+ * expired at ten, so the enrolment he had just completed could not become an enterprise and he had
+ * to start again. An hour covers the inbox round trip with room to spare. It is still a bounded
+ * attempt: the name is single-use, useless without Google's `enterpriseToken`, and the callback
+ * clears it the moment it succeeds.
  */
-export const SIGNUP_URL_NAME_COOKIE_MAX_AGE_SECONDS = 600;
+export const SIGNUP_URL_NAME_COOKIE_MAX_AGE_SECONDS = 60 * 60;
 
 /**
  * How the finished binding reaches the page that displays it.
@@ -195,7 +200,7 @@ export async function createEnterprise(
   if (!signupUrlName) {
     throw new Error(
       "The signup URL name is missing. It is parked in a short-lived cookie between Google's " +
-        "enrolment page and this callback — if the enrolment took more than ten minutes, or the " +
+        "enrolment page and this callback — if the enrolment took more than an hour, or the " +
         "callback was opened in a different browser, start the signup again.",
     );
   }

@@ -2,10 +2,17 @@
 
 import { FileText, ImageOff, Loader2, Paperclip } from "lucide-react";
 import { useEffect, useState } from "react";
+import { TripEvidencePhotos } from "@/components/outstation/trip-evidence-photos";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import type { ApproverTripPhoto } from "@/lib/outstation/trip-evidence-photos";
 
 type Ticket = { contentType: string; name: string; url: string };
-type AttachmentsData = { carEvidenceImageUrl: string | null; found: boolean; tickets: Ticket[] };
+type AttachmentsData = {
+  employeeName: string | null;
+  found: boolean;
+  photos: ApproverTripPhoto[];
+  tickets: Ticket[];
+};
 
 /** Bulk-xlsx trips use `TRP-*`; only Phoenix-submitted rows are `OUTSTATION-<requestId>`. */
 function parseRequestId(tripId: string): string | null {
@@ -18,8 +25,13 @@ function isPdf(ticket: Ticket): boolean {
 }
 
 /**
- * Ticket/receipt pictures & PDFs and the car-evidence photo for a Phoenix-submitted expense.
- * Bulk-xlsx trips (or trips whose source request was deleted) degrade to a quiet note.
+ * The arrival and departure photos, then the ticket/receipt pictures & PDFs, for a
+ * Phoenix-submitted expense. Bulk-xlsx trips (or trips whose source request was deleted) degrade
+ * to a quiet note.
+ *
+ * The photos used to be one 160px cropped tile labelled "Car evidence", the arrival photo alone:
+ * the departure photo was never sent here, and the Super Admin who approves these could not see
+ * it (owner, 2026-09-18). Both now render full width through TripEvidencePhotos.
  */
 export function TripAttachments({ tripId }: { tripId: string }) {
   const requestId = parseRequestId(tripId);
@@ -73,50 +85,64 @@ export function TripAttachments({ tripId }: { tripId: string }) {
   }
 
   const { data } = state;
-  const items: Array<{ isPdf: boolean; key: string; label: string; url: string }> = [];
-  if (data.carEvidenceImageUrl) {
-    items.push({ isPdf: false, key: "car", label: "Car evidence", url: data.carEvidenceImageUrl });
-  }
-  data.tickets.forEach((ticket, index) => {
-    items.push({ isPdf: isPdf(ticket), key: `ticket-${index}`, label: ticket.name || `Ticket ${index + 1}`, url: ticket.url });
-  });
-
-  if (!data.found || items.length === 0) {
+  if (!data.found) {
     return (
       <p className="flex items-center gap-2 text-xs text-slate-400">
         <ImageOff className="h-3.5 w-3.5" />
-        {data.found ? "No attachment on this submission." : "Source request is no longer available."}
+        Source request is no longer available.
       </p>
     );
   }
 
+  const photos = Array.isArray(data.photos) ? data.photos : [];
+  const items = data.tickets.map((ticket, index) => ({
+    isPdf: isPdf(ticket),
+    key: `ticket-${index}`,
+    label: ticket.name || `Ticket ${index + 1}`,
+    url: ticket.url,
+  }));
+
   return (
-    <div className="flex flex-wrap gap-3">
-      {items.map((item) => (
-        <a
-          className="group block w-40 overflow-hidden rounded-lg border border-phx-line bg-white transition-colors hover:border-orange-400"
-          href={item.url}
-          key={item.key}
-          rel="noopener noreferrer"
-          target="_blank"
-          title={`${item.label} — open in a new tab`}
-        >
-          {item.isPdf ? (
-            <div className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-500">
-              <FileText className="h-7 w-7" />
-              <span className="text-phx-2xs font-bold uppercase tracking-wide">PDF</span>
-            </div>
-          ) : (
-            // The tile crops the receipt to a 112px strip, so tapping the image opens the full
-            // photo rather than following the anchor — the amount on a receipt cannot be read at
-            // this size. The label beneath still opens the file in a new tab.
-            <ZoomablePhoto alt={item.label} caption={item.label} className="h-28 w-full object-cover" src={item.url} />
-          )}
-          <p className="truncate px-2 py-1.5 text-phx-xs font-semibold text-slate-700 group-hover:text-orange-700">
-            {item.label}
-          </p>
-        </a>
-      ))}
+    <div className="space-y-4">
+      {photos.length > 0 ? <TripEvidencePhotos photos={photos} subject={data.employeeName} /> : null}
+      {items.length > 0 ? (
+        <div>
+          <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Tickets and receipts</p>
+          <div className="flex flex-wrap gap-3">
+            {items.map((item) => (
+              <a
+                className="group block w-40 overflow-hidden border border-phx-line bg-white transition-colors hover:border-orange-400"
+                href={item.url}
+                key={item.key}
+                rel="noopener noreferrer"
+                target="_blank"
+                title={`${item.label} — open in a new tab`}
+              >
+                {item.isPdf ? (
+                  <div className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-500">
+                    <FileText className="h-7 w-7" />
+                    <span className="text-phx-2xs font-bold uppercase tracking-wide">PDF</span>
+                  </div>
+                ) : (
+                  // The tile crops the receipt to a 112px strip, so tapping the image opens the full
+                  // photo rather than following the anchor — the amount on a receipt cannot be read at
+                  // this size. The label beneath still opens the file in a new tab.
+                  <ZoomablePhoto alt={item.label} caption={item.label} className="h-28 w-full object-cover" src={item.url} />
+                )}
+                <p className="break-words px-2 py-1.5 text-phx-xs font-semibold text-slate-700 group-hover:text-orange-700">
+                  {item.label}
+                </p>
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {photos.length === 0 && items.length === 0 ? (
+        <p className="flex items-center gap-2 text-xs text-slate-400">
+          <ImageOff className="h-3.5 w-3.5" />
+          No attachment on this submission.
+        </p>
+      ) : null}
     </div>
   );
 }

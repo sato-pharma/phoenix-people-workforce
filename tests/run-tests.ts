@@ -507,6 +507,7 @@ import { runSalesDistributorImportTests } from "./sales-distributor-import.test.
 import { runCustomerNormalizeTests } from "./customer-normalize.test.ts";
 import { runPharmacyGeoValidateTests } from "./pharmacy-geo-validate.test.ts";
 import { runCustomerPropagationTests } from "./customer-propagation.test.ts";
+import { runCustomerFreeStepsTests } from "./customer-free-steps.test.ts";
 import { runSosAutoApplyTests } from "./sos-auto-apply.test.ts";
 import { runCustomerClustersTests } from "./customer-clusters.test.ts";
 import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
@@ -1271,6 +1272,13 @@ import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts"
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
 import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
+import { runOutstationDeparturePhotoNullCoordsTests } from "./outstation-departure-photo-null-coords.test.ts";
+import { runOutstationArrivalNullCoordsTests } from "./outstation-arrival-null-coords.test.ts";
+import { runOutstationApproverTripPhotosTests } from "./outstation-approver-trip-photos.test.ts";
+import { runCoordinateParseFollowupsTests } from "./coordinate-parse-followups.test.ts";
+import { runPharmacyValidationAccuracyInputTests } from "./pharmacy-validation-accuracy-input.test.ts";
+import { runOutstationAccuracyInputTests } from "./outstation-accuracy-input.test.ts";
+import { runEvidenceStampBlankCoordinatesTests } from "./evidence-stamp-blank-coordinates.test.ts";
 import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
 import { runOutstationDeparturePhotoReminderTests } from "./outstation-departure-photo-reminder.test.ts";
@@ -1690,6 +1698,8 @@ import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-ca
 
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
 import { runSecretBoxTests } from "./secret-box.test.ts";
+import { runPersonalMailboxTests } from "./personal-mailbox.test.ts";
+import { runNewHireMailboxTests } from "./new-hire-mailbox.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
@@ -1738,6 +1748,8 @@ import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
+import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
+import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2774,6 +2786,7 @@ await runTest("sales distributor import", runSalesDistributorImportTests);
 await runTest("customer normalize + pharmacy chains", runCustomerNormalizeTests);
 await runTest("pharmacy geo validate (distance tiers)", runPharmacyGeoValidateTests);
 await runTest("customer cross-distributor propagation", runCustomerPropagationTests);
+await runTest("customer free steps: grouped once, then address match, known twin, place in the name", runCustomerFreeStepsTests);
 await runTest("sos auto-apply gate", runSosAutoApplyTests);
 await runTest("customer location clusters", runCustomerClustersTests);
 await runTest("weekly sales import", runWeeklySalesImportTests);
@@ -3917,6 +3930,13 @@ await runTest("reconciliation harness (a breach names both figures and their sou
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
+await runTest("outstation departure photo with no GPS fix (the web card posts nulls and Number(null) is 0, which stored the photo at 0,0 and flagged it thousands of km from the trip; nulls, missing keys, blanks and non-numbers are NO position, a real single 0 survives, 0,0 and half-pairs read as unknown, and the review never calls an unknown distance far)", runOutstationDeparturePhotoNullCoordsTests);
+await runTest("outstation arrival with no GPS fix (Number(null) is 0, so a null-coordinate body passed capture-location's 'Captured coordinates are required.' 400 and was saved at 0,0, and calculate/submit/sync-offline priced it with no check at all; every arrival route now reads through the shared reader and refuses a missing, blank, half or 0,0 position with that same 400 before the service runs, and an arrival photo with no fix is refused as incomplete, never stamped at 0,0)", runOutstationArrivalNullCoordsTests);
+await runTest("outstation approver sees BOTH photos (the Super Admin approves every outstation expense and could see no departure photo: no admin read path signed it, so its far-from-the-trip flag reached the employee alone; both read paths now sign it, Expense Approvals and the Expense Center panel show arrival and departure full width with time, place and the stored review, a flag reads as a look that never blocks pay, and a photo a role or a pre-rule trip never owed is not called missing)", runOutstationApproverTripPhotosTests);
+await runTest("blank or missing coordinates on the two paths #3993 left out (Number(null), Number(\"\") and Number(\" \") are 0, so the admin outstation edit saved a destination with no coordinates at 0,0 and the direct-order pharmacy validation route filed a blank pin at 0,0 past its missing-pin refusal; both now read through the shared one-value reader, the admin edit is refused with its existing message, and a blank pin reaches the direct-orders refusal as null)", runCoordinateParseFollowupsTests);
+await runTest("blank GPS accuracy on a direct-order pharmacy claim (the route's Number(\"\") and Number(\" \") stored a blank accuracy as a perfect 0 m fix; the route now passes it through and the service reads it with the shared one-value reader, so a blank accuracy is stored as null and nothing is refused)", runPharmacyValidationAccuracyInputTests);
+await runTest("blank GPS accuracy on an outstation claim, an evidence stamp and a CRM visit (Number(null), Number(\"\") and Number(\" \") are 0, so a claim with no accuracy passed the policy's GPS limit as a perfect 0 m fix; all four outstation routes read it with the shared one-value reader, the claim is saved with no accuracy and held for Super Admin review (owner, 2026-09-18) — never refused, and never held for a National Sales Manager — while 0 stays the manual-entry marker; the evidence stamp and the CRM visit form read a blank accuracy as none)", runOutstationAccuracyInputTests);
+await runTest("blank latitude and longitude on an evidence photo stamp (Number(null), Number(\"\") and Number(\" \") are 0, so the four evidence-location endpoints stamped a blank pair at 0°N 0°E and the phone burned that fake pin into the photo; the shared parser now reads each coordinate with the one-value reader, so a blank pair or half-pair takes the same refusal a missing one always did and the phone keeps its photo with the lookup-unavailable stamp)", runEvidenceStampBlankCoordinatesTests);
 await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
 await runTest("evidence photo watermark panel (grows to hold the location block; nothing is drawn past the bottom edge; shrinks the font rather than truncating)", runEvidencePanelLayoutTests);
 await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
@@ -5966,6 +5986,26 @@ await runTest(
 await runTest(
   "the native app may write, and nothing else gained anything: a request declaring x-phoenix-client with NO session cookie skips the origin check at BOTH refusal sites, while the same header alongside a session cookie is still refused 403 — the cookie clause is what keeps the exemption from becoming 'any request that sets a header skips CSRF'",
   runNativeClientCsrfExemptionTests,
+);
+
+await runTest(
+  "the Android app's departure-photo stamp is the portal's: the Cairo time, every location fallback, the wrapped lines, the panel geometry and every draw call's text, baseline, font, ink, shadow and gradient stop match drawEvidenceWatermark, and the JPEG quality, title, reference, routes, timeouts, size limit and watermark file are the portal card's own",
+  runMobileEvidenceStampParityTests,
+);
+
+await runTest(
+  "My email is private to each person: the owner comes from the session only and no route reads a person from the request, the compliance monitor can neither reach the personal table nor decrypt a personal app password (its own context-free blobs still open), the email reader is a script-less sandbox, a refused password stops all further logins before the password is opened again, and leavers are purged daily",
+  runPersonalMailboxTests,
+);
+
+await runTest(
+  "a new hire's company email is taken care of when they are added: HR's typed address always wins, a generated one follows the house first.second shape and never repeats a taken one, the notice names the person and never email, both employee-create paths open the task, and the app password pasted on the page is permission-gated, rate-capped, never logged or audited, and INSERTED under the hire's own single active login so a connection they made themselves always wins",
+  runNewHireMailboxTests,
+);
+
+await runTest(
+  "a tapped notification on the Android app goes where the server's own link says: the portal home and profile open the app's screens, any other Phoenix page (its query kept) opens in the browser, and a link that is not Phoenix's — another host, a look-alike, http, another port, a backslash, a control character, a script, a production link on a staging build — opens nothing; the push context route hands the phone the OneSignal app ID the server sends with",
+  runMobilePushLinkTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

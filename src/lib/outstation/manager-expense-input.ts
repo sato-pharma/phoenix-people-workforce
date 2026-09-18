@@ -25,6 +25,7 @@
  * together so they cannot drift apart again.
  */
 
+import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import type {
   ManagerExpenseAdminInput,
   ManagerExpenseDestination,
@@ -120,16 +121,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readDestination(value: unknown): ManagerExpenseDestination | null {
   if (!isRecord(value)) return null;
-  const latitude = Number(value.latitude);
-  const longitude = Number(value.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  // Never `Number(value.latitude)`: `Number(null)`, `Number("")` and `Number(" ")` are 0, which is
+  // finite, so an edit posting a destination with no coordinates passed the check below and
+  // updateManagerExpenseAsAdmin wrote 0,0 into the trip's captured_latitude/captured_longitude.
+  // The shared reader also drops half a pair and the exact pair 0,0, the same as every other
+  // outstation route; either way the result is null and the edit is refused exactly as before.
+  const position = readCapturedPosition(value.latitude, value.longitude);
+  if (!position) return null;
   return {
     area: optionalText(value.area),
     city: optionalText(value.city),
     country: optionalText(value.country),
     label: typeof value.label === "string" ? value.label : "",
-    latitude,
-    longitude,
+    latitude: position.latitude,
+    longitude: position.longitude,
     placeId: typeof value.placeId === "string" ? value.placeId : "",
   };
 }

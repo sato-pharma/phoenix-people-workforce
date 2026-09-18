@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence";
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -69,15 +70,15 @@ export async function POST(
 
     // Coordinates are optional on purpose. The owner chose to FLAG a departure photo taken far
     // from the trip rather than refuse it, so a device that cannot get a fix must still be able
-    // to submit — the review simply records the distance as unknown instead of as zero.
-    const latitude = Number(body.latitude);
-    const longitude = Number(body.longitude);
+    // to submit — the review simply records the distance as unknown instead of as zero. Never
+    // `Number(body.latitude)` here: `Number(null)` is 0, which stored a no-fix photo at 0,0.
+    const { latitude, longitude } = readDeparturePhotoPosition(body);
 
     const result = await captureOutstationDeparturePhoto(access, {
       imageDataUrl,
-      latitude: Number.isFinite(latitude) ? latitude : null,
+      latitude,
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
-      longitude: Number.isFinite(longitude) ? longitude : null,
+      longitude,
       requestId: id,
     });
 

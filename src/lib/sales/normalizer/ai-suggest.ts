@@ -13,7 +13,7 @@
 // With no key it is a no-op and the UI hides the button.
 
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
-import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { aiErrorCodeForResponse, isQuotaExhaustedBody, recordAiCall } from "@/lib/observability/ai-metrics";
 
 export type AiCandidate = { code: string; label: string };
 // rawAddress + rawTerritory carry the extra geo signal used for CUSTOMER (pharmacy) matching:
@@ -32,6 +32,12 @@ function resolveProvider(): AiProvider | null {
 
 export function hasAiKey(): boolean {
   return resolveProvider() !== null;
+}
+
+// The model answering right now. customer-ai-answers.ts keeps each model's answers apart, so a
+// model change asks again instead of serving another model's answers.
+export function aiSuggestModel(): string | null {
+  return resolveProvider()?.model ?? null;
 }
 
 function systemPrompt(kind: AiKind): string {
@@ -108,17 +114,9 @@ function shortReason(raw: string): string {
 // OpenAI (and compatible providers) return HTTP 429 for TWO very different problems: a transient
 // per-minute rate limit (waiting/retrying helps) OR a permanently exhausted quota — out of credit /
 // billing not set up (waiting never helps). Detect the quota case from the error body so the UI can
-// tell the user to fix billing instead of endlessly "waiting a moment".
-function isQuotaExhausted(rawBody: string): boolean {
-  if (rawBody.toLowerCase().includes("insufficient_quota")) return true;
-  try {
-    const j = JSON.parse(rawBody) as { error?: { code?: string; type?: string; message?: string } };
-    const tag = `${j?.error?.code ?? ""} ${j?.error?.type ?? ""}`.toLowerCase();
-    if (tag.includes("insufficient_quota") || tag.includes("billing")) return true;
-    const msg = String(j?.error?.message ?? "").toLowerCase();
-    return msg.includes("quota") || msg.includes("billing");
-  } catch { return false; }
-}
+// tell the user to fix billing instead of endlessly "waiting a moment". The detector lives in
+// ai-metrics.ts so every AI path reports the out-of-credit case the same way (and pages the owner).
+const isQuotaExhausted = isQuotaExhaustedBody;
 
 // Transient per-minute rate limits (not the quota-exhausted case, which retrying never fixes)
 // clear on their own within a few seconds — retry automatically instead of forcing the user to
@@ -154,6 +152,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
   // Captured so the failure row can say WHY. This is the exact path that answered 401 for days on
   // 2026-09-02 while nothing anywhere recorded that it had.
   let upstreamStatus: number | undefined;
+  let upstreamCode: string | undefined;
   try {
     for (let attempt = 0; ; attempt += 1) {
       const res = await fetch(`${provider.baseUrl}/chat/completions`, {
@@ -179,6 +178,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
       }
       upstreamStatus = res.status;
       const respBody = await res.text().catch(() => "");
+      upstreamCode = aiErrorCodeForResponse(res.status, respBody);
       if (res.status === 429 && !isQuotaExhausted(respBody)) {
         if (attempt < MAX_RATE_LIMIT_RETRIES) {
           // Exponential backoff with jitter: base, 2x base, 4x base (+ up to 250ms jitter).
@@ -196,7 +196,7 @@ async function generate(provider: AiProvider, kind: AiKind, unknowns: AiUnknown[
   } catch (error) {
     recordAiCall({
       component: "sales_normalizer_ai_suggest",
-      errorCode: upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus),
+      errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       purpose: `ai_suggest_${kind}`,

@@ -115,10 +115,40 @@ itself, not of which door created the developer account, so it holds on this rou
 🔴 **The fingerprint to register with any API provider is the APP SIGNING key's, never the upload
 key's.** Google re-signs the delivered artifact, so a Maps, Firebase or OAuth integration registered
 against the upload key's fingerprint will fail on every installed copy while working perfectly in
-testing. This is what gates the push-notifications phase.
+testing.
+
+**Push notifications do not depend on it** — an earlier version of this line said they gated the push
+phase, and they do not. Firebase asks for a certificate fingerprint only for features such as Google
+sign-in and phone-number sign-in; Cloud Messaging is not one of them, and OneSignal delivers through
+Cloud Messaging.
 
 🔴 **Every upload needs a higher `versionCode` than the one before it**, and the refusal comes after
 the build, not before.
+
+---
+
+## What the app reads from the phone
+
+In one place, because a store form or a device policy may ask:
+
+| Permission | Used for | When |
+| --- | --- | --- |
+| Camera | The profile photo, and evidence photos — today the outstation departure photo | Only while the person is taking a photo |
+| Precise and approximate location | Where an evidence photo was taken: stamped on the photo and sent to Phoenix with it | Only while an evidence photo is being taken — never in the background |
+| Notifications | Showing the notifications Phoenix already sends to the web portal — approvals, requests, reminders | Asked once per install, the first time the app opens signed in with notifications ready; after that only when the person presses "Turn on notifications" on Profile |
+
+The Phoenix server sends the coordinates to Google's geocoding service to word the address, exactly
+as it does for the portal's own departure photo. Background location is not merely unused:
+`app.json` blocks `ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE_LOCATION` from the manifest,
+so no library can add them back.
+
+The notification library, OneSignal, can collect location too. It is built without its location
+module (`disableLocation: true` in `app.json`), so notifications add no location reading.
+
+🔴 **OneSignal is a native module too**, so notifications also reach a phone only in a new binary.
+
+🔴 **The departure photo added native modules** (`expo-location`, `@shopify/react-native-skia`), so
+it reaches a phone only in a new binary with a higher `versionCode` — there is no over-the-air path.
 
 ---
 
@@ -126,8 +156,22 @@ the build, not before.
 
 - Create the company Google account.
 - Sign the Managed Google Play agreement, or create the enterprise.
+- Create the Expo account that EAS builds under.
+- **Give OneSignal its Android credentials** — without them the app is built, installed and signed in,
+  and no notification ever arrives:
+  1. Create a Firebase project and, under its service accounts, generate the **Cloud Messaging (FCM
+     v1) service-account key** — a JSON file.
+  2. Upload that file to the **same OneSignal app the web portal already uses**: Settings → Push &
+     In-App → Google Android (FCM). A second OneSignal app would split employees across two
+     audiences, and Phoenix's one send reaches only the one its server is configured for.
+  3. If Google refuses to generate the key, the organisation policy
+     `constraints/iam.disableServiceAccountKeyCreation` is on — the same one `android-web-app.ts`
+     runs into. An Organization Policy Administrator overrides it for that one project, the key is
+     generated, and the policy goes back on. Turning it back on does not disable a key already made.
+  4. The key is a credential: it goes into OneSignal and nowhere else, never into this repository.
 
-Both need the owner's own identity. Everything after them is ordinary work this repo can do.
+Each needs the owner's own identity or an account in his name. Everything after them is ordinary work
+this repo can do.
 
 ## What is not verified here
 
@@ -136,3 +180,12 @@ Both need the owner's own identity. Everything after them is ordinary work this 
   authenticates in production — the Google Cloud org policy
   (`constraints/iam.disableServiceAccountKeyCreation`) blocks long-lived service-account keys, and
   that applies here too.
+- **Whether a private app is asked for Google Play's Data safety form.** Public apps must fill it in;
+  nothing here confirms whether the managed Play iframe asks for it. If it does, the table above is
+  the answer.
+- **A notification arriving on a real phone.** The tap rules are tested and the app typechecks in CI,
+  but no build carrying OneSignal has run on a handset — that waits on the Firebase key and a first
+  EAS build. The first check, once both exist: sign in on the phone, allow notifications, see Profile
+  read "On", then press the push test in the web portal's notification settings, which sends only to
+  whoever presses it. Its link is the portal profile, so tapping it should open the app's Profile
+  screen.

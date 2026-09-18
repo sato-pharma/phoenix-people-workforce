@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import {
+  MISSING_CAPTURED_COORDINATES,
   parseCarEvidenceImageDataUrl,
   parseCarEvidenceMetadata,
   parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
+import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -37,6 +40,13 @@ export async function POST(request: Request) {
       );
     }
 
+    // The arrival position is required, exactly as on submit. Never `Number(body.capturedLatitude)`:
+    // `Number(null)` is 0, so a draft with no GPS fix was replayed as an arrival at 0°N 0°E.
+    const position = readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
+    if (!position) {
+      return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
+    }
+
     // This body must stay a SUBSET of what /api/outstation/submit accepts, never a superset.
     // Both routes assert the same permission — the submitting employee's own `outstation:create`
     // — so anything read here that submit does not read is a field an employee can set on his own
@@ -63,10 +73,12 @@ export async function POST(request: Request) {
     //
     // Adding a field back requires the owner's approval and an explicit gate here — not a default.
     const result = await syncOfflineOutstationRequest(access, {
-      capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
+      // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a
+      // claim with no accuracy for Super Admin review (owner, 2026-09-18).
+      capturedAccuracyMeters: readAccuracyInput(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
-      capturedLatitude: Number(body.capturedLatitude),
-      capturedLongitude: Number(body.capturedLongitude),
+      capturedLatitude: position.latitude,
+      capturedLongitude: position.longitude,
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
       expenseType: outstationTypes.expenseType,
       goTicketAmount: Number(body.goTicketAmount ?? 0),

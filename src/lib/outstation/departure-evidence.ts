@@ -23,6 +23,7 @@
 // outstation service's graph, and its other imports are type-only and erased at build.
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { readCapturedPosition, usablePosition } from "@/lib/outstation/captured-coordinates";
 
 /**
  * How far apart the two photos may be before the pair is worth a human look. Not a rejection
@@ -55,8 +56,18 @@ export type DepartureEvidenceReview = {
   summary: string;
 };
 
-function finiteNumber(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+/**
+ * The departure photo's position from a request body, for every client: the web card sends nulls
+ * when it has no fix, the Android app leaves the keys out. Either way the answer is null/null, so
+ * the review records the distance as UNKNOWN instead of measuring it from 0,0 — a phone with no
+ * fix used to be stored there and flagged as taken thousands of kilometres from the trip. The
+ * reading itself is shared with the arrival routes (captured-coordinates.ts).
+ */
+export function readDeparturePhotoPosition(body: {
+  latitude?: unknown;
+  longitude?: unknown;
+}): { latitude: number | null; longitude: number | null } {
+  return readCapturedPosition(body.latitude, body.longitude) ?? { latitude: null, longitude: null };
 }
 
 function instant(value: string | null | undefined): Date | null {
@@ -116,14 +127,14 @@ export function reviewDepartureEvidence(input: {
   departureLongitude: number | null | undefined;
   tripEndDate: string | null | undefined;
 }): DepartureEvidenceReview {
-  const aLat = finiteNumber(input.arrivalLatitude);
-  const aLon = finiteNumber(input.arrivalLongitude);
-  const dLat = finiteNumber(input.departureLatitude);
-  const dLon = finiteNumber(input.departureLongitude);
+  const arrival = usablePosition(input.arrivalLatitude, input.arrivalLongitude);
+  const departure = usablePosition(input.departureLatitude, input.departureLongitude);
 
   const distanceFromArrivalKm =
-    aLat != null && aLon != null && dLat != null && dLon != null
-      ? Number(haversineKm(aLat, aLon, dLat, dLon).toFixed(2))
+    arrival && departure
+      ? Number(
+          haversineKm(arrival.latitude, arrival.longitude, departure.latitude, departure.longitude).toFixed(2),
+        )
       : null;
 
   const arrivalAt = instant(input.arrivalCapturedAt);

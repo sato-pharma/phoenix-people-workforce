@@ -9,7 +9,7 @@
 // carry their own copies of this resolver; consolidating them onto this module is a safe follow-up
 // (kept separate here to avoid touching those live paths in the AI-explain change).
 
-import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
 
 export type AiProvider = { baseUrl: string; key: string; model: string };
 
@@ -50,6 +50,7 @@ export async function aiChatJson(
   // "HTTP 401" is the difference between "the key is wrong" and "the model is busy" — the two
   // that looked identical during the 2026-09-02 outage.
   let upstreamStatus: number | undefined;
+  let upstreamCode: string | undefined;
   try {
     const res = await fetch(`${provider.baseUrl}/chat/completions`, {
       body: JSON.stringify({
@@ -69,6 +70,7 @@ export async function aiChatJson(
     if (!res.ok) {
       upstreamStatus = res.status;
       const body = await res.text().catch(() => "");
+      upstreamCode = aiErrorCodeForResponse(res.status, body);
       throw new Error(`AI request failed (HTTP ${res.status}): ${body.slice(0, 200)}`);
     }
     const json = (await res.json()) as {
@@ -88,7 +90,7 @@ export async function aiChatJson(
   } catch (error) {
     recordAiCall({
       component: "sales_ai_provider",
-      errorCode: upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus),
+      errorCode: upstreamCode ?? (upstreamStatus === undefined ? "no_http_status" : String(upstreamStatus)),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       purpose,

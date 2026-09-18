@@ -740,7 +740,8 @@ export function MobileOutstationWizard({
     () => ({
       amWorkload: Number(amWorkload || 0),
       attachmentCount: ticketFiles.length,
-      capturedAccuracyMeters: captured?.capturedAccuracyMeters ?? 0,
+      // Never `?? 0`: 0 would reach the server as a perfect 0 m fix and pass the accuracy limit.
+      capturedAccuracyMeters: captured?.capturedAccuracyMeters ?? null,
       capturedAt: captured?.capturedAt,
       capturedLatitude: captured?.capturedLatitude ?? 0,
       capturedLongitude: captured?.capturedLongitude ?? 0,

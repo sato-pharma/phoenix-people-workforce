@@ -871,6 +871,15 @@ export const accessRegistry = [
   // (Phase 1, no write actions). Role gate lives in the domain helper
   // (assertPharmacyMasterAccess); Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/pharmacy-master/candidates", permission: null, guard: "domain-helper" }),
+  // "My email" in the envelope — each person's OWN Turbify mailbox, connected once with their own
+  // app password. `permission: null` for the same reason as the personal layout below: every route
+  // derives the owner from the session (src/lib/personal-mailbox/service.ts) and accepts no id, so
+  // there is nothing to grant — being signed in is the whole requirement, and the guard rejects on
+  // access.source. No role, Super Admin included, can reach another person's mailbox through here.
+  // Audit is deliberately not required: a Phoenix-side trail of who emailed whom would be the very
+  // monitoring this feature promises not to do.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["POST", "DELETE"], pattern: "/api/messages/mailbox/**", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
   // there is no resource to gate on, because the route can only ever read or write the CALLER'S
@@ -917,6 +926,10 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
+  // The native app's "which of my trips still owe a departure photo" list. It declares
+  // `outstation:create` because that is the capture it leads to; a caller without it is answered
+  // an empty list, never a 403, since the app signs out on any 403 (see the route's own comment).
+  sessionApi({ methods: readOnly, pattern: "/api/outstation/departure-photo-due", permission: { resource: "outstation", action: "create" } }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -1189,6 +1202,11 @@ export const accessRegistry = [
   // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
   // the entry named only half of what the route enforces.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
+  // The other end of the same job: a JOINER's mailbox. The POST connects a new hire's Turbify mailbox
+  // to their My email with the app password made while creating it, or rules they need none. It
+  // carries a mailbox credential in its body (sealed by the personal-mailbox service, never stored,
+  // logged or audited here), so it is update-gated, same-origin only, and rate-capped per hire.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes", permission: { resource: "mailbox_offboarding", action: "update" }, csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

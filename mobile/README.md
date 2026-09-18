@@ -304,25 +304,140 @@ the person's time.
 This app never records video, and an HR app requesting a microphone it never uses is the kind of
 thing an employee is right to distrust.
 
-🔴 **This is not the evidence camera, and must not be used as one.** The web app's live photo burns
-the time, the street address, the Phoenix brick, area and region and the coordinates into the image
-before upload, and opens the camera and the location together — because a venue photo without a fix
-proves nothing about a place, which is the owner's rule for marketing venue validation. A profile
-photo is not evidence of a place and needs none of that. Wiring `camera.ts` as it stands into venue
-validation, a direct-order storefront or an outstation departure photo would produce a picture the
-desk has no way to trust. That work belongs with the GPS phase.
+🔴 **`camera.ts` on its own is still not the evidence camera.** It returns a bare picture — no time,
+no place, no stamp — and a profile photo needs nothing more. Evidence goes through
+`src/lib/evidence-photo.ts` (next section), which wraps it. Wiring `capturePhoto` straight into venue
+validation, a direct-order storefront or any other evidence upload would produce a picture the desk
+has no way to trust.
+
+## The departure photo — evidence with a place and a time
+
+An outstation trip does not reach payroll until its departure photo is taken, and it can only be
+taken at the destination. The Home tab lists the trips waiting for one — `GET
+/api/outstation/departure-photo-due`, the portal's own list from the same server function — and
+"Open camera" on a trip runs `captureDeparturePhoto` in `src/lib/evidence-photo.ts`:
+
+1. **Location permission first, then the camera.** Android's permission prompt and its "turn on
+   location" dialog are full-screen; landing one on a photo the person has just framed reads as the
+   app losing it.
+2. **The camera**, at quality 1 — the camera's own file, so the photo is compressed once, at the
+   end, as on the web.
+3. **A fresh GPS fix**, waited for at most 12 seconds (the portal's own patience) and never a cached
+   last-known position. Then **the address**, from `POST /api/outstation/reverse-geocode`: the server
+   words the address, brick, area and region, so the app never words a place itself.
+4. **The stamp, burned into the pixels** with Skia (`evidence-burn.ts`), the photo shrunk to 1280 px
+   on its longest side and saved as a JPEG at quality 0.74.
+5. **The upload**, to the portal's own route, `POST /api/outstation/{id}/departure-photo`.
+
+🔴 **The stamp is the portal's stamp, and a test holds it there.** An approver compares the departure
+photo with the trip's arrival photo, which the portal stamped. `evidence-stamp.ts` is a copy of the
+portal's pure stamp code
+([`evidence-watermark.ts`](../src/components/outstation/evidence-watermark.ts) and
+[`location-stamp.ts`](../src/lib/evidence/location-stamp.ts)), because the app cannot import a
+browser-canvas module. [`tests/mobile-evidence-stamp-parity.test.ts`](../tests/mobile-evidence-stamp-parity.test.ts),
+in the web app's required `test` check, runs the two side by side and fails on any difference in
+wording, time, wrapping, geometry or draw call. Change the web stamp and that test says to change the
+copy in the same PR. Never loosen the test instead.
+
+**A missing position is said, never faked.** With no fix the stamp reads "no GPS fix" and the upload
+**leaves the coordinates out** rather than sending null: the route reads them with
+`Number(body.latitude)`, `Number(null)` is 0, and the approver would be told the photo was taken
+thousands of kilometres from the trip instead of "unknown". After the save, a photo with no position
+or only an approximate one says why, and what to change next time.
+
+**Foreground location only.** The `expo-location` plugin runs with background location, the
+foreground service and activity recognition all off, and `blockedPermissions` in `app.json` strips
+`ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE_LOCATION` from the manifest, so no library can
+bring them back. The app reads a position only while someone is taking an evidence photo.
+
+**No queue.** A photo that fails to send is not kept for a later retry: a departure photo sent from
+somewhere else would carry the right stamp and the wrong journey. The person is told to take it again
+while still there. For the same reason the list is **never shown from the offline copy** — a stale
+list offers the camera for a trip already photographed, and the approver's summary counts every
+retake.
+
+**Why Skia.** The photo is decoded, scaled, stamped and encoded on the phone in one pass. Skia's
+decoder applies the JPEG's orientation tag, so a camera file saved sideways comes out upright, and its
+paragraph layout shapes Arabic — Google returns the address in Arabic as often as in English — where
+drawing with a single typeface prints empty boxes. It adds a few megabytes to the app.
+
+🔴 **Skia and `expo-location` are native modules, so this needs a new build** with a higher
+`versionCode`. There are no over-the-air updates (see above), so a phone on an older build simply
+does not have the departure photo until it installs the new one.
+
+## Notifications
+
+The phone gets the notifications the browser gets — an approval waiting, a request answered, a
+reminder — from the same send. **The server's send path did not change.**
+
+**How.** Phoenix sends every push through OneSignal, addressed to an HR ID rather than to a device
+(`sendPushNotification` in [`src/lib/notifications/push.ts`](../src/lib/notifications/push.ts)), and
+OneSignal delivers to every device signed in under that ID. [`src/lib/push.tsx`](src/lib/push.tsx)
+signs the phone into the **same OneSignal app** as the web portal, under the employee's HR ID, so the
+existing send reaches the phone and the browser alike. The OneSignal app ID is not built into the
+app: `GET /api/notifications/push/context` returns it beside the HR ID, read from the same
+`NEXT_PUBLIC_ONESIGNAL_APP_ID` the server sends with, so there is one value to keep right, not two.
+The phone then records itself with Phoenix (`POST /api/notifications/push/register`, device type
+`mobile`) exactly as a browser does, because Phoenix sends only to someone with at least one
+subscribed device.
+
+**One switch for both.** Push is on unless the employee turned it off in the web portal's
+notification settings, and that switch covers the phone too.
+
+**Asking for the permission.** Android 13 and later ask before an app may show notifications. The app
+asks by itself **once per install**, the first time it opens signed in with notifications ready to
+deliver — the web portal's rule (`push-opt-in-nudge-rules.ts`) is that a nudge asked more than once
+becomes wallpaper. After that, the Notifications card on Profile says where things stand, and "Turn
+on notifications" there is the way back for someone who said no.
+
+**What a tap opens.** Every push carries a link to the web portal, because the same send reaches
+browsers. A manifest flag set by [`plugins/with-onesignal-opens-the-app.js`](plugins/with-onesignal-opens-the-app.js)
+stops OneSignal opening that link in the phone's browser, and
+[`src/lib/push-link.ts`](src/lib/push-link.ts) decides instead:
+
+| The link | A tap opens |
+| --- | --- |
+| The portal home, or the portal profile | That screen, in the app |
+| Any other Phoenix page | That page in a browser tab over the app, because the app has no screen for it yet. The tab does not share the app's sign-in, so someone not already signed in to the portal in Chrome signs in there. |
+| Anything that is not Phoenix's own address | The app, and nothing else |
+
+[`tests/mobile-push-link.test.ts`](../tests/mobile-push-link.test.ts), in the web app's required
+`test` check, builds the links with the server's own `sendPushNotification` and holds that table —
+including the look-alike addresses a browser would resolve to another site.
+
+**Signing out ends it; a lapsed session does not.** A deliberate sign-out logs the phone out of
+OneSignal and tells Phoenix the device no longer reaches that employee, while the token still
+works. A session that runs out on its 12-hour clock leaves push alone: the same person is still
+holding the phone, and ending push there would silence their notifications twice a day.
+
+🔴 **"Log out everywhere" does not stop notifications on a phone.** To the app, a revoked session
+looks like a lapsed one, so push is left alone, and a lost phone keeps showing that employee's
+notifications. Stopping them today means deleting that phone's subscription in OneSignal —
+`push_subscriptions` holds its ID, on the row with device type `mobile`.
+
+**Not in Expo Go.** OneSignal is a native module that Expo Go does not contain. There the app runs
+without push, and Profile says "Expo Go cannot receive notifications. The installed app can." Push
+needs an EAS build, and before one can deliver anything the owner has two things to create — the
+Firebase key uploaded to OneSignal, and the Expo account. [PUBLISHING.md](PUBLISHING.md) has both.
+
+**No location.** OneSignal's SDK can collect the phone's location. `disableLocation: true` in
+`app.json` builds it without its location module, so the only place this app reads a position is
+still the evidence photo.
+
+**The status-bar icon** is `assets/phoenix/notification-icon.png`. Android draws only the shape of a
+notification icon, so it is the Phoenix mark as a white silhouette on transparency, with Phoenix
+orange as the accent colour.
+
+🔴 **OneSignal is a native module, so this needs a new build** with a higher `versionCode`, like the
+departure photo before it.
 
 ## What is not here yet
 
-Push notifications and GPS. Both exist in the web portal and both need native equivalents in this
-app — they are the next phases, not oversights.
+**The other evidence photos are still web-only**: the arrival photo (taken inside the expense
+wizard, which this app does not have), direct-order storefronts and marketing venue validation. Each
+burns the same stamp, so a native one reuses `evidence-stamp.ts` and `evidence-burn.ts` rather than
+inventing a second stamp — and each needs its own list and route checked, as the departure photo did.
 
-🔴 **Push notifications are gated on the app signing key**, not on code: Firebase has to be
-registered with the **app signing** key's fingerprint, never the upload key's. See the signing
-section above before starting that phase.
-
-🔴 **GPS is what unblocks the evidence flows**, not the camera — see the warning above. The pairing
-is the point: `fetchEvidenceLocation` and the watermark helpers in
-[`src/components/outstation/evidence-watermark.ts`](../src/components/outstation/evidence-watermark.ts)
-are the contract a native evidence capture has to satisfy, and they are shared by every Phoenix live
-photo. Port that contract rather than inventing a second one.
+**No retake from the app.** The portal's expense submissions page can retake a departure photo while
+the trip window is open; the app offers the camera only for a trip that has none yet. A retake is
+still made from the portal.

@@ -47,9 +47,11 @@ import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import {
   outstationCampaignRuleOutcome,
   outstationDvEvidenceWindowClosed,
+  outstationGpsAccuracyHoldReason,
   outstationTicketEvidenceRejection,
   type OutstationCampaignRuleOutcome,
 } from "@/lib/outstation/decision";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
@@ -143,7 +145,8 @@ import type {
 
 type ValidationContext = {
   access: AccessContext;
-  capturedAccuracyMeters: number;
+  /** Null when the device reported no accuracy — never read as 0 m. */
+  capturedAccuracyMeters: number | null;
   capturedAt?: string | null;
   capturedLatitude: number;
   capturedLongitude: number;
@@ -1153,7 +1156,8 @@ async function validateCapturedLocation(
     eligibilityStatus !== "not_eligible" && (!residenceGovernorate || !destinationGovernorate);
 
   const result: OutstationCaptureResult = {
-    capturedAccuracyMeters: params.capturedAccuracyMeters,
+    // Read once more at the service boundary, so a caller that hands over NaN still stores null.
+    capturedAccuracyMeters: readAccuracyInput(params.capturedAccuracyMeters),
     capturedAt,
     capturedLatitude: params.capturedLatitude,
     capturedLocationSource: "browser_gps",
@@ -1199,7 +1203,7 @@ async function validateCapturedLocation(
 export async function captureOutstationLocation(
   access: AccessContext,
   input: {
-    capturedAccuracyMeters: number;
+    capturedAccuracyMeters: number | null;
     capturedAt?: string;
     capturedLatitude: number;
     capturedLongitude: number;
@@ -1451,6 +1455,10 @@ async function notifyOutstationSubmitted(
       latitude: request.capturedLatitude,
       longitude: request.capturedLongitude,
     });
+    const capturedAccuracyText =
+      request.capturedAccuracyMeters === null
+        ? "accuracy not reported"
+        : `±${request.capturedAccuracyMeters}m`;
 
     const metrics = [
       ...(heldForReview
@@ -1537,8 +1545,8 @@ async function notifyOutstationSubmitted(
         // read as an exact one. See captured-location.ts.
         label: "Location match",
         value: capturedLocation.confidence
-          ? `${capturedLocation.confidence} · captured ${formatPhoenixDateTime(request.capturedAt)} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`
-          : `Not matched · captured ${formatPhoenixDateTime(request.capturedAt)} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`,
+          ? `${capturedLocation.confidence} · captured ${formatPhoenixDateTime(request.capturedAt)} (${capturedAccuracyText}, ${request.offlineCaptured ? "offline sync" : "online"})`
+          : `Not matched · captured ${formatPhoenixDateTime(request.capturedAt)} (${capturedAccuracyText}, ${request.offlineCaptured ? "offline sync" : "online"})`,
       },
       { label: "Notes", value: text(request.notes) || "—" },
     ];
@@ -1799,13 +1807,12 @@ export async function submitOutstationRequest(
   // Admin-editable policy limits. Both were previously stored and rendered in the
   // policy editor but enforced nowhere, so a kilometre-inaccurate GPS fix or an
   // offline capture synced days later auto-paid exactly like a clean one. Neither
-  // rejects — a fuzzy or stale capture is a review signal, not proof of abuse.
-  const capturedAccuracyMeters = numberValue(calculation.capturedAccuracyMeters);
-  const gpsAccuracyLimit = numberValue(submitPolicy.gpsAccuracyThresholdMeters);
-  const gpsAccuracyHoldReason =
-    gpsAccuracyLimit > 0 && capturedAccuracyMeters > gpsAccuracyLimit
-      ? `The captured GPS accuracy (${Math.round(capturedAccuracyMeters)} m) is outside the ${gpsAccuracyLimit} m policy limit, so this request is held for Super Admin review before it moves to payroll.`
-      : null;
+  // rejects — a fuzzy or stale capture is a review signal, not proof of abuse. An accuracy the
+  // device never reported is null here, never 0 m, and holds too (owner, 2026-09-18).
+  const gpsAccuracyHoldReason = outstationGpsAccuracyHoldReason({
+    capturedAccuracyMeters: calculation.capturedAccuracyMeters,
+    gpsAccuracyLimitMeters: numberValue(submitPolicy.gpsAccuracyThresholdMeters),
+  });
 
   const offlineSyncLimitHours = numberValue(submitPolicy.maxOfflineSyncDelayHours);
   const capturedAtMs = calculation.capturedAt ? Date.parse(calculation.capturedAt) : Number.NaN;
@@ -2190,7 +2197,9 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     attachmentCount: numberValue(row.attachment_count),
     approvalReason: text(row.approval_reason),
     approvalRecommendation: normalizeApprovalRecommendation(text(row.approval_recommendation)),
-    capturedAccuracyMeters: numberValue(row.captured_accuracy_meters),
+    // Never numberValue: a stored null (no accuracy reported) would read back as 0, which is the
+    // manual-entry marker expense-command.ts looks for.
+    capturedAccuracyMeters: readAccuracyInput(row.captured_accuracy_meters),
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
     capturedLongitude: numberValue(row.captured_longitude),
@@ -2313,28 +2322,35 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
 }
 
 /**
- * Signs both evidence kinds a request can carry: the car photo AND the ticket attachments.
+ * Signs every evidence kind a request can carry: the arrival photo, the departure photo AND the
+ * ticket attachments.
  *
  * Tickets were previously left unsigned here, so the admin request detail received only
  * their metadata (name/type/size) and rendered each one as an inert row — it looked
  * clickable but had no href, which is the "the ticket attachment doesn't open" report of
  * 2026-08-04. The Expense Approvals page never hit this because it fetches its own signed
  * URLs from /api/admin/outstation/[id]/attachments.
+ *
+ * The departure photo was left unsigned the same way until 2026-09-18, so no approver screen
+ * could show it: the one approver (the Super Admin) saw the arrival photo alone.
  */
 async function attachCarEvidenceSignedUrls(
   requests: OutstationExpenseRequest[],
 ): Promise<OutstationExpenseRequest[]> {
   return Promise.all(
     requests.map(async (request) => {
-      const [carEvidenceImageUrl, ticketAttachmentUrls, meetingInvoiceUrl] = await Promise.all([
-        createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
-        createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
-        createOutstationCarEvidenceSignedUrl(request.meetingInvoicePath),
-      ]);
+      const [carEvidenceImageUrl, departureEvidenceImageUrl, ticketAttachmentUrls, meetingInvoiceUrl] =
+        await Promise.all([
+          createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+          createOutstationCarEvidenceSignedUrl(request.departureEvidenceImagePath),
+          createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
+          createOutstationCarEvidenceSignedUrl(request.meetingInvoicePath),
+        ]);
 
       return {
         ...request,
         carEvidenceImageUrl,
+        departureEvidenceImageUrl,
         meetingInvoiceUrl,
         ticketAttachmentUrls,
       };
@@ -2603,9 +2619,16 @@ export async function getOutstationRequestById(
   };
   if (!options?.includeCarEvidenceSignedUrl) return request;
 
+  // Both photos, always together: an approver shown the arrival photo alone cannot see whether
+  // the employee was still there when he left (see attachCarEvidenceSignedUrls).
+  const [carEvidenceImageUrl, departureEvidenceImageUrl] = await Promise.all([
+    createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+    createOutstationCarEvidenceSignedUrl(request.departureEvidenceImagePath),
+  ]);
   return {
     ...request,
-    carEvidenceImageUrl: await createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+    carEvidenceImageUrl,
+    departureEvidenceImageUrl,
   };
 }
 

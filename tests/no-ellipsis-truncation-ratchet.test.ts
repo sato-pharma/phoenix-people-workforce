@@ -169,8 +169,12 @@ import path from "node:path";
  * 196 -> 194 on 2026-09-17: the admin shell's Weekly Sales Dashboard (weekly-dashboard-view-impl.tsx).
  * The product mix legend and the trend tooltip's distributor names ended in an ellipsis; both are now
  * `min-w-0 break-words` and wrap. Pinned by tests/weekly-sales-fits-the-screen.test.ts.
+ *
+ * 194 -> 193 on 2026-09-18: Expense Approvals' ticket and receipt tiles (trip-attachments.tsx). A
+ * long file name ended in an ellipsis under the picture; it is `break-words` now and wraps. Pinned
+ * by tests/outstation-approver-trip-photos.test.ts.
  */
-const BASELINE = 194;
+const BASELINE = 193;
 
 const ROOTS = ["app", "src"];
 

@@ -50,9 +50,12 @@ export async function POST(request: Request) {
       licenseDataUrl: body.licenseDataUrl ? String(body.licenseDataUrl) : null,
       validationRoute: body.validationRoute === "invoice" ? "invoice" : "field",
       invoiceDataUrl: body.invoiceDataUrl ? String(body.invoiceDataUrl) : null,
-      capturedLatitude: body.capturedLatitude == null ? null : Number(body.capturedLatitude),
-      capturedLongitude: body.capturedLongitude == null ? null : Number(body.capturedLongitude),
-      capturedAccuracyMeters: body.capturedAccuracyMeters == null ? null : Number(body.capturedAccuracyMeters),
+      // Passed through exactly as posted; the service reads the pin and its accuracy. Never
+      // `Number(...)` here: `Number("")` and `Number(" ")` are 0, which filed a blank pin at 0°N 0°E
+      // and stored a blank accuracy as a perfect 0 m fix.
+      capturedLatitude: body.capturedLatitude,
+      capturedLongitude: body.capturedLongitude,
+      capturedAccuracyMeters: body.capturedAccuracyMeters,
       capturedAt: body.capturedAt ? String(body.capturedAt) : null,
       capturedAddress: body.capturedAddress ? String(body.capturedAddress) : null,
     });
