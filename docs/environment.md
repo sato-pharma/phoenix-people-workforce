@@ -108,6 +108,12 @@ candidate either way. Set them in Railway only — never in a committed file.
 | ZOOM_CLIENT_SECRET | The app's client secret (server only) |
 | ZOOM_HOST_USER | Email of the Zoom user who hosts every interview meeting |
 
+The app needs the scopes for the three calls Phoenix makes — create a meeting for the host, move
+it, and delete it when the interview is cancelled: `meeting:write:meeting:admin`,
+`meeting:update:meeting:admin` and `meeting:delete:meeting:admin` (an older app with classic scopes
+needs only `meeting:write:admin`). Activate the app in the Zoom Marketplace, or every token request
+is refused.
+
 ## Attendance Agent (Optional)
 
 | Variable | Description | Default |
