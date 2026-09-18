@@ -282,11 +282,47 @@ anything over 1,600 bytes rather than truncating it, and simply does not cache t
 portal snapshot is a few hundred bytes of scalars, so this is headroom — but a future screen wanting
 to cache a long list needs a different store and must not quietly squeeze into this one.
 
+## Taking a photo
+
+`src/lib/camera.ts` opens the camera and returns what was taken. The first screen to use it is the
+profile tab, where an employee sets their own photo — `POST /api/employee-portal/profile-photo`, the
+same route and the same `employee_profile:update` permission the web app's profile tab uses.
+
+**The camera only — never the gallery.** `launchImageLibraryAsync` is deliberately not imported, so
+a picture this app sends was taken on this phone, now. The web app's live photo capture makes the
+same choice for the same reason: an image chosen from a gallery can be any image from any day. A
+"choose from library" button added here would retire that property for every future screen at once.
+
+**Every outcome is ordinary, so nothing throws.** A tapped-away camera, a refused permission, an
+oversized file: `capturePhoto` returns a discriminated union and the screen says the one true thing.
+A refused permission is reported two different ways depending on `canAskAgain`, because "tap again
+and allow" and "turn it on in Android Settings" are different instructions and guessing wrong wastes
+the person's time.
+
+**The app asks for the camera and nothing else.** `expo-image-picker`'s config plugin adds
+`RECORD_AUDIO` to the manifest by default; `microphonePermission: false` in `app.json` blocks it.
+This app never records video, and an HR app requesting a microphone it never uses is the kind of
+thing an employee is right to distrust.
+
+🔴 **This is not the evidence camera, and must not be used as one.** The web app's live photo burns
+the time, the street address, the Phoenix brick, area and region and the coordinates into the image
+before upload, and opens the camera and the location together — because a venue photo without a fix
+proves nothing about a place, which is the owner's rule for marketing venue validation. A profile
+photo is not evidence of a place and needs none of that. Wiring `camera.ts` as it stands into venue
+validation, a direct-order storefront or an outstation departure photo would produce a picture the
+desk has no way to trust. That work belongs with the GPS phase.
+
 ## What is not here yet
 
-Push notifications, camera and GPS. All three exist in the web portal and all three need native
-equivalents in this app — they are the next phases, not oversights.
+Push notifications and GPS. Both exist in the web portal and both need native equivalents in this
+app — they are the next phases, not oversights.
 
 🔴 **Push notifications are gated on the app signing key**, not on code: Firebase has to be
 registered with the **app signing** key's fingerprint, never the upload key's. See the signing
 section above before starting that phase.
+
+🔴 **GPS is what unblocks the evidence flows**, not the camera — see the warning above. The pairing
+is the point: `fetchEvidenceLocation` and the watermark helpers in
+[`src/components/outstation/evidence-watermark.ts`](../src/components/outstation/evidence-watermark.ts)
+are the contract a native evidence capture has to satisfy, and they are shared by every Phoenix live
+photo. Port that contract rather than inventing a second one.

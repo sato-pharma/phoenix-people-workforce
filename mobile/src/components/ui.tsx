@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import {
   ActivityIndicator,
   Pressable,
@@ -52,6 +53,52 @@ export function Card({
       ]}
     >
       {children}
+    </View>
+  );
+}
+
+/**
+ * An employee's photo, or their initials when there is none.
+ *
+ * SQUARE, like everything else here. An avatar is a circle almost everywhere in the industry, and
+ * that is exactly why this note exists: the owner's square-edge rule has no exception for one, and
+ * "it is an avatar" is the reasoning that would quietly reintroduce a radius into a file whose whole
+ * point is that rounding is un-expressible. It takes no `borderRadius` prop for the same reason.
+ *
+ * `headers` is passed through to the image request because the photo route authenticates the same
+ * way every other Phoenix route does — an <Image> pointed at it without the bearer token silently
+ * renders nothing, which looks exactly like "this employee has no photo".
+ */
+export function Avatar({
+  initials,
+  size = 72,
+  source,
+}: {
+  initials: string;
+  size?: number;
+  source?: { headers?: Record<string, string>; uri: string } | null;
+}) {
+  const palette = usePalette();
+
+  return (
+    <View
+      style={{
+        alignItems: "center",
+        backgroundColor: palette.surface2,
+        borderColor: palette.line,
+        borderRadius: radius,
+        borderWidth: hairline,
+        height: size,
+        justifyContent: "center",
+        overflow: "hidden",
+        width: size,
+      }}
+    >
+      {source ? (
+        <Image contentFit="cover" source={source} style={{ height: size, width: size }} />
+      ) : (
+        <Text style={[type.figure, { color: palette.inkSoft }]}>{initials}</Text>
+      )}
     </View>
   );
 }
