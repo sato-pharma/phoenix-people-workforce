@@ -553,9 +553,14 @@ export async function runClosingExportOrganogramRegionLabelsTests() {
       + "sorts after Minia 1 and 2 rather than before them as it did under one Upper Egypt",
   );
   assert.equal(
-    totalGrid.find((row) => row["Area Code"] === "UE2")?.["Sales Value"],
+    totalGrid.find((row) => row["Area Code"] === "UE2")?.["Data Value"],
     10_000,
     "renaming a region must not move a Total figure",
+  );
+  assert.equal(
+    totalGrid.find((row) => row["Area Code"] === "UE2")?.["Sales Value"],
+    10_000 + 20_370,
+    "Minia 2's Sales on Total adds its direct order, as the Closing Matrix does (owner, 2026-09-18)",
   );
 
   assert.deepEqual(mapRegionMentions(august), [], "no sheet of the August file may name the map's Upper Egypt");

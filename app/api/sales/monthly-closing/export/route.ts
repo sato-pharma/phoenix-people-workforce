@@ -19,6 +19,7 @@ import {
   buildClosingDetailsWorkbook,
   buildMonthlyClosingWorkbook,
   buildPortalClosingWorkbook,
+  directByTotalCell,
   fileDirectCellsUnderMatrixRegions,
 } from "@/lib/sales/monthly-closing-export";
 import {
@@ -417,16 +418,16 @@ export async function POST(request: Request) {
       // Stated on the Total sheet, because a rebuilt slice has no retail half to subtract. Derived
       // as (with direct) minus (without) so a direct row whose area or product is absent from this
       // matrix — never placed in a cell — is not bridged as if it were on the sheet.
-      const directPlaced = rowLevelActive
-        ? (() => {
-          const invoiceOnly = rebuildMatrixFromRows(matrix, details.rows);
-          return {
-            units: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0)
-              - invoiceOnly.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
-            value: rebuiltMatrix.grandTotal.rowTotal.salesValue - invoiceOnly.grandTotal.rowTotal.salesValue,
-          };
-        })()
+      const invoiceOnly = rowLevelActive ? rebuildMatrixFromRows(matrix, details.rows) : null;
+      const directPlaced = invoiceOnly
+        ? {
+          units: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0)
+            - invoiceOnly.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+          value: rebuiltMatrix.grandTotal.rowTotal.salesValue - invoiceOnly.grandTotal.rowTotal.salesValue,
+        }
         : undefined;
+      // The same difference cell by cell, so the Total sheet adds each area its own direct.
+      const directPlacedCells = invoiceOnly ? directByTotalCell(rebuiltMatrix, invoiceOnly) : undefined;
 
       // The store split. A wholesaler supplies its whole city rather than only the area it stands
       // in, so its sell-in on Pedia / Anti Infective / CNS is shared evenly across that city's
@@ -439,10 +440,11 @@ export async function POST(request: Request) {
       // does move, because part of the allocation belongs to areas that are not on show, and
       // `storeSplitApplied` is exactly that amount — stated on the Total sheet as its own
       // reconciliation line rather than quietly disappearing from the headline.
-      const { applied: storeSplitApplied, matrix: workbookMatrix } = applyStoreSplitToMatrix(
-        rebuiltMatrix,
-        storeSplitNet,
-      );
+      const {
+        applied: storeSplitApplied,
+        cells: storeSplitCells,
+        matrix: workbookMatrix,
+      } = applyStoreSplitToMatrix(rebuiltMatrix, storeSplitNet);
 
       // The channel tabs. The retail half gets the SAME split write-back as the master — the split
       // only ever moves distributor (retail) money between areas of one city, so applying it to the
@@ -545,6 +547,7 @@ export async function POST(request: Request) {
         // Only set under a row-level filter, where `channels` is null and the Total sheet has no
         // retail half to derive the direct bridge from.
         directPlaced,
+        directPlacedCells,
         filterNote,
         includeTargetSheet: !rowLevelActive,
         // ALWAYS carried, so the workbook shows what the SCREEN shows. Owner's rule, 2026-08-26:
@@ -560,6 +563,7 @@ export async function POST(request: Request) {
         // can still see WHERE the rest of that city's share went; `storeSplitScopeAreaCodes` marks
         // which of those areas this workbook actually covers.
         storeSplitApplied,
+        storeSplitCells,
         storeSplitRows: monthRows.rows,
         // Computed from the REAL rows above; the answer is masked by code, because a split
         // entry carries no distributor to recognise. See closing-source-mask.ts.

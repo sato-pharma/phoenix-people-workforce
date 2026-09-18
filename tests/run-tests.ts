@@ -1388,6 +1388,8 @@ import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-c
 
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
+import { runClosingTotalSheetMatchesMatrixTests } from "./closing-total-sheet-matches-matrix.test.ts";
+
 import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
 import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-office.test.ts";
 import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
@@ -4311,6 +4313,11 @@ await runTest(
 await runTest(
   "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero, the share belonging to excluded areas is named, and the export uses the SCREEN's split rather than deriving a second one)",
   runMonthlyClosingExportStoreSplitFilteredTests,
+);
+
+await runTest(
+  "Total sheet agrees with the Closing Matrix area by area (store split and direct orders included, owner 2026-09-18)",
+  runClosingTotalSheetMatchesMatrixTests,
 );
 
 await runTest(
