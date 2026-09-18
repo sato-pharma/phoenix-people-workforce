@@ -147,7 +147,7 @@ export function runCoordinateParseFollowupsTests() {
   const service = stripComments(readFileSync(DIRECT_ORDER_SERVICE, "utf8"));
   assert.match(
     service,
-    /import \{ readCoordinateInput \} from "@\/lib\/geo\/coordinate-input";/,
+    /import \{[^}]*\breadCoordinateInput\b[^}]*\} from "@\/lib\/geo\/coordinate-input";/,
     "the direct-orders service reads the pin with the shared reader",
   );
   assert.match(
