@@ -69,6 +69,24 @@ async function resolveCeoSuperAdminRecipients(): Promise<string[]> {
 }
 
 /**
+ * The report must be the month it is named for. getSosDashboard answers a month with no validated
+ * sales with the NEWEST month instead, so an unchecked build emailed that month's workbook and
+ * figures under the requested month's filename, and spent the requested month's once-only send key
+ * on it. Returns why not to send, or null when the dashboard answered for exactly `requested`.
+ */
+export function reportPeriodMismatch(
+  requested: string,
+  answered: { period: string | null; selectedPeriods: string[] },
+): string | null {
+  const requestedLabel = periodProseLabel(requested);
+  if (!answered.period) return `No Source-of-Sales data is available for ${requestedLabel}.`;
+  const exactlyRequested =
+    answered.period === requested && answered.selectedPeriods.length === 1 && answered.selectedPeriods[0] === requested;
+  if (exactlyRequested) return null;
+  return `${requestedLabel} has no validated Source-of-Sales data, so no report was sent. The dashboard would have answered with ${periodProseLabel(answered.period)} instead.`;
+}
+
+/**
  * Build the CEO/Super-Admin-scope Source-of-Sales BI workbook for `period` and email it to
  * every active CEO / Super Admin (or `recipientsOverride`, for manual testing against a single
  * address). Never sends confidential data anywhere but this fixed, role-derived recipient set.
@@ -96,8 +114,9 @@ export async function buildAndEmailSosBiReport(input: {
     // CEO / Super Admin roles the on-screen toggle already gates the reveal to.
     revealRestrictedProducts: true,
   });
-  if (!data.period) {
-    return { period, reason: `No Source-of-Sales data available for period ${period}.`, sent: false };
+  const wrongMonth = reportPeriodMismatch(period, data);
+  if (wrongMonth) {
+    return { period, reason: wrongMonth, sent: false };
   }
 
   const recipients =
@@ -116,7 +135,7 @@ export async function buildAndEmailSosBiReport(input: {
     generatedBy: "Phoenix Automated Report",
   });
 
-  const periodLabel = periodProseLabel(data.period);
+  const periodLabel = periodProseLabel(period);
   const subject = `Source of Sales — ${periodLabel} Executive BI Report`;
   const metadataRows = [
     { label: "Period", value: periodLabel },
