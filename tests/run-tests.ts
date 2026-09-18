@@ -4316,7 +4316,7 @@ await runTest(
 );
 
 await runTest(
-  "closing corrections: a reversal is found by what the second month TOOK BACK, so Pharma Overseas taking 251 Saginko units back from Menoufia 1 in May 2026 is reported although 685 ordinary units keep the cell net +434",
+  "closing corrections: a take-back is matched pharmacy by pharmacy, so Overseas taking back 122 units of Lacto Advanced 2 in Qalubeya in March 2026 is listed though the month's other sales leave the cell at -35, and a same-month correction never counts",
   runClosingCorrectionsMaskedReversalsTests,
 );
 
