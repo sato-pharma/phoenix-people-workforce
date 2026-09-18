@@ -1766,6 +1766,7 @@ import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parit
 import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone-app-push.test.ts";
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
+import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -6077,8 +6078,13 @@ await runTest(
 );
 
 await runTest(
-  "the normalizer's invoice day is a real date or none, never an impossible year: Sofico's BILLINGDATE sent as an Excel serial (46247) and mec's month column (202607), each of which JavaScript reads as a year, give no day, while a text date and an Excel date cell still read to the day and keep their month",
+  "the normalizer's invoice day is a real date or none, never an impossible year: mec's month column (202607), which JavaScript reads as a year, gives no day, while Sofico's Excel serial (46247), a text date and an Excel date cell read to the day and keep their month",
   runNormalizerInvoiceDayImpossibleYearTests,
+);
+
+await runTest(
+  "the normalizer reads Sofico's Excel serial billing dates as the real date, month and day together: BILLINGDATE 46247 is 13 Aug 2026, so an all-August file resolves to August with no month picked by hand, the days either side land in July and September, Sofico Tender reads the same, and mec's six-digit month is never taken for a serial",
+  runNormalizerSoficoExcelSerialDateTests,
 );
 
 await runTest(
