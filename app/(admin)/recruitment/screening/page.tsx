@@ -101,6 +101,7 @@ async function ScreeningContent({
       canSendToManagers={workspace.canSendToManagers}
       canWriteNotes={canUpdate}
       counts={workspace.counts}
+      filterCounts={workspace.filterCounts}
       filteredOut={workspace.filteredOut}
       hiringManagers={workspace.hiringManagers}
       notified={workspace.notified}

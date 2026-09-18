@@ -276,6 +276,7 @@ import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region
 import { runRecruitmentDeclaredPreferencesTests } from "./recruitment-declared-preferences.test.ts";
 import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
+import { runScreeningFilterCountsTests } from "./recruitment-screening-filter-counts.test.ts";
 import { runScreeningRoleMismatchTests } from "./recruitment-screening-role-mismatch.test.ts";
 import { runWhatsAppAnswersTests } from "./recruitment-whatsapp-answers.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
@@ -2424,6 +2425,10 @@ await runTest(
 await runTest(
   "recruitment screening role mismatch (a senior medical rep who applied for a district manager seat is findable under the seat he asked for)",
   runScreeningRoleMismatchTests,
+);
+await runTest(
+  "recruitment screening filter counts (every filter option promises exactly the number of CVs the filter itself returns)",
+  runScreeningFilterCountsTests,
 );
 await runTest(
   "recruitment WhatsApp answers (every answer an applicant gave the bot is listed beside the CV, each under its own question)",

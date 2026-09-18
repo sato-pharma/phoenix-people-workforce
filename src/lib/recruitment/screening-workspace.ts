@@ -65,6 +65,10 @@ import {
   type VacancyOption,
 } from "@/lib/recruitment/vacancy-options";
 import { matchesScreeningNarrowing, screeningAreaOptions, screeningSourceOptions } from "@/lib/recruitment/screening-filter";
+import {
+  screeningFilterCounts,
+  type ScreeningFilterCounts,
+} from "@/lib/recruitment/screening-filter-counts";
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { normalizeNameForMatch, normalizePhone } from "@/lib/recruitment/candidate-matching";
 import {
@@ -125,6 +129,11 @@ export type ScreeningWorkspace = {
   positionSuggestions: { jobTitles: string[]; areas: string[] };
   areaOptions: string[];
   sourceOptions: string[];
+  /**
+   * How many CVs each filter option would return, so the bar can say "District Manager (161)"
+   * instead of making him pick blind and wait out the round trip to find out.
+   */
+  filterCounts: ScreeningFilterCounts;
   /** How many the URL filters dropped, so the page can say so instead of silently shrinking. */
   filteredOut: number;
   /** The whole live pool, before the URL filters. The denominator every count is honest about. */
@@ -568,6 +577,18 @@ export async function loadScreeningWorkspace(
     }),
   );
 
+  // WHAT EACH FILTER OPTION WOULD GIVE HIM, over the SAME population the bar's denominator counts
+  // (`pool`, reported as `poolSize`) rather than over the narrowed list — a dropdown whose numbers
+  // all collapse the moment you pick one of them cannot be used to change your mind, which is the
+  // reason `areaOptions` is built from the whole pool too. One pass, reusing the resolvers the
+  // matcher just used; see screening-filter-counts.ts.
+  const filterCounts = screeningFilterCounts(pool, {
+    asOf,
+    seenByViewer: (candidate) => Boolean(views[candidate.id]),
+    seenByAnyone: (candidate) =>
+      Boolean(views[candidate.id]) || (otherViewers.get(candidate.id)?.length ?? 0) > 0,
+  });
+
   const rows = visible.map(rowFor);
   const rowsById = new Map(rows.map((row) => [row.id, row]));
 
@@ -687,6 +708,7 @@ export async function loadScreeningWorkspace(
     areaOptions: screeningAreaOptions(poolBasis),
     canSendToManagers,
     counts: rows.length === 0 ? emptyWorkQueueCounts() : counts,
+    filterCounts,
     filteredOut: pool.length - rows.length,
     hiringManagers,
     overdueManagerFeedback,
