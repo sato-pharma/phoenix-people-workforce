@@ -70,7 +70,7 @@ non-engineer: what happened, what it costs, what to do next.
 Why each exists: `docs/agents-incident-history.md` — read it before changing branch protection, CI
 cost, the deploy path or the region.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected with **5 required checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected with **6 required checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`; `allow_auto_merge: false`. Merge only with a plain `gh pr merge` after separate owner approval.
 - **Never commit directly onto local `main` in the primary checkout.** The push is then rejected (`enforce_admins: true`), and the commit strands on the one checkout every parallel session shares — where another session’s `git reset` destroys it. Branch first. If you already committed: `git branch <name> <sha>` then `git reset --keep origin/main` (**not** `--hard`, which would also wipe other sessions’ uncommitted work), then open a PR. Cost a real recovery on 2026-09-12 (#3728).
 - **Do NOT run `gh pr update-branch` reflexively** — "require branches up to date" is OFF (`strict: false`) and each run costs ~16 Actions minutes. Run it **only when the change depends on something newly on `main`**.
 - **`gh pr update-branch` acts on the SERVER** — `git fetch` and `git merge --ff-only origin/<branch>` before your next push; CI re-runs on the new head.
@@ -403,11 +403,13 @@ automatically; the local branch and worktree survive and still need approval to 
 
 `check:harden` and the `ask-before-validation` hook are retired at the owner's instruction. Do not
 reintroduce them or invent a replacement — no "quick subset" of lint + typecheck before pushing, no
-`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The five
-**required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan` — run on the PR head
-commit and block the merge if any is red. **The unit suite is `test`, not `validate`** (split out
-2026-09-17, #3950) — a doc naming `validate` as where a pinned test runs is stale by that much and
-no more; the gate is unchanged. `pnpm run ci` is opt-in: run it **only when the owner names it**.
+`pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's checks answer.** The six
+**required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile` — run on the
+PR head commit and block the merge if any is red. **The unit suite is `test`, not `validate`** (split
+out 2026-09-17, #3950) — a doc naming `validate` as where a pinned test runs is stale by that much.
+🔴 **That split left `test` OUT of branch protection until 2026-09-18, so every locked-rule test went
+red without blocking a merge** — never take "pinned by a required check" on trust; read the
+protection API. `pnpm run ci` is opt-in: run it **only when the owner names it**.
 
 Two things are NOT covered by a PR's CI and still need a check immediately before the action:
 **migrations** and **production deploys**. Verifying a UI change in the browser is not validation at
