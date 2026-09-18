@@ -403,10 +403,10 @@ export async function loadScreeningWorkspace(
   //
   // Drawn from EVERY candidate, filed and decided ones included, because that page lists everyone
   // who started the questions whatever has happened to their CV since. Drawn from the review pool,
-  // this pile would read 47 where that page said 52, with nothing on screen to say why. This page's
-  // own filters (status, stars and the rest) still narrow it after, like any other pile. With a seat
-  // picked as well, the seat is read over these people only, so that pile and its count on the rail
-  // both mean "of this search".
+  // this pile would read fewer people than that page did, with nothing on screen to say why. This
+  // page's own filters (status, stars and the rest) still narrow it after, like any other pile. With
+  // a seat picked as well, the seat is read over these people only, so that pile and its count on
+  // the rail both mean "of this search".
   const whatsAppIds =
     whatsAppSearch && whatsAppView ? whatsAppApplicantSearchCandidateIds(whatsAppView.rows, whatsAppSearch) : null;
   const whatsAppMatches = whatsAppIds ? allCandidates.filter((candidate) => whatsAppIds.has(candidate.id)) : null;
