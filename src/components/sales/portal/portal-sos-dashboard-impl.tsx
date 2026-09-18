@@ -266,15 +266,10 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
     setSelection({ lines: [], regions: [], areas: [], products: [], distributors: [] });
 
   const summary = data.summary;
-  // Period-over-period delta for the headline value (trend is ascending; last = selected period).
-  const valueDelta = useMemo(() => {
-    const t = data.trend;
-    if (t.length < 2) return null;
-    const prev = t[t.length - 2]?.value ?? 0;
-    const cur = t[t.length - 1]?.value ?? 0;
-    if (prev <= 0) return null;
-    return (cur - prev) / prev;
-  }, [data.trend]);
+  // The selected month against the calendar month before it, worked out on the server from the
+  // same comparison that fills "Δ vs last month". Never from the trend: its last two points are the
+  // newest month and the one before, whatever month is picked.
+  const valueDelta = comparison?.totalValueDelta ?? null;
 
   const isEmpty = data.period === null || summary.totalValue <= 0;
   const isProductManager = scope.role === "Product Manager" || scope.role === "Group Product Manager";

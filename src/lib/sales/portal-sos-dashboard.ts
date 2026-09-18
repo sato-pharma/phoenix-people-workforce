@@ -535,7 +535,29 @@ export type PortalSosComparison = {
   /** Biggest product gainers / decliners by % change (prev must be > 0). */
   gainers: PortalSosMover[];
   decliners: PortalSosMover[];
+  /** The previous month's Total Value, same scope and filters. */
+  previousTotalValue: number;
+  /** The Total Value arrow: the selected month against the calendar month before it. */
+  totalValueDelta: number | null;
 };
+
+/**
+ * The Total Value arrow. It compares the SELECTED month with the calendar month before it, and
+ * nothing else: it used to read the last two points of the trend, which are always the newest
+ * month and the one before, so a manager looking at March was shown July against June.
+ * Null when the prior month is not the one before `currentPeriod`, or has no value to divide by.
+ */
+export function totalValueDelta(
+  currentPeriod: string | null,
+  currentTotal: number,
+  previousPeriod: string | null,
+  previousTotal: number,
+): number | null {
+  if (!currentPeriod || !previousPeriod) return null;
+  if (shiftPeriod(currentPeriod, 1) !== previousPeriod) return null;
+  if (!Number.isFinite(currentTotal) || !Number.isFinite(previousTotal) || previousTotal <= 0) return null;
+  return (currentTotal - previousTotal) / previousTotal;
+}
 
 function valueByCode(rows: { code: string; value: number }[]): Record<string, number> {
   const out: Record<string, number> = {};
@@ -581,7 +603,15 @@ async function computeComparison(
   const gainers = [...moves].filter((m) => m.deltaPct > 0).sort((a, b) => b.deltaPct - a.deltaPct).slice(0, 3);
   const decliners = [...moves].filter((m) => m.deltaPct < 0).sort((a, b) => a.deltaPct - b.deltaPct).slice(0, 3);
 
-  return { previousPeriod, prevValueByCode, gainers, decliners };
+  const previousTotalValue = prev.summary.totalValue;
+  return {
+    previousPeriod,
+    prevValueByCode,
+    gainers,
+    decliners,
+    previousTotalValue,
+    totalValueDelta: totalValueDelta(current.period, current.summary.totalValue, prev.period, previousTotalValue),
+  };
 }
 
 export async function getPortalSosDashboard(
