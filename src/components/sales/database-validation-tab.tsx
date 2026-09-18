@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
-import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
@@ -25,6 +24,50 @@ type ImportResult = { blockedRows: ImportBlockedRow[]; inserted: number; skipped
 
 const filterSelect = "h-9 rounded-lg border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 const PAGE = 100;
+
+// The header grid fits by MERGING columns (fits-the-screen rule): thirteen nowrap columns ran far
+// past a 669px content box, so the twelve Phoenix headers ride in five labelled groups beside the
+// Distributor cell, which also carries Distrub ID (always the distributor's own code). A column
+// added to HEADER_GRID_COLUMNS and missing here still shows, in the last group.
+const HEADER_GRID_GROUPS: { keys: string[]; title: string }[] = [
+  { keys: ["brick", "region", "area"], title: "Territory" },
+  { keys: ["product"], title: "Product" },
+  { keys: ["qty", "bonus"], title: "Quantity" },
+  { keys: ["value", "discount", "date"], title: "Value & date" },
+  { keys: ["customer", "customerName"], title: "Customer" },
+];
+
+type HeaderPair = { label: string; value: string };
+
+const isDerivedHeaderValue = (v: string) => v === "—" || v.startsWith("auto") || v === "via Customer map" || v === "from sheet";
+
+// Neighbours in one group that read the same value share a line: Region ID and Area ID are both
+// "auto (from Brick)" for every distributor, so merging them costs no height. Both labels stay.
+function headerPairs(keys: string[], cells: Record<string, string>, labelOf: Map<string, string>): HeaderPair[] {
+  const pairs: HeaderPair[] = [];
+  for (const key of keys) {
+    const label = labelOf.get(key);
+    if (!label) continue;
+    const value = cells[key] ?? "—";
+    const last = pairs[pairs.length - 1];
+    if (last && last.value === value && value !== "—") last.label = `${last.label} · ${label}`;
+    else pairs.push({ label, value });
+  }
+  return pairs;
+}
+
+function HeaderPairs({ pairs }: { pairs: HeaderPair[] }) {
+  return (
+    <div className="space-y-1.5">
+      {pairs.map((p) => (
+        <div key={p.label}>
+          <div className="break-words text-phx-2xs font-semibold leading-snug text-slate-400">{p.label}</div>
+          <div className={isDerivedHeaderValue(p.value) ? "break-words italic text-slate-400" : "break-words text-slate-700"}>{p.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }) {
   const distributors = headerGrid.rows.map((r) => ({ code: r.distributorCode, name: r.distributorName }));
@@ -102,6 +145,11 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
   }
 
   const headerRows = headerFilter === "ALL" ? headerGrid.rows : headerGrid.rows.filter((r) => r.distributorCode === headerFilter);
+  const headerLabelOf = new Map(headerGrid.columns.map((c) => [c.key, c.label] as const));
+  const groupedHeaderKeys = new Set(["distrub", ...HEADER_GRID_GROUPS.flatMap((g) => g.keys)]);
+  const ungroupedHeaderKeys = headerGrid.columns.map((c) => c.key).filter((key) => !groupedHeaderKeys.has(key));
+  const headerGroups = HEADER_GRID_GROUPS.map((g, i) => (i === HEADER_GRID_GROUPS.length - 1 ? { ...g, keys: [...g.keys, ...ungroupedHeaderKeys] } : g));
+  const distrubLabel = headerLabelOf.get("distrub") ?? "Distrub ID";
   const pages = Math.max(1, Math.ceil(customers.length / PAGE));
   const pageRows = customers.slice(page * PAGE, page * PAGE + PAGE);
 
@@ -117,27 +165,60 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
         description="For each distributor, which raw column in their sheet feeds each Phoenix header. Area & Region are derived from the Brick; Distrub ID is the distributor's own code. Free-goods flag feeds no quantity: a row it marks is skipped whole, so a bonus count is never mapped there."
         title="Distributor → Phoenix header mapping"
       >
-        <div className="overflow-x-auto p-4 md:p-5">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="bg-[#0B0B0B] text-phx-paper-2">
-                <th className="whitespace-nowrap px-3 py-2 text-left">Distributor</th>
-                {headerGrid.columns.map((c) => <th className="whitespace-nowrap border-l border-phx-accent/25 px-3 py-2 text-left" key={c.key}>{c.label}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {headerRows.map((r) => (
-                <tr className="border-b border-[#F1D9C0]/50" key={r.distributorCode}>
-                  <td className="whitespace-nowrap px-3 py-2 font-bold text-[#0B0B0B]">{r.distributorName} <span className="font-normal text-slate-400">/ {r.distributorCode}</span></td>
-                  {headerGrid.columns.map((c) => {
-                    const v = r.cells[c.key] ?? "—";
-                    const muted = v === "—" || v.startsWith("auto") || v === "via Customer map" || v === "from sheet";
-                    return <td className={cn("whitespace-nowrap border-l border-[#F1D9C0]/40 px-3 py-2", muted ? "italic text-slate-400" : "text-slate-700")} key={c.key}>{v}</td>;
-                  })}
+        <div className="p-4 md:p-5">
+          {/* Desktop: six fitted columns, no horizontal scroller. */}
+          <div className="hidden border border-phx-line md:block">
+            <table className="w-full table-fixed border-collapse text-xs">
+              <colgroup>
+                <col className="w-[17%]" />
+                <col className="w-[17%]" />
+                <col className="w-[17%]" />
+                <col className="w-[15%]" />
+                <col className="w-[16%]" />
+                <col className="w-[18%]" />
+              </colgroup>
+              <thead>
+                <tr className="bg-[#0B0B0B] text-phx-paper-2">
+                  <th className="break-words px-3 py-2 text-left align-bottom">Distributor</th>
+                  {headerGroups.map((g) => <th className="break-words border-l border-phx-accent/25 px-3 py-2 text-left align-bottom" key={g.title}>{g.title}</th>)}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {headerRows.map((r) => (
+                  <tr className="border-b border-[#F1D9C0]/50" key={r.distributorCode}>
+                    <td className="break-words px-3 py-2 align-top">
+                      <div className="font-bold text-[#0B0B0B]">{r.distributorName}</div>
+                      <div className="mt-1.5 text-phx-2xs font-semibold leading-snug text-slate-400">{distrubLabel}</div>
+                      <div className="break-words text-slate-700">{r.cells.distrub ?? r.distributorCode}</div>
+                    </td>
+                    {headerGroups.map((g) => (
+                      <td className="border-l border-[#F1D9C0]/40 px-3 py-2 align-top" key={g.title}>
+                        <HeaderPairs pairs={headerPairs(g.keys, r.cells, headerLabelOf)} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: one card per distributor, never the table. */}
+          <div className="space-y-2 text-xs md:hidden">
+            {headerRows.map((r) => (
+              <div className="border border-phx-line bg-white p-3" key={r.distributorCode}>
+                <p className="break-words text-sm font-bold text-[#0B0B0B]">{r.distributorName}</p>
+                <p className="break-words text-phx-2xs font-semibold text-slate-400">{distrubLabel} {r.cells.distrub ?? r.distributorCode}</p>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+                  {headerGroups.map((g) => (
+                    <div className="min-w-0" key={g.title}>
+                      <p className="mb-1 break-words text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{g.title}</p>
+                      <HeaderPairs pairs={headerPairs(g.keys, r.cells, headerLabelOf)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </AdminTableShell>
 

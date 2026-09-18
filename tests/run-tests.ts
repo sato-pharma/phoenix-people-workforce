@@ -1771,6 +1771,7 @@ import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofi
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
+import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6111,6 +6112,11 @@ await runTest(
 await runTest(
   "the normalizer reads mec's month column \"شهر\" as the month: \"202607\" is July 2026, as text or a number cell, and it decides over the invoice's own date (a 25 July invoice marked 202608 is August), so a file inside one month resolves to it with none picked by hand, a file crossing mec's cut-off is refused as two named months, no mec row claims a day, and \"202613\" gives no month",
   runNormalizerMecMonthColumnTests,
+);
+
+await runTest(
+  "the Database Validation header grid fits the screen: no sideways scroller and no nowrap, six table-fixed columns over a 100% colgroup with Distrub ID in the Distributor cell and every other Phoenix header in exactly one labelled group, long sheet headers wrap, nothing is truncated or rounded, and mobile gets one card per distributor",
+  runDatabaseValidationHeaderGridFitsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
