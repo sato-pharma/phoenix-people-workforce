@@ -96,20 +96,22 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "closing_cells must carry that region out as cell_region",
   );
 
-  // The region travels to the caller as the LAST column: on net_negative rows, and on a reversal
-  // pair of no-area Direct rows, which is keyed by region the same way (20260918165553). It is NULL
-  // on late_return, and on every reversal pair of an ordinary area cell.
+  // The region travels to the caller right after other_value: on net_negative rows, and on a
+  // reversal pair of no-area Direct rows, which is keyed by region the same way (20260918165553). It
+  // is NULL on late_return, and on every reversal pair of an ordinary area cell. (other_net_units,
+  // added by 20260918175500, follows it as the last column — pinned by
+  // tests/closing-corrections-masked-reversals.test.ts.)
   assert.ok(
-    /returns table\([^)]*other_value numeric, region_code text\)/.test(statements),
-    "phx_closing_corrections must return region_code as its last column",
+    /returns table\([^)]*other_value numeric, region_code text[,)]/.test(statements),
+    "phx_closing_corrections must return region_code right after other_value",
   );
   const netNegative = statements.slice(statements.indexOf("select 'net_negative'::text"));
   assert.ok(
-    /null, null, c\.cell_region from closing_cells c/.test(netNegative),
+    /null, null, c\.cell_region(, null::numeric)? from closing_cells c/.test(netNegative),
     "the net_negative branch must return the cell's region",
   );
   assert.ok(
-    /round\(coalesce\(ret\.ret_value, neg\.cell_value\)::numeric, 2\), pos\.cell_region from cells pos/.test(statements),
+    /else neg\.cell_value end\)::numeric, 2\), pos\.cell_region, neg\.cell_units from cells pos/.test(statements),
     "reversal_pair must return its cells' region — set only for a no-area Direct pair, NULL for an area cell",
   );
   assert.ok(
@@ -117,7 +119,7 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "a reversal pair must never join two regions' no-area Direct rows",
   );
   assert.ok(
-    /origin\.origin_units, null, null::text from \(/.test(statements),
+    /origin\.origin_units, null, null::text(, null::numeric)? from \(/.test(statements),
     "late_return must return NULL for region_code — it stays per distributor",
   );
 
@@ -134,10 +136,9 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     statements.includes("revoke execute on function public.phx_closing_corrections(text) from public, anon, authenticated"),
     "the function must stay closed to public, anon and authenticated",
   );
-  // No longer PARALLEL SAFE since 20260918165553: it now calls phx_sos_rows_attributed, which is
-  // parallel unsafe, and a function must not claim more than what it calls.
-  assert.ok(statements.includes("stable security definer"), "function attributes preserved");
-  assert.ok(!statements.includes("parallel safe"), "a function calling a parallel-unsafe one is not parallel safe");
+  // PARALLEL SAFE again since 20260918175500: the take-back is read from the rollup, and nothing
+  // here calls the parallel-unsafe phx_sos_rows_attributed any more.
+  assert.ok(statements.includes("stable parallel safe security definer"), "function attributes preserved");
 
   // Two regions' Direct rows are two cells and two situations, never one.
   const grouped = groupClosingCorrections(

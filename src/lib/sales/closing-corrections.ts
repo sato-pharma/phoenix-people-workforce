@@ -8,8 +8,8 @@
 //
 // Three kinds, detected in SQL (see the migration for the thresholds and the reasoning):
 //   reversal_pair — plus-then-minus across two consecutive months, same distributor+area+product.
-//                   The minus is the second month's RETURNS, read on their own, so the same month's
-//                   ordinary sales cannot hide a reversal; other* carries those returns, not the net.
+//                   The take-back is matched pharmacy by pharmacy, so the month's other sales
+//                   cannot hide it; other* carries that take-back, not the net, when it qualifies.
 //   net_negative  — a month cell where returns exceed sales.
 //   late_return   — a client-level return traced to its most recent purchase month with the SAME
 //                   distributor (client codes are only unique per distributor).
@@ -46,6 +46,13 @@ export type ClosingCorrectionRow = {
   value: number;
   otherUnits: number | null;
   otherValue: number | null;
+  /**
+   * reversal_pair ONLY: the distributor's whole net for the cell in the take-back month. otherUnits
+   * is what the same pharmacies took back; the net is that minus everything else sold there that
+   * month, which is how much of the take-back the month's total actually shows. NULL or absent on
+   * the other kinds, and from a database older than the column.
+   */
+  otherNetUnits?: number | null;
 };
 
 /**
@@ -72,6 +79,8 @@ export type ReversalPair = {
   negativePeriod: string;
   negativeUnits: number;
   negativeValue: number;
+  /** The distributor's whole net for the cell in the take-back month; see ClosingCorrectionRow. */
+  negativeMonthNetUnits: number | null;
   impact: string;
   /** Other sections listing this same cell. Empty when this row stands alone. */
   alsoSeenIn: AlsoSeenIn;
@@ -174,6 +183,23 @@ function units(value: number): string {
 }
 
 /**
+ * How much of a take-back the month's own total shows. The pair is found from the same pharmacies'
+ * returns, so it is listed even when the distributor's other sales that month outweigh it — and a
+ * reader checking the take-back against that month's figures would otherwise find nothing there.
+ * Empty when the net shows the whole take-back, or when the database predates the column.
+ */
+function hiddenTakeBackNote(row: ClosingCorrectionRow, negativePeriod: string): string {
+  const net = row.otherNetUnits;
+  if (net == null) return "";
+  const takenBack = Math.abs(row.otherUnits ?? 0);
+  if (net < 0 && Math.abs(net) >= takenBack) return "";
+  const lead = ` ${row.distributorName}'s other ${negativePeriod} sales here hide`;
+  if (net > 0) return `${lead} it: its ${negativePeriod} total for this area and product still reads +${units(net)}.`;
+  if (net === 0) return `${lead} it: its ${negativePeriod} total for this area and product nets to zero.`;
+  return `${lead} part of it: its ${negativePeriod} total for this area and product reads -${units(net)}.`;
+}
+
+/**
  * Pure grouping + sentence writing over already-named rows. Exported for tests: the sentences are
  * the product here — a wrong sentence misleads exactly the reader this page exists to protect.
  */
@@ -217,10 +243,12 @@ export function groupClosingCorrections(
         negativePeriod,
         negativeUnits: row.otherUnits ?? 0,
         negativeValue: row.otherValue ?? 0,
+        negativeMonthNetUnits: row.otherNetUnits ?? null,
         impact:
           `${row.distributorName} posted +${units(row.units)} (${egp(row.value)}) in ${row.period}, ` +
           `then took ${units(row.otherUnits ?? 0)} back in ${negativePeriod} — ` +
-          `${row.period} reads high and ${negativePeriod} reads low by roughly that much.`,
+          `${row.period} reads high and ${negativePeriod} reads low by roughly that much.` +
+          hiddenTakeBackNote(row, negativePeriod),
         alsoSeenIn: alsoSeenInFor(row),
       });
     } else if (row.kind === "net_negative") {
@@ -366,6 +394,7 @@ export async function loadClosingCorrections(input?: {
       value: Number(row.value ?? 0),
       otherUnits: row.other_units == null ? null : Number(row.other_units),
       otherValue: row.other_value == null ? null : Number(row.other_value),
+      otherNetUnits: row.other_net_units == null ? null : Number(row.other_net_units),
     };
   });
 
