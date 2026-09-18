@@ -599,6 +599,7 @@ import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSalesChannelsByRepClosingValueTests } from "./sales-channels-by-rep-closing-value.test.ts";
 import { runProductScopeOneListTests } from "./product-scope-one-list.test.ts";
+import { runWeeklyProductScopeReadTests } from "./weekly-product-scope-read.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
@@ -2991,6 +2992,10 @@ await runTest(
 await runTest(
   "a product list saved on Scope & Visibility or the Weekly Sales screen is written to both, so Source of Sales sees it",
   runProductScopeOneListTests,
+);
+await runTest(
+  "a failed read of a person's Weekly Sales product list is an error, and a Product Manager with no list sees his whole lines on every screen",
+  runWeeklyProductScopeReadTests,
 );
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);

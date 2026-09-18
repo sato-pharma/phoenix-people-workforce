@@ -26,7 +26,8 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //                sees everything EXCEPT those.
 //  • product   — Product / Group Product / Marketing Managers see ONLY the product codes
 //                explicitly assigned to them in `weekly_sales_product_scope` (by HR_ID).
-//                Line is ignored entirely; an empty assignment set means they see nothing.
+//                Line is ignored entirely. With no list they see their whole lines instead, on
+//                the territory tier (owner, 2026-09-18; resolveWeeklyProductBound).
 //  • territory — sales-field roles (District / Regional / National Sales Manager, Medical
 //                Rep) reuse the monthly sales scope: bounded to their own line and/or region.
 //
@@ -89,16 +90,42 @@ function viewerHrKey(ctx: AccessContext): string | null {
   return canonicalHrIdKey(resolveEmployeeIdentityId(ctx) ?? ctx.hrId ?? ctx.loginId ?? null);
 }
 
-/** Read the product codes assigned to one person in the weekly product-scope table. */
-export async function getWeeklyProductScopeCodes(hrKey: string | null): Promise<Set<string>> {
+/**
+ * Read the product codes assigned to one person in the weekly product-scope table.
+ *
+ * A failed read THROWS. It used to return the same empty set as "no list", and every caller reads
+ * "no list" as a scope decision: Weekly Sales, the portal closing and Make It Happen widen a Product
+ * Manager to his whole line, and Source of Sales shows him nothing. So one timed-out query silently
+ * showed a two-product manager every product on his line (Source of Sales audit, finding
+ * weekly/access.ts:99). A page that cannot read the list now says so instead.
+ */
+export async function getWeeklyProductScopeCodes(
+  hrKey: string | null,
+  supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<Set<string>> {
   if (!hrKey) return new Set();
-  const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("weekly_sales_product_scope")
     .select("product_code")
     .eq("hr_id", hrKey);
-  if (error) return new Set();
+  if (error) throw new Error(`Could not read the Weekly Sales product list: ${error.message}`);
   return new Set((data ?? []).map((row) => String(row.product_code ?? "").trim().toUpperCase()).filter(Boolean));
+}
+
+/**
+ * A person's product list as a bound: their codes, or null when they have no list. Every screen that
+ * narrows a viewer by this list asks HERE, so none can read "no list" differently again.
+ *
+ * Owner, 2026-09-18: "no product list means his whole lines everywhere". Null, never an empty set:
+ * Source of Sales reads an empty set as "show nothing", and it did, so a Product Manager with no list
+ * saw nothing there while Weekly Sales, the portal closing and Make It Happen showed him his lines.
+ */
+export async function resolveWeeklyProductBound(
+  hrKey: string | null,
+  supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<Set<string> | null> {
+  const codes = await getWeeklyProductScopeCodes(hrKey, supabase);
+  return codes.size > 0 ? codes : null;
 }
 
 /** All product-scope assignments, grouped by canonical HR_ID (for the admin manager). */
@@ -167,11 +194,11 @@ async function resolveWeeklyAccessTier(ctx: AccessContext): Promise<WeeklyAccess
 
   // 3. The product-scope sheet is the source of truth: anyone with an explicit assignment is bounded
   // to exactly those products — regardless of role (e.g. an SFE Manager who owns a curated list).
-  const assignedCodes = await getWeeklyProductScopeCodes(hrKey);
-  if (assignedCodes.size > 0) return { tier: "product", productCodes: assignedCodes };
+  const assignedCodes = await resolveWeeklyProductBound(hrKey);
+  if (assignedCodes) return { tier: "product", productCodes: assignedCodes };
 
-  // 4. Product roles without an explicit assignment fall back to their full line scope so they
-  //    always see data without requiring an admin to populate weekly_sales_product_scope.
+  // 4. Product roles with no list see their whole lines, as on every other screen (owner,
+  //    2026-09-18: "no product list means his whole lines everywhere").
   if (PRODUCT_SCOPED_ROLES.has(ctx.role)) {
     const scope = await resolveSalesAccessScope(ctx);
     return { tier: "territory", allowedLineNames: scope.allowedLineNames, allowedRegionCodes: null, allowedAreaCodes: null };
