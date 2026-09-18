@@ -2,13 +2,23 @@
 
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, Database, Download, History, Layers, Loader2, MapPin, Package, Save, Signpost, Sparkles, Upload } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 type IconType = typeof Sparkles;
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { useBrickMovesListener } from "@/components/sales/brick-move-refresh";
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
 import { Button } from "@/components/ui/button";
+import {
+  brickCorrectionHref,
+  followMovedBrick,
+  followMovedPicks,
+  pickedBrick,
+  type MappingBrickReference,
+  type MappingReferences,
+} from "@/lib/sales/normalizer/brick-area";
 import { packCustomersByPharmacy } from "@/lib/sales/normalizer/customer-request-packing";
 import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/lib/sales/normalizer/mapping-left";
 import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
@@ -18,7 +28,6 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 type DistributorOption = { code: string; name: string };
-type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
 type CodedRow = { areaCode: string; brickId: string; brickName: string; productCode: string; productName: string; qty: number; regionCode: string; clientName: string | null };
 type Unknown = { raw: string; rawName: string; rawAddress?: string; rawTerritory?: string; count: number; suggestionCode: string | null; suggestionLabel: string | null };
@@ -210,6 +219,67 @@ function RowLimitFoot({ listLength, onShowAll, previewTotal, shown }: { listLeng
   );
 }
 
+// THE UNKNOWN TERRITORY AND CUSTOMER TABLES FIT THE SCREEN (the owner's golden rule): on a desktop a
+// fixed-layout table over a <colgroup> of percentages, so nothing pushes it wider than the page; on a
+// phone the SAME rows stack as cards, each value under its own label. One copy of every row, never a
+// table plus a separate card list: each row carries a live brick picker, and a second copy would
+// double thousands of them after "Show all". Columns are merged to fit (code with name, address with
+// territory), never shrunk, and long text wraps.
+const stackTable = "block w-full text-left text-sm md:table md:table-fixed";
+const stackCols = "hidden md:table-column-group";
+const stackHead = "hidden bg-slate-100 md:table-header-group";
+const stackBody = "block md:table-row-group";
+const stackRow = "block border-t border-slate-100 px-2 py-2 transition-colors hover:bg-orange-50/40 md:table-row md:p-0";
+const stackCell = "block px-1 py-1 align-top md:table-cell md:px-3 md:py-1.5";
+const stackTickCell = "block px-1 py-1 align-top md:table-cell md:px-2 md:py-2";
+const stackHeadCell = "px-3 py-2 text-left font-semibold text-slate-600";
+
+/** A card's field name on a phone; the column header says it on a desktop. */
+function StackLabel({ children }: { children: ReactNode }) {
+  return <span className="mb-0.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400 md:hidden">{children}</span>;
+}
+
+/** The tick for bulk mapping; on a phone it says what it is for, since the header is hidden there. */
+function RowTick({ checked, label, onChange }: { checked: boolean; label: string; onChange: (on: boolean) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2">
+      <input aria-label={`Tick ${label}`} checked={checked} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => onChange(e.target.checked)} type="checkbox" />
+      <span className="text-xs font-semibold text-slate-500 md:hidden">Tick for bulk map</span>
+    </label>
+  );
+}
+
+/**
+ * The area a picked brick credits, straight from the brick master (the area of the brick's block).
+ * It is never edited here (owner, 2026-09-18: "I will not be able to edit the area in this page"). A
+ * wrong one is fixed where it lives: "Correct in database" opens that brick's correction on the
+ * Database Mapping page in a new tab, so the picks on this page survive, and a move made there
+ * reloads this page's lists (useBrickMovesListener) so the Area shown here follows it.
+ */
+function BrickAreaCell({ brick }: { brick: MappingBrickReference | null }) {
+  if (!brick) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="block space-y-0.5">
+      <span className="block font-semibold text-slate-800 [overflow-wrap:anywhere]">{brick.areaName || "No area on the brick master"}</span>
+      {brick.regionName ? <span className="block text-slate-500 [overflow-wrap:anywhere]">{brick.regionName}</span> : null}
+      <a
+        className="inline-block font-bold text-orange-700 underline underline-offset-2 transition hover:text-orange-800"
+        href={brickCorrectionHref(brick.id)}
+        rel="noopener"
+        target="_blank"
+        title={`Opens ${brick.name} on the Database Mapping page, where its area is corrected`}
+      >
+        Correct in database
+      </a>
+    </span>
+  );
+}
+
+// Territory and customer picks name a brick; product picks name a product.
+function isBrickPick(key: string) {
+  return key.startsWith("t:") || key.startsWith("c:");
+}
+
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
   // The template is offered FIRST in the picker (the owner asked for it beside the distributors), but
   // the default selection stays a real distributor — the per-distributor path is still the daily one.
@@ -244,6 +314,23 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [showAll, setShowAll] = useState<Record<UnknownKind, boolean>>({ c: false, p: false, t: false });
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
+
+  // A brick moved in another tab ("Correct in database"): reload this page's brick lists so every
+  // Area shown is the one the database holds now. The file, the picks and the ticks stay as they are.
+  const router = useRouter();
+  useBrickMovesListener(() => router.refresh());
+  const movedBricks = references.movedBricks;
+  const bricksById = useMemo(() => new Map(references.bricks.map((b) => [b.id, b])), [references.bricks]);
+  // A pick that names a brick kept only as history after a move follows it to the brick it moved to,
+  // so the Area shown and the mapping saved are the new brick's. The suggestion's own brick follows
+  // too: it is the same place under a new id, so its confidence still describes the pick. Adjusted
+  // while rendering, React's pattern for state that follows a prop, rather than in an effect.
+  const [followedMoves, setFollowedMoves] = useState(movedBricks);
+  if (followedMoves !== movedBricks) {
+    setFollowedMoves(movedBricks);
+    setPicks((current) => followMovedPicks(current, movedBricks, isBrickPick));
+    setAiPick((current) => followMovedPicks(current, movedBricks, isBrickPick));
+  }
 
   useEffect(() => {
     void (async () => {
@@ -623,10 +710,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   function assignClusterBrick(cluster: CustomerCluster, brickId: string) {
-    if (!brickId) return;
+    // The nearest-brick chips come from the place index, which can still name a brick kept only as
+    // history after a move; the pharmacies go to the brick it moved to.
+    const live = followMovedBrick(brickId, movedBricks);
+    if (!live) return;
     setPicks((p) => {
       const next = { ...p };
-      cluster.members.forEach((m) => { next[`c:${m.raw}`] = brickId; });
+      cluster.members.forEach((m) => { next[`c:${m.raw}`] = live; });
       return next;
     });
   }
@@ -1045,8 +1135,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   ) : null}
 
                   {preview.unknownTerritories.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown territories ({countLabel("t", preview.unknownTerritories.length)})</p>
+                    <div className="border border-phx-line">
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown territories ({countLabel("t", preview.unknownTerritories.length)})</p>
                       <BulkAssignBar
                         assignLabel="Bulk map to"
                         busy={busy !== null}
@@ -1056,16 +1146,28 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         selectedCount={countSelected("t")}
                         total={preview.unknownTerritories.length}
                       />
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw territory", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
-                        <tbody>
+                      <table className={stackTable}>
+                        <colgroup className={stackCols}>
+                          <col style={{ width: "5%" }} />
+                          <col style={{ width: "31%" }} />
+                          <col style={{ width: "9%" }} />
+                          <col style={{ width: "32%" }} />
+                          <col style={{ width: "23%" }} />
+                        </colgroup>
+                        <thead className={stackHead}><tr><th className="px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw territory", "Rows", "Phoenix brick", "Area"].map((h) => <th className={cn(stackHeadCell, h === "Rows" && "text-right")} key={h} scope="col">{h}</th>)}</tr></thead>
+                        <tbody className={stackBody}>
                           {visibleRows("t", preview.unknownTerritories).map((u) => (
-                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
-                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.raw}`} checked={selected[`t:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("t", u.raw, e.target.checked)} type="checkbox" /></td>
-                              <td className="px-3 py-1.5 text-slate-700"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
-                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
-                              <td className="px-3 py-1.5">
-                                <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`t:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`t:${u.raw}`] ?? ""} />
+                            <tr className={stackRow} key={u.raw}>
+                              <td className={stackTickCell}><RowTick checked={selected[`t:${u.raw}`] ?? false} label={u.raw} onChange={(on) => toggleRow("t", u.raw, on)} /></td>
+                              <td className={cn(stackCell, "text-slate-700 [overflow-wrap:anywhere]")}><StackLabel>Raw territory</StackLabel>{u.raw}<CopyBtn text={u.raw} /></td>
+                              <td className={cn(stackCell, "font-semibold tabular-nums text-slate-700 md:text-right")}><StackLabel>Rows</StackLabel>{u.count.toLocaleString()}</td>
+                              <td className={stackCell}>
+                                <StackLabel>Phoenix brick</StackLabel>
+                                <ComboBox className="min-w-0" onChange={(v) => setPicks((p) => ({ ...p, [`t:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`t:${u.raw}`] ?? ""} />
+                              </td>
+                              <td className={cn(stackCell, "text-xs")}>
+                                <StackLabel>Area</StackLabel>
+                                <BrickAreaCell brick={pickedBrick(picks[`t:${u.raw}`], bricksById, movedBricks)} />
                               </td>
                             </tr>
                           ))}
@@ -1081,7 +1183,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   ) : null}
 
                   {preview.unknownCustomers.length > 0 ? (
-                    <div className="overflow-x-auto border border-phx-line">
+                    <div className="border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({countLabel("c", preview.unknownCustomers.length)}) — map by pharmacy when the area text is unreliable</p>
                       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
                         {geoCoverage ? (
@@ -1103,24 +1205,31 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           {clusters.map((c) => (
                             <div className="px-3 py-2" key={c.key}>
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-sm font-bold text-slate-900">{c.label}</span>
-                                <span className="rounded-full bg-phx-paper px-2 py-0.5 text-xs font-semibold text-phx-ink-soft">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
-                                {c.suggestedBricks.slice(0, 3).map((s) => (
-                                  <button className="rounded-full border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-xs font-bold text-phx-ok transition hover:bg-phx-ok-bg" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
-                                    {s.brickId}{s.distanceKm != null ? ` · ${s.distanceKm}km` : ""}
-                                  </button>
-                                ))}
-                                <div className="w-64">
-                                  <ComboBox onChange={(v) => assignClusterBrick(c, v)} options={brickOptions} placeholder="Assign brick to whole group…" value="" />
+                                <span className="text-sm font-bold text-slate-900 [overflow-wrap:anywhere]">{c.label}</span>
+                                <span className="bg-phx-paper px-2 py-0.5 text-xs font-semibold text-phx-ink-soft">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
+                                {c.suggestedBricks.slice(0, 3).map((s) => {
+                                  // The chip names the brick, never its id, and a brick kept as history names the brick it moved to.
+                                  const suggested = bricksById.get(followMovedBrick(s.brickId, movedBricks));
+                                  return (
+                                    <button className="border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-xs font-bold text-phx-ok transition hover:bg-phx-ok-bg" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
+                                      {suggested?.name ?? s.brickId}{s.distanceKm != null ? ` · ${s.distanceKm} km` : ""}
+                                    </button>
+                                  );
+                                })}
+                                <div className="w-full sm:w-64">
+                                  <ComboBox className="min-w-0" onChange={(v) => assignClusterBrick(c, v)} options={brickOptions} placeholder="Assign brick to whole group…" value="" />
                                 </div>
                               </div>
                               <div className="mt-1.5 space-y-1">
                                 {c.members.map((m) => (
-                                  <div className="flex flex-wrap items-center gap-2 pl-2 text-xs text-slate-600" key={m.raw}>
+                                  <div className="flex flex-wrap items-start gap-2 pl-2 text-xs text-slate-600" key={m.raw}>
                                     <span className="font-mono font-semibold text-slate-800">{m.raw}</span>
-                                    <span>{m.rawName}</span>
-                                    <div className="ml-auto w-56">
-                                      <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${m.raw}`]: v }))} options={brickOptions} placeholder="brick…" value={picks[`c:${m.raw}`] ?? ""} />
+                                    <span className="min-w-0 [overflow-wrap:anywhere]">{m.rawName}</span>
+                                    <div className="w-full sm:ml-auto sm:w-56">
+                                      <ComboBox className="min-w-0" onChange={(v) => setPicks((p) => ({ ...p, [`c:${m.raw}`]: v }))} options={brickOptions} placeholder="brick…" value={picks[`c:${m.raw}`] ?? ""} />
+                                    </div>
+                                    <div className="w-full sm:w-40">
+                                      <BrickAreaCell brick={pickedBrick(picks[`c:${m.raw}`], bricksById, movedBricks)} />
                                     </div>
                                     {shownConfidence(`c:${m.raw}`) != null ? <ConfidenceBadge pct={shownConfidence(`c:${m.raw}`)!} /> : null}
                                   </div>
@@ -1141,23 +1250,45 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         selectedCount={countSelected("c")}
                         total={preview.unknownCustomers.length}
                       />
-                      <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
-                        <tbody>
+                      <table className={stackTable}>
+                        <colgroup className={stackCols}>
+                          <col style={{ width: "4%" }} />
+                          <col style={{ width: "19%" }} />
+                          <col style={{ width: "21%" }} />
+                          <col style={{ width: "7%" }} />
+                          <col style={{ width: "22%" }} />
+                          <col style={{ width: "16%" }} />
+                          <col style={{ width: "11%" }} />
+                        </colgroup>
+                        <thead className={stackHead}><tr><th className="px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Customer", "Address / Territory", "Rows", "Phoenix brick", "Area", "Confidence"].map((h) => <th className={cn(stackHeadCell, h === "Rows" && "text-right", h === "Confidence" && "text-center")} key={h} scope="col">{h}</th>)}</tr></thead>
+                        <tbody className={stackBody}>
                           {visibleRows("c", preview.unknownCustomers).map((u) => (
-                            <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
-                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`c:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("c", u.raw, e.target.checked)} type="checkbox" /></td>
-                              <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
-                              <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
-                              <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[200px]">{u.rawAddress ? <span className="inline-flex items-center gap-0.5">{u.rawAddress}<CopyBtn text={u.rawAddress} /></span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[140px]">{u.rawTerritory ? <span className="inline-flex items-center gap-0.5">{u.rawTerritory}<CopyBtn text={u.rawTerritory} /></span> : <span className="text-slate-300">—</span>}</td>
-                              <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
-                              <td className="px-3 py-1.5">
-                                <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
+                            <tr className={stackRow} key={u.raw}>
+                              <td className={stackTickCell}><RowTick checked={selected[`c:${u.raw}`] ?? false} label={u.rawName || u.raw} onChange={(on) => toggleRow("c", u.raw, on)} /></td>
+                              <td className={cn(stackCell, "[overflow-wrap:anywhere]")}>
+                                <StackLabel>Customer</StackLabel>
+                                <span className="block font-semibold text-slate-900">{u.raw}<CopyBtn text={u.raw} /></span>
+                                {u.rawName ? <span className="block text-slate-600">{u.rawName}<CopyBtn text={u.rawName} /></span> : null}
                               </td>
-                              <td className="px-3 py-1.5 text-center">
+                              <td className={cn(stackCell, "text-xs text-slate-500 [overflow-wrap:anywhere]")}>
+                                <StackLabel>Address / Territory</StackLabel>
+                                {u.rawAddress ? <span className="block">{u.rawAddress}<CopyBtn text={u.rawAddress} /></span> : null}
+                                {u.rawTerritory ? <span className="block text-slate-400">{u.rawTerritory}<CopyBtn text={u.rawTerritory} /></span> : null}
+                                {!u.rawAddress && !u.rawTerritory ? <span className="text-slate-300">—</span> : null}
+                              </td>
+                              <td className={cn(stackCell, "font-semibold tabular-nums text-slate-700 md:text-right")}><StackLabel>Rows</StackLabel>{u.count.toLocaleString()}</td>
+                              <td className={stackCell}>
+                                <StackLabel>Phoenix brick</StackLabel>
+                                <ComboBox className="min-w-0" onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
+                              </td>
+                              <td className={cn(stackCell, "text-xs")}>
+                                <StackLabel>Area</StackLabel>
+                                <BrickAreaCell brick={pickedBrick(picks[`c:${u.raw}`], bricksById, movedBricks)} />
+                              </td>
+                              <td className={cn(stackCell, "md:text-center")}>
+                                <StackLabel>Confidence</StackLabel>
                                 {shownConfidence(`c:${u.raw}`) != null ? (
-                                  <span className="inline-flex flex-col items-center gap-0.5">
+                                  <span className="inline-flex flex-col items-start gap-0.5 md:items-center">
                                     <ConfidenceBadge pct={shownConfidence(`c:${u.raw}`)!} />
                                     {aiOrigin[`c:${u.raw}`]?.source === "propagated" ? (
                                       <span

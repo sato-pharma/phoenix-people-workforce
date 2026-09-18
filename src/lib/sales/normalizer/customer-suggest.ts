@@ -1,4 +1,5 @@
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { aiSuggest, aiSuggestModel, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import type { PropagationEvidence } from "@/lib/sales/normalizer/auto-apply";
 import { loadBrickCentroids } from "@/lib/sales/normalizer/brick-centroids";
@@ -145,16 +146,22 @@ export async function suggestCustomerBricks(
   // Only the brick master is read from the reference data. The customer→brick crosswalk that
   // loadSalesReferenceData() pages by default is a second pass over the whole customer map — 70
   // offset pages, ~3.5 s — that nothing here reads, and it was paid again for every group sent.
-  const [refs, customerMapRows] = await Promise.all([
+  const [refs, customerMapRows, movedBricks] = await Promise.all([
     loadSalesReferenceData({ includeCustomerBricks: false }),
     loadActiveCustomerMap(),
+    loadMovedBricks(),
   ]);
-  const brickMap = new Map((refs.bricks ?? []).map((b) => [b.brickId, b]));
-  const candidates = (refs.bricks ?? []).map((b) => ({
+  // A brick kept only as history after a move is no answer: its pharmacies would credit the area it
+  // left. It is not translated to the brick it moved to either — a pharmacy still on it is one the
+  // owner kept there, or one waiting for his decision on the Mapping guard, and neither says where a
+  // new pharmacy belongs. So every step below sees the live bricks only.
+  const liveBricks = (refs.bricks ?? []).filter((b) => !movedBricks.has(b.brickId));
+  const brickMap = new Map(liveBricks.map((b) => [b.brickId, b]));
+  const candidates = liveBricks.map((b) => ({
     code: b.brickId,
     label: [b.brickName, [b.areaName, b.regionName].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
   }));
-  // Only bricks that still exist in the master — the map can hold retired ids.
+  // Only bricks that still exist in the master, and have not moved — the map can hold retired ids.
   const isLiveBrick = (code: string) => brickMap.has(code);
 
   // Only mappings a person made, or that cleared the auto-accept bar, may TEACH: a weak suggestion
@@ -175,7 +182,7 @@ export async function suggestCustomerBricks(
   }));
   const indexes = buildFreeStepIndexes(
     mapped,
-    (refs.bricks ?? []).map((b) => ({ areaCode: String(b.areaCode ?? "").trim().toUpperCase(), brickId: b.brickId, brickName: b.brickName })),
+    liveBricks.map((b) => ({ areaCode: String(b.areaCode ?? "").trim().toUpperCase(), brickId: b.brickId, brickName: b.brickName })),
   );
   const answered = new Map<string, CustomerSuggestion>();
   for (const [raw, answer] of answerFromFreeSteps(representatives, indexes, isLiveBrick)) {
@@ -216,7 +223,9 @@ export async function suggestCustomerBricks(
     const push = (raw: string, code: string) => {
       const r = String(raw ?? "").trim();
       const c = String(code ?? "").trim();
-      if (!r || !c) return;
+      // An example pointing at a brick the AI may not answer (moved, or gone) would only steer it
+      // toward an answer that is then thrown away.
+      if (!r || !c || !isLiveBrick(c)) return;
       const dedupText = normalizeCustomerNameKey(r.split("|")[0]) || r.toLowerCase();
       const key = `${dedupText}:${c}`;
       if (!seen.has(key)) { seen.add(key); referenceAliases.push({ raw: r, code: c }); }

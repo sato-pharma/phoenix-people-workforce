@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { hrIdForStorage } from "@/lib/hr-id";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, errorMessageOf } from "@/lib/http/api-errors";
 import { decideMappingHold, listHeldMappingChanges } from "@/lib/sales/mapping-guard";
 
 export const runtime = "nodejs";
@@ -24,6 +24,12 @@ function actorOf(access: Awaited<ReturnType<typeof resolveAccessContext>>): stri
 function fail(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+  }
+  // A refusal the database wrote on purpose (for example: the brick a held pharmacy moves to was
+  // switched off, so its sales cannot follow). The approval and the sales move are one transaction,
+  // so nothing was decided and the hold still waits.
+  if ((error as { code?: unknown } | null)?.code === "P0001") {
+    return NextResponse.json({ success: false, error: `${errorMessageOf(error)} Nothing was decided.` }, { status: 409 });
   }
   return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, fallback) }, { status: 500 });
 }
@@ -64,7 +70,9 @@ export async function POST(request: Request) {
     if (!result.ok) {
       return NextResponse.json({ success: false, error: result.reason ?? "That change was already decided." }, { status: 409 });
     }
-    return NextResponse.json({ success: true, holds: await listHeldMappingChanges() });
+    // An approved brick-move hold moved the pharmacy's open-month sales too; the screen says so and
+    // rebuilds the files they sit in.
+    return NextResponse.json({ brickMove: result.brickMove, holds: await listHeldMappingChanges(), success: true });
   } catch (error) {
     return fail(error, "Could not record that decision.");
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { aiSuggest, hasAiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -27,10 +28,14 @@ export async function POST(request: Request) {
     const unknowns = (Array.isArray(body.unknowns) ? body.unknowns : []).filter((u) => u && u.raw).slice(0, 300);
     if (unknowns.length === 0) return NextResponse.json({ success: true, data: { suggestions: [] } });
 
-    const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+    const [refs, movedBricks] = await Promise.all([
+      loadSalesReferenceData({ includeCustomerBricks: false }),
+      kind === "territory" ? loadMovedBricks() : Promise.resolve(new Map<string, string>()),
+    ]);
     const candidates = kind === "product"
       ? refs.products.map((p) => ({ code: p.productCode, label: p.productName }))
-      : (refs.bricks ?? []).map((b) => ({ code: b.brickId, label: b.brickName }));
+      // A brick kept only as history after a move is never an answer: it credits the area it left.
+      : (refs.bricks ?? []).filter((b) => !movedBricks.has(b.brickId)).map((b) => ({ code: b.brickId, label: b.brickName }));
 
     const suggestions = await aiSuggest(kind, unknowns, candidates);
     return NextResponse.json({ success: true, data: { suggestions } });

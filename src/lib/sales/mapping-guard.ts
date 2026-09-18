@@ -18,6 +18,7 @@
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
+import { parseBrickSalesMove, type BrickSalesMove } from "@/lib/sales/master-data/brick-move-result";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Exported so a test can assert the absence of email out loud rather than by inspection. */
@@ -409,18 +410,24 @@ export type MappingHoldDecision = "approved" | "rejected";
  * The apply is done INSIDE the database function, because that function is the only thing permitted
  * to set the bypass. Doing the update from here would either be blocked by the guard or require
  * handing the application a way to switch the guard off, which is the same as not having one.
+ *
+ * sos_map_guard_decide_and_move_sales (20260918150200) wraps sos_map_guard_decide: when the approved
+ * hold is a pharmacy a brick move held, that pharmacy's open-month sales move in the SAME
+ * transaction (owner decision 2026-09-18, "Approving one there also moves its unlocked-month
+ * sales"). `brickMove` says what moved; it is null for everything else. The moved files' totals are
+ * rebuilt afterwards (brick-moves.ts).
  */
 export async function decideMappingHold(input: {
   holdId: number;
   decision: MappingHoldDecision;
   actor: string;
-}): Promise<{ ok: boolean; reason?: string }> {
-  const { data, error } = await getSupabaseAdmin().rpc("sos_map_guard_decide", {
+}): Promise<{ ok: boolean; reason?: string; brickMove: BrickSalesMove | null }> {
+  const { data, error } = await getSupabaseAdmin().rpc("sos_map_guard_decide_and_move_sales", {
     p_actor: input.actor,
     p_decision: input.decision,
     p_hold_id: input.holdId,
   });
   if (error) throw error;
-  const result = (data ?? {}) as { ok?: boolean; reason?: string };
-  return { ok: result.ok === true, reason: result.reason };
+  const result = (data ?? {}) as { ok?: boolean; reason?: string; brickMove?: unknown };
+  return { brickMove: parseBrickSalesMove(result.brickMove), ok: result.ok === true, reason: result.reason };
 }

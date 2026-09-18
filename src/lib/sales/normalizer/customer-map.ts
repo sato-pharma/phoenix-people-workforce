@@ -875,6 +875,50 @@ export async function previewHistoricalReconciliation(input: {
   return parseReconciliationPreviewRow(row);
 }
 
+// Rebuilds every total one sales file feeds, each after the totals it reads. Shared by the history
+// correction below and by a brick move (src/lib/sales/master-data/brick-moves.ts), so the two can
+// never rebuild different sets. `failure` turns a failed step into the caller's own error; the
+// steps name themselves ("channel rollup refresh failed") so each caller keeps its own wording.
+export async function refreshBatchRollups(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  batchId: string,
+  failure: (step: string, message: string) => Error,
+): Promise<void> {
+  const [fact, directory, roi] = await Promise.all([
+    supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
+    supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
+    supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
+  ]);
+  const rollupError = fact.error ?? directory.error ?? roi.error;
+  if (rollupError) throw failure("rollup refresh failed", rollupError.message);
+  // The Monthly-Closing channel totals rollup rides the same trio — it reads the fact + directory
+  // rollups just refreshed above, so it must run AFTER them, never inside the Promise.all.
+  const channel = await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
+  if (channel.error) throw failure("channel rollup refresh failed", channel.error.message);
+  // The distributor×product rollup rides the same trio — after the fact rollup it reads.
+  const distProduct = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
+  if (distProduct.error) throw failure("distributor-product rollup refresh failed", distProduct.error.message);
+  // The wholesaler city split net FIRST — au.f_monthly_attribution reads it, and a correction or a
+  // brick move that shifted rows between areas is exactly when it goes stale.
+  try {
+    await writeStoreSplitNetForBatch(supabase, batchId);
+  } catch (splitError) {
+    const message = splitError instanceof Error ? splitError.message : String(splitError);
+    throw failure("the wholesaler split net failed to rebuild", message);
+  }
+  // The sales-vs-target attribution rollup rides the same trio — after the fact rollup it reads.
+  const attribution = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
+  if (attribution.error) throw failure("attribution rollup refresh failed", attribution.error.message);
+  // The import summaries — what the Source of Sales DASHBOARD reads. Until 2026-08-30 no
+  // refresh for them existed: they were written once at insert and never again, so the correction
+  // rebuilt every number the Monthly Closing reads and none of the numbers the dashboard reads.
+  // Correcting a row left the executive screen permanently stale with no marker anywhere
+  // (July 2026 was 653,299.13 EGP short), while the correction's own comment claimed "dashboards
+  // never go stale".
+  const summaries = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
+  if (summaries.error) throw failure("import summary refresh failed", summaries.error.message);
+}
+
 // The actual mutation: overwrites brick/area/region on every historical row for this customer that
 // disagrees with the ACTIVE customer->brick mapping (not just NULL ones — see the migration comment).
 // Refreshes every affected batch's rollups so dashboards never go stale, and audits the correction
@@ -901,73 +945,16 @@ export async function applyHistoricalReconciliation(input: {
 
   let refreshedBatches = 0;
   for (const batchId of affectedBatchIds) {
-    const [fact, directory, roi] = await Promise.all([
-      supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
-      supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
-      supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
-    ]);
-    const rollupError = fact.error ?? directory.error ?? roi.error;
-    if (rollupError) {
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but rollup refresh failed for batch ${batchId}: ${rollupError.message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
-    // The Monthly-Closing channel totals rollup rides the same trio — it reads the fact + directory
-    // rollups just refreshed above, so it must run AFTER them, never inside the Promise.all.
-    const channel = await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
-    if (channel.error) {
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but channel rollup refresh failed for batch ${batchId}: ${channel.error.message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
-    // The distributor×product rollup rides the same trio — after the fact rollup it reads.
-    const distProduct = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
-    if (distProduct.error) {
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but distributor-product rollup refresh failed for batch ${batchId}: ${distProduct.error.message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
-    // The wholesaler city split net FIRST — au.f_monthly_attribution reads it, and a reconcile that
-    // moved rows between areas is exactly when it goes stale.
-    try {
-      await writeStoreSplitNetForBatch(supabase, batchId);
-    } catch (splitError) {
-      const message = splitError instanceof Error ? splitError.message : String(splitError);
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but the wholesaler split net failed to rebuild for batch ${batchId}: ${message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
-    // The sales-vs-target attribution rollup rides the same trio — after the fact rollup it reads.
-    const attribution = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
-    if (attribution.error) {
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but attribution rollup refresh failed for batch ${batchId}: ${attribution.error.message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
-    // The import summaries — what the Source of Sales DASHBOARD reads. Until 2026-08-30 no
-    // refresh for them existed: they were written once at insert and never again, so this loop
-    // rebuilt every number the Monthly Closing reads and none of the numbers the dashboard reads.
-    // Correcting a row here left the executive screen permanently stale with no marker anywhere
-    // (July 2026 was 653,299.13 EGP short). The comment above this function claimed "dashboards
-    // never go stale" while that was the one dashboard going stale.
-    const summaries = await supabase.rpc("phx_refresh_sos_import_summaries", { p_batch_id: batchId });
-    if (summaries.error) {
-      throw new SalesWorkflowError(
-        "reconcile_rollup_refresh_failed",
-        `${updatedRows} historical row(s) were corrected, but import summary refresh failed for batch ${batchId}: ${summaries.error.message}. Re-run the reconcile to retry the refresh.`,
-        500,
-      );
-    }
+    await refreshBatchRollups(
+      supabase,
+      batchId,
+      (step, message) =>
+        new SalesWorkflowError(
+          "reconcile_rollup_refresh_failed",
+          `${updatedRows} historical row(s) were corrected, but ${step} for batch ${batchId}: ${message}. Re-run the reconcile to retry the refresh.`,
+          500,
+        ),
+    );
     refreshedBatches += 1;
   }
 

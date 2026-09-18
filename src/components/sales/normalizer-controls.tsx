@@ -26,7 +26,9 @@ export function CopyBtn({ text }: { text: string }) {
 
 // Type-to-search combobox — filter hundreds of bricks/products by typing instead of scrolling.
 // Includes a paste button: paste a copied raw value to instantly filter the list.
-export function ComboBox({ disabled, onChange, options, placeholder, value }: { disabled?: boolean; onChange: (v: string) => void; options: { label: string; value: string }[]; placeholder: string; value: string }) {
+// `className` sizes the box; a fixed-layout table cell passes "min-w-0" so the box fits its column
+// instead of forcing the table wider than the screen.
+export function ComboBox({ className, disabled, onChange, options, placeholder, value }: { className?: string; disabled?: boolean; onChange: (v: string) => void; options: { label: string; value: string }[]; placeholder: string; value: string }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -34,7 +36,7 @@ export function ComboBox({ disabled, onChange, options, placeholder, value }: { 
   const q = query.trim().toLowerCase();
   const filtered = open ? (q ? options.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : options).slice(0, 60) : [];
   return (
-    <div className="relative min-w-[240px]">
+    <div className={cn("relative min-w-[240px]", className)}>
       <input
         className="h-9 w-full border border-slate-300 bg-white px-2 pr-8 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50 disabled:text-slate-400"
         disabled={disabled}

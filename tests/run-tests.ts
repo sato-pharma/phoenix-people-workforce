@@ -567,6 +567,7 @@ import { runSalesMasterDataPaginationTests } from "./sales-master-data-paginatio
 import { runSalesMasterDataEditDeleteTests } from "./sales-master-data-edit-delete.test.ts";
 import { runMappingDeleteNeedsDeletePermissionTests } from "./mapping-delete-needs-delete-permission.test.ts";
 import { runSalesBrickRelocateTests } from "./sales-brick-relocate.test.ts";
+import { runSalesBrickMoveSalesTests } from "./sales-brick-move-sales.test.ts";
 import { runDistributorProfileStoreTests } from "./sales-distributor-profile-store.test.ts";
 import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.test.ts";
 import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
@@ -2960,7 +2961,11 @@ await runTest("sales profiles invariants", runSalesProfilesTests);
 await runTest("sales master-data pagination", runSalesMasterDataPaginationTests);
 await runTest("sales master-data edit/delete (soft deactivate)", runSalesMasterDataEditDeleteTests);
 await runTest("mapping delete needs sales:delete, not sales:import", runMappingDeleteNeedsDeletePermissionTests);
-await runTest("sales brick relocate (new id + deactivate old)", runSalesBrickRelocateTests);
+await runTest("sales brick relocate (new id, old brick kept switched on as history)", runSalesBrickRelocateTests);
+await runTest(
+  "a brick corrected in database moves with its pharmacies and open-month sales, and a held pharmacy's approval moves its sales too",
+  runSalesBrickMoveSalesTests,
+);
 await runTest("distributor profile store (editable merge + validation)", runDistributorProfileStoreTests);
 await runTest("weekly column profile store (editable merge + validation)", runWeeklyColumnProfileStoreTests);
 await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);

@@ -4,6 +4,7 @@ import { DatabaseMappingWorkspace } from "@/components/sales/database-mapping-wo
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { countBrickMoveFilesPending } from "@/lib/sales/master-data/brick-moves";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
 import { countCustomerMapByDistributor, pickOpeningCustomerDistributor } from "@/lib/sales/normalizer/customer-map";
@@ -12,7 +13,15 @@ import { profilesToHeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 
 export const dynamic = "force-dynamic";
 
-export default async function DatabaseMappingPage() {
+type SearchParams = Promise<{ brick?: string | string[]; tab?: string | string[] }>;
+
+function firstParam(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+}
+
+// `?tab=bricks&brick=<id>` is where the Source Normalizer's "Correct in database" lands: the Bricks
+// tab, opened on that brick's area correction (see brickCorrectionHref).
+export default async function DatabaseMappingPage({ searchParams }: { searchParams: SearchParams }) {
   const accessContext = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(accessContext) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
@@ -22,6 +31,16 @@ export default async function DatabaseMappingPage() {
   if (accessContext.role !== "Super Admin" && accessContext.scope !== "system") {
     redirect(resolveLandingPathForRole(accessContext.role));
   }
+
+  const params = await searchParams;
+  const initialBrickId = firstParam(params.brick) || null;
+  const tab = firstParam(params.tab);
+  const initialTab: MasterKey = initialBrickId
+    ? "bricks"
+    : (MASTER_ORDER as readonly string[]).includes(tab) ? (tab as MasterKey) : MASTER_ORDER[0];
+  // Moved files whose totals still wait to be rebuilt (a move whose page was closed mid-rebuild): the
+  // page picks the rebuild up again. Zero when the count cannot be read; the next move rebuilds them.
+  const pendingMoveFiles = countBrickMoveFilesPending().catch(() => 0);
 
   const initialRows = MASTER_ORDER.reduce((accumulator, master) => {
     accumulator[master] = [];
@@ -48,10 +67,13 @@ export default async function DatabaseMappingPage() {
 
   return (
     <DatabaseMappingWorkspace
+      initialBrickId={initialBrickId}
       initialCustomerDistributor={initialCustomerDistributor}
       initialError={initialError}
       initialHeaderGrid={initialHeaderGrid}
+      initialPendingMoveFiles={await pendingMoveFiles}
       initialRows={initialRows}
+      initialTab={initialTab}
     />
   );
 }

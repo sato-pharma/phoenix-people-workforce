@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { systemIdentity } from "@/config/system-settings";
 import { writeMappingAudit } from "@/lib/sales/mapping-audit";
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { customerDetailRow, type CustomerDetailRow } from "@/lib/sales/normalizer/customer-details";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
@@ -346,10 +347,24 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
   // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
   // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
   // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
-  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const [refs, movedBricks] = await Promise.all([
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+    loadMovedBricks(),
+  ]);
   const productCodes = new Set(refs.products.map((p) => normalizeCodeKey(p.productCode)));
   productCodes.add(IGNORE_PRODUCT_CODE); // "neglect this item" is a valid product target
   const brickById = new Map((refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), b]));
+  // A brick kept only as history after a move stays in the master, so published months resolve, but
+  // no mapping may be saved onto it: its sales would credit the area it left. A screen opened before
+  // the move can still offer it, so the save says where it went instead of writing it.
+  const movedTo = new Map([...movedBricks].map(([from, to]) => [normalizeCodeKey(from), to]));
+  const historyReason = (code: string): string | null => {
+    const to = movedTo.get(code);
+    if (!to) return null;
+    const from = brickById.get(code)?.brickName ?? code;
+    const successor = brickById.get(normalizeCodeKey(to))?.brickName ?? to;
+    return `${from} is kept only as history: it moved to ${successor}. Pick ${successor} instead.`;
+  };
   const supabase = getSupabaseAdmin();
 
   // Intra-batch dedup only — these sets prevent sending duplicate keys in a single upsert batch.
@@ -382,6 +397,8 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       const brick = brickById.get(code);
       if (!dist) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: "Missing distributor code" }); continue; }
       if (!brick) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: `Brick ID "${code}" not found in master` }); continue; }
+      const customerHistory = historyReason(code);
+      if (customerHistory) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: customerHistory }); continue; }
       const ck = `${dist} ${normalizeCodeKey(raw)}`;
       if (haveCust.has(ck)) { skipped += 1; continue; }
       haveCust.add(ck);
@@ -419,6 +436,8 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       productRows.push({ alias: raw, normalized_alias: key, distributor_code: dist, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
     } else {
       if (!brickById.has(code)) { invalid += 1; invalidEntries.push({ raw, type: "territory", reason: `Brick ID "${code}" not found in master` }); continue; }
+      const territoryHistory = historyReason(code);
+      if (territoryHistory) { invalid += 1; invalidEntries.push({ raw, type: "territory", reason: territoryHistory }); continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
       haveTerr.add(key);
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });

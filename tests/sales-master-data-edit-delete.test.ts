@@ -87,7 +87,7 @@ export function runSalesMasterDataEditDeleteTests() {
   assert.doesNotMatch(
     setActiveBody,
     /\.delete\(\)/,
-    "setMasterRowActive never issues a real row DELETE (relocateBrick's compensating rollback is a separate, narrow exception — see sales-brick-relocate.test.ts)",
+    "setMasterRowActive never issues a real row DELETE",
   );
 
   const routeSource = readFileSync("app/api/sales/database-mapping/[master]/[key]/route.ts", "utf8");
