@@ -1705,6 +1705,7 @@ import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipi
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import { runCsrfBlockIsLoggedTests } from "./csrf-block-is-logged.test.ts";
 import { runPortalSosSourceMaskTests } from "./portal-sos-source-mask.test.ts";
+import { runPortalTotalValueDeltaTests } from "./portal-total-value-delta.test.ts";
 import {
   runEmployeeManagementCanEditReachTests,
   runEmployeeManagementCanEditTests,
@@ -5729,6 +5730,10 @@ await runTest(
 await runTest(
   "El Qema leaves no trace on the SoS dashboard either (13 of 19 roles can open it; the filter, the ranked bars, the customer rows and the code-keyed comparison all mask, and totals never move)",
   runPortalSosSourceMaskTests,
+);
+await runTest(
+  "the portal SoS Total Value arrow compares the picked month with the month before it (never the trend's newest two months, and no arrow when that month has no sales)",
+  runPortalTotalValueDeltaTests,
 );
 await runTest(
   "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
