@@ -280,6 +280,7 @@ import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screeni
 import { runScreeningFilterCountsTests } from "./recruitment-screening-filter-counts.test.ts";
 import { runScreeningRoleMismatchTests } from "./recruitment-screening-role-mismatch.test.ts";
 import { runWhatsAppAnswersTests } from "./recruitment-whatsapp-answers.test.ts";
+import { runRecruitmentWhatsAppApplicantsTests } from "./recruitment-whatsapp-applicants.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
 import { runRecruitmentEmployerNameTests } from "./recruitment-employer-name.test.ts";
 import { runRecruitmentScreeningOrderTests } from "./recruitment-screening-order.test.ts";
@@ -2473,6 +2474,10 @@ await runTest(
 await runTest(
   "recruitment WhatsApp answers (every answer an applicant gave the bot is listed beside the CV, each under its own question)",
   runWhatsAppAnswersTests,
+);
+await runTest(
+  "recruitment WhatsApp Applicants (everyone who started the bot's questions, searched by job title and that title's own questions; their WhatsApp answer outranks the CV for where they live)",
+  runRecruitmentWhatsAppApplicantsTests,
 );
 await runTest(
   "recruitment CV file choice (screening mode picks the newest renderable CV, and says so when there is none)",

@@ -902,6 +902,10 @@ export const adminNavigationSectionSeeds = [
       // no more reach — the same choice Manager CV Engagement made. The recruitment:read clause is
       // what its page gate reads too, so the two cannot drift (every-offered-link-opens.test.ts).
       { href: "/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
+      // WhatsApp Applicants — everyone who started the WhatsApp bot's questions, searched by job
+      // title and then by that title's own questions (app/(admin)/recruitment/whatsapp-applicants/
+      // page.tsx). Owner, 2026-09-18. Same gate and same clause as Returned CVs above.
+      { href: "/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
       // CV Sheet Links — the bearer tokens feeding the owner's live CV-lifecycle Google Sheet
       // (app/(admin)/recruitment/cv-lifecycle-sheet/page.tsx). #3102 shipped that whole feature
       // with no UI, so the only token was minted by hand in SQL against production and nothing in
@@ -2023,6 +2027,11 @@ const hrNavigationSectionSeeds = [
       // isHrAuthorityRole + recruitment:read — and had no row anywhere, so the district managers'
       // returned CVs sat in a queue nobody could navigate to.
       { href: "/hr/recruitment/returned-cvs", icon: Undo2, label: "Returned CVs", permissions: [{ resource: "recruitment" }] },
+      // The HR shell's own row for /recruitment/whatsapp-applicants, added with the page on
+      // 2026-09-18. The admin row alone would leave the HR Business Partner, who works in this shell,
+      // able to reach it only by typing the address (see WhatsApp Templates below). Same gate as
+      // Returned CVs above, and only that seat holds `recruitment`, so HR Operations is never offered it.
+      { href: "/hr/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
       // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
       // `action: "export"` rather than the bare resource used by its neighbours, because that is
       // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers
