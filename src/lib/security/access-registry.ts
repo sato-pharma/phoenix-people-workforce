@@ -1280,6 +1280,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/policy", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/imei", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
+  // register's own createDevice writes the required audit row.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.
