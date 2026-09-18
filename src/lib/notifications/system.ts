@@ -30,6 +30,7 @@ import { enforcePhoenixCrmEmailBlock } from "@/lib/notifications/phoenix-crm-cha
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
+import { enforceOutstationRejectionEmailBlock } from "@/lib/notifications/outstation-rejection-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -391,10 +392,16 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // The weekly attendance review is deliberately NOT blocked here any more (owner rule 2026-09-17,
   // replacing 2026-09-15's "never email"): its notices go by email, Telegram and in-app — see
   // attendance-digest-channels.ts.
+  // Same hard guarantee for an expense rejection (owner rule 2026-09-19): the employee is told
+  // in-app, never by email — see outstation-rejection-channel-guard.ts. Scoped to the single
+  // outstation request_rejected eventType; the submit notice and the reminders keep their email.
+  // Placed BEFORE the Phoenix CRM block, not after: phoenix-crm-email-block.test.ts pins that block
+  // as the chain's last line, and the two guard disjoint sets, so the order changes nothing.
+  const withoutOutstationRejectionEmail = enforceOutstationRejectionEmailBlock(withoutCandidateAssignedEmail, input.module, input.eventType);
   // Same hard guarantee for Phoenix CRM (owner rule 2026-09-16): in-app and Telegram only, never
   // email — see phoenix-crm-channel-guard.ts. Keyed on its own module string; chained, never
   // replacing a block above, because each guards a disjoint set.
-  return enforcePhoenixCrmEmailBlock(withoutCandidateAssignedEmail, input.module);
+  return enforcePhoenixCrmEmailBlock(withoutOutstationRejectionEmail, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

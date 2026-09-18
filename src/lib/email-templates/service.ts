@@ -766,7 +766,7 @@ const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
     bodyText:
       "{{summary}}\n\nEmployee: {{employeeName}}\nAmount: {{amount}}\nDestination: {{destination}}\nTrip dates: {{startDate}} to {{endDate}}",
     closingText: "Open Phoenix Workforce to review the full request and supporting evidence.",
-    description: "Outstation and expense updates: submission (to the approver), approval, and rejection (to the employee).",
+    description: "Outstation and expense updates: submission (to the approver) and approval.",
     greeting: "Dear {{honorific}}{{recipientName}},",
     isActive: true,
     previewText: "An outstation / expense request needs your attention.",

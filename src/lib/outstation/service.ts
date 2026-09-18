@@ -1633,8 +1633,11 @@ async function notifyOutstationSubmitted(
   }
 }
 
-// Rejection notification to the submitting employee. This is the ONLY email sent for
-// outstation/expenses — HR Manager rejects violations; approvals are silent (auto-approve).
+// Rejection notification to the submitting employee — HR Manager rejects violations; approvals
+// are silent. NEVER emailed (owner rule 2026-09-19: "I don't want him to receive an email that his
+// expense is rejected"): in-app, Telegram and push only. The `email` block below is inert — kept
+// only so the plain template stays pinned — and outstation-rejection-channel-guard.ts strips email
+// even when the Telegram-failure fallback asks for it.
 async function notifyOutstationDecision(input: {
   comment?: string | null;
   decision: "reject";
@@ -1648,7 +1651,7 @@ async function notifyOutstationDecision(input: {
       createSystemNotification({
         actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
         category: "general",
-        channels: ["in_app", "email", "telegram", "push"],
+        channels: ["in_app", "telegram", "push"],
         email: {
           metrics: [
             { label: "Employee", value: r.employeeName },
