@@ -17,6 +17,15 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // Same gate as the list route beside it and the page that hosts the button: `sales:export` is
+    // held by the base Employee and Medical Rep roles, and this workbook is the whole national
+    // customer map with names and addresses.
+    if (access.role !== "Super Admin" && access.scope !== "system") {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: the customer map export is restricted to the admin account." },
+        { status: 403 },
+      );
+    }
     await assertPermission(access, "sales", "export");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:customer-map-validation" });
     const distributor = new URL(request.url).searchParams.get("distributor") ?? "";

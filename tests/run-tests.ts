@@ -1476,6 +1476,7 @@ import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-expor
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
+import { runCustomerMapReadGateTests } from "./customer-map-read-gate.test.ts";
 import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
 import { runEmployeeAchievementGroupingTests } from "./employee-achievement-grouping.test.ts";
 import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.test.ts";
@@ -4879,6 +4880,11 @@ await runTest(
 await runTest(
   "public sales exposure (no achievement data under public/, master-workbook export gated on Super Admin before the national read)",
   runPublicSalesExposureGuardsTests,
+);
+
+await runTest(
+  "customer map read gate (the Database Validation customer list and its export refuse every role but Super Admin before reading a customer; sales:read/export alone admits Employee and Medical Rep)",
+  runCustomerMapReadGateTests,
 );
 
 await runTest(
