@@ -124,6 +124,30 @@ machines the register does not already hold.
 | ACTION1_API_BASE_URL | Tenant API root. EU tenants are `https://app.eu.action1.com/api/3.0` | https://app.action1.com/api/3.0 |
 | ACTION1_ORG_ID | Which organization's endpoints to read. Only needed when the account has more than one — with several and none set, the pull refuses and names them rather than guessing | |
 
+## Android Management API (Optional — managed Google Play)
+
+Lets **Managed Google Play** open Google's own store iframe inside Phoenix, where the owner approves
+which apps the company tablets may run and uploads Phoenix's own app privately. Without these the
+page is still there and answers with the variable name it wants, so nothing breaks when it is unset —
+the feature is simply not connected.
+
+**There are two doors and only one of them charges.** The iframe's **Private apps** page creates the
+enterprise's Play developer account itself and waives the US$25 registration fee — no Play Console
+account, no card, no D-U-N-S number. Signing up at the Play Console instead charges the fee and, for
+an organization account, requires a D-U-N-S number that Sato Pharma has never been confirmed to have.
+Use the iframe.
+
+The enterprise is created **once**, from the page's own setup panel, and the Google account that
+signs in becomes its permanent owner with no transfer path afterwards — so it must be a company
+account, never a personal one.
+
+| Variable | Description | Default |
+|---|---|---|
+| ANDROID_MANAGEMENT_ENTERPRISE_NAME | The binding in full, starting `enterprises/` (it looks like `enterprises/LC0123456789`). The setup panel prints it after the one-time signup; set it and restart. Everything else refuses until it is set | |
+| ANDROID_MANAGEMENT_PROJECT_ID | The Google Cloud project the Android Management API is enabled on. Needed only for the one-time signup — **the quota is 2 projects for the whole company**, so this is Phoenix's own, never a new one | |
+| ANDROID_MANAGEMENT_ACCESS_TOKEN | A short-lived OAuth token (`gcloud auth print-access-token`). Read first, ahead of the key — the working path while the production credential is decided, because the owner's Google org blocks long-lived service-account keys | |
+| ANDROID_MANAGEMENT_KEY | A service-account JSON key, base64-encoded. A fleet-wide approval credential — server-only, never exposed to a browser | |
+
 ## Observability
 
 `COMMIT_SHA` / `NEXT_PUBLIC_COMMIT_SHA` are the release identifier for the self-hosted

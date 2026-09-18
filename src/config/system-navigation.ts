@@ -3574,6 +3574,20 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Every laptop, tablet and phone the company owns, and who signed for it.",
     permissions: [{ resource: "company_devices" }],
   },
+  // 🔴 `action: "approve"` is the whole point of this card, not decoration. Device Custody above is
+  // paperwork and HR Operations runs it; this one publishes software onto every rep's tablet, and
+  // `approve` is the only action on this resource the matrix reserves to the Super Admin. That is
+  // also why it is HERE and not in the /hr rail beside Device Custody: neither HR seat can open the
+  // page, and an /hr row reaching a page no HR seat is admitted to is a dead row — the thing
+  // tests/hr-url-namespace.test.ts refuses. The page and all three route handlers assert the same
+  // permission.
+  {
+    href: "/devices/managed-play",
+    icon: Store,
+    label: "Managed Google Play",
+    description: "Approve which apps the company tablets are allowed to run.",
+    permissions: [{ resource: "company_devices", action: "approve" }],
+  },
   {
     href: "/retention",
     icon: HeartPulse,
@@ -4291,6 +4305,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/retention",
           "/mailbox-offboarding",
           "/devices",
+          "/devices/managed-play",
         ],
       },
       {
