@@ -13,8 +13,9 @@ import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation, previewOfficeAllocation } from "@/lib/sales/office-upload";
 import { buildPreviewBreakdowns, type PreviewBreakdowns } from "@/lib/sales/normalizer/breakdowns";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import { describeRefusedRow, isRefusedRow, listRowLines, summarizeRefusedRows } from "@/lib/sales/normalizer/row-messages";
 import { persistNormalizedBatch } from "@/lib/sales/normalizer/service";
-import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
+import type { CodedRow, NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
 import { RECOGNITION_ENGINE_VERSION, recognizeDistributorWorkbook, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
 import { validateNormalizedUpload, type DistributorCrossCheck, type ValidationContext, type ValidationFinding, type ValidationReport, type ValidationSeverity } from "@/lib/sales/upload-validation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -157,6 +158,64 @@ export function withPeriodGateFinding(report: ValidationReport, decision: Period
         };
   // Prepend: this is the reason the import will be refused, so it belongs above findings about rows
   // that will never be imported anyway.
+  return {
+    ok: false,
+    errorCount: report.errorCount + 1,
+    warningCount: report.warningCount,
+    infoCount: report.infoCount,
+    findings: [finding, ...report.findings],
+  };
+}
+
+/**
+ * Whether one exception row makes commit refuse the WHOLE file. An unknown product is the only
+ * exception the import tolerates: those rows are left out and the rest imports. Any other reason
+ * blocks, and commit returns "blocked" before it validates anything.
+ */
+export function blocksImport(exception: NormalizeException): boolean {
+  return exception.reason !== "product";
+}
+
+/**
+ * The one finding for the rows commit refuses that no mapping can fix (row-messages.ts's
+ * REFUSED_ROW_REASONS), or null when there are none. It names each row and the cell as the sheet wrote
+ * it — "Row 145: quantity "1,2OO" has letters in it" — so the person knows exactly what to correct.
+ * Analyze folds it into its report; a blocked commit returns it so the refusal says the same thing.
+ */
+export function refusedRowsFinding(exceptions: readonly NormalizeException[]): ValidationFinding | null {
+  const refused = exceptions.filter(blocksImport).filter(isRefusedRow);
+  if (refused.length === 0) return null;
+  return {
+    code: "rows_refused",
+    severity: "error",
+    title: "Rows the import refuses",
+    detail:
+      `${summarizeRefusedRows(refused)}. ${listRowLines(refused.map(describeRefusedRow))}. ` +
+      "One such row is enough for the import to refuse the whole file, not just these rows, and no mapping can fix them.",
+    count: refused.length,
+    // Row numbers and the refused cell only: a refused row's product name is raw sheet text, which the
+    // confidential-product exclusion cannot recognise, so naming it could show a restricted viewer a
+    // product they may not see.
+    sampleRows: refused.slice(0, 12).map((e) => e.rawRowNumber),
+    fixHint:
+      "Correct these rows in the distributor's sheet, then analyze again. Arabic digits and thousands " +
+      "written with spaces are read for you; a letter, a bracket or a word inside a number is never guessed.",
+  };
+}
+
+/**
+ * Fold the rows commit refuses into an ANALYZE report, as withPeriodGateFinding does for the period.
+ *
+ * Analyze never looked at them. A row with an unreadable quantity, value or discount, or a blank
+ * customer where the profile treats one as an error (EGD Branch), is counted in no unmapped list and
+ * tripped no strict check, so Sales Upload said "Validation passed", Diagnostics said "this file would
+ * import cleanly", and the very next click imported nothing.
+ *
+ * Pure, so the two paths can be proven to agree without uploading a file.
+ */
+export function withRefusedRowsFinding(report: ValidationReport, exceptions: readonly NormalizeException[]): ValidationReport {
+  const finding = refusedRowsFinding(exceptions);
+  if (!finding) return report;
   return {
     ok: false,
     errorCount: report.errorCount + 1,
@@ -313,9 +372,13 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // ...and fold in the period gate, because commit REFUSES a missing or multi-month period before it
   // validates anything. Without this, those two cases were validated with resolvedPeriod = null —
   // which also disables the period-dependent checks — and could report "Validation passed" for a file
-  // the very next click rejects.
+  // the very next click rejects. The rows commit refuses outright are folded in the same way: an
+  // unknown territory or customer already shows as an unmapped item, but nothing else showed them.
   const validation = withPeriodGateFinding(
-    await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck),
+    withRefusedRowsFinding(
+      await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck),
+      rec.result.exceptions,
+    ),
     decision,
   );
   return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
@@ -323,7 +386,9 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
 
 export type CommitResult =
   | { status: "imported"; batchId: string; period: string | null; importedRows: number; reconciliation: ReconciliationReceipt; engineVersion: string; validation: ValidationReport }
-  | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview }
+  // blockingRows: the rows that stopped the import (unknown products do not). refused: set when rows no
+  // mapping can fix are among them, so the refusal names each one.
+  | { status: "blocked"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; blockingRows: number; refused: ValidationFinding | null }
   | { status: "blocked_validation"; reconciliation: ReconciliationReceipt; preview: NormalizePreview; validation: ValidationReport };
 
 // Persist a raw upload. Blocks (persists nothing) when the file can't be used: unmapped rows
@@ -361,10 +426,12 @@ export async function commitMonthlyUpload(input: {
   const reconciliation = buildReconciliation(result, excludeProductCodes);
 
   // Product-only exceptions are auto-excluded (those rows are already absent from result.coded).
-  // Only brick/customer/both/blank_customer exceptions block — the operator must fix those mappings.
-  const blockingExceptions = result.exceptions.filter((e) => e.reason !== "product");
+  // Every other exception blocks (blocksImport) — an unmapped territory or customer, a blank customer
+  // where the profile makes it an error, or a quantity/value/discount that cannot be read. Analyze
+  // reports the same rows through withRefusedRowsFinding.
+  const blockingExceptions = result.exceptions.filter(blocksImport);
   if (blockingExceptions.length > 0) {
-    return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products, excludeProductCodes) };
+    return { status: "blocked", reconciliation, preview: summarizePreview(input.distributorCode, rec.distributorName, result, rec.products, excludeProductCodes), blockingRows: blockingExceptions.length, refused: refusedRowsFinding(blockingExceptions) };
   }
 
   const decision = resolveUploadPeriod(result.coded.map((r) => r.invoiceDate), String(input.periodOverride ?? "").trim());
