@@ -179,6 +179,8 @@ export async function runRecruitmentScreeningPageTests() {
   // ── 2 · Reading the narrowing out of a link ───────────────────────────────
   const nothing = {
     area: null,
+    // Off is the default and narrows nothing: only a link that asks for it keeps decided CVs.
+    decided: false,
     notified: "any",
     rating: null,
     received: null,
