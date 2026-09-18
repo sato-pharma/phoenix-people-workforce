@@ -5,7 +5,15 @@
 // WHO CAN REACH A MAILBOX. Exactly one person: its owner. There is no id in any request — every
 // function here takes the resolved session and derives the owner from it (mailboxOwnerKey), so no
 // input exists by which one employee could name another's mailbox, and no role (Super Admin
-// included) has a screen or route that lists or opens these rows. The compliance monitor
+// included) has a screen or route that lists or opens these rows.
+//
+// ONE PATH WRITES A ROW FOR SOMEBODY ELSE, AND ONLY WRITES: connectNewHireMailbox, behind the New
+// Hire Mailboxes page (owner instruction 2026-09-18). Whoever creates a new hire's mailbox in
+// Turbify generates its app password there, and handing it straight to Phoenix is what makes the
+// hire's My email work on day one with nothing for them to do. It binds the password to the hire's
+// OWN active login, never opens or returns a stored one, and refuses anybody who already has a
+// connection — so it can never replace, read or redirect a mailbox a person connected themselves.
+// The compliance monitor
 // (src/lib/mailbox-monitor/) is a separate table and a separate crypto context: its code cannot
 // decrypt one of these passwords even holding the row (tests/personal-mailbox.test.ts pins both).
 // A row is also bound to the LOGIN that connected it, not only to the HR id: app_auth_users.hr_id
@@ -19,6 +27,7 @@
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { describeImapError, normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
 import { logError } from "@/lib/observability/log";
 import {
@@ -32,6 +41,7 @@ import {
   describeSmtpError,
   isAuthenticationFailure,
   mailboxOwnerKey,
+  isPlausibleAddress,
   normalizeAddress,
   PERSONAL_MAILBOX_SECRET_CONTEXT,
   PersonalMailboxError,
@@ -115,10 +125,15 @@ export async function resolveMailboxOwner(access: AccessContext): Promise<Person
   let workEmail: string | null = null;
   let employeeName: string | null = null;
   if (hrId) {
+    // The session carries the LOWER-CASE comparison key (canonicalHrIdKey) while employees store
+    // the display form ("B-10"), so a plain .eq on it matched nobody and every person silently fell
+    // back to their login's address. That fallback happened to agree for everyone connected so far;
+    // it does not for a new hire whose company address was filled in after their login was made.
     const { data, error } = await db()
       .from("employees")
       .select("work_email,full_name")
-      .eq("hr_id", hrId)
+      .in("hr_id", hrIdLookupKeys(hrId))
+      .limit(1)
       .maybeSingle();
     if (error) throw error;
     const row = data as { work_email?: string | null; full_name?: string | null } | null;
@@ -204,35 +219,26 @@ export async function getPersonalMailboxState(owner: PersonalMailboxOwner): Prom
 }
 
 /**
- * Prove a pasted app password against BOTH servers, then store it sealed. One login each: a wrong
- * password costs the person two failed attempts on their own mailbox, never more — the route caps
- * how often this can run.
+ * Prove an app password against BOTH servers and hand back the cleaned password for sealing. One
+ * login each: a wrong password costs the mailbox two failed attempts, never more — both routes that
+ * reach this cap how often it can run.
  */
-export async function connectPersonalMailbox(
-  owner: PersonalMailboxOwner,
-  rawPassword: string,
-): Promise<PersonalMailboxState> {
-  if (!owner.emailAddress) {
-    throw new PersonalMailboxError(
-      "HR has no company email on file for you, so there is nothing to connect. Ask HR to add it.",
-      409,
-    );
-  }
+async function verifyAppPassword(address: string, rawPassword: string): Promise<string> {
   const password = normalizeAppPassword(rawPassword);
   if (password.length < 8 || password.length > 64) {
     throw new PersonalMailboxError("Paste the app password exactly as Turbify showed it.");
   }
-  const credential: PersonalMailboxCredential = { password, user: owner.emailAddress };
+  const credential: PersonalMailboxCredential = { password, user: address };
 
   try {
     await verifyImapLogin(credential);
   } catch (error) {
     if (isAuthenticationFailure(error)) {
       throw new PersonalMailboxError(
-        "Turbify refused that app password. Create a new one and paste it here — the letters only.",
+        `Turbify refused that app password for ${address}. Create a new one and paste it here — the letters only.`,
       );
     }
-    throw new PersonalMailboxError(`Could not reach your mailbox: ${describeImapError(error)}.`, 502, {
+    throw new PersonalMailboxError(`Could not reach the mailbox: ${describeImapError(error)}.`, 502, {
       diagnostic: true,
     });
   }
@@ -248,6 +254,25 @@ export async function connectPersonalMailbox(
       diagnostic: true,
     });
   }
+  return password;
+}
+
+/**
+ * Prove a pasted app password against BOTH servers, then store it sealed. One login each: a wrong
+ * password costs the person two failed attempts on their own mailbox, never more — the route caps
+ * how often this can run.
+ */
+export async function connectPersonalMailbox(
+  owner: PersonalMailboxOwner,
+  rawPassword: string,
+): Promise<PersonalMailboxState> {
+  if (!owner.emailAddress) {
+    throw new PersonalMailboxError(
+      "HR has no company email on file for you, so there is nothing to connect. Ask HR to add it.",
+      409,
+    );
+  }
+  const password = await verifyAppPassword(owner.emailAddress, rawPassword);
 
   const now = new Date().toISOString();
   const { error } = await db()
@@ -268,6 +293,122 @@ export async function connectPersonalMailbox(
     );
   if (error) throw error;
   return getPersonalMailboxState(owner);
+}
+
+export type NewHireMailboxConnectResult = {
+  /** True when this exact address was already connected for the hire: nothing was written. */
+  alreadyConnected: boolean;
+  emailAddress: string;
+};
+
+/**
+ * Connect a NEW HIRE's company mailbox to their My email, with the app password created while the
+ * mailbox was set up in Turbify. The one function here that writes a row for somebody other than
+ * the signed-in person (see the header). Reached only from src/lib/new-hire-mailbox/service.ts,
+ * behind `mailbox_offboarding:update`, and it writes — it never reads a stored password back.
+ *
+ * The row is bound to the hire's OWN login: exactly one active Phoenix login carrying their HR id,
+ * with the owner key derived from it exactly as resolveMailboxOwner derives it from that login's
+ * session. So the hire's first sign-in finds it, and no other login ever does.
+ */
+export async function connectNewHireMailbox(input: {
+  displayName: string;
+  emailAddress: string;
+  hrId: string;
+  rawPassword: string;
+}): Promise<NewHireMailboxConnectResult> {
+  const address = normalizeAddress(input.emailAddress);
+  if (!isPlausibleAddress(address)) {
+    throw new PersonalMailboxError(`"${input.emailAddress.trim()}" is not an email address.`);
+  }
+  const hrKey = canonicalHrIdKey(input.hrId);
+  if (!hrKey) throw new PersonalMailboxError("Choose the employee this mailbox belongs to.");
+
+  const { data: loginRows, error: loginError } = await db()
+    .from("app_auth_users")
+    .select("login_id,hr_id")
+    .in("hr_id", hrIdLookupKeys(input.hrId))
+    .eq("is_active", true);
+  if (loginError) throw loginError;
+  const logins = ((loginRows ?? []) as Array<{ hr_id: string | null; login_id: string | null }>).filter(
+    (row) => Boolean(row.login_id?.trim()) && canonicalHrIdKey(row.hr_id) === hrKey,
+  );
+  if (logins.length === 0) {
+    throw new PersonalMailboxError(
+      `${input.displayName} has no active Phoenix login, so there is nobody to connect this mailbox to. Give them a login in Users, then try again.`,
+      409,
+    );
+  }
+  if (logins.length > 1) {
+    throw new PersonalMailboxError(
+      `${input.displayName} has ${logins.length} active Phoenix logins, so Phoenix cannot tell which one the mailbox belongs to. Switch off the extra login in Users, then try again.`,
+      409,
+    );
+  }
+  const loginId = String(logins[0].login_id).trim();
+  const key = mailboxOwnerKey({ hrId: hrKey, loginId });
+  if (!key) throw new PersonalMailboxError("Choose the employee this mailbox belongs to.");
+
+  const { data: ownRow, error: ownError } = await db()
+    .from(CONNECTIONS_TABLE)
+    .select("email_address,owner_login_id")
+    .eq("owner_key", key)
+    .maybeSingle();
+  if (ownError) throw ownError;
+  const own = ownRow as { email_address: string; owner_login_id: string | null } | null;
+  if (own) {
+    if (normalizeAddress(own.email_address) === address && own.owner_login_id === loginId) {
+      return { alreadyConnected: true, emailAddress: address };
+    }
+    throw new PersonalMailboxError(
+      `${input.displayName}'s My email is already connected. Phoenix never replaces a connection somebody already has.`,
+      409,
+    );
+  }
+
+  const { data: takenRows, error: takenError } = await db()
+    .from(CONNECTIONS_TABLE)
+    .select("owner_key")
+    .eq("email_address", address)
+    .neq("owner_key", key)
+    .limit(1);
+  if (takenError) throw takenError;
+  if ((takenRows ?? []).length > 0) {
+    throw new PersonalMailboxError(
+      `${address} is already connected to another person's My email. Check the address.`,
+      409,
+    );
+  }
+
+  const password = await verifyAppPassword(address, input.rawPassword);
+
+  const now = new Date().toISOString();
+  // INSERT, never upsert: a connection that appeared between the check above and here (the hire
+  // connecting it themselves) must win, not be overwritten.
+  const { error } = await db()
+    .from(CONNECTIONS_TABLE)
+    .insert({
+      email_address: address,
+      last_error: null,
+      last_ok_at: now,
+      // The same value the hire's own session would write (see connectPersonalMailbox).
+      owner_hr_id: hrKey,
+      owner_key: key,
+      owner_login_id: loginId,
+      sealed_password: sealSecret(password, SECRET_OPTIONS),
+      status: "active",
+      updated_at: now,
+    });
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new PersonalMailboxError(
+        `${input.displayName}'s My email was connected a moment ago from somewhere else. Nothing was changed.`,
+        409,
+      );
+    }
+    throw error;
+  }
+  return { alreadyConnected: false, emailAddress: address };
 }
 
 /** Forget the connection. The app password itself stays valid in Turbify until the person deletes it there. */

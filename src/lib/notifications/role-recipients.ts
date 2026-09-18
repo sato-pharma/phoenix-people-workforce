@@ -37,6 +37,7 @@ export const notificationRoleKeys = [
   "retention_risk_alert",
   "crm_account_setup_alert",
   "sos_mapping_guard_alert",
+  "new_hire_mailbox_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -213,6 +214,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     description:
       "Who is told when an employee is added to the employee master, so that person can be given an iReports360 (CRM) account. The notice carries the new hire's line, hiring date, region, area, manager, work email and mobile, and links to the New Hire CRM Setup tab where the CRM username and CRM code are entered. Defaults to the SFE Manager alone — the owner's instruction, 2026-09-07. Super Admin is deliberately not seeded alongside him: this is one person's standing job, and an audience of two on a per-hire notice is how both recipients learn to assume the other one did it.",
     roles: ["SFE Manager"],
+    enabled: true,
+  },
+  new_hire_mailbox_alert: {
+    key: "new_hire_mailbox_alert",
+    label: "New hire mailbox",
+    description:
+      "Who is told, in-app and on Telegram, when an employee is added, so that person's Turbify mailbox can be created and its app password handed to Phoenix. The notice carries the new hire's name, job title and the address Phoenix proposes, and links to the New Hire Mailboxes page. Never email: the mailbox it is about does not exist yet. Defaults to Super Admin alone — the owner's instruction, 2026-09-18.",
+    roles: ["Super Admin"],
     enabled: true,
   },
   marketing_sla_reminder: {

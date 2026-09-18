@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
+import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
@@ -1253,6 +1254,12 @@ export async function POST(request: Request) {
     // and manager back out of the directory, and a stale read would send a notice full of blanks.
     if (dryRunResult.rowsToInsert.length > 0) {
       await openAndAnnounceCrmAccountSetup({
+        actorId: access.loginId ?? access.hrId ?? access.role,
+        hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
+        source: "employee_import",
+      });
+      // And each one's company email (owner instruction 2026-09-18), from the same list.
+      await openAndAnnounceNewHireMailboxes({
         actorId: access.loginId ?? access.hrId ?? access.role,
         hrIds: dryRunResult.rowsToInsert.map((record) => record.hrId),
         source: "employee_import",

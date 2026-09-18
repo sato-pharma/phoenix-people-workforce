@@ -1698,6 +1698,7 @@ import { runAttendanceDeductionCancelRuleTests } from "./attendance-deduction-ca
 import { runAttendanceDeductionCancelMatrixTests } from "./attendance-deduction-cancel-matrix.test.ts";
 import { runSecretBoxTests } from "./secret-box.test.ts";
 import { runPersonalMailboxTests } from "./personal-mailbox.test.ts";
+import { runNewHireMailboxTests } from "./new-hire-mailbox.test.ts";
 
 import { runAttendanceWeeklyDigestTests } from "./attendance-weekly-digest.test.ts";
 import { runAttendanceDigestRulesTests } from "./attendance-digest-rules.test.ts";
@@ -5993,6 +5994,11 @@ await runTest(
 await runTest(
   "My email is private to each person: the owner comes from the session only and no route reads a person from the request, the compliance monitor can neither reach the personal table nor decrypt a personal app password (its own context-free blobs still open), the email reader is a script-less sandbox, a refused password stops all further logins before the password is opened again, and leavers are purged daily",
   runPersonalMailboxTests,
+);
+
+await runTest(
+  "a new hire's company email is taken care of when they are added: HR's typed address always wins, a generated one follows the house first.second shape and never repeats a taken one, the notice names the person and never email, both employee-create paths open the task, and the app password pasted on the page is permission-gated, rate-capped, never logged or audited, and INSERTED under the hire's own single active login so a connection they made themselves always wins",
+  runNewHireMailboxTests,
 );
 
 await runTest(

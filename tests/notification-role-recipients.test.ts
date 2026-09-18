@@ -96,14 +96,20 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // /sales/mapping-guard, and releasing one is his decision by construction, since the guard fires
   // precisely when somebody else's change was about to replace one of his.
   sos_mapping_guard_alert: { roles: ["Super Admin"], enabled: true },
+  // 22nd key, added 2026-09-18. Owner instruction: when an employee is added, their Turbify
+  // mailbox is made and its app password lands in Phoenix, so My email works on day one. Turbify
+  // has no API for either, so one person does the Turbify half; he named himself as that person.
+  // Super Admin ALONE, and in-app plus Telegram only — the alert is ABOUT a mailbox that does not
+  // exist yet, and his standing rule is that nothing here sends anyone an email.
+  new_hire_mailbox_alert: { roles: ["Super Admin"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 21, "expected exactly the 21 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 22, "expected exactly the 22 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 21 keys",
+    "notificationRoleKeys set does not match the confirmed 22 keys",
   );
 
   for (const key of notificationRoleKeys) {
