@@ -1,8 +1,9 @@
 import { ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Card, MicroLabel, SecondaryButton } from "@/components/ui";
+import { Card, MicroLabel, OfflineNotice, SecondaryButton } from "@/components/ui";
 import { apiBaseUrl, isProductionTarget } from "@/lib/config";
+import { describeCachedAt } from "@/lib/offline-cache";
 import { useSession } from "@/lib/session";
 import { hairline, space, type } from "@/theme/tokens";
 import { usePalette } from "@/theme/use-palette";
@@ -43,7 +44,7 @@ export default function ProfileScreen() {
   const palette = usePalette();
   const insets = useSafeAreaInsets();
   const { signOut, user } = useSession();
-  const { data } = usePhoenixQuery<PortalHome>("/api/employee-portals/home");
+  const { cachedAt, data } = usePhoenixQuery<PortalHome>("/api/employee-portals/home");
 
   const employee = data?.shell?.employee ?? null;
 
@@ -58,6 +59,11 @@ export default function ProfileScreen() {
       style={{ backgroundColor: palette.paper }}
     >
       <Text style={[type.display, { color: palette.ink }]}>Profile</Text>
+
+      {/* The same rule as the home screen: these details are cached too, so their age is stated
+          before they are read. A stale job title or manager is exactly the kind of thing someone
+          would otherwise trust without question. */}
+      {cachedAt ? <OfflineNotice takenAt={describeCachedAt(cachedAt)} /> : null}
 
       <Card style={{ paddingTop: 0 }}>
         <Row label="Name" value={employee?.fullName ?? "—"} />
