@@ -1783,6 +1783,7 @@ import { runDatabaseMappingTablesFitTests } from "./database-mapping-tables-fit.
 import { runDatabaseMappingCustomerMapNamesTests } from "./database-mapping-customer-map-names.test.ts";
 import { runDatabaseMappingCustomerMapOpeningTests } from "./database-mapping-customer-map-opening.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
+import { runMonthlySalesRunSkipHoldsOnlyWhileTrueTests } from "./monthly-sales-run-skip-holds-only-while-true.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -6181,6 +6182,11 @@ await runTest(
 await runTest(
   "the Monthly Sales wizard's closing-complete figure weighs each step by today's share of sales, never the weight frozen when the run opened: May 2026 with 5 of 17 steps confirmed reads 62%, not 95%, and 100% only when every step is confirmed or skipped",
   runMonthlySalesRunLiveWeightsTests,
+);
+
+await runTest(
+  "a skipped Monthly Sales step holds only while it is true: a skipped distributor whose file is validated later is confirmed with that file on the next load, never left skipped with its rows in the closing; a skip is refused over a validated file, and the lock refuses while a skipped step's file is in the closing",
+  runMonthlySalesRunSkipHoldsOnlyWhileTrueTests,
 );
 
 await runTest(

@@ -12,9 +12,11 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly Sales guided workflow — resumable run state. A run walks one period distributor-by-
 // distributor (pending → uploaded → validated → confirmed, or skipped), with Direct then Office
-// pinned to the tail (Office is computed last). Completion % is weighted by each distributor's
-// trailing sales share, worked out afresh on every load. Locking a period freezes its uploads
-// (enforced in the import service).
+// pinned to the tail (Office is computed last). A skip holds only while its distributor has no
+// validated file for the period: it cannot be written over one, and one that lands later turns the
+// step confirmed on the next load. Completion % is weighted by each distributor's trailing sales
+// share, worked out afresh on every load. Locking a period freezes its uploads (enforced in the
+// import service).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
@@ -196,6 +198,58 @@ async function loadValidatedBatchesByCode(period: string): Promise<ValidatedBatc
   return { ok: true, byCode };
 }
 
+/**
+ * What re-opening the wizard changes on one step, given its distributor's validated batch for the
+ * period, or null when the step already agrees with the batches.
+ *
+ * A SKIPPED step is brought up to date like any other. It used to be passed over for good: skip a
+ * distributor because its file was not ready, upload and validate that file the next day, and its
+ * rows were in the closing while the run still said "skipped" with no batch, forever. The run log
+ * then disagreed with the database, and nothing in the wizard could show it.
+ */
+export function reconcileStepPatch(
+  status: string,
+  batchId: string | null,
+  batch: { id: string } | undefined,
+): { step_status: StepStatus; batch_id: string | null; skip_reason?: null } | null {
+  if (batch && batchId !== batch.id) {
+    return { step_status: "confirmed", batch_id: batch.id, skip_reason: null };
+  } else if (!batch && status === "confirmed") {
+    // NOT gated on `batchId` any more. The FK is ON DELETE SET NULL, so deleting a batch has ALREADY
+    // nulled this column — requiring it to be truthy made this branch unreachable for the one case
+    // it exists to handle, leaving the step "confirmed" against a batch that no longer exists. The
+    // only time it fired was the failed-query path, where it was actively wrong.
+    return { step_status: "pending", batch_id: null };
+  }
+  return null;
+}
+
+/**
+ * Skipped steps whose distributor HAS a validated batch for the period. A skip says the month has
+ * nothing from that distributor, so it holds only while that is true: once a file is validated,
+ * its rows are in the closing and the skip is a false record.
+ */
+export function skipsContradictedByBatches(
+  steps: MonthlySalesStep[],
+  validatedByCode: Map<string, { id: string }>,
+): MonthlySalesStep[] {
+  return steps.filter(
+    (s) => s.stepStatus === "skipped" && validatedByCode.has(normalizeCodeKey(s.distributorCode)),
+  );
+}
+
+async function readValidatedBatchesOrThrow(period: string, action: string): Promise<Map<string, { id: string }>> {
+  const validatedBatches = await loadValidatedBatchesByCode(period);
+  if (!validatedBatches.ok) {
+    throw new SalesWorkflowError(
+      "batches_unavailable",
+      `Cannot ${action}: the ${period} uploads could not be read. Try again.`,
+      503,
+    );
+  }
+  return validatedBatches.byCode;
+}
+
 export async function startOrGetRun(period: string, actorId: string): Promise<MonthlySalesRun> {
   assertPeriod(period);
   const supabase = getSupabaseAdmin();
@@ -235,7 +289,8 @@ export async function startOrGetRun(period: string, actorId: string): Promise<Mo
     if (stepError) throw stepError;
   } else {
     // Re-entry: add steps for any distributors registered since, and reconcile each step against the
-    // live validated batches (confirm when a batch now exists; reset when its batch was deleted).
+    // live validated batches (confirm when a batch now exists, a skipped step included; reset when its
+    // batch was deleted). See reconcileStepPatch.
     const stepsResult = await supabase
       .from("monthly_sales_run_step")
       .select("distributor_code,step_status,batch_id,weight,ordering")
@@ -268,26 +323,17 @@ export async function startOrGetRun(period: string, actorId: string): Promise<Mo
     if (validatedBatches.ok) {
       for (const step of steps) {
         const code = normalizeCodeKey(String(step.distributor_code ?? ""));
-        const batch = validatedBatches.byCode.get(code);
-        const status = String(step.step_status ?? "pending");
-        if (batch && status !== "skipped" && String(step.batch_id ?? "") !== batch.id) {
-          await supabase
-            .from("monthly_sales_run_step")
-            .update({ step_status: "confirmed", batch_id: batch.id, updated_at: new Date().toISOString() })
-            .eq("run_id", runId)
-            .eq("distributor_code", String(step.distributor_code));
-        } else if (!batch && status === "confirmed") {
-          // NOT gated on `step.batch_id` any more. The FK is ON DELETE SET NULL, so deleting a batch
-          // has ALREADY nulled this column — requiring it to be truthy made this branch unreachable
-          // for the one case it exists to handle, leaving the step "confirmed" against a batch that
-          // no longer exists. The only time it fired was the failed-query path above, where it was
-          // actively wrong.
-          await supabase
-            .from("monthly_sales_run_step")
-            .update({ step_status: "pending", batch_id: null, updated_at: new Date().toISOString() })
-            .eq("run_id", runId)
-            .eq("distributor_code", String(step.distributor_code));
-        }
+        const patch = reconcileStepPatch(
+          String(step.step_status ?? "pending"),
+          step.batch_id ? String(step.batch_id) : null,
+          validatedBatches.byCode.get(code),
+        );
+        if (!patch) continue;
+        await supabase
+          .from("monthly_sales_run_step")
+          .update({ ...patch, updated_at: new Date().toISOString() })
+          .eq("run_id", runId)
+          .eq("distributor_code", String(step.distributor_code));
       }
     }
   }
@@ -428,6 +474,20 @@ export async function confirmStep(period: string, distributorCode: string, batch
 export async function skipStep(period: string, distributorCode: string, reason: string): Promise<MonthlySalesRun> {
   const trimmed = String(reason ?? "").trim();
   if (!trimmed) throw new SalesWorkflowError("invalid_request", "A reason is required to skip a distributor.", 400);
+  assertPeriod(period);
+  // A skip written over a validated file is false the moment it is written: the step drops its batch
+  // while the batch's rows stay in the closing.
+  const validatedByCode = await readValidatedBatchesOrThrow(period, "skip this distributor");
+  if (validatedByCode.has(normalizeCodeKey(distributorCode))) {
+    const distributors = await listSalesImportDistributors();
+    const name =
+      distributors.find((d) => normalizeCodeKey(d.code) === normalizeCodeKey(distributorCode))?.name ?? distributorCode;
+    throw new SalesWorkflowError(
+      "skip_contradicted",
+      `${name} cannot be skipped for ${period}: its validated file is already in the closing. Delete that upload first if it should not count.`,
+      409,
+    );
+  }
   return updateStep(period, distributorCode, { step_status: "skipped", skip_reason: trimmed, batch_id: null });
 }
 
@@ -443,6 +503,19 @@ export async function lockPeriod(period: string, actorId: string): Promise<Month
     throw new SalesWorkflowError(
       "incomplete_close",
       `Cannot lock ${period}: ${pending.length} distributor(s) are not yet confirmed or skipped (${pending.map((s) => s.distributorName).join(", ")}).`,
+      409,
+    );
+  }
+
+  // A skip counts as done only while it is true. When a skipped distributor's file has been
+  // validated since the wizard last loaded, the step is out of date, and the lock would freeze a run
+  // that names a distributor as missing while its rows are in the closing.
+  const validatedByCode = await readValidatedBatchesOrThrow(period, `lock ${period}`);
+  const contradicted = skipsContradictedByBatches(run.steps, validatedByCode);
+  if (contradicted.length > 0) {
+    throw new SalesWorkflowError(
+      "incomplete_close",
+      `Cannot lock ${period}: ${contradicted.map((s) => s.distributorName).join(", ")} ${contradicted.length === 1 ? "is" : "are"} marked skipped, but a validated file for ${period} is now in the closing. Press "Reload run" to bring the steps up to date, then lock.`,
       409,
     );
   }
