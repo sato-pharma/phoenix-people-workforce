@@ -76,6 +76,11 @@ function occurrences(haystack: string, needle: string): number {
 // and a July or August file mixes Head Office rows (never locked) with locked-line rows.
 const JUDGES_EACH_FILE = "where public.sos_import_batch_touches_locked_closing(f.batch_id)";
 const LEAVES_LOCKED_FILES_WHOLE = "and not (r.batch_id = any (v_frozen))";
+// Each file is judged once, over a list of files collected first. Written as a filter on a subquery
+// over the rows, the planner pushed the judgement into the row scan and ran it once per ROW: 152
+// judgements for one pharmacy's 8 files took 9.3 s, and the app's database calls are cancelled at 8.
+const JUDGES_A_LIST_OF_FILES = "from unnest(v_files) as f(batch_id) where public.sos_import_batch_touches_locked_closing(f.batch_id)";
+const JUDGES_EACH_ROW = ") f where public.sos_import_batch_touches_locked_closing(f.batch_id)";
 // The lock trigger's own match (phx_reject_write_to_locked_closing), on the row's month AND the file's.
 const A_FILE_TOUCHES_A_LOCK = flat(`join public.monthly_closing_locks l
   on l.unlocked_at is null
@@ -207,6 +212,16 @@ function theHealStepsAroundALockedMonth() {
     assert.ok(body.includes(JUDGES_EACH_FILE) && body.includes(LEAVES_LOCKED_FILES_WHOLE),
       `${name} (latest: ${file}) must leave a whole file untouched when it touches a locked month - skipping only the locked rows `
         + "let it change a July Head Office row whose file could then never be rebuilt (\"Monthly closing CNS 2026-07 is LOCKED\")");
+  }
+  for (const name of [
+    "sos_backfill_import_rows_from_customer_map",
+    "sos_reconcile_import_rows_from_customer_map",
+    "sos_count_reconcilable_import_rows",
+  ]) {
+    const { file, body } = effectiveDefinition(name);
+    assert.ok(body.includes(JUDGES_A_LIST_OF_FILES) && !body.includes(JUDGES_EACH_ROW),
+      `${name} (latest: ${file}) must collect the files first and judge each one once - a filter on a subquery over the rows `
+        + "was judged per ROW (9.3 s for one pharmacy's 152 rows), past the 8 seconds the app's database calls get");
   }
   // The heal is still a gap-filler only, and judges only the files it would fill.
   const heal = effectiveDefinition("sos_backfill_import_rows_from_customer_map");
