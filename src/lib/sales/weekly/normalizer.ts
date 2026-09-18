@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 
+import { writeAuditLog } from "@/lib/admin/audit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { IGNORE_PRODUCT_CODE } from "@/lib/sales/normalizer/types";
@@ -532,6 +533,8 @@ export type WeeklyNormalizeProductMapping = {
   alias: string;
   aliasKind: WeeklyAliasKind;
   productCode: string;
+  /** the filled list's sheet row, when the pick came from one — so a failure can name its line */
+  row?: number;
 };
 
 export type WeeklyNormalizeBranchMapping = {
@@ -542,12 +545,14 @@ export type WeeklyNormalizeBranchMapping = {
   /** a master region code, or WEEKLY_BRANCH_EXCLUDE_CODE to drop this depot from every total */
   regionCode: string;
   areaCode?: string | null;
+  /** the filled list's sheet row, when the pick came from one — so a failure can name its line */
+  row?: number;
 };
 
 export type WeeklyNormalizeSaveResult = {
   savedProducts: number;
   savedBranches: number;
-  failed: { kind: "product" | "branch"; label: string; reason: string }[];
+  failed: { kind: "product" | "branch"; label: string; reason: string; row?: number }[];
 };
 
 /**
@@ -582,7 +587,7 @@ export async function saveWeeklyNormalizerMappings(input: {
       });
       savedProducts += 1;
     } catch (error) {
-      failed.push({ kind: "product", label: alias, reason: errorText(error) });
+      failed.push({ kind: "product", label: alias, reason: errorText(error), ...(mapping.row ? { row: mapping.row } : {}) });
     }
   }
 
@@ -607,7 +612,7 @@ export async function saveWeeklyNormalizerMappings(input: {
       });
       savedBranches += 1;
     } catch (error) {
-      failed.push({ kind: "branch", label: rawBranch || `column ${columnIndex}`, reason: errorText(error) });
+      failed.push({ kind: "branch", label: rawBranch || `column ${columnIndex}`, reason: errorText(error), ...(mapping.row ? { row: mapping.row } : {}) });
     }
   }
 
@@ -814,14 +819,14 @@ function codeFromLabel(label: string): string {
   return trimmed;
 }
 
-/** Read a filled unmapped workbook back and apply every answered row. */
-export async function importWeeklyFilledWorkbook(input: {
-  distributorCode: string;
-  file: File;
-  actorId: string | null;
-}): Promise<WeeklyNormalizeSaveResult & { scannedRows: number }> {
+/** The picks a filled unmapped workbook carries: every answered row, each naming its sheet row. */
+export async function parseWeeklyFilledWorkbook(buffer: ArrayBuffer | Buffer): Promise<{
+  products: WeeklyNormalizeProductMapping[];
+  branches: WeeklyNormalizeBranchMapping[];
+  scannedRows: number;
+}> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load((await input.file.arrayBuffer()) as Parameters<typeof workbook.xlsx.load>[0]);
+  await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
 
   const productSheet = workbook.getWorksheet(PRODUCT_SHEET);
   const branchSheet = workbook.getWorksheet(BRANCH_SHEET);
@@ -847,7 +852,7 @@ export async function importWeeklyFilledWorkbook(input: {
       if (!itemCode && !itemName) continue;
       scannedRows += 1;
       if (!productCode) continue;
-      products.push({ alias: aliasKind === "code" ? itemCode || itemName : itemName || itemCode, aliasKind, productCode });
+      products.push({ alias: aliasKind === "code" ? itemCode || itemName : itemName || itemCode, aliasKind, productCode, row: r });
     }
   }
 
@@ -871,15 +876,72 @@ export async function importWeeklyFilledWorkbook(input: {
         branchColumnIndex: Number.isFinite(columnIndex) ? columnIndex : null,
         regionCode,
         areaCode: areaCode || null,
+        row: r,
       });
     }
   }
+
+  return { products, branches, scannedRows };
+}
+
+// How many failed rows one upload's history record keeps, and how long each cell may run — the
+// customer map import's bounds (normalizer/customer-map.ts), for its reason: writeAuditLog sends with
+// a 3-second timeout and drops a failed write silently, so only a pathological sheet is ever cut and
+// the record itself always saves.
+export const WEEKLY_LIST_FAILED_ROWS_KEPT = 5000;
+const FAILED_LABEL_MAX = 200;
+const FAILED_REASON_MAX = 400;
+
+type WeeklyFailedRow = WeeklyNormalizeSaveResult["failed"][number];
+
+/**
+ * The failed rows of one weekly "upload filled list", in the shape its history record keeps them:
+ * the product sheet's rows first, then the branch sheet's, each in sheet order. The screen names only
+ * the first three failures and no record held any of them, so a fourth could not be found again.
+ */
+export function weeklyListFailedRecord(failed: WeeklyFailedRow[]): {
+  note: string;
+  values: { failedRows: WeeklyFailedRow[]; failedRowsKept: number };
+} {
+  const sheetOrder = (f: WeeklyFailedRow) => (f.kind === "product" ? 0 : 1);
+  const kept = [...failed]
+    .sort((a, b) => sheetOrder(a) - sheetOrder(b) || (a.row ?? 0) - (b.row ?? 0))
+    .slice(0, WEEKLY_LIST_FAILED_ROWS_KEPT)
+    .map((f) => ({ kind: f.kind, label: f.label.slice(0, FAILED_LABEL_MAX), reason: f.reason.slice(0, FAILED_REASON_MAX), ...(f.row ? { row: f.row } : {}) }));
+  const note = failed.length === 0
+    ? ""
+    : kept.length === failed.length
+      ? " (each listed in this record)"
+      : ` (the first ${kept.length} listed in this record)`;
+  return { note, values: { failedRows: kept, failedRowsKept: kept.length } };
+}
+
+/** Read a filled unmapped workbook back and apply every answered row. */
+export async function importWeeklyFilledWorkbook(input: {
+  distributorCode: string;
+  file: File;
+  actorId: string | null;
+}): Promise<WeeklyNormalizeSaveResult & { scannedRows: number }> {
+  const { products, branches, scannedRows } = await parseWeeklyFilledWorkbook(await input.file.arrayBuffer());
 
   const result = await saveWeeklyNormalizerMappings({
     distributorCode: input.distributorCode,
     actorId: input.actorId,
     products,
     branches,
+  });
+  if (products.length + branches.length === 0) return { ...result, scannedRows };
+
+  // The failed rows ride on the upload's own history record, so the list outlives the notice that
+  // named three of them — the record the customer map import keeps for its blocked rows.
+  const failedRecord = weeklyListFailedRecord(result.failed);
+  const distributor = weeklyDistributorByCode(input.distributorCode);
+  await writeAuditLog({
+    actorLoginId: input.actorId ?? "system",
+    entityId: "weekly_unmapped_list",
+    entityType: "sales_import_batch",
+    newValues: { distributor_code: distributor?.code ?? input.distributorCode, failed: result.failed.length, ...failedRecord.values, savedBranches: result.savedBranches, savedProducts: result.savedProducts, scannedRows, source: "weekly_unmapped_list_upload" },
+    summary: `Weekly unmapped list upload for ${distributor?.name ?? input.distributorCode} — ${scannedRows} rows read: ${result.savedProducts} product and ${result.savedBranches} branch mapping(s) saved, ${result.failed.length} could not be saved${failedRecord.note}.`,
   });
   return { ...result, scannedRows };
 }
