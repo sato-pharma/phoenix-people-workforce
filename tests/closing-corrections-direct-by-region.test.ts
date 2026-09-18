@@ -96,23 +96,24 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "closing_cells must carry that region out as cell_region",
   );
 
-  // The region travels to the caller on net_negative rows, as the LAST column, and is NULL on the
-  // two per-distributor kinds.
+  // The region travels to the caller on net_negative rows, right after other_value, and is NULL on
+  // the two per-distributor kinds. (other_net_units, added 2026-09-18 for masked reversals, follows
+  // it as the last column — pinned by tests/closing-corrections-masked-reversals.test.ts.)
   assert.ok(
-    /returns table\([^)]*other_value numeric, region_code text\)/.test(statements),
-    "phx_closing_corrections must return region_code as its last column",
+    /returns table\([^)]*other_value numeric, region_code text[,)]/.test(statements),
+    "phx_closing_corrections must return region_code right after other_value",
   );
   const netNegative = statements.slice(statements.indexOf("select 'net_negative'::text"));
   assert.ok(
-    /null, null, c\.cell_region from closing_cells c/.test(netNegative),
+    /null, null, c\.cell_region(, null::numeric)? from closing_cells c/.test(netNegative),
     "the net_negative branch must return the cell's region",
   );
   assert.ok(
-    /round\(neg\.cell_value::numeric, 2\), null::text from cells pos/.test(statements),
+    /else neg\.cell_value end\)::numeric, 2\), null::text, neg\.cell_units from cells pos/.test(statements),
     "reversal_pair must return NULL for region_code — it stays per distributor",
   );
   assert.ok(
-    /origin\.origin_units, null, null::text from \(/.test(statements),
+    /origin\.origin_units, null, null::text(, null::numeric)? from \(/.test(statements),
     "late_return must return NULL for region_code — it stays per distributor",
   );
 

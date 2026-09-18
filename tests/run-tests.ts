@@ -1378,6 +1378,7 @@ import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
 import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
 import { runClosingCorrectionsDirectByRegionTests } from "./closing-corrections-direct-by-region.test.ts";
+import { runClosingCorrectionsMaskedReversalsTests } from "./closing-corrections-masked-reversals.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -4312,6 +4313,11 @@ await runTest(
 await runTest(
   "closing corrections: a Direct row with no area is the closing's Direct row for its REGION, so April 2026 Pedia Lacto Advanced 2 reads Delta (1) -432 units / -83,160 EGP and Alex-BHR on its own, never one \"(no area) ()\" cell netting the two to -66,880",
   runClosingCorrectionsDirectByRegionTests,
+);
+
+await runTest(
+  "closing corrections: a take-back is matched pharmacy by pharmacy, so Overseas taking back 122 units of Lacto Advanced 2 in Qalubeya in March 2026 is listed though the month's other sales leave the cell at -35, and a same-month correction never counts",
+  runClosingCorrectionsMaskedReversalsTests,
 );
 
 await runTest(
