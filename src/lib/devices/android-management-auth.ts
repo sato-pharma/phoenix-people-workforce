@@ -86,14 +86,17 @@ export async function mintAndroidManagementToken(
  * following KEY=VALUE when given raw newlines, and `railway variables --stdin` prepends a BOM that
  * makes the JSON unparseable.
  */
+// The bag is `Record<string, string | undefined>` rather than `NodeJS.ProcessEnv` so a test can
+// hand it a literal: Next makes `NODE_ENV` required on `ProcessEnv`, and the resulting error is
+// invisible to `pnpm run test` (it strips types) — see docs/agents-session-traps.md.
 export function androidManagementTokenProvider(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): GoogleTokenProvider {
   return async () => {
-    const direct = env.ANDROID_MANAGEMENT_ACCESS_TOKEN?.trim();
+    const direct = env["ANDROID_MANAGEMENT_ACCESS_TOKEN"]?.trim();
     if (direct) return direct;
 
-    const encoded = env.ANDROID_MANAGEMENT_KEY?.trim();
+    const encoded = env["ANDROID_MANAGEMENT_KEY"]?.trim();
     if (!encoded) {
       throw new Error(
         "No Google credential for the Android Management API: set ANDROID_MANAGEMENT_KEY (base64 " +
@@ -112,7 +115,9 @@ export function androidManagementTokenProvider(
 
 /** Whether a credential is present at all — lets a page say "set this up" instead of throwing. */
 export function hasAndroidManagementCredential(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): boolean {
-  return Boolean(env.ANDROID_MANAGEMENT_ACCESS_TOKEN?.trim() || env.ANDROID_MANAGEMENT_KEY?.trim());
+  return Boolean(
+    env["ANDROID_MANAGEMENT_ACCESS_TOKEN"]?.trim() || env["ANDROID_MANAGEMENT_KEY"]?.trim(),
+  );
 }

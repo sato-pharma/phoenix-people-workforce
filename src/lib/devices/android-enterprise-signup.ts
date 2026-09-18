@@ -74,8 +74,14 @@ export type AndroidEnterpriseSignupUrl = {
 /** Long enough for Google, short enough that a wedged call frees the request. */
 const SIGNUP_TIMEOUT_MS = 20_000;
 
-function projectId(env: NodeJS.ProcessEnv = process.env): string {
-  const value = env.ANDROID_MANAGEMENT_PROJECT_ID?.trim();
+// 🔴 THE BAG IS `Record<string, string | undefined>`, NEVER `NodeJS.ProcessEnv` — and that is
+// not a style choice. Next augments `ProcessEnv` with a required `NODE_ENV`
+// (node_modules/next/types/global.d.ts), so a test handing this an object literal gets TS2352 or
+// TS2345 and the local suite CANNOT see it: `pnpm run test` strips types, so only the PR's
+// typecheck job answers, one full red CI round per attempt. docs/agents-session-traps.md records
+// the whole trap. Bracket access for the same reason.
+function projectId(env: Record<string, string | undefined> = process.env): string {
+  const value = env["ANDROID_MANAGEMENT_PROJECT_ID"]?.trim();
   if (!value) {
     throw new Error(
       "ANDROID_MANAGEMENT_PROJECT_ID is not set. It is the Google Cloud project the Android " +
@@ -142,7 +148,7 @@ async function callGoogle(
 
 /** Step 1 — ask Google for the enrolment page the owner will open. */
 export async function createEnterpriseSignupUrl(
-  options: { token: string; callbackUrl: string; env?: NodeJS.ProcessEnv },
+  options: { token: string; callbackUrl: string; env?: Record<string, string | undefined> },
   fetchImpl: typeof fetch = fetch,
 ): Promise<AndroidEnterpriseSignupUrl> {
   const callbackUrl = assertCallbackUrl(options.callbackUrl);
@@ -180,7 +186,7 @@ export async function createEnterprise(
     enterpriseToken: string;
     /** Shown to admins in Google's own surfaces. Defaults to the Phoenix brand. */
     displayName?: string;
-    env?: NodeJS.ProcessEnv;
+    env?: Record<string, string | undefined>;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ enterpriseName: string }> {

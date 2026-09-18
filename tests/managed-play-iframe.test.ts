@@ -291,7 +291,7 @@ export async function runManagedPlayIframeTests() {
       createEnterprise(
         {
           enterpriseToken: "ET-1",
-          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" } as NodeJS.ProcessEnv,
+          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" },
           signupUrlName: "",
           token: "ya29.test",
         },
@@ -306,7 +306,7 @@ export async function runManagedPlayIframeTests() {
       createEnterprise(
         {
           enterpriseToken: "   ",
-          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" } as NodeJS.ProcessEnv,
+          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" },
           signupUrlName: "signupUrls/C123",
           token: "ya29.test",
         },
@@ -320,7 +320,7 @@ export async function runManagedPlayIframeTests() {
   const created = await createEnterprise(
     {
       enterpriseToken: "ET-1",
-      env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix-cloud" } as NodeJS.ProcessEnv,
+      env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix-cloud" },
       signupUrlName: "signupUrls/C123",
       token: "ya29.test",
     },
@@ -341,7 +341,7 @@ export async function runManagedPlayIframeTests() {
       createEnterprise(
         {
           enterpriseToken: "ET-1",
-          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" } as NodeJS.ProcessEnv,
+          env: { ANDROID_MANAGEMENT_PROJECT_ID: "phoenix" },
           signupUrlName: "signupUrls/C123",
           token: "ya29.test",
         },
