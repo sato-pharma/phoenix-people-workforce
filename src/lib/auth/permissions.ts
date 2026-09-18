@@ -170,7 +170,13 @@ export type PermissionResource =
   // rep's list, plan and visits and a district manager's own visits; `approve` is the territory's
   // reviewing manager deciding a grade or a drop and approving a plan (the SFE Manager only returns a
   // plan); `update` is the settings. The Super Admin's entries are always test entries.
-  | "phoenix_crm";
+  | "phoenix_crm"
+  // Visual Aids (owner, 2026-09-18): the promotional flyers a rep holds up to a doctor on his company
+  // tablet, moved into Phoenix from WhatsApp. `create` uploads one, `update` retires or replaces one;
+  // NOBODY holds `delete`, because a flyer is never hard-deleted — retiring keeps the file and the
+  // row, so the company can always say what was in front of doctors and when. `read` is narrowed
+  // AGAIN below the matrix, to the active aids of the reader's OWN line (src/lib/visual-aids/).
+  | "visual_aids";
 
 /**
  * The runtime twin of the `PermissionResource` union above. Both lists must hold exactly the same
@@ -271,6 +277,9 @@ export const permissionResources: PermissionResource[] = [
   // Phoenix CRM. Omitting this would offer every territory's customer list, its doctors' timings and
   // clinic photos, and the plan and visit screens to every role. Mechanism at the head of this array.
   "phoenix_crm",
+  // Visual Aids. Omitting this would offer the upload and retire buttons, and every line's flyers, to
+  // every role. Mechanism at the head of this array.
+  "visual_aids",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -890,6 +899,9 @@ const defaultPermissionMatrix: PermissionMap = {
     user_activity: ["read", "export"],
     synthetic_journeys: ["read"],
     spotlight: ["read", "export"],
+    // Visual Aids: uploads, retires and replaces, and opens every line's. No `delete` for anyone —
+    // a flyer is retired, never destroyed.
+    visual_aids: ["read", "create", "update"],
   },
   CEO: {
     // Spotlight: read and export. The owner named him and the Super Admin as the only two holders.
@@ -1161,6 +1173,9 @@ const defaultPermissionMatrix: PermissionMap = {
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     payslips: ["read", "export"],
+    // Visual Aids: opens the active flyers of his OWN line on the tablet — narrowed below the matrix
+    // by resolveVisualAidReaderLines, never by this grant.
+    visual_aids: ["read"],
     report_it: ["read", "create"],
   },
   "District Manager": {
@@ -1208,6 +1223,9 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
     hiring_interviews: ["read", "update"],
+    // Visual Aids: opens the active flyers of his OWN line on the tablet — narrowed below the matrix
+    // by resolveVisualAidReaderLines, never by this grant.
+    visual_aids: ["read"],
     report_it: ["read", "create"],
   },
   "Regional Manager": {
@@ -1265,6 +1283,9 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
     hiring_interviews: ["read", "update"],
+    // Visual Aids: opens the active flyers of his OWN line on the tablet — narrowed below the matrix
+    // by resolveVisualAidReaderLines, never by this grant.
+    visual_aids: ["read"],
     report_it: ["read", "create"],
   },
   "National Sales Manager": {
@@ -1304,6 +1325,9 @@ const defaultPermissionMatrix: PermissionMap = {
     vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
+    // Visual Aids: opens the active flyers of his OWN line on the tablet — narrowed below the matrix
+    // by resolveVisualAidReaderLines, never by this grant.
+    visual_aids: ["read"],
     report_it: ["read", "create"],
   },
   "Product Manager": {
@@ -1365,6 +1389,9 @@ const defaultPermissionMatrix: PermissionMap = {
     probation: ["read"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
+    // Visual Aids (owner, 2026-09-18): one of the three uploaders. Uploads a flyer against a line,
+    // retires it, replaces it with a newer version. No `delete` — a flyer is never destroyed.
+    visual_aids: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
   "SFE Manager": {
@@ -1468,6 +1495,9 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_sales: ["read", "export"],
     weekly_plans: ["read", "create", "update"],
     hiring_interviews: ["read", "update"],
+    // Visual Aids (owner, 2026-09-18): one of the three uploaders. Uploads a flyer against a line,
+    // retires it, replaces it with a newer version. No `delete` — a flyer is never destroyed.
+    visual_aids: ["read", "create", "update"],
     report_it: ["read", "create"],
   },
   Manager: {

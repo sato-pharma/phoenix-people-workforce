@@ -58,6 +58,7 @@ import {
   TrendingUp,
   Package,
   Sunrise,
+  Presentation,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -202,6 +203,7 @@ function buildEmployeePortalSections({
   showIncentiveTab = true,
   showMarketAwarenessInboxTab = false,
   showMarketAwarenessTab = false,
+  showVisualAidsTab = false,
   showMarketingRequestsTab = false,
   showMarketingValidationTab = false,
   showMarketingInboxTab = false,
@@ -374,6 +376,10 @@ function buildEmployeePortalSections({
         // which this rail does not read (see the header of buildEmployeePortalSections' own memory:
         // the portal sidebar is built here, by hand). Its admin twin is /admin/early-birds.
         ...(showEarlyBirdsTab ? [{ href: "/employee-portals/early-birds", label: "Early Birds", icon: Sunrise }] : []),
+        // The flyers and visual aids a rep shows a doctor during the visit, full screen on the
+        // tablet — field material, so it sits with the visits rather than under Marketing & ROI.
+        // Flag: VISUAL_AIDS_PORTAL_ROLES (src/lib/visual-aids/rules.ts), read in navigation.ts.
+        ...(showVisualAidsTab ? [{ href: "/employee-portals/visual-aids", label: "Visual Aids", icon: Presentation }] : []),
         // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM. My Visits
         // above stays: it is the always-on self view every portal role keeps.
         ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),

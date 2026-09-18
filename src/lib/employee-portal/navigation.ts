@@ -6,6 +6,7 @@ import { DOCTOR_LIST_PORTAL_ROLES, MY_LIST_PORTAL_ROLES } from "@/lib/crm/doctor
 import { REPS_PLANS_PORTAL_ROLES } from "@/lib/crm/reps-plans-access";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
+import { VISUAL_AIDS_PORTAL_ROLES } from "@/lib/visual-aids/rules";
 
 export type EmployeePortalNavVisibility = {
   showDashboardTab?: boolean;
@@ -22,6 +23,10 @@ export type EmployeePortalNavVisibility = {
   showMarketAwarenessTab?: boolean;
   /** The Market Awareness approvals queue — its own inbox under Approvals Hub, beside Marketing. */
   showMarketAwarenessInboxTab?: boolean;
+  // Visual Aids — the flyers a rep shows a doctor on the tablet (owner, 2026-09-18). The rep, his
+  // DM, RM and NSM read their own line; the Marketing Manager and the GPM also upload. The list is
+  // VISUAL_AIDS_PORTAL_ROLES in src/lib/visual-aids/rules.ts, pinned against the matrix by a test.
+  showVisualAidsTab?: boolean;
   showMarketingInboxTab?: boolean;
   /**
    * Customer Validation — the field-capture screen. Its OWN flag since 2026-09-18: the Medical Rep
@@ -530,6 +535,7 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingValidationTab = canUseEmployeePortalMarketingValidation(resolvedRole);
   const showMarketAwarenessTab = MARKET_AWARENESS_PORTAL_ROLES.includes(resolvedRole);
+  const showVisualAidsTab = VISUAL_AIDS_PORTAL_ROLES.includes(resolvedRole);
   // Only the seats that can actually hold a decision: the two manager-step holders and the CEO.
   // An empty queue for everyone else is noise, and the page scopes itself server-side anyway.
   const showMarketAwarenessInboxTab = MARKET_AWARENESS_DECIDER_ROLES.includes(resolvedRole);
@@ -598,6 +604,7 @@ export function resolveEmployeePortalNavVisibility(
     showMarketingValidationTab,
     showMarketAwarenessInboxTab,
     showMarketAwarenessTab,
+    showVisualAidsTab,
     showMarketingRequestsTab,
     showMarketingRoiTrackingTab,
     showMarketingCoverageReportTab,

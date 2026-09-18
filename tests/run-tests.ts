@@ -1771,6 +1771,7 @@ import { runForceLogoutStopsPhoneAppPushTests } from "./force-logout-stops-phone
 import { runNormalizerInvoiceDayImpossibleYearTests } from "./normalizer-invoice-day-never-an-impossible-year.test.ts";
 import { runNormalizerSoficoExcelSerialDateTests } from "./normalizer-reads-sofico-excel-serial-billing-dates.test.ts";
 import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-never-drops-paid-units.test.ts";
+import { runVisualAidsTests } from "./visual-aids.test.ts";
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
@@ -6115,6 +6116,11 @@ await runTest(
 await runTest(
   "a bonus never drops paid units: an El Qema line carrying paid packs (الكمية) and a bonus count (بونص), even a bonus of 1, imports at its paid packs, valued at units times factory price with nothing added for the bonus, while EPDA's is_bonus flag still skips a free-goods line, and no profile maps a bonus count as a free-goods flag",
   runNormalizerBonusNeverDropsPaidUnitsTests,
+);
+
+await runTest(
+  "Visual Aids: a rep and his DM, RM and NSM open only the ACTIVE aids of their own line and an unresolved line reads nothing; the line list equals the migration's CHECK list; a file is judged by its bytes and its upload path names its uploader; only the Marketing Manager, the GPM and the Super Admin upload, retire or replace, nobody deletes; the portal link, the matrix and the rules agree; every route is registered with its real permission, CSRF on every POST and a required audit row on every write",
+  runVisualAidsTests,
 );
 
 await runTest(

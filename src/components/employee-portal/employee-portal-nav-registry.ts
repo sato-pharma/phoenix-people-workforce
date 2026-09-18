@@ -26,6 +26,7 @@ import {
   type LucideIcon,
   MapPinned,
   Package,
+  Presentation,
   ReceiptText,
   Send,
   Settings2,
@@ -147,6 +148,9 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // machine-readable gate (resolveEarlyBirdsScope decides what it shows from the reporting chain),
   // and employee-portal-nav-permission-matches-page.test.ts requires the field to be absent then.
   { label: "Early Birds", fullLabel: "Early Birds", href: "/employee-portals/early-birds", icon: Sunrise, flags: ["showEarlyBirdsTab"] },
+  // Visual Aids — the flyers a rep shows a doctor on the tablet. The permission mirrors the page's own
+  // inline gate (app/employee-portals/visual-aids/page.tsx); the line narrowing is server-side.
+  { label: "Visual Aids", fullLabel: "Visual Aids", href: "/employee-portals/visual-aids", icon: Presentation, flags: ["showVisualAidsTab"], permission: { resource: "visual_aids", action: "read" } },
   // The label is the FULL "Reps Plans", not a shortened "Plans", and not "Reps": both are already
   // taken — "Plans" by the rep's own Weekly / Monthly Plan two entries above, "Reps" by Reps List —
   // and a District Manager holds every one of those flags at once, so shortening puts two identical
