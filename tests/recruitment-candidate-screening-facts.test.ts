@@ -7,6 +7,8 @@ import {
   candidateScreeningFacts,
   candidateScreeningRoleFamily,
   formatYearsOfExperience,
+  FROM_MILITARY_ANSWER,
+  SAID_ON_WHATSAPP,
   unconfirmedCvFactsFromExtraction,
 } from "../src/lib/recruitment/candidate-screening-facts.ts";
 
@@ -252,6 +254,68 @@ export function runCandidateScreeningFactsTests() {
   // The CV's faculty answers when the applicant never did - the same order judgeBackground uses.
   const fromCv = byLabel({ faculty: "Faculty of Veterinary Medicine" });
   assert.equal(fromCv.get("Degree rule")?.value, "Veterinary");
+
+  // --- WHAT THE APPLICANT TOLD THE BOT FILLS AN EMPTY CHECK. From 2026-09-18 reps and district
+  // --- managers are asked their military service and their age on WhatsApp, and office coordinators
+  // --- have been asked their age since 09-02. The checks read the columns alone, so an applicant who
+  // --- had just answered still read "not on file" - which is the headline this block pins.
+  const toldTheBot = byLabel({
+    screeningExtraAnswers: { field_age_band: "25 to 29", field_military_service: "Temporary exemption" },
+  });
+  assert.equal(toldTheBot.get("Military service")?.value, "Temporary exemption", "the tapped status fills the check");
+  assert.equal(toldTheBot.get("Military service")?.hint, SAID_ON_WHATSAPP, "and says where it came from");
+  assert.equal(toldTheBot.get("Age")?.value, "25 to 29", "the band fills the age, as a band and never as a number");
+  assert.equal(toldTheBot.get("Age")?.hint, SAID_ON_WHATSAPP);
+  assert.equal(toldTheBot.get("Gender")?.value, "Male", "every service status is a man's - the owner's rule");
+  assert.equal(toldTheBot.get("Gender")?.hint, FROM_MILITARY_ANSWER, "an inferred gender says it is inferred");
+
+  // "Not applicable" is the option the bot offers "For female applicants".
+  const woman = byLabel({ screeningExtraAnswers: { field_military_service: "Not applicable" } });
+  assert.equal(woman.get("Gender")?.value, "Female");
+  assert.equal(woman.get("Military service")?.value, "Not applicable");
+  assert.equal(
+    byLabel({ screeningExtraAnswers: { field_military_service: " not  APPLICABLE " } }).get("Gender")?.value,
+    "Female",
+    "matched on the words, whatever their case and spacing",
+  );
+
+  // The office coordinator's three bands fill it too, and the finer field band wins over them.
+  assert.equal(byLabel({ screeningExtraAnswers: { oc_age_band: "Over 30" } }).get("Age")?.value, "Over 30");
+  assert.equal(
+    byLabel({ screeningExtraAnswers: { field_age_band: "30 to 34", oc_age_band: "Over 30" } }).get("Age")?.value,
+    "30 to 34",
+  );
+
+  // THE COLUMN STILL WINS. An answer fills a hole and never contradicts what the record holds.
+  const onFile = byLabel(
+    {
+      dateOfBirth: "1997-04-11",
+      gender: "female",
+      militaryStatus: "exempted",
+      screeningExtraAnswers: { field_age_band: "40 or older", field_military_service: "Completed" },
+    },
+    new Date(2026, 8, 12),
+  );
+  assert.equal(onFile.get("Age")?.value, "29");
+  assert.equal(onFile.get("Age")?.hint, "1997-04-11");
+  assert.equal(onFile.get("Gender")?.value, "Female");
+  assert.equal(onFile.get("Gender")?.hint, null);
+  assert.equal(onFile.get("Military service")?.value, "Exempted");
+  assert.equal(onFile.get("Military service")?.hint, null);
+
+  // An answer the rule does not name implies no gender. "not on file" is true; a guessed "Male" is not.
+  const renamed = byLabel({ screeningExtraAnswers: { field_military_service: "Something new" } });
+  assert.equal(renamed.get("Military service")?.value, "Something new");
+  assert.equal(renamed.get("Gender")?.value, null);
+  assert.equal(renamed.get("Gender")?.hint, null);
+
+  // A blank or a non-string is not an answer, and neither is another question's answer.
+  assert.deepEqual(
+    candidateScreeningChecks({
+      screeningExtraAnswers: { field_age_band: "   ", field_military_service: 3, oc_start_date: "Immediately" },
+    }).map((check) => check.value),
+    [null, null, null, null],
+  );
 
   // --- Age is parsed by hand rather than through `new Date`, so a birthday cannot land a day early
   // --- for a reader east of Greenwich, and a mis-parsed date is refused instead of printed.
