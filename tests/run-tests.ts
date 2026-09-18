@@ -1271,6 +1271,7 @@ import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts"
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
 import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
+import { runOutstationDeparturePhotoNullCoordsTests } from "./outstation-departure-photo-null-coords.test.ts";
 import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
 import { runOutstationDeparturePhotoReminderTests } from "./outstation-departure-photo-reminder.test.ts";
@@ -3917,6 +3918,7 @@ await runTest("reconciliation harness (a breach names both figures and their sou
 await runTest("outstation submit email envelope (employee To, his direct manager Cc, Super Admins Bcc; the CEO is dropped from Cc in every case — direct manager or skip-level — with the skip-level stepping in when the direct manager is the CEO; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
+await runTest("outstation departure photo with no GPS fix (the web card posts nulls and Number(null) is 0, which stored the photo at 0,0 and flagged it thousands of km from the trip; nulls, missing keys, blanks and non-numbers are NO position, a real single 0 survives, 0,0 and half-pairs read as unknown, and the review never calls an unknown distance far)", runOutstationDeparturePhotoNullCoordsTests);
 await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
 await runTest("evidence photo watermark panel (grows to hold the location block; nothing is drawn past the bottom edge; shrinks the font rather than truncating)", runEvidencePanelLayoutTests);
 await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
