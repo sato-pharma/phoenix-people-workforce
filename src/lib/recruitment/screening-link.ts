@@ -71,6 +71,13 @@ export type ScreeningQueueFilters = {
    */
   whatsapp?: string | string[] | undefined;
   /**
+   * `1`/`true` — keep the CVs a person has ALREADY DECIDED (shortlisted, sent, rejected, hired) in a
+   * WhatsApp Applicants pile. Absent, that pile hides them: the owner, 2026-09-18, "hide the CVs I
+   * already decided from the WhatsApp screening list". Read only next to `whatsapp`; on any other
+   * pile it means nothing, because those piles already have their own rule for decided CVs.
+   */
+  decided?: string | string[] | undefined;
+  /**
    * WHICH CV IS OPEN — the one thing on this screen that had no address until 2026-09-18.
    *
    * Every filter here is a link on purpose, so "screen the New Medical Rep CVs in Tanta I have not
@@ -175,6 +182,11 @@ export type ScreeningQueueNarrowing = {
    * queue. The loader decodes it. A value it cannot read narrows nothing, like any other filter here.
    */
   whatsapp: string | null;
+  /**
+   * True when the link asks for the already-decided CVs to be KEPT in a WhatsApp Applicants pile.
+   * False is the default and hides them. Carries no meaning without `whatsapp`.
+   */
+  decided: boolean;
 };
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
@@ -257,6 +269,7 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
   const area = firstParam(filters.area);
   return {
     area: area && area.toLowerCase() === SCREENING_UNKNOWN ? SCREENING_UNKNOWN : area,
+    decided: isTruthyFlag(firstParam(filters.decided)),
     // `?sent=1&unsent=1` is somebody editing an address bar, not an attack. Sent wins for the same
     // reason unseen wins over seen below: it is the narrower, more specific half of the pair.
     notified: sent ? "sent" : unsent ? "unsent" : "any",
@@ -291,6 +304,8 @@ export type ScreeningHrefOptions = {
   vacancy?: number | null;
   /** A WhatsApp Applicants search, encoded by `whatsAppApplicantSearchParam`, or null to drop it. */
   whatsapp?: string | null;
+  /** Keep the already-decided CVs in a WhatsApp Applicants pile. False or absent hides them. */
+  decided?: boolean;
   /** The CV to open on arrival. Not a filter — the queue is identical with or without it. */
   candidate?: string | null;
 };
@@ -370,6 +385,7 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.source) params.set("source", options.source);
   if (options.vacancy) params.set("vacancy", String(options.vacancy));
   if (options.whatsapp) params.set("whatsapp", options.whatsapp);
+  if (options.decided) params.set("decided", "1");
   // LAST, so the filters read first in the address bar and the long id sits at the end where it is
   // out of the way of a person reading the URL to see what the pile is.
   if (options.candidate) params.set("candidate", options.candidate);

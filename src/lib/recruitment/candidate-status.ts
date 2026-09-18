@@ -95,6 +95,22 @@ export function isUnreviewedCandidateStatus(value: string | null | undefined): b
   return normalizeCandidateStatus(value) === DEFAULT_CANDIDATE_STATUS;
 }
 
+/**
+ * "A person has already taken a decision on this CV" — shortlisted, sent to a manager, rejected or
+ * hired: every status past `new`.
+ *
+ * Deliberately NOT `isSeatQueueDecided`, which leaves shortlisted out because a shortlisted CV is
+ * still worth offering for a vacant seat. The question here is the screener's own: "have I already
+ * dealt with this one?", and to him a shortlist is as final as a rejection.
+ *
+ * A value the list cannot read (the one handwritten legacy sentence) is NOT decided. Hiding a CV
+ * on a guess about what somebody once typed would lose a person; showing it costs one glance.
+ */
+export function isDecidedCandidateStatus(value: string | null | undefined): boolean {
+  const status = normalizeCandidateStatus(value);
+  return status !== null && status !== DEFAULT_CANDIDATE_STATUS;
+}
+
 // ---------------------------------------------------------------------------
 // The manager's answer.
 // ---------------------------------------------------------------------------

@@ -159,6 +159,7 @@ export function ScreeningWorkstation({
   canSendToManagers,
   canWriteNotes,
   counts,
+  decidedControl,
   filteredOut,
   focus,
   onToggleFocus,
@@ -212,6 +213,13 @@ export function ScreeningWorkstation({
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
+  /**
+   * The one-press switch for the CVs a person has already decided, inside a WhatsApp Applicants
+   * pile: how many there are, whether the list is hiding them right now, and the press. Null when
+   * there is nothing for it to do - no such pile, no decided CVs in it, or a status picked on the
+   * filter bar that already keeps them.
+   */
+  decidedControl: { count: number; hidden: boolean; onToggle: () => void } | null;
   filteredOut: number;
   /** Every pane folded at once, so the document has the screen. Owned by the page so the filter
       bar above this component folds with it. */
@@ -1340,8 +1348,22 @@ export function ScreeningWorkstation({
             line is then the only thing saying why the pile is short. The way out is one press, as it
             is for a seat. Wraps at 375px rather than scrolling sideways; no ellipsis, no code. */}
         {whatsAppSearch && !ownPage ? (
-          <Band tone="accent">
+          <Band
+            footnote={
+              decidedControl
+                ? decidedControl.hidden
+                  ? `${decidedControl.count} ${decidedControl.count === 1 ? "CV" : "CVs"} from this search already shortlisted, sent to a manager, rejected or hired ${decidedControl.count === 1 ? "is" : "are"} hidden.`
+                  : `Showing the ${decidedControl.count} ${decidedControl.count === 1 ? "CV" : "CVs"} already decided as well.`
+                : undefined
+            }
+            tone="accent"
+          >
             <BandSays>WhatsApp applicants: {whatsAppSearch}</BandSays>
+            {decidedControl ? (
+              <Action onClick={decidedControl.onToggle} tone="quiet">
+                {decidedControl.hidden ? `Show the ${decidedControl.count} decided` : `Hide the ${decidedControl.count} decided`}
+              </Action>
+            ) : null}
             <Action
               onClick={() => {
                 onLeaveWhatsAppSearch();
