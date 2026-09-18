@@ -54,7 +54,9 @@ const PHOTO_SURFACES = [
   // Outstation — receipts and car evidence, previously cropped to a strip.
   "src/components/outstation/trip-attachments.tsx",
   "src/components/outstation/my-expense-submissions.tsx",
-  "src/components/outstation/outstation-requests-admin.tsx",
+  // The approver's arrival and departure photos. outstation-requests-admin.tsx rendered its own
+  // until 2026-09-18 and now hands both to this component; the approver-photos test pins that.
+  "src/components/outstation/trip-evidence-photos.tsx",
   "src/components/outstation/mobile-outstation-wizard.tsx",
   // Direct orders — the pharmacy storefront behind a validation decision.
   "src/components/direct-orders/validation-desk.tsx",

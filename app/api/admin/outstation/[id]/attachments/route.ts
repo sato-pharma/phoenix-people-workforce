@@ -5,14 +5,18 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createOutstationEvidenceSignedUrls } from "@/lib/outstation/car-evidence-storage";
 import { getOutstationRequestById } from "@/lib/outstation/service";
+import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
+import { formatEmployeeDisplayName } from "@/lib/utils";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Signed attachments (car-evidence photo + ticket pictures/PDFs) for a Phoenix-submitted
- * outstation request. Backs the "attached picture or PDF" view on the Expense Approvals page.
+ * Signed attachments (the arrival and departure photos + ticket pictures/PDFs) for a
+ * Phoenix-submitted outstation request. Backs the photos and attachments on the Expense Approvals
+ * page, where the Super Admin approves. `photos` always holds both captures, arrival first: the
+ * departure photo was never returned here until 2026-09-18, so the approver saw the arrival alone.
  * Returns `found: false` (200) when the source request no longer exists, so bulk-xlsx or
  * deleted-request trips degrade to "no attachment" instead of erroring.
  */
@@ -34,7 +38,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const requestRow = await getOutstationRequestById(id, { includeCarEvidenceSignedUrl: true });
     if (!requestRow) {
-      return NextResponse.json({ carEvidenceImageUrl: null, found: false, tickets: [] });
+      return NextResponse.json({
+        carEvidenceImageUrl: null,
+        departureEvidenceImageUrl: null,
+        employeeName: null,
+        found: false,
+        photos: [],
+        tickets: [],
+      });
     }
 
     const ticketPaths = Array.isArray(requestRow.ticketAttachmentPaths) ? requestRow.ticketAttachmentPaths : [];
@@ -50,7 +61,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     return NextResponse.json({
       carEvidenceImageUrl: requestRow.carEvidenceImageUrl ?? null,
+      departureEvidenceImageUrl: requestRow.departureEvidenceImageUrl ?? null,
+      employeeName: formatEmployeeDisplayName(requestRow.employeeName) || null,
       found: true,
+      photos: approverTripPhotos(requestRow),
       tickets,
     });
   } catch (error) {

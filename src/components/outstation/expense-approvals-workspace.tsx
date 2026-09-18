@@ -1822,8 +1822,9 @@ function ExpenseDecisionPanel({
           <ExpenseClaimValidationPanel requestId={validationRequestId} />
         ) : null}
 
-        {/* Attachments (Phoenix-submitted trips carry the ticket/receipt picture or PDF) */}
-        <PanelSection title="Attachment">
+        {/* The arrival and departure photos, then the ticket/receipt pictures or PDFs. This is
+            where the Super Admin approves, so both photos must be here in full, not a thumbnail. */}
+        <PanelSection title="Photos and attachments">
           <TripAttachments tripId={record.tripId} />
         </PanelSection>
 
