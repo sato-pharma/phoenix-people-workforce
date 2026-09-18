@@ -1,6 +1,7 @@
 /**
- * Rep Tablets — the service behind the page: what Google holds, what the register holds, and the
- * two things the Super Admin can do about it (change the rules, make an enrollment code).
+ * Rep Tablets — the service behind the page: what Google holds, what the register holds, the two
+ * things the Super Admin can do about it (change the rules, make an enrollment code), and the one
+ * thing the page does by itself (copy the IMEI each tablet reports into the register).
  *
  * Every call here goes to Google with the enterprise binding and the service-account credential,
  * and every change is followed by a REQUIRED audit row, the same as every other write in the device
@@ -18,12 +19,13 @@ import { CHROME_PACKAGE_NAME, androidManagementConfig } from "@/lib/devices/andr
 import {
   buildManagedTabletRows,
   enrollableTablets,
+  imeisToRecord,
   listEnterpriseDevices,
   type EnrollableTablet,
   type ManagedTabletRow,
   type RegisterTablet,
 } from "@/lib/devices/managed-tablets";
-import { deviceErrorMessage, getDeviceRegisterData } from "@/lib/devices/service";
+import { deviceErrorMessage, getDeviceRegisterData, recordReportedImei } from "@/lib/devices/service";
 import {
   DEFAULT_ENROLLMENT_VALIDITY,
   ENROLLMENT_VALIDITY,
@@ -149,6 +151,43 @@ export async function getRepTabletsState(): Promise<RepTabletsState> {
       value,
     })),
   };
+}
+
+export type ImeiRecordResult = {
+  /** Entries that now hold the IMEI their tablet reports. */
+  recorded: Array<{ assetTag: string; imei: string }>;
+  /** Entries somebody gave an IMEI between the read and the write — left exactly as they are. */
+  alreadyRecorded: string[];
+  /** Entries that could not be written, each with the reason. The others are not held up by them. */
+  failed: Array<{ assetTag: string; message: string }>;
+};
+
+/**
+ * Copy the IMEI each enrolled tablet reports into its custody-register entry, where the entry has
+ * none — `imeisToRecord` decides which, `recordReportedImei` writes each with its own required
+ * audit row.
+ *
+ * The page asks for this by itself after it loads, so the register fills without anybody typing an
+ * IMEI. It takes NOTHING from the browser: which entries and which IMEIs are read again here, from
+ * Google's list and the register as they are now, so a stale page or a forged request can only
+ * trigger the copy the page would have made, never choose what is written.
+ */
+export async function recordReportedImeis(actor: string): Promise<ImeiRecordResult> {
+  const connection = await connect();
+  const [devices, register] = await Promise.all([listEnterpriseDevices(connection), getDeviceRegisterData()]);
+  const rows = buildManagedTabletRows(devices, register.devices, { currentPolicyVersion: null });
+
+  const result: ImeiRecordResult = { alreadyRecorded: [], failed: [], recorded: [] };
+  for (const item of imeisToRecord(rows)) {
+    try {
+      const written = await recordReportedImei({ deviceId: item.registerDeviceId, imei: item.imei }, actor);
+      if (written) result.recorded.push({ assetTag: item.assetTag, imei: item.imei });
+      else result.alreadyRecorded.push(item.assetTag);
+    } catch (error) {
+      result.failed.push({ assetTag: item.assetTag, message: deviceErrorMessage(error) });
+    }
+  }
+  return result;
 }
 
 export type PolicyChange =
