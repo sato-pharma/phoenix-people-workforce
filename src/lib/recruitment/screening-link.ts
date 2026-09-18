@@ -21,7 +21,11 @@ import {
 } from "@/lib/recruitment/candidate-rating";
 import { candidateRegionCodes, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
-import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
+import {
+  DEFAULT_CANDIDATE_STATUS,
+  normalizeCandidateStatus,
+  type CandidateStatus,
+} from "@/lib/recruitment/candidate-status";
 
 /** The filters a screening link can carry. Everything is optional; absent means "no narrowing". */
 export type ScreeningQueueFilters = {
@@ -35,7 +39,10 @@ export type ScreeningQueueFilters = {
   sent?: string | string[] | undefined;
   /** `1`/`true` — the other half of the same three-way: only CVs never pushed to a manager. */
   unsent?: string | string[] | undefined;
-  /** A single candidate status, e.g. `new`. Anything unrecognised is ignored, never guessed at. */
+  /**
+   * The DECISION TAB — a candidate status, e.g. `rejected`, or `all`. Absent opens "Not decided yet"
+   * (`new`), where every screen lands since 2026-09-18. Anything unrecognised is ignored, never guessed at.
+   */
   status?: string | string[] | undefined;
   /** The area the applicant asked to work in, verbatim, or `unknown` for those who never said. */
   area?: string | string[] | undefined;
@@ -71,10 +78,10 @@ export type ScreeningQueueFilters = {
    */
   whatsapp?: string | string[] | undefined;
   /**
-   * `1`/`true` — keep the CVs a person has ALREADY DECIDED (shortlisted, sent, rejected, hired) in a
-   * WhatsApp Applicants pile. Absent, that pile hides them: the owner, 2026-09-18, "hide the CVs I
-   * already decided from the WhatsApp screening list". Read only next to `whatsapp`; on any other
-   * pile it means nothing, because those piles already have their own rule for decided CVs.
+   * RETIRED 2026-09-18, and still READ so an old link keeps its meaning. It was the "Show the decided"
+   * switch on a WhatsApp Applicants pile, which hid shortlisted, sent, rejected and hired CVs unless
+   * this was set. The decision tabs replaced it on every pile: `decided=1` with no `status` now opens
+   * the "All" tab, which is exactly what the switch used to show. Nothing builds it any more.
    */
   decided?: string | string[] | undefined;
   /**
@@ -165,6 +172,10 @@ export const SCREENING_UNKNOWN = "unknown";
 export type ScreeningQueueNarrowing = {
   seen: ScreeningSeenFilter;
   notified: ScreeningNotifiedFilter;
+  /**
+   * The DECISION TAB: one status, or null for "All". Never absent-means-everything any more — a link
+   * with no status opens "Not decided yet". See `parseScreeningStatus`.
+   */
   status: CandidateStatus | null;
   /** An area name spelled as the applicant's answer spells it, or `SCREENING_UNKNOWN`. */
   area: string | null;
@@ -182,12 +193,10 @@ export type ScreeningQueueNarrowing = {
    * queue. The loader decodes it. A value it cannot read narrows nothing, like any other filter here.
    */
   whatsapp: string | null;
-  /**
-   * True when the link asks for the already-decided CVs to be KEPT in a WhatsApp Applicants pile.
-   * False is the default and hides them. Carries no meaning without `whatsapp`.
-   */
-  decided: boolean;
 };
+
+/** The link's spelling of the "All" tab — the one status value that is not a status. */
+export const SCREENING_STATUS_ALL = "all";
 
 /** Next.js hands a repeated query param through as an array; take the first and ignore the rest. */
 function firstParam(value: string | string[] | undefined): string | null {
@@ -239,6 +248,26 @@ function parseVacancy(value: string | null): number | null {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
+/**
+ * The decision tab out of the link: a status, or null for "All".
+ *
+ * THE OWNER, 2026-09-18: every screening page opens on "Not decided yet". So a link with NO status is
+ * that tab — `new` — and "All" has to be asked for by name, `status=all`. Before that date an absent
+ * status meant everybody; a link saved then still works, and lands on the pile where the undecided
+ * work is, which is where he asked every screen to land.
+ *
+ * `decided=1` is the retired way a WhatsApp Applicants pile asked to keep the decided CVs. Such a link
+ * with no status of its own meant "everybody", so it opens "All" rather than silently changing its
+ * meaning. A status nobody recognises is ignored like every other bad parameter, which here means the
+ * default tab, never an error page.
+ */
+function parseScreeningStatus(value: string | null, legacyDecided: boolean): CandidateStatus | null {
+  if (value && value.toLowerCase() === SCREENING_STATUS_ALL) return null;
+  const status = normalizeCandidateStatus(value);
+  if (status) return status;
+  return legacyDecided ? null : DEFAULT_CANDIDATE_STATUS;
+}
+
 function parseRegion(value: string | null): ScreeningRegionFilter | null {
   if (!value) return null;
   // Region CODES are upper case (`CA`, `D3`) and the two buckets are lower case, so each half is
@@ -269,7 +298,6 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
   const area = firstParam(filters.area);
   return {
     area: area && area.toLowerCase() === SCREENING_UNKNOWN ? SCREENING_UNKNOWN : area,
-    decided: isTruthyFlag(firstParam(filters.decided)),
     // `?sent=1&unsent=1` is somebody editing an address bar, not an attack. Sent wins for the same
     // reason unseen wins over seen below: it is the narrower, more specific half of the pair.
     notified: sent ? "sent" : unsent ? "unsent" : "any",
@@ -283,16 +311,20 @@ export function parseScreeningFilters(filters: ScreeningQueueFilters = {}): Scre
     // it could never win.
     seen: untouched ? "untouched" : unseen ? "unseen" : seen ? "seen" : "any",
     source: firstParam(filters.source),
-    status: normalizeCandidateStatus(firstParam(filters.status)),
+    status: parseScreeningStatus(firstParam(filters.status), isTruthyFlag(firstParam(filters.decided))),
     vacancy: parseVacancy(firstParam(filters.vacancy)),
     whatsapp: firstParam(filters.whatsapp),
   };
 }
 
-/** Everything a screening link can narrow to. Absent keys narrow nothing, exactly as before. */
+/** Everything a screening link can narrow to. Absent keys narrow nothing — except `status`, see there. */
 export type ScreeningHrefOptions = {
   seen?: ScreeningSeenFilter;
   notified?: ScreeningNotifiedFilter;
+  /**
+   * The decision tab. Absent or `new` is "Not decided yet", the default, and writes nothing; null is
+   * "All" and writes `status=all`, because an absent status no longer means everybody.
+   */
   status?: CandidateStatus | null;
   area?: string | null;
   role?: ScreeningRoleFilter | null;
@@ -304,8 +336,6 @@ export type ScreeningHrefOptions = {
   vacancy?: number | null;
   /** A WhatsApp Applicants search, encoded by `whatsAppApplicantSearchParam`, or null to drop it. */
   whatsapp?: string | null;
-  /** Keep the already-decided CVs in a WhatsApp Applicants pile. False or absent hides them. */
-  decided?: boolean;
   /** The CV to open on arrival. Not a filter — the queue is identical with or without it. */
   candidate?: string | null;
 };
@@ -376,7 +406,10 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.seen === "untouched") params.set("untouched", "1");
   if (options.notified === "sent") params.set("sent", "1");
   if (options.notified === "unsent") params.set("unsent", "1");
-  if (options.status) params.set("status", options.status);
+  // The decision tab. "Not decided yet" is the default, so it writes nothing and the owner's bookmarked
+  // links stay as short as they were; "All" is the one that has to be named now.
+  if (options.status === null) params.set("status", SCREENING_STATUS_ALL);
+  else if (options.status && options.status !== DEFAULT_CANDIDATE_STATUS) params.set("status", options.status);
   if (options.role) params.set("role", options.role);
   if (options.region) params.set("region", options.region);
   if (options.area) params.set("area", options.area);
@@ -385,7 +418,6 @@ export function screeningHref(basePath: string, options: ScreeningHrefOptions = 
   if (options.source) params.set("source", options.source);
   if (options.vacancy) params.set("vacancy", String(options.vacancy));
   if (options.whatsapp) params.set("whatsapp", options.whatsapp);
-  if (options.decided) params.set("decided", "1");
   // LAST, so the filters read first in the address bar and the long id sits at the end where it is
   // out of the way of a person reading the URL to see what the pile is.
   if (options.candidate) params.set("candidate", options.candidate);

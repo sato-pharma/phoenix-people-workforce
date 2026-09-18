@@ -60,6 +60,7 @@ import { isStatedNonEgyptian, nonEgyptianFlagTitle } from "@/lib/recruitment/nat
 import { managerLabel, UNNAMED_USER_LABEL } from "@/lib/recruitment/person-labels";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
 import { screeningHref } from "@/lib/recruitment/screening-link";
+import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import type { ManagerSend } from "@/lib/recruitment/manager-sends";
 import type { Candidate, RecruitmentFile } from "@/lib/recruitment/types";
 
@@ -273,7 +274,9 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
         controls={
           <>
             <ActionLink
-              href={screeningHref(root, { candidate: candidate.id })}
+              // On the CV's OWN decision tab, so "Screening list" on that page goes back to the pile
+              // this person is actually in rather than to "Not decided yet", which may not hold them.
+              href={screeningHref(root, { candidate: candidate.id, status: candidateDecisionTabOf(candidate.status) })}
               title="Open this CV on the screening page, where the decisions are made"
               tone="primary"
             >

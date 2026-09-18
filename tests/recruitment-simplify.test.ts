@@ -239,7 +239,9 @@ export async function runRecruitmentSimplifyTests() {
     /new Date\(right\.createdAt\)\.getTime\(\) - new Date\(left\.createdAt\)\.getTime\(\)/,
     "the pool sorts newest first — with 152 a week, arrival order is the only order that helps",
   );
-  for (const control of ["dateFilter", "statusFilter", "sourceFilter"]) {
+  // The Status select became the decision tabs on 2026-09-18 (candidate-decision-tabs.ts): the same
+  // question, answered by one click on a tab instead of a dropdown.
+  for (const control of ["dateFilter", "decisionTab", "sourceFilter"]) {
     assert.ok(workspace.includes(control), `the pool needs a ${control} — 226 rows behind one search box is not usable`);
   }
 

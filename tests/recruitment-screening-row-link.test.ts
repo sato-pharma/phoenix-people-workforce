@@ -51,10 +51,18 @@ export async function runScreeningRowLinkTests() {
     candidate: "cv-1",
     rating: "unrated",
     seen: "untouched",
-    status: "new",
+    status: "shortlisted",
   });
   assert.match(withFilters, /untouched=1/, "the pile must survive into the new tab");
-  assert.match(withFilters, /status=new/);
+  assert.match(withFilters, /status=shortlisted/, "…and so must the decision tab it was on");
+  // "Not decided yet" is the default tab, so it travels as the ABSENCE of `status` (2026-09-18) — and
+  // still reads back as that tab on the other side.
+  const onDefaultTab = screeningHref("/recruitment", { candidate: "cv-1", seen: "untouched", status: "new" });
+  assert.doesNotMatch(onDefaultTab, /status=/);
+  assert.equal(
+    parseScreeningFilters(Object.fromEntries(new URL(onDefaultTab, "https://x.test").searchParams)).status,
+    "new",
+  );
   assert.match(withFilters, /area=Sohag\+1/);
   assert.match(withFilters, /rating=unrated/);
   assert.match(withFilters, /candidate=cv-1$/, "…and the long id sits LAST, out of a reader's way");

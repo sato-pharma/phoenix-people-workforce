@@ -203,6 +203,7 @@ async function loadCandidates(ids: readonly string[], into: Map<string, WhatsApp
         full_name: row.full_name,
         governorate: row.governorate,
         id: row.id,
+        in_cv_folder: false,
         status: row.status,
       });
     }
@@ -241,6 +242,34 @@ async function attachUnconfirmedGovernorates(candidates: Map<string, WhatsAppApp
   }
 }
 
+/**
+ * Marks the candidates filed in one of the owner's own folders, which this page leaves off.
+ *
+ * BEST-EFFORT, the way the candidate pool reads the same table (`attachCvFolderMemberships`): a read
+ * that fails part-way leaves every CV listed, never a half-read set that hides some of them. The
+ * table is small (one row per filed CV), so it is read whole rather than asked about by id.
+ */
+async function markCvFolderMembers(candidates: Map<string, WhatsAppApplicantCandidate>): Promise<void> {
+  if (candidates.size === 0) return;
+  const supabase = recruitmentDb();
+  const filed = new Set<string>();
+  for (let page = 0; page < PAGE_LIMIT; page += 1) {
+    const from = page * PAGE_SIZE;
+    const { data, error } = await supabase
+      .from("ats_cv_folder_items")
+      .select("id,candidate_id")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error || !data) return;
+    for (const row of data as { candidate_id: string | null }[]) {
+      const candidateId = textOrNull(row.candidate_id);
+      if (candidateId) filed.add(candidateId);
+    }
+    if (data.length < PAGE_SIZE) break;
+  }
+  for (const candidate of candidates.values()) candidate.in_cv_folder = filed.has(candidate.id);
+}
+
 /** Everything the WhatsApp Applicants page shows, read once per visit. */
 export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsView> {
   const [sessions, questions, audiences] = await Promise.all([
@@ -260,7 +289,7 @@ export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsVi
       if (candidates.has(candidateId)) joined.set(sessionId, candidateId);
     }
   }
-  await attachUnconfirmedGovernorates(candidates);
+  await Promise.all([attachUnconfirmedGovernorates(candidates), markCvFolderMembers(candidates)]);
 
   return buildWhatsAppApplicantsView({
     audiences,

@@ -94,6 +94,7 @@ import {
 import { Action, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
+import { candidateDecisionTabLabels, type CandidateDecisionTab } from "@/lib/recruitment/candidate-decision-tabs";
 
 /**
  * What one loaded candidate is: the profile, the CV read if there is one, and the wording of the
@@ -160,7 +161,7 @@ export function ScreeningWorkstation({
   canSendToManagers,
   canWriteNotes,
   counts,
-  decidedControl,
+  decisionTab,
   filteredOut,
   focus,
   onToggleFocus,
@@ -221,12 +222,10 @@ export function ScreeningWorkstation({
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
   /**
-   * The one-press switch for the CVs a person has already decided, inside a WhatsApp Applicants
-   * pile: how many there are, whether the list is hiding them right now, and the press. Null when
-   * there is nothing for it to do - no such pile, no decided CVs in it, or a status picked on the
-   * filter bar that already keeps them.
+   * The decision tab the server loaded — Not decided yet, Shortlisted, Sent to manager, Rejected,
+   * Hired or All. Names the list when the work queue is "Everyone", because then the tab IS the pile.
    */
-  decidedControl: { count: number; hidden: boolean; onToggle: () => void } | null;
+  decisionTab: CandidateDecisionTab;
   filteredOut: number;
   /** Every pane folded at once, so the document has the screen. Owned by the page so the filter
       bar above this component folds with it. */
@@ -254,17 +253,13 @@ export function ScreeningWorkstation({
    */
   whatsAppSearch: string | null;
 }) {
-  // "New" is the right default for the ordinary queue and the WRONG one for a seat. The seat pile
-  // the server just built is everything UNDECIDED for that seat, and plenty of it has been looked at
-  // before — a CV filed to the area folder months ago is not new. Opening a bookmarked seat link on
-  // the "New" tab would show a fraction of the pile with the rail beside it reporting the whole of
-  // it, which is the one thing this mode must never do.
-  //
-  // The same for a WhatsApp Applicants search. That page listed everyone its filters found, and the
-  // owner asked for exactly those here ("only show those I filtered"). On "New" the people already
-  // read or decided would be missing from a list that page had just shown in full.
-  const pileIsChosen = vacancyId !== null || whatsAppSearch !== null;
-  const [queue, setQueue] = useState<ScreeningWorkQueue>(pileIsChosen ? "all" : "new");
+  // "EVERYONE" IS WHERE THE LIST OPENS, on every pile, since 2026-09-18. The DECISION TAB above the
+  // page is the pile now — "Not decided yet" by default — and the list shows all of it, so the number
+  // on the tab is the number of rows under it. Opening on the "New CVs" queue instead would narrow
+  // the tab a second time (it leaves out the red-flagged and the rows with no CV) and show a list
+  // shorter than the tab that opened it; on any other tab it would show nobody at all. The queues on
+  // the rail are still one press away, as piles inside the tab.
+  const [queue, setQueue] = useState<ScreeningWorkQueue>("all");
   const [search, setSearch] = useState("");
   // The CV in the link wins on arrival; otherwise the top of the queue, exactly as before. An id
   // that is not in this pile selects nothing and the effect below falls back to the first row.
@@ -1150,7 +1145,10 @@ export function ScreeningWorkstation({
 
   const suggestedVacancyIds = selected?.vacancyIds ?? [];
 
-  const listTitle = screeningWorkQueueLabels[queue];
+  // On "Everyone" the decision tab IS the pile, so the list is named after it — "Rejected", not
+  // "Everyone", when the reader is on the Rejected tab. The "All" tab keeps the queue's own name.
+  const listTitle =
+    queue === "all" && decisionTab !== "all" ? candidateDecisionTabLabels[decisionTab] : screeningWorkQueueLabels[queue];
   const chosenVacancy = vacancyId === null ? null : vacancies.find((vacancy) => vacancy.id === vacancyId) ?? null;
   // The phone's pane switch. A CV's own page has no list pane, so it offers none.
   const mobilePanes: readonly MobilePane[] = ownPage ? ["cv", "panel"] : ["list", "cv", "panel"];
@@ -1190,7 +1188,7 @@ export function ScreeningWorkstation({
                 // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
                 // for that seat the filed CVs are read back in and the email applicants are matched.
                 onSelectVacancy(next);
-                setQueue(next === null && whatsAppSearch === null ? "new" : "all");
+                setQueue("all");
                 setQueueOpen(false);
                 setMobilePane("list");
               }}
@@ -1330,7 +1328,7 @@ export function ScreeningWorkstation({
             The way out is one press, and it is the whole reason this line still exists after the
             page header started naming the seat itself. The header says WHICH seat and what is in the
             pile; this says how to stop looking at only that seat — and it has to live here rather
-            than up there because leaving seat mode also puts the work queue back on "New CVs", which
+            than up there because leaving seat mode also puts the work queue back on "Everyone", which
             is state the workstation owns.
 
             Wraps at 375px rather than scrolling sideways; no ellipsis, no id. Not on a CV's own page,
@@ -1341,7 +1339,7 @@ export function ScreeningWorkstation({
             <Action
               onClick={() => {
                 onSelectVacancy(null);
-                setQueue(whatsAppSearch === null ? "new" : "all");
+                setQueue("all");
               }}
               tone="quiet"
             >
@@ -1355,26 +1353,12 @@ export function ScreeningWorkstation({
             line is then the only thing saying why the pile is short. The way out is one press, as it
             is for a seat. Wraps at 375px rather than scrolling sideways; no ellipsis, no code. */}
         {whatsAppSearch && !ownPage ? (
-          <Band
-            footnote={
-              decidedControl
-                ? decidedControl.hidden
-                  ? `${decidedControl.count} ${decidedControl.count === 1 ? "CV" : "CVs"} from this search already shortlisted, sent to a manager, rejected or hired ${decidedControl.count === 1 ? "is" : "are"} hidden.`
-                  : `Showing the ${decidedControl.count} ${decidedControl.count === 1 ? "CV" : "CVs"} already decided as well.`
-                : undefined
-            }
-            tone="accent"
-          >
+          <Band tone="accent">
             <BandSays>WhatsApp applicants: {whatsAppSearch}</BandSays>
-            {decidedControl ? (
-              <Action onClick={decidedControl.onToggle} tone="quiet">
-                {decidedControl.hidden ? `Show the ${decidedControl.count} decided` : `Hide the ${decidedControl.count} decided`}
-              </Action>
-            ) : null}
             <Action
               onClick={() => {
                 onLeaveWhatsAppSearch();
-                setQueue(vacancyId === null ? "new" : "all");
+                setQueue("all");
               }}
               tone="quiet"
             >
@@ -1439,7 +1423,9 @@ export function ScreeningWorkstation({
                   search={search}
                   selectedId={selectedId}
                   title={listTitle}
-                  totalLabel={`${visible.length} of ${poolSize}`}
+                  // Of the TAB's pile — the rows the server sent — so "12 of 28" on the Rejected tab
+                  // reads against the 28 that tab reported, not against every CV in the pool.
+                  totalLabel={`${visible.length} of ${rows.length}`}
                 />
               </div>
               {!showList && !focus ? (

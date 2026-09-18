@@ -67,7 +67,6 @@ import { addressNamesArea, areaGovernorate, governorateNamedBy, normalizePlaceTe
 import { normalizedAreaMatchKey } from "@/lib/recruitment/candidate-folder";
 import { suggestPositions, type SuggestionInput } from "@/lib/recruitment/position-suggestion";
 import { vacanciesForCandidate } from "@/lib/recruitment/vacancy-applicants";
-import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 /** How we know this CV belongs to the seat. Ranked strongest-stated first — see the header. */
@@ -101,22 +100,6 @@ export type SeatQueueCandidate = SuggestionInput & {
    */
   appliedForText?: string | null;
 };
-
-/**
- * A decision has been taken on this CV.
- *
- * `shortlisted` is NOT decided: somebody agreed the CV is worth acting on and nobody has acted yet,
- * which is precisely a CV that should still be offered for the seat. The three below are the ones
- * where a person has finished with the record — it was rejected, it has gone to a manager, or the
- * job was filled — and re-offering any of them would put work back in front of the reader that they
- * have already done.
- */
-const SEAT_QUEUE_DECIDED: readonly CandidateStatus[] = ["rejected", "sent_to_manager", "hired"];
-
-/** True when a decision has already been taken, so the seat queue must not offer this CV again. */
-export function isSeatQueueDecided(status: CandidateStatus | null | undefined): boolean {
-  return status !== null && status !== undefined && SEAT_QUEUE_DECIDED.includes(status);
-}
 
 /**
  * The seat's place, in the words a recruiter uses for it.
@@ -258,9 +241,9 @@ function jobFitsSeat(candidate: SeatQueueCandidate, vacancy: VacancyOption): boo
  * also described as "the email subject names Menoufia 1", because the recruiter settled that
  * question themselves and the weaker sentence underneath would only invite doubting it.
  *
- * DECIDING IS NOT THIS FUNCTION'S JOB. A rejected CV still matches — `isSeatQueueDecided` is the
- * separate question, asked separately by the loader, so the rail can count a pile and the queue can
- * offer a shorter one without either of them re-deriving the other's rule.
+ * DECIDING IS NOT THIS FUNCTION'S JOB. A rejected CV still matches: which verdict a CV carries is the
+ * decision tabs' question (candidate-decision-tabs.ts), asked by the page over the whole seat pile,
+ * so a seat's Rejected tab can still show who was turned down for it.
  */
 export function statedSeatQueueMatch(
   candidate: SeatQueueCandidate,

@@ -375,7 +375,21 @@ export type FiledCandidate = {
  * one of those already asked here, which is the whole reason the question was centralised.
  */
 export function isFiledCandidate(candidate: FiledCandidate | null | undefined): boolean {
-  return Boolean(candidate?.folder) || (candidate?.cvFolderIds?.length ?? 0) > 0;
+  return Boolean(candidate?.folder) || isInCvFolder(candidate);
+}
+
+/**
+ * True when this CV sits in at least one folder a PERSON made by hand — the tree, not the shelves.
+ *
+ * Its own question because the two filings leave the screening lists on different rules. A shelf is
+ * filled by the system as often as by a person: a CV's declared area files it the evening it
+ * arrives, before anybody has read it, so an undecided shelved CV must stay in front of the screener
+ * (see `isShelvedFromReview`). A hand-built folder is only ever somebody's own act. The owner, asked
+ * on 2026-09-18 where a CV he moves into a folder such as "Archive" should still appear, answered
+ * "only inside that folder": it leaves every decision tab on every screen, whatever its status.
+ */
+export function isInCvFolder(candidate: Pick<FiledCandidate, "cvFolderIds"> | null | undefined): boolean {
+  return (candidate?.cvFolderIds?.length ?? 0) > 0;
 }
 
 /** A filed candidate plus the one other thing the review queue has to know: has anybody decided. */
@@ -404,6 +418,11 @@ export type ReviewQueueCandidate = FiledCandidate & { status?: string | null };
  * redundant record rather than a CV parked for a seat, so it stays out whatever its status says —
  * the behaviour tests/candidate-folders.test.ts already pins.
  *
+ * A HAND-BUILT FOLDER IS EXEMPT TOO, since 2026-09-18, for the opposite reason from the shelf rule
+ * above: nothing but a person ever puts a CV there. The owner makes a folder such as "Archive" and
+ * moves CVs into it precisely so they stop crowding his lists, and he chose, asked directly, that
+ * such a CV appear "only inside that folder". See `isInCvFolder`.
+ *
  * AN UNREADABLE STATUS LEAVES THE CV VISIBLE, which is the one place this disagrees with
  * `isUnreviewedCandidateStatus` in candidate-status.ts: that one reads unrecognised free text as
  * "somebody typed it, which is itself the review". Right for a count on a landing page, wrong here.
@@ -416,6 +435,7 @@ export type ReviewQueueCandidate = FiledCandidate & { status?: string | null };
 export function isShelvedFromReview(candidate: ReviewQueueCandidate | null | undefined): boolean {
   if (!isFiledCandidate(candidate)) return false;
   if (isDuplicateArchive(candidate?.folder?.kind)) return true;
+  if (isInCvFolder(candidate)) return true;
   const status = normalizeCandidateStatus(candidate?.status ?? null);
   return status !== null && status !== "new";
 }

@@ -115,9 +115,9 @@ export async function runRecruitmentScreeningPageTests() {
       region: "D1",
       role: "medical_rep",
       seen: "unseen",
-      status: "new",
+      status: "shortlisted",
     }),
-    "/recruitment/screening?unseen=1&status=new&role=medical_rep&region=D1&area=Gharbia+1+%28Tanta%29",
+    "/recruitment/screening?unseen=1&status=shortlisted&role=medical_rep&region=D1&area=Gharbia+1+%28Tanta%29",
     "every filter travels in one link, and an area with spaces and brackets survives the round trip",
   );
   assert.equal(
@@ -126,10 +126,14 @@ export async function runRecruitmentScreeningPageTests() {
     "the three we-were-never-told buckets are linkable too",
   );
   assert.equal(
-    screeningHref("/recruitment", { area: null, region: null, role: null, status: null }),
+    screeningHref("/recruitment", { area: null, region: null, role: null }),
     "/recruitment/screening",
     "an explicitly empty narrowing is the plain link, not a query string of nulls",
   );
+  // THE DECISION TAB rides on `status` (owner, 2026-09-18). The plain link is "Not decided yet", so
+  // that tab is never spelled out; "All" is, because its absence now means the other thing.
+  assert.equal(screeningHref("/recruitment", { status: "new" }), "/recruitment/screening", "Not decided yet is the plain link");
+  assert.equal(screeningHref("/recruitment", { status: null }), "/recruitment/screening?status=all", "All is spelled out");
 
   // ── 1b · Which shell the filter links stay inside ─────────────────────────
   // The HR namespace is a proxy REWRITE, so the server cannot see it and hands the client the
@@ -179,8 +183,6 @@ export async function runRecruitmentScreeningPageTests() {
   // ── 2 · Reading the narrowing out of a link ───────────────────────────────
   const nothing = {
     area: null,
-    // Off is the default and narrows nothing: only a link that asks for it keeps decided CVs.
-    decided: false,
     notified: "any",
     rating: null,
     received: null,
@@ -188,12 +190,13 @@ export async function runRecruitmentScreeningPageTests() {
     role: null,
     seen: "any",
     source: null,
-    status: null,
+    // The one narrowing a bare link carries: every screen opens on the "Not decided yet" tab.
+    status: "new",
     vacancy: null,
     whatsapp: null,
   };
-  assert.deepEqual(parseScreeningFilters({}), nothing, "a bare link narrows nothing");
-  assert.deepEqual(parseScreeningFilters(), nothing, "no params at all narrows nothing");
+  assert.deepEqual(parseScreeningFilters({}), nothing, "a bare link narrows nothing but the tab");
+  assert.deepEqual(parseScreeningFilters(), nothing, "no params at all narrows nothing but the tab");
   // THE VACANT SEAT travels in the link like every other narrowing, so "screen Menoufia 1" can be
   // bookmarked and pasted to the other screener. It is the one filter carrying an id: two seats can
   // share a job title AND an area and differ only by line, so no name identifies one.
@@ -287,10 +290,17 @@ export async function runRecruitmentScreeningPageTests() {
     "sent_to_manager",
     "every status in the vocabulary is linkable",
   );
-  // An unrecognised status is IGNORED, never guessed at and never thrown on. A screening link that
-  // 500s because somebody edited the address bar is a worse outcome than one showing everything.
-  assert.equal(parseScreeningFilters({ status: "banana" }).status, null, "an unknown status narrows nothing");
-  assert.equal(parseScreeningFilters({ status: "" }).status, null, "an empty status narrows nothing");
+  // An unrecognised status is IGNORED, never guessed at and never thrown on — it opens the default
+  // tab, like a link with no status at all. A screening link that 500s because somebody edited the
+  // address bar is a worse outcome than one showing the undecided CVs.
+  assert.equal(parseScreeningFilters({ status: "banana" }).status, "new", "an unknown status opens Not decided yet");
+  assert.equal(parseScreeningFilters({ status: "" }).status, "new", "and so does an empty one");
+  assert.equal(parseScreeningFilters({ status: "all" }).status, null, "status=all is the All tab");
+  assert.equal(parseScreeningFilters({ status: "ALL" }).status, null, "in any case");
+  // The retired `decided=1` asked a WhatsApp pile to keep its decided CVs. Such a link opens on All,
+  // the tab that keeps them, rather than quietly hiding what it was saved to show.
+  assert.equal(parseScreeningFilters({ decided: "1" }).status, null, "an old decided=1 link opens on All");
+  assert.equal(parseScreeningFilters({ decided: "1", status: "hired" }).status, "hired", "a status it also names wins");
   // The legacy spelling that predates the fixed vocabulary still resolves, so an old bookmark works.
   assert.equal(
     parseScreeningFilters({ status: "candidate created" }).status,
@@ -354,17 +364,27 @@ export async function runRecruitmentScreeningPageTests() {
   };
   const everyone = [rep, managerAbroad, blank, applicant];
 
+  // On the "All" tab unless the query names a status, so each filter below is tested on its own.
   const keeps = (query: Parameters<typeof parseScreeningFilters>[0], seenIds: string[] = []) =>
     everyone
       .filter((candidate) =>
-        matchesScreeningNarrowing(candidate, parseScreeningFilters(query), {
+        matchesScreeningNarrowing(candidate, parseScreeningFilters({ status: "all", ...query }), {
           asOf,
           seenByViewer: seenIds.includes(candidate.id),
         }),
       )
       .map((candidate) => candidate.id);
 
-  assert.deepEqual(keeps({}), ["rep", "manager", "blank", "applicant"], "a bare link keeps everyone");
+  assert.deepEqual(keeps({}), ["rep", "manager", "blank", "applicant"], "the All tab keeps everyone");
+  // The tabs themselves: a bare link is "Not decided yet", which leaves out the shortlisted manager.
+  assert.deepEqual(
+    everyone
+      .filter((candidate) => matchesScreeningNarrowing(candidate, parseScreeningFilters({}), { asOf, seenByViewer: false }))
+      .map((candidate) => candidate.id),
+    ["rep", "blank", "applicant"],
+    "a bare link opens on Not decided yet",
+  );
+  assert.deepEqual(keeps({ status: "shortlisted" }), ["manager"], "and the Shortlisted tab holds only him");
 
   // Seen / unseen — the three-way, against one viewer's reading.
   assert.deepEqual(keeps({ unseen: "1" }, ["rep"]), ["manager", "blank", "applicant"], "unseen drops what was read");
@@ -591,8 +611,8 @@ export async function runRecruitmentScreeningPageTests() {
   const workspaceSource = read("src/components/recruitment/recruitment-workspace.tsx");
   assert.match(
     workspaceSource,
-    /screeningHref\(screeningBasePath, \{ seen: "unseen" \}\)/,
-    "the pool must link to the screening page, opening on the unread pile",
+    /screeningHref\(screeningBasePath, \{ seen: "unseen", status: statusFilterForDecisionTab\(decisionTab\) \}\)/,
+    "the pool must link to the screening page, opening on the unread pile of the tab the pool is on",
   );
   assert.match(
     workspaceSource,
@@ -602,11 +622,13 @@ export async function runRecruitmentScreeningPageTests() {
 
   // The overlay button survives alongside it on purpose: it carries every filter on the toolbar
   // exactly, which a URL cannot, while the link is bookmarkable. Losing either is a regression.
-  assert.match(workspaceSource, /setScreeningQueue\(filteredCandidates\)/, "the in-place screening button must remain");
-  // It hands over the list BEFORE the red split, and that argument IS the assertion — not a
-  // detail. The queue owns its own Active/Red tabs, so passing the already-split list would give
-  // it a Red-flagged tab that read zero however many red CVs the toolbar had actually turned up.
-  // This pin read `visibleCandidates` until the split was built; the rename is deliberate.
+  assert.match(workspaceSource, /setScreeningQueue\(inDecisionTab\)/, "the in-place screening button must remain");
+  // It hands over the decision tab's pile BEFORE the red split, and that argument IS the assertion —
+  // not a detail. The queue owns its own Active/Red tabs, so passing the already-split list would give
+  // it a Red-flagged tab that read zero however many red CVs the toolbar had actually turned up; and
+  // passing the whole filtered pool would screen the decided CVs the tab strip had just put away.
+  // This pin read `visibleCandidates` until the split was built, then `filteredCandidates` until the
+  // decision tabs (2026-09-18); both renames are deliberate.
   assert.match(
     workspaceSource,
     /initialCvTab=\{cvTab\}/,
