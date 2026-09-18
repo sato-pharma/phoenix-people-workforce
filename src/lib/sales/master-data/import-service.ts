@@ -1,6 +1,8 @@
 import type ExcelJS from "exceljs";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { errorMessageOf, isStatementTimeoutError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { IMS_OTHERS_REGION_CODE } from "@/lib/sales/ims-ratio";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -12,11 +14,13 @@ import {
   editableColumns,
   normalizeCode,
   normalizeDisplay,
+  normalizeKey,
   parseMasterNumber,
   type MasterColumn,
   type MasterDefinition,
   type MasterKey,
 } from "./definitions";
+import { historicalNameCandidates, parseBrickRelocation, type BrickRelocation } from "./brick-move-result";
 import { selectAllRows } from "./list";
 
 export type MasterImportBlockedRow = { key: string; reason: string; row: number };
@@ -736,6 +740,18 @@ export async function setMasterRowActive(input: {
   if (!existingRow) {
     return { success: false, error: `${columnLabel(def, def.keyColumn)} "${key}" was not found.` };
   }
+  // A brick kept as history after a move stays switched on (owner rule: never deactivate the old
+  // brick): published months still read their pharmacies and sales through it.
+  if (
+    input.master === "bricks" &&
+    !input.active &&
+    normalizeDisplay((existingRow as Record<string, unknown>).superseded_by_brick_id) !== ""
+  ) {
+    return {
+      success: false,
+      error: "This brick is kept as history after it moved to another area, so published months keep their numbers. It stays switched on.",
+    };
+  }
   const wasActive = (existingRow as Record<string, unknown>).active !== false;
   if (wasActive === input.active) {
     return { success: true }; // already in the requested state
@@ -760,160 +776,128 @@ export async function setMasterRowActive(input: {
 }
 
 /**
- * Moves a brick to a different block by creating a fresh "{newBlockCode}-{n}" brick and
- * deactivating the old one, rather than editing block_code on the existing row in place.
+ * Moves a brick to the block it really belongs to ("Correct in database"), in ONE database
+ * transaction: sos_relocate_brick (20260918150000).
  *
- * Why not a plain in-place edit (which updateSingleMasterRow already supports generically): this
- * dataset's brick IDs consistently encode their block as a display convention (e.g. "B1-2" under
- * block "B1" — verified 100% consistent across all 439 live bricks on 2026-07-23), even though
- * nothing in the app parses that string to derive geography (block_code is what actually drives
- * area/region everywhere). Owner preference (2026-07-23): moving a brick should keep that
- * convention intact rather than leave a brick's ID visually mismatched with its block, so relocate
- * spawns a new correctly-prefixed ID and retires the old one (soft — same as setMasterRowActive,
- * so historical Source of Sales rows that already reference the old brick_id keep resolving).
+ * The brick gets a fresh "{block}-{n}" id in the target block (owner preference 2026-07-23: a
+ * brick's id follows its block). The old brick is never switched off: it stays active in its old
+ * area as history, renamed "<name> - <old area>" and pointing at its successor, so published months
+ * keep resolving. The pharmacies, territory names, direct-order pharmacies and codes and the saved
+ * AI answers move with it; a pharmacy the mapping guard holds waits for the owner on the Mapping
+ * guard (owner decision 2026-09-18). The sales rows of every pharmacy that moved follow it in every
+ * file that touches no locked month; the files' totals are rebuilt afterwards, one at a time
+ * (brick-moves.ts), because one request cannot rebuild them all.
+ *
+ * The database's refusals are written for the owner (SQLSTATE P0001), so they are passed through as
+ * they are. Anything else is logged and answered with a plain "nothing was moved".
  */
 export async function relocateBrick(input: {
   actorLoginId: string;
   brickId: string;
   newBlockCode: string;
-  /** Optional rename applied atomically with the move (the UI lets both be edited in one save). */
+  /** Optional rename applied with the move (the Database Mapping screen offers both in one save). */
   newBrickName?: string;
-}): Promise<{ customersCascaded?: number; customersCascadeError?: string; error?: string; newBrickId?: string; success: boolean }> {
+}): Promise<{ success: true; result: BrickRelocation } | { success: false; error: string }> {
   const def = MASTER_DEFINITIONS.bricks;
   const brickId = String(input.brickId ?? "").trim();
   const newBlockCode = normalizeCode(input.newBlockCode);
-  const newBrickName = typeof input.newBrickName === "string" ? input.newBrickName.trim() : "";
-  if (!brickId) return { success: false, error: "Brick ID is required." };
-  if (!newBlockCode) return { success: false, error: "Block Code is required." };
+  const newBrickName = typeof input.newBrickName === "string" ? input.newBrickName.trim().replace(/\s+/g, " ") : "";
+  if (!brickId) return { success: false, error: "Pick the brick to move." };
+  if (!newBlockCode) return { success: false, error: "Pick the block the brick belongs to." };
 
   const supabase = getSupabaseAdmin();
-
-  const { data: existingRow, error: fetchError } = await supabase
+  const { data: brickRow, error: brickError } = await supabase
     .from(def.table)
-    .select("*")
+    .select("brick_id, brick_name, area_code")
     .eq(def.keyColumn, brickId)
     .maybeSingle();
-  if (fetchError) return { success: false, error: fetchError.message };
-  if (!existingRow) return { success: false, error: `Brick ID "${brickId}" was not found.` };
-  const existing = existingRow as Record<string, unknown>;
-  if (existing.active === false) {
-    return { success: false, error: `Brick "${brickId}" is inactive — reactivate it before relocating.` };
-  }
-  const currentBlockCode = normalizeCode(existing.block_code);
-  if (currentBlockCode === newBlockCode) {
-    return { success: false, error: `"${brickId}" is already in block "${newBlockCode}".` };
-  }
+  if (brickError) return relocateFailure(brickError, brickId);
+  if (!brickRow) return { success: false, error: "That brick is no longer in the brick master. Reload the page and try again." };
+  const brick = brickRow as { area_code: string | null; brick_id: string; brick_name: string | null };
+  const oldName = normalizeDisplay(brick.brick_name).replace(/\s+/g, " ");
 
-  const blocksDef = MASTER_DEFINITIONS.blocks;
-  const { data: blockRow, error: blockError } = await supabase
-    .from(blocksDef.table)
-    .select("*")
-    .eq(blocksDef.keyColumn, newBlockCode)
+  const { data: areaRow, error: areaError } = await supabase
+    .from("source_of_sales_areas")
+    .select("area_name")
+    .eq("area_code", normalizeCode(brick.area_code))
     .maybeSingle();
-  if (blockError) return { success: false, error: blockError.message };
-  if (!blockRow) return { success: false, error: `Block Code "${newBlockCode}" is not in ${blocksDef.label}.` };
-  const block = blockRow as Record<string, unknown>;
-  if (block.active === false) {
-    return { success: false, error: `Block "${newBlockCode}" is inactive — reactivate it before moving a brick there.` };
-  }
+  if (areaError) return relocateFailure(areaError, brickId);
+  const oldAreaName = normalizeDisplay((areaRow as { area_name?: string | null } | null)?.area_name);
 
-  // Allocate the next "{block}-{n}" id under the target block — purely cosmetic (see comment
-  // above); collisions are still caught below by the table's primary key on insert.
-  const prefix = `${newBlockCode}-`;
-  const { data: siblings, error: siblingsError } = await supabase.from(def.table).select("brick_id").ilike("brick_id", `${prefix}%`);
-  if (siblingsError) return { success: false, error: siblingsError.message };
-  let nextSeq = 1;
-  for (const row of (siblings ?? []) as Array<{ brick_id: string }>) {
-    const parsed = Number(row.brick_id.slice(prefix.length));
-    if (Number.isInteger(parsed) && parsed >= nextSeq) nextSeq = parsed + 1;
-  }
-  const newBrickId = `${prefix}${nextSeq}`;
-
-  const effectiveBrickName = newBrickName || String(existing.brick_name ?? "");
-  const derived = def.derive({ brick_name: effectiveBrickName });
-  const newRow: Record<string, unknown> = {
-    active: true,
-    area_code: normalizeCode(block.area_code),
-    block_code: newBlockCode,
-    brick_id: newBrickId,
-    brick_name: effectiveBrickName,
-    description: existing.description ?? "",
-    normalized_description: existing.normalized_description ?? "",
-    region_code: normalizeCode(block.region_code),
-    ...derived,
-  };
-
-  const { error: insertError } = await supabase.from(def.table).insert(newRow);
-  if (insertError) {
-    const reason = insertError.code === "23505" ? `Brick ID "${newBrickId}" already exists.` : insertError.message;
-    return { success: false, error: reason };
-  }
-
-  const { error: deactivateError } = await supabase
+  const brickName = newBrickName || oldName;
+  const candidates = historicalNameCandidates({
+    brickName: oldName,
+    fromAreaName: oldAreaName,
+    movedOn: cairoDateLabel(new Date()),
+    newBrickName: brickName,
+  });
+  // Brick names are unique (owner rule 2026-09-11), so the history keeps the first name no other
+  // brick holds.
+  const { data: takenRows, error: takenError } = await supabase
     .from(def.table)
-    .update({ active: false, updated_at: new Date().toISOString() })
-    .eq(def.keyColumn, brickId);
-  if (deactivateError) {
-    // The move only half-happened — remove the new row rather than leave two active bricks
-    // representing the same territory.
-    await supabase.from(def.table).delete().eq(def.keyColumn, newBrickId);
-    return {
-      success: false,
-      error: `Created "${newBrickId}" but failed to deactivate "${brickId}": ${deactivateError.message}`,
-    };
+    .select("normalized_brick_name")
+    .neq(def.keyColumn, brickId)
+    .in("normalized_brick_name", candidates.map((candidate) => normalizeKey(candidate)));
+  if (takenError) return relocateFailure(takenError, brickId);
+  const taken = new Set(((takenRows ?? []) as Array<{ normalized_brick_name: string | null }>).map((row) => row.normalized_brick_name ?? ""));
+  const historicalName = candidates.find((candidate) => !taken.has(normalizeKey(candidate)));
+  if (!historicalName) {
+    return { success: false, error: `Every history name for ${oldName} is already taken by another brick. Rename one of them, then move it.` };
   }
 
-  // The customer -> brick crosswalk (source_of_sales_customer_map) has no FK to bricks — it's a
-  // plain denormalized brick_id/area_code/region_code copy. The monthly import pipeline only loads
-  // ACTIVE bricks into its lookup map (see monthly-distributor-import.ts, .eq("active", true)), so
-  // without this cascade every customer still pointing at the now-deactivated old brickId would
-  // silently fail to resolve on the next import — not an error, just quietly unmapped. This must
-  // run in the same operation as the relocation, not as a separate step someone could forget.
-  let customersCascaded: number | undefined;
-  let customersCascadeError: string | undefined;
-  const { data: cascaded, error: cascadeError } = await supabase
-    .from("source_of_sales_customer_map")
-    .update({
-      area_code: normalizeCode(block.area_code),
-      brick_id: newBrickId,
-      region_code: normalizeCode(block.region_code),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("brick_id", brickId)
-    .select("id");
-  if (cascadeError) {
-    customersCascadeError = cascadeError.message;
-  } else {
-    customersCascaded = cascaded?.length ?? 0;
+  const { data, error } = await supabase.rpc("sos_relocate_brick", {
+    p_actor: input.actorLoginId,
+    p_block_code: newBlockCode,
+    p_brick_id: brickId,
+    p_brick_name: brickName,
+    p_historical_name: historicalName,
+    p_normalized_brick_name: normalizeKey(brickName),
+    p_normalized_historical_name: normalizeKey(historicalName),
+  });
+  if (error) return relocateFailure(error, brickId);
+  const result = parseBrickRelocation(data);
+  if (!result) {
+    logError("Brick move returned no result", { labels: { event: "brick_move_no_result" }, context: { brickId } });
+    return { success: false, error: "The database did not say what it moved. Reload the page to see where the brick is now." };
   }
 
+  const auditValues = { ...result, master: "bricks", source: "database_mapping_brick_move" };
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: brickId,
     entityType: def.auditEntityType,
-    newValues: {
-      active: false,
-      customersCascadeError,
-      customersCascaded,
-      master: "bricks",
-      relocatedTo: newBrickId,
-      source: "database_mapping_brick_relocate",
-    },
-    oldValues: { active: true, block_code: currentBlockCode },
-    summary: `Database Mapping brick relocated — ${brickId} (block ${currentBlockCode}) deactivated, replaced by ${newBrickId} (block ${newBlockCode}). Customer mappings updated: ${customersCascaded ?? "FAILED — " + customersCascadeError}.`,
+    newValues: { ...auditValues, brick_name: historicalName, superseded_by_brick_id: result.newBrickId },
+    oldValues: { area_code: brick.area_code, brick_name: oldName },
+    summary: `Database Mapping brick move — ${oldName} moved from ${result.fromAreaName} to ${result.toAreaName}; the old brick stays as history under ${historicalName}.`,
   });
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
-    entityId: newBrickId,
+    entityId: result.newBrickId,
     entityType: def.auditEntityType,
-    newValues: { ...newRow, master: "bricks", relocatedFrom: brickId, source: "database_mapping_brick_relocate" },
-    summary:
-      newBrickName && newBrickName !== String(existing.brick_name ?? "")
-        ? `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode} as "${newBrickName}", replacing ${brickId}.`
-        : `Database Mapping brick relocated — ${newBrickId} created in block ${newBlockCode}, replacing ${brickId}.`,
+    newValues: { ...auditValues, moved_from_brick_id: brickId },
+    summary: `Database Mapping brick move — ${result.newBrickName} created in ${result.toAreaName} (block ${result.toBlockLabel}), replacing ${oldName}.`,
   });
 
-  return { customersCascaded, customersCascadeError, newBrickId, success: true };
+  return { result, success: true };
+}
+
+function relocateFailure(error: unknown, brickId: string): { success: false; error: string } {
+  // The database's own refusals name the brick and say what to do; nothing else is safe to show.
+  if ((error as { code?: unknown } | null)?.code === "P0001") {
+    return { success: false, error: errorMessageOf(error) || "The database refused the move. Nothing was moved." };
+  }
+  if (isStatementTimeoutError(error)) {
+    return {
+      success: false,
+      error: "The move took too long and was cancelled by the database. Nothing was moved. Try again in a minute.",
+    };
+  }
+  logError("Brick move failed", { context: { brickId }, error, labels: { event: "brick_move_failed" } });
+  return { success: false, error: "The brick could not be moved. Nothing was moved; try again, and if it keeps failing, report it." };
+}
+
+function cairoDateLabel(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "Africa/Cairo", year: "numeric" }).format(date);
 }
 
 function columnLabel(def: MasterDefinition, key: string) {

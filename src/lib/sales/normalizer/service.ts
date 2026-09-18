@@ -6,7 +6,9 @@ import { logError } from "@/lib/observability/log";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
 import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
 import { pickBestSheet } from "@/lib/sales/normalizer/engine";
@@ -26,16 +28,25 @@ import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-
 export { normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview };
 export type { NormalizeFileResult, NormalizePart, NormalizePreview };
 
-export type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
+export type { MappingBrickReference, MappingReferences } from "@/lib/sales/normalizer/brick-area";
 
 const IMPORT_FINALIZING_REASON = "Import is still being finalized. Retry the upload if this remains blocked.";
 
 export async function listMappingReferences(): Promise<MappingReferences> {
   // Only the product + brick name lists are needed for the mapping dropdowns — skip the (large)
   // customer->brick crosswalk that loadSalesReferenceData() pages by default.
-  const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const [refs, movedBricks] = await Promise.all([
+    loadSalesReferenceData({ includeCustomerBricks: false }),
+    loadMovedBricks(),
+  ]);
   return {
-    bricks: (refs.bricks ?? []).map((b) => ({ id: b.brickId, name: b.brickName })).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    // Every picker these feed maps something NEW, so a brick kept only as history after a move is
+    // left out; movedBricks says where each one went, for a pick made before the move.
+    bricks: (refs.bricks ?? [])
+      .filter((b) => !movedBricks.has(b.brickId))
+      .map((b) => ({ areaName: b.areaName ?? "", id: b.brickId, name: b.brickName, regionName: b.regionName ?? "" }))
+      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)),
+    movedBricks: Object.fromEntries(movedBricks),
     products: refs.products.map((p) => ({ code: p.productCode, name: p.productName })).sort((a, b) => a.name.localeCompare(b.name)),
   };
 }

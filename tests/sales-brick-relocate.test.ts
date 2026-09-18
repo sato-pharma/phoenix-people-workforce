@@ -1,18 +1,23 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// Moving a brick to a different block goes through relocateBrick (new "{block}-{n}" id + deactivate
-// the old row) instead of updateSingleMasterRow's plain in-place PATCH — owner preference
-// (2026-07-23): this dataset's brick IDs consistently encode their block as a display convention
-// (verified 100% consistent across all 439 live production bricks), so a move should keep a new
-// brick's ID matching its new block rather than leave a stale-looking prefix. Like the rest of this
-// surface this is DB-backed and not directly unit-testable without a live/mocked Supabase client, so
-// this is a source-text regression test (matches sales-master-data-pagination.test.ts's convention).
+import { historicalNameCandidates } from "@/lib/sales/master-data/brick-move-result";
+
+// Moving a brick to a different block goes through relocateBrick instead of updateSingleMasterRow's
+// plain in-place PATCH. Owner preference (2026-07-23): this dataset's brick IDs encode their block, so
+// the moved brick gets a fresh "{block}-{n}" id in its new block. Owner rule (2026-09-18): the old
+// brick is NEVER switched off. It stays active in its old area as history, renamed and pointing at the
+// brick that replaced it, so published months keep resolving through it.
+//
+// The move itself (the new brick, the history, the pharmacies and their open-month sales) is ONE
+// database transaction, sos_relocate_brick, pinned in sales-brick-move-sales.test.ts. This file pins
+// the TypeScript around it: source-text checks, since the service needs a live database (the
+// convention of sales-master-data-pagination.test.ts), plus the pure history-name rule.
 export function runSalesBrickRelocateTests() {
   const definitionsSource = readFileSync("src/lib/sales/master-data/definitions.ts", "utf8");
 
   // brick_name and block description are in-place renames (updateSingleMasterRow's plain PATCH);
-  // only block_code (which brick a block's bricks live under) drives the relocate flow above.
+  // only block_code (which block a brick lives under) drives the move.
   assert.match(
     definitionsSource,
     /\{ key: "brick_name", label: "Brick Name", locked: false, required: true, type: "text" \}/,
@@ -38,69 +43,81 @@ export function runSalesBrickRelocateTests() {
   );
   assert.match(
     serviceSource,
-    /newBrickName\?: string;\s*\}\): Promise<\{ customersCascaded/,
-    "relocateBrick accepts an optional rename to apply atomically with the move",
+    /newBrickName\?: string;\s*\}\): Promise<\{ success: true; result: BrickRelocation \} \| \{ success: false; error: string \}>/,
+    "relocateBrick accepts an optional rename and answers with what the database moved",
   );
+
+  const relocateStart = serviceSource.indexOf("export async function relocateBrick");
+  const failureStart = serviceSource.indexOf("function relocateFailure");
+  assert.ok(relocateStart >= 0 && failureStart > relocateStart, "relocateBrick is followed by relocateFailure");
+  const relocateBody = serviceSource.slice(relocateStart, failureStart);
+
   assert.match(
-    serviceSource,
-    /const newBrickName = typeof input\.newBrickName === "string" \? input\.newBrickName\.trim\(\) : "";/,
+    relocateBody,
+    /const newBrickName = typeof input\.newBrickName === "string" \? input\.newBrickName\.trim\(\)\.replace\(\/\\s\+\/g, " "\) : "";/,
     "relocateBrick normalizes the optional rename input",
   );
   assert.match(
-    serviceSource,
-    /if \(existing\.active === false\) \{\s*return \{ success: false, error: `Brick "\$\{brickId\}" is inactive/,
-    "relocateBrick refuses to move an already-inactive brick",
+    relocateBody,
+    /const brickName = newBrickName \|\| oldName;/,
+    "an explicit rename wins over the old brick's name; an empty or absent rename keeps it",
   );
   assert.match(
-    serviceSource,
-    /if \(currentBlockCode === newBlockCode\) \{\s*return \{ success: false, error: `"\$\{brickId\}" is already in block/,
-    "relocateBrick no-ops with a clear error when the target block is unchanged",
+    relocateBody,
+    /historicalNameCandidates\(\{/,
+    "the name the old brick keeps as history comes from the shared candidate list",
   );
   assert.match(
-    serviceSource,
-    /if \(block\.active === false\) \{\s*return \{ success: false, error: `Block "\$\{newBlockCode\}" is inactive/,
-    "relocateBrick refuses to move a brick into an inactive block",
+    relocateBody,
+    /const historicalName = candidates\.find\(\(candidate\) => !taken\.has\(normalizeKey\(candidate\)\)\);/,
+    "the history keeps the first candidate no other brick holds (brick names are unique)",
   );
   assert.match(
-    serviceSource,
-    /const newBrickId = `\$\{prefix\}\$\{nextSeq\}`/,
-    "relocateBrick allocates the new id from the target block's existing siblings",
+    relocateBody,
+    /\.rpc\("sos_relocate_brick", \{[\s\S]*?p_historical_name: historicalName,[\s\S]*?p_normalized_historical_name: normalizeKey\(historicalName\),[\s\S]*?\}\);/,
+    "the move is ONE database call, sos_relocate_brick, which also names the old brick's history",
   );
-  assert.match(
-    serviceSource,
-    /const effectiveBrickName = newBrickName \|\| String\(existing\.brick_name \?\? ""\);/,
-    "an explicit rename wins over the old brick's name; an empty/absent rename falls back to it",
-  );
-  assert.match(
-    serviceSource,
-    /brick_name: effectiveBrickName,[\s\S]{0,120}region_code: normalizeCode\(block\.region_code\)/,
-    "the new brick takes the effective (possibly renamed) name and area/region from the new block",
-  );
-  assert.match(
-    serviceSource,
-    /if \(deactivateError\) \{[\s\S]{0,200}\.delete\(\)\.eq\(def\.keyColumn, newBrickId\)/,
-    "a failed deactivate compensates by deleting the just-created new row, instead of leaving two active bricks for one territory",
-  );
-  const relocateBody = serviceSource.slice(serviceSource.indexOf("export async function relocateBrick"));
   assert.equal(
     (relocateBody.match(/writeAuditLog\(/g) ?? []).length,
     2,
-    "relocateBrick audits both the deactivated old brick and the newly created one",
+    "relocateBrick audits both the brick kept as history and the brick that replaced it",
   );
   assert.match(
     relocateBody,
-    /from\("source_of_sales_customer_map"\)\s*\.update\(\{\s*area_code: normalizeCode\(block\.area_code\),\s*brick_id: newBrickId,\s*region_code: normalizeCode\(block\.region_code\),/,
-    "relocateBrick cascades the move into source_of_sales_customer_map (brick_id has no FK — every customer still pointing at the old id would silently stop resolving on the next monthly import, since the importer only loads active bricks)",
+    /superseded_by_brick_id: result\.newBrickId/,
+    "the history brick's audit row names the brick it moved to",
   );
-  assert.match(
-    relocateBody,
-    /\.eq\("brick_id", brickId\)/,
-    "the customer_map cascade is scoped to rows still pointing at the OLD brick id",
-  );
+  // The old flow switched the old brick off, patched the customer map from TypeScript and deleted the
+  // new row when that failed. All of it now happens, or none of it, inside sos_relocate_brick.
+  assert.doesNotMatch(relocateBody, /active: false/, "relocateBrick never switches the old brick off");
+  assert.doesNotMatch(relocateBody, /\.delete\(\)/, "relocateBrick deletes nothing; a failed move rolls back in the database");
   assert.doesNotMatch(
-    relocateBody.slice(0, relocateBody.indexOf("source_of_sales_customer_map")),
-    /return \{ newBrickId, success: true \}/,
-    "the function does not return success before the customer_map cascade runs",
+    relocateBody,
+    /from\("source_of_sales_customer_map"\)/,
+    "the pharmacies move inside the database transaction (through the mapping guard), never from TypeScript",
+  );
+
+  const failureBody = serviceSource.slice(failureStart, serviceSource.indexOf("function cairoDateLabel"));
+  assert.match(
+    failureBody,
+    /if \(\(error as \{ code\?: unknown \} \| null\)\?\.code === "P0001"\) \{\s*return \{ success: false, error: errorMessageOf\(error\)/,
+    "the database's own refusals (P0001: switched off, already history, held on the Mapping guard) reach the screen as written",
+  );
+  assert.match(
+    failureBody,
+    /isStatementTimeoutError\(error\)/,
+    "a move the database cancelled for time says nothing was moved",
+  );
+
+  assert.match(
+    serviceSource,
+    /input\.master === "bricks" &&\s*!input\.active &&\s*normalizeDisplay\(\(existingRow as Record<string, unknown>\)\.superseded_by_brick_id\) !== ""/,
+    "switching off a brick kept as history is refused (owner rule: never deactivate the old brick)",
+  );
+  assert.match(
+    serviceSource,
+    /error: "This brick is kept as history after it moved to another area, so published months keep their numbers\. It stays switched on\.",/,
+    "the refusal says why the history brick stays switched on",
   );
 
   const routeSource = readFileSync("app/api/sales/database-mapping/bricks/[key]/relocate/route.ts", "utf8");
@@ -108,13 +125,32 @@ export function runSalesBrickRelocateTests() {
   assert.match(routeSource, /resolveAccessContext\(request\)/, "the route resolves an authenticated session");
   assert.match(
     routeSource,
+    /if \(access\.role !== "Super Admin" && access\.scope !== "system"\) \{\s*return NextResponse\.json\(\{ success: false, error: "Only the Super Admin can move a brick\." \}, \{ status: 403 \}\);/,
+    "only the Super Admin can move a brick, like the rest of the Database Mapping screen",
+  );
+  assert.match(
+    routeSource,
     /assertPermission\(access, "sales", "update"\)/,
     "relocating requires the sales:update permission — same tier as a plain edit",
+  );
+  assert.ok(
+    routeSource.indexOf('access.role !== "Super Admin"') < routeSource.indexOf("relocateBrick({"),
+    "the Super Admin gate runs before the move",
+  );
+  assert.match(
+    routeSource,
+    /export const maxDuration = 150;/,
+    "the route outlives the database's own two-minute limit on the move",
   );
   assert.match(
     routeSource,
     /relocateBrick\(\{\s*actorLoginId,\s*brickId: key,\s*newBlockCode: body\.newBlockCode,\s*newBrickName: typeof body\.brickName === "string" \? body\.brickName : undefined,\s*\}\)/,
     "the route delegates to relocateBrick with the block move and the optional rename",
+  );
+  assert.match(
+    routeSource,
+    /move: outcome\.result,/,
+    "the route hands back what moved, so the screen can rebuild the files the sales moved in",
   );
 
   const uiSource = readFileSync("src/components/sales/database-mapping-workspace.tsx", "utf8");
@@ -135,6 +171,11 @@ export function runSalesBrickRelocateTests() {
   );
   assert.match(
     uiSource,
+    /if \(isBrickRelocate\) onBrickMoved\(parseBrickRelocation\(payload\.move\)\?\.pendingFiles \?\? 0\);/,
+    "a move from the row editor tells the other tabs and rebuilds the files its sales moved in, like the correction panel",
+  );
+  assert.match(
+    uiSource,
     /const isRelocatingEdit =\s*isEditing && def\.master === "bricks" && \(editValues\.block_code \?\? ""\) !== String\(row\.block_code \?\? ""\);/,
     "the row-level Move/Save label and relocate hint use the same 'block_code actually changed' condition as the save handler",
   );
@@ -143,14 +184,47 @@ export function runSalesBrickRelocateTests() {
     /\{isRelocatingEdit \? "Move" : "Save"\}/,
     "the save button only reads \"Move\" when the pending edit is a real relocate",
   );
-  // Styling-agnostic on purpose. This used to pin the hint's ENTIRE className, which meant
-  // every restyle broke an assertion that has nothing to do with styling — it broke once on
-  // the colour sweep (text-[#94A3B8]) and again on the type sweep (text-[10px]), neither of
-  // which could possibly affect when the hint appears. What this guards is the CONDITION and
-  // the words; the paragraph is allowed to look like anything.
+  // Styling-agnostic on purpose: an earlier version pinned the hint's whole className and broke on
+  // two restyles that could not change when the hint appears. What this guards is the CONDITION and
+  // the words.
   assert.match(
     uiSource,
-    /\{isRelocatingEdit \? \(\s*<p[^>]*>\s*Creates a new brick ID in the target block and deactivates this one\./,
-    "the relocate warning hint only shows for a real block move, not a pure brick_name rename",
+    /\{isRelocatingEdit \? \(\s*<p[^>]*>\s*Moves the brick to that block&apos;s area: it gets a new ID there, its pharmacies and their open-month sales go with it, and this brick stays switched on as history\./,
+    "the relocate hint only shows for a real block move, and says the old brick stays switched on",
   );
+  assert.doesNotMatch(
+    uiSource,
+    /deactivates this one/,
+    "no screen tells the owner a move deactivates the old brick: it never does",
+  );
+
+  // The history name: "<name> - <old area>" first, then dated, then counted; never the moved brick's
+  // own name (the database refuses that pair).
+  const candidates = historicalNameCandidates({
+    brickName: "  North   Market ",
+    fromAreaName: " Old Town ",
+    movedOn: "18 September 2026",
+    newBrickName: "North Market",
+  });
+  assert.equal(candidates[0], "North Market - Old Town", "the history first keeps its name with the area it left");
+  assert.equal(candidates[1], "North Market - Old Town (moved 18 September 2026)", "then the same with the move date");
+  assert.equal(candidates[2], "North Market - Old Town (moved 18 September 2026, 2)", "then a counter");
+  assert.equal(candidates.at(-1), "North Market - Old Town (moved 18 September 2026, 20)", "the counter stops at 20");
+  assert.equal(candidates.length, 21, "twenty-one names to try");
+  assert.equal(new Set(candidates).size, candidates.length, "no name is offered twice");
+
+  assert.equal(
+    historicalNameCandidates({ brickName: "North Market", fromAreaName: " ", movedOn: "18 September 2026", newBrickName: "South Gate" })[0],
+    "North Market (history)",
+    "a brick whose old area has no name is kept as \"(history)\"",
+  );
+
+  const clash = historicalNameCandidates({
+    brickName: "North Market",
+    fromAreaName: "Old Town",
+    movedOn: "18 September 2026",
+    newBrickName: "north market -  OLD TOWN",
+  });
+  assert.ok(!clash.includes("North Market - Old Town"), "a history name equal to the moved brick's new name is skipped");
+  assert.equal(clash[0], "North Market - Old Town (moved 18 September 2026)", "the next candidate takes its place");
 }

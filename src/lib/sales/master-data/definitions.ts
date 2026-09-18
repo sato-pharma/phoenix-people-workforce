@@ -196,7 +196,7 @@ const BRICKS: MasterDefinition = {
   label: "Brick Master",
   sheetName: "Brick Master",
   title: "Brick Master",
-  description: "Bricks belong to a block; area and region follow the block automatically (enforced by the database). Edit Block Code to move a brick (spawns a new ID), Brick Name to rename it in place.",
+  description: "Bricks belong to a block; area and region follow the block automatically (enforced by the database). Edit Brick Name to rename a brick in place. Changing Block Code moves the brick to that block's area: it gets a new ID there, its pharmacies and their open-month sales go with it, and the old brick stays switched on as history so published months keep their numbers.",
   columns: [
     { key: "brick_id", label: "Brick ID", locked: true, required: true, type: "code" },
     { key: "brick_name", label: "Brick Name", locked: false, required: true, type: "text" },

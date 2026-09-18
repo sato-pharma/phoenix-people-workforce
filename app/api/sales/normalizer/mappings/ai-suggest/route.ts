@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { aiSuggest, hasAiKey, type AiKind, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import { suggestCustomerBricks } from "@/lib/sales/normalizer/customer-suggest";
+import { loadMovedBricks } from "@/lib/sales/master-data/moved-bricks";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -49,11 +50,15 @@ export async function POST(request: Request) {
     }
 
     const supabase = getSupabaseAdmin();
-    const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
+    const [refs, movedBricks] = await Promise.all([
+      loadSalesReferenceData({ includeCustomerBricks: false }),
+      kind === "territory" ? loadMovedBricks() : Promise.resolve(new Map<string, string>()),
+    ]);
 
     const candidates = kind === "product"
       ? refs.products.map((p) => ({ code: p.productCode, label: p.productName }))
-      : (refs.bricks ?? []).map((b) => ({
+      // A brick kept only as history after a move is never an answer: it credits the area it left.
+      : (refs.bricks ?? []).filter((b) => !movedBricks.has(b.brickId)).map((b) => ({
           code: b.brickId,
           label: [b.brickName, [b.areaName, b.regionName].filter(Boolean).join(", ")].filter(Boolean).join(" — "),
         }));
