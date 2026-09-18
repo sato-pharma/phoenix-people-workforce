@@ -15,7 +15,7 @@
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
-import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
+import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
 import {
   boundLabel,
   filterRowsForBound,
@@ -54,8 +54,9 @@ export async function resolveMakeItHappenBound(ctx: AccessContext): Promise<Make
     return { rows: { kind: "none" }, productCodes: null, label: "No sales territory" };
   }
   if (ctx.role === "Product Manager") {
-    const codes = await getWeeklyProductScopeCodes(canonicalHrIdKey(ctx.hrId ?? ctx.loginId ?? null));
-    if (codes.size > 0) return { rows: { kind: "company" }, productCodes: codes, label: "Your products" };
+    // No list → the line bound below, as on every other screen (owner, 2026-09-18).
+    const codes = await resolveWeeklyProductBound(canonicalHrIdKey(ctx.hrId ?? ctx.loginId ?? null));
+    if (codes) return { rows: { kind: "company" }, productCodes: codes, label: "Your products" };
   }
   const rows = await resolveVsTargetBound(ctx);
   return { rows, productCodes: null, label: makeItHappenBoundLabel(rows) };

@@ -41,7 +41,7 @@ import {
   type SosScopeOverrides,
 } from "@/lib/sales/sos-dashboard";
 import { maskCodeKeyedDistributorMap, maskPortalSosDashboard } from "@/lib/sales/closing-source-mask";
-import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
+import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   isWithinManagerHierarchy,
@@ -415,11 +415,13 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     loadSalesReferenceData({ includeCustomerBricks: false }),
   ]);
 
-  // Product scope — PM/GPM strictly bounded to their assigned codes (empty ⇒ show nothing).
+  // Product scope — PM/GPM are bounded to their product list. No list means their whole lines, as on
+  // every other screen (owner, 2026-09-18). It used to be an empty set here, which the engine reads as
+  // "show nothing", so a Product Manager with no list saw a blank Source of Sales.
   let allowedProductCodes: Set<string> | null = null;
   if (isProductManager) {
     const hrKey = canonicalHrIdKey(resolveEmployeeIdentityId(ctx) ?? "");
-    allowedProductCodes = await getWeeklyProductScopeCodes(hrKey);
+    allowedProductCodes = await resolveWeeklyProductBound(hrKey);
   }
 
   // Geography scope. A District / Regional Manager whose organogram seat resolved is bounded by that

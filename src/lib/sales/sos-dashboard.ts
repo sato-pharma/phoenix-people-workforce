@@ -660,7 +660,8 @@ export async function getSosDashboard(
         : null
       : geographyBound.areaCodes;
   // Product lockdown (server-resolved): null/undefined = no restriction; empty Set = show
-  // nothing (the strict "PM with no assigned products" case); non-empty = only those codes.
+  // nothing; non-empty = only those codes. A Product Manager with no product list arrives as
+  // null — his whole lines (owner, 2026-09-18; resolveWeeklyProductBound) — never as an empty Set.
   const scopeProductCodes: Set<string> | null =
     options?.allowedProductCodes == null
       ? null

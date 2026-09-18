@@ -21,7 +21,7 @@ import {
   resolveMedicalRepSosAreaCodes,
 } from "@/lib/sales/medical-rep-area-scope";
 import type { ComparisonScope } from "@/lib/sales/monthly-closing-comparison";
-import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
+import { resolveWeeklyProductBound } from "@/lib/sales/weekly/access";
 import {
   type MonthlyClosingCell,
   type MonthlyClosingGrandTotalRow,
@@ -293,12 +293,12 @@ export async function resolvePortalClosingScope(
     const hrKey = canonicalHrIdKey(
       resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
     );
-    const productCodes = await getWeeklyProductScopeCodes(hrKey);
-    // No explicit assignment → fall back to showing their full line (null = whole line, no column filter).
+    // No list → their whole line (null = no column filter), as on every other screen (owner, 2026-09-18).
+    const productCodes = await resolveWeeklyProductBound(hrKey);
     return {
       line: defaultLine,
       allowedLines,
-      productCodes: productCodes.size > 0 ? productCodes : null,
+      productCodes,
       regionNames,
       areaCodes,
       areaUnresolved: false,
