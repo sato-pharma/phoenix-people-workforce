@@ -1765,6 +1765,7 @@ import { runClosingPerformanceReviewExportGateTests } from "./closing-performanc
 import { runLoginSharedNetworkThrottleTests } from "./login-shared-network-throttle.test.ts";
 import { runCheckWorkbookIntegrityAbsoluteTargetsTests } from "./check-workbook-integrity-absolute-targets.test.ts";
 import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.ts";
+import { runMonthlyImportValidateDryRunTests } from "./monthly-import-validate-dry-run.test.ts";
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
@@ -6077,6 +6078,11 @@ await runTest(
 await runTest(
   "a large sales workbook's storage path is honoured only from the importer upload-url minted it for: another importer's slot, a path outside incoming/<owner>/<upload id>/<file>, traversal and extra segments answer 400 before any download or delete",
   runSalesImportUploadPathTests,
+);
+
+await runTest(
+  "the monthly-import validate route answers whether a workbook would import and saves nothing: a dry run, no batch, no coverage snapshot",
+  runMonthlyImportValidateDryRunTests,
 );
 
 await runTest(
