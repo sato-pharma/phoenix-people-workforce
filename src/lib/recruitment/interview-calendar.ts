@@ -14,9 +14,10 @@
 // touches a row, and the tables are service-role only (migration 20260918195837), so there is no
 // other road to them. The screens hide what a level cannot do; they are not what stops it.
 //
-// WHY THE OWNER IS "SYSTEM SCOPE". The owner is the Super Admin, the only account with system scope.
-// Tying ownership to that rather than to one HR id means the check reads the same fact every other
-// Super Admin gate reads, and survives the id being written in a different case.
+// WHY THE OWNER IS "THE SUPER ADMIN". The owner is the only account holding that role. Tying
+// ownership to the role rather than to one HR id means the check reads the same fact every other
+// Super Admin gate reads, and survives the id being written in a different case. It is the ROLE, not
+// the scope: a signed-in Super Admin's scope is "company" (isInterviewCalendarOwner explains).
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
@@ -28,6 +29,7 @@ import { getFileForDownload, listCandidateFiles, type FileDownload } from "@/lib
 import {
   interviewCalendarHref,
   isInterviewCalendarAccessLevel,
+  isInterviewCalendarOwner,
   isInterviewPlatform,
   resolveCalendarRole,
   roleMeets,
@@ -94,9 +96,7 @@ function shareLevelFor(rows: readonly ShareRow[], hrId: string | null | undefine
   return row && isInterviewCalendarAccessLevel(row.access_level) ? row.access_level : null;
 }
 
-export function isInterviewCalendarOwner(access: AccessContext): boolean {
-  return access.scope === "system";
-}
+export { isInterviewCalendarOwner };
 
 export async function resolveInterviewCalendarRole(access: AccessContext): Promise<InterviewCalendarRole | null> {
   const isOwner = isInterviewCalendarOwner(access);

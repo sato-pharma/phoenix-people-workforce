@@ -57,9 +57,24 @@ export function roleMeets(role: InterviewCalendarRole | null, need: InterviewCal
 }
 
 /**
+ * The calendar's owner: the Super Admin — the owner himself, the only account holding that role —
+ * or a system context (a job, not a person).
+ *
+ * THE ROLE, NOT THE SCOPE, IS WHAT A SIGNED-IN OWNER CARRIES. `scopeForRole` gives a Super Admin
+ * session "company", exactly as it gives the CEO, the Finance Manager and HR Operations; "system"
+ * is only ever the synthetic `systemAccessContext`. A scope-only test therefore locked the owner out
+ * of his own calendar and admitted no one — caught before merge on 2026-09-18, and pinned in
+ * tests/interview-calendar.test.ts against contexts built by `createAccessContext`, the way a real
+ * session builds them.
+ */
+export function isInterviewCalendarOwner(access: { role: string | null; scope: string }): boolean {
+  return access.scope === "system" || access.role === "Super Admin";
+}
+
+/**
  * Who a viewer is on the calendar, from facts the caller has already read.
  *
- * `isOwner` is the Super Admin (system scope). A share row is looked up by the caller with the HR id
+ * `isOwner` is `isInterviewCalendarOwner` above. A share row is looked up by the caller with the HR id
  * compared case-insensitively — the shares table holds one row per person whatever the casing.
  * The owner outranks any share row naming him: he cannot demote himself by sharing with himself.
  */

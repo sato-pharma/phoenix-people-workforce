@@ -11,11 +11,13 @@ import {
   buildInterviewCalendarWorkbook,
   interviewCalendarFilename,
 } from "../src/lib/recruitment/interview-calendar-export.ts";
+import { createAccessContext, systemAccessContext } from "../src/lib/auth/permissions.ts";
 import { validateInterviewBookingInput } from "../src/lib/recruitment/interview-calendar.ts";
 import {
   canBookInterviews,
   interviewCalendarBaseFor,
   interviewCalendarHref,
+  isInterviewCalendarOwner,
   resolveCalendarRole,
   roleMeets,
   type InterviewBooking,
@@ -184,6 +186,17 @@ function runRoleTests() {
   assert.equal(resolveCalendarRole({ isOwner: true, shareLevel: "viewer" }), "owner", "the owner cannot demote himself by sharing");
   assert.equal(resolveCalendarRole({ isOwner: false, shareLevel: "commenter" }), "commenter");
   assert.equal(resolveCalendarRole({ isOwner: false, shareLevel: null }), null, "no share row, no calendar");
+
+  // The owner, as a real session carries him. createAccessContext is what the session builds, and
+  // it gives a signed-in Super Admin scope "company", not "system" — a scope-only owner test
+  // locked him out of his own calendar (2026-09-18, caught before merge).
+  const owner = createAccessContext({ hrId: "B-10", role: "Super Admin" });
+  assert.equal(isInterviewCalendarOwner(owner), true, "the signed-in Super Admin owns the calendar");
+  assert.equal(isInterviewCalendarOwner(systemAccessContext), true, "a system job acts as the owner");
+  for (const role of ["CEO", "Finance Manager", "HR Operations", "HR Advisory", "National Sales Manager", "Employee"]) {
+    const other = createAccessContext({ hrId: "A-99", role });
+    assert.equal(isInterviewCalendarOwner(other), false, `${role} (scope ${other.scope}) is not the owner — only a share row lets them in`);
+  }
 }
 
 // ── 4 · A booking the server will take ─────────────────────────────────────────────────────────
