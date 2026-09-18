@@ -582,6 +582,8 @@ import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
 import { runSalesUploadReconcileTests } from "./sales-upload-reconcile.test.ts";
 import { runSalesUploadValidationTests } from "./sales-upload-validation.test.ts";
+import { runSalesUploadRefusedRowsTests } from "./sales-upload-refused-rows.test.ts";
+import { runSosNumberCellsAutoFixTests } from "./sos-number-cells-auto-fix.test.ts";
 import { runSalesUploadVerificationTests } from "./sales-upload-verification.test.ts";
 import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
@@ -2934,6 +2936,14 @@ await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
 await runTest("sales upload reconciliation", runSalesUploadReconcileTests);
 await runTest("sales upload strict validation", runSalesUploadValidationTests);
+await runTest(
+  "sales upload analyze refuses every row commit refuses: an unreadable quantity, value or discount, or a blank customer, is never \"would import cleanly\"",
+  runSalesUploadRefusedRowsTests,
+);
+await runTest(
+  "sales upload reads a number with one meaning (Arabic digits, space-grouped thousands, 1%) and says so; one it would have to guess at is refused and named cell by cell",
+  runSosNumberCellsAutoFixTests,
+);
 await runTest("sales upload verification step (never-stuck invariant)", runSalesUploadVerificationTests);
 await runTest("sales AI header-mismatch explain (privacy + no-op)", runSalesAiExplainTests);
 await runTest("sales linkage gate (one engine)", runSalesLinkageTests);

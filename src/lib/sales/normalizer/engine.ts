@@ -1,8 +1,9 @@
 import ExcelJS from "exceljs";
 
 import { HEADER_SCAN_ROWS, normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
+import { normalizeNumberText } from "@/lib/sales/normalizer/number-text";
 import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
-import { IGNORE_PRODUCT_CODE, type CodedRow, type Crosswalks, type CustomerBrickCorrection, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
+import { IGNORE_PRODUCT_CODE, type CellCorrection, type CodedRow, type Crosswalks, type CustomerBrickCorrection, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
 export type HeaderValidationFailure = { label: string; expected: string[] };
 export type HeaderValidationResult = {
@@ -37,8 +38,10 @@ export function cellText(cell: ExcelJS.Cell | undefined): string {
   return String(v);
 }
 
+// Both readers take the cell through normalizeNumberText first, so a number written in a form with one
+// meaning only (Arabic-Indic digits, space-grouped thousands) is read instead of refusing the file.
 function parseNum(value: unknown, emptyAsZero = false): number {
-  const text = String(value ?? "").replace(/,/g, "").trim();
+  const text = normalizeNumberText(String(value ?? "")).replace(/,/g, "").trim();
   if (!text) return emptyAsZero ? 0 : Number.NaN;
   const n = Number(text);
   return Number.isFinite(n) ? n : Number.NaN;
@@ -55,17 +58,20 @@ function parseNum(value: unknown, emptyAsZero = false): number {
  * so a bad cell is reviewed rather than quietly zeroing revenue.
  */
 function discountFrac(value: unknown): number {
-  const text = String(value ?? "").replace(/%/g, "").replace(/,/g, "").trim();
+  const written = normalizeNumberText(String(value ?? ""));
+  const text = written.replace(/%/g, "").replace(/,/g, "").trim();
   if (!text) return 0; // an empty cell genuinely means "no discount"
   const n = Number(text);
   if (!Number.isFinite(n)) return Number.NaN; // present but unreadable
   if (n === 0) return 0;
-  // Convention: >1 is a percentage, <=1 is already a fraction.
-  const fraction = Math.abs(n) > 1 ? n / 100 : n;
-  // >= 1 is rejected rather than applied. A cell of exactly "1" is genuinely ambiguous under the
-  // convention above — 1% or 100%? — and reading it as 100% zeroes the row. Anything that would
+  // Convention: a cell written with a "%" sign, or a number above 1, is a percentage; a bare number up
+  // to 1 is already a fraction. The sign settles it: "1%" is 1%, where it used to be refused as 100%
+  // (production on 2026-09-18 held no discount cell written with a "%" at all, so this re-reads none).
+  const fraction = written.includes("%") || Math.abs(n) > 1 ? n / 100 : n;
+  // >= 1 is rejected rather than applied. A bare "1" is genuinely ambiguous under the convention
+  // above — 1% or 100%? — and reading it as 100% zeroes the row. Anything that would
   // wipe out a sale should be reviewed, not guessed at. Production carries no discount at or above
-  // 1 today (all 52 non-zero values are 0.0–0.08), so this rejects nothing that currently exists.
+  // 1 today (all 55 non-zero values are 0.01–0.08 on 2026-09-18), so this rejects nothing that exists.
   if (fraction < 0 || fraction >= 1) return Number.NaN;
   return fraction;
 }
@@ -361,6 +367,7 @@ export function normalizeRows(
   // Keyed by the same customerKey the resolver uses — last row for a given customer in this sheet
   // wins, so one file never produces two conflicting corrections for the same customer.
   const customerBrickCorrections = new Map<string, CustomerBrickCorrection>();
+  const cellCorrections: CellCorrection[] = [];
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     if (options?.includeRow && !options.includeRow(r)) continue;
@@ -503,6 +510,8 @@ export function normalizeRows(
     // — and made upload-validation's discount_out_of_range check unreachable, because nothing
     // out-of-range ever survived to be validated.
     const badDiscount = !Number.isFinite(discount) && nonEmpty(discountRaw);
+    // The cell exactly as written, so the refusal can say what is wrong in this row.
+    const rawCell = badQty ? qtyRaw : badValue ? valueRaw : discountRaw;
 
     if (badQty || badValue || badDiscount) {
       exceptions.push({
@@ -514,9 +523,18 @@ export function normalizeRows(
         rawCustomerAddress: firstValue(row, header, profile.customerAddressColumns),
         rawRowNumber: r,
         reason: badQty ? "unparseable_qty" : badValue ? "unparseable_value" : "discount_out_of_range",
+        rawCell,
       });
       continue;
     }
+
+    // A cell read only because normalizeNumberText rewrote it is listed, so the upload says what it read.
+    const noteCorrection = (field: CellCorrection["field"], raw: string, read: number) => {
+      if (normalizeNumberText(raw) !== raw.trim()) cellCorrections.push({ rawRowNumber: r, field, raw: raw.trim(), read });
+    };
+    noteCorrection("quantity", qtyRaw, qty);
+    if (profile.valueSource === "sheet") noteCorrection("value", valueRaw, sheetValue);
+    noteCorrection("discount", discountRaw, discount);
 
     coded.push({
       areaCode: hierarchy.areaCode,
@@ -554,6 +572,7 @@ export function normalizeRows(
     ignoredRows,
     blankCustomerRows,
     customerBrickCorrections: [...customerBrickCorrections.values()],
+    cellCorrections,
     summary: { brickResolved, blankCustomerSkipped, fullyCoded: coded.length, ignored, productResolved, totalRows: coded.length + exceptions.length + ignored + blankCustomerSkipped, scannedDataRows },
   };
 }

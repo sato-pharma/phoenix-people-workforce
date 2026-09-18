@@ -27,6 +27,7 @@ import {
 import { buildImportSplitPlan } from "@/lib/sales/import-split-preview";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
+import { describeRefusedRow, isRefusedRow, summarizeRefusedRows } from "@/lib/sales/normalizer/row-messages";
 import { buildCodedBuffer } from "@/lib/sales/normalizer/service";
 import type { NormalizeException, NormalizeResult } from "@/lib/sales/normalizer/types";
 
@@ -154,9 +155,31 @@ function ignoredRowsAdvisory(normalizeResult: NormalizeResult): string | null {
   );
 }
 
+// The field each row no mapping can fix is reported under. Deliberately none of the labels the wizard's
+// "map now" grouping reads (Product, Customer code, Territory), because mapping is not the fix.
+const REFUSED_ISSUE_FIELD = {
+  blank_customer: "Customer",
+  unparseable_qty: "Quantity",
+  unparseable_value: "Value",
+  discount_out_of_range: "Discount",
+} as const;
+
 export function exceptionToIssue(exc: NormalizeException): DistributorSalesValidationIssue {
   const rawItem = exc.rawProductName || exc.rawProduct || "";
   const rawArea = exc.rawTerritory || exc.rawCustomerCode || "";
+
+  // A cell the sheet got wrong, or a blank customer: said exactly, and fixed in the sheet, not in Mapping.
+  // These used to fall through to "Both … are unmapped" below, naming a product and territory that
+  // were perfectly well mapped.
+  if (isRefusedRow(exc)) {
+    return {
+      field: REFUSED_ISSUE_FIELD[exc.reason],
+      message: `${describeRefusedRow(exc)}. Mapping cannot fix this: correct the row in the distributor's sheet, then re-upload.`,
+      rowNumber: exc.rawRowNumber,
+      severity: "failure",
+      value: exc.rawCell?.trim() || null,
+    };
+  }
 
   if (exc.reason === "product") {
     return {
@@ -269,9 +292,19 @@ export async function importSourceOfSalesFile(input: {
       const totalBonusQty = normalizeResult.coded.reduce((sum, r) => sum + r.bonusQty, 0);
       const totalValue = normalizeResult.coded.reduce((sum, r) => sum + r.value, 0);
       const rowCount = normalizeResult.summary.totalRows - normalizeResult.summary.ignored;
+      // Rows no mapping can fix are counted apart from the unmapped ones, so neither is told the other's fix.
+      const refused = exceptions.filter(isRefusedRow);
+      const unmapped = exceptions.length - refused.length;
       const blockingReasons = [
-        `${exceptions.length} row${exceptions.length === 1 ? "" : "s"} could not be imported because customer, territory, branch, or product mapping is missing.`,
-        `Go to the Mapping tab -> click "Analyze raw sheet" -> fix the unmapped items -> Save -> re-upload this file.`,
+        ...(refused.length > 0
+          ? [`${refused.length} row${refused.length === 1 ? "" : "s"} could not be imported because the sheet itself is wrong there (${summarizeRefusedRows(refused)}). Each is listed below with its row number — correct them in the distributor's sheet, then re-upload.`]
+          : []),
+        ...(unmapped > 0
+          ? [
+            `${unmapped} row${unmapped === 1 ? "" : "s"} could not be imported because customer, territory, branch, or product mapping is missing.`,
+            `Go to the Mapping tab -> click "Analyze raw sheet" -> fix the unmapped items -> Save -> re-upload this file.`,
+          ]
+          : []),
       ];
 
       const blockedResult = {

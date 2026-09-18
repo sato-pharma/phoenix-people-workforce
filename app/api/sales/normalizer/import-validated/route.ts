@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { createSourceOfSalesUploadFromBuffer } from "@/lib/sales/monthly-distributor-import";
 import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-map";
+import { describeRefusedRow, isRefusedRow } from "@/lib/sales/normalizer/row-messages";
 import { buildCodedParts, learnFromImportHistory } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -50,10 +51,13 @@ export async function POST(request: Request) {
     // distributor before a single one is written: refusing halfway would leave the month imported
     // for some distributors in the file and not for others.
     const failedRows = parts.reduce((n, part) => n + part.result.exceptions.length, 0);
+    const refusedRows = parts.reduce((n, part) => n + part.result.exceptions.filter(isRefusedRow).length, 0);
     if (failedRows > 0) {
       const rowLines = parts.flatMap((part) => part.result.exceptions.slice(0, 20).map((exc) => {
         const item = exc.rawProductName || exc.rawProduct || "?";
         const area = exc.rawTerritory || exc.rawCustomerCode || "?";
+        // A bad cell or a blank customer is said as it is; it used to read "product and territory not mapped".
+        if (isRefusedRow(exc)) return `${whose(part.distributorName)}${describeRefusedRow(exc)}`;
         if (exc.reason === "product") return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: product "${item}" not mapped`;
         if (exc.reason === "brick") return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: territory "${area}" not mapped`;
         return `${whose(part.distributorName)}Row ${exc.rawRowNumber}: product "${item}" and territory "${area}" not mapped`;
@@ -61,7 +65,9 @@ export async function POST(request: Request) {
       const more = failedRows > rowLines.length ? ` — and ${failedRows - rowLines.length} more.` : "";
       return NextResponse.json({
         success: false,
-        error: `${failedRows} row${failedRows === 1 ? "" : "s"} could not be imported — product or territory not mapped. Fix them in the Mapping tab then re-import.`,
+        error: refusedRows > 0
+          ? `${failedRows} row${failedRows === 1 ? "" : "s"} could not be imported. ${refusedRows} of them ${refusedRows === 1 ? "has" : "have"} a quantity, value or discount the sheet got wrong, or no customer — each is listed; correct those in the distributor's sheet; map any others in the Mapping tab, then re-import.`
+          : `${failedRows} row${failedRows === 1 ? "" : "s"} could not be imported — product or territory not mapped. Fix them in the Mapping tab then re-import.`,
         data: {
           blockingReasons: [...rowLines, more].filter(Boolean),
           failedRows,

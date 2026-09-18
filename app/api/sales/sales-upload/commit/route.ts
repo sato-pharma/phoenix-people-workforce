@@ -45,12 +45,17 @@ export async function POST(request: Request) {
     const excludeProductCodes = canViewRestrictedProducts(access.role) ? [] : [...RESTRICTED_PRODUCT_CODES];
     const result = await commitMonthlyUpload({ distributorCode, file, periodOverride, uploadedBy, excludeProductCodes });
     if (result.status === "blocked") {
+      // A row no mapping can fix (an unreadable cell, a blank customer) is named with its row and cell;
+      // sending that person to Mapping Database was the wrong fix. Any unmapped places are still counted.
+      const refused = result.refused;
+      const unmapped = result.blockingRows - (refused?.count ?? 0);
+      const mapLine = unmapped > 0 ? `${unmapped} row(s) could not be imported — map them in Mapping Database, then re-upload.` : "";
       return NextResponse.json({
         success: false,
-        code: "blocked_unmapped",
+        code: refused ? "blocked_refused_rows" : "blocked_unmapped",
         reconciliation: result.reconciliation,
         data: result.preview,
-        error: `${result.reconciliation.rowsBlocked} row(s) could not be imported — map them in Mapping Database, then re-upload.`,
+        error: refused ? [`${refused.title} — ${refused.detail}`, refused.fixHint, mapLine].filter(Boolean).join(" ") : mapLine,
       });
     }
     if (result.status === "blocked_validation") {

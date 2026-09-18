@@ -1,3 +1,4 @@
+import { describeCellCorrection, listRowLines } from "@/lib/sales/normalizer/row-messages";
 import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 
 // ── Strict post-analyze validation ─────────────────────────────────────────────────────────────
@@ -15,7 +16,8 @@ import type { NormalizeResult } from "@/lib/sales/normalizer/types";
 //               corrupt regional totals (brick_to_region_inconsistent, blank_geography). The remaining
 //               hard block — unmapped rows — is gated by the upload flow itself (exceptions), not here.
 //   "warning" → advisory data-quality. Shown to the operator but NEVER blocks; they decide and proceed
-//               (duplicate lines, odd values/discounts, anomalies, future-dated rows, blank dates, …).
+//               (duplicate lines, odd values/discounts, anomalies, future-dated rows, blank dates, and
+//               the numbers the engine read only after rewriting them — cells_read_after_fix).
 //   "info"    → advisory; never blocks.
 //
 // The catalog was vetted by an adversarial design review against the real engine. Notes baked in:
@@ -125,6 +127,26 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
       count: 1,
       sampleRows: [],
       fixHint: `Switch to ${cc.bestCode} and re-validate, or proceed if you really meant to upload this file as ${cc.pickedCode}.`,
+    });
+  }
+
+  // ── Numbers the engine fixed before reading them ───────────────────────────────────────────────
+  // A cell written in a form with one meaning only — Arabic-Indic digits, thousands grouped with
+  // spaces — is rewritten and read (normalizeNumberText) instead of refusing the whole file, which is
+  // what used to happen. Nothing is guessed, but nothing is silent either: every one is listed with
+  // what it was read as, so a wrong reading is still caught by a person. Advisory; never blocks.
+  const corrections = result.cellCorrections ?? [];
+  if (corrections.length > 0) {
+    add({
+      code: "cells_read_after_fix",
+      severity: "warning",
+      title: "Numbers fixed automatically",
+      detail:
+        `${corrections.length.toLocaleString()} number ${corrections.length === 1 ? "cell was" : "cells were"} written in a form `
+        + `the import rewrote before reading: ${listRowLines(corrections.map(describeCellCorrection))}.`,
+      count: corrections.length,
+      sampleRows: [...new Set(corrections.map((c) => c.rawRowNumber))].slice(0, SAMPLE_LIMIT),
+      fixHint: "Nothing to do if these are right. If one was read wrongly, correct that cell in the distributor's sheet and analyze again.",
     });
   }
 

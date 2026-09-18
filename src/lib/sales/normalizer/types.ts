@@ -159,6 +159,20 @@ export type NormalizeException = {
     | "unparseable_qty"
     | "unparseable_value"
     | "discount_out_of_range";
+  // For the three unparseable_* reasons: the cell exactly as the sheet wrote it, trimmed, so the person
+  // uploading is told WHAT is wrong in row N, not only that something is. Empty for the other reasons.
+  rawCell?: string;
+};
+
+// A number cell written in a form with one meaning only — Arabic-Indic digits, space-grouped
+// thousands — that the engine rewrote and then read (normalizeNumberText). Kept so the upload says
+// exactly what it read, instead of quietly reading it: before, each of these refused the whole file.
+export type CellCorrection = {
+  rawRowNumber: number;
+  field: "quantity" | "value" | "discount";
+  raw: string;
+  // The number the row was imported with — a discount as the fraction the engine stores.
+  read: number;
 };
 
 // Reserved product code for "we don't sell this — neglect it". Rows whose item maps to this are
@@ -188,6 +202,8 @@ export type NormalizeResult = {
   blankCustomerRows: NormalizeIgnoredRow[];
   // Deduped (last-row-wins per customer) sheet-verified brick corrections — see CustomerBrickCorrection.
   customerBrickCorrections: CustomerBrickCorrection[];
+  // Optional because only the engine reads cells; results built elsewhere carry none.
+  cellCorrections?: CellCorrection[];
   summary: {
     brickResolved: number;
     blankCustomerSkipped: number;
