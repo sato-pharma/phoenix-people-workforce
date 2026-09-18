@@ -1,0 +1,73 @@
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
+
+import { PageContainer } from "@/components/layout/page-container";
+import { CandidateRecordPage } from "@/components/recruitment/candidate-record-page";
+import { AppRouteLoadingState } from "@/components/ui/loading-state";
+import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { parseCandidatePageId } from "@/lib/recruitment/candidate-page-link";
+import { loadCandidateRecord } from "@/lib/recruitment/candidate-record";
+
+export const dynamic = "force-dynamic";
+
+/**
+ * One candidate's own page — everything the system holds on them.
+ *
+ * The owner, 2026-09-18: "when I press on the name of the person, I am jumped to a new page which
+ * shows the full details on everything for this candidate." The name in the candidate pool and on
+ * WhatsApp Applicants opens this page in a new tab.
+ *
+ * READ-ONLY. It never marks the CV read and never holds it for the viewer — see candidate-record.ts.
+ * Decisions are made on the screening page, which this page links to.
+ *
+ * Same permission gate as /recruitment/screening, and for the same reason: this page reads every
+ * field on the candidate, so anything looser would be a way around the module's own gate.
+ */
+export default async function RecruitmentCandidatePage({ params }: { params: Promise<{ id: string }> }) {
+  const access = await resolveAccessContextFromPage();
+  if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
+    redirect("/employee-portals");
+  }
+
+  const { id } = await params;
+
+  return (
+    <PageContainer>
+      <Suspense
+        fallback={
+          <AppRouteLoadingState description="Loading everything on file for this candidate." title="Opening the candidate" />
+        }
+      >
+        <CandidateContent access={access} rawId={id} />
+      </Suspense>
+    </PageContainer>
+  );
+}
+
+async function CandidateContent({ access, rawId }: { access: AccessContext; rawId: string }) {
+  // A module lock on `candidates` alone leaves `recruitment: read` true — the screening page's own
+  // account of why this branch is reachable. Such a caller gets a sentence, not the record.
+  if (!(await canAccess(access, "candidates", "read"))) {
+    return (
+      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        A candidate&apos;s page is available to roles that can read the candidate pool.
+      </p>
+    );
+  }
+
+  // An edited or cut-off link is checked before the database is asked: a malformed id makes the
+  // query fail outright rather than answer "no such candidate".
+  const candidateId = parseCandidatePageId(rawId);
+  const record = candidateId ? await loadCandidateRecord(candidateId) : null;
+  if (!record) {
+    return (
+      <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        This candidate is not in the system. The link may be incomplete, or the record may have been
+        removed. Go back to the candidate pool and open the name from there.
+      </p>
+    );
+  }
+
+  return <CandidateRecordPage record={record} />;
+}
