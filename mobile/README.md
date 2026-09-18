@@ -39,15 +39,18 @@ default, so sideloading would have meant deliberately weakening that policy on e
 sideloaded app has no channel to pull a bad build back through. Managed Play keeps the fleet locked
 and makes a bad release withdrawable centrally.
 
-What it costs: a Google Play Console developer account, **US$25 one time** — not a subscription and
-not per device. Personal or Organization account; a credit or debit card, as prepaid cards are
-refused. 🔴 **Creating that account and paying the fee is the owner's own action.** It needs identity
-details and a payment method, and no session does it on his behalf. The fee is not refunded if the
-identity details are rejected, so it is worth getting right first time.
+**What it costs: nothing.** An earlier version of this section said it needed a Google Play Console
+developer account and **US$25** — corrected the same day. Publishing a private app through the
+managed Google Play iframe creates the developer account automatically and waives the registration
+fee, in Google's own words: *"You don't need to pay a registration fee for this account."* There is
+no fee, no card, no identity verification and no D-U-N-S number on this route.
 
-**[PLAY-CONSOLE-SETUP.md](PLAY-CONSOLE-SETUP.md) is the order to do it in** — which Google account to
-register with, the free enterprise step that comes before the fee, and the one account-type decision
-that cannot be reversed.
+What it does need is the company's **managed Google Play enterprise**, which is free and does not
+exist yet — the same one the managed-tablet web app already waits on.
+
+**[PUBLISHING.md](PUBLISHING.md) is the order to do it in** — the one free prerequisite, which Google
+account to use and why that choice is permanent, and the upload limits and one-way doors worth
+knowing before the first release.
 
 `eas.json` carries both profiles, and `production` is now the live one:
 
@@ -79,14 +82,19 @@ npm run build:apk            # a test install for a single handset
 
 ### Publishing without living in the Play Console
 
-A private app does not go through public store review. The **Google Play Custom App Publishing API**
-publishes it to the organisation's managed Play store from our own console or an IDE, and Google
-documents a custom app appearing in the managed store **in as little as five minutes**, against over
-two hours through the Play Console UI. That is worth designing releases around: it keeps Phoenix the
-place a release is made from, instead of the Play Console becoming a manual step in every ship.
+A private app does not go through public store review. Releases go out through the **managed Google
+Play iframe's Private apps page**, embedded in Phoenix — so Phoenix stays the place a release is made
+from, instead of the Play Console becoming a manual step in every ship. A private app auto-approves
+for the organisation and is typically ready to distribute **within about ten minutes**.
 
-Not wired up. The account has to exist first — the setup order, including the Google Cloud service
-account this needs, is in [PLAY-CONSOLE-SETUP.md](PLAY-CONSOLE-SETUP.md).
+It is reachable from the **Android Management API** this repo already calls: `enterprises.webTokens`
+takes an `enabledFeatures` list, and `PRIVATE_APPS` is one of its values.
+
+🔴 **Not the Custom App Publishing API.** An earlier version of this section pointed at it. That API
+belongs to the paid Play Console route and wants a developer account behind it — the iframe replaces
+it, and building against it would re-introduce the fee this project does not need to pay.
+
+Not wired up. The enterprise has to exist first — the order is in [PUBLISHING.md](PUBLISHING.md).
 
 ### Signing — which key, and which one can be replaced
 
