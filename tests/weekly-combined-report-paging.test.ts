@@ -188,7 +188,8 @@ function code(source: string): string {
 export async function runWeeklyCombinedReportPagingTests() {
   // ── The read: every product row, however many requests it takes ─────────────────────────────────
   const read = fakePostgrest(TABLES);
-  const products = await loadCombinedReportProducts(read.client, SELECTED);
+  // No prices here: this test is about the paging, so every row keeps its stored value (live price: weekly-combined-report-live-price.test.ts).
+  const products = await loadCombinedReportProducts(read.client, SELECTED, new Map());
 
   const byCode = (batchId: string) =>
     Object.fromEntries((products.get(batchId) ?? []).map((p) => [p.productCode, [p.netQty, p.salesValue, p.stockQty]]));
