@@ -11,6 +11,7 @@ import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalize
 import { Button } from "@/components/ui/button";
 import { packCustomersByPharmacy } from "@/lib/sales/normalizer/customer-request-packing";
 import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/lib/sales/normalizer/mapping-left";
+import { pickConfidence } from "@/lib/sales/normalizer/pick-confidence";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -225,6 +226,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   function resetParts() { setParts([]); setActivePart(0); }
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [aiConfidence, setAiConfidence] = useState<Record<string, number>>({});
+  // The brick the suggestion itself chose, kept beside the pick so a pick changed by hand can be told
+  // from one left as suggested. A confidence describes THAT brick and no other.
+  const [aiPick, setAiPick] = useState<Record<string, string>>({});
   const [aiOrigin, setAiOrigin] = useState<Record<string, { source: CustomerSuggestionSource; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -300,6 +304,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
     setPicks(seed);
     setAiConfidence({});
+    setAiPick({});
     setAiOrigin({});
     setClusters(null);
     setClusterView(false);
@@ -378,11 +383,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
   async function saveMappings() {
     if (!preview) return;
-    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string; confidence?: number }[] = [];
+    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string; confidence?: number; name?: string; address?: string }[] = [];
     const dist = effectiveDistributorCode;
     preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c, distributorCode: dist }); });
     preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c, distributorCode: dist }); });
-    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode: dist, confidence: aiConfidence[`c:${u.raw}`] }); });
+    // A customer pick carries the suggestion's confidence only while it is still the suggestion's own
+    // brick, and the pharmacy's name and address travel with it so the saved mapping can teach.
+    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode: dist, confidence: shownConfidence(`c:${u.raw}`), name: u.rawName, address: u.rawAddress }); });
     if (mappings.length === 0) { setError("Pick at least one Phoenix code to save."); return; }
     setBusy("save"); setError(null); setNotice(null);
     try {
@@ -433,18 +440,35 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   // Customer suggestions carry a confidence and where they came from; both routes answer in this shape.
+  // A new suggestion REPLACES the old one's confidence and origin, rather than merging over them: a
+  // suggestion that carries none must not inherit the number an earlier run gave a different brick.
   function applyCustomerSuggestions(rows: CustomerSuggestionRow[]) {
+    if (rows.length === 0) return;
     const newPicks: Record<string, string> = {};
-    const newConf: Record<string, number> = {};
-    const newOrigin: typeof aiOrigin = {};
-    for (const s of rows) {
-      newPicks[`c:${s.raw}`] = s.code;
-      if (typeof s.confidence === "number") newConf[`c:${s.raw}`] = s.confidence;
-      if (s.source) newOrigin[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
-    }
-    if (Object.keys(newPicks).length) setPicks((p) => ({ ...p, ...newPicks }));
-    if (Object.keys(newConf).length) setAiConfidence((p) => ({ ...p, ...newConf }));
-    if (Object.keys(newOrigin).length) setAiOrigin((p) => ({ ...p, ...newOrigin }));
+    for (const s of rows) newPicks[`c:${s.raw}`] = s.code;
+    setPicks((p) => ({ ...p, ...newPicks }));
+    setAiPick((p) => ({ ...p, ...newPicks }));
+    setAiConfidence((p) => {
+      const next = { ...p };
+      for (const s of rows) {
+        if (typeof s.confidence === "number") next[`c:${s.raw}`] = s.confidence;
+        else delete next[`c:${s.raw}`];
+      }
+      return next;
+    });
+    setAiOrigin((p) => {
+      const next = { ...p };
+      for (const s of rows) {
+        if (s.source) next[`c:${s.raw}`] = { matchedFrom: s.matchedFrom, source: s.source };
+        else delete next[`c:${s.raw}`];
+      }
+      return next;
+    });
+  }
+
+  /** The confidence a customer row shows and saves - only while its pick is the suggestion's own brick. */
+  function shownConfidence(key: string): number | undefined {
+    return pickConfidence(picks[key], aiPick[key], aiConfidence[key]);
   }
 
   async function aiSuggestAll() {
@@ -1098,7 +1122,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                     <div className="ml-auto w-56">
                                       <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${m.raw}`]: v }))} options={brickOptions} placeholder="brick…" value={picks[`c:${m.raw}`] ?? ""} />
                                     </div>
-                                    {aiConfidence[`c:${m.raw}`] != null ? <ConfidenceBadge pct={aiConfidence[`c:${m.raw}`]} /> : null}
+                                    {shownConfidence(`c:${m.raw}`) != null ? <ConfidenceBadge pct={shownConfidence(`c:${m.raw}`)!} /> : null}
                                   </div>
                                 ))}
                               </div>
@@ -1132,9 +1156,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                 <ComboBox onChange={(v) => setPicks((p) => ({ ...p, [`c:${u.raw}`]: v }))} options={brickOptions} placeholder="Type brick id or name…" value={picks[`c:${u.raw}`] ?? ""} />
                               </td>
                               <td className="px-3 py-1.5 text-center">
-                                {aiConfidence[`c:${u.raw}`] != null ? (
+                                {shownConfidence(`c:${u.raw}`) != null ? (
                                   <span className="inline-flex flex-col items-center gap-0.5">
-                                    <ConfidenceBadge pct={aiConfidence[`c:${u.raw}`]} />
+                                    <ConfidenceBadge pct={shownConfidence(`c:${u.raw}`)!} />
                                     {aiOrigin[`c:${u.raw}`]?.source === "propagated" ? (
                                       <span
                                         className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600"

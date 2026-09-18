@@ -33,7 +33,7 @@ type SosPreviewResponse = { success: boolean; data?: PreviewResult; error?: stri
 type SosCommitResponse = { success: boolean; data?: { batchId?: string; period?: string; rowCount?: number }; error?: string };
 
 type HeaderValidationFailure = { label: string; expected: string[] };
-type DistinctUnknown = { count: number; raw: string; rawName: string; suggestionCode: string | null; suggestionLabel: string | null };
+type DistinctUnknown = { count: number; raw: string; rawName: string; rawAddress?: string; suggestionCode: string | null; suggestionLabel: string | null };
 type NormalizePreview = {
   distributorName: string;
   period: string | null;
@@ -420,10 +420,17 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
   }
 
   async function save() {
-    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string }[] = [];
+    const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; name?: string; address?: string }[] = [];
     for (const [raw, code] of Object.entries(productCodes)) if (code.trim()) mappings.push({ type: "product", raw, code: code.trim() });
     for (const [raw, code] of Object.entries(territoryCodes)) if (code.trim()) mappings.push({ type: "territory", raw, code: code.trim() });
-    for (const [raw, code] of Object.entries(customerCodes)) if (code.trim()) mappings.push({ type: "customer", raw, code: code.trim() });
+    // A customer mapping carries the pharmacy's name and address from the sheet, stored where the
+    // mapping's own fields are blank so the next pharmacy can be matched against it.
+    const customerByRaw = new Map((preview?.unknownCustomers ?? []).map((u) => [u.raw, u]));
+    for (const [raw, code] of Object.entries(customerCodes)) {
+      if (!code.trim()) continue;
+      const customer = customerByRaw.get(raw);
+      mappings.push({ type: "customer", raw, code: code.trim(), name: customer?.rawName, address: customer?.rawAddress });
+    }
     if (mappings.length === 0) { setError("Fill at least one Phoenix code before saving."); return; }
     setSaving(true); setError(null); setMessage(null);
     try {

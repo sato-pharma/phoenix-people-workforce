@@ -40,6 +40,41 @@ const RESTAMP_FUNCTIONS = [
   "public.sos_reconcile_import_rows_from_customer_map",
 ] as const;
 
+type TargetSpelling = Record<"brick" | "area" | "region" | "areaName" | "regionName", string>;
+
+/** The `target` CTE, read as `t.brick_id`, `t.area_code`, ... */
+const CTE_TARGET: TargetSpelling = {
+  brick: "t\\.brick_id",
+  area: "t\\.area_code",
+  region: "t\\.region_code",
+  areaName: "t\\.area_name",
+  regionName: "t\\.region_name",
+};
+
+/**
+ * How each function spells the CORRECT geography it re-stamps to. The two sync functions read a
+ * `target` CTE. Since 20260918143000 the history correction reads the same target into variables
+ * first, because it must know the target before it can tell which sales files touch a locked month.
+ * The predicate and the writes are unchanged; only the spelling differs. Each function is held to its
+ * OWN spelling, so a rewrite into another form fails here until this table is updated with it.
+ */
+const TARGET_SPELLING: Record<(typeof RESTAMP_FUNCTIONS)[number], TargetSpelling> = {
+  "public.phx_sync_sos_run": CTE_TARGET,
+  "public.phx_sync_sos_restamp_import_rows": CTE_TARGET,
+  "public.sos_reconcile_import_rows_from_customer_map": {
+    brick: "v_brick",
+    area: "v_area",
+    region: "v_region",
+    areaName: "v_area_name",
+    regionName: "v_region_name",
+  },
+};
+
+/** `r.<column> is distinct from <target>`, where `\b` keeps `v_area` from matching `v_area_name`. */
+function differs(column: string, target: string): string {
+  return `r\\.${column}\\s+is distinct from ${target}\\b`;
+}
+
 /**
  * The body of `name` as the database will actually have it. Migrations apply in filename order, so
  * the LAST file creating the function wins. Reading only the newest migration would pass while some
@@ -79,22 +114,23 @@ function effectiveDefinition(name: string): { file: string; body: string } {
 export function runTerritoryRestampAreaChangeTests() {
   for (const name of RESTAMP_FUNCTIONS) {
     const { file, body } = effectiveDefinition(name);
+    const t = TARGET_SPELLING[name];
 
     // ── The headline: an area re-parent must re-stamp ────────────────────────────
     assert.match(
       body,
-      /r\.area_code\s+is distinct from t\.area_code/,
+      new RegExp(differs("area_code", t.area)),
       `${name} (latest: ${file}) must re-stamp when the AREA changed — gating on brick alone left `
         + "14 rows / EGP 5,274.90 mis-stamped in 2026-07 while the sync reported 0 re-stamped",
     );
     assert.match(
       body,
-      /r\.region_code\s+is distinct from t\.region_code/,
+      new RegExp(differs("region_code", t.region)),
       `${name} (latest: ${file}) must re-stamp when the REGION changed`,
     );
     assert.match(
       body,
-      /r\.brick_id\s+is distinct from t\.brick_id/,
+      new RegExp(differs("brick_id", t.brick)),
       `${name} (latest: ${file}) must still re-stamp when the BRICK changed`,
     );
 
@@ -103,9 +139,28 @@ export function runTerritoryRestampAreaChangeTests() {
     // three wrong before it was corrected.
     assert.match(
       body,
-      /\(\s*r\.brick_id\s+is distinct from t\.brick_id\s+or\s+r\.area_code\s+is distinct from t\.area_code\s+or\s+r\.region_code\s+is distinct from t\.region_code\s*\)/,
+      new RegExp(
+        `\\(\\s*${differs("brick_id", t.brick)}\\s+or\\s+${differs("area_code", t.area)}`
+          + `\\s+or\\s+${differs("region_code", t.region)}\\s*\\)`,
+      ),
       `${name} (latest: ${file}) must OR the three code predicates into one group`,
     );
+
+    // ── Variables must hold the BRICK MASTER's area and region ──────────────────
+    // The map row carries its own area and region columns. Reading those instead of the brick's
+    // would re-stamp a re-parented brick back to its old area, which is the bug this test exists for.
+    if (t !== CTE_TARGET) {
+      assert.match(
+        body,
+        /select\s+m\.brick_id,\s*b\.area_code,\s*b\.region_code,\s*a\.area_name,\s*g\.region_name\s+into\s+v_brick,\s*v_area,\s*v_region,\s*v_area_name,\s*v_region_name\b/,
+        `${name} (latest: ${file}) must read the target area and region from the brick master`,
+      );
+      assert.match(
+        body,
+        /join\s+public\.source_of_sales_bricks\s+b\s+on\s+b\.brick_id\s*=\s*m\.brick_id/,
+        `${name} (latest: ${file}) must join the brick master on the mapped brick`,
+      );
+    }
 
     // ── The NAME columns are deliberately NOT in the predicate ───────────────────
     // area_name/region_name on import_rows disagree with the brick master on a further 8,824 rows
@@ -123,13 +178,13 @@ export function runTerritoryRestampAreaChangeTests() {
     // Otherwise a corrected CA2 row would keep CA1's old label, which is worse than either state.
     assert.match(
       body,
-      /area_name = coalesce\(t\.area_name, r\.area_name\)/,
+      new RegExp(`area_name = coalesce\\(${t.areaName}, r\\.area_name\\)`),
       `${name} (latest: ${file}) must still write area_name, so a re-stamped row is not left `
         + "carrying its previous area's label",
     );
     assert.match(
       body,
-      /region_name = coalesce\(t\.region_name, r\.region_name\)/,
+      new RegExp(`region_name = coalesce\\(${t.regionName}, r\\.region_name\\)`),
       `${name} (latest: ${file}) must still write region_name`,
     );
   }

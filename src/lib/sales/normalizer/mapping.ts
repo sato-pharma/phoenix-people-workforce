@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { systemIdentity } from "@/config/system-settings";
 import { writeMappingAudit } from "@/lib/sales/mapping-audit";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { customerDetailRow, type CustomerDetailRow } from "@/lib/sales/normalizer/customer-details";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type NormalizeException } from "@/lib/sales/normalizer/types";
@@ -124,8 +125,35 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
 
 // ── write path (insert-if-absent, validated against the masters) ──
 
-export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer"; confidence?: number };
+// name / address are customer-only: the pharmacy's name and postal address as the distributor sheet
+// spells them. They never decide the mapping - they are stored so the free steps can learn from it.
+export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer"; confidence?: number; name?: string; address?: string };
 export type InvalidEntry = { raw: string; type: string; reason: string };
+
+// Writes the name / address of mappings that were just saved, into BLANK fields only. They cannot ride
+// in the upsert: ON CONFLICT DO UPDATE would overwrite a name already on file (one code can name
+// different pharmacies over time), and supabase-js sends one column list for a whole bulk upsert, so
+// a row without a name would null out a stored one. Best-effort like the backfill: a missing RPC
+// (pre-migration) or a failure never fails the save, whose mapping is already written.
+export async function fillBlankCustomerDetails(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  rows: CustomerDetailRow[],
+): Promise<number> {
+  let filled = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    try {
+      const { data, error } = await supabase.rpc("sos_customer_map_fill_blanks", { p_rows: rows.slice(i, i + CHUNK) });
+      // A failed call is the RPC not being there yet or the database struggling - more calls help
+      // neither. The fill is idempotent, so the next save of the same mappings fills them.
+      if (error) break;
+      filled += Number(data ?? 0) || 0;
+    } catch {
+      break;
+    }
+  }
+  return filled;
+}
 
 export type SaveMappingsOptions = {
   // Provenance for customer rows: 'auto' marks auto-applied mappings; default 'normalizer'.
@@ -314,7 +342,7 @@ export function selectCustomerRowsToWrite<T extends Record<string, unknown>>(
   return { rows: kept, skippedExisting, skippedOwnerVerified };
 }
 
-export async function saveMappings(mappings: MappingInput[], options?: SaveMappingsOptions): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[]; backfilled: number; skippedOwnerVerified: number }> {
+export async function saveMappings(mappings: MappingInput[], options?: SaveMappingsOptions): Promise<{ saved: number; skipped: number; invalid: number; invalidEntries: InvalidEntry[]; backfilled: number; skippedOwnerVerified: number; detailsFilled: number }> {
   // Only the product + brick masters are needed to validate the mapping targets — NOT the (12k+ row)
   // customer→brick crosswalk, which loadSalesReferenceData() pages 1000-at-a-time by default. Skipping
   // it keeps a save fast + cold-start-safe (~2s → ~0.2s) instead of scaling with the customer map.
@@ -335,6 +363,9 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
   const productRows: Record<string, unknown>[] = [];
   const territoryRows: Record<string, unknown>[] = [];
   const customerRows: Record<string, unknown>[] = [];
+  // Each customer row's name / address, keyed by the row object itself: selectCustomerRowsToWrite
+  // filters these same objects, so what survives the guard still finds its details.
+  const detailsByRow = new Map<Record<string, unknown>, CustomerDetailRow>();
   const invalidEntries: InvalidEntry[] = [];
   let skipped = 0;
   let invalid = 0;
@@ -357,7 +388,7 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       const confidence = typeof mapping.confidence === "number"
         ? Math.min(100, Math.max(0, Math.round(mapping.confidence)))
         : null;
-      customerRows.push({
+      const customerRow: Record<string, unknown> = {
         active: true,
         area_code: brick.areaCode,
         brick_id: brick.brickId,
@@ -367,7 +398,10 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
         mapped_by: options?.mappedBy ?? null,
         region_code: brick.regionCode,
         source: options?.source ?? "normalizer",
-      });
+      };
+      customerRows.push(customerRow);
+      const details = customerDetailRow(dist, raw, mapping.name, mapping.address);
+      if (details) detailsByRow.set(customerRow, details);
       continue;
     }
     const key = normalizeAliasKey(raw);
@@ -438,16 +472,26 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
     saved += data?.length ?? 0;
   }
   let customerSaved = 0;
+  let detailsFilled = 0;
   if (customerWriteRows.length) {
-    let { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerWriteRows, { onConflict: "distributor_code,customer_code" }).select("id");
+    let { data, error } = await supabase.from("source_of_sales_customer_map").upsert(customerWriteRows, { onConflict: "distributor_code,customer_code" }).select("id,distributor_code,customer_code");
     if (error && /confidence|mapped_by/i.test(error.message ?? "")) {
       // Pre-migration deployment: retry without the provenance columns rather than failing the save.
       const stripped = customerWriteRows.map(({ confidence: _c, mapped_by: _m, ...rest }) => rest);
-      ({ data, error } = await supabase.from("source_of_sales_customer_map").upsert(stripped, { onConflict: "distributor_code,customer_code" }).select("id"));
+      ({ data, error } = await supabase.from("source_of_sales_customer_map").upsert(stripped, { onConflict: "distributor_code,customer_code" }).select("id,distributor_code,customer_code"));
     }
     if (error) throw failed("customer map", error);
     customerSaved = data?.length ?? 0;
     saved += customerSaved;
+    // Names and addresses go only to the rows this upsert actually WROTE. A move the mapping guard
+    // held is not in `data` - its row still carries the old brick, and one code can name a different
+    // pharmacy over time, so the sheet's name must not land beside a brick it never chose.
+    const written = new Set((data ?? []).map((row) => `${String(row.distributor_code ?? "")} ${String(row.customer_code ?? "")}`));
+    const details = customerWriteRows.flatMap((row) => {
+      const detail = detailsByRow.get(row);
+      return detail && written.has(`${detail.distributor_code} ${detail.customer_code}`) ? [detail] : [];
+    });
+    if (details.length) detailsFilled = await fillBlankCustomerDetails(supabase, details);
   }
   // Safety net: if any submitted row was not reflected in the select result, count it as skipped.
   // Counts the rows actually SENT — guard-skipped rows are already in `skipped` above, and counting
@@ -463,7 +507,7 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       customerWriteRows.map((r) => ({ customer_code: r.customer_code, distributor_code: r.distributor_code })),
     );
   }
-  return { saved, skipped, invalid, invalidEntries, backfilled, skippedOwnerVerified };
+  return { saved, skipped, invalid, invalidEntries, backfilled, skippedOwnerVerified, detailsFilled };
 }
 
 // ── Single-row mapping CRUD (Mapping Database page) ──

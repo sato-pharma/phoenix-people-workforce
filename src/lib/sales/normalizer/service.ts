@@ -67,12 +67,16 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
   sheet.getRow(headerRow).eachCell({ includeEmpty: false }, (cell, i) => { const k = String(cell.text ?? "").trim().toLowerCase(); if (k && !col.has(k)) col.set(k, i); });
   const colOf = (names: string[]) => { for (const n of names) { const i = col.get(n.trim().toLowerCase()); if (i) return i; } return 0; };
   const text = (row: ExcelJS.Row, i: number) => (i ? String(row.getCell(i)?.text ?? "").trim() : "");
+  // The first non-empty value across a profile's columns, as the importer engine reads them (firstValue).
+  const firstText = (row: ExcelJS.Row, cols: number[]) => { for (const i of cols) { const v = text(row, i); if (v) return v; } return ""; };
 
   const productIdCol = colOf(PHOENIX_PRODUCT_COLUMNS);
   const brickIdCol = colOf(PHOENIX_BRICK_COLUMNS);
   const rawProductCols = profile.productColumns.map((n) => colOf([n])).filter(Boolean); // code + name both → product
   const primaryTerritory = profile.territoryColumns?.[0] ? colOf([profile.territoryColumns[0]]) : 0; // most specific only
   const customerCol = profile.customerCodeColumns?.[0] ? colOf([profile.customerCodeColumns[0]]) : 0;
+  const customerNameCols = (profile.customerNameColumns ?? []).map((n) => colOf([n])).filter(Boolean);
+  const customerAddressCols = (profile.customerAddressColumns ?? []).map((n) => colOf([n])).filter(Boolean);
 
   const seen = new Set<string>();
   const mappings: MappingInput[] = [];
@@ -94,7 +98,8 @@ export async function learnFromCleanedFile(distributorCode: string, file: File):
       }
       if (customerCol) {
         const raw = text(row, customerCol); const key = `c:${raw.toLowerCase()}`;
-        if (raw && !seen.has(key)) { seen.add(key); mappings.push({ code: bid, distributorCode, raw, type: "customer" }); }
+        // The pharmacy's name and address travel with its mapping, stored only where blank.
+        if (raw && !seen.has(key)) { seen.add(key); mappings.push({ address: firstText(row, customerAddressCols), code: bid, distributorCode, name: firstText(row, customerNameCols), raw, type: "customer" }); }
       }
     }
   }
@@ -142,7 +147,7 @@ async function selectAllImportRows(columns: string, distributorCode: string | un
 export async function learnFromImportHistory(distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number; scannedRows: number }> {
   const [productRows, customerRows] = await Promise.all([
     selectAllImportRows("distributor_code,product_name,product_code", distributorCode, ["product_name", "product_code"]),
-    selectAllImportRows("distributor_code,client_code,brick_id", distributorCode, ["client_code", "brick_id"]),
+    selectAllImportRows("distributor_code,client_code,brick_id,client_name,client_address", distributorCode, ["client_code", "brick_id"]),
   ]);
 
   const seenProd = new Set<string>();
@@ -169,8 +174,17 @@ export async function learnFromImportHistory(distributorCode?: string): Promise<
     // bigint identity, so the last row a customer appears in is genuinely the most recent sheet that
     // named them — the one that reflects where they sit now. Only ever reached for a customer with
     // no crosswalk row at all, so this decides how an UNKNOWN customer is first learned, never how a
-    // known one is revised.
-    custByKey.set(`${dist}\x00${clientCode}`, { type: "customer", raw: clientCode, code: brick, distributorCode: dist });
+    // known one is revised. The pharmacy's name and address come from that SAME row, never an earlier
+    // one: EP-PHS sends one client code for different pharmacies at once, so a name taken from another
+    // row can belong to another business. They are stored only where the new mapping's fields are blank.
+    custByKey.set(`${dist}\x00${clientCode}`, {
+      type: "customer",
+      raw: clientCode,
+      code: brick,
+      distributorCode: dist,
+      name: String(row.client_name ?? "").trim(),
+      address: String(row.client_address ?? "").trim(),
+    });
   }
   mappings.push(...custByKey.values());
 

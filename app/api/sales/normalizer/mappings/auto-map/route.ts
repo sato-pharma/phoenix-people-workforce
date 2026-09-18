@@ -49,8 +49,19 @@ export async function POST(request: Request) {
     let saved = 0;
     let backfilled = 0;
     if (accepted.length > 0) {
+      // The pharmacy's name and address are saved with its mapping (blank fields only), so what
+      // Auto-map applies can teach the free steps in turn.
+      const unknownByRaw = new Map(unknowns.map((u) => [u.raw, u]));
       const result = await saveMappings(
-        accepted.map((s) => ({ code: s.code, confidence: s.confidence, distributorCode, raw: s.raw, type: "customer" as const })),
+        accepted.map((s) => ({
+          address: unknownByRaw.get(s.raw)?.rawAddress,
+          code: s.code,
+          confidence: s.confidence,
+          distributorCode,
+          name: unknownByRaw.get(s.raw)?.rawName,
+          raw: s.raw,
+          type: "customer" as const,
+        })),
         { backfill: true, mappedBy: actor, source: "auto" },
       );
       saved = result.saved;
