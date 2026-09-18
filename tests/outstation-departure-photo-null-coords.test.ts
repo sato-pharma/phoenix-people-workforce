@@ -126,7 +126,10 @@ export function runOutstationDeparturePhotoNullCoordsTests() {
   }
 
   // ── The route must use the domain reader, never a bare Number() on the body ──
-  const route = readFileSync(ROUTE_SOURCE, "utf8");
+  // Code only: the route's own comment names the old parse in order to warn against it.
+  const route = readFileSync(ROUTE_SOURCE, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
   assert.match(
     route,
     /readDeparturePhotoPosition\(body\)/,
