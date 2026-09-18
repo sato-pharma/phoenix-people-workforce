@@ -132,9 +132,11 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
 
   // ── Numbers the engine fixed before reading them ───────────────────────────────────────────────
   // A cell written in a form with one meaning only — Arabic-Indic digits, thousands grouped with
-  // spaces — is rewritten and read (normalizeNumberText) instead of refusing the whole file, which is
-  // what used to happen. Nothing is guessed, but nothing is silent either: every one is listed with
-  // what it was read as, so a wrong reading is still caught by a person. Advisory; never blocks.
+  // spaces, dots for thousands before a decimal comma ("1.234,56") — is rewritten and read
+  // (normalizeNumberText) instead of refusing the whole file, or, for "1.234,56", instead of being read
+  // silently as 1.23456, which is what used to happen. Nothing is guessed, but nothing is silent
+  // either: every one is listed with what it was read as, so a wrong reading is still caught by a
+  // person. Advisory; never blocks.
   const corrections = result.cellCorrections ?? [];
   if (corrections.length > 0) {
     add({

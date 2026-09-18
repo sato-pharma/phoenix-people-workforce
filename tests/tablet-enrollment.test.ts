@@ -5,11 +5,13 @@ import { AndroidManagementRequestError, CHROME_PACKAGE_NAME } from "../src/lib/d
 import {
   buildManagedTabletRows,
   enrollableTablets,
+  imeisToRecord,
   listEnterpriseDevices,
   matchTabletToRegister,
   normalizeImei,
   normalizeSerial,
   type AmapiDevice,
+  type ManagedTabletRow,
   type RegisterTablet,
 } from "../src/lib/devices/managed-tablets.ts";
 import {
@@ -62,8 +64,9 @@ import {
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
 /**
- * Rep Tablets — the QR code a factory-fresh tablet scans, the rules it is enrolled onto, and the
- * list that matches what enrolled to the custody register.
+ * Rep Tablets — the QR code a factory-fresh tablet scans, the rules it is enrolled onto, the
+ * list that matches what enrolled to the custody register, and the IMEI each tablet reports, which
+ * Phoenix copies into the register.
  *
  * The QR half cannot be checked by eye and cannot be checked by a phone in CI, so it is checked by
  * READING THE SYMBOL BACK with a decoder written here from ISO/IEC 18004 directly — its own map of
@@ -516,6 +519,11 @@ function runPolicyTests() {
   assert.deepEqual(policy.systemUpdate, { endMinutes: 300, startMinutes: 120, type: "WINDOWED" });
   assert.ok(UPDATE_WINDOW.startMinutes >= 0 && UPDATE_WINDOW.endMinutes <= 1439 && UPDATE_WINDOW.startMinutes < UPDATE_WINDOW.endMinutes);
   assert.deepEqual(policy.statusReportingSettings, { networkInfoEnabled: true, softwareInfoEnabled: true });
+  assert.equal(
+    policy.statusReportingSettings.networkInfoEnabled,
+    true,
+    "without network reporting no tablet reports its IMEI, and the custody register never gets one",
+  );
   for (const dead of ["installUnknownSourcesAllowed", "debuggingFeaturesAllowed", "passwordRequirements", "addUserDisabled", "kioskCustomLauncherEnabled"]) {
     assert.equal(dead in policy, false, `${dead} is deprecated, ignored or out of scope and must not be sent`);
   }
@@ -526,6 +534,9 @@ function runPolicyTests() {
   const updates = REP_TABLET_RULES.find((rule) => rule.title === "Updates overnight");
   assert.ok(updates?.detail.includes(`${UPDATE_WINDOW.startMinutes / 60}:00`) && updates.detail.includes(`${UPDATE_WINDOW.endMinutes / 60}:00`));
   assert.match(REP_TABLET_RULES.find((rule) => rule.title === "Only approved apps")?.detail ?? "", /camera/);
+  const reports = REP_TABLET_RULES.find((rule) => rule.title === "What the tablet reports")?.detail ?? "";
+  assert.match(reports, /IMEI/, "the page says the tablet reports its IMEI");
+  assert.match(reports, /copies the IMEI into the custody register when the register has none/);
 
   // The owner's apps ride behind Chrome, deduplicated, in order.
   const owned: OwnerApp[] = [
@@ -845,6 +856,7 @@ function runMatchingTests() {
         enrollmentTokenData: tokenData,
         hardwareInfo: { manufacturer: "LENOVO", model: "Lenovo TB330FU", serialNumber: "HS1A2B3" },
         name: `${ENTERPRISE}/devices/ok`,
+        networkInfo: { imei: "490154203237518" },
         policyCompliant: true,
         softwareInfo: { androidVersion: "14", securityPatchLevel: "2026-08-05" },
       },
@@ -855,6 +867,7 @@ function runMatchingTests() {
         enrollmentTokenData: tokenData,
         hardwareInfo: { serialNumber: "SOMEONE-ELSES" },
         name: `${ENTERPRISE}/devices/wrong-code`,
+        networkInfo: { imei: "356938035643809" },
         policyCompliant: true,
       },
       {
@@ -863,14 +876,21 @@ function runMatchingTests() {
         appliedState: "ACTIVE",
         hardwareInfo: { serialNumber: "HS9Z9Z9" },
         name: `${ENTERPRISE}/devices/stale`,
+        networkInfo: { imei: "351234567890123" },
         nonComplianceDetails: [
           { nonComplianceReason: "APP_NOT_INSTALLED", packageName: "com.whatsapp", settingName: "applications" },
           { nonComplianceReason: "USER_ACTION", settingName: "passwordPolicies" },
         ],
         policyCompliant: false,
       },
-      { appliedState: "PROVISIONING", hardwareInfo: { serialNumber: "STRANGER" }, name: `${ENTERPRISE}/devices/stranger`, policyName: `${ENTERPRISE}/policies/other` },
-      { appliedState: "LOST", hardwareInfo: { serialNumber: "HS5" }, name: `${ENTERPRISE}/devices/lost` },
+      {
+        appliedState: "PROVISIONING",
+        hardwareInfo: { serialNumber: "STRANGER" },
+        name: `${ENTERPRISE}/devices/stranger`,
+        networkInfo: { imei: "860000000000001" },
+        policyName: `${ENTERPRISE}/policies/other`,
+      },
+      { appliedState: "LOST", hardwareInfo: { serialNumber: "HS5" }, name: `${ENTERPRISE}/devices/lost`, networkInfo: {} },
     ],
     register,
     { appTitles: new Map([["com.whatsapp", "WhatsApp"]]), currentPolicyVersion: "4" },
@@ -913,6 +933,20 @@ function runMatchingTests() {
     "what needs attention first; within a tone, known tablets by asset tag, strangers last",
   );
 
+  // The IMEI each tablet reports, against the register.
+  assert.equal(ok?.imei, "490154203237518");
+  assert.equal(ok?.imeiStatus, "to_record", "a tablet its serial confirms, on an entry with no IMEI, has its IMEI copied in");
+  assert.equal(wrong?.imeiStatus, "held_back", "another tablet's code never puts this tablet's IMEI on that tablet's entry");
+  assert.equal(stale?.imeiStatus, "in_register", "a register IMEI missing its check digit is the same IMEI");
+  assert.equal(stranger?.imeiStatus, "unmatched");
+  assert.equal(lost?.imei, null);
+  assert.equal(lost?.imeiStatus, "none", "a tablet that reported its network and no IMEI has none — a Wi-Fi-only tablet");
+  assert.deepEqual(
+    imeisToRecord(rows),
+    [{ assetTag: "PHX-TAB-0001", imei: "490154203237518", registerDeviceId: "reg-1" }],
+    "only the confirmed tablet's IMEI is copied; the one enrolled with its code is held back, and does not block it",
+  );
+
   assert.deepEqual(
     enrollableTablets(register, rows).map((tablet) => [tablet.assetTag, tablet.enrolled]),
     [
@@ -929,6 +963,115 @@ function runMatchingTests() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The IMEI each tablet reports, and when Phoenix copies it into the register
+// ---------------------------------------------------------------------------------------------
+
+function runImeiTests() {
+  const register: RegisterTablet[] = [
+    registerTablet({ assetTag: "PHX-TAB-0101", id: "reg-a", serialNumber: "SER-A" }),
+    registerTablet({ assetTag: "PHX-TAB-0102", id: "reg-b", imei: "35-209900-176148-1", serialNumber: "SER-B" }),
+    registerTablet({ assetTag: "PHX-TAB-0103", id: "reg-c", serialNumber: "SER-C" }),
+    registerTablet({ assetTag: "PHX-TAB-0104", id: "reg-d", serialNumber: "SER-D" }),
+    registerTablet({ assetTag: "PHX-TAB-0105", id: "reg-e", imei: "  ", serialNumber: "SER-E" }),
+  ];
+  let count = 0;
+  const tablet = (
+    hardwareInfo: NonNullable<AmapiDevice["hardwareInfo"]>,
+    networkInfo?: AmapiDevice["networkInfo"],
+    extra: Partial<AmapiDevice> = {},
+  ): AmapiDevice => {
+    count += 1;
+    return {
+      appliedPolicyName: `${ENTERPRISE}/policies/rep-tablet`,
+      appliedPolicyVersion: "4",
+      appliedState: "ACTIVE",
+      hardwareInfo,
+      name: `${ENTERPRISE}/devices/imei-${count}`,
+      policyCompliant: true,
+      ...(networkInfo ? { networkInfo } : {}),
+      ...extra,
+    };
+  };
+  const rowsOf = (...devices: AmapiDevice[]) => buildManagedTabletRows(devices, register, { currentPolicyVersion: "4" });
+  const only = (device: AmapiDevice): ManagedTabletRow => rowsOf(device)[0];
+  const codeFor = (id: string, assetTag: string) => ({ enrollmentTokenData: serializeEnrollmentTokenData({ assetTag, registerDeviceId: id }) });
+
+  // Already in the register — typed with dashes, and found by the IMEI alone.
+  const same = only(tablet({ serialNumber: "SER-B" }, { imei: "352099001761481" }));
+  assert.equal(same.imeiStatus, "in_register", "an IMEI typed with dashes is the same IMEI");
+  assert.equal(same.tone, "ok");
+  const foundByImei = only(tablet({ serialNumber: "NOT-IN-THE-REGISTER" }, { imei: "352099001761481" }));
+  assert.equal(foundByImei.matchedBy, "imei");
+  assert.equal(foundByImei.imeiStatus, "in_register");
+
+  // A typed IMEI is never replaced: the row shows both, and a person decides.
+  const differs = only(tablet({ serialNumber: "SER-B" }, { imei: "352099001761499" }));
+  assert.equal(differs.imeiStatus, "register_differs");
+  assert.equal(differs.registerImei, "35-209900-176148-1", "the register's IMEI is shown as it was typed");
+  assert.equal(differs.imei, "352099001761499");
+  assert.equal(differs.tone, "warn");
+  assert.deepEqual(imeisToRecord([differs]), [], "an IMEI somebody typed is never overwritten");
+
+  // The same IMEI on another entry: the register says this is a different tablet.
+  const elsewhere = only(tablet({ serialNumber: "SER-A" }, { imei: "352099001761481" }));
+  assert.equal(elsewhere.assetTag, "PHX-TAB-0101", "the serial still decides which entry it is");
+  assert.equal(elsewhere.imeiStatus, "on_another_tablet");
+  assert.equal(elsewhere.imeiRecordedOn, "PHX-TAB-0102");
+  assert.equal(elsewhere.tone, "bad");
+  assert.deepEqual(
+    imeisToRecord([elsewhere]),
+    [],
+    "never a second entry with the same IMEI — the unique index compares the text as typed, and would let this one through",
+  );
+
+  // An IMEI of spaces is no IMEI.
+  const blank = only(tablet({ serialNumber: "SER-E" }, { imei: "490154203237518" }));
+  assert.equal(blank.imeiStatus, "to_record");
+  assert.deepEqual(imeisToRecord([blank]), [{ assetTag: "PHX-TAB-0105", imei: "490154203237518", registerDeviceId: "reg-e" }]);
+
+  // Nothing reported yet is not a problem with the tablet.
+  const silent = only(tablet({ serialNumber: "SER-C" }));
+  assert.equal(silent.imei, null);
+  assert.equal(silent.imeiStatus, "not_reported");
+  assert.equal(silent.tone, "ok");
+
+  // Copied only onto an entry the tablet's own serial confirms — a code alone is not enough.
+  const unconfirmed = only(tablet({ model: "TB330FU" }, { imei: "490154203237526" }, codeFor("reg-c", "PHX-TAB-0103")));
+  assert.equal(unconfirmed.matchedBy, "enrollment");
+  assert.equal(unconfirmed.enrolledWithAnotherTabletsCode, false, "no serial to compare is not a mix-up");
+  assert.equal(unconfirmed.imeiStatus, "held_back", "an IMEI is copied only onto an entry the tablet's serial confirms");
+  assert.equal(unconfirmed.tone, "warn");
+  assert.deepEqual(imeisToRecord([unconfirmed]), []);
+  const confirmed = only(tablet({ serialNumber: "ser c" }, { imei: "490154203237526" }, codeFor("reg-c", "PHX-TAB-0103")));
+  assert.equal(confirmed.matchedBy, "enrollment");
+  assert.equal(confirmed.imeiStatus, "to_record", "the code and the serial agree");
+
+  // Two enrolled tablets that disagree: nothing is copied, and both rows say so.
+  const twoImeisOneEntry = rowsOf(
+    tablet({ serialNumber: "SER-D" }, { imei: "490154203237534" }),
+    tablet({ serialNumber: "SER-D" }, { imei: "490154203237542" }),
+  );
+  assert.deepEqual(twoImeisOneEntry.map((row) => row.imeiStatus), ["contested", "contested"]);
+  assert.deepEqual(twoImeisOneEntry.map((row) => row.tone), ["warn", "warn"]);
+  assert.deepEqual(imeisToRecord(twoImeisOneEntry), []);
+  const oneImeiTwoEntries = rowsOf(
+    tablet({ serialNumber: "SER-A" }, { imei: "490154203237559" }),
+    tablet({ serialNumber: "SER-C" }, { imei: "490154203237559" }),
+  );
+  assert.deepEqual(oneImeiTwoEntries.map((row) => row.imeiStatus), ["contested", "contested"]);
+  assert.deepEqual(imeisToRecord(oneImeiTwoEntries), []);
+
+  // The same tablet listed twice — Google keeps the old record after a reset and re-enrollment —
+  // is not a conflict, and its IMEI is copied once.
+  const reEnrolled = rowsOf(
+    tablet({ serialNumber: "SER-A" }, { imei: "490154203237567" }),
+    tablet({ serialNumber: "SER-A" }, { imei: "490154203237567" }),
+  );
+  assert.deepEqual(reEnrolled.map((row) => row.imeiStatus), ["to_record", "to_record"]);
+  assert.deepEqual(imeisToRecord(reEnrolled), [{ assetTag: "PHX-TAB-0101", imei: "490154203237567", registerDeviceId: "reg-a" }]);
+}
+
+// ---------------------------------------------------------------------------------------------
 // The doors: routes, page, registry, and what the credential may never touch
 // ---------------------------------------------------------------------------------------------
 
@@ -939,7 +1082,7 @@ function source(relative: string): string {
 function runDoorTests() {
   const approve = { action: "approve", resource: "company_devices" };
   assert.deepEqual(findAccessRegistryEntry("/api/devices/tablets", "GET")?.permission, approve);
-  for (const route of ["/api/devices/tablets/policy", "/api/devices/tablets/enrollment", "/api/devices/tablets/usb"]) {
+  for (const route of ["/api/devices/tablets/policy", "/api/devices/tablets/enrollment", "/api/devices/tablets/imei", "/api/devices/tablets/usb"]) {
     const entry = findAccessRegistryEntry(route, "POST");
     assert.equal(entry?.pattern, route, `${route} has its own entry`);
     assert.deepEqual(entry?.permission, approve);
@@ -950,6 +1093,7 @@ function runDoorTests() {
 
   const routes = {
     enrollment: source("app/api/devices/tablets/enrollment/route.ts"),
+    imei: source("app/api/devices/tablets/imei/route.ts"),
     policy: source("app/api/devices/tablets/policy/route.ts"),
     read: source("app/api/devices/tablets/route.ts"),
     usb: source("app/api/devices/tablets/usb/route.ts"),
@@ -957,10 +1101,15 @@ function runDoorTests() {
   for (const [name, text] of Object.entries(routes)) {
     assert.match(text, /assertPermission\(access, "company_devices", "approve"\)/, `${name} route asserts approve`);
   }
-  for (const text of [routes.enrollment, routes.policy, routes.usb]) {
+  for (const text of [routes.enrollment, routes.imei, routes.policy, routes.usb]) {
     assert.match(text, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
   }
   assert.match(routes.enrollment, /"cache-control": "no-store"/, "the enrollment code must not be cached between Phoenix and the browser");
+  assert.doesNotMatch(
+    routes.imei,
+    /request\.(json|text|formData|arrayBuffer|blob)\(|searchParams/,
+    "the IMEI copy takes nothing from the browser — which IMEI goes onto which entry is decided on the server",
+  );
 
   const page = source("app/(admin)/devices/tablets/page.tsx");
   assert.match(page, /canAccess\(access, "company_devices", "approve"\)/);
@@ -973,6 +1122,21 @@ function runDoorTests() {
   assert.ok(tokenAuditStart !== -1 && tokenAudit.includes('"android_enrollment_token"'));
   assert.doesNotMatch(tokenAudit, /enrollmentCode|qrPayload|\.\.\.created|request\b/, "the enrollment audit row must never hold the code");
 
+  // The one register write whose value nobody typed: never over an IMEI, audited first, conditional.
+  assert.match(service, /imeisToRecord\(rows\)/, "which IMEIs are copied is decided by imeisToRecord, on the server");
+  const register = source("src/lib/devices/service.ts");
+  const copyStart = register.indexOf("export async function recordReportedImei(");
+  const copy = register.slice(copyStart, register.indexOf("\nexport ", copyStart + 1));
+  const leaveAlone = copy.indexOf("if (trimmed(row.imei)) return false;");
+  const audited = copy.indexOf("writeRequiredAuditLog({");
+  const updated = copy.indexOf(".update(");
+  assert.ok(copyStart !== -1 && leaveAlone !== -1, "an entry that already holds an IMEI is left as it is");
+  assert.ok(audited !== -1 && leaveAlone < audited, "it is left alone before anything is written");
+  assert.ok(updated !== -1 && audited < updated, "the audit row is written before the register changes");
+  assert.match(copy, /update\.is\("imei", null\)/, "the write lands only on an entry still holding no IMEI");
+  assert.match(copy, /update\.eq\("imei", row\.imei\)/);
+  assert.doesNotMatch(copy, /\.upsert\(|\.insert\(/);
+
   const consoleSource = source("src/components/devices/rep-tablets-console.tsx");
   assert.doesNotMatch(consoleSource, /dangerouslySetInnerHTML|innerHTML|appendChild|insertBefore/, "React draws the QR; nothing writes into the page behind it");
   assert.doesNotMatch(consoleSource, /localStorage|sessionStorage|indexedDB/, "the code is never stored in the browser");
@@ -981,6 +1145,12 @@ function runDoorTests() {
     assert.match(line, /^import type /, `a client component takes only TYPES from the server-side device modules: ${line.trim()}`);
   }
   assert.doesNotMatch(consoleSource, /\brounded\b|rounded-|\btruncate\b|text-ellipsis|overflow-x-auto/);
+  assert.match(consoleSource, /requestJson<ImeiRecordResult>\("\/api\/devices\/tablets\/imei", \{\}\)/, "the page asks for the IMEI copy by itself");
+  assert.match(
+    consoleSource,
+    /imeiAsked\.current\.has\(id\)/,
+    "once per register entry per visit — a copy that fails is shown, never retried in a loop",
+  );
 
   for (const file of [
     "src/lib/qr/qr-code.ts",
@@ -992,6 +1162,7 @@ function runDoorTests() {
     "app/api/devices/tablets/route.ts",
     "app/api/devices/tablets/policy/route.ts",
     "app/api/devices/tablets/enrollment/route.ts",
+    "app/api/devices/tablets/imei/route.ts",
     "app/api/devices/tablets/usb/route.ts",
     "src/lib/devices/tablet-auto-register.ts",
     "src/components/devices/rep-tablets-console.tsx",
@@ -1006,5 +1177,6 @@ export async function runTabletEnrollmentTests() {
   runEnrollmentRequestTests();
   await runGoogleCallTests();
   runMatchingTests();
+  runImeiTests();
   runDoorTests();
 }

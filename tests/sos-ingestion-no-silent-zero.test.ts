@@ -5,9 +5,10 @@ import { join } from "node:path";
 // A cell the parser cannot read must never become a zero.
 //
 // engine.ts wrote `qty: Number.isFinite(qty) ? qty : 0` and the same for value, on the raw-import
-// path that carries 99.6% of production rows. So "1,2OO" (letter O), an Arabic-Indic numeral, "n/a"
-// or a European "1.234,56" all silently became 0 — the sale vanished from every total with nothing
-// to review. discountFrac then clamped out-of-range values into [0,1], so a "150" typo became a
+// path that carries 99.6% of production rows. So "1,2OO" (letter O), an Arabic-Indic numeral or
+// "n/a" all silently became 0 — the sale vanished from every total with nothing to review. (A
+// European "1.234,56" was worse: it parsed, as 1.23456 — see sos-european-decimal-misread.test.ts.)
+// discountFrac then clamped out-of-range values into [0,1], so a "150" typo became a
 // 100% discount that zeroed the row, AND upload-validation's discount_out_of_range check could
 // never fire because nothing out-of-range survived the clamp.
 //

@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { HEADER_SCAN_ROWS, normalizeHeaderKey } from "@/lib/sales/normalizer/header-normalize";
-import { normalizeNumberText } from "@/lib/sales/normalizer/number-text";
+import { needsAGuess, normalizeNumberText } from "@/lib/sales/normalizer/number-text";
 import { deriveHierarchy, normalizeCodeKey, numericCanonicalKey, resolveBrick, resolveProduct } from "@/lib/sales/normalizer/resolvers";
 import { IGNORE_PRODUCT_CODE, type CellCorrection, type CodedRow, type Crosswalks, type CustomerBrickCorrection, type DistributorProfile, type NormalizeException, type NormalizeIgnoredRow, type NormalizeResult } from "@/lib/sales/normalizer/types";
 
@@ -38,12 +38,26 @@ export function cellText(cell: ExcelJS.Cell | undefined): string {
   return String(v);
 }
 
+// A number cell as the engine reads it: its text, and whether Excel stores it as a NUMBER. Only text
+// can be ambiguous — a number cell holding 1.234 is 1.234 however it prints, so it is never refused.
+type NumberCell = { text: string; typed: boolean };
+
+function isNumberCell(cell: ExcelJS.Cell): boolean {
+  const v = cell.value;
+  if (typeof v === "number") return true;
+  return v != null && typeof v === "object" && "result" in v && typeof (v as { result?: unknown }).result === "number";
+}
+
 // Both readers take the cell through normalizeNumberText first, so a number written in a form with one
-// meaning only (Arabic-Indic digits, space-grouped thousands) is read instead of refusing the file.
-function parseNum(value: unknown, emptyAsZero = false): number {
-  const text = normalizeNumberText(String(value ?? "")).replace(/,/g, "").trim();
-  if (!text) return emptyAsZero ? 0 : Number.NaN;
-  const n = Number(text);
+// meaning only (Arabic-Indic digits, space-grouped thousands, "1.234,56") is read instead of refusing
+// the file. A TEXT quantity or value that could only be read by guessing ("1.234": 1.234 or 1234?
+// "12,5": 12.5 or 125?) is NaN, so its row is refused and named. This used to strip every comma blind,
+// which read "1.234,56" as 1.23456 and "12,5" as 125 with nothing said (owner, 2026-09-18).
+function parseNum(cell: NumberCell, emptyAsZero = false): number {
+  const written = normalizeNumberText(cell.text);
+  if (!written) return emptyAsZero ? 0 : Number.NaN;
+  if (!cell.typed && needsAGuess(written)) return Number.NaN;
+  const n = Number(written.replace(/,/g, ""));
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
@@ -325,15 +339,20 @@ function rawSourceRow(row: ExcelJS.Row, labels: Map<number, string>): Record<str
   return out;
 }
 
-function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
+function firstCell(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): NumberCell {
   for (const name of columns ?? []) {
     const c = map.col.get(normalizeHeaderKey(name));
     if (c) {
-      const text = cellText(row.getCell(c)).trim();
-      if (text) return text;
+      const cell = row.getCell(c);
+      const text = cellText(cell).trim();
+      if (text) return { text, typed: isNumberCell(cell) };
     }
   }
-  return "";
+  return { text: "", typed: false };
+}
+
+function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
+  return firstCell(row, map, columns).text;
 }
 
 // ── engine ──
@@ -395,7 +414,7 @@ export function normalizeRows(
     // but record it so the import surface can tell the user exactly how many units were excluded.
     if (productCode === IGNORE_PRODUCT_CODE) {
       ignored += 1;
-      const ignoredQty = parseNum(firstValue(row, header, profile.qtyColumns));
+      const ignoredQty = parseNum(firstCell(row, header, profile.qtyColumns));
       ignoredRows.push({
         rawProduct,
         rawProductName: productValues.slice(1).find(Boolean) ?? "",
@@ -464,7 +483,7 @@ export function normalizeRows(
           });
         } else {
           blankCustomerSkipped += 1;
-          const skippedQty = parseNum(firstValue(row, header, profile.qtyColumns));
+          const skippedQty = parseNum(firstCell(row, header, profile.qtyColumns));
           blankCustomerRows.push({
             rawProduct,
             rawProductName: productValues.slice(1).find(Boolean) ?? "",
@@ -488,13 +507,15 @@ export function normalizeRows(
     }
 
     const product = maps.productByCode.get(productCode);
-    const qtyRaw = firstValue(row, header, profile.qtyColumns);
-    const valueRaw = firstValue(row, header, profile.valueColumns);
+    const qtyCell = firstCell(row, header, profile.qtyColumns);
+    const valueCell = firstCell(row, header, profile.valueColumns);
+    const qtyRaw = qtyCell.text;
+    const valueRaw = valueCell.text;
     const discountRaw = firstValue(row, header, profile.discountColumns);
-    const qty = parseNum(qtyRaw);
+    const qty = parseNum(qtyCell);
     const bonusQty = 0;
     const discount = discountFrac(discountRaw);
-    const sheetValue = parseNum(valueRaw, true);
+    const sheetValue = parseNum(valueCell, true);
     // Units times the factory price, full stop — the discount factor came out on 2026-09-07 by the
     // owner's instruction. `discount` is still parsed and still stored on the row; it just no longer
     // multiplies anything.
@@ -505,8 +526,10 @@ export function normalizeRows(
     // A cell the parser cannot read must NOT become a zero.
     //
     // qty and value were written as `Number.isFinite(x) ? x : 0`, so "1,2OO" (letter O), an Arabic-
-    // Indic numeral, "n/a", or a European "1.234,56" all silently became 0 on the path that carries
-    // 99.6% of production rows — the sale vanished from every total with nothing to review. parseNum
+    // Indic numeral or "n/a" silently became 0 on the path that carries 99.6% of production rows — the
+    // sale vanished from every total with nothing to review. (A European "1.234,56" never failed to
+    // parse at all: the commas were stripped blind and it was read as 1.23456. parseNum now reads it
+    // as 1234.56 and refuses a text "1.234" or "12,5", which it would have to guess at.) parseNum
     // returns NaN for an EMPTY cell too, and an empty quantity legitimately means zero, so only a
     // NON-EMPTY cell that fails to parse is an error.
     const nonEmpty = (raw: unknown) => String(raw ?? "").trim() !== "";
