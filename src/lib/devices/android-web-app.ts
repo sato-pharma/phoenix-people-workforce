@@ -339,7 +339,14 @@ export function webAppPackageNameFrom(resourceName: string): string | null {
 /** Long enough for an icon upload, short enough that a wedged call does not hold a request open. */
 const ANDROID_MANAGEMENT_TIMEOUT_MS = 30_000;
 
-async function callAndroidManagement(
+/**
+ * One authenticated call to the Android Management API, parsed.
+ *
+ * Exported so the tablet policy and enrollment modules share this one implementation of the error
+ * shape. 🔴 The error message carries Google's response body and the request path, so no caller may
+ * put a credential in `path`: an enrollment token's value travels only in RESPONSE bodies.
+ */
+export async function callAndroidManagement(
   token: string,
   path: string,
   init: RequestInit,
