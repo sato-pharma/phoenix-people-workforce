@@ -56,6 +56,7 @@ import {
   resolveViewerNames,
 } from "@/lib/recruitment/candidate-views";
 import { listCandidates, loadDecisionHistory, loadRowFindings } from "@/lib/recruitment/candidates";
+import { linkedInProfileHref } from "@/lib/recruitment/linkedin-profile";
 import { countRowFindings } from "@/lib/recruitment/cv-findings";
 import { buildThroughput, type ThroughputSummary } from "@/lib/recruitment/candidate-throughput";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
@@ -593,6 +594,7 @@ export async function loadScreeningWorkspace(
       fullName: candidateDisplayName(candidate.fullName),
       id: candidate.id,
       interviewToday: queueInput.interviewToday,
+      linkedinUrl: linkedInProfileHref(candidate.linkedinUrl),
       locationDeclared: place.declared,
       locationLabel: place.label,
       notACv: candidate.notACv === true,
