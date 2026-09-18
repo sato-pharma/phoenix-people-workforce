@@ -129,10 +129,20 @@ export function applyPeriodConsolidation(result: NormalizeResult, decision: Peri
  * "Validation passed" and then hard-rejected on import — while `analyzeMonthlyUpload`'s own comment
  * promised "the analyze report matches the commit gate exactly".
  *
+ * A month the operator picked is folded in too, when it re-dates rows: see redatedRowsFinding. Pass
+ * the rows as the sheet dated them, before consolidation.
+ *
  * Pure, so the two paths can be proven to agree without uploading a file.
  */
-export function withPeriodGateFinding(report: ValidationReport, decision: PeriodDecision): ValidationReport {
-  if (decision.kind === "ok") return report;
+export function withPeriodGateFinding(
+  report: ValidationReport,
+  decision: PeriodDecision,
+  coded: readonly Pick<CodedRow, "invoiceDate" | "rawRowNumber">[] = [],
+): ValidationReport {
+  if (decision.kind === "ok") {
+    const redated = redatedRowsFinding(coded, decision);
+    return redated ? { ...report, warningCount: report.warningCount + 1, findings: [redated, ...report.findings] } : report;
+  }
   const finding: ValidationFinding =
     decision.kind === "missing"
       ? {
@@ -164,6 +174,43 @@ export function withPeriodGateFinding(report: ValidationReport, decision: Period
     warningCount: report.warningCount,
     infoCount: report.infoCount,
     findings: [finding, ...report.findings],
+  };
+}
+
+/**
+ * The warning for rows the picked month re-dates, or null when it re-dates none.
+ *
+ * Filing a sheet under the month the operator picks is allowed: the multi-month refusal itself says
+ * "Pick a period above to import them all under one month". But every row the sheet dated in another
+ * month is then imported as the picked month's sales, and nothing said so. The strict checks run on
+ * the rows after they are re-dated, so they cannot see it, and Sales Upload's own period picker, in
+ * bulk import and whenever a month is chosen before Validate, gave no sign the sheet held another
+ * month at all. Production, 2026-09-18: EG-HOS's August sheet carried one invoice dated 25 July, and
+ * it is filed under August.
+ *
+ * A warning, not a block: consolidating stays the operator's choice, now made knowing which rows move.
+ */
+export function redatedRowsFinding(
+  coded: readonly Pick<CodedRow, "invoiceDate" | "rawRowNumber">[],
+  decision: PeriodDecision,
+): ValidationFinding | null {
+  if (decision.kind !== "ok" || !decision.consolidate) return null;
+  const moved = coded.filter((r) => r.invoiceDate && r.invoiceDate !== decision.period);
+  if (moved.length === 0) return null;
+  const byMonth = new Map<string, number>();
+  for (const r of moved) byMonth.set(r.invoiceDate, (byMonth.get(r.invoiceDate) ?? 0) + 1);
+  const months = [...byMonth].sort(([a], [b]) => a.localeCompare(b));
+  const parts = months.map(([month, n]) => `${month} (${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"})`);
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+  const left = months.length === 1 ? `${months[0][0]} will not include them` : "Those months will not include them";
+  return {
+    code: "rows_redated",
+    severity: "warning",
+    title: `Rows dated in another month will be filed under ${decision.period}`,
+    detail: `Rows dated ${list} will be imported as ${decision.period} sales, because ${decision.period} is the month picked for this file. ${left}.`,
+    count: moved.length,
+    sampleRows: moved.slice(0, 12).map((r) => r.rawRowNumber),
+    fixHint: "If they belong to their own month, upload one month per file. If they are meant to count in this month, there is nothing to do.",
   };
 }
 
@@ -374,12 +421,14 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
   // which also disables the period-dependent checks — and could report "Validation passed" for a file
   // the very next click rejects. The rows commit refuses outright are folded in the same way: an
   // unknown territory or customer already shows as an unmapped item, but nothing else showed them.
+  // A picked month that re-dates rows is named from the rows as the sheet dated them.
   const validation = withPeriodGateFinding(
     withRefusedRowsFinding(
       await runStrictValidation(distributorCode, rec, applyPeriodConsolidation(rec.result, decision), resolvedPeriod, crossCheck),
       rec.result.exceptions,
     ),
     decision,
+    rec.result.coded,
   );
   return { status: "ok", preview, reconciliation, breakdowns, period: rec.period, needsPeriod: !rec.period, engineVersion: RECOGNITION_ENGINE_VERSION, validation };
 }
