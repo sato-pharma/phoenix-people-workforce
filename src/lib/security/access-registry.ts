@@ -1228,6 +1228,23 @@ export const accessRegistry = [
   // writes its own per-device audit row — the pull goes through createDevice, not around it. It
   // never issues custody to anybody, so no assignment audit row can come from this path.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/action1/confirm", permission: { resource: "company_devices", action: "import" }, csrfRequired: true }),
+  // Managed Google Play — three doors into Google's own console, every one gated on
+  // `company_devices:approve`, the only action on this resource the matrix reserves to the Super
+  // Admin. Device Custody above is paperwork and HR Operations runs it; these publish software onto
+  // every rep's tablet.
+  //
+  // NO audit clause on any of the three, deliberately. They write nothing in Phoenix: the first
+  // mints a short-lived Google web token and hands back a URL, and the other two carry the one-time
+  // enterprise enrolment. What is worth auditing — which app was approved for the fleet — happens
+  // inside Google's iframe, where this app never sees it, and Google's own admin log is that record.
+  // `required: true` here would assert a row no handler writes.
+  sessionApi({ methods: ["POST"], pattern: "/api/devices/managed-play", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/devices/managed-play/signup", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Google's RETURN leg, so a GET and deliberately not CSRF-guarded: it arrives as a top-level
+  // navigation from Google's domain carrying `?enterpriseToken=…`, and a same-origin assertion would
+  // refuse every real callback. The permission is still asserted, and the token is single-use, so a
+  // replayed one buys nothing.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/managed-play/callback", permission: { resource: "company_devices", action: "approve" } }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

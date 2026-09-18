@@ -794,6 +794,7 @@ import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
 import { runAndroidWebAppTests } from "./android-web-app.test.ts";
+import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -3240,6 +3241,16 @@ await runTest(
   + "nothing; an existing package PATCHes rather than minting a second app the policy would "
   + "never name, and app/icon.png itself is checked at 512x512 because that file is what travels)",
   runAndroidWebAppTests,
+);
+await runTest(
+  "managed google play iframe (the free door a private app reaches the fleet through: the page's "
+  + "own CSP must allow apis.google.com in script-src and BOTH google hosts in frame-src or the "
+  + "frame is refused with nothing in the repo to point at, a web token is never minted for an "
+  + "unchecked parent frame, a homepage the token never enabled raises instead of rendering blank, "
+  + "a 200 carrying no token fails loudly rather than becoming token=undefined, the credential "
+  + "never survives redaction, and enterprises.create keeps needing BOTH the cookie-parked signup "
+  + "name and the single-use enterpriseToken)",
+  runManagedPlayIframeTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

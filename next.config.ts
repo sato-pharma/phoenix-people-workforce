@@ -109,6 +109,31 @@ const hiringPackPrintCsp = contentSecurityPolicy.replace(
   "frame-ancestors 'self'",
 );
 
+// A CSP for the managed Google Play console ONLY — /devices/managed-play and its /hr spelling,
+// where the fleet's private apps are published. Google serves that surface as an iframe opened
+// through gapi.iframes, so the page needs THREE things the site-wide policy refuses outright:
+//   - script-src https://apis.google.com — the gapi loader. Blocked, the page reports "Google's API
+//     script failed to load" and nothing else ever happens.
+//   - frame-src play.google.com AND apis.google.com — there is NO frame-src directive in the base
+//     policy, so framing falls back to `default-src 'self'` and the child frame is refused outright.
+//     gapi opens its own relay frame on apis.google.com as well, so naming only play.google.com is
+//     not enough and fails in a way that looks like an empty store rather than a blocked frame.
+//   - connect-src for both hosts — the iframe's RPC channel and the upload it performs.
+// frame-ancestors is deliberately NOT touched: this widens what THIS page may embed, never who may
+// embed Phoenix. Nothing else on the site is affected, so payroll and HR keep the strict policy.
+//
+// DERIVED from the site-wide policy by string-replacing the shared const, like whatsappConnectCsp
+// and hiringPackPrintCsp above and for the same reason: later hardening of the base policy carries
+// through here automatically, and tests/csp-headers.test.ts (which fingerprints the base template
+// literal) is unaffected.
+const managedPlayCsp = contentSecurityPolicy
+  .replace("script-src 'self'", "script-src 'self' https://apis.google.com")
+  .replace(
+    "connect-src 'self'",
+    "connect-src 'self' https://apis.google.com https://play.google.com",
+  )
+  .concat("; frame-src 'self' https://play.google.com https://apis.google.com");
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -391,6 +416,19 @@ const nextConfig: NextConfig = {
           { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
         ],
         source: "/whatsapp-connect",
+      },
+      // The managed Google Play console — see managedPlayCsp above for what each widened directive
+      // buys and what breaks without it. BOTH spellings are listed because proxy.ts rewrites the
+      // `/hr` namespace onto the admin pages AFTER these headers are matched, so a rule written only
+      // against the admin path would never fire for the HR seats that actually browse there — and it
+      // would fail as a blank frame, which is the failure mode hardest to trace back to a header.
+      {
+        headers: [{ key: "Content-Security-Policy", value: managedPlayCsp }],
+        source: "/devices/managed-play",
+      },
+      {
+        headers: [{ key: "Content-Security-Policy", value: managedPlayCsp }],
+        source: "/hr/devices/managed-play",
       },
       // CvPreviewModal renders a candidate's CV inline via <iframe src={ourOwnDownloadRoute}> —
       // the global X-Frame-Options: DENY / frame-ancestors 'none' above blocks that outright,
