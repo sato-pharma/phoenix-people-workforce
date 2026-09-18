@@ -52,7 +52,10 @@ export type Crosswalks = {
 // How to read ONE distributor's raw sheet: which raw column holds what. Lists are fallbacks
 // (first present header wins). A code-defined registry seeds these; later they live in the DB.
 export type DistributorProfile = {
-  // Rows where is_bonus = 1 (or truthy) are free-goods deliveries — skip them from sales totals.
+  // A FREE-GOODS FLAG, never a bonus quantity. Rows where is_bonus = 1 (or truthy) are free-goods
+  // deliveries — the WHOLE row is skipped from sales totals. So only a column that marks an entire
+  // line as free goods (EPDA's `is_bonus`) belongs here. A bonus COUNT printed beside the paid units
+  // (El Qema's `بونص`) must never be mapped: any non-zero cell would drop the row's paid units with it.
   bonusColumns?: string[];
   // "skip" (default) — blank customer/territory row is quietly tracked but never blocks import.
   // "error" — blank is a data error; the row goes to exceptions with reason "blank_customer".
