@@ -595,6 +595,7 @@ import { runDecidedForMeTests } from "./decided-for-me.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
+import { runSalesChannelsByRepClosingValueTests } from "./sales-channels-by-rep-closing-value.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
@@ -2960,6 +2961,10 @@ await runTest("sales upload verification step (never-stuck invariant)", runSales
 await runTest("sales AI header-mismatch explain (privacy + no-op)", runSalesAiExplainTests);
 await runTest("sales linkage gate (one engine)", runSalesLinkageTests);
 await runTest("sales channels by rep (stems derived, restricted fail-closed, unattributed kept)", runSalesChannelsByRepTests);
+await runTest(
+  "channels by rep values a distributor row at paid units x factory price and a direct order at its own value, as the closing does",
+  runSalesChannelsByRepClosingValueTests,
+);
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("units are units — no discount factor", runUnitsAreUnitsNoDiscountFactorTests);
