@@ -1796,6 +1796,7 @@ import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-wei
 import { runMonthlySalesRunSkipHoldsOnlyWhileTrueTests } from "./monthly-sales-run-skip-holds-only-while-true.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 import { runNormalizerUnmappedListCustomersTests } from "./normalizer-unmapped-list-customers.test.ts";
+import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-failed-rows.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6245,6 +6246,11 @@ await runTest(
 await runTest(
   "the normalizer's Download list (Excel) carries every unknown pharmacy the screen shows, with its name, address and area text, and Upload filled list learns a filled pharmacy row as a customer mapping under the list's distributor; before the fix the file held products and territories only and a customer row was dropped on upload",
   runNormalizerUnmappedListCustomersTests,
+);
+
+await runTest(
+  "the weekly Upload filled list names each pick's sheet row and keeps every row it could not save in the upload's history record, product sheet first, in sheet order; before the fix the notice named only the first three failures and no record held any",
+  runWeeklyUnmappedListFailedRowsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
