@@ -509,6 +509,7 @@ import { runCustomerNormalizeTests } from "./customer-normalize.test.ts";
 import { runPharmacyGeoValidateTests } from "./pharmacy-geo-validate.test.ts";
 import { runCustomerPropagationTests } from "./customer-propagation.test.ts";
 import { runCustomerFreeStepsTests } from "./customer-free-steps.test.ts";
+import { runNormalizerMappingTruthTests } from "./normalizer-mapping-truth.test.ts";
 import { runSosAutoApplyTests } from "./sos-auto-apply.test.ts";
 import { runCustomerClustersTests } from "./customer-clusters.test.ts";
 import { runWeeklySalesImportTests } from "./weekly-sales-import.test.ts";
@@ -2798,6 +2799,10 @@ await runTest("customer normalize + pharmacy chains", runCustomerNormalizeTests)
 await runTest("pharmacy geo validate (distance tiers)", runPharmacyGeoValidateTests);
 await runTest("customer cross-distributor propagation", runCustomerPropagationTests);
 await runTest("customer free steps: grouped once, then address match, known twin, place in the name", runCustomerFreeStepsTests);
+await runTest(
+  "customer mapping truth: a saved mapping keeps the pharmacy's name and address (blanks only), a pick changed by hand saves no AI confidence, only a person's pick or a guess at the auto-accept bar teaches the free steps, the history heal and correction step around a locked month, and the guard does not call the re-map of a switched-off row a region move",
+  runNormalizerMappingTruthTests,
+);
 await runTest("sos auto-apply gate", runSosAutoApplyTests);
 await runTest("customer location clusters", runCustomerClustersTests);
 await runTest("weekly sales import", runWeeklySalesImportTests);

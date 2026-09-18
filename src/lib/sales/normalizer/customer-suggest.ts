@@ -4,6 +4,7 @@ import type { PropagationEvidence } from "@/lib/sales/normalizer/auto-apply";
 import { loadBrickCentroids } from "@/lib/sales/normalizer/brick-centroids";
 import { readStoredAiAnswers, storeAiAnswers } from "@/lib/sales/normalizer/customer-ai-answers";
 import { answerFromFreeSteps, buildFreeStepIndexes, groupIdenticalPharmacies } from "@/lib/sales/normalizer/customer-free-steps";
+import { teachesFreeSteps } from "@/lib/sales/normalizer/customer-map-teaching";
 import { normalizeCustomerNameKey } from "@/lib/sales/normalizer/customer-normalize";
 import type { MappedCustomerRow, PropagatedSuggestion } from "@/lib/sales/normalizer/customer-propagate";
 import { NO_KEY_CONFIDENCE, scoreCustomerBrick, type GeoSignals } from "@/lib/sales/normalizer/geo-validate";
@@ -46,6 +47,9 @@ type CustomerMapDbRow = {
   brick_id: string | null;
   customer_code: string | null;
   distributor_code: string | null;
+  // Read so a weak saved suggestion can be kept from teaching - customer-map-teaching.ts.
+  source: string | null;
+  confidence: number | null;
 };
 
 /**
@@ -77,7 +81,7 @@ async function loadActiveCustomerMap(): Promise<CustomerMapDbRow[]> {
         () => {
           let query = supabase
             .from("source_of_sales_customer_map")
-            .select("id,customer_name,address,brick_id,customer_code,distributor_code")
+            .select("id,customer_name,address,brick_id,customer_code,distributor_code,source,confidence")
             .eq("active", true)
             .not("brick_id", "is", null);
           if (range.from !== null) query = query.gte("id", range.from);
@@ -153,10 +157,16 @@ export async function suggestCustomerBricks(
   // Only bricks that still exist in the master — the map can hold retired ids.
   const isLiveBrick = (code: string) => brickMap.has(code);
 
+  // Only mappings a person made, or that cleared the auto-accept bar, may TEACH: a weak suggestion
+  // saved unreviewed would otherwise come back as a confident "same address" or "known twin" answer
+  // for the next pharmacy, and a wrong guess would copy itself (customer-map-teaching.ts). The free
+  // steps' indexes and the AI's reference list both read this, never the raw map.
+  const teaching = customerMapRows.filter((row) => teachesFreeSteps(row));
+
   // 1. The free steps, once per distinct pharmacy.
   const groups = groupIdenticalPharmacies(unknowns);
   const representatives = groups.map((g) => g.representative);
-  const mapped: MappedCustomerRow[] = customerMapRows.map((r) => ({
+  const mapped: MappedCustomerRow[] = teaching.map((r) => ({
     address: String(r.address ?? ""),
     brickId: String(r.brick_id ?? "").trim(),
     customerCode: String(r.customer_code ?? ""),
@@ -224,7 +234,7 @@ export async function suggestCustomerBricks(
         push(text, String(r.brick_id ?? ""));
       }
     } catch { /* reference context is optional */ }
-    for (const row of customerMapRows) {
+    for (const row of teaching) {
       const text = [String(row.customer_name ?? "").trim(), String(row.address ?? "").trim()].filter(Boolean).join(" | ");
       push(text, String(row.brick_id ?? ""));
     }
