@@ -39,6 +39,10 @@ const PORTAL_LAYOUT = readFileSync(
   "utf8",
 );
 const TOPBAR = readFileSync(new URL("../src/components/layout/topbar.tsx", import.meta.url), "utf8");
+const SCREENING_PAGE_CLIENT = readFileSync(
+  new URL("../src/components/recruitment/workstation/workstation-page-client.tsx", import.meta.url),
+  "utf8",
+);
 
 const DESKTOP_GATE = "@media screen and (min-width: 1024px)";
 
@@ -222,10 +226,29 @@ function runWiringTests() {
   );
 }
 
+function runViewportFrameTests() {
+  // `zoom` does not compensate viewport units — 100vh resolves against the real window and is THEN
+  // scaled — so a frame sized in vh inside <main> paints at 80% of the height it asked for. The
+  // stylesheet divides `.h-screen` / `.min-h-screen` and deliberately leaves arbitrary values alone,
+  // which means each full-height frame has to divide itself. The screening frame is the one the
+  // owner saw: a CV pane 20% short, with a band of empty page under it.
+  assert.ok(
+    SCREENING_PAGE_CLIENT.includes("h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))]"),
+    "The screening frame's height no longer divides 100vh by --phx-scale-applied, so inside the " +
+      "0.8 zoom it paints at 80% of the window and leaves the CV pane short.",
+  );
+  assert.ok(
+    SCREENING_PAGE_CLIENT.includes("min-h-[calc(32rem_/_var(--phx-scale-applied,1))]"),
+    "The screening frame's floor no longer divides by --phx-scale-applied, so on a short window " +
+      "it paints at 410px instead of the 512px it was written to hold.",
+  );
+}
+
 export async function runDisplayScaleTests() {
   runScaleVocabularyTests();
   runParseTotalityTests();
   runStylesheetContractTests();
   runBootScriptContractTests();
   runWiringTests();
+  runViewportFrameTests();
 }
