@@ -32,9 +32,9 @@ name: CI
 # `validate`. `pnpm run test` shared nothing but node_modules with the build it ran in front
 # of, and was 96s and 98s of a 364s and 371s job on runs 35258637196 and 35257651146. It is
 # the `test` job now, which lands under `typecheck` and therefore off the critical path;
-# `validate` drops to ~268s and the wall clock with it. Full reasoning on that job — INCLUDING
-# that `test` has to be added to branch protection's required checks, because `validate` is
-# required and no longer runs the tests.
+# `validate` drops to ~268s and the wall clock with it. Full reasoning on that job — including
+# why `test` had to be added to branch protection's required checks, which happened on
+# 2026-09-18, a day after the split had left the tests gating nothing at all.
 
 # NO `paths-ignore` ON `pull_request`, DELIBERATELY (2026-08-12). It used to skip this whole
 # workflow for docs-only PRs, and ci-docs-fallback.yml existed to satisfy the required checks that
@@ -236,10 +236,11 @@ jobs:
       # smoke test and needs neither, so a quarter of the slowest required check was serial for
       # no reason. The measurement and the reasoning are on that job.
       #
-      # IT ONLY GATES ANYTHING IF BRANCH PROTECTION NAMES `test`. `validate` is a required
-      # check and no longer runs the tests; until `test` is required too, a PR whose tests are
-      # red shows four green required checks and merges. That is the spare-key-under-the-mat
-      # hole the header describes, arriving from the other side.
+      # IT ONLY GATES ANYTHING IF BRANCH PROTECTION NAMES `test` — which it does, since
+      # 2026-09-18. For the day between the split and that change, `validate` was required and
+      # no longer ran the tests, so a PR whose tests were red showed four green required checks
+      # and merged: the spare-key-under-the-mat hole the header describes, arriving from the
+      # other side. Never move work out of a required check without adding the new name.
 
       # THE .next BUILD CACHE WAS DELETED HERE ON 2026-08-29. Do not re-add it.
       #
@@ -545,11 +546,11 @@ jobs:
   # a skipped job reports no status, and a required check with no status blocks a PR forever.
   # Only the expensive steps are conditional.
   #
-  # THIS JOB GATES NOTHING UNTIL BRANCH PROTECTION LISTS `test` AS A REQUIRED CHECK. It is
-  # not a detail to get to later: the same commit that created this job took the tests out of
-  # `validate`, which IS required, so between the two changes a red test suite blocks nothing
-  # at all. The required names are set on the repository, not in this file, and only the owner
-  # can add one.
+  # THIS JOB GATES NOTHING UNLESS BRANCH PROTECTION LISTS `test` AS A REQUIRED CHECK — added
+  # 2026-09-18, a day late. It was not a detail to get to later: the same commit that created
+  # this job took the tests out of `validate`, which IS required, so for that whole day a red
+  # test suite blocked nothing at all. The required names are set on the repository, not in this
+  # file, and only the owner can add one.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -624,8 +625,9 @@ jobs:
   #
   # THE JOB ALWAYS RUNS AND ALWAYS REPORTS, for the reason spelled out in `validate` — a skipped
   # job reports no status, and a required check with no status blocks a PR forever. Only the
-  # expensive steps are conditional. So this name can be added to branch protection's required
-  # checks safely, and it still costs seconds on a PR that never touches mobile/.
+  # expensive steps are conditional. That is what made this name safe to add to branch
+  # protection's required checks, which happened on 2026-09-18 — and it still costs seconds on
+  # a PR that never touches mobile/.
   #
   # The detect step FAILS TOWARDS DOING THE WORK: every path it cannot resolve answers `true`.
   # That is the opposite direction from `docs_only` above, and for the same reason — each fails

@@ -302,9 +302,10 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
-- **`secret-scan` is a required check — there are 4 total**, because a personal account has no GHAS/OSS
-  scanning. `github-personal-account-no-ghas-oss-scanning` **It is the one required check that never
-  runs on a `main` push** — `security-scan.yml` is `on: pull_request` + a daily `schedule`,
+- **`secret-scan` is a required check — there are 6 total** (`validate`, `lint`, `typecheck`, `test`,
+  `secret-scan`, `mobile`; the last two were added on 2026-09-18), because a personal account has no
+  GHAS/OSS scanning. `github-personal-account-no-ghas-oss-scanning` **It is the one required check
+  that never runs on a `main` push** — `security-scan.yml` is `on: pull_request` + a daily `schedule`,
   deliberately not `push` (Actions cost). Its absence from a merge commit's check-runs is CORRECT,
   not a missed gate: it ran on the PR head against the identical tree. Do not hunt for it after a
   merge, and do not dispatch it to "complete the set".
@@ -1986,7 +1987,7 @@ it for the hook's wording. Which memory backs which hook:
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.**
-- **`secret-scan` is a required check — there are 4 — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
+- **`secret-scan` is a required check — there are 6 (`test` and `mobile` joined 2026-09-18) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
 - **`gh pr checks` LAGS behind the real job state.**
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**

@@ -59,7 +59,7 @@ does not fire, so its silence is not evidence that no trap applies.
 **CI and PRs**
 
 - **CI jobs failing in SECONDS mean billing, not code.**
-- **`secret-scan` is a required check — there are 4 — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
+- **`secret-scan` is a required check — there are 6 (`test` and `mobile` joined 2026-09-18) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
 - **`gh pr checks` LAGS behind the real job state.**
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
 - **ONE new hub page trips FOUR separate CI gates.**

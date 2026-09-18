@@ -17,9 +17,27 @@ relevant section here first.
 
 ## Branch protection and the required checks
 
-`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **4
-required status checks** (`validate`, `lint`, `typecheck`, `secret-scan`) that **DO gate every
-merge** — a PR cannot land until all four are green on its head commit.
+`main` is branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, and **6
+required status checks** (`validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`) that
+**DO gate every merge** — a PR cannot land until all six are green on its head commit.
+
+**It was 4 until 2026-09-18**, and both names added that day had been outside the gate by oversight
+rather than by decision. `test` was split out of `validate` on 2026-09-17 (#3950) for speed, and
+the new job's own header said in as many words that it "has to be added to branch protection's
+required checks, because `validate` is required and no longer runs the tests" — that step never
+happened, so for a day a PR with a red unit suite showed four green required checks and merged.
+`mobile` (#3974) was created the next day and had never been listed. Both were added with a
+surgical `PATCH` to `branches/main/protection/required_status_checks` in the `checks` array form,
+which keeps `app_id: 15368` (GitHub Actions) on every context; the deprecated `contexts` form sets
+`app_id: null` and would let **any** app satisfy a check by name. Nothing else in the payload moved
+— `enforce_admins`, reviews, force-pushes, deletions and `strict: false` were read before and
+after and were identical.
+
+**Both new names come from jobs that always run and always report**, which is what made them safe
+to require: a skipped job reports no status, and a required check with no status blocks a PR
+forever. `mobile` therefore decides *inside* the job whether to do the work — its detect step
+answers `true` for anything it cannot resolve — and on a PR that never touches `mobile/` the whole
+check costs about nine seconds.
 
 **`secret-scan` is required and blocking.** It is the gitleaks job in
 `.github/workflows/security-scan.yml`, which #1889 deleted on 2026-08-08 believing it was optional
@@ -520,7 +538,7 @@ Evidence — dates, PR numbers, billing figures, measurements — is in
 [docs/agents-incident-history.md](agents-incident-history.md). Read it before changing branch
 protection, CI cost, the deploy path, or the region.
 
-- **Never use `gh pr merge --auto`.** `main` is branch-protected (`enforce_admins: true`) with **5 required status checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan` — that **DO gate every merge**. `allow_auto_merge: false`, so `--auto` is rejected anyway. Required reviews is **0**. Merge only with an explicit plain `gh pr merge` after separate owner approval.
+- **Never use `gh pr merge --auto`.** `main` is branch-protected (`enforce_admins: true`) with **6 required status checks** — `validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile` — that **DO gate every merge**. `allow_auto_merge: false`, so `--auto` is rejected anyway. Required reviews is **0**. Merge only with an explicit plain `gh pr merge` after separate owner approval.
 - **Do NOT run `gh pr update-branch` reflexively.** "Require branches up to date" is **OFF** (`strict: false`, owner-approved 2026-08-05) because it was the dominant Actions cost and hit the spending cap. Each run costs ~16 Actions minutes and discards the prior green CI. Run it **only when the change genuinely depends on something newly on `main`**.
 - **When you do run it, it acts on the SERVER — your local branch is then stale.** The next `git push` is rejected with *"remote contains work that you do not have locally"*. Always `git fetch` and `git merge --ff-only origin/<branch>` first. It also moves the head SHA, so **CI re-runs and the previous green result no longer applies.**
 - **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY.** Railway deploys on push, at full traffic, no cron wait, no staged rollout, no smoke test. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is live, request `/api/healthz` and read `revision`.
@@ -559,8 +577,8 @@ On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's reques
 branch and let the PR's checks answer.**
 
 This is safe because the local gate never gated anything. `.github/workflows/ci.yml` re-lists every
-step itself, and the four **required** checks — `validate`, `lint`, `typecheck`, `secret-scan` — run
-on the PR head commit and block the merge if any is red.
+step itself, and the six **required** checks — `validate`, `lint`, `typecheck`, `test`, `secret-scan`,
+`mobile` — run on the PR head commit and block the merge if any is red.
 
 `pnpm run ci` still exists for the rare case where you genuinely need the answer before pushing. It
 is opt-in: run it **only when the owner names it**.
