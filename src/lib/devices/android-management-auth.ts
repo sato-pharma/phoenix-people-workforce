@@ -8,12 +8,16 @@
  * widen its signature, the flow is spelled here for this domain's one scope. If a third caller ever
  * needs it, THAT is the moment to lift a shared helper out — two is not yet a pattern.
  *
- * 🔴 THE PRODUCTION CREDENTIAL ROUTE IS STILL OPEN. The org policy on the owner's Google Cloud org
- * (`constraints/iam.disableServiceAccountKeyCreation`) blocks long-lived service-account keys, so
- * this may end up as impersonation or workload identity federation instead. Everything above it is
- * written against `GoogleTokenProvider`, so that decision changes this file and nothing else.
- * Until it is made, `ANDROID_MANAGEMENT_ACCESS_TOKEN` is the working path: paste a short-lived token
- * from `gcloud auth print-access-token` and the iframe opens.
+ * 🔴 PRODUCTION RUNS ON A SERVICE-ACCOUNT KEY, AND ROTATING IT IS THE OWNER'S OWN JOB. Decided and
+ * done 2026-09-18: `phoenix-amapi@phoenix-hr-2026.iam.gserviceaccount.com`, holding
+ * `roles/androidmanagement.user` and nothing else, with one key stored base64 in Railway's
+ * `ANDROID_MANAGEMENT_KEY`. The owner's Google Cloud org enforces
+ * `constraints/iam.disableServiceAccountKeyCreation`, so that key exists only because he lifted the
+ * constraint on that one project for the minting and restored it straight after. The constraint is
+ * not retroactive, which is the only reason the key keeps working — so a rotation needs the same
+ * lift, mint and restore, and it is his (a security setting and a credential), never a session's.
+ * Everything above this file is written against `GoogleTokenProvider`, so moving to impersonation
+ * or workload identity federation later would still change this file and nothing else.
  */
 
 import { createSign } from "node:crypto";
@@ -81,6 +85,7 @@ export async function mintAndroidManagementToken(
  *
  * `ANDROID_MANAGEMENT_ACCESS_TOKEN` wins when set — the impersonated/local path, which lets the
  * iframe be developed and verified against the real enterprise with no key existing anywhere.
+ * 🔴 Never set it on Railway: it outranks the key, and a `gcloud` token dies within the hour.
  * `ANDROID_MANAGEMENT_KEY` holds the service-account JSON, base64-encoded, for the same two reasons
  * the Master Map key is: the key is multi-line and Railway's variable paste has silently eaten the
  * following KEY=VALUE when given raw newlines, and `railway variables --stdin` prepends a BOM that
