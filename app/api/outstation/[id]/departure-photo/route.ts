@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence";
-import { readLocationFailure } from "@/lib/outstation/location-failure";
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -69,18 +68,15 @@ export async function POST(
       );
     }
 
-    // Coordinates are optional on purpose. The owner chose to FLAG a departure photo taken far
-    // from the trip rather than refuse it, so a device that cannot get a fix must still be able
-    // to submit — the review simply records the distance as unknown instead of as zero. Never
+    // Read here, judged in the service: a photo with no position is refused there (owner ruling,
+    // 2026-09-18, departure-photo-location.ts), and its message carries "required", so the status
+    // map above answers 400. A far or inaccurate position is still accepted and only flagged. Never
     // `Number(body.latitude)` here: `Number(null)` is 0, which stored a no-fix photo at 0,0.
     const { latitude, longitude } = readDeparturePhotoPosition(body);
 
     const result = await captureOutstationDeparturePhoto(access, {
       imageDataUrl,
       latitude,
-      // Why there is no position, as the phone reported it (owner, 2026-09-18: "the system must
-      // record the reason"). Null when there is a position; `not_reported` when the client sent none.
-      locationFailure: readLocationFailure(body, latitude != null && longitude != null),
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
       longitude,
       requestId: id,

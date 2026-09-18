@@ -217,7 +217,7 @@ export async function runPersonalMailboxTests() {
   // 10. Whose mailbox a request reaches is decided by the session, never by the request. Every route
   //     resolves the owner from the access context and reads no person identifier from its input.
   const routes = walk("app/api/messages/mailbox").filter((file) => file.endsWith("/route.ts"));
-  assert.equal(routes.length, 5, "the five personal-mailbox routes");
+  assert.equal(routes.length, 6, "the six personal-mailbox routes");
   for (const file of routes) {
     const source = read(file);
     assert.ok(source.includes("resolveAccessContext(request)"), `${file} must resolve the session`);
@@ -283,6 +283,7 @@ export async function runPersonalMailboxTests() {
     ["/api/messages/mailbox", "DELETE"],
     ["/api/messages/mailbox/send", "POST"],
     ["/api/messages/mailbox/attachment", "GET"],
+    ["/api/messages/mailbox/unread", "GET"],
   ] as const) {
     const entry = findAccessRegistryEntry(route, method);
     assert.equal(entry?.pattern, "/api/messages/mailbox/**", `${method} ${route} must resolve to the personal-mailbox entry`);
@@ -303,4 +304,125 @@ export async function runPersonalMailboxTests() {
     read("app/api/cron/mailbox-offboarding-sweep/route.ts").includes("await purgeDepartedPersonalMailboxes()"),
     "the daily leaver sweep must forget departed owners' sealed passwords",
   );
+
+  // 13. UNREAD COUNT AND NEW-MAIL ALERTS (owner request 2026-09-18). The envelope shows how many inbox
+  //     emails are unread and pops up when a new one arrives. What "new" means is pure and pinned
+  //     here: the first look announces nothing (2,000 old unread emails are not news), one email is
+  //     announced once, and a folder Turbify renumbered starts over silently.
+  const item = (uid: number, subject: string | null = `Subject ${uid}`) => ({
+    date: null,
+    fromAddress: `sender${uid}@x.com`,
+    fromName: `Sender ${uid}`,
+    subject,
+    uid,
+  });
+  const inbox = { newestUnread: [item(98), item(101), item(100)], uidValidity: "777", watermark: 102 };
+  const first = rules.newUnreadSince(null, inbox);
+  assert.deepEqual(first.fresh, [], "the first look must announce nothing — every old unread email would pop up at once");
+  assert.deepEqual(first.next, { uidValidity: "777", watermark: 102 });
+  const later = rules.newUnreadSince({ uidValidity: "777", watermark: 100 }, inbox);
+  assert.deepEqual(
+    later.fresh.map((entry) => entry.uid),
+    [101, 100],
+    "only emails at or above the last watermark are new, newest first",
+  );
+  assert.deepEqual(rules.newUnreadSince(later.next, inbox).fresh, [], "an email already announced is never announced again");
+  assert.equal(
+    rules.newUnreadSince({ uidValidity: "777", watermark: 150 }, inbox).next.watermark,
+    150,
+    "the watermark never moves backwards",
+  );
+  assert.deepEqual(
+    rules.newUnreadSince({ uidValidity: "111", watermark: 5 }, inbox).fresh,
+    [],
+    "a renumbered folder (new UIDVALIDITY) starts over silently instead of announcing its whole unread list",
+  );
+  assert.deepEqual(rules.parseMailAlertBaseline(JSON.stringify(later.next)), later.next);
+  for (const junk of [null, "", "not json", '{"uidValidity":"","watermark":3}', '{"uidValidity":"7","watermark":-1}', '{"uidValidity":"7"}']) {
+    assert.equal(rules.parseMailAlertBaseline(junk), null, `a stored baseline of ${String(junk)} is no baseline`);
+  }
+
+  assert.equal(rules.unreadBadgeLabel(0), null, "no unread email shows no badge");
+  assert.equal(rules.unreadBadgeLabel(null), null);
+  assert.equal(rules.unreadBadgeLabel(7), "7");
+  assert.equal(rules.unreadBadgeLabel(99), "99");
+  assert.equal(rules.unreadBadgeLabel(2319), "99+");
+
+  assert.deepEqual(rules.newMailAlertText([item(5, "  Budget for October  ")]), {
+    body: "Budget for October",
+    title: "New email from Sender 5",
+  });
+  assert.equal(rules.newMailAlertText([{ ...item(5, null), fromName: null }])?.title, "New email from sender5@x.com");
+  assert.equal(rules.newMailAlertText([item(5, null)])?.body, "(no subject)");
+  assert.deepEqual(rules.newMailAlertText([item(9), item(8)]), {
+    body: "Latest from Sender 9: Subject 9",
+    title: "2 new emails",
+  });
+  assert.equal(
+    rules.newMailAlertText(Array.from({ length: rules.PERSONAL_MAILBOX_ALERT_LIMIT }, (_, index) => item(20 - index)))?.title,
+    `${rules.PERSONAL_MAILBOX_ALERT_LIMIT} or more new emails`,
+    "a full list may be the top of more, so it must not claim an exact count",
+  );
+  assert.equal(rules.newMailAlertText([]), null);
+  const longSubject = "A".repeat(400);
+  assert.ok(
+    rules.newMailAlertText([item(5, longSubject)])?.body === longSubject,
+    "the pop-up shows the subject in full — the owner's rule is never to shorten text with an ellipsis",
+  );
+
+  // 13b. The unread check only LOOKS. Opening an email marks it read (as any mail client does); the
+  //      background check runs every couple of minutes and must never change the mailbox.
+  const imap = read("src/lib/personal-mailbox/imap.ts");
+  const statusStart = imap.indexOf("export async function readInboxStatus");
+  const statusBody = imap.slice(statusStart, imap.indexOf("\n}\n", statusStart));
+  assert.ok(statusStart > 0, "readInboxStatus exists");
+  assert.ok(
+    statusBody.includes('getMailboxLock("INBOX", { readOnly: true })'),
+    "the unread check must open the inbox read-only — a writable open can change flags",
+  );
+  assert.ok(!/messageFlags(Add|Set|Remove)|messageDelete|messageMove/.test(statusBody), "the unread check must never change a message");
+  assert.ok(!/source: true/.test(statusBody), "the unread check fetches envelopes only, never a message body");
+
+  const types = read("src/lib/personal-mailbox/types.ts");
+  const alertTypeStart = types.indexOf("export type PersonalMailboxAlertItem");
+  const alertType = types.slice(alertTypeStart, types.indexOf("};", alertTypeStart));
+  assert.ok(alertTypeStart > 0 && !/\b(text|html|body|attachments|password)\b/.test(alertType), "an alert carries who and what about, never the email itself");
+
+  // 13c. The route: owner from the session, its own ceiling, never cached by a browser or proxy.
+  const unreadRoute = read("app/api/messages/mailbox/unread/route.ts");
+  assert.ok(unreadRoute.includes('assertPersonalMailboxCeiling(owner.key, "poll")'), "the unread check has its own per-owner ceiling");
+  assert.ok(unreadRoute.includes('"Cache-Control": "private, no-store"'));
+
+  // 13d. The service: a refused or missing connection answers WITHOUT a login (withCredential stops it
+  //      first), a mail server that did not answer is quiet, and opening an email clears the cached
+  //      count so the badge does not bounce back up.
+  const checkBody = bodyOf("checkInbox");
+  assert.ok(checkBody.includes("withCredential(owner, readFailure"), "the unread check must go through withCredential and its lockout rule");
+  assert.ok(checkBody.includes('if (error.statusCode === 409) return { kind: "needs_reconnect" }'));
+  assert.ok(checkBody.includes('if (error.statusCode === 404) return { kind: "not_connected" }'));
+  assert.ok(checkBody.includes('if (error.diagnostic) return { kind: "unavailable" }'), "a background check must not flood the error monitor while Yahoo is down");
+  assert.ok(
+    bodyOf("openPersonalMailboxMessage").includes("forgetInboxStatus(owner)"),
+    "opening an email makes the cached unread count stale — it must be dropped",
+  );
+  for (const name of ["connectPersonalMailbox", "disconnectPersonalMailbox"]) {
+    assert.ok(bodyOf(name).includes("forgetInboxStatus(owner)"), `${name} must drop the cached answer, or the envelope keeps the old state`);
+  }
+
+  // 13e. The browser side: someone who never connected, or whose password Turbify refused, is not
+  //      asked about again; and the "allow notifications" prompt only ever comes from a click.
+  const hook = read("src/hooks/use-personal-mailbox-alerts.ts");
+  assert.ok(
+    /status\.kind === "not_connected" \|\| status\.kind === "needs_reconnect"\) \{\s*stopped = true;/.test(hook),
+    "the envelope must stop checking for someone with no working connection",
+  );
+  assert.equal((hook.match(/requestPermission\(/g) ?? []).length, 1, "exactly one permission request, in askForDesktopMailAlerts");
+  const askStart = hook.indexOf("export function askForDesktopMailAlerts");
+  assert.ok(askStart > 0 && hook.indexOf("requestPermission(", askStart) < hook.indexOf("\n}\n", askStart));
+  const menu = read("src/components/layout/internal-messages-menu.tsx");
+  assert.ok(
+    /onClick=\{\(\) => \{[^}]*askForDesktopMailAlerts\(\)/.test(menu),
+    "the notification permission is asked from the My email tab's click, never from a timer",
+  );
+  assert.ok(menu.includes("usePersonalMailboxAlerts("), "the envelope runs the unread watch");
 }

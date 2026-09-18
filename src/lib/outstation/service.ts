@@ -76,7 +76,7 @@ import {
   reviewDepartureEvidence,
   type DepartureEvidenceReview,
 } from "@/lib/outstation/departure-evidence";
-import { readLocationFailure, type LocationFailure } from "@/lib/outstation/location-failure";
+import { departurePhotoLocationRefusal } from "@/lib/outstation/departure-photo-location";
 import {
   isOutstationExpenseInPayroll,
   isOutstationRequestHeldForRepair,
@@ -4500,15 +4500,7 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
 // distance, the gap and a late capture visible to whoever approves the request.
 export async function captureOutstationDeparturePhoto(
   access: AccessContext,
-  input: {
-    imageDataUrl: string;
-    latitude?: number | null;
-    /** Why there is no position, as the device reported it. Ignored when a position was captured. */
-    locationFailure?: LocationFailure | null;
-    locationLabel?: string | null;
-    longitude?: number | null;
-    requestId: number;
-  },
+  input: { imageDataUrl: string; latitude?: number | null; locationLabel?: string | null; longitude?: number | null; requestId: number },
 ): Promise<{ gateStatus: OutstationEvidenceGateStatus; review: DepartureEvidenceReview }> {
   const request = await getOutstationRequestById(input.requestId);
   if (!request) throw new Error("That outstation request is not available.");
@@ -4550,6 +4542,11 @@ export async function captureOutstationDeparturePhoto(
       "The arrival photo is missing, so a departure photo cannot be accepted yet — capture the arrival photo first.",
     );
   }
+  // No location, no photo (owner ruling, 2026-09-18): refused like an arrival photo without GPS,
+  // and BEFORE the upload, so nothing is stored. It used to be saved stamped "no GPS fix" with its
+  // distance unknown and no flag, which cost the employee nothing. Distance is still only flagged.
+  const locationRefusal = departurePhotoLocationRefusal(input.latitude, input.longitude);
+  if (locationRefusal) throw new Error(locationRefusal);
 
   const capturedAt = new Date().toISOString();
   const review = reviewDepartureEvidence({
@@ -4578,7 +4575,6 @@ export async function captureOutstationDeparturePhoto(
             distanceFromArrivalKm: existing?.distanceFromArrivalKm ?? null,
             flags: existing?.flags ?? [],
             imagePath: request.departureEvidenceImagePath,
-            locationFailure: existing?.locationFailure ?? null,
             minutesAfterArrival: existing?.minutesAfterArrival ?? null,
             version: existing?.version ?? 1,
           },
@@ -4595,25 +4591,13 @@ export async function captureOutstationDeparturePhoto(
     version,
   });
 
-  const capturedLatitude = typeof input.latitude === "number" ? input.latitude : null;
-  const capturedLongitude = typeof input.longitude === "number" ? input.longitude : null;
   const metadata: OutstationDepartureEvidenceMetadata = {
     capturedAt,
-    capturedLatitude,
+    capturedLatitude: typeof input.latitude === "number" ? input.latitude : null,
     capturedLocationLabel: text(input.locationLabel) || null,
-    capturedLongitude,
+    capturedLongitude: typeof input.longitude === "number" ? input.longitude : null,
     distanceFromArrivalKm: review.distanceFromArrivalKm,
     flags: review.flags,
-    // Owner, 2026-09-18: "the system must record the reason". Read again here, not trusted from
-    // the caller, so a photo with no position always carries one (`not_reported` at worst) and a
-    // photo with a position never carries a stale one.
-    locationFailure: readLocationFailure(
-      {
-        locationFailure: input.locationFailure?.reason,
-        locationFailureDetail: input.locationFailure?.detail,
-      },
-      capturedLatitude != null && capturedLongitude != null,
-    ),
     minutesAfterArrival: review.minutesAfterArrival,
     previousVersions,
     source: "live_camera",

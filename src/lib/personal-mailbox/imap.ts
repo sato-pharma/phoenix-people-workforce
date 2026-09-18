@@ -11,10 +11,12 @@ import { simpleParser, type AddressObject } from "mailparser";
 import { logError } from "@/lib/observability/log";
 import {
   embedInlineImages,
+  PERSONAL_MAILBOX_ALERT_LIMIT,
   PERSONAL_MAILBOX_PAGE_SIZE,
   TURBIFY_IMAP,
 } from "@/lib/personal-mailbox/rules";
 import type {
+  PersonalMailboxAlertItem,
   PersonalMailboxAttachment,
   PersonalMailboxCredential,
   PersonalMailboxFolder,
@@ -149,6 +151,58 @@ export async function listFolderPage(
       }
       messages.sort((a, b) => b.uid - a.uid);
       return { folder, messages, nextBefore: uids.length > page.length ? page[0] : null };
+    } finally {
+      lock.release();
+    }
+  });
+}
+
+/**
+ * The inbox at a glance for the envelope: how many emails are unread, the newest few of them (sender
+ * and subject only), and the UID the next arrival will get. Read-only, so a check never marks
+ * anything read — only opening an email does that.
+ */
+export async function readInboxStatus(credential: PersonalMailboxCredential): Promise<{
+  unread: number;
+  uidValidity: string;
+  watermark: number;
+  newestUnread: PersonalMailboxAlertItem[];
+}> {
+  return withClient(credential, async (client) => {
+    const lock = await client.getMailboxLock("INBOX", { readOnly: true });
+    try {
+      const mailbox = client.mailbox || null;
+      const found = await client.search({ seen: false }, { uid: true });
+      const unseen = (Array.isArray(found) ? found : []).sort((a, b) => a - b);
+      const newest = unseen.slice(-PERSONAL_MAILBOX_ALERT_LIMIT);
+
+      const newestUnread: PersonalMailboxAlertItem[] = [];
+      if (newest.length > 0) {
+        for await (const message of client.fetch(newest.join(","), { envelope: true, uid: true }, { uid: true })) {
+          const envelope = message.envelope ?? ({} as NonNullable<typeof message.envelope>);
+          const from = envelopeAddresses(envelope.from)[0] ?? { address: null, name: null };
+          newestUnread.push({
+            date: envelope.date ? new Date(envelope.date).toISOString() : null,
+            fromAddress: from.address,
+            fromName: from.name,
+            subject: envelope.subject ?? null,
+            uid: message.uid,
+          });
+        }
+      }
+      newestUnread.sort((a, b) => b.uid - a.uid);
+
+      // UIDNEXT is what makes "new since the last look" exact. A server that withholds it still gets a
+      // working watermark from the newest unread UID: whatever arrives unread after it sorts above it.
+      const highestUnread = unseen.length > 0 ? unseen[unseen.length - 1] : 0;
+      const watermark =
+        mailbox && Number.isInteger(mailbox.uidNext) && mailbox.uidNext > 0 ? mailbox.uidNext : highestUnread + 1;
+      return {
+        newestUnread,
+        uidValidity: mailbox ? String(mailbox.uidValidity) : "unknown",
+        unread: unseen.length,
+        watermark,
+      };
     } finally {
       lock.release();
     }

@@ -11,11 +11,11 @@
  * Pure and type-only on purpose, so the approval screens (client) and the attachments route
  * (server) read one answer. It must never import departure-evidence.ts, which pulls the sales geo
  * module into the browser bundle: the review was computed when the photo was taken and stored in
- * the metadata, and it is read from there. evidence-waiver.ts and location-failure.ts import
- * nothing, so both are safe here.
+ * the metadata, and it is read from there. evidence-waiver.ts and captured-coordinates.ts pull in
+ * nothing heavier than a number reader, so both are safe here.
  */
+import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
-import { describeLocationFailure, storedLocationFailure } from "@/lib/outstation/location-failure";
 import type {
   OutstationCarEvidenceMetadata,
   OutstationDepartureEvidenceMetadata,
@@ -27,9 +27,9 @@ export type ApproverTripPhotoKind = "arrival" | "departure";
 export type ApproverTripPhoto = {
   capturedAt: string | null;
   /**
-   * The photo is on file with no GPS position, and why, in words: "No GPS location. <reason>".
-   * Null when the photo has a position or there is no photo. Departure only: an arrival with no
-   * fix is refused at capture, so it can never be stored without one.
+   * The photo is on file with no GPS position: `DEPARTURE_PHOTO_NO_GPS_NOTE`. Null when the photo
+   * has a position or there is no photo. Departure only: an arrival with no fix is refused at
+   * capture, so it can never be stored without one.
    */
   gpsMissingReason: string | null;
   /** True only when the stored review raised a flag. A flag asks for a look; it never blocks pay. */
@@ -58,6 +58,15 @@ export type ApproverTripPhotosInput = {
   employeeRole?: string | null;
   evidenceGateStatus?: OutstationEvidenceGateStatus | null;
 };
+
+/**
+ * What the approver reads under a departure photo on file with no GPS position (owner, 2026-09-18:
+ * "the system must record the reason"). Since the same day such a photo is refused at capture and
+ * nothing is stored (departure-photo-location.ts), so only one saved before then reaches here, and
+ * nothing recorded why its position was missing. Said plainly, never guessed.
+ */
+export const DEPARTURE_PHOTO_NO_GPS_NOTE =
+  "No GPS location. The phone sent no position with this photo, and the reason was not recorded: it was saved before Phoenix began refusing a departure photo without a location.";
 
 function text(value: string | null | undefined): string | null {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -92,14 +101,11 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
   const departureFlags = Array.isArray(departureMeta?.flags) ? departureMeta.flags : [];
   const version = Number(departureMeta?.version);
   const notOwed = notOwedNote(input);
-  // Owner, 2026-09-18: a departure photo with no GPS must say why. A photo taken before the reason
-  // was recorded reads "No reason was recorded", never a guess.
-  const departureLocationFailure = departurePath && departureMeta ? storedLocationFailure(departureMeta) : null;
-  const departureGpsMissingReason = departureLocationFailure
-    ? `No GPS location. ${describeLocationFailure(departureLocationFailure.reason)}${
-        departureLocationFailure.detail ? ` The phone reported: "${departureLocationFailure.detail}"` : ""
-      }`
-    : null;
+  // No position is what the domain already calls it: nothing, half a pair, or the old 0,0 marker.
+  const departureGpsMissingReason =
+    departurePath && departureMeta && !usablePosition(departureMeta.capturedLatitude, departureMeta.capturedLongitude)
+      ? DEPARTURE_PHOTO_NO_GPS_NOTE
+      : null;
 
   return [
     {

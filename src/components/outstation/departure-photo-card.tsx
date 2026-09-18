@@ -5,12 +5,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   drawEvidenceWatermark,
-  evidenceLocationWithoutFix,
   getCompressedEvidenceCanvasSize,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
-import { locationFailureFromBrowserErrorCode, type LocationFailure } from "@/lib/outstation/location-failure";
+import { usablePosition } from "@/lib/outstation/captured-coordinates";
+import { DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/departure-photo-location";
 
 /** One request still owing its departure photo. */
 export type DeparturePhotoPendingRequest = {
@@ -46,7 +46,7 @@ export function DeparturePhotoCard({
 }: {
   employeeHrId: string;
   /**
-   * "retake" changes the WORDS only. The capture, the watermark, the geolocation fallback and the
+   * "retake" changes the WORDS only. The capture, the watermark, the location refusal and the
    * server contract stay identical — a retake is a capture — because the moment the two paths
    * diverge is the moment one of them stops matching what the server actually accepts.
    */
@@ -151,44 +151,29 @@ export function DeparturePhotoCard({
         if (!context) throw new Error("This browser could not prepare the photo.");
         context.drawImage(video, 0, 0, width, height);
 
-        // Position is best-effort, exactly as the server expects: the owner chose to FLAG a
-        // departure photo taken far from the trip rather than refuse it, so a device that cannot
-        // get a fix must still be able to submit. A failed lookup sends nulls, and the review
-        // then records the distance as unknown instead of as zero. It also sends WHY there is no
-        // fix, from the browser's own error (owner, 2026-09-18: "the system must record the
-        // reason"): before this the error was thrown away and the approver saw no explanation.
-        const { failure, position } = await new Promise<{
-          failure: LocationFailure | null;
-          position: GeolocationPosition | null;
-        }>((resolve) => {
-          if (!navigator.geolocation) {
-            return resolve({ failure: { detail: null, reason: "unsupported" }, position: null });
-          }
+        // No location, no photo (owner ruling, 2026-09-18). A denied permission, location switched
+        // off and a fix that does not arrive in 12 seconds all end here, before anything is stamped
+        // or sent. The server refuses the same photo (departure-photo-location.ts); saying so first
+        // saves an upload the employee would only see refused. A far or fuzzy fix is still sent,
+        // and flagged rather than blocked.
+        const position = await new Promise<GeolocationPosition | null>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
           navigator.geolocation.getCurrentPosition(
-            (value) => resolve({ failure: null, position: value }),
-            (error) =>
-              resolve({
-                failure: {
-                  detail: typeof error.message === "string" ? error.message : null,
-                  reason: locationFailureFromBrowserErrorCode(error.code),
-                },
-                position: null,
-              }),
+            (value) => resolve(value),
+            () => resolve(null),
             { enableHighAccuracy: true, maximumAge: 0, timeout: 12_000 },
           );
         });
 
-        const latitude = position?.coords.latitude ?? null;
-        const longitude = position?.coords.longitude ?? null;
-        const location =
-          latitude != null && longitude != null
-            ? await resolveEvidenceLocationStamp(
-                "/api/outstation/reverse-geocode",
-                latitude,
-                longitude,
-                position?.coords.accuracy ?? null,
-              )
-            : evidenceLocationWithoutFix();
+        const fix = usablePosition(position?.coords.latitude, position?.coords.longitude);
+        if (!fix) throw new Error(DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE);
+        const { latitude, longitude } = fix;
+        const location = await resolveEvidenceLocationStamp(
+          "/api/outstation/reverse-geocode",
+          latitude,
+          longitude,
+          position?.coords.accuracy ?? null,
+        );
         const capturedLocationLabel = location.label;
         const capturedAt = new Date().toISOString();
 
@@ -204,8 +189,6 @@ export function DeparturePhotoCard({
           body: JSON.stringify({
             imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
             latitude,
-            locationFailure: failure?.reason ?? null,
-            locationFailureDetail: failure?.detail ?? null,
             locationLabel: capturedLocationLabel,
             longitude,
           }),
@@ -340,7 +323,7 @@ export function DeparturePhotoCard({
               {!isActive ? (
                 <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                   <MapPin className="h-3.5 w-3.5" />
-                  Your location is recorded with the photo.
+                  Your location is recorded with the photo. Without it, the photo is refused.
                 </p>
               ) : null}
             </div>

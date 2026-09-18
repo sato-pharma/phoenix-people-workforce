@@ -15,6 +15,11 @@
  *     request needs a Super Admin to release it. This stops a request sitting open forever while
  *     nothing chases it.
  *
+ * A third decision (owner, 2026-09-18) sits beside them in departure-photo-location.ts: a photo
+ * with NO position at all is refused before it is stored. That refuses the absence of a location
+ * only; a far or fuzzy one is still flagged here, never blocked. The unknown-distance handling
+ * below stays for photos stored before that ruling.
+ *
  * Everything here is pure. The gate that consumes it lives in expense-gate.ts.
  */
 
@@ -57,11 +62,12 @@ export type DepartureEvidenceReview = {
 };
 
 /**
- * The departure photo's position from a request body, for every client: the web card sends nulls
- * when it has no fix, the Android app leaves the keys out. Either way the answer is null/null, so
- * the review records the distance as UNKNOWN instead of measuring it from 0,0 — a phone with no
- * fix used to be stored there and flagged as taken thousands of kilometres from the trip. The
- * reading itself is shared with the arrival routes (captured-coordinates.ts).
+ * The departure photo's position from a request body, for every client: an older web card sends
+ * nulls when it has no fix, an older Android app leaves the keys out. Either way the answer is
+ * null/null, never 0,0 — a phone with no fix used to be stored there and flagged as taken
+ * thousands of kilometres from the trip. Null/null is then refused by the service
+ * (departure-photo-location.ts). The reading itself is shared with the arrival routes
+ * (captured-coordinates.ts).
  */
 export function readDeparturePhotoPosition(body: {
   latitude?: unknown;
