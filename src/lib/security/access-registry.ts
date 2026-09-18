@@ -1202,6 +1202,11 @@ export const accessRegistry = [
   // re-attesting an existing one asserts `update`. Declared as `update` alone until 2026-09-03, so
   // the entry named only half of what the route enforces.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/mailbox-offboarding", permission: [{ resource: "mailbox_offboarding", action: "create" }, { resource: "mailbox_offboarding", action: "update" }], csrfRequired: true }),
+  // The other end of the same job: a JOINER's mailbox. The POST connects a new hire's Turbify mailbox
+  // to their My email with the app password made while creating it, or rules they need none. It
+  // carries a mailbox credential in its body (sealed by the personal-mailbox service, never stored,
+  // logged or audited here), so it is update-gated, same-origin only, and rate-capped per hire.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/new-hire-mailboxes", permission: { resource: "mailbox_offboarding", action: "update" }, csrfRequired: true }),
   // Company device register. The GET returns, per employee, the serial or IMEI of the machine he
   // carries and what the company values it at — a shopping list if it were readable company-wide,
   // which is why `company_devices` is its own resource rather than a corner of `sales` or `team`.

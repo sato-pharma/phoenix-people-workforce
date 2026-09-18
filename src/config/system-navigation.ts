@@ -42,6 +42,7 @@ import {
   Link2,
   Mail,
   MailCheck,
+  MailPlus,
   MailX,
   MousePointerClick,
   MapPinned,
@@ -1980,6 +1981,9 @@ const hrNavigationSectionSeeds = [
       // sidebar does not enforce that - the route handler does - but the split is the reason a
       // reader of this file should not "helpfully" grant both to both.
       { href: "/hr/mailbox-offboarding", icon: MailX, label: "Mailbox Revocation", permissions: [{ resource: "mailbox_offboarding" }] },
+      // The joiner's end of the same job, on the same grant: a new hire's company mailbox, created in
+      // Turbify and handed to Phoenix so their My email works on day one (owner, 2026-09-18).
+      { href: "/hr/new-hire-mailboxes", icon: MailPlus, label: "New Hire Mailboxes", permissions: [{ resource: "mailbox_offboarding" }] },
       // Device Custody sits with the other two because it closes the same way they do — the
       // custody receipt's البند (7) has the device returned "قبل استلام مستحقاتي النهائية", before
       // final dues. It is not offboarding-only: the same register issues the machine on a joiner's
@@ -3568,6 +3572,13 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "mailbox_offboarding" }],
   },
   {
+    href: "/new-hire-mailboxes",
+    icon: MailPlus,
+    label: "New Hire Mailboxes",
+    description: "Every new hire waiting for a company email, and the app password that connects it.",
+    permissions: [{ resource: "mailbox_offboarding" }],
+  },
+  {
     href: "/devices",
     icon: Laptop,
     label: "Device Custody",
@@ -4304,6 +4315,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/resignations",
           "/retention",
           "/mailbox-offboarding",
+          "/new-hire-mailboxes",
           "/devices",
           "/devices/managed-play",
         ],

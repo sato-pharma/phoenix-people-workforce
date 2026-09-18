@@ -10,6 +10,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { attachEmployeeCvOnCreate } from "@/lib/employees/employee-cv";
 import { openAndAnnounceCrmAccountSetup } from "@/lib/crm/account-setup-notify";
+import { openAndAnnounceNewHireMailboxes } from "@/lib/new-hire-mailbox/notify";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
@@ -204,6 +205,15 @@ export async function POST(request: Request) {
     // would mean an unreachable recipient stops HR hiring anybody.
     if (isNewEmployee) {
       await openAndAnnounceCrmAccountSetup({
+        actorId: access.loginId ?? access.hrId ?? access.role,
+        hrIds: [newEmployeeHrId],
+        source: "manual_add",
+      });
+      // Every new hire's company email, too (owner instruction 2026-09-18): open the task that
+      // proposes their address and tell whoever creates mailboxes, in-app and on Telegram. The app
+      // password pasted there connects the hire's My email before their first day. Swallows its own
+      // failures, like the call above.
+      await openAndAnnounceNewHireMailboxes({
         actorId: access.loginId ?? access.hrId ?? access.role,
         hrIds: [newEmployeeHrId],
         source: "manual_add",

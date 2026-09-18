@@ -2330,6 +2330,56 @@ export async function setEmployeeCrmIdentity(input: {
   return rows[0] ?? null;
 }
 
+/**
+ * Write ONLY an employee's company email address — for the New Hire Mailboxes page, once Turbify has
+ * accepted an app password for that address. A PATCH of one column, for the same reason as
+ * setEmployeeCrmIdentity above: upsertEmployee would rewrite the whole row from a one-field form.
+ *
+ * `employees.work_email` is UNIQUE, but case-sensitively, so "Ahmed.Ali@" and "ahmed.ali@" would
+ * both pass it. This refuses a match in any case first, naming the person who holds the address.
+ */
+export async function setEmployeeWorkEmail(input: { hrId: string; workEmail: string }) {
+  const hrId = normalizeHrId(input.hrId);
+  if (!hrId) {
+    throw new Error("HR_ID is required.");
+  }
+  const workEmail = input.workEmail.trim().toLowerCase();
+  if (!workEmail) {
+    throw new Error("A work email is required.");
+  }
+
+  const existing = await supabaseRest<Array<{ hr_id: string }>>(
+    `employees?hr_id=eq.${encodeURIComponent(hrId)}&select=hr_id`,
+  );
+  if (existing.length === 0) {
+    throw new Error(`Employee ${hrId} was not found.`);
+  }
+
+  // ilike treats `_` as a wildcard, so it can over-match; the exact comparison below narrows it.
+  const holders = await supabaseRest<Array<{ full_name: string | null; hr_id: string; work_email: string | null }>>(
+    `employees?work_email=ilike.${encodeURIComponent(workEmail)}&select=hr_id,full_name,work_email`,
+  );
+  const conflict = holders.find(
+    (row) => (row.work_email ?? "").trim().toLowerCase() === workEmail && normalizeHrId(row.hr_id) !== hrId,
+  );
+  if (conflict) {
+    throw new Error(`${workEmail} is already the work email of ${conflict.full_name?.trim() || conflict.hr_id}.`);
+  }
+
+  const rows = await supabaseRest<EmployeeDbRow[]>(
+    `employees?hr_id=eq.${encodeURIComponent(hrId)}`,
+    {
+      body: JSON.stringify({ updated_at: new Date().toISOString(), work_email: workEmail }),
+      headers: { Prefer: "return=representation" },
+      method: "PATCH",
+    },
+  );
+
+  invalidateEmployeeDirectoryCache();
+
+  return rows[0] ?? null;
+}
+
 export async function bulkUpdateEmployees(
   hrIds: string[],
   values: Pick<

@@ -122,6 +122,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // that puts those on a lock screen. The call site passes the same two channels, so this row is
   // the intent and that argument is what actually binds — they must not be allowed to drift.
   "crm_account_setup.*": { actionUrlRequired: true, channels: ["in_app", "email"], permissionResource: null, priority: "high", recipientStrategy: ["role_based"] },
+  // New hire mailboxes (owner instruction 2026-09-18). Recipients come from the admin-editable
+  // `new_hire_mailbox_alert` role policy and are passed EXPLICITLY by new-hire-mailbox/notify.ts,
+  // hence "role_based". In-app and Telegram, NEVER email — the notice is about a mailbox that does
+  // not exist yet. The call site passes the same two channels, and that argument is what binds.
+  "new_hire_mailbox.*": { actionUrlRequired: true, channels: ["in_app", "telegram"], permissionResource: null, priority: "high", recipientStrategy: ["role_based"], telegramAllowed: true },
   "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
   // Recipients are supplied explicitly (the District Manager, with his NSM and RM copied), so the
   // strategy is "cc" rather than a lookup. Without an entry here it falls back to the bare default

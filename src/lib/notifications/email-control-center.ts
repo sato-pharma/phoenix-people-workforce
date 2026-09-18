@@ -88,6 +88,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   sos_mapping_guard_alert: "Source of Sales",
   retention_risk_alert: "Retention Risk",
   crm_account_setup_alert: "CRM",
+  new_hire_mailbox_alert: "Employees",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
