@@ -24,11 +24,10 @@ export const STAGING_REF = "cifwmndunmlxjhyjugxa";
  * Projects the account can see that this repository must never target. Named individually rather
  * than lumped into "not staging" so the report can say WHICH project and WHOSE — an operator who
  * reads "Future Talents Hub" understands instantly; one who reads "unrecognised ref" goes looking
- * for a typo. AGENTS.md 3 lists all four.
+ * for a typo. AGENTS.md 3 lists all three.
  */
 export const FOREIGN_REFS = new Map([
   ["plleofqyfbknvwcotzqo", "Future Talents Hub (unrelated to this app)"],
-  ["mlbpzvaanusdejqnimst", "the owner's personal project (a DIFFERENT organization)"],
 ]);
 
 /**
