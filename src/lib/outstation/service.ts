@@ -2614,7 +2614,7 @@ export async function getOutstationRequestById(
   // the employee was still there when he left (see attachCarEvidenceSignedUrls).
   const [carEvidenceImageUrl, departureEvidenceImageUrl] = await Promise.all([
     createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
-    createOutstationCarEvidenceSignedUrl(request.departureEvidenceImagePath),
+    Promise.resolve(null),
   ]);
   return {
     ...request,
