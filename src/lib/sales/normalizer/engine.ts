@@ -120,7 +120,7 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
  */
 function dateFrom(value: unknown, dayFirst?: boolean): string | null {
   const ymd = (y: number, m: number, d: number) =>
-    (Number.isInteger(y) && y >= 1900 && y <= 9999 && m >= 1 && m <= 12 && d >= 1 && d <= 31
+    (Number.isInteger(y) && y >= 1900 && m >= 1 && m <= 12 && d >= 1 && d <= 31
       ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
       : null);
   if (value instanceof Date) return ymd(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
