@@ -34,6 +34,7 @@ import {
 import { HeldRequestsPanel } from "@/components/outstation/held-requests-panel";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
+import { TripEvidencePhotos } from "@/components/outstation/trip-evidence-photos";
 import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,10 +42,10 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
+import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
 import {
   PortalRecordCard,
@@ -83,10 +84,6 @@ function formatDate(value: string) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "N/A";
-  return formatDateTimeValue(value) || "N/A";
-}
-
-function formatEvidenceDateTime(value: string) {
   return formatDateTimeValue(value) || "N/A";
 }
 
@@ -343,13 +340,6 @@ function RequestDetailsModal({
   onReject: (request: OutstationExpenseRequest) => void;
   request: OutstationExpenseRequest;
 }) {
-  // Car-only evidence fields must read as "does not apply here" on a train/bus/other trip,
-  // never as an empty or missing value — see the evidence panel below.
-  const isCarTrip = request.transportationType === "car";
-  const notApplicableForNonCar = isCarTrip
-    ? "Not captured"
-    : `Not applicable — ${formatStatus(request.transportationType)} trip`;
-
   // Render through a portal to document.body so the dialog escapes the admin
   // shell's stacking context and is never painted under the sticky topbar.
   const [mounted, setMounted] = useState(false);
@@ -512,55 +502,17 @@ function RequestDetailsModal({
                 </span>
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-accent-hover">Evidence</p>
-                  <h3 className="mt-1 text-lg font-black text-phx-ink">Photo and attachments</h3>
+                  <h3 className="mt-1 text-lg font-black text-phx-ink">Photos and attachments</h3>
                 </div>
               </div>
 
-              {request.carEvidenceImageUrl ? (
-                <div className="overflow-hidden rounded-lg border border-phx-line bg-phx-paper">
-                  <ZoomablePhoto
-                    alt={`Car evidence for outstation request ${request.id}`}
-                    caption={`Car evidence · outstation request ${request.id}`}
-                    className="max-h-[420px] w-full object-contain"
-                    src={request.carEvidenceImageUrl}
-                  />
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-phx-line-strong bg-phx-paper p-5 text-sm font-semibold text-phx-ink-soft">
-                  {/* A car photo is only ever required for a CAR trip. On a train/bus/other trip
-                      its absence is correct, not missing evidence — saying "not available" there
-                      reads as a fault and was part of the "I see nulls on non-car trips" report. */}
-                  {isCarTrip
-                    ? "No signed evidence photo is available for this request."
-                    : `Not applicable — the live car photo is only required for car trips (this is a ${formatStatus(request.transportationType)} trip).`}
-                </div>
-              )}
-
-              <div className="mt-4 grid gap-3">
-                <Info
-                  label="Evidence capture"
-                  value={
-                    request.carEvidenceMetadata?.capturedAt
-                      ? formatEvidenceDateTime(request.carEvidenceMetadata.capturedAt)
-                      : notApplicableForNonCar
-                  }
-                />
-                <Info
-                  label="Evidence location"
-                  value={request.carEvidenceMetadata?.capturedLocationLabel ?? notApplicableForNonCar}
-                />
-                {request.carEvidenceImageUrl ? (
-                  <a
-                    className="inline-flex w-fit items-center gap-2 rounded-xl bg-phx-accent-hover px-4 py-2 text-xs font-black text-white hover:bg-phx-accent-press"
-                    href={request.carEvidenceImageUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Open image
-                  </a>
-                ) : null}
-              </div>
+              {/* Both photos, arrival and departure, with each one's time and place and the departure
+                  review. This panel showed the arrival photo alone until 2026-09-18: the departure
+                  path was never signed, so the Super Admin, the one approver, never saw it. */}
+              <TripEvidencePhotos
+                photos={approverTripPhotos(request)}
+                subject={formatEmployeeDisplayName(request.employeeName) || null}
+              />
 
               <div className="mt-5 rounded-[18px] border border-phx-line bg-phx-paper/85 p-4">
                 <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Ticket attachments</p>

@@ -2313,28 +2313,35 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
 }
 
 /**
- * Signs both evidence kinds a request can carry: the car photo AND the ticket attachments.
+ * Signs every evidence kind a request can carry: the arrival photo, the departure photo AND the
+ * ticket attachments.
  *
  * Tickets were previously left unsigned here, so the admin request detail received only
  * their metadata (name/type/size) and rendered each one as an inert row — it looked
  * clickable but had no href, which is the "the ticket attachment doesn't open" report of
  * 2026-08-04. The Expense Approvals page never hit this because it fetches its own signed
  * URLs from /api/admin/outstation/[id]/attachments.
+ *
+ * The departure photo was left unsigned the same way until 2026-09-18, so no approver screen
+ * could show it: the one approver (the Super Admin) saw the arrival photo alone.
  */
 async function attachCarEvidenceSignedUrls(
   requests: OutstationExpenseRequest[],
 ): Promise<OutstationExpenseRequest[]> {
   return Promise.all(
     requests.map(async (request) => {
-      const [carEvidenceImageUrl, ticketAttachmentUrls, meetingInvoiceUrl] = await Promise.all([
-        createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
-        createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
-        createOutstationCarEvidenceSignedUrl(request.meetingInvoicePath),
-      ]);
+      const [carEvidenceImageUrl, departureEvidenceImageUrl, ticketAttachmentUrls, meetingInvoiceUrl] =
+        await Promise.all([
+          createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+          createOutstationCarEvidenceSignedUrl(request.departureEvidenceImagePath),
+          createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
+          createOutstationCarEvidenceSignedUrl(request.meetingInvoicePath),
+        ]);
 
       return {
         ...request,
         carEvidenceImageUrl,
+        departureEvidenceImageUrl,
         meetingInvoiceUrl,
         ticketAttachmentUrls,
       };
@@ -2603,9 +2610,16 @@ export async function getOutstationRequestById(
   };
   if (!options?.includeCarEvidenceSignedUrl) return request;
 
+  // Both photos, always together: an approver shown the arrival photo alone cannot see whether
+  // the employee was still there when he left (see attachCarEvidenceSignedUrls).
+  const [carEvidenceImageUrl, departureEvidenceImageUrl] = await Promise.all([
+    createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+    createOutstationCarEvidenceSignedUrl(request.departureEvidenceImagePath),
+  ]);
   return {
     ...request,
-    carEvidenceImageUrl: await createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+    carEvidenceImageUrl,
+    departureEvidenceImageUrl,
   };
 }
 
