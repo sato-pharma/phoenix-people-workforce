@@ -100,6 +100,7 @@ import {
   candidateScreeningFacts,
   candidateScreeningRoleFamily,
   formatYearsOfExperience,
+  screeningRoleFamilies,
   UNCONFIRMED_FACT_TITLE,
 } from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
@@ -3488,8 +3489,10 @@ function CandidatesTab({
       if (roleFilter || regionFilter) {
         const facts = candidateScreeningFacts(c);
         if (roleFilter) {
-          const family = candidateScreeningRoleFamily(facts, candidateRowAppliedFor(c).text);
-          if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
+          // Both families, for the reason screeningRoleFamilies gives: a senior medical rep applying
+          // for a district manager seat is in the District Manager filter as well as his own.
+          const families = screeningRoleFamilies(facts, candidateRowAppliedFor(c).text);
+          if (roleFilter === "unknown" ? families.length > 0 : !families.includes(roleFilter)) return false;
         }
         if (regionFilter) {
           const region = facts.region?.value.code ?? null;

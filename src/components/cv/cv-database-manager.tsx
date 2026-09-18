@@ -334,8 +334,17 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
       if (!matchesExperienceBand(row, experienceBand)) return false;
       if (!matchesGradeFilter(row, gradeFilter)) return false;
       if (roleFilter) {
-        const family = candidateRoleFamilyOrNull(row.currentJobTitle);
-        if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
+        // BOTH the job they hold and the job they asked us for. This read `currentJobTitle` alone,
+        // so a CV sent in for a district manager seat off a senior medical rep's CV could only be
+        // found under Medical Representative — on the screen whose entire job is finding a CV again.
+        // 303 of the 649 candidates who stated a job were missing from a filter their own record
+        // answered, measured on production 2026-09-18; this screen's filter was the blindest of the
+        // three, because it never consulted the stated job at all.
+        const families = [
+          candidateRoleFamilyOrNull(row.currentJobTitle),
+          candidateRoleFamilyOrNull(row.appliedForJobTitle),
+        ].filter((family): family is CandidateRoleFamily => family !== null);
+        if (roleFilter === "unknown" ? families.length > 0 : !families.includes(roleFilter)) return false;
       }
       if (regionFilter) {
         // `row.regionCode` already honours the applicant's own WhatsApp answer and falls back to

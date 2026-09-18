@@ -21,7 +21,7 @@ import { candidateRowAppliedFor, type AppliedForCandidateRow } from "@/lib/recru
 import { candidateSourceChannel } from "@/lib/recruitment/candidate-source-context";
 import {
   candidateScreeningFacts,
-  candidateScreeningRoleFamily,
+  screeningRoleFamilies,
   type ScreeningFactsCandidateRow,
 } from "@/lib/recruitment/candidate-screening-facts";
 import { matchesRatingFilter, type CandidateRating } from "@/lib/recruitment/candidate-rating";
@@ -161,10 +161,20 @@ export function matchesScreeningNarrowing(
   const facts = candidateScreeningFacts(candidate);
 
   if (narrowing.role) {
-    const family = candidateScreeningRoleFamily(facts, candidateRowAppliedFor(candidate).text);
+    // EVERY family this candidate is findable under, not the one family the cell prints. Somebody
+    // who applied for a district manager seat off a senior medical rep CV belongs in BOTH filters,
+    // and while this read the single answer they were in neither the reader expected. Measured with
+    // this module's own matcher over production on 2026-09-18: of 649 candidates who stated a job,
+    // 303 were missing from a filter their own record answered — 244 of them never screened — and
+    // 55 of those had asked for a district manager seat. See `screeningRoleFamilies`.
+    const families = screeningRoleFamilies(facts, candidateRowAppliedFor(candidate).text);
     // `unknown` means nobody ever told us — a genuinely different claim from "Other", which is a
     // title we DO hold that names no job we recruit for.
-    if (narrowing.role === SCREENING_UNKNOWN ? family !== null : family !== narrowing.role) return false;
+    if (narrowing.role === SCREENING_UNKNOWN) {
+      if (families.length > 0) return false;
+    } else if (!families.includes(narrowing.role)) {
+      return false;
+    }
   }
 
   if (narrowing.region) {

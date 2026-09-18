@@ -276,6 +276,7 @@ import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region
 import { runRecruitmentDeclaredPreferencesTests } from "./recruitment-declared-preferences.test.ts";
 import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
+import { runScreeningRoleMismatchTests } from "./recruitment-screening-role-mismatch.test.ts";
 import { runWhatsAppAnswersTests } from "./recruitment-whatsapp-answers.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
 import { runRecruitmentEmployerNameTests } from "./recruitment-employer-name.test.ts";
@@ -2419,6 +2420,10 @@ await runTest(
 await runTest(
   "recruitment candidate screening facts (a hedged CV read never outranks a recorded one, and the row and the filter resolve the same role family)",
   runCandidateScreeningFactsTests,
+);
+await runTest(
+  "recruitment screening role mismatch (a senior medical rep who applied for a district manager seat is findable under the seat he asked for)",
+  runScreeningRoleMismatchTests,
 );
 await runTest(
   "recruitment WhatsApp answers (every answer an applicant gave the bot is listed beside the CV, each under its own question)",
