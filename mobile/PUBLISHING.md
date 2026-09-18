@@ -28,11 +28,29 @@ That is the whole prerequisite. It is the same enterprise
 [`src/lib/devices/android-web-app.ts`](../src/lib/devices/android-web-app.ts) already needs, so the
 native app and the managed-tablet web app wait on one free step between them, not two.
 
-🔴 **Use a company Google account to create it** (`something@satopharma.com`), not a personal Gmail,
-and not an account only one person can reach. The auto-created developer account is
-**non-transferable**, so the account that creates the enterprise is the account that owns publishing
-for good. This is the one decision here that is genuinely hard to undo, and it costs ten seconds to
-get right at the sign-in screen.
+🔴 **Decided 2026-09-18 by the owner: a SHARED `satopharma.com` account** — not a personal Gmail, and
+not an account only one person can reach. Two separate things make that choice hard to undo, and both
+are settled at the same sign-in screen:
+
+- **The auto-created developer account is non-transferable.** Whichever account creates the
+  enterprise owns publishing for good.
+- **A company-domain sign-up creates a MANAGED GOOGLE DOMAIN**, not the older managed Google Play
+  Accounts enterprise — in Google's own words, *"From 2024, all new organizations completing this
+  process will be provided with a managed Google domain."* That is the path Google now recommends for
+  new enrolments, which is why the shared company address is the RIGHT answer rather than merely the
+  tidier one. A Gmail sign-up falls back to a managed Google Play Accounts enterprise, which is
+  Android-only and forecloses cross-device use later.
+
+A managed Google domain means **verifying `satopharma.com` by DNS** with a `google-site-verification=`
+TXT record, and merging any existing email-verified Google accounts already using a `satopharma.com`
+address — Google prompts for both.
+
+🔴 **ADD that TXT record; never edit or replace what is already in the zone.** `satopharma.com`
+carries the Resend DKIM at `resend._domainkey.satopharma.com` and a DMARC of `p=reject`, and
+[`src/config/system-settings.ts`](../src/config/system-settings.ts) records the consequence of losing
+that verification: **every Sato Email Composer send is refused.** TXT records coexist, so a new one is
+purely additive — disturbing the existing pair is not, and the breakage would show up as mail silently
+failing rather than as anything on this page.
 
 ---
 
