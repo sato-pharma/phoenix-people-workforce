@@ -331,6 +331,42 @@ export function candidateScreeningRoleFamily(
   return candidateRoleFamilyOrNull(facts.roleTitle?.value ?? text(appliedForText));
 }
 
+/**
+ * Every role family a candidate is FINDABLE under — the family of their own current title, AND the
+ * family of the job they applied for. For FILTERS only. A display cell keeps reading
+ * `candidateScreeningRoleFamily`, which answers with one family because a cell has room for one.
+ *
+ * THE TWO ARE REGULARLY DIFFERENT, AND THE DIFFERENCE IS THE POINT. A senior medical rep applying
+ * for a district manager seat is genuinely both: the CV says Medical Representative, the application
+ * says District Manager, and the row already prints both — the seat above, "Currently Senior Medical
+ * Representative" below it. While the Role filter answered with `candidateScreeningRoleFamily`
+ * alone it filed every one of them under the CV's title. Measured over production on 2026-09-18,
+ * of the 649 candidates who stated a job 303 were missing from a filter their own record answered,
+ * 244 of them never screened, and 55 of those had asked for a district manager seat — the promotion
+ * pipeline for a seat being actively recruited, invisible on the one filter built to find it. That is this
+ * module's own headline warning happening in the other direction: filtering on a different fact
+ * from the one displayed is not a narrower filter, it is a wrong one.
+ *
+ * It also reaches a shape the single answer cannot. `candidateScreeningRoleFamily` falls through
+ * to the applied-for text only when there is no current title at ALL — `??` does not fire on a
+ * title that is present and simply names no family we recruit for — so "Warehouse Keeper" applying
+ * for District Manager answered null and sat in the `unknown` bucket with a stated seat on the row.
+ *
+ * Empty only when nothing on the record names a job, which is exactly what `unknown` asks for.
+ */
+export function screeningRoleFamilies(
+  facts: CandidateScreeningFacts,
+  appliedForText: string | null | undefined,
+): CandidateRoleFamily[] {
+  const found = [
+    candidateRoleFamilyOrNull(facts.roleTitle?.value ?? null),
+    candidateRoleFamilyOrNull(text(appliedForText)),
+  ].filter((family): family is CandidateRoleFamily => family !== null);
+  // Deduplicated because the common case is the two agreeing, and a caller asking "is this row in
+  // the District Manager filter" must not care how many sources said so.
+  return Array.from(new Set(found));
+}
+
 /** "12 yrs", "6.9 yrs", "8 mo" — a decimal year under 1 reads as nonsense in years. */
 export function formatYearsOfExperience(value: number): string {
   if (value < 1) {

@@ -28,6 +28,12 @@ export type CvLibraryRow = {
   /** The day the CV arrived, in Africa/Cairo — never a raw UTC timestamp. */
   receivedOn: string;
   currentJobTitle: string;
+  /**
+   * The job they asked us FOR, which is regularly not the one above — a senior medical rep applying
+   * for a district manager seat is both. Carried so the Role filter can find them under either; a
+   * filter that knew only `currentJobTitle` could not find a CV under the seat it was sent in for.
+   */
+  appliedForJobTitle: string;
   currentEmployer: string;
   totalExperience: string;
   medicalSales: CvExperienceStatus;
@@ -414,6 +420,7 @@ export function cvLibraryRowFromCandidate(
     backgroundSource: background.source ?? null,
     cvFileName: text(candidate.cvReferenceName),
     currentEmployer: text(candidate.currentEmployer),
+    appliedForJobTitle: text(candidate.appliedForJobTitle),
     currentJobTitle: text(candidate.currentJobTitle),
     education: educationLine(candidate),
     educationDegree: text(candidate.degree),

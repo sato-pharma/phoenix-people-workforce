@@ -65,6 +65,7 @@ import {
   rejectionReasons,
   type RejectionReason,
 } from "@/lib/recruitment/rejection-reasons";
+import { normalizeJobTitle } from "@/lib/recruitment/candidate-role-family";
 import { roleFitVerdictLabels } from "@/lib/recruitment/role-fit";
 import type { WorkspaceCandidateRow, WorkspaceVacancy } from "@/lib/recruitment/screening-workspace-types";
 import { FREE_POSITION, NO_POSITION, VacancyPicker } from "@/components/recruitment/vacancy-picker";
@@ -156,6 +157,12 @@ export function WorkstationReviewHeader({
   // is the name, the SEAT and the status — enough to be sure the buttons belong to the person on
   // screen, which is the one thing a decision bar must never get wrong.
   const [whoOpen, toggleWho] = useSectionFold("review:who");
+  // `normalizeJobTitle` rather than a string compare, so "MEDICAL REPRESENTATIVE" and "Medical
+  // Representative" are the same words and do not earn a line that repeats the seat above.
+  const currentRoleLine =
+    row.currentRole && normalizeJobTitle(row.currentRole.value) !== normalizeJobTitle(row.appliedForText)
+      ? row.currentRole.value
+      : null;
   // THE DECISION BAND FOLDS TOO. It did not, and the owner asked for the opposite in plain words:
   // he reads a CV at full screen. Its control sits in the identity line above rather than in the
   // band itself, so the band can leave the screen entirely rather than leave a handle behind that
@@ -392,6 +399,26 @@ export function WorkstationReviewHeader({
             <p className="mt-0.5 break-words text-[14px] font-bold leading-tight text-phx-accent-press">
               {row.appliedForText ?? "No job named on the application"}
             </p>
+            {/* WHAT THEY DO NOW, directly under the seat, and only when it is a different job.
+                The list row has carried this line since it was built; this pane did not — so a
+                senior medical rep applying for a district manager seat read here as a plain
+                "District Manager", with nothing saying the CV underneath is a medical rep's. That
+                mismatch IS the screening fact on such a CV: it is the difference between reading
+                somebody for the job they hold and reading them for a promotion. Measured on production
+                2026-09-18: 55 candidates had asked for a district manager seat off a title that says
+                something else. Suppressed when the two name the same job, so an ordinary CV pays no
+                line for it. */}
+            {currentRoleLine ? (
+              <p
+                className={cn(
+                  "mt-0.5 break-words text-[12px] leading-tight",
+                  row.currentRole?.confirmed ? "text-phx-ink-2" : "italic text-phx-ink-faint",
+                )}
+                title={row.currentRole?.confirmed ? undefined : "Read off the CV, but the reader was not confident."}
+              >
+                Currently {currentRoleLine}
+              </p>
+            ) : null}
             {/* The same sentence the list row carries, repeated here on purpose: the reader spends
                 the minute that matters looking at THIS pane, and "why am I being shown this person
                 for this seat" must be answerable without going back to the list. */}
