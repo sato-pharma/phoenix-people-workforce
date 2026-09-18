@@ -43,6 +43,14 @@ const SCREENING_PAGE_CLIENT = readFileSync(
   new URL("../src/components/recruitment/workstation/workstation-page-client.tsx", import.meta.url),
   "utf8",
 );
+const SCREENING_SESSION = readFileSync(
+  new URL("../src/components/recruitment/candidate-screening-session.tsx", import.meta.url),
+  "utf8",
+);
+const WHATSAPP_INBOX = readFileSync(
+  new URL("../src/components/whatsapp-inbox/whatsapp-inbox.tsx", import.meta.url),
+  "utf8",
+);
 
 const DESKTOP_GATE = "@media screen and (min-width: 1024px)";
 
@@ -232,16 +240,30 @@ function runViewportFrameTests() {
   // stylesheet divides `.h-screen` / `.min-h-screen` and deliberately leaves arbitrary values alone,
   // which means each full-height frame has to divide itself. The screening frame is the one the
   // owner saw: a CV pane 20% short, with a band of empty page under it.
-  assert.ok(
-    SCREENING_PAGE_CLIENT.includes("h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))]"),
-    "The screening frame's height no longer divides 100vh by --phx-scale-applied, so inside the " +
-      "0.8 zoom it paints at 80% of the window and leaves the CV pane short.",
-  );
-  assert.ok(
-    SCREENING_PAGE_CLIENT.includes("min-h-[calc(32rem_/_var(--phx-scale-applied,1))]"),
-    "The screening frame's floor no longer divides by --phx-scale-applied, so on a short window " +
-      "it paints at 410px instead of the 512px it was written to hold.",
-  );
+  //
+  // Three frames share the geometry — the screening workstation, the older screening session view
+  // and the WhatsApp Inbox — and the same defect reached all three, so each is pinned.
+  const frames: ReadonlyArray<readonly [string, string]> = [
+    ["the screening workstation frame", SCREENING_PAGE_CLIENT],
+    ["the screening session frame", SCREENING_SESSION],
+    ["the WhatsApp Inbox frame", WHATSAPP_INBOX],
+  ];
+  for (const [name, source] of frames) {
+    assert.ok(
+      source.includes("h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))]"),
+      `${name}'s height no longer divides 100vh by --phx-scale-applied, so inside the 0.8 zoom it ` +
+        "paints at 80% of the window and leaves the pane short.",
+    );
+    assert.ok(
+      source.includes("min-h-[calc(32rem_/_var(--phx-scale-applied,1))]"),
+      `${name}'s floor no longer divides by --phx-scale-applied, so on a short window it paints ` +
+        "at 410px instead of the 512px it was written to hold.",
+    );
+    assert.ok(
+      !source.includes("h-[calc(100vh-4rem)]"),
+      `${name} still carries the bare h-[calc(100vh-4rem)] — that form is what paints at 80%.`,
+    );
+  }
 }
 
 export async function runDisplayScaleTests() {
