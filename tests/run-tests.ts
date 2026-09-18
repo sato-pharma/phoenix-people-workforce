@@ -1799,6 +1799,7 @@ import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet
 import { runNormalizerUnmappedListCustomersTests } from "./normalizer-unmapped-list-customers.test.ts";
 import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-failed-rows.test.ts";
 import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-gate.test.ts";
+import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6263,6 +6264,11 @@ await runTest(
 await runTest(
   "the signed-in Super Admin (B-10, scope company) is handed the WhatsApp template editor, exactly the people the write routes' admin:update admits; HR Advisory still sends but never edits, and HR Operations, the CEO and the Finance Manager never edit; before the fix the gate was system scope only and hid the editor from everyone",
   runWhatsAppTemplateManageGateTests,
+);
+
+await runTest(
+  "the screening verdicts (Shortlist, Reject, the reject panel, the stars, the bulk marks) are gated on candidates:update, the grant their routes assert, and the WhatsApp reply box on recruitment:update, its own route's grant; before the fix canDecide was recruitment:update, the reply box rode on it, and the header drew Shortlist and Reject whatever it said",
+  runScreeningDecideGateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
