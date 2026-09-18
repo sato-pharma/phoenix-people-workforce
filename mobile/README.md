@@ -304,25 +304,81 @@ the person's time.
 This app never records video, and an HR app requesting a microphone it never uses is the kind of
 thing an employee is right to distrust.
 
-🔴 **This is not the evidence camera, and must not be used as one.** The web app's live photo burns
-the time, the street address, the Phoenix brick, area and region and the coordinates into the image
-before upload, and opens the camera and the location together — because a venue photo without a fix
-proves nothing about a place, which is the owner's rule for marketing venue validation. A profile
-photo is not evidence of a place and needs none of that. Wiring `camera.ts` as it stands into venue
-validation, a direct-order storefront or an outstation departure photo would produce a picture the
-desk has no way to trust. That work belongs with the GPS phase.
+🔴 **`camera.ts` on its own is still not the evidence camera.** It returns a bare picture — no time,
+no place, no stamp — and a profile photo needs nothing more. Evidence goes through
+`src/lib/evidence-photo.ts` (next section), which wraps it. Wiring `capturePhoto` straight into venue
+validation, a direct-order storefront or any other evidence upload would produce a picture the desk
+has no way to trust.
+
+## The departure photo — evidence with a place and a time
+
+An outstation trip does not reach payroll until its departure photo is taken, and it can only be
+taken at the destination. The Home tab lists the trips waiting for one — `GET
+/api/outstation/departure-photo-due`, the portal's own list from the same server function — and
+"Open camera" on a trip runs `captureDeparturePhoto` in `src/lib/evidence-photo.ts`:
+
+1. **Location permission first, then the camera.** Android's permission prompt and its "turn on
+   location" dialog are full-screen; landing one on a photo the person has just framed reads as the
+   app losing it.
+2. **The camera**, at quality 1 — the camera's own file, so the photo is compressed once, at the
+   end, as on the web.
+3. **A fresh GPS fix**, waited for at most 12 seconds (the portal's own patience) and never a cached
+   last-known position. Then **the address**, from `POST /api/outstation/reverse-geocode`: the server
+   words the address, brick, area and region, so the app never words a place itself.
+4. **The stamp, burned into the pixels** with Skia (`evidence-burn.ts`), the photo shrunk to 1280 px
+   on its longest side and saved as a JPEG at quality 0.74.
+5. **The upload**, to the portal's own route, `POST /api/outstation/{id}/departure-photo`.
+
+🔴 **The stamp is the portal's stamp, and a test holds it there.** An approver compares the departure
+photo with the trip's arrival photo, which the portal stamped. `evidence-stamp.ts` is a copy of the
+portal's pure stamp code
+([`evidence-watermark.ts`](../src/components/outstation/evidence-watermark.ts) and
+[`location-stamp.ts`](../src/lib/evidence/location-stamp.ts)), because the app cannot import a
+browser-canvas module. [`tests/mobile-evidence-stamp-parity.test.ts`](../tests/mobile-evidence-stamp-parity.test.ts),
+in the web app's required `test` check, runs the two side by side and fails on any difference in
+wording, time, wrapping, geometry or draw call. Change the web stamp and that test says to change the
+copy in the same PR. Never loosen the test instead.
+
+**A missing position is said, never faked.** With no fix the stamp reads "no GPS fix" and the upload
+**leaves the coordinates out** rather than sending null: the route reads them with
+`Number(body.latitude)`, `Number(null)` is 0, and the approver would be told the photo was taken
+thousands of kilometres from the trip instead of "unknown". After the save, a photo with no position
+or only an approximate one says why, and what to change next time.
+
+**Foreground location only.** The `expo-location` plugin runs with background location, the
+foreground service and activity recognition all off, and `blockedPermissions` in `app.json` strips
+`ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE_LOCATION` from the manifest, so no library can
+bring them back. The app reads a position only while someone is taking an evidence photo.
+
+**No queue.** A photo that fails to send is not kept for a later retry: a departure photo sent from
+somewhere else would carry the right stamp and the wrong journey. The person is told to take it again
+while still there. For the same reason the list is **never shown from the offline copy** — a stale
+list offers the camera for a trip already photographed, and the approver's summary counts every
+retake.
+
+**Why Skia.** The photo is decoded, scaled, stamped and encoded on the phone in one pass. Skia's
+decoder applies the JPEG's orientation tag, so a camera file saved sideways comes out upright, and its
+paragraph layout shapes Arabic — Google returns the address in Arabic as often as in English — where
+drawing with a single typeface prints empty boxes. It adds a few megabytes to the app.
+
+🔴 **Skia and `expo-location` are native modules, so this needs a new build** with a higher
+`versionCode`. There are no over-the-air updates (see above), so a phone on an older build simply
+does not have the departure photo until it installs the new one.
 
 ## What is not here yet
 
-Push notifications and GPS. Both exist in the web portal and both need native equivalents in this
-app — they are the next phases, not oversights.
+Push notifications. They exist in the web portal and need a native equivalent in this app — the next
+phase, not an oversight.
 
 🔴 **Push notifications are gated on the app signing key**, not on code: Firebase has to be
 registered with the **app signing** key's fingerprint, never the upload key's. See the signing
 section above before starting that phase.
 
-🔴 **GPS is what unblocks the evidence flows**, not the camera — see the warning above. The pairing
-is the point: `fetchEvidenceLocation` and the watermark helpers in
-[`src/components/outstation/evidence-watermark.ts`](../src/components/outstation/evidence-watermark.ts)
-are the contract a native evidence capture has to satisfy, and they are shared by every Phoenix live
-photo. Port that contract rather than inventing a second one.
+**The other evidence photos are still web-only**: the arrival photo (taken inside the expense
+wizard, which this app does not have), direct-order storefronts and marketing venue validation. Each
+burns the same stamp, so a native one reuses `evidence-stamp.ts` and `evidence-burn.ts` rather than
+inventing a second stamp — and each needs its own list and route checked, as the departure photo did.
+
+**No retake from the app.** The portal's expense submissions page can retake a departure photo while
+the trip window is open; the app offers the camera only for a trip that has none yet. A retake is
+still made from the portal.
