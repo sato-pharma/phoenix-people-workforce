@@ -154,6 +154,43 @@ function syncEnv(dir) {
   }
 }
 
+// CLAIM THE NEW WORKTREE FOR THE SESSION THAT ASKED FOR IT. A desktop-app session is pinned to the
+// `.claude/worktrees/<name>` folder it started in, so it keeps working from there — and until
+// 2026-09-18 `.claude/hooks/primary-write-guard.mjs` denied its Edit and Write tools on every file
+// of the worktree it had just made here, as "another session worktree". The guard now lets in the
+// session this claim names, while no other session is working in the worktree.
+//
+// The id is CLAUDE_CODE_SESSION_ID: the harness sets it for every Bash child, and it is the value
+// hooks receive as `session_id` (session-lock.mjs stores it in every lock). CLAUDE_PROJECT_DIR is
+// NOT set here — only hooks get it. Run from a plain terminal there is no session to name, so
+// nothing is claimed and the folder stays open only to a session started inside it, as before.
+//
+// The claim goes in the worktree's git ADMIN folder (<common .git>/worktrees/<name>/), never in the
+// folder itself: nothing there can be staged, committed or copied into another tree, and
+// `git worktree remove`/`prune` delete it with the registration. Only a folder THIS run created is
+// claimed — --repair never claims, since the worktree it touches may be another session's.
+const CLAIM_FILE = "phx-session-owner.json";
+
+function claimForThisSession(dir, branch) {
+  const sessionId = String(process.env.CLAUDE_CODE_SESSION_ID || "").trim();
+  if (!sessionId) {
+    return { claimed: false, note: "unclaimed — no Claude session ran this, so only a session opened there may edit it" };
+  }
+  try {
+    const adminDir = git(["-C", dir, "rev-parse", "--path-format=absolute", "--git-dir"]);
+    // A linked worktree's admin folder is <common>/worktrees/<name>. Anything else means `dir` is
+    // not the worktree just created, and a claim there would name the wrong tree.
+    if (path.basename(path.dirname(adminDir)) !== "worktrees") {
+      return { claimed: false, note: "unclaimed — " + adminDir + " is not a worktree admin folder" };
+    }
+    const claim = { sessionId, worktree: dir, branch, claimedAt: new Date().toISOString(), by: "scripts/new-session.mjs" };
+    fs.writeFileSync(path.join(adminDir, CLAIM_FILE), JSON.stringify(claim, null, 2) + "\n");
+    return { claimed: true, note: "claimed for this Claude session — its Edit and Write tools may write here" };
+  } catch (error) {
+    return { claimed: false, note: "unclaimed — " + (error instanceof Error ? error.message : String(error)) };
+  }
+}
+
 const args = process.argv.slice(2);
 
 // ---------------------------------------------------------------- --status
@@ -527,6 +564,8 @@ console.log("2/4  creating " + dir + " on " + branch);
 // -q suppresses the per-file "Updating files: 41% (2075/5059)" progress, which
 // on a 5,000-file checkout floods the transcript with hundreds of lines.
 git(["worktree", "add", "-q", dir, "-b", branch, baseRef]);
+const claim = claimForThisSession(dir, branch);
+console.log("     " + claim.note);
 
 console.log("3/4  junctioning node_modules from the primary (never installing)");
 console.log("     " + linkModules(dir));
@@ -539,7 +578,12 @@ console.log("\n" + (result.ok ? "READY" : "INCOMPLETE") + "   " + dir);
 console.log("  branch        " + branch + "  (from " + baseRef + ")");
 console.log("  .env.local    " + (result.hasEnv ? "yes" : "MISSING"));
 console.log("  node_modules  " + (result.hasMods ? "junctioned" : "MISSING"));
-console.log("\nOpen a session there — point the new session at this folder:");
+console.log("  claimed by    " + (claim.claimed ? "this Claude session" : "no session"));
+console.log(
+  claim.claimed
+    ? "\nThis session may edit it directly with Edit and Write, and run commands there:"
+    : "\nOpen a session there — point the new session at this folder:",
+);
 console.log('  cd "' + dir + '"');
 console.log("\nInside that folder invoke node directly (node scripts/…).");
 console.log("Never run pnpm there — it purges the primary's node_modules when the lockfile moved.\n");
