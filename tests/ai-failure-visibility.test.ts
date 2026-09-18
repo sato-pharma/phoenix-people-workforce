@@ -4,9 +4,13 @@ import {
   buildAiFailureEvent,
   failureThrottleKey,
   shouldReportFailure,
+  aiErrorCodeForResponse,
+  isQuotaExhaustedRecord,
+  AI_QUOTA_EXHAUSTED_CODE,
   FAILURE_THROTTLE_MS,
   type AiCallRecord,
 } from "../src/lib/observability/ai-metrics.ts";
+import { aiQuotaAlertEnabled, buildAiQuotaExhaustedMessage } from "../src/lib/notifications/ai-quota-alert.ts";
 
 // Guards the 2026-09-02 finding: AI telemetry was writing to GCP Cloud Monitoring with
 // GCP_PROJECT_ID unset on Railway, so it returned on its first line. When OPENAI_API_KEY held a
@@ -127,4 +131,48 @@ export function runAiFailureVisibilityTests() {
   for (let i = 0; i < 150; i += 1) shouldReportFailure(`stale-${i}`, t0, many);
   shouldReportFailure("fresh-key", t0 + FAILURE_THROTTLE_MS + 1, many);
   assert.ok(many.size < 150, "entries that can no longer suppress anything must be dropped");
+
+  // --- out of credit pages the owner (2026-09-18) ---------------------------------------------
+  // At 09:55 that day OpenAI refused the Sales normalizer with insufficient_quota. The raw-fetch
+  // paths recorded it as a bare "429" — indistinguishable from a busy minute — and it reached no
+  // one. The account has no auto-recharge, so this is the failure that needs a human, fast.
+  const quotaBody = JSON.stringify({
+    error: {
+      message: "You exceeded your current quota, please check your plan and billing details.",
+      type: "insufficient_quota",
+      code: "insufficient_quota",
+    },
+  });
+  assert.equal(
+    aiErrorCodeForResponse(429, quotaBody),
+    AI_QUOTA_EXHAUSTED_CODE,
+    "an insufficient_quota 429 must be recorded as out of credit, not as a bare 429",
+  );
+  const rateBody = JSON.stringify({
+    error: {
+      message: "Rate limit reached for gpt-4o on tokens per min (TPM): Limit 450000. Please try again in 2s.",
+      type: "tokens",
+      code: "rate_limit_exceeded",
+    },
+  });
+  assert.equal(aiErrorCodeForResponse(429, rateBody), "429", "a per-minute rate limit clears by itself and must NOT page anyone");
+  assert.equal(aiErrorCodeForResponse(401, quotaBody), "401", "only a 429 can be out of credit");
+  assert.equal(isQuotaExhaustedRecord(record({ errorCode: AI_QUOTA_EXHAUSTED_CODE })), true);
+  assert.equal(isQuotaExhaustedRecord(record({ errorCode: "429" })), false);
+  assert.equal(
+    isQuotaExhaustedRecord(record({ errorCode: AI_QUOTA_EXHAUSTED_CODE, status: "success" })),
+    false,
+    "a success never pages",
+  );
+  assert.match(
+    buildAiFailureEvent(record({ errorCode: AI_QUOTA_EXHAUSTED_CODE }))!.message,
+    /out of credit/,
+    "the error-monitor row must say out of credit in words",
+  );
+  assert.match(buildAiQuotaExhaustedMessage(), /top(ped)? up|Add credit/i, "the alert must say what fixes it");
+  assert.equal(
+    aiQuotaAlertEnabled(),
+    false,
+    "the suite runs with production credentials — it must never page the owner",
+  );
 }
