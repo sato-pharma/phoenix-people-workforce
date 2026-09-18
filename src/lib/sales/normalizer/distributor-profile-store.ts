@@ -7,6 +7,7 @@
 // fails CLOSED to the code profiles and LOGS — it never silently behaves as code-only without a trace.
 
 import { logError } from "@/lib/observability/log";
+import { FREE_GOODS_FLAG_LABEL } from "@/lib/sales/normalizer/free-goods-flag";
 import { RAW_DISTRIBUTOR_PROFILES, rawProfileForDistributor } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { DistributorProfile } from "@/lib/sales/normalizer/types";
@@ -20,7 +21,8 @@ export const PROFILE_FIELDS = [
   { key: "qtyColumns", column: "qty_columns", label: "Quantity" },
   { key: "branchCodeColumns", column: "branch_code_columns", label: "Branch Code" },
   { key: "branchNameColumns", column: "branch_name_columns", label: "Branch Name" },
-  { key: "bonusColumns", column: "bonus_columns", label: "Bonus Qty" },
+  // A free-goods FLAG that skips the whole row, never a bonus quantity (free-goods-flag.ts).
+  { key: "bonusColumns", column: "bonus_columns", label: FREE_GOODS_FLAG_LABEL },
   { key: "valueColumns", column: "value_columns", label: "Value" },
   { key: "discountColumns", column: "discount_columns", label: "Discount %" },
   { key: "dateColumns", column: "date_columns", label: "Invoice Date" },
