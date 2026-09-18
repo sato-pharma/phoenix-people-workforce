@@ -283,8 +283,11 @@ async function salaryPromptWithOverride(): Promise<string> {
  * question on its code default, which is exactly what this conversation did before either feature
  * existed. A key ABSENT from the map is "nothing configured", which is the `undefined`
  * `resolveBuiltInAudience` expects, so a plain `.get()` is already the right argument.
+ *
+ * Exported for the WhatsApp Applicants page, so the page and the bot never disagree about who is
+ * asked what.
  */
-async function loadSavedAudiences(): Promise<SavedAudiences> {
+export async function loadSavedAudiences(): Promise<SavedAudiences> {
   const byKey = new Map<string, readonly string[]>();
   for (const [key, override] of await loadQuestionPromptOverrides()) {
     if (override.appliesToRoleFamilies !== undefined) byKey.set(key, override.appliesToRoleFamilies);

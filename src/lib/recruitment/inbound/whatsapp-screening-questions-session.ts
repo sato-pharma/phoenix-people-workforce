@@ -79,7 +79,9 @@ function mapQuestionRow(row: QuestionRow): ScreeningQuestion {
   };
 }
 
-async function loadAllQuestions(): Promise<ScreeningQuestion[]> {
+/** Every question, retired ones included, in sort order. Also what the WhatsApp Applicants page
+ *  reads, so a question's wording there is the wording the bot sends. */
+export async function loadAllQuestions(): Promise<ScreeningQuestion[]> {
   if (questionCache && Date.now() - questionCache.at < QUESTION_CACHE_TTL_MS) return questionCache.all;
 
   const supabase = recruitmentDb();
