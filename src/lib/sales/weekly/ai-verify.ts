@@ -17,7 +17,7 @@
 import ExcelJS from "exceljs";
 
 import { resolveAiProvider, type AiProvider } from "@/lib/sales/ai/provider";
-import { recordAiCall } from "@/lib/observability/ai-metrics";
+import { aiErrorCodeForResponse, recordAiCall } from "@/lib/observability/ai-metrics";
 import { logError } from "@/lib/observability/log";
 import { type WeeklyContractSheet, type WeeklyDistributorContract } from "@/lib/sales/weekly/column-contract";
 import { resolveWeeklyContract } from "@/lib/sales/weekly/weekly-column-profile-store";
@@ -115,7 +115,7 @@ async function judgeWithAi(
     });
     recordAiCall({
       component: "sales_weekly_ai_verify",
-      errorCode: String(res.status),
+      errorCode: aiErrorCodeForResponse(res.status, body),
       latencyMs: Date.now() - startedAt,
       model: provider.model,
       purpose: "weekly_verify_columns",

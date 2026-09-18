@@ -87,7 +87,41 @@ export function shouldReportFailure(
   return true;
 }
 
+/**
+ * The error code every AI path reports when the provider account has run out of credit — the one
+ * failure that no retry, no wait and no code change fixes; only a human topping up the account.
+ * `openai-client.ts` already emitted this spelling; the raw-fetch paths now do too
+ * (aiErrorCodeForResponse), so the alarm below keys on ONE string.
+ */
+export const AI_QUOTA_EXHAUSTED_CODE = "quota_exceeded";
+
+/**
+ * OpenAI answers HTTP 429 for two unrelated problems: a per-minute rate limit (clears on its own)
+ * and an exhausted quota — out of credit (never clears on its own). Only the body tells them apart.
+ */
+export function isQuotaExhaustedBody(rawBody: string): boolean {
+  if (rawBody.toLowerCase().includes("insufficient_quota")) return true;
+  try {
+    const j = JSON.parse(rawBody) as { error?: { code?: string; type?: string; message?: string } };
+    const tag = `${j?.error?.code ?? ""} ${j?.error?.type ?? ""}`.toLowerCase();
+    if (tag.includes("insufficient_quota") || tag.includes("billing")) return true;
+    const msg = String(j?.error?.message ?? "").toLowerCase();
+    return msg.includes("quota") || msg.includes("billing");
+  } catch { return false; }
+}
+
+/** The errorCode a raw-fetch AI path records for a non-OK response. */
+export function aiErrorCodeForResponse(status: number, rawBody: string): string {
+  return status === 429 && isQuotaExhaustedBody(rawBody) ? AI_QUOTA_EXHAUSTED_CODE : String(status);
+}
+
+/** Whether this call means the AI account is out of credit — the case that pages a human. */
+export function isQuotaExhaustedRecord(record: AiCallRecord): boolean {
+  return record.status === "error" && record.errorCode === AI_QUOTA_EXHAUSTED_CODE;
+}
+
 function describeCode(errorCode: string | undefined): string {
+  if (errorCode === AI_QUOTA_EXHAUSTED_CODE) return "account out of credit (quota exhausted)";
   if (!errorCode) return "no error code reported";
   return /^\d{3}$/.test(errorCode) ? `HTTP ${errorCode}` : errorCode;
 }
@@ -145,6 +179,16 @@ export function recordAiCall(record: AiCallRecord): void {
   const event = buildAiFailureEvent(record);
   if (!event) return;
   if (!failureReportingEnabled()) return;
+  // Out of credit is the one AI failure only a human can end, and on 2026-09-18 it sat in this
+  // table unread. Page the owner too (in-app + Telegram, once a day — ai-quota-alert.ts). Loaded
+  // lazily so this light module does not pull the notification stack into every AI call site.
+  if (isQuotaExhaustedRecord(record)) {
+    void import("@/lib/notifications/ai-quota-alert")
+      .then((alert) => alert.notifyAiQuotaExhausted(record))
+      .catch(() => {
+        // Best-effort by contract, like the row below.
+      });
+  }
   if (!shouldReportFailure(failureThrottleKey(record), Date.now(), lastReportedAt)) return;
 
   void logAppError(event).catch(() => {
