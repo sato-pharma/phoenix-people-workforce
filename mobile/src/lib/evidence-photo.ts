@@ -95,6 +95,26 @@ async function lookUpPlace(
   }
 }
 
+/**
+ * Why there is no position, in the server's words, sent WITH the photo so the approver sees it
+ * (owner, 2026-09-18: "the system must record the reason"). Until then the app told the person
+ * "your approver will see that" and sent nothing. Null when there is a position.
+ */
+function locationFailureFor(
+  access: LocationAccess,
+  fix: LocationFix,
+): { detail: string | null; reason: "permission_denied" | "location_off" | "timeout" | "position_unavailable" } | null {
+  if (fix.status === "fixed") return null;
+  if (!access.granted) {
+    return {
+      detail: access.canAskAgain ? null : "Location is blocked for Phoenix in Android Settings.",
+      reason: "permission_denied",
+    };
+  }
+  if (fix.status === "unavailable") return { detail: fix.detail, reason: fix.reason };
+  return { detail: null, reason: "permission_denied" };
+}
+
 /** What to tell the person after a save when the position is missing or rough. Null when it is fine. */
 function describeLocationGap(access: LocationAccess, fix: LocationFix): string | null {
   if (!access.granted) {
@@ -184,6 +204,7 @@ export async function captureDeparturePhoto(input: {
 
   // 4. Send it.
   onStep?.("sending");
+  const locationFailure = locationFailureFor(access, fix);
   try {
     const response = await apiRequest<{ review?: { summary?: unknown } | null }>(
       `/api/outstation/${requestId}/departure-photo`,
@@ -193,6 +214,10 @@ export async function captureDeparturePhoto(input: {
           locationLabel: location.label,
           // Present only with a fix — see the module note on why never null.
           ...(fix.status === "fixed" ? { latitude: fix.latitude, longitude: fix.longitude } : {}),
+          // Present only without one: why, for the approver.
+          ...(locationFailure
+            ? { locationFailure: locationFailure.reason, locationFailureDetail: locationFailure.detail }
+            : {}),
         },
         method: "POST",
         // Bytes over a field connection, as `apiUpload` allows for, not a JSON read.

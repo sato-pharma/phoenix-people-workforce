@@ -11,9 +11,11 @@
  * Pure and type-only on purpose, so the approval screens (client) and the attachments route
  * (server) read one answer. It must never import departure-evidence.ts, which pulls the sales geo
  * module into the browser bundle: the review was computed when the photo was taken and stored in
- * the metadata, and it is read from there. evidence-waiver.ts imports nothing, so it is safe here.
+ * the metadata, and it is read from there. evidence-waiver.ts and location-failure.ts import
+ * nothing, so both are safe here.
  */
 import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
+import { describeLocationFailure, storedLocationFailure } from "@/lib/outstation/location-failure";
 import type {
   OutstationCarEvidenceMetadata,
   OutstationDepartureEvidenceMetadata,
@@ -24,6 +26,12 @@ export type ApproverTripPhotoKind = "arrival" | "departure";
 
 export type ApproverTripPhoto = {
   capturedAt: string | null;
+  /**
+   * The photo is on file with no GPS position, and why, in words: "No GPS location. <reason>".
+   * Null when the photo has a position or there is no photo. Departure only: an arrival with no
+   * fix is refused at capture, so it can never be stored without one.
+   */
+  gpsMissingReason: string | null;
   /** True only when the stored review raised a flag. A flag asks for a look; it never blocks pay. */
   isFlagged: boolean;
   kind: ApproverTripPhotoKind;
@@ -84,10 +92,19 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
   const departureFlags = Array.isArray(departureMeta?.flags) ? departureMeta.flags : [];
   const version = Number(departureMeta?.version);
   const notOwed = notOwedNote(input);
+  // Owner, 2026-09-18: a departure photo with no GPS must say why. A photo taken before the reason
+  // was recorded reads "No reason was recorded", never a guess.
+  const departureLocationFailure = departurePath && departureMeta ? storedLocationFailure(departureMeta) : null;
+  const departureGpsMissingReason = departureLocationFailure
+    ? `No GPS location. ${describeLocationFailure(departureLocationFailure.reason)}${
+        departureLocationFailure.detail ? ` The phone reported: "${departureLocationFailure.detail}"` : ""
+      }`
+    : null;
 
   return [
     {
       capturedAt: text(arrivalMeta?.capturedAt),
+      gpsMissingReason: null,
       isFlagged: false,
       kind: "arrival",
       label: "Arrival photo",
@@ -100,10 +117,12 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
     },
     {
       capturedAt: text(departureMeta?.capturedAt),
+      gpsMissingReason: departureGpsMissingReason,
       isFlagged: departureFlags.length > 0,
       kind: "departure",
       label: "Departure photo",
-      locationLabel: text(departureMeta?.capturedLocationLabel),
+      // "Location unavailable" beside the reason would say the same thing twice, less well.
+      locationLabel: departureGpsMissingReason ? null : text(departureMeta?.capturedLocationLabel),
       missingNote: missingNote("Departure photo", departurePath, departureUrl, notOwed),
       retakeCount: Number.isFinite(version) ? Math.max(0, Math.trunc(version) - 1) : 0,
       review: text(departureMeta?.summary),

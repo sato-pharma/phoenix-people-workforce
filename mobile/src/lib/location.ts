@@ -23,15 +23,23 @@ import { EVIDENCE_LOOKUP_TIMEOUT_MS } from "./evidence-stamp";
  */
 
 export type LocationAccess =
-  | { granted: true; precise: boolean }
+  /** `servicesOn` is whether the phone's location was switched on once the "turn on" dialog closed. */
+  | { granted: true; precise: boolean; servicesOn: boolean }
   /** `canAskAgain` is false once Android stops showing the prompt — only Settings can change it then. */
   | { granted: false; canAskAgain: boolean };
+
+/**
+ * Why there is no reading. The server records it with the photo (owner, 2026-09-18: "the system
+ * must record the reason"), so these words are the server's codes in
+ * `src/lib/outstation/location-failure.ts` — a test pins every one the app sends to that list.
+ */
+export type LocationUnavailableReason = "location_off" | "timeout" | "position_unavailable";
 
 export type LocationFix =
   | { status: "fixed"; accuracyMeters: number | null; latitude: number; longitude: number }
   | { status: "no-permission" }
   /** Location is switched off on the phone, or the phone gave no reading within the time allowed. */
-  | { status: "unavailable" };
+  | { status: "unavailable"; reason: LocationUnavailableReason; detail: string | null };
 
 /**
  * Ask for location while the app is open, and make sure the phone's location is switched on.
@@ -47,15 +55,17 @@ export async function prepareLocation(): Promise<LocationAccess> {
       return { canAskAgain: permission.canAskAgain, granted: false };
     }
 
-    const servicesOn = await Location.hasServicesEnabledAsync().catch(() => true);
+    let servicesOn = await Location.hasServicesEnabledAsync().catch(() => true);
     if (!servicesOn) {
       // Android's "turn on location" dialog. Rejects when the person declines — not an error.
       await Location.enableNetworkProviderAsync().catch(() => undefined);
+      // Asked again, so a person who declined is recorded as "location off", not as a slow fix.
+      servicesOn = await Location.hasServicesEnabledAsync().catch(() => true);
     }
 
     // Android 12 lets a person grant only an approximate location. That still stamps a position,
     // but one that can be kilometres out, so the caller says so after the photo is saved.
-    return { granted: true, precise: permission.android?.accuracy !== "coarse" };
+    return { granted: true, precise: permission.android?.accuracy !== "coarse", servicesOn };
   } catch {
     return { canAskAgain: true, granted: false };
   }
@@ -84,10 +94,20 @@ export async function readCurrentPosition(access: LocationAccess): Promise<Locat
       }),
       timeout,
     ]);
-    if (!position) return { status: "unavailable" };
+    if (!position) {
+      return access.servicesOn
+        ? { detail: null, reason: "timeout", status: "unavailable" }
+        : { detail: null, reason: "location_off", status: "unavailable" };
+    }
 
     const { accuracy, latitude, longitude } = position.coords;
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { status: "unavailable" };
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return {
+        detail: "The phone returned a reading with no usable coordinates.",
+        reason: "position_unavailable",
+        status: "unavailable",
+      };
+    }
 
     return {
       accuracyMeters: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
@@ -95,8 +115,12 @@ export async function readCurrentPosition(access: LocationAccess): Promise<Locat
       longitude,
       status: "fixed",
     };
-  } catch {
-    return { status: "unavailable" };
+  } catch (error) {
+    return {
+      detail: error instanceof Error && error.message ? error.message : null,
+      reason: access.servicesOn ? "position_unavailable" : "location_off",
+      status: "unavailable",
+    };
   } finally {
     if (timer) clearTimeout(timer);
   }

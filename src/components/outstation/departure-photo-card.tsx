@@ -10,6 +10,7 @@ import {
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { locationFailureFromBrowserErrorCode, type LocationFailure } from "@/lib/outstation/location-failure";
 
 /** One request still owing its departure photo. */
 export type DeparturePhotoPendingRequest = {
@@ -153,12 +154,26 @@ export function DeparturePhotoCard({
         // Position is best-effort, exactly as the server expects: the owner chose to FLAG a
         // departure photo taken far from the trip rather than refuse it, so a device that cannot
         // get a fix must still be able to submit. A failed lookup sends nulls, and the review
-        // then records the distance as unknown instead of as zero.
-        const position = await new Promise<GeolocationPosition | null>((resolve) => {
-          if (!navigator.geolocation) return resolve(null);
+        // then records the distance as unknown instead of as zero. It also sends WHY there is no
+        // fix, from the browser's own error (owner, 2026-09-18: "the system must record the
+        // reason"): before this the error was thrown away and the approver saw no explanation.
+        const { failure, position } = await new Promise<{
+          failure: LocationFailure | null;
+          position: GeolocationPosition | null;
+        }>((resolve) => {
+          if (!navigator.geolocation) {
+            return resolve({ failure: { detail: null, reason: "unsupported" }, position: null });
+          }
           navigator.geolocation.getCurrentPosition(
-            (value) => resolve(value),
-            () => resolve(null),
+            (value) => resolve({ failure: null, position: value }),
+            (error) =>
+              resolve({
+                failure: {
+                  detail: typeof error.message === "string" ? error.message : null,
+                  reason: locationFailureFromBrowserErrorCode(error.code),
+                },
+                position: null,
+              }),
             { enableHighAccuracy: true, maximumAge: 0, timeout: 12_000 },
           );
         });
@@ -189,6 +204,8 @@ export function DeparturePhotoCard({
           body: JSON.stringify({
             imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
             latitude,
+            locationFailure: failure?.reason ?? null,
+            locationFailureDetail: failure?.detail ?? null,
             locationLabel: capturedLocationLabel,
             longitude,
           }),

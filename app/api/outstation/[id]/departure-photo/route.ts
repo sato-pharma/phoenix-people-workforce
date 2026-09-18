@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { readDeparturePhotoPosition } from "@/lib/outstation/departure-evidence";
+import { readLocationFailure } from "@/lib/outstation/location-failure";
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -77,6 +78,9 @@ export async function POST(
     const result = await captureOutstationDeparturePhoto(access, {
       imageDataUrl,
       latitude,
+      // Why there is no position, as the phone reported it (owner, 2026-09-18: "the system must
+      // record the reason"). Null when there is a position; `not_reported` when the client sent none.
+      locationFailure: readLocationFailure(body, latitude != null && longitude != null),
       locationLabel: typeof body.locationLabel === "string" ? body.locationLabel : null,
       longitude,
       requestId: id,

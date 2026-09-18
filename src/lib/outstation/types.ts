@@ -1,4 +1,5 @@
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
+import type { LocationFailure } from "@/lib/outstation/location-failure";
 
 export type OutstationEligibilityStatus =
   | "eligible"
@@ -69,6 +70,11 @@ export type OutstationDepartureEvidenceMetadata = {
   capturedLongitude: number | null;
   distanceFromArrivalKm: number | null;
   flags: string[];
+  /**
+   * Why there is no position, when there is none (location-failure.ts). Null with a position.
+   * Absent on photos taken before 2026-09-18, which read as "no reason recorded".
+   */
+  locationFailure?: LocationFailure | null;
   minutesAfterArrival: number | null;
   /**
    * Every capture this one replaced, oldest first. Empty on a first capture.
@@ -93,6 +99,7 @@ export type OutstationDepartureEvidenceVersion = {
   distanceFromArrivalKm: number | null;
   flags: string[];
   imagePath: string;
+  locationFailure?: LocationFailure | null;
   minutesAfterArrival: number | null;
   version: number;
 };
