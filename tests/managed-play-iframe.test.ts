@@ -47,12 +47,25 @@ import {
  *     cookie, so losing it is the realistic failure — and it must say so, because by then the owner
  *     has already completed an enrolment he cannot repeat without starting over.
  *
+ *  7. GOOGLE'S FRAME HOST HOLDS NOTHING REACT RENDERED. gapi writes the store's frame into an
+ *     element and the console empties that element before every open, both behind React's back. A
+ *     placeholder React rendered inside it is therefore gone when React's next commit tries to
+ *     remove it: `removeChild` throws, and the whole admin page falls to "This page stopped
+ *     unexpectedly". That is exactly how the store page failed on production the day the enterprise
+ *     was bound (2026-09-18) — the server answered 200 every time and the page still died. This
+ *     suite has no DOM, so the console's source is pinned instead: the host is self-closing, and it
+ *     is the only element gapi writes into or the console empties.
+ *
  * WHY `fetch` IS INJECTED. There is no network in this suite and there must not be: a real call
  * would need the owner's enterprise binding, and the API's quota is 2 Cloud projects for the whole
  * company.
  */
 
 const nextConfigSource = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+const consoleSource = readFileSync(
+  new URL("../src/components/devices/managed-play-console.tsx", import.meta.url),
+  "utf8",
+);
 
 type RecordedCall = { body: unknown; method: string; url: string };
 
@@ -350,4 +363,38 @@ export async function runManagedPlayIframeTests() {
     "rather than an 'enterprises/",
     "A name that is not a binding cannot configure anything",
   );
+
+  // ── 7. Google's frame host holds nothing React rendered ─────────────────────────────────────
+  const hostTags = [...consoleSource.matchAll(/<[a-z]+\b[^>]*\bref=\{frameHostRef\}[^>]*>/g)].map(
+    (match) => match[0],
+  );
+  assert.equal(
+    hostTags.length,
+    1,
+    "managed-play-console.tsx must hand exactly one element to frameHostRef — the element gapi writes Google's frame into.",
+  );
+  assert.ok(
+    hostTags[0].endsWith("/>") && !/\b(children|dangerouslySetInnerHTML)=/.test(hostTags[0]),
+    `The element gapi writes into must be self-closing, holding nothing React rendered — got '${hostTags[0]}'. The console empties it and openChild fills it behind React's back, so a child React put there is already gone when React's next commit removes it: "Failed to execute 'removeChild' on 'Node'", and the whole admin page falls to "This page stopped unexpectedly". Render the placeholder as the host's sibling.`,
+  );
+
+  const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const isFrameHost = (expression: string) =>
+    expression === "frameHostRef.current" ||
+    new RegExp(`const ${escapeRegExp(expression)} = frameHostRef\\.current;`).test(consoleSource);
+
+  const whereMatch = /\.openChild\(\{[\s\S]*?\bwhere:\s*([\w.]+)/.exec(consoleSource);
+  assert.ok(whereMatch, "managed-play-console.tsx must open Google's frame through gapi's openChild.");
+  assert.ok(
+    isFrameHost(whereMatch[1]),
+    `openChild must write into the frame host and nowhere React renders — got 'where: ${whereMatch[1]}'.`,
+  );
+
+  const emptied = [...consoleSource.matchAll(/([\w.]+)\??\.replaceChildren\(/g)].map((match) => match[1]);
+  for (const target of emptied) {
+    assert.ok(
+      isFrameHost(target),
+      `Only the frame host may be emptied by hand — '${target}.replaceChildren()' would pull out nodes React still owns.`,
+    );
+  }
 }
