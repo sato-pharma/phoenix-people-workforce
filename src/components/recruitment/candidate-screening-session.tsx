@@ -872,9 +872,12 @@ export function CandidateScreeningSession({
   // handles the squeeze; this removes the cause, and hands the whole screen to the only task on
   // this page that wants it.
   const fullBleed = variant === "overlay" || expanded;
+  // The page geometry's height and floor are divided by the display scale: this frame sits inside
+  // <main>'s zoom, which does not compensate viewport units, so a bare 100vh painted it at 80% of the
+  // window. See the screening page's frame (workstation-page-client.tsx) and globals.css.
   const shellClass = fullBleed
     ? "fixed inset-0 z-[190] flex flex-col bg-slate-900"
-    : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col overflow-hidden bg-slate-900";
+    : "flex h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))] min-h-[calc(32rem_/_var(--phx-scale-applied,1))] flex-col overflow-hidden bg-slate-900";
 
   if (!current) {
     return (
