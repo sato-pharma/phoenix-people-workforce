@@ -242,7 +242,24 @@ export function WorkHeader({
           ) : null}
         </div>
         {figures ? (
-          <div className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-4 gap-y-1">{figures}</div>
+          /*
+           * NO `shrink-0` HERE, EVER — it is what made this header scroll sideways on a phone.
+           *
+           * `flex-wrap` on this strip cannot wrap what is never made narrow enough to need wrapping.
+           * `shrink-0` pins the strip at its own content width, so at 375px the three figures stayed
+           * on one 464px line and pushed `main` to a 480px scrollWidth inside a 375px viewport —
+           * measured on production 2026-09-18, and the exact failure the fits-the-screen rule names:
+           * `shrink-0` makes an inner `flex-wrap` inert.
+           *
+           * Dropping it costs nothing above the fold: with room to spare, `flex-shrink` never
+           * engages, so the strip keeps its natural width on one line at the end of the name's row
+           * (measured identical at 1440px — 371px wide, 13px tall, same left edge, with and
+           * without). It only does something when there is no room, which is the whole point.
+           *
+           * `min-w-0` stays and is load-bearing: without it the strip cannot be sized below the
+           * min-content width of its own flex line, and the overflow comes straight back.
+           */
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">{figures}</div>
         ) : null}
       </div>
       {controls ? <div className="mt-2 flex flex-wrap items-center gap-1.5">{controls}</div> : null}
