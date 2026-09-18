@@ -1377,6 +1377,7 @@ import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attributi
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runClosingCorrectionsCellTests } from "./closing-corrections-cell.test.ts";
 import { runClosingCorrectionsOneEventTests } from "./closing-corrections-one-event.test.ts";
+import { runClosingCorrectionsDirectByRegionTests } from "./closing-corrections-direct-by-region.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
@@ -4305,6 +4306,11 @@ await runTest(
 await runTest(
   "closing corrections: one return is ONE situation however many detectors see it",
   runClosingCorrectionsOneEventTests,
+);
+
+await runTest(
+  "closing corrections: a Direct row with no area is the closing's Direct row for its REGION, so April 2026 Pedia Lacto Advanced 2 reads Delta (1) -432 units / -83,160 EGP and Alex-BHR on its own, never one \"(no area) ()\" cell netting the two to -66,880",
+  runClosingCorrectionsDirectByRegionTests,
 );
 
 await runTest(
