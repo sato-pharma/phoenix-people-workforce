@@ -798,6 +798,7 @@ import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
 import { runDeviceAction1SyncTests } from "./device-action1-sync.test.ts";
 import { runAndroidWebAppTests } from "./android-web-app.test.ts";
 import { runManagedPlayIframeTests } from "./managed-play-iframe.test.ts";
+import { runTabletEnrollmentTests } from "./tablet-enrollment.test.ts";
 import { runCustodyItemValuesTests } from "./custody-item-values.test.ts";
 import { runDeviceImportAttemptLogTests } from "./device-import-attempt-log.test.ts";
 import { runHrAdvisoryModuleAccessTests } from "./hr-advisory-module-access.test.ts";
@@ -3277,6 +3278,14 @@ await runTest(
   + "never survives redaction, and enterprises.create keeps needing BOTH the cookie-parked signup "
   + "name and the single-use enterpriseToken)",
   runManagedPlayIframeTests,
+);
+await runTest(
+  "rep tablets (the enrollment QR reads back through an independent decoder at every level and "
+  + "across versions 1 to 40, the payload keeps the tablet's built-in camera app, a code made for "
+  + "one tablet works once and never reaches the audit row, the rep-tablet policy refuses "
+  + "side-loaded apps and only defaults or list order are not drift, and an enrolled tablet is "
+  + "matched to the custody register by its code, serial or IMEI with a wrong-code tablet flagged)",
+  runTabletEnrollmentTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

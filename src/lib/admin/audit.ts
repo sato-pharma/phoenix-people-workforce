@@ -63,6 +63,16 @@ export type AuditEntityType =
   // Best-effort (`writeAuditLog`), unlike the two above: a diagnostic that can fail the import it
   // was only meant to observe is worse than the blindness it replaces.
   | "device_import"
+  // Rep Tablets (2026-09-18). `android_device_policy` is a push of the `rep-tablet` policy to Google —
+  // the rules and app list every enrolled tablet follows, so one row can change every rep's tablet
+  // at once. `android_enrollment_token` is one enrollment code made, recording which register tablet
+  // it was for, how long it lasts and whether it works once.
+  //
+  // Both REQUIRED, written after Google has answered. The token row NEVER holds the code or the QR
+  // payload: either one enrols a device into the fleet until it expires, and an audit trail that
+  // stores the credential it audits hands it to every reader of the log.
+  | "android_device_policy"
+  | "android_enrollment_token"
   // Email routing. `distribution_list` is an edit to a named recipient group — who a future email
   // reaches. `company_email_alias` is the Turbify register beside it.
   //

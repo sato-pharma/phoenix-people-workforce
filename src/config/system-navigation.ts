@@ -67,6 +67,7 @@ import {
   Stethoscope,
   Sunrise,
   Store,
+  Tablet,
   Tags,
   Target,
   TrendingUp,
@@ -3599,6 +3600,15 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Approve which apps the company tablets are allowed to run.",
     permissions: [{ resource: "company_devices", action: "approve" }],
   },
+  // Same gate, same reason, same rail as Managed Google Play: the rules on this page reach every
+  // enrolled rep tablet at once, and an enrollment code brings a new tablet under them.
+  {
+    href: "/devices/tablets",
+    icon: Tablet,
+    label: "Rep Tablets",
+    description: "Enroll a company tablet with a QR code and set the rules every rep tablet follows.",
+    permissions: [{ resource: "company_devices", action: "approve" }],
+  },
   {
     href: "/retention",
     icon: HeartPulse,
@@ -4318,6 +4328,7 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
           "/new-hire-mailboxes",
           "/devices",
           "/devices/managed-play",
+          "/devices/tablets",
         ],
       },
       {

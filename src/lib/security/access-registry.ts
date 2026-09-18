@@ -1263,6 +1263,17 @@ export const accessRegistry = [
   // refuse every real callback. The permission is still asserted, and the token is single-use, so a
   // replayed one buys nothing.
   sessionApi({ methods: ["GET"], pattern: "/api/devices/managed-play/callback", permission: { resource: "company_devices", action: "approve" } }),
+  // Rep Tablets — the device policy every rep tablet follows, the enrollment codes that bring a
+  // tablet under it, and the enrolled-tablet list. All three on `company_devices:approve` like
+  // Managed Google Play: one policy save reaches every enrolled tablet, and even the read lists each
+  // tablet's serial, IMEI and holder straight from Google.
+  //
+  // The READ writes nothing, so it declares no audit row. The two WRITES each write a REQUIRED audit
+  // row after Google answers — the enrollment one records who made a code, for which tablet and for
+  // how long, and never the code itself, which stays a live credential until it expires.
+  sessionApi({ methods: ["GET"], pattern: "/api/devices/tablets", permission: { resource: "company_devices", action: "approve" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/policy", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/enrollment", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

@@ -1,0 +1,979 @@
+"use client";
+
+/**
+ * Rep Tablets — the rules every rep tablet follows, the QR code that enrolls a new one, and the
+ * tablets already enrolled, matched to the custody register.
+ *
+ * DESIGN IDENTITY is Managed Google Play's and the device register's (AGENTS.md §4: match the
+ * sibling pages, never invent a one-off look) — the same `PremiumHero`, slate borders, square
+ * corners and 9px uppercase micro-labels. It is the third page of the same job: the register records
+ * who holds a tablet, Managed Google Play decides what may be published to it, this page puts it
+ * under the company's rules.
+ *
+ * IT FITS THE SCREEN. The enrolled-tablet table is `table-fixed` with a `<colgroup>` totalling 100%,
+ * merged to four columns so it holds at the 669px content width the register designs against, and
+ * phones get cards. Nothing truncates: every free-text line wraps.
+ *
+ * 🔴 THE ENROLLMENT CODE IS A CREDENTIAL. Until it expires it puts a tablet into the company's
+ * fleet, so it lives in component state only while it is on screen — never in storage, never in a
+ * log, never in a URL — and "Hide the code" drops it.
+ *
+ * THE QR CODE IS DRAWN BY REACT — one `<path>` from Phoenix's own encoder — not by a library writing
+ * into a DOM node. On 2026-09-18 production's Managed Google Play page crashed because a script wrote
+ * into an element React also rendered into; nothing on this page hands a node to anyone.
+ */
+
+import {
+  Download,
+  EyeOff,
+  Loader2,
+  Plus,
+  QrCode,
+  RefreshCw,
+  ShieldAlert,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { PremiumHero } from "@/components/ui/premium-hero";
+import type { ManagedTabletRow, ManagedTabletTone } from "@/lib/devices/managed-tablets";
+import type { EnrollmentResult, RepTabletsState } from "@/lib/devices/rep-tablets-service";
+import type { EnrollmentValidity } from "@/lib/devices/tablet-enrollment";
+import type { OwnerAppInstallType } from "@/lib/devices/tablet-policy";
+import { cairoDate, cairoDateTime } from "@/lib/format/cairo-datetime";
+import { QR_QUIET_ZONE, encodeQrText, qrSvgPath, type QrCode as QrSymbol } from "@/lib/qr/qr-code";
+
+const MICRO_LABEL = "text-[9px] font-black uppercase tracking-[0.14em] text-slate-500";
+const PRIMARY_BUTTON =
+  "inline-flex items-center gap-2 border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60";
+const SECONDARY_BUTTON =
+  "inline-flex items-center gap-2 border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60";
+const DANGER_BUTTON =
+  "inline-flex items-center gap-2 border border-rose-700 bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:opacity-60";
+const INPUT_CLASS =
+  "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
+
+// ---------------------------------------------------------------------------------------------
+// Talking to the three routes
+// ---------------------------------------------------------------------------------------------
+
+class RequestFailure extends Error {
+  readonly setupRequired: boolean;
+
+  constructor(message: string, setupRequired: boolean) {
+    super(message);
+    this.name = "RequestFailure";
+    this.setupRequired = setupRequired;
+  }
+}
+
+async function requestJson<T>(url: string, body?: unknown): Promise<T> {
+  const response = await fetch(url, {
+    cache: "no-store",
+    ...(body === undefined
+      ? {}
+      : { body: JSON.stringify(body), headers: { "content-type": "application/json" }, method: "POST" }),
+  });
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const failure = (payload ?? {}) as { message?: unknown; setupRequired?: unknown };
+    throw new RequestFailure(
+      typeof failure.message === "string" && failure.message
+        ? failure.message
+        : "The server answered with an error and no explanation. Reload the page and try again.",
+      failure.setupRequired === true,
+    );
+  }
+  return payload as T;
+}
+
+function messageOf(caught: unknown, fallback: string): string {
+  return caught instanceof Error && caught.message ? caught.message : fallback;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Small pieces
+// ---------------------------------------------------------------------------------------------
+
+const CHIP_TONE = {
+  bad: "border-rose-300 bg-rose-50 text-rose-800",
+  good: "border-emerald-300 bg-emerald-50 text-emerald-800",
+  info: "border-sky-300 bg-sky-50 text-sky-800",
+  neutral: "border-slate-300 bg-slate-50 text-slate-700",
+  warn: "border-amber-300 bg-amber-50 text-amber-800",
+} as const;
+
+/** Chips WRAP, like the register's — a nowrap chip overflows its cell, not the table. */
+function Chip({ tone, children }: { tone: keyof typeof CHIP_TONE; children: ReactNode }) {
+  return (
+    <span className={`inline-block border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${CHIP_TONE[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+const STATE_CHIP: Record<ManagedTabletTone, keyof typeof CHIP_TONE> = { bad: "bad", ok: "info", warn: "warn" };
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className={`block ${MICRO_LABEL}`}>{label}</span>
+      {children}
+      {hint ? <span className="mt-1 block text-[10px] font-semibold text-slate-400">{hint}</span> : null}
+    </label>
+  );
+}
+
+function ErrorBox({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="border border-rose-300 bg-rose-50 p-4">
+      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-rose-800">{title}</p>
+      <p className="mt-1 break-words text-sm text-rose-900">{message}</p>
+    </div>
+  );
+}
+
+function WarningBox({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="border border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-start gap-3">
+        <TriangleAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-amber-700" />
+        <div className="min-w-0 space-y-2">
+          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-800">{title}</p>
+          <div className="break-words text-sm text-amber-900">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The QR code
+// ---------------------------------------------------------------------------------------------
+
+function QrImage({ code, label }: { code: QrSymbol; label: string }) {
+  const side = code.size + QR_QUIET_ZONE * 2;
+  const path = useMemo(() => qrSvgPath(code), [code]);
+  return (
+    <svg
+      aria-label={label}
+      className="block h-auto w-full max-w-[360px] border border-slate-200 bg-white"
+      role="img"
+      shapeRendering="crispEdges"
+      viewBox={`0 0 ${side} ${side}`}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect fill="#ffffff" height={side} width={side} />
+      <path d={path} fill="#000000" />
+    </svg>
+  );
+}
+
+/**
+ * A PNG of the code with a caption under it, for printing or showing on a second screen.
+ *
+ * The anchor is clicked DETACHED — never appended to the document — so nothing is added to a tree
+ * React owns, not even for a moment.
+ */
+function saveQrImage(code: QrSymbol, caption: string, fileName: string) {
+  const scale = 12;
+  const side = (code.size + QR_QUIET_ZONE * 2) * scale;
+  const captionHeight = 72;
+  const canvas = document.createElement("canvas");
+  canvas.width = side;
+  canvas.height = side + captionHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "#000000";
+  code.modules.forEach((row, y) => {
+    row.forEach((dark, x) => {
+      if (dark) context.fillRect((x + QR_QUIET_ZONE) * scale, (y + QR_QUIET_ZONE) * scale, scale, scale);
+    });
+  });
+  context.fillStyle = "#0f172a";
+  context.font = "bold 26px Arial, sans-serif";
+  context.textAlign = "center";
+  context.fillText(caption, side / 2, side + captionHeight / 2, side - 2 * QR_QUIET_ZONE * scale);
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }, "image/png");
+}
+
+// ---------------------------------------------------------------------------------------------
+// The enrolled tablets
+// ---------------------------------------------------------------------------------------------
+
+const MATCHED_BY_LABEL: Record<NonNullable<ManagedTabletRow["matchedBy"]>, string> = {
+  enrollment: "Matched by its enrollment code",
+  imei: "Matched by IMEI",
+  serial: "Matched by serial number",
+};
+
+function attentionLines(row: ManagedTabletRow): Array<{ tone: "bad" | "warn"; text: string }> {
+  const lines: Array<{ tone: "bad" | "warn"; text: string }> = [];
+  if (row.enrolledWithAnotherTabletsCode) {
+    lines.push({
+      text: `Enrolled with the code made for ${row.assetTag}, but its serial number is not that tablet's. Check which tablet this is before it is handed over.`,
+      tone: "bad",
+    });
+  }
+  if (!row.onRepPolicy) {
+    lines.push({ text: "Not on the rep tablet rules.", tone: "warn" });
+  } else if (row.policyUpToDate === false) {
+    lines.push({ text: "Has not picked up the latest rules yet — it will at its next check-in.", tone: "warn" });
+  }
+  for (const issue of row.issues) lines.push({ text: issue, tone: "warn" });
+  return lines;
+}
+
+function TabletIdentity({ row }: { row: ManagedTabletRow }) {
+  return (
+    <>
+      {row.assetTag ? (
+        <p className="break-words text-[12px] font-black text-slate-900">{row.assetTag}</p>
+      ) : (
+        <p className="break-words text-[12px] font-black text-amber-700">Not in the custody register</p>
+      )}
+      <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">{row.model}</p>
+      {row.serialNumber ? (
+        <p className="mt-0.5 break-words text-[11px] font-bold text-slate-700" dir="ltr">
+          S/N {row.serialNumber}
+        </p>
+      ) : null}
+      <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+        {row.androidVersion ? `Android ${row.androidVersion}` : "Android version not reported yet"}
+        {row.securityPatchLevel ? ` · security patch ${cairoDate(row.securityPatchLevel)}` : ""}
+      </p>
+    </>
+  );
+}
+
+function TabletHolder({ row, registerUnavailable }: { row: ManagedTabletRow; registerUnavailable: boolean }) {
+  if (!row.registerDeviceId) {
+    return (
+      <p className="break-words text-[11px] font-semibold text-slate-500">
+        {registerUnavailable
+          ? "The register could not be read, so the holder is unknown."
+          : "Unknown — add this tablet to the custody register to see who holds it."}
+      </p>
+    );
+  }
+  return (
+    <>
+      {row.holderName ? (
+        <>
+          <p className="break-words text-[12px] font-bold text-slate-900">{row.holderName}</p>
+          <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+            {row.holderJobTitle ?? "Job title not recorded"}
+          </p>
+        </>
+      ) : (
+        <p className="break-words text-[11px] font-semibold text-slate-400">Nobody — held by the company</p>
+      )}
+      {row.matchedBy ? (
+        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-400">{MATCHED_BY_LABEL[row.matchedBy]}</p>
+      ) : null}
+    </>
+  );
+}
+
+function TabletRules({ row }: { row: ManagedTabletRow }) {
+  const lines = attentionLines(row);
+  return (
+    <>
+      <div className="flex flex-wrap gap-1">
+        <Chip tone={STATE_CHIP[row.stateTone]}>{row.stateLabel}</Chip>
+        {row.compliant ? <Chip tone="good">Following the rules</Chip> : <Chip tone="warn">Not following every rule</Chip>}
+      </div>
+      {lines.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {lines.map((line) => (
+            <li
+              className={`break-words text-[11px] font-semibold ${line.tone === "bad" ? "text-rose-700" : "text-amber-800"}`}
+              key={line.text}
+            >
+              {line.text}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
+
+function TabletTimes({ row }: { row: ManagedTabletRow }) {
+  return (
+    <>
+      <p className="break-words text-[11px] font-bold text-slate-700">
+        {row.lastReportAt ? `Reported ${cairoDateTime(row.lastReportAt)}` : "No report yet"}
+      </p>
+      {row.lastSyncAt ? (
+        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+          Rules synced {cairoDateTime(row.lastSyncAt)}
+        </p>
+      ) : null}
+      {row.enrolledAt ? (
+        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">Enrolled {cairoDate(row.enrolledAt)}</p>
+      ) : null}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The page
+// ---------------------------------------------------------------------------------------------
+
+type PolicyChangeBody =
+  | { action: "save" }
+  | { action: "add"; app: string; installType: OwnerAppInstallType }
+  | { action: "remove"; packageName: string };
+
+export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolean }) {
+  const [data, setData] = useState<RepTabletsState | null>(null);
+  // True from the first render when the enterprise is bound: the first load starts in an effect,
+  // which may not set state synchronously (see below).
+  const [loading, setLoading] = useState(enterpriseBound);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [setupRequired, setSetupRequired] = useState(!enterpriseBound);
+
+  const [policyBusy, setPolicyBusy] = useState<string | null>(null);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policyNotice, setPolicyNotice] = useState<string | null>(null);
+  const [appInput, setAppInput] = useState("");
+  const [installType, setInstallType] = useState<OwnerAppInstallType>("FORCE_INSTALLED");
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+
+  const [target, setTarget] = useState("");
+  const [validFor, setValidFor] = useState<EnrollmentValidity | null>(null);
+  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [enrollment, setEnrollment] = useState<EnrollmentResult | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // One read of the page, shared by the first load and every refresh. It sets state only inside
+  // the promise's callbacks, which is what lets the first load run from an effect: an async loader
+  // called straight from an effect body trips react-hooks/set-state-in-effect. BiometricDevicesCard
+  // solves the same problem the same way.
+  const readState = useCallback(
+    (isCurrent: () => boolean) =>
+      requestJson<RepTabletsState>("/api/devices/tablets")
+        .then((state) => {
+          if (!isCurrent()) return;
+          setData(state);
+          setSetupRequired(false);
+        })
+        .catch((caught: unknown) => {
+          if (!isCurrent()) return;
+          if (caught instanceof RequestFailure && caught.setupRequired) setSetupRequired(true);
+          else setLoadError(messageOf(caught, "Could not load the rep tablets."));
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        }),
+    [],
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    await readState(() => true);
+  }, [readState]);
+
+  useEffect(() => {
+    if (!enterpriseBound) return;
+    let current = true;
+    void readState(() => current);
+    return () => {
+      current = false;
+    };
+  }, [enterpriseBound, readState]);
+
+  // The expiry line turns into "expired" on its own while the code is on screen.
+  useEffect(() => {
+    if (!enrollment?.expiresAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [enrollment]);
+
+  const changePolicy = useCallback(
+    async (change: PolicyChangeBody, busyKey: string, done: string) => {
+      setPolicyBusy(busyKey);
+      setPolicyError(null);
+      setPolicyNotice(null);
+      try {
+        await requestJson<{ version: string | null }>("/api/devices/tablets/policy", change);
+        setPolicyNotice(done);
+        await load();
+        return true;
+      } catch (caught) {
+        setPolicyError(messageOf(caught, "Could not save the tablet rules."));
+        return false;
+      } finally {
+        setPolicyBusy(null);
+      }
+    },
+    [load],
+  );
+
+  const addApp = useCallback(async () => {
+    const app = appInput.trim();
+    if (!app) {
+      setPolicyError("Paste the app's Google Play link, or its package name.");
+      return;
+    }
+    if (await changePolicy({ action: "add", app, installType }, "add", "Added. Every rep tablet picks it up at its next check-in.")) {
+      setAppInput("");
+    }
+  }, [appInput, changePolicy, installType]);
+
+  const removeApp = useCallback(
+    async (packageName: string, title: string) => {
+      if (
+        await changePolicy(
+          { action: "remove", packageName },
+          `remove:${packageName}`,
+          `Removed ${title}. It is uninstalled from every rep tablet at its next check-in.`,
+        )
+      ) {
+        setConfirmRemove(null);
+      }
+    },
+    [changePolicy],
+  );
+
+  const effectiveValidity: EnrollmentValidity = validFor ?? data?.defaultValidity ?? "24h";
+
+  const makeCode = useCallback(async () => {
+    setEnrollBusy(true);
+    setEnrollError(null);
+    setEnrollment(null);
+    try {
+      const created = await requestJson<EnrollmentResult>("/api/devices/tablets/enrollment", {
+        registerDeviceId: target || null,
+        validFor: effectiveValidity,
+      });
+      setNow(Date.now());
+      setEnrollment(created);
+    } catch (caught) {
+      setEnrollError(messageOf(caught, "Could not make an enrollment code."));
+    } finally {
+      setEnrollBusy(false);
+    }
+  }, [effectiveValidity, target]);
+
+  const qr = useMemo(() => {
+    if (!enrollment) return null;
+    try {
+      return encodeQrText(enrollment.qrPayload);
+    } catch {
+      return null;
+    }
+  }, [enrollment]);
+
+  const expired = enrollment?.expiresAt ? Date.parse(enrollment.expiresAt) <= now : false;
+  const policy = data?.policy ?? null;
+  const tablets = data?.tablets ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PremiumHero
+        kicker="Company devices"
+        subtitle="Set the rules every rep tablet follows, enroll a new tablet with a QR code, and see every enrolled tablet beside the custody register. A tablet enrolled here is the company's from its first screen."
+        title="Rep Tablets"
+      />
+
+      {setupRequired ? (
+        <div className="space-y-4 border border-slate-200 bg-white p-5">
+          <div>
+            <p className={MICRO_LABEL}>Setup — one time</p>
+            <h2 className="mt-1 text-lg font-black text-slate-900">Phoenix is not bound to an Android Enterprise yet</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-600">
+              The binding is made once, on the Managed Google Play page. Until it exists there are no rules to set and
+              nothing a tablet could enroll into.
+            </p>
+          </div>
+          <Link className={SECONDARY_BUTTON} href="/devices/managed-play">
+            Open Managed Google Play
+          </Link>
+        </div>
+      ) : null}
+
+      {!setupRequired && !data && loading ? (
+        <div className="flex items-center justify-center gap-2 border border-slate-200 bg-white p-10 text-sm text-slate-500">
+          <Loader2 aria-hidden className="size-4 animate-spin" />
+          Asking Google for the rep tablets…
+        </div>
+      ) : null}
+
+      {!setupRequired && loadError ? (
+        <div className="space-y-3">
+          <ErrorBox message={loadError} title="The rep tablets did not load" />
+          <button className={SECONDARY_BUTTON} disabled={loading} onClick={() => void load()} type="button">
+            {loading ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <RefreshCw aria-hidden className="size-4" />}
+            Try again
+          </button>
+        </div>
+      ) : null}
+
+      {!setupRequired && data && policy ? (
+        <>
+          {/* ── The rules ─────────────────────────────────────────────────────────────── */}
+          <section className="space-y-4 border border-slate-200 bg-white p-5">
+            <div>
+              <p className={MICRO_LABEL}>Tablet rules</p>
+              <h2 className="mt-1 text-lg font-black text-slate-900">What every rep tablet follows</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                One set of rules for every rep tablet. A change here reaches every enrolled tablet at its next check-in.
+              </p>
+            </div>
+
+            {!policy.exists ? (
+              <WarningBox title="The rules are not on Google yet">
+                <p>
+                  Save them once and every tablet enrolled from then on follows them. No tablet can be enrolled before
+                  that.
+                </p>
+                <button
+                  className={PRIMARY_BUTTON}
+                  disabled={policyBusy !== null}
+                  onClick={() =>
+                    void changePolicy({ action: "save" }, "save", "Saved. The rules are on Google and tablets can be enrolled.")
+                  }
+                  type="button"
+                >
+                  {policyBusy === "save" ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
+                  {policyBusy === "save" ? "Saving…" : "Save the rules to Google"}
+                </button>
+              </WarningBox>
+            ) : policy.drift.length > 0 ? (
+              <WarningBox title="Google's copy has drifted">
+                <p>
+                  {policy.drift.join(", ")} on Google {policy.drift.length === 1 ? "is" : "are"} not what Phoenix sets.
+                  Saving puts every tablet back on the rules below.
+                </p>
+                <button
+                  className={PRIMARY_BUTTON}
+                  disabled={policyBusy !== null}
+                  onClick={() => void changePolicy({ action: "save" }, "save", "Saved. Google's copy matches the rules again.")}
+                  type="button"
+                >
+                  {policyBusy === "save" ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
+                  {policyBusy === "save" ? "Saving…" : "Put the rules back"}
+                </button>
+              </WarningBox>
+            ) : (
+              <p className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                In force on Google, exactly as listed below.
+              </p>
+            )}
+
+            <ul className="grid gap-3 md:grid-cols-2">
+              {data.rules.map((rule) => (
+                <li className="border border-slate-200 p-3" key={rule.title}>
+                  <p className="break-words text-[12px] font-black text-slate-900">{rule.title}</p>
+                  <p className="mt-1 break-words text-[12px] text-slate-600">{rule.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {/* ── The apps ──────────────────────────────────────────────────────────────── */}
+          <section className="space-y-4 border border-slate-200 bg-white p-5">
+            <div>
+              <p className={MICRO_LABEL}>Apps</p>
+              <h2 className="mt-1 text-lg font-black text-slate-900">Apps on the rep tablets</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Only the apps listed here can be installed from a rep tablet&rsquo;s store. Adding one reaches every
+                tablet at its next check-in; removing one uninstalls it from every tablet.
+              </p>
+            </div>
+
+            {policyError ? <ErrorBox message={policyError} title="The rules were not saved" /> : null}
+            {policyNotice ? (
+              <p className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                {policyNotice}
+              </p>
+            ) : null}
+
+            <ul className="divide-y divide-slate-200 border border-slate-200">
+              <li className="px-4 py-3">
+                <p className="break-words text-[12px] font-black text-slate-900">Chrome</p>
+                <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">
+                  Installed on every tablet · Phoenix runs in it, so it is always there and cannot be removed.
+                </p>
+              </li>
+              {policy.apps.map((app) => {
+                const installLabel =
+                  data.installTypes.find((entry) => entry.value === app.installType)?.label ?? app.installType;
+                const removing = policyBusy === `remove:${app.packageName}`;
+                return (
+                  <li className="px-4 py-3" key={app.packageName}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="break-words text-[12px] font-black text-slate-900">{app.title}</p>
+                        <p className="mt-0.5 break-all text-[11px] font-semibold text-slate-400" dir="ltr">
+                          {app.packageName}
+                        </p>
+                        <p className="mt-0.5 break-words text-[11px] font-semibold text-slate-500">{installLabel}</p>
+                      </div>
+                      {confirmRemove === app.packageName ? null : (
+                        <button
+                          className={SECONDARY_BUTTON}
+                          disabled={policyBusy !== null}
+                          onClick={() => {
+                            setPolicyError(null);
+                            setPolicyNotice(null);
+                            setConfirmRemove(app.packageName);
+                          }}
+                          type="button"
+                        >
+                          <Trash2 aria-hidden className="size-4" />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {confirmRemove === app.packageName ? (
+                      <div className="mt-3 space-y-3 border border-rose-300 bg-rose-50 p-4">
+                        <p className="break-words text-sm text-rose-900">
+                          Remove <span className="font-semibold">{app.title}</span>? It is uninstalled from every rep
+                          tablet at its next check-in, together with anything the rep saved inside it.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            className={DANGER_BUTTON}
+                            disabled={policyBusy !== null}
+                            onClick={() => void removeApp(app.packageName, app.title)}
+                            type="button"
+                          >
+                            {removing ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Trash2 aria-hidden className="size-4" />}
+                            {removing ? "Removing…" : "Remove from every tablet"}
+                          </button>
+                          <button
+                            className={SECONDARY_BUTTON}
+                            disabled={removing}
+                            onClick={() => setConfirmRemove(null)}
+                            type="button"
+                          >
+                            Keep it
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+              {policy.apps.length === 0 ? (
+                <li className="px-4 py-3 text-[12px] font-semibold text-slate-500">
+                  No other app yet. The tablets carry Chrome and their own built-in apps only.
+                </li>
+              ) : null}
+            </ul>
+
+            <form
+              className="grid gap-3 border border-slate-200 bg-slate-50 p-4 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void addApp();
+              }}
+            >
+              <Field hint="Open the app on play.google.com and copy the address — it carries ?id= and the app's package name." label="Google Play link or package name">
+                <input
+                  className={INPUT_CLASS}
+                  dir="ltr"
+                  onChange={(event) => setAppInput(event.target.value)}
+                  placeholder="https://play.google.com/store/apps/details?id=com.example.app"
+                  value={appInput}
+                />
+              </Field>
+              <Field label="How it reaches the tablets">
+                <select
+                  className={INPUT_CLASS}
+                  onChange={(event) => setInstallType(event.target.value as OwnerAppInstallType)}
+                  value={installType}
+                >
+                  {data.installTypes.map((entry) => (
+                    <option key={entry.value} value={entry.value}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="md:col-span-2">
+                <button className={PRIMARY_BUTTON} disabled={policyBusy !== null} type="submit">
+                  {policyBusy === "add" ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Plus aria-hidden className="size-4" />}
+                  {policyBusy === "add" ? "Adding…" : "Add to the rep tablets"}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          {/* ── Enrollment ────────────────────────────────────────────────────────────── */}
+          <section className="space-y-4 border border-slate-200 bg-white p-5">
+            <div>
+              <p className={MICRO_LABEL}>Enroll a tablet</p>
+              <h2 className="mt-1 text-lg font-black text-slate-900">Make a QR code for a new tablet</h2>
+              <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                Choose the tablet from the custody register and the code works for that one tablet, once. Choose
+                &ldquo;Any rep tablet&rdquo; to set up several from one code until it expires.
+              </p>
+            </div>
+
+            {!policy.exists ? (
+              <p className="border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                Save the tablet rules above first — a tablet enrolled before then would have no rules to follow.
+              </p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                <Field
+                  hint={
+                    data.enrollable.length === 0
+                      ? "No tablet in the custody register yet — add it there to make a code for it by name."
+                      : undefined
+                  }
+                  label="Which tablet"
+                >
+                  <select className={INPUT_CLASS} onChange={(event) => setTarget(event.target.value)} value={target}>
+                    <option value="">Any rep tablet — works for every tablet until it expires</option>
+                    {data.enrollable.map((tablet) => (
+                      <option key={tablet.id} value={tablet.id}>
+                        {[
+                          tablet.assetTag,
+                          tablet.model,
+                          tablet.holderName ?? "not issued",
+                          tablet.enrolled ? "already enrolled" : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Usable for">
+                  <select
+                    className={INPUT_CLASS}
+                    onChange={(event) => setValidFor(event.target.value as EnrollmentValidity)}
+                    value={effectiveValidity}
+                  >
+                    {data.validity.map((entry) => (
+                      <option key={entry.value} value={entry.value}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <div className="flex flex-wrap gap-2 md:col-span-2">
+                  <button className={PRIMARY_BUTTON} disabled={enrollBusy} onClick={() => void makeCode()} type="button">
+                    {enrollBusy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <QrCode aria-hidden className="size-4" />}
+                    {enrollBusy ? "Making the code…" : "Make the QR code"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {enrollError ? <ErrorBox message={enrollError} title="No code was made" /> : null}
+
+            {enrollment ? (
+              <div className="grid gap-5 border border-slate-300 p-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+                <div className="min-w-0 space-y-3">
+                  {qr ? (
+                    <QrImage
+                      code={qr}
+                      label={enrollment.assetTag ? `Enrollment QR code for ${enrollment.assetTag}` : "Enrollment QR code for any rep tablet"}
+                    />
+                  ) : (
+                    <p className="border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      The QR code could not be drawn. Use the typed code on the right instead.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {qr ? (
+                      <button
+                        className={SECONDARY_BUTTON}
+                        onClick={() =>
+                          saveQrImage(
+                            qr,
+                            `${enrollment.assetTag ?? "Any rep tablet"} · until ${cairoDateTime(enrollment.expiresAt)}`,
+                            `rep-tablet-enrollment-${(enrollment.assetTag ?? "any-tablet").replace(/[^A-Za-z0-9-]+/g, "-")}.png`,
+                          )
+                        }
+                        type="button"
+                      >
+                        <Download aria-hidden className="size-4" />
+                        Save as image
+                      </button>
+                    ) : null}
+                    <button className={SECONDARY_BUTTON} onClick={() => setEnrollment(null)} type="button">
+                      <EyeOff aria-hidden className="size-4" />
+                      Hide the code
+                    </button>
+                  </div>
+                </div>
+
+                <div className="min-w-0 space-y-4">
+                  <div>
+                    <p className={MICRO_LABEL}>{enrollment.assetTag ? `For ${enrollment.assetTag}` : "For any rep tablet"}</p>
+                    <p className={`mt-1 break-words text-sm font-semibold ${expired ? "text-rose-700" : "text-slate-900"}`}>
+                      {expired
+                        ? `Expired ${cairoDateTime(enrollment.expiresAt)} — make a new one.`
+                        : `Usable until ${cairoDateTime(enrollment.expiresAt)}, Cairo time (${enrollment.validForLabel}).`}
+                    </p>
+                    <p className="mt-1 break-words text-[12px] text-slate-600">
+                      {enrollment.oneTimeOnly
+                        ? "It works once: the first tablet that scans it uses it up."
+                        : "It works for any number of tablets until it expires."}
+                    </p>
+                  </div>
+
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
+                    <li>
+                      Start from the tablet&rsquo;s first Welcome screen — new out of the box, or erased from Settings ›
+                      System › Reset options.
+                    </li>
+                    <li>Tap the same empty spot on the Welcome screen six times. The tablet opens its QR scanner.</li>
+                    <li>Join Wi-Fi if it asks, then point the tablet at this code.</li>
+                    <li>
+                      Accept the notice that the tablet belongs to the company. It sets itself up, installs Chrome and
+                      applies the rules — allow a few minutes.
+                    </li>
+                    <li>It then appears under Enrolled tablets below. Hand it over once it shows there.</li>
+                  </ol>
+
+                  <div>
+                    <p className={MICRO_LABEL}>No QR scanner?</p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      At the Google sign-in step, type <span className="font-mono font-semibold">afw#setup</span> in the
+                      email box instead, then enter this code when the tablet asks for it:
+                    </p>
+                    <p className="mt-2 break-all border border-slate-300 bg-slate-50 p-3 font-mono text-sm font-semibold text-slate-900" dir="ltr">
+                      {enrollment.enrollmentCode}
+                    </p>
+                  </div>
+
+                  <div className="flex items-start gap-3 border border-slate-300 bg-slate-50 p-4">
+                    <ShieldAlert aria-hidden className="mt-0.5 size-5 shrink-0 text-slate-700" />
+                    <p className="break-words text-sm text-slate-700">
+                      {enrollment.oneTimeOnly
+                        ? "Whoever scans this first puts that tablet into the company's fleet. Show it only to the tablet you are setting up."
+                        : "Until it expires, this code puts ANY tablet that scans it into the company's fleet. Show it only to the tablets you are setting up, and do not send it on WhatsApp or by email — the saved image carries the code too."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          {/* ── The enrolled tablets ──────────────────────────────────────────────────── */}
+          <section className="border border-slate-200 bg-white p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className={MICRO_LABEL}>Enrolled tablets</p>
+                <h2 className="mt-1 text-lg font-black text-slate-900">
+                  {tablets.length === 1 ? "1 tablet" : `${tablets.length} tablets`} on Google&rsquo;s list
+                </h2>
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">Checked {cairoDateTime(data.loadedAt)}</p>
+              </div>
+              <button className={SECONDARY_BUTTON} disabled={loading} onClick={() => void load()} type="button">
+                {loading ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <RefreshCw aria-hidden className="size-4" />}
+                {loading ? "Checking…" : "Check again"}
+              </button>
+            </div>
+
+            {data.registerError ? (
+              <div className="mt-4">
+                <WarningBox title="The custody register could not be read">
+                  <p>The tablets are listed without their asset tags and holders. {data.registerError}</p>
+                </WarningBox>
+              </div>
+            ) : null}
+
+            {tablets.length === 0 ? (
+              <p className="mt-5 border border-slate-200 bg-white px-4 py-6 text-center text-[12px] font-bold text-slate-500">
+                No tablet is enrolled yet. Make a QR code above and scan it from a tablet&rsquo;s Welcome screen.
+              </p>
+            ) : null}
+
+            {/* DESKTOP — four columns, merged rather than shrunk so the table holds at 669px. */}
+            {tablets.length > 0 ? (
+              <div className="mt-5 hidden md:block">
+                <table className="w-full table-fixed border-collapse">
+                  <colgroup>
+                    <col className="w-[28%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[32%]" />
+                    <col className="w-[18%]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="border-b border-slate-300 bg-slate-50">
+                      {["Tablet", "Holder", "Rules", "Last heard"].map((heading) => (
+                        <th
+                          className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-[0.14em] text-slate-500"
+                          key={heading}
+                          scope="col"
+                        >
+                          {heading}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tablets.map((row) => (
+                      <tr className="border-b border-slate-200 align-top" key={row.key}>
+                        <td className="px-3 py-3">
+                          <TabletIdentity row={row} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <TabletHolder registerUnavailable={Boolean(data.registerError)} row={row} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <TabletRules row={row} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <TabletTimes row={row} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+
+            {/* MOBILE — one card per tablet. */}
+            {tablets.length > 0 ? (
+              <div className="mt-5 space-y-3 md:hidden">
+                {tablets.map((row) => (
+                  <div className="space-y-2 border border-slate-200 bg-white px-4 py-3" key={row.key}>
+                    <TabletIdentity row={row} />
+                    <div className="border-t border-slate-100 pt-2">
+                      <TabletHolder registerUnavailable={Boolean(data.registerError)} row={row} />
+                    </div>
+                    <div className="border-t border-slate-100 pt-2">
+                      <TabletRules row={row} />
+                    </div>
+                    <div className="border-t border-slate-100 pt-2">
+                      <TabletTimes row={row} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+    </div>
+  );
+}
