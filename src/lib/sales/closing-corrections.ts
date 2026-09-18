@@ -8,6 +8,8 @@
 //
 // Three kinds, detected in SQL (see the migration for the thresholds and the reasoning):
 //   reversal_pair — plus-then-minus across two consecutive months, same distributor+area+product.
+//                   The minus is the second month's RETURNS, read on their own, so the same month's
+//                   ordinary sales cannot hide a reversal; other* carries those returns, not the net.
 //   net_negative  — a month cell where returns exceed sales.
 //   late_return   — a client-level return traced to its most recent purchase month with the SAME
 //                   distributor (client codes are only unique per distributor).
@@ -30,10 +32,11 @@ export type ClosingCorrectionRow = {
   areaCode: string;
   areaName: string;
   /**
-   * Set ONLY on a net_negative row that is a region's company Direct row: Direct money with no area
-   * of its own, which the closing books by REGION (one "Direct orders (company)" row per region),
-   * never in an area cell. NULL or absent on every other row. It is part of the cell's identity —
-   * two regions' Direct rows are two cells, and netting them was the bug.
+   * Set ONLY on a row built from a region's company Direct row (a net_negative cell, or a
+   * reversal_pair of such rows): Direct money with no area of its own, which the closing books by
+   * REGION (one "Direct orders (company)" row per region), never in an area cell. NULL or absent on
+   * every other row. It is part of the cell's identity — two regions' Direct rows are two cells,
+   * and netting them was the bug.
    */
   regionCode?: string | null;
   productCode: string;

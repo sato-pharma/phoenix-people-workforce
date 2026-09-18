@@ -96,8 +96,9 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "closing_cells must carry that region out as cell_region",
   );
 
-  // The region travels to the caller on net_negative rows, as the LAST column, and is NULL on the
-  // two per-distributor kinds.
+  // The region travels to the caller as the LAST column: on net_negative rows, and on a reversal
+  // pair of no-area Direct rows, which is keyed by region the same way (20260918165553). It is NULL
+  // on late_return, and on every reversal pair of an ordinary area cell.
   assert.ok(
     /returns table\([^)]*other_value numeric, region_code text\)/.test(statements),
     "phx_closing_corrections must return region_code as its last column",
@@ -108,8 +109,12 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     "the net_negative branch must return the cell's region",
   );
   assert.ok(
-    /round\(neg\.cell_value::numeric, 2\), null::text from cells pos/.test(statements),
-    "reversal_pair must return NULL for region_code — it stays per distributor",
+    /round\(coalesce\(ret\.ret_value, neg\.cell_value\)::numeric, 2\), pos\.cell_region from cells pos/.test(statements),
+    "reversal_pair must return its cells' region — set only for a no-area Direct pair, NULL for an area cell",
+  );
+  assert.ok(
+    statements.includes("neg.cell_region is not distinct from pos.cell_region"),
+    "a reversal pair must never join two regions' no-area Direct rows",
   );
   assert.ok(
     /origin\.origin_units, null, null::text from \(/.test(statements),
@@ -129,7 +134,10 @@ export async function runClosingCorrectionsDirectByRegionTests(): Promise<void> 
     statements.includes("revoke execute on function public.phx_closing_corrections(text) from public, anon, authenticated"),
     "the function must stay closed to public, anon and authenticated",
   );
-  assert.ok(statements.includes("stable parallel safe security definer"), "function attributes preserved");
+  // No longer PARALLEL SAFE since 20260918165553: it now calls phx_sos_rows_attributed, which is
+  // parallel unsafe, and a function must not claim more than what it calls.
+  assert.ok(statements.includes("stable security definer"), "function attributes preserved");
+  assert.ok(!statements.includes("parallel safe"), "a function calling a parallel-unsafe one is not parallel safe");
 
   // Two regions' Direct rows are two cells and two situations, never one.
   const grouped = groupClosingCorrections(
