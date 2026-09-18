@@ -393,7 +393,14 @@ function RequestDetailsModal({
             <Fact label="Distance" value={formatKm(request.distanceFromResidenceKm)} />
             <Fact label="Submitted" value={formatDateTime(request.submittedAt ?? request.createdAt)} />
             <Fact label="Captured time" value={formatDateTime(request.capturedAt)} />
-            <Fact label="GPS accuracy" value={`${request.capturedAccuracyMeters.toFixed(0)} m`} />
+            <Fact
+              label="GPS accuracy"
+              value={
+                request.capturedAccuracyMeters === null
+                  ? "Not reported"
+                  : `${request.capturedAccuracyMeters.toFixed(0)} m`
+              }
+            />
             <Fact label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
             {/* Owner request (2026-08-04): the place, not the coordinate pair. Brick and
                 area/region derive from the same captured point (captured-location.ts); the match

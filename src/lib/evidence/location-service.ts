@@ -14,6 +14,7 @@
  */
 
 import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { googleReverseGeocode } from "@/lib/google-maps/server";
 
 import type { EvidenceLocationStamp } from "./location-stamp";
@@ -86,7 +87,8 @@ export async function resolveEvidenceLocation(input: {
   const brick = resolveBrickForPoint(latitude, longitude, centroids);
 
   const stamp: EvidenceLocationStamp = {
-    accuracyMeters: finiteOrNull(input.accuracyMeters),
+    // Never `Number(...)`: `Number(null)` is 0, which stamped a withheld accuracy as "±0 m".
+    accuracyMeters: readAccuracyInput(input.accuracyMeters),
     address,
     areaName: brick?.areaName ?? null,
     // Rounded to 100 m: the caption reads "42 km away", and carrying 13 decimals of a haversine
@@ -123,7 +125,7 @@ export function parseEvidenceLocationBody(body: Record<string, unknown>):
   // A pin outside these bounds is a unit mix-up (radians, or lat/lng swapped), not a place.
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
   return {
-    accuracyMeters: finiteOrNull(body.accuracyMeters ?? body.accuracy),
+    accuracyMeters: readAccuracyInput(body.accuracyMeters ?? body.accuracy),
     latitude,
     longitude,
   };
