@@ -9,6 +9,9 @@ import {
 import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
 import { describeExpenseResyncNotApplied, type ExpenseResyncOutcome } from "@/lib/automated-payroll/expense-resync";
 import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service";
+import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
+import { refreshExpenseClaims } from "@/lib/outstation/claims-refresh";
+import { logError } from "@/lib/observability/log";
 import {
   assertOutstationExpenseApprovalReviewAccess,
   assertSystemAdministratorWorkspaceAccess,
@@ -76,11 +79,14 @@ export async function GET(request: Request) {
 
     const reports = await listPayrollExpenseReports(access);
     const targetReportId = reportId;
+    // The legacy tables, never the `expense_claims` mirror: both screens on this route SAVE to those
+    // tables, so they must read back what they wrote (see `readLegacyTables`).
     const expenses = await listUnifiedOutstationExpenses(
       hasPeriodFilter ? month : undefined,
       hasPeriodFilter ? year : undefined,
       targetReportId,
       access,
+      { readLegacyTables: true },
     );
 
     return NextResponse.json({ expenses, reports });
@@ -185,6 +191,27 @@ export async function POST(request: Request) {
             },
           })
         : [];
+
+    // Every other expense screen (the approvals hub, the command centre, the dashboards) still reads
+    // the `expense_claims` mirror, which otherwise shows this decision only after its next scheduled
+    // rebuild. The rebuild is idempotent and takes under a second, so run it now. It never fails the
+    // save: the decision is already committed, and the schedule remains the backstop.
+    if (expenseClaimsReadEnabled() && expenses.length + requestDecisions.applied > 0) {
+      try {
+        const refresh = await refreshExpenseClaims();
+        if (refresh.status === "blocked") {
+          logError("Expense claims refresh after an approvals save was refused by an interlock", {
+            labels: { event: "expense_claims_refresh_after_save_blocked" },
+            error: new Error(refresh.reason),
+          });
+        }
+      } catch (refreshError) {
+        logError("Expense claims refresh after an approvals save failed", {
+          labels: { event: "expense_claims_refresh_after_save_failed" },
+          error: refreshError instanceof Error ? refreshError : new Error(describeThrown(refreshError)),
+        });
+      }
+    }
 
     return NextResponse.json({
       expenses,
