@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
-import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { downloadSalesUploadFile, removeSalesUploadObject } from "@/lib/sales/monthly-import-request";
 import { isOwnSalesImportUploadPath, SALES_UPLOAD_PATH_REFUSAL } from "@/lib/sales/sales-import-upload-path";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
@@ -14,6 +13,9 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Validation only: it answers whether the workbook would import, and writes nothing. It runs the
+// import as a dry run, so no batch, row or coverage snapshot is saved; importing is the commit
+// route's job, after the preview.
 export async function POST(request: Request) {
   // For the large-file path we hold the temp storage object and delete it once processing is done
   // (success or failure), so the bucket only ever holds in-flight uploads.
@@ -84,36 +86,8 @@ export async function POST(request: Request) {
     }
 
     const uploadedBy = hrIdForStorage(access.hrId) ?? resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy, periodOverride: period });
+    const result = await importSourceOfSalesFile({ distributorCode, file, uploadedBy, periodOverride: period, dryRun: true });
     const blocked = result.status === "blocked";
-
-    // Save a coverage snapshot for every successful persist so the Coverage tab stays populated
-    // regardless of which import path the user took. Non-fatal — never blocks the response.
-    if (!blocked && result.batchId) {
-      const r = result as Record<string, unknown>;
-      const totalRows = Number(r.totalRows ?? r.rowCount ?? 0);
-      const failedRows = Number(r.failedRows ?? 0);
-      const importableValue = Number((r.totals as Record<string, unknown> | undefined)?.totalValue ?? 0);
-      void saveCoverageSnapshot({
-        batchId: result.batchId,
-        distributorCode,
-        period: result.period ?? null,
-        diff: {
-          brickDriftCount: 0,
-          brickDriftSamples: [],
-          distinctCustomers: 0,
-          importableRows: totalRows - failedRows,
-          importableValue,
-          mappedCustomers: 0,
-          newCustomerCodes: [],
-          newCustomers: 0,
-          resolvedRowsPct: totalRows > 0 ? Math.round(1000 * (totalRows - failedRows) / totalRows) / 10 : 100,
-          totalRows,
-          unmappedProducts: [],
-          unmappedProductsCount: failedRows,
-        },
-      });
-    }
 
     return NextResponse.json(
       {
