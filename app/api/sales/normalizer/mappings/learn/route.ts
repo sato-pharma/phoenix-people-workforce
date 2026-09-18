@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { learnFromUploadedMappings } from "@/lib/sales/normalizer/mapping";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     const distributorCode = String(form.get("distributorCode") ?? "") || undefined;
 
-    const result = await learnFromUploadedMappings(await file.arrayBuffer(), distributorCode);
+    const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
+    const result = await learnFromUploadedMappings(await file.arrayBuffer(), distributorCode, actorLoginId);
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });

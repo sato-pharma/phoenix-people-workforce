@@ -128,8 +128,9 @@ export function distinctUnknowns(exceptions: NormalizeException[], products: Pro
 
 // name / address are customer-only: the pharmacy's name and postal address as the distributor sheet
 // spells them. They never decide the mapping - they are stored so the free steps can learn from it.
-export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer"; confidence?: number; name?: string; address?: string };
-export type InvalidEntry = { raw: string; type: string; reason: string };
+// row is the sheet row a mapping was read from, when it came from a file (the unmapped list).
+export type MappingInput = { code: string; distributorCode?: string; raw: string; type: "product" | "territory" | "customer"; confidence?: number; name?: string; address?: string; row?: number };
+export type InvalidEntry = { raw: string; type: string; reason: string; row?: number };
 
 // Writes the name / address of mappings that were just saved, into BLANK fields only. They cannot ride
 // in the upsert: ON CONFLICT DO UPDATE would overwrite a name already on file (one code can name
@@ -385,20 +386,22 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
   let skipped = 0;
   let invalid = 0;
   for (const mapping of mappings) {
+    // A mapping read from a file names its row, so a rejection can say which line to fix.
+    const sheetRow = mapping.row ? { row: mapping.row } : {};
     const raw = String(mapping.raw ?? "").trim();
     const code = normalizeCodeKey(mapping.code);
     if (!raw || !code) {
       invalid += 1;
-      invalidEntries.push({ raw: raw || "(empty)", type: mapping.type, reason: "Empty raw value or code" });
+      invalidEntries.push({ ...sheetRow, raw: raw || "(empty)", type: mapping.type, reason: "Empty raw value or code" });
       continue;
     }
     if (mapping.type === "customer") {
       const dist = normalizeCodeKey(mapping.distributorCode);
       const brick = brickById.get(code);
-      if (!dist) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: "Missing distributor code" }); continue; }
-      if (!brick) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: `Brick ID "${code}" not found in master` }); continue; }
+      if (!dist) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "customer", reason: "Missing distributor code" }); continue; }
+      if (!brick) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "customer", reason: `Brick ID "${code}" not found in master` }); continue; }
       const customerHistory = historyReason(code);
-      if (customerHistory) { invalid += 1; invalidEntries.push({ raw, type: "customer", reason: customerHistory }); continue; }
+      if (customerHistory) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "customer", reason: customerHistory }); continue; }
       const ck = `${dist} ${normalizeCodeKey(raw)}`;
       if (haveCust.has(ck)) { skipped += 1; continue; }
       haveCust.add(ck);
@@ -422,22 +425,22 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
       continue;
     }
     const key = normalizeAliasKey(raw);
-    if (!key) { invalid += 1; invalidEntries.push({ raw, type: mapping.type, reason: "Raw value normalizes to empty string" }); continue; }
+    if (!key) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: mapping.type, reason: "Raw value normalizes to empty string" }); continue; }
     const fromDistributor = distributorLabel(mapping.distributorCode);
     if (mapping.type === "product") {
       // Product aliases are PER-DISTRIBUTOR: the same raw code/name can mean different products for
       // different distributors, so a distributor is required and the dedup key is distributor-scoped.
       const dist = normalizeCodeKey(mapping.distributorCode);
-      if (!dist) { invalid += 1; invalidEntries.push({ raw, type: "product", reason: "Missing distributor code" }); continue; }
-      if (!productCodes.has(code)) { invalid += 1; invalidEntries.push({ raw, type: "product", reason: `Product code "${code}" not found in master` }); continue; }
+      if (!dist) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "product", reason: "Missing distributor code" }); continue; }
+      if (!productCodes.has(code)) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "product", reason: `Product code "${code}" not found in master` }); continue; }
       const pk = `${dist} ${key}`;
       if (haveProd.has(pk)) { skipped += 1; continue; }
       haveProd.add(pk);
       productRows.push({ alias: raw, normalized_alias: key, distributor_code: dist, product_code: code, active: true, source_file: "normalizer", source_labels: fromDistributor ? [fromDistributor] : [] });
     } else {
-      if (!brickById.has(code)) { invalid += 1; invalidEntries.push({ raw, type: "territory", reason: `Brick ID "${code}" not found in master` }); continue; }
+      if (!brickById.has(code)) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "territory", reason: `Brick ID "${code}" not found in master` }); continue; }
       const territoryHistory = historyReason(code);
-      if (territoryHistory) { invalid += 1; invalidEntries.push({ raw, type: "territory", reason: territoryHistory }); continue; }
+      if (territoryHistory) { invalid += 1; invalidEntries.push({ ...sheetRow, raw, type: "territory", reason: territoryHistory }); continue; }
       if (haveTerr.has(key)) { skipped += 1; continue; }
       haveTerr.add(key);
       territoryRows.push({ alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "normalizer", notes: fromDistributor });
@@ -729,15 +732,56 @@ export async function parseUnmappedWorkbook(buffer: ArrayBuffer | Buffer, distri
     const type = String(row.getCell(typeCol)?.text ?? "").trim().toLowerCase() as MappingInput["type"];
     const raw = String(row.getCell(rawCol)?.text ?? "").trim();
     const code = String(row.getCell(fillCol)?.text ?? "").trim();
-    if (UNMAPPED_LIST_TYPES.has(type) && raw && code) mappings.push({ code, distributorCode, raw, type });
+    if (UNMAPPED_LIST_TYPES.has(type) && raw && code) mappings.push({ code, distributorCode, raw, row: r, type });
   }
   return mappings;
 }
 
-export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, distributorCode?: string): Promise<{ saved: number; skipped: number; invalid: number }> {
+// How many rejected rows one upload's history record keeps, and how long each cell may run — the
+// customer map import's bounds (customer-map.ts), for its reason: writeAuditLog sends with a
+// 3-second timeout and drops a failed write silently, so only a pathological sheet is ever cut and
+// the record itself always saves.
+export const UNMAPPED_LIST_REJECTED_ROWS_KEPT = 5000;
+const REJECTED_RAW_MAX = 200;
+const REJECTED_REASON_MAX = 400;
+
+/**
+ * The rejected rows of one "Upload filled list", in the shape its history record keeps them. The
+ * upload used to report only "N invalid": which rows and why reached the browser once, the notice
+ * printed the count alone, and no record held them — a mistyped Brick ID could not be found again.
+ */
+export function unmappedListRejectedRecord(entries: InvalidEntry[]): {
+  note: string;
+  values: { rejectedRows: InvalidEntry[]; rejectedRowsKept: number };
+} {
+  const kept = [...entries]
+    .sort((a, b) => (a.row ?? 0) - (b.row ?? 0))
+    .slice(0, UNMAPPED_LIST_REJECTED_ROWS_KEPT)
+    .map((e) => ({ ...(e.row ? { row: e.row } : {}), raw: e.raw.slice(0, REJECTED_RAW_MAX), reason: e.reason.slice(0, REJECTED_REASON_MAX), type: e.type }));
+  const note = entries.length === 0
+    ? ""
+    : kept.length === entries.length
+      ? " (each listed in this record)"
+      : ` (the first ${kept.length} listed in this record)`;
+  return { note, values: { rejectedRows: kept, rejectedRowsKept: kept.length } };
+}
+
+export async function learnFromUploadedMappings(buffer: ArrayBuffer | Buffer, distributorCode?: string, actorLoginId = "system"): Promise<{ saved: number; skipped: number; invalid: number }> {
   const mappings = await parseUnmappedWorkbook(buffer, distributorCode);
   if (mappings.length === 0) return { saved: 0, skipped: 0, invalid: 0 };
   // Customer rows keep saveMappings' protective default: an existing crosswalk row is corrected, but
   // an owner ruling (confidence 100) is never overwritten from a file.
-  return saveMappings(mappings);
+  const result = await saveMappings(mappings);
+  // The rejected rows ride on the upload's own history record, so the list outlives the notice that
+  // counted them — the record the customer map import keeps for its blocked rows.
+  const rejectedRecord = unmappedListRejectedRecord(result.invalidEntries);
+  const from = distributorLabel(distributorCode);
+  await writeAuditLog({
+    actorLoginId,
+    entityId: "source_of_sales_unmapped_list",
+    entityType: "sales_import_batch",
+    newValues: { distributor_code: normalizeCodeKey(distributorCode) || null, filled: mappings.length, invalid: result.invalid, ...rejectedRecord.values, saved: result.saved, skipped: result.skipped, skippedOwnerVerified: result.skippedOwnerVerified, source: "unmapped_list_upload" },
+    summary: `Unmapped list upload${from ? ` for ${from}` : ""} — ${mappings.length} filled rows: ${result.saved} learned, ${result.skipped} already known, ${result.invalid} rejected${rejectedRecord.note}.`,
+  });
+  return result;
 }
