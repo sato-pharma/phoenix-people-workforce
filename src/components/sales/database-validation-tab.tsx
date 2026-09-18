@@ -69,6 +69,26 @@ function HeaderPairs({ pairs }: { pairs: HeaderPair[] }) {
   );
 }
 
+function CustomerCell({ customer }: { customer: CustomerRow }) {
+  return (
+    <>
+      <p className="break-words font-semibold text-[#0B0B0B]">{customer.customerName || "—"}</p>
+      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Code</span> {customer.customerCode}</p>
+      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Distributor</span> {customer.distributorCode}</p>
+    </>
+  );
+}
+
+function TerritoryCell({ customer }: { customer: CustomerRow }) {
+  return (
+    <>
+      <p className="break-words font-semibold text-[#1D4ED8]">{customer.brickId || "—"}</p>
+      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Area</span> {customer.areaCode || "—"}</p>
+      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Region</span> {customer.regionCode || "—"}</p>
+    </>
+  );
+}
+
 export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }) {
   const distributors = headerGrid.rows.map((r) => ({ code: r.distributorCode, name: r.distributorName }));
   const [headerFilter, setHeaderFilter] = useState("ALL");
@@ -224,7 +244,7 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
 
       <AdminTableShell
         action={(
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SearchableSelect className={filterSelect} onChange={(e) => setCustFilter(e.target.value)} value={custFilter}>
               <option value="ALL">All distributors</option>
               {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
@@ -250,23 +270,37 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
                 <p>{importMsg}</p>
               </AdminCallout>
               {importResult && importResult.blockedRows.length > 0 ? (
-                <div className="overflow-x-auto border border-[#F0C9C9]">
-                  <table className="w-full text-xs">
+                <div className="border border-[#F0C9C9]">
+                  {/* Desktop: three fitted columns. Mobile: one card per blocked row, never the table. */}
+                  <table className="hidden w-full table-fixed text-xs md:table">
+                    <colgroup>
+                      <col className="w-[12%]" />
+                      <col className="w-[28%]" />
+                      <col className="w-[60%]" />
+                    </colgroup>
                     <thead>
                       <tr className="bg-[#7F1D1D] text-[#FEE2E2]">
-                        {["Row", "Key", "Reason"].map((h) => <th className="whitespace-nowrap border-l border-white/20 px-3 py-2 text-left" key={h}>{h}</th>)}
+                        {["Row", "Key", "Reason"].map((h) => <th className="break-words border-l border-white/20 px-3 py-2 text-left" key={h}>{h}</th>)}
                       </tr>
                     </thead>
                     <tbody>
                       {importResult.blockedRows.slice(0, 200).map((b, i) => (
                         <tr className="border-b border-[#F1D9C0]/50" key={`${b.row}:${i}`}>
-                          <td className="border-l border-[#F1D9C0]/40 px-3 py-2 text-slate-500">{b.row}</td>
-                          <td className="border-l border-[#F1D9C0]/40 px-3 py-2 font-semibold text-[#0B0B0B]">{b.key}</td>
-                          <td className="border-l border-[#F1D9C0]/40 px-3 py-2 text-[#991B1B]">{b.reason}</td>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top text-slate-500">{b.row}</td>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top font-semibold text-[#0B0B0B]">{b.key}</td>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top text-[#991B1B]">{b.reason}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="divide-y divide-[#F1D9C0]/60 text-xs md:hidden">
+                    {importResult.blockedRows.slice(0, 200).map((b, i) => (
+                      <div className="px-3 py-2" key={`${b.row}:${i}`}>
+                        <p className="break-words font-semibold text-[#0B0B0B]"><span className="font-normal text-slate-500">Row {b.row} ·</span> {b.key}</p>
+                        <p className="mt-1 break-words text-[#991B1B]">{b.reason}</p>
+                      </div>
+                    ))}
+                  </div>
                   {importResult.blockedRows.length > 200 ? <p className="px-3 py-2 text-xs text-slate-500">Showing first 200 of {importResult.blockedRows.length} blocked rows.</p> : null}
                 </div>
               ) : null}
@@ -278,27 +312,39 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
             <p className="text-sm text-slate-400">No customers mapped for this distributor yet.</p>
           ) : customers.length > 0 ? (
             <>
-              <div className="overflow-x-auto border border-phx-line">
-                <table className="w-full text-xs">
+              {/* Desktop: seven columns merged into three, and the address wraps in full rather than
+                  being cut short. Mobile: one card per customer, never the table. */}
+              <div className="hidden border border-phx-line md:block">
+                <table className="w-full table-fixed text-xs">
+                  <colgroup>
+                    <col className="w-[32%]" />
+                    <col className="w-[43%]" />
+                    <col className="w-[25%]" />
+                  </colgroup>
                   <thead>
                     <tr className="bg-[#0B0B0B] text-phx-paper-2">
-                      {["Distributor", "Customer code", "Customer name", "Address", "Brick ID", "Area", "Region"].map((h) => <th className="whitespace-nowrap border-l border-phx-accent/25 px-3 py-2 text-left" key={h}>{h}</th>)}
+                      {["Customer", "Address", "Brick · Area · Region"].map((h) => <th className="break-words border-l border-phx-accent/25 px-3 py-2 text-left" key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {pageRows.map((c, i) => (
                       <tr className="border-b border-[#F1D9C0]/50" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2 text-slate-500">{c.distributorCode}</td>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2 font-semibold text-[#0B0B0B]">{c.customerCode}</td>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2">{c.customerName || "—"}</td>
-                        <td className="max-w-[280px] truncate border-l border-[#F1D9C0]/40 px-3 py-2" title={c.address}>{c.address || "—"}</td>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2 font-semibold text-[#1D4ED8]">{c.brickId || "—"}</td>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2 text-slate-500">{c.areaCode || "—"}</td>
-                        <td className="border-l border-[#F1D9C0]/40 px-3 py-2 text-slate-500">{c.regionCode || "—"}</td>
+                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><CustomerCell customer={c} /></td>
+                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top">{c.address || "—"}</td>
+                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><TerritoryCell customer={c} /></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="space-y-2 text-xs md:hidden">
+                {pageRows.map((c, i) => (
+                  <div className="border border-phx-line bg-white p-3" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
+                    <CustomerCell customer={c} />
+                    <p className="mt-2 break-words text-slate-700">{c.address || "—"}</p>
+                    <div className="mt-2"><TerritoryCell customer={c} /></div>
+                  </div>
+                ))}
               </div>
               <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
                 <span>{customers.length.toLocaleString()} customer{customers.length === 1 ? "" : "s"}</span>

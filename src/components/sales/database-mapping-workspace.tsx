@@ -46,6 +46,7 @@ import {
   type MasterRowRecord,
 } from "@/lib/sales/master-data/definitions";
 import type { MasterImportResult } from "@/lib/sales/master-data/import-service";
+import { masterRowLayout } from "@/lib/sales/master-data/row-layout";
 import { cn } from "@/lib/utils";
 
 const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line";
@@ -77,7 +78,8 @@ type Props = {
 type ImportResponse = { data?: MasterImportResult; error?: string; message?: string; success: boolean };
 type ListResponse = { data?: MasterRowRecord[]; error?: string; success: boolean };
 
-const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em]";
+const tableHeaderClassName = "break-words px-3 py-3 align-bottom text-xs font-black uppercase tracking-[0.14em]";
+const masterBodyCell = "break-words px-3 py-2.5 align-top";
 
 async function readJson<T extends { error?: string; success: boolean }>(response: Response): Promise<T> {
   const text = await response.text();
@@ -87,6 +89,17 @@ async function readJson<T extends { error?: string; success: boolean }>(response
   } catch {
     return { success: false, error: text } as T;
   }
+}
+
+// A label over its value, for the merged cells of the rows table (layout: master-data/row-layout.ts)
+// and for the mobile cards that replace it.
+function Labelled({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <div className="mt-1.5">
+      <div className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</div>
+      <div className="break-words">{children}</div>
+    </div>
+  );
 }
 
 function displayCell(column: { key: string; type: MasterColumnType }, row: MasterRowRecord) {
@@ -107,6 +120,7 @@ function ColumnField({
   column,
   def,
   disabled,
+  fill = false,
   onChange,
   value,
 }: {
@@ -114,6 +128,8 @@ function ColumnField({
   column: MasterColumn;
   def: MasterDefinition;
   disabled: boolean;
+  /** Take the cell's width (inline row edit) instead of the Add form's fixed w-48. */
+  fill?: boolean;
   onChange: (value: string) => void;
   value: string;
 }) {
@@ -128,7 +144,7 @@ function ColumnField({
   const numeric = column.type === "number" || column.type === "percent";
   return (
     <input
-      className={cn(fieldInputClass, "w-48")}
+      className={cn(fieldInputClass, fill ? "w-full min-w-0" : "w-48")}
       disabled={disabled}
       max={column.type === "percent" ? 1 : undefined}
       min={column.type === "percent" ? 0 : undefined}
@@ -193,6 +209,142 @@ function MasterTab({
     const parentRow = referenceMaps.get(lookup.lookupMaster)?.get(normalizeCode(row[lookup.viaCodeColumn]));
     const value = parentRow ? normalizeDisplay(parentRow[lookup.lookupColumn]) : "";
     return value || "-";
+  }
+
+  const layout = masterRowLayout(def);
+  const identityHead = layout.identity[0];
+  const identityHeader = identityHead ? `${identityHead.label}${identityHead.locked ? " 🔒" : ""}` : "Row";
+
+  function rowState(row: MasterRowRecord) {
+    const rowKey = String(row[def.keyColumn]);
+    const isEditing = editingKey === rowKey;
+    const isActive = row.active !== false;
+    const isBusy = activeKeyBusy === rowKey;
+    const isConfirmingDelete = confirmDeleteKey === rowKey;
+    const isRelocatingEdit =
+      isEditing && def.master === "bricks" && (editValues.block_code ?? "") !== String(row.block_code ?? "");
+    return { isActive, isBusy, isConfirmingDelete, isEditing, isRelocatingEdit, rowKey };
+  }
+
+  function renderLookups(hostKey: string, row: MasterRowRecord) {
+    return (layout.lookupsByHost.get(hostKey) ?? []).map((lookup) => (
+      <Labelled key={lookup.key} label={lookup.label}>
+        <span className="text-phx-ink-2">{resolveLookup(row, lookup)}</span>
+      </Labelled>
+    ));
+  }
+
+  function renderIdentity(row: MasterRowRecord) {
+    const [head, ...riders] = layout.identity;
+    return (
+      <>
+        {head ? <div className="break-words font-semibold text-phx-ink">{displayCell(head, row)}</div> : null}
+        {head ? renderLookups(head.key, row) : null}
+        {riders.map((column) => (
+          <div key={column.key}>
+            <Labelled label={column.label}>{displayCell(column, row)}</Labelled>
+            {renderLookups(column.key, row)}
+          </div>
+        ))}
+      </>
+    );
+  }
+
+  function renderField(column: MasterColumn, row: MasterRowRecord, isEditing: boolean) {
+    return (
+      <>
+        {isEditing && !column.locked ? (
+          <ColumnField
+            allRows={allRows}
+            column={column}
+            def={def}
+            disabled={savingEdit}
+            fill
+            onChange={(value) => setEditValues((prev) => ({ ...prev, [column.key]: value }))}
+            value={editValues[column.key] ?? ""}
+          />
+        ) : (
+          <div className="break-words">{displayCell(column, row)}</div>
+        )}
+        {renderLookups(column.key, row)}
+      </>
+    );
+  }
+
+  function renderStatus(row: MasterRowRecord) {
+    return (
+      <>
+        <Badge variant={row.active === false ? "neutral" : "success"}>
+          {row.active === false ? "Inactive" : "Active"}
+        </Badge>
+        <Labelled label="Updated">
+          {row.updated_at
+            ? new Date(String(row.updated_at)).toLocaleString("en-GB", {
+                timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+              })
+            : "-"}
+        </Labelled>
+      </>
+    );
+  }
+
+  function renderActions(row: MasterRowRecord, state: ReturnType<typeof rowState>) {
+    const { isActive, isBusy, isConfirmingDelete, isEditing, isRelocatingEdit, rowKey } = state;
+    return isEditing ? (
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap gap-1.5">
+          <Button disabled={savingEdit} onClick={() => void handleSaveEdit(rowKey)} size="sm">
+            {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {isRelocatingEdit ? "Move" : "Save"}
+          </Button>
+          <Button disabled={savingEdit} onClick={cancelEdit} size="sm" variant="secondary">
+            Cancel
+          </Button>
+        </div>
+        {isRelocatingEdit ? (
+          <p className="break-words text-phx-2xs font-semibold leading-tight text-phx-ink-faint">
+            Creates a new brick ID in the target block and deactivates this one.
+          </p>
+        ) : null}
+      </div>
+    ) : isConfirmingDelete ? (
+      <div className="flex flex-wrap gap-1.5">
+        <Button disabled={isBusy} onClick={() => void handleSetActive(rowKey, false)} size="sm" variant="destructive">
+          {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Confirm
+        </Button>
+        <Button disabled={isBusy} onClick={() => setConfirmDeleteKey(null)} size="sm" variant="secondary">
+          Cancel
+        </Button>
+      </div>
+    ) : (
+      <div className="flex flex-wrap gap-1.5">
+        {editableLabels.length > 0 ? (
+          <Button onClick={() => startEdit(row)} size="icon-sm" title="Edit this row" variant="secondary">
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
+        {isActive ? (
+          <Button
+            onClick={() => setConfirmDeleteKey(rowKey)}
+            size="icon-sm"
+            title="Deactivate — hides this row everywhere immediately; reversible, keeps history."
+            variant="destructive"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        ) : (
+          <Button
+            className="gap-1"
+            disabled={isBusy}
+            onClick={() => void handleSetActive(rowKey, true)}
+            size="sm"
+            title="Reactivate this row"
+            variant="secondary"
+          >
+            {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Reactivate
+          </Button>
+        )}
+      </div>
+    );
   }
 
   async function handleExport() {
@@ -444,9 +596,15 @@ function MasterTab({
 
       {result && result.blockedRows.length > 0 ? (
         <AdminTableShell description="Fix these rows in the workbook and re-import." title="Blocked Rows">
-          <div className="overflow-x-auto p-4 md:p-5">
-            <div className="overflow-hidden rounded-[16px] border border-phx-line">
-              <table className="w-full min-w-[640px] text-left text-sm">
+          <div className="p-4 md:p-5">
+            {/* Desktop: three fitted columns. Mobile: one card per blocked row, never the table. */}
+            <div className="hidden border border-phx-line md:block">
+              <table className="w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[12%]" />
+                  <col className="w-[28%]" />
+                  <col className="w-[60%]" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th className={tableHeaderClassName}>Row</th>
@@ -457,13 +615,21 @@ function MasterTab({
                 <tbody className="divide-y divide-phx-line">
                   {result.blockedRows.slice(0, 200).map((blocked, index) => (
                     <tr className="text-phx-ink-soft" key={`${blocked.row}:${blocked.key}:${index}`}>
-                      <td className="px-4 py-3 font-semibold text-phx-ink">{blocked.row}</td>
-                      <td className="px-4 py-3">{blocked.key || "-"}</td>
-                      <td className="px-4 py-3">{blocked.reason}</td>
+                      <td className={`${masterBodyCell} font-semibold text-phx-ink`}>{blocked.row}</td>
+                      <td className={masterBodyCell}>{blocked.key || "-"}</td>
+                      <td className={masterBodyCell}>{blocked.reason}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="space-y-2 md:hidden">
+              {result.blockedRows.slice(0, 200).map((blocked, index) => (
+                <div className="border border-phx-line bg-white p-3 text-sm text-phx-ink-soft" key={`${blocked.row}:${blocked.key}:${index}`}>
+                  <p className="break-words font-semibold text-phx-ink">Row {blocked.row} · {blocked.key || "-"}</p>
+                  <p className="mt-1 break-words">{blocked.reason}</p>
+                </div>
+              ))}
             </div>
           </div>
         </AdminTableShell>
@@ -498,143 +664,75 @@ function MasterTab({
       </Card>
 
       <AdminTableShell description={`Live rows currently stored in ${def.table}.`} title={`${def.label} Rows`}>
-        <div className="overflow-x-auto p-4 md:p-5">
-          <div className="overflow-hidden rounded-[16px] border border-phx-line">
-            <table className="w-full min-w-[720px] text-left text-sm">
+        <div className="p-4 md:p-5">
+          {/* Desktop: the fitted table (at most five columns). Mobile: one card per row, never the table. */}
+          <div className="hidden border border-phx-line md:block">
+            <table className="w-full table-fixed text-left text-sm">
+              <colgroup>
+                {layout.widths.map((width, index) => (
+                  <col key={index} style={{ width: `${width}%` }} />
+                ))}
+              </colgroup>
               <thead>
                 <tr>
-                  {def.columns.map((column) => (
+                  <th className={tableHeaderClassName}>{identityHeader}</th>
+                  {layout.fields.map((column) => (
                     <th className={tableHeaderClassName} key={column.key}>
                       {column.label}
                       {column.locked ? " 🔒" : ""}
                     </th>
                   ))}
-                  {lookups.map((column) => (
-                    <th className={tableHeaderClassName} key={column.key}>
-                      {column.label}
-                    </th>
-                  ))}
-                  <th className={tableHeaderClassName}>Active</th>
-                  <th className={tableHeaderClassName}>Updated</th>
+                  <th className={tableHeaderClassName}>Status</th>
                   <th className={tableHeaderClassName}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-phx-line">
                 {rows.map((row) => {
-                  const rowKey = String(row[def.keyColumn]);
-                  const isEditing = editingKey === rowKey;
-                  const isActive = row.active !== false;
-                  const isBusy = activeKeyBusy === rowKey;
-                  const isConfirmingDelete = confirmDeleteKey === rowKey;
-                  const isRelocatingEdit =
-                    isEditing && def.master === "bricks" && (editValues.block_code ?? "") !== String(row.block_code ?? "");
+                  const state = rowState(row);
                   return (
-                    <tr className="text-phx-ink-soft" key={rowKey}>
-                      {def.columns.map((column, columnIndex) => (
-                        <td
-                          className={cn("px-4 py-2.5 align-top", columnIndex === 0 ? "font-semibold text-phx-ink" : "")}
-                          key={column.key}
-                        >
-                          {isEditing && !column.locked ? (
-                            <ColumnField
-                              allRows={allRows}
-                              column={column}
-                              def={def}
-                              disabled={savingEdit}
-                              onChange={(value) => setEditValues((prev) => ({ ...prev, [column.key]: value }))}
-                              value={editValues[column.key] ?? ""}
-                            />
-                          ) : (
-                            displayCell(column, row)
-                          )}
+                    <tr className="text-phx-ink-soft" key={state.rowKey}>
+                      <td className={masterBodyCell}>{renderIdentity(row)}</td>
+                      {layout.fields.map((column) => (
+                        <td className={masterBodyCell} key={column.key}>
+                          {renderField(column, row, state.isEditing)}
                         </td>
                       ))}
-                      {lookups.map((column) => (
-                        <td className="px-4 py-2.5 align-top text-phx-ink-2" key={column.key}>
-                          {resolveLookup(row, column)}
-                        </td>
-                      ))}
-                      <td className="px-4 py-2.5">
-                        <Badge variant={row.active === false ? "neutral" : "success"}>
-                          {row.active === false ? "Inactive" : "Active"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {row.updated_at
-                          ? new Date(String(row.updated_at)).toLocaleString("en-GB", {
-                              timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-                            })
-                          : "-"}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {isEditing ? (
-                          <div className="flex flex-col gap-1">
-                            <div className="flex flex-wrap gap-1.5">
-                              <Button disabled={savingEdit} onClick={() => void handleSaveEdit(rowKey)} size="sm">
-                                {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} {isRelocatingEdit ? "Move" : "Save"}
-                              </Button>
-                              <Button disabled={savingEdit} onClick={cancelEdit} size="sm" variant="secondary">
-                                Cancel
-                              </Button>
-                            </div>
-                            {isRelocatingEdit ? (
-                              <p className="max-w-[220px] text-phx-2xs font-semibold leading-tight text-phx-ink-faint">
-                                Creates a new brick ID in the target block and deactivates this one.
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : isConfirmingDelete ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            <Button disabled={isBusy} onClick={() => void handleSetActive(rowKey, false)} size="sm" variant="destructive">
-                              {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Confirm
-                            </Button>
-                            <Button disabled={isBusy} onClick={() => setConfirmDeleteKey(null)} size="sm" variant="secondary">
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {editableLabels.length > 0 ? (
-                              <Button onClick={() => startEdit(row)} size="icon-sm" title="Edit this row" variant="secondary">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : null}
-                            {isActive ? (
-                              <Button
-                                onClick={() => setConfirmDeleteKey(rowKey)}
-                                size="icon-sm"
-                                title="Deactivate — hides this row everywhere immediately; reversible, keeps history."
-                                variant="destructive"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : (
-                              <Button
-                                className="gap-1"
-                                disabled={isBusy}
-                                onClick={() => void handleSetActive(rowKey, true)}
-                                size="sm"
-                                title="Reactivate this row"
-                                variant="secondary"
-                              >
-                                {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />} Reactivate
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                      <td className={masterBodyCell}>{renderStatus(row)}</td>
+                      <td className="break-words px-2 py-2.5 align-top">{renderActions(row, state)}</td>
                     </tr>
                   );
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={def.columns.length + lookups.length + 3}>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={layout.widths.length}>
                       No rows yet. Export the template, fill it in, then import.
                     </td>
                   </tr>
                 ) : null}
               </tbody>
             </table>
+          </div>
+          <div className="space-y-2 md:hidden">
+            {rows.map((row) => {
+              const state = rowState(row);
+              return (
+                <div className="border border-phx-line bg-white p-3 text-sm text-phx-ink-soft" key={state.rowKey}>
+                  {renderIdentity(row)}
+                  {layout.fields.map((column) => (
+                    <Labelled key={column.key} label={column.label}>
+                      {renderField(column, row, state.isEditing)}
+                    </Labelled>
+                  ))}
+                  <div className="mt-2">{renderStatus(row)}</div>
+                  <div className="mt-3">{renderActions(row, state)}</div>
+                </div>
+              );
+            })}
+            {rows.length === 0 ? (
+              <p className="border border-phx-line bg-white px-3 py-8 text-center text-sm font-semibold text-phx-ink-soft">
+                No rows yet. Export the template, fill it in, then import.
+              </p>
+            ) : null}
           </div>
         </div>
       </AdminTableShell>
