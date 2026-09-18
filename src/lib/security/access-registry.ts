@@ -1283,6 +1283,12 @@ export const accessRegistry = [
   // A tablet plugged in by USB joins the custody register under the next PHX-TAB number; the
   // register's own createDevice writes the required audit row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/tablets/usb", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
+  // Correcting an existing entry's serial number and IMEI — the one path that REPLACES an identity
+  // somebody recorded, so it is Super Admin only (`company_devices:approve`, owner decision
+  // 2026-09-18), not the `update` HR Operations issues and returns with. A written reason is
+  // required, and the REQUIRED audit row — old values, new values, reason — is written BEFORE the
+  // entry changes. Rep Tablets' "the register has a different IMEI" warning links here.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/devices/identity", permission: { resource: "company_devices", action: "approve" }, csrfRequired: true }),
   // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
   // employee said in confidence about their manager and their pay — the permission is the whole
   // protection, since RLS is disabled-by-default here like every other table in this app.

@@ -28,6 +28,7 @@
  */
 
 import { callAndroidManagement } from "@/lib/devices/android-web-app";
+import { imeisMatch, normalizeImei, normalizeSerial } from "@/lib/devices/device-identity";
 import { parseEnrollmentTokenData } from "@/lib/devices/tablet-enrollment";
 import { REP_TABLET_POLICY_ID, policySettingLabel } from "@/lib/devices/tablet-policy";
 import type { CompanyDevice } from "@/lib/devices/types";
@@ -106,25 +107,9 @@ export type RegisterMatch = {
   matchedBy: "enrollment" | "serial" | "imei";
 };
 
-/** Upper case, letters and digits only — a serial typed as "hs1 a-2b3" is the same as "HS1A2B3". */
-export function normalizeSerial(value: string | null | undefined): string | null {
-  const normalized = (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return normalized || null;
-}
-
-/** Digits only, and only when there are enough of them to be an IMEI at all. */
-export function normalizeImei(value: string | null | undefined): string | null {
-  const digits = (value ?? "").replace(/\D/g, "");
-  return digits.length >= 14 ? digits : null;
-}
-
-/** Equal, or equal in the first 14 digits when one side left off the check digit. */
-function imeisMatch(left: string, right: string): boolean {
-  if (left === right) return true;
-  const short = left.length < right.length ? left : right;
-  const long = short === left ? right : left;
-  return short.length === 14 && long.length === 15 && long.startsWith(short);
-}
+// Serial and IMEI comparison lives in `device-identity.ts`, shared with the register's own
+// correction, so "the same IMEI" means one thing on both screens. Re-exported for existing callers.
+export { normalizeImei, normalizeSerial };
 
 export function matchTabletToRegister(
   device: AmapiDevice,

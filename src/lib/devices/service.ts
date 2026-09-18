@@ -24,7 +24,13 @@
  *    machine. Every state change carries an actor for that reason.
  */
 
-import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
+import {
+  DeviceIdentityCorrectionError,
+  describeIdentityChange,
+  planIdentityCorrection,
+  type IdentityEntry,
+} from "@/lib/devices/device-identity";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1050,6 +1056,136 @@ export async function recordReportedImei(input: { deviceId: string; imei: string
   const { data, error } = await (row.imei === null ? update.is("imei", null) : update.eq("imei", row.imei)).select("id");
   if (error) throw new Error(deviceErrorMessage(error));
   return Array.isArray(data) && data.length > 0;
+}
+
+/** Other entries read per page when looking for a duplicate serial or IMEI. PostgREST's own cap. */
+const IDENTITY_PAGE_SIZE = 1000;
+
+/** Every entry's id, tag, serial and IMEI — the whole register, page by page, never a first page. */
+async function readRegisterIdentities(): Promise<IdentityEntry[]> {
+  const supabase = getSupabaseAdmin();
+  const entries: IdentityEntry[] = [];
+  for (let from = 0; ; from += IDENTITY_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("company_devices")
+      .select("id,asset_tag,serial_number,imei")
+      .order("id", { ascending: true })
+      .range(from, from + IDENTITY_PAGE_SIZE - 1);
+    if (error) throw new Error(deviceErrorMessage(error));
+    const rows = (data ?? []) as Array<Pick<DeviceRow, "id" | "asset_tag" | "serial_number" | "imei">>;
+    for (const row of rows) {
+      entries.push({ id: row.id, assetTag: row.asset_tag, serialNumber: row.serial_number, imei: row.imei });
+    }
+    if (rows.length < IDENTITY_PAGE_SIZE) return entries;
+  }
+}
+
+/**
+ * Correct the serial number and IMEI of an entry that already exists — Super Admin only
+ * (`company_devices:approve`, owner decision 2026-09-18), with a written reason.
+ *
+ * The one path that REPLACES an identity somebody recorded. `createDevice` writes the pair once and
+ * the bulk import refuses entries that exist, so before this a wrong IMEI stayed wrong for good —
+ * and Rep Tablets' "the register has a different IMEI" warning could never be cleared.
+ *
+ * Allowed in every status, assigned included: the commonest case is a rep's tablet, in the rep's
+ * hands, whose IMEI was typed wrong when it was registered.
+ *
+ * In order: the plan refuses anything wrong before a write (`planIdentityCorrection`), including a
+ * form opened on values the entry no longer holds; the audit row, with the old values, the new
+ * values and the reason, is written BEFORE the change and is required — no audit row, no change;
+ * and the update is conditional on the entry still holding exactly what was read, so a value
+ * somebody else saves between that read and this write is never overwritten unseen either.
+ *
+ * A correction that fails AFTER its audit row leaves a second row saying so, because the first one
+ * already reads "Corrected" — in a register kept for the police and insurers, the log must not
+ * disagree with the entry. That second row is best-effort: it never hides the failure it records.
+ */
+export async function correctDeviceIdentity(
+  input: {
+    deviceId: string;
+    serialNumber: string | null;
+    imei: string | null;
+    reason: string;
+    shownSerialNumber: string | null;
+    shownImei: string | null;
+  },
+  actor: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: before, error: readError } = await supabase
+    .from("company_devices")
+    .select(DEVICE_COLUMNS)
+    .eq("id", input.deviceId)
+    .maybeSingle();
+  if (readError) throw new Error(deviceErrorMessage(readError));
+  if (!before) throw new DeviceIdentityCorrectionError("That device is no longer in the custody register.");
+  const row = before as DeviceRow;
+
+  const plan = planIdentityCorrection(
+    { id: row.id, assetTag: row.asset_tag, serialNumber: row.serial_number, imei: row.imei },
+    input,
+    await readRegisterIdentities(),
+  );
+
+  const target = `${describeIdentityChange(plan)} of ${row.asset_tag}`;
+  // Set as the update leaves for the database. Before it, the entry cannot have changed.
+  let updateSent = false;
+  try {
+    await writeRequiredAuditLog({
+      actorLoginId: actor,
+      entityType: "company_device",
+      entityId: row.id,
+      summary: `Corrected ${target} in the custody register`,
+      oldValues: { serialNumber: row.serial_number, imei: row.imei },
+      newValues: { serialNumber: plan.serialNumber, imei: plan.imei, reason: plan.reason },
+    });
+
+    let update = supabase
+      .from("company_devices")
+      .update({ serial_number: plan.serialNumber, imei: plan.imei, updated_at: new Date().toISOString() })
+      .eq("id", row.id);
+    update = row.serial_number === null ? update.is("serial_number", null) : update.eq("serial_number", row.serial_number);
+    update = row.imei === null ? update.is("imei", null) : update.eq("imei", row.imei);
+    updateSent = true;
+    const { data, error } = await update.select("id");
+    if (error) {
+      // `uq_company_devices_serial` / `uq_company_devices_imei`: another entry saved the same text
+      // between the duplicate check and this update.
+      if ((error as { code?: string }).code === "23505") {
+        throw new DeviceIdentityCorrectionError(
+          "Another entry in the register now holds that serial number or IMEI. Reload the register and check which device it belongs to.",
+        );
+      }
+      throw new Error(deviceErrorMessage(error));
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new DeviceIdentityCorrectionError(
+        `${row.asset_tag}'s serial number or IMEI was changed by somebody else while you were correcting it, so nothing was saved. Reload the register and correct it again.`,
+      );
+    }
+  } catch (failure) {
+    // A refusal from the database is certain the entry did not change; a request that failed on
+    // the way back is not — that row says so rather than claim either.
+    const unchanged = !updateSent || failure instanceof DeviceIdentityCorrectionError;
+    await writeAuditLog({
+      actorLoginId: actor,
+      entityType: "company_device",
+      entityId: row.id,
+      summary: unchanged
+        ? `The correction of ${target} was not applied — the entry still holds its old serial number and IMEI`
+        : `The correction of ${target} failed and may not have been applied — read the entry before relying on the row above`,
+      oldValues: { serialNumber: row.serial_number, imei: row.imei },
+      newValues: {
+        serialNumber: plan.serialNumber,
+        imei: plan.imei,
+        reason: plan.reason,
+        failure: failure instanceof Error ? failure.message : String(failure),
+      },
+    });
+    throw failure;
+  }
 }
 
 export async function writeOffDevice(input: WriteOffDeviceInput, actor: string): Promise<string> {

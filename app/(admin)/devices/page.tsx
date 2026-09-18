@@ -19,7 +19,11 @@ function devicePageError(error: unknown) {
   return deviceErrorMessage(error);
 }
 
-export default async function DeviceRegisterPage() {
+export default async function DeviceRegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
   if (!(await canAccess(access, "company_devices", "read"))) {
     redirect("/employee-portals");
@@ -34,6 +38,14 @@ export default async function DeviceRegisterPage() {
   // Separate from `create` on purpose: the bulk door is its own action, so it can be withdrawn
   // without taking single-device registration with it. The three import routes assert the same.
   const canImport = await canAccess(access, "company_devices", "import");
+  // Correcting a serial number or IMEI already in the register is Super Admin only — `approve`,
+  // the action this resource reserves to him (owner decision, 2026-09-18). `/api/devices/identity`
+  // asserts the same.
+  const canCorrectIdentity = await canAccess(access, "company_devices", "approve");
+  // `?correct=<entry>` is where Rep Tablets' "the register has a different IMEI" warning lands.
+  const correct = (await searchParams).correct;
+  const initialCorrectDeviceId =
+    canCorrectIdentity && typeof correct === "string" && correct.trim() ? correct.trim() : null;
 
   let initialData: DeviceRegisterData | null = null;
   let initialError: string | null = null;
@@ -46,9 +58,11 @@ export default async function DeviceRegisterPage() {
 
   return (
     <DeviceRegisterWorkspace
+      canCorrectIdentity={canCorrectIdentity}
       canImport={canImport}
       canRecord={canRecord}
       canRegister={canRegister}
+      initialCorrectDeviceId={initialCorrectDeviceId}
       initialData={initialData}
       initialError={initialError}
     />

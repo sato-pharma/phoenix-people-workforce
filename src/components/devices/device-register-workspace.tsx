@@ -33,6 +33,10 @@
  *
  * NO `window.prompt` OR `window.confirm`. Every reason is typed inline, against the row it is
  * about, so what somebody wrote and what they wrote it against never come apart.
+ *
+ * A SERIAL NUMBER OR IMEI IS CORRECTED ON ITS OWN ROW, by the Super Admin only, with a reason.
+ * `/devices?correct=<entry>` — where Rep Tablets' "the register has a different IMEI" warning
+ * links — opens the register on All with that entry's correction already open and scrolled to.
  */
 
 import {
@@ -48,7 +52,7 @@ import {
   UserMinus,
   X,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { PremiumHero } from "@/components/ui/premium-hero";
@@ -57,6 +61,7 @@ import type {
   DeviceImportPreview,
   DeviceImportResult,
 } from "@/lib/devices/bulk-import";
+import { IDENTITY_REASON_MAX_LENGTH } from "@/lib/devices/device-identity";
 import { importedDevicesForHandover } from "@/lib/devices/handover-queue";
 import type {
   CompanyDevice,
@@ -288,23 +293,50 @@ type Action1PullInfo = {
   organizationId: string;
 };
 
+/** Posts a serial/IMEI correction; answers null when it saved, or the sentence it was refused with. */
+type CorrectIdentity = (payload: {
+  deviceId: string;
+  serialNumber: string;
+  imei: string;
+  reason: string;
+  /** What the editor opened on — the server refuses the save if the entry holds something else now. */
+  shownSerialNumber: string | null;
+  shownImei: string | null;
+}) => Promise<string | null>;
+
 export function DeviceRegisterWorkspace({
+  canCorrectIdentity,
   canImport,
   canRecord,
   canRegister,
+  initialCorrectDeviceId,
   initialData,
   initialError,
 }: {
+  canCorrectIdentity: boolean;
   canImport: boolean;
   canRecord: boolean;
   canRegister: boolean;
+  /** `?correct=<entry>` — the entry whose serial/IMEI correction opens on arrival. */
+  initialCorrectDeviceId: string | null;
   initialData: DeviceRegisterData | null;
   initialError: string | null;
 }) {
   const [data, setData] = useState<DeviceRegisterData | null>(initialData);
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState<StatusFilter>("leavers");
+  // Only an entry that exists, and only for somebody who may correct it — anything else is ignored
+  // and the page opens as it always has.
+  const [focusDeviceId] = useState<string | null>(() =>
+    canCorrectIdentity &&
+    initialCorrectDeviceId &&
+    initialData?.devices.some((device) => device.id === initialCorrectDeviceId)
+      ? initialCorrectDeviceId
+      : null,
+  );
+  // The default filter is leavers, and a tablet a rep is still using is not held by a leaver — so
+  // a deep link opens on All, or the row it points at would not be on the screen.
+  const [filter, setFilter] = useState<StatusFilter>(focusDeviceId ? "all" : "leavers");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [registerOpen, setRegisterOpen] = useState(false);
   const [newDevice, setNewDevice] = useState(EMPTY_NEW_DEVICE);
@@ -346,6 +378,41 @@ export function DeviceRegisterWorkspace({
       setBusy(false);
     }
   }, []);
+
+  /**
+   * The serial/IMEI correction, on its own route (`company_devices:approve`). It answers the refusal
+   * rather than raising the page banner: the editor sits on the row, often far below the banner,
+   * and "another entry holds this IMEI" has to be read beside the number it is about.
+   */
+  const correctIdentity = useCallback<CorrectIdentity>(async (payload) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/devices/identity", {
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body = (await response.json()) as DeviceRegisterData & { message?: string };
+      if (!response.ok) return body.message ?? "The serial number or IMEI could not be corrected.";
+      setData(body);
+      return null;
+    } catch (requestError) {
+      return requestError instanceof Error ? requestError.message : "The request failed.";
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  // Bring a deep-linked entry into view once. Both layouts render it, one hidden by CSS, so it
+  // scrolls to whichever is actually on the screen.
+  useEffect(() => {
+    if (!focusDeviceId) return;
+    const target = Array.from(document.querySelectorAll<HTMLElement>("[data-device-row]")).find(
+      (element) => element.dataset.deviceRow === focusDeviceId && element.getClientRects().length > 0,
+    );
+    target?.scrollIntoView({ block: "center" });
+  }, [focusDeviceId]);
 
   const stats = data?.stats ?? null;
 
@@ -1171,7 +1238,7 @@ export function DeviceRegisterWorkspace({
             </thead>
             <tbody>
               {visible.map((device) => (
-                <tr className="border-b border-slate-200 align-top" key={device.id}>
+                <tr className="border-b border-slate-200 align-top" data-device-row={device.id} key={device.id}>
                   <td className="px-3 py-3">
                     <p className="break-words text-[12px] font-black text-slate-900">
                       {device.assetTag}
@@ -1240,6 +1307,8 @@ export function DeviceRegisterWorkspace({
                       <DeviceActions
                         assignable={data?.assignable ?? []}
                         busy={busy}
+                        correctIdentity={canCorrectIdentity ? correctIdentity : null}
+                        correctionOpen={device.id === focusDeviceId}
                         device={device}
                         draft={draft.surface === "register" ? draft : EMPTY_DRAFT}
                         onClose={closeDraft}
@@ -1247,6 +1316,13 @@ export function DeviceRegisterWorkspace({
                         onSubmit={() => void submitDraft(device)}
                         post={post}
                         setDraft={setDraft}
+                      />
+                    ) : canCorrectIdentity ? (
+                      <IdentityCorrection
+                        busy={busy}
+                        correctIdentity={correctIdentity}
+                        defaultOpen={device.id === focusDeviceId}
+                        device={device}
                       />
                     ) : (
                       <p className="break-words text-[11px] font-semibold text-slate-400">
@@ -1264,7 +1340,7 @@ export function DeviceRegisterWorkspace({
       {/* MOBILE — cards. The owner's standing rule: mobile never gets a table. */}
       <div className="mt-5 space-y-3 md:hidden">
         {visible.map((device) => (
-          <div className="border border-slate-200 bg-white px-4 py-3" key={device.id}>
+          <div className="border border-slate-200 bg-white px-4 py-3" data-device-row={device.id} key={device.id}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="break-words text-[13px] font-black text-slate-900">{device.assetTag}</p>
@@ -1310,6 +1386,8 @@ export function DeviceRegisterWorkspace({
                 <DeviceActions
                   assignable={data?.assignable ?? []}
                   busy={busy}
+                  correctIdentity={canCorrectIdentity ? correctIdentity : null}
+                  correctionOpen={device.id === focusDeviceId}
                   device={device}
                   draft={draft.surface === "register" ? draft : EMPTY_DRAFT}
                   onClose={closeDraft}
@@ -1317,6 +1395,15 @@ export function DeviceRegisterWorkspace({
                   onSubmit={() => void submitDraft(device)}
                   post={post}
                   setDraft={setDraft}
+                />
+              </div>
+            ) : canCorrectIdentity ? (
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                <IdentityCorrection
+                  busy={busy}
+                  correctIdentity={correctIdentity}
+                  defaultOpen={device.id === focusDeviceId}
+                  device={device}
                 />
               </div>
             ) : null}
@@ -1552,9 +1639,146 @@ function ItemPricing({
   );
 }
 
+/**
+ * Correct an entry's serial number and IMEI — Super Admin only, with a written reason.
+ *
+ * THE SERVER DECIDES; THIS ONLY ASKS. A malformed IMEI, a number another entry holds, a correction
+ * that would leave nothing to identify the device by — `planIdentityCorrection` refuses each on the
+ * server with a sentence, and the sentence is shown here, beside the fields it is about. The only
+ * thing held back on the screen is an empty reason, which it can see for itself.
+ *
+ * BOTH CURRENT VALUES ARE SHOWN. The row prints one of the two, and a correction is about which
+ * number is wrong. The fields start from what is stored and reset to it each time the editor opens,
+ * so a correction saved a moment ago is what the next one starts from.
+ */
+function IdentityCorrection({
+  busy,
+  correctIdentity,
+  defaultOpen,
+  device,
+}: {
+  busy: boolean;
+  correctIdentity: CorrectIdentity;
+  defaultOpen: boolean;
+  device: CompanyDevice;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  // The pair the fields were filled from. Sent with the save, so an IMEI Rep Tablets copied in
+  // while this was open is refused as a change, never erased by a blank field.
+  const [shown, setShown] = useState(() => ({ serialNumber: device.serialNumber, imei: device.imei }));
+  const [serialNumber, setSerialNumber] = useState(device.serialNumber ?? "");
+  const [imei, setImei] = useState(device.imei ?? "");
+  const [reason, setReason] = useState("");
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const buttonClass =
+    "border border-slate-300 bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-700 hover:bg-slate-100 disabled:opacity-50";
+
+  if (!open) {
+    return (
+      <div className="flex flex-col gap-1">
+        <button
+          className={`self-start ${buttonClass}`}
+          disabled={busy}
+          onClick={() => {
+            setShown({ serialNumber: device.serialNumber, imei: device.imei });
+            setSerialNumber(device.serialNumber ?? "");
+            setImei(device.imei ?? "");
+            setReason("");
+            setRefusal(null);
+            setSaved(false);
+            setOpen(true);
+          }}
+          type="button"
+        >
+          Correct serial or IMEI
+        </button>
+        {saved ? (
+          <p className="break-words text-[10px] font-bold text-emerald-700">
+            Corrected. The old values and the reason are in the audit log.
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-w-0 border border-slate-300 bg-slate-50 px-2.5 py-2">
+      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-600">
+        Correct the serial number or IMEI
+      </p>
+      <p className="mt-1 break-words text-[11px] font-semibold leading-relaxed text-slate-500" dir="ltr">
+        Now: S/N {device.serialNumber ?? "not recorded"} · IMEI {device.imei ?? "not recorded"}
+      </p>
+      <div className="mt-2 flex flex-col gap-1.5">
+        <Field label="Serial number">
+          <input
+            className={INPUT_CLASS}
+            dir="ltr"
+            onChange={(event) => setSerialNumber(event.target.value)}
+            value={serialNumber}
+          />
+        </Field>
+        <Field label="IMEI" hint="15 digits — dial *#06# on the device to read it.">
+          <input
+            className={INPUT_CLASS}
+            dir="ltr"
+            inputMode="numeric"
+            onChange={(event) => setImei(event.target.value)}
+            value={imei}
+          />
+        </Field>
+        <Field label="Reason" hint="Required. Kept in the audit log with the old and new values.">
+          <input
+            className={INPUT_CLASS}
+            maxLength={IDENTITY_REASON_MAX_LENGTH}
+            onChange={(event) => setReason(event.target.value)}
+            value={reason}
+          />
+        </Field>
+      </div>
+      {refusal ? (
+        <p className="mt-2 break-words text-[11px] font-bold leading-relaxed text-rose-800" role="alert">
+          {refusal}
+        </p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          className="border border-slate-900 bg-slate-900 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white hover:bg-slate-800 disabled:opacity-50"
+          disabled={busy || reason.trim() === ""}
+          onClick={() => {
+            void correctIdentity({
+              deviceId: device.id,
+              serialNumber,
+              imei,
+              reason,
+              shownSerialNumber: shown.serialNumber,
+              shownImei: shown.imei,
+            }).then((refused) => {
+              setRefusal(refused);
+              if (refused) return;
+              setSaved(true);
+              setOpen(false);
+            });
+          }}
+          type="button"
+        >
+          Save correction
+        </button>
+        <button className={buttonClass} disabled={busy} onClick={() => setOpen(false)} type="button">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DeviceActions({
   assignable,
   busy,
+  correctIdentity = null,
+  correctionOpen = false,
   device,
   draft,
   onClose,
@@ -1565,6 +1789,10 @@ function DeviceActions({
 }: {
   assignable: DeviceRegisterData["assignable"];
   busy: boolean;
+  /** Present only for somebody who may correct a serial or IMEI (Super Admin), and only in the register. */
+  correctIdentity?: CorrectIdentity | null;
+  /** The deep-linked entry: its correction starts open. */
+  correctionOpen?: boolean;
   device: CompanyDevice;
   draft: Draft;
   onClose: () => void;
@@ -1628,6 +1856,14 @@ function DeviceActions({
           in stock has no handover to price.
         */}
         {device.assignmentId ? <ItemPricing busy={busy} device={device} post={post} /> : null}
+        {correctIdentity ? (
+          <IdentityCorrection
+            busy={busy}
+            correctIdentity={correctIdentity}
+            defaultOpen={correctionOpen}
+            device={device}
+          />
+        ) : null}
       </div>
     );
   }
