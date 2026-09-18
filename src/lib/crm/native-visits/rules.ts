@@ -19,7 +19,7 @@
 
 import { isPlausibleCheckinCoordinate } from "@/lib/crm/checkin-coords";
 import { addDaysIso } from "@/lib/crm/dates";
-import { readAccuracyInput } from "@/lib/geo/coordinate-input";
+import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export type NativeVisitContactRule = "required" | "contact_or_prospect" | "none";
@@ -332,8 +332,11 @@ export function parseNativeVisitDraft(
     return { ok: false, error: `${type.label} is not a visit to a doctor, so it takes no doctor.` };
   }
 
-  let latitude = context.enteredOnBehalf ? null : finiteOrNull(body.latitude);
-  let longitude = context.enteredOnBehalf ? null : finiteOrNull(body.longitude);
+  // Not finiteOrNull, which lets " " through as 0: a blank pair read as 0°N 0°E, which is outside
+  // Egypt, so the visit was flagged "out of bounds" and kept a position the phone never reported.
+  // A blank coordinate is no fix, and takes the "missing" flag a missing one always did.
+  let latitude = context.enteredOnBehalf ? null : readCoordinateInput(body.latitude);
+  let longitude = context.enteredOnBehalf ? null : readCoordinateInput(body.longitude);
   if (latitude == null || longitude == null) {
     latitude = null;
     longitude = null;
