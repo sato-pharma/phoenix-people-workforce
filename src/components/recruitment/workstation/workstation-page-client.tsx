@@ -553,12 +553,22 @@ export function WorkstationPageClient({
           press this whole change exists to make good. Same position in the tree, different class.
 
           The normal geometry is the one the screening page has used since August: as tall as the
-          viewport minus the shell header, with a floor so it does not collapse on a short window. */}
+          viewport minus the shell header, with a floor so it does not collapse on a short window.
+
+          BOTH NUMBERS ARE DIVIDED BY THE DISPLAY SCALE. This frame sits inside <main>, which wears
+          the app's own zoom (0.8 by default from 1024px), and `zoom` does not compensate viewport
+          units: 100vh resolves against the real window and is THEN scaled, so the frame painted at
+          80% of the height it asked for — on a 900px window a CV pane 20% short with a band of
+          empty page under it, and on a short window one pinned to the floor. globals.css divides
+          `.h-screen` and `.min-h-screen` for exactly this reason and leaves arbitrary `100vh`
+          values alone, so this one has to say it itself. `--phx-scale-applied` is 1 below 1024px,
+          where no zoom applies, so a phone is untouched. The floor is divided too: it is a
+          physical minimum, and 32rem inside the zoom paints at 410px. */}
       <div
         className={
           fullBleed
             ? "fixed inset-0 z-[190] flex flex-col bg-white"
-            : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col border border-phx-line bg-white"
+            : "flex h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))] min-h-[calc(32rem_/_var(--phx-scale-applied,1))] flex-col border border-phx-line bg-white"
         }
       >
         {/* A CV'S OWN PAGE: one slim line, and the rest of the screen is the CV. The way back to
