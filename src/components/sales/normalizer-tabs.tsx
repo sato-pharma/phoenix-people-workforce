@@ -4,10 +4,10 @@ import { useState } from "react";
 
 import { NormalizerWorkspace } from "@/components/sales/normalizer-workspace";
 import { WeeklyNormalizerWorkspace, type WeeklyNormalizerDistributor, type WeeklyNormalizerReferences } from "@/components/sales/weekly/weekly-normalizer-workspace";
+import type { MappingReferences } from "@/lib/sales/normalizer/brick-area";
 import { cn } from "@/lib/utils";
 
 type DistributorOption = { code: string; name: string };
-type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (

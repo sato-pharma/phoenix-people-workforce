@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { BrickMoveRefreshStatus, useBrickMoveRefresh } from "@/components/sales/brick-move-refresh";
+import { describeBrickSalesMove, parseBrickSalesMove } from "@/lib/sales/master-data/brick-move-result";
 import type { HeldMappingChange } from "@/lib/sales/mapping-guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,14 +77,36 @@ function Decide({
   );
 }
 
+// What an Allow did beyond the map row: a pharmacy a brick move held takes its open-month sales
+// with it, in the same step as the approval.
+type SalesNotice = { subject: string; lines: string[] };
+
+function SalesMovedNotice({ notice }: { notice: SalesNotice }) {
+  return (
+    <div className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">
+      <p className="font-semibold">{notice.subject} was allowed, and its open-month sales moved with it.</p>
+      <ul className="mt-1 space-y-1">
+        {notice.lines.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function MappingGuardReview({ initialHolds }: { initialHolds: HeldMappingChange[] }) {
   const [holds, setHolds] = useState(initialHolds);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [salesNotice, setSalesNotice] = useState<SalesNotice | null>(null);
+  const refresh = useBrickMoveRefresh();
+  const { run: rebuildMovedFiles } = refresh;
 
   const decide = useCallback(async (holdId: number, decision: "approved" | "rejected") => {
     setBusyId(holdId);
     setError(null);
+    setSalesNotice(null);
+    const subject = holds.find((hold) => hold.id === holdId)?.subject ?? "The pharmacy";
     try {
       const response = await fetch("/api/sales/mapping-guard/decide", {
         body: JSON.stringify({ decision, holdId }),
@@ -93,6 +117,7 @@ export function MappingGuardReview({ initialHolds }: { initialHolds: HeldMapping
         success?: boolean;
         error?: string;
         holds?: HeldMappingChange[];
+        brickMove?: unknown;
       };
       if (!response.ok || !payload.success) {
         setError(payload.error ?? "That did not go through.");
@@ -101,36 +126,55 @@ export function MappingGuardReview({ initialHolds }: { initialHolds: HeldMapping
         return;
       }
       setHolds(payload.holds ?? []);
+      const brickMove = parseBrickSalesMove(payload.brickMove);
+      if (brickMove) {
+        const lines = describeBrickSalesMove(brickMove);
+        setSalesNotice({ lines: lines.length > 0 ? lines : ["It had no sales in an open month."], subject });
+        if (brickMove.pendingFiles > 0) void rebuildMovedFiles();
+      }
     } catch {
       setError("That did not go through.");
     } finally {
       setBusyId(null);
     }
-  }, []);
+  }, [holds, rebuildMovedFiles]);
+
+  const notices = (
+    <>
+      {error ? (
+        <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
+      ) : null}
+      {salesNotice ? <SalesMovedNotice notice={salesNotice} /> : null}
+      <BrickMoveRefreshStatus refresh={refresh} />
+    </>
+  );
 
   if (holds.length === 0) {
     return (
-      <div className="border border-phx-line bg-white px-4 py-8 text-center">
-        <p className="text-sm font-semibold text-[#0B0B0B]">Nothing is waiting.</p>
-        <p className="mt-1 text-sm text-slate-600">
-          Every customer, brick and area re-mapping has gone through. You are told here only when one
-          overwrites a decision of yours or moves a customer to another region.
-        </p>
+      <div className="space-y-3">
+        {notices}
+        <div className="border border-phx-line bg-white px-4 py-8 text-center">
+          <p className="text-sm font-semibold text-[#0B0B0B]">Nothing is waiting.</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Every customer, brick and area re-mapping has gone through. You are told here only when one
+            overwrites a decision of yours or moves a customer to another region.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {error ? (
-        <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
-      ) : null}
+      {notices}
 
       <p className="text-sm text-slate-600">
         {holds.length === 1
           ? "One change is held. Nothing has been altered."
           : `${holds.length} changes are held. Nothing has been altered.`}{" "}
         Allow applies the change. Keep as is refuses it and leaves the mapping exactly where it stands.
+        Allowing a pharmacy that a brick move held also moves its sales in every open month; a published
+        month never changes.
       </p>
 
       {/* Desktop: the fitting table. Five columns, no horizontal scroller. */}

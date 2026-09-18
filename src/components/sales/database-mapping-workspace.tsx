@@ -21,10 +21,12 @@ import {
   UploadCloud,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { AdminCallout, AdminInsightChip, AdminTableShell } from "@/components/admin/admin-design-system";
+import { BrickAreaCorrection, type BrickCorrectionMoved } from "@/components/sales/brick-area-correction";
+import { BrickMoveRefreshStatus, announceBrickMoves, useBrickMoveRefresh } from "@/components/sales/brick-move-refresh";
 import { DatabaseValidationTab } from "@/components/sales/database-validation-tab";
 import { MappingCombobox } from "@/components/sales/source-of-sales-mapping-tab";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +34,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/sales/format";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { brickCorrectionHref } from "@/lib/sales/normalizer/brick-area";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
+import { blockName } from "@/lib/sales/master-data/brick-correction";
+import { parseBrickRelocation } from "@/lib/sales/master-data/brick-move-result";
 import {
   MASTER_DEFINITIONS,
   MASTER_ORDER,
@@ -71,10 +76,15 @@ const MASTER_ICONS: Record<MasterKey, LucideIcon> = {
 };
 
 type Props = {
+  /** The brick "Correct in database" opened the page on, if any. */
+  initialBrickId: string | null;
   initialCustomerDistributor: string;
   initialError: string | null;
   initialHeaderGrid: HeaderGrid;
+  /** Moved files whose totals still wait to be rebuilt; the page rebuilds them when it opens. */
+  initialPendingMoveFiles: number;
   initialRows: Record<MasterKey, MasterRowRecord[]>;
+  initialTab: MasterKey;
 };
 
 type ImportResponse = { data?: MasterImportResult; error?: string; message?: string; success: boolean };
@@ -136,11 +146,28 @@ function ColumnField({
   value: string;
 }) {
   const parent = def.parents.find((p) => p.codeColumn === column.key);
+  // Parents are picked by name: a region or area by its own, a block by its name and its area.
+  const parentOptions = useMemo(() => {
+    if (!parent) return [];
+    const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
+    const areaNames = new Map((allRows.areas ?? []).map((row) => [normalizeCode(row.area_code), normalizeDisplay(row.area_name)]));
+    const brickNames = new Map((allRows.bricks ?? []).map((row) => [normalizeDisplay(row.brick_id), normalizeDisplay(row.brick_name)]));
+    return (allRows[parent.parentMaster] ?? [])
+      .filter((row) => row.active !== false)
+      .map((row) => {
+        const code = String(row[parentDef.keyColumn]);
+        let name = "";
+        if (parent.parentMaster === "regions") name = normalizeDisplay(row.region_name);
+        else if (parent.parentMaster === "areas") name = normalizeDisplay(row.area_name);
+        else if (parent.parentMaster === "blocks") {
+          const area = areaNames.get(normalizeCode(row.area_code));
+          name = [blockName(row, brickNames), area].filter(Boolean).join(" — ");
+        }
+        return { code, name: name || code };
+      });
+  }, [allRows, parent]);
   if (parent) {
     const parentDef = MASTER_DEFINITIONS[parent.parentMaster];
-    const parentOptions = (allRows[parent.parentMaster] ?? [])
-      .filter((row) => row.active !== false)
-      .map((row) => ({ code: String(row[parentDef.keyColumn]), name: String(row[parentDef.keyColumn]) }));
     return <MappingCombobox onChange={onChange} options={parentOptions} placeholder={`Select ${parentDef.label}`} value={value} />;
   }
   const numeric = column.type === "number" || column.type === "percent";
@@ -164,11 +191,14 @@ function ColumnField({
 function MasterTab({
   allRows,
   def,
+  onBrickMoved,
   onRowsChange,
   rows,
 }: {
   allRows: Record<MasterKey, MasterRowRecord[]>;
   def: MasterDefinition;
+  /** A brick moved to another block: the page tells the other tabs and rebuilds the moved files. */
+  onBrickMoved: (pendingFiles: number) => void;
   onRowsChange: (rows: MasterRowRecord[]) => void;
   rows: MasterRowRecord[];
 }) {
@@ -304,7 +334,7 @@ function MasterTab({
         </div>
         {isRelocatingEdit ? (
           <p className="break-words text-phx-2xs font-semibold leading-tight text-phx-ink-faint">
-            Creates a new brick ID in the target block and deactivates this one.
+            Moves the brick to that block&apos;s area: it gets a new ID there, its pharmacies and their open-month sales go with it, and this brick stays switched on as history.
           </p>
         ) : null}
       </div>
@@ -459,9 +489,10 @@ function MasterTab({
     setSavingEdit(true);
     setMessage(null);
     try {
-      // Bricks: only a block_code CHANGE means "move" (relocate spawns a fresh block-prefixed ID
-      // and deactivates rowKey — owner preference, 2026-07-23; see relocateBrick). Editing brick_name
-      // alone (a rename) is a plain in-place PATCH on the same row, same as every other master.
+      // Bricks: only a block_code CHANGE means "move" (relocate gives the brick a fresh block-prefixed
+      // ID and keeps rowKey switched on as history, with its pharmacies and open-month sales moved
+      // across; see relocateBrick). Editing brick_name alone (a rename) is a plain in-place PATCH on
+      // the same row, same as every other master.
       const originalRow = rows.find((row) => String(row[def.keyColumn]) === rowKey);
       const originalBlockCode = originalRow ? String(originalRow.block_code ?? "") : "";
       const isBrickRelocate = def.master === "bricks" && (editValues.block_code ?? "") !== originalBlockCode;
@@ -477,11 +508,12 @@ function MasterTab({
             : JSON.stringify(editValues),
         },
       );
-      const payload = await readJson<{ success: boolean; message?: string; error?: string }>(response);
+      const payload = await readJson<{ success: boolean; message?: string; error?: string; move?: unknown }>(response);
       if (payload.success) {
         setMessage({ type: "success", text: payload.message ?? "Row updated successfully." });
         setEditingKey(null);
         setEditValues({});
+        if (isBrickRelocate) onBrickMoved(parseBrickRelocation(payload.move)?.pendingFiles ?? 0);
         await refresh();
       } else {
         setMessage({ type: "error", text: payload.error ?? "Update failed." });
@@ -756,13 +788,66 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   );
 }
 
-export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialError, initialHeaderGrid, initialRows }: Props) {
+export function DatabaseMappingWorkspace({
+  initialBrickId,
+  initialCustomerDistributor,
+  initialError,
+  initialHeaderGrid,
+  initialPendingMoveFiles,
+  initialRows,
+  initialTab,
+}: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
-  const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(MASTER_ORDER[0]);
+  const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(initialTab);
   const [downloadingMaster, setDownloadingMaster] = useState(false);
   const [masterError, setMasterError] = useState<string | null>(null);
   // The customer map shows names, not codes: resolved from the master rows this page already holds.
   const customerMapNameIndex = useMemo(() => buildCustomerMapNameIndex(rowsByMaster), [rowsByMaster]);
+  // "Correct in database": the brick whose area is being corrected, and what the last move did.
+  const [correctionBrickId, setCorrectionBrickId] = useState(initialBrickId);
+  const [correctionNotice, setCorrectionNotice] = useState<string[] | null>(null);
+  const moveRefresh = useBrickMoveRefresh();
+  const { run: rebuildMovedFiles } = moveRefresh;
+  const correctionRows = useMemo(
+    () => ({ areas: rowsByMaster.areas, blocks: rowsByMaster.blocks, bricks: rowsByMaster.bricks, regions: rowsByMaster.regions }),
+    [rowsByMaster.areas, rowsByMaster.blocks, rowsByMaster.bricks, rowsByMaster.regions],
+  );
+
+  // A move whose page was closed before its files were rebuilt: pick the rebuild up again.
+  useEffect(() => {
+    if (initialPendingMoveFiles > 0) void rebuildMovedFiles();
+  }, [initialPendingMoveFiles, rebuildMovedFiles]);
+
+  // Every move tells the other open tabs (the Source Normalizer re-reads its bricks and areas), then
+  // rebuilds the totals of the files whose sales moved.
+  const afterBrickMove = useCallback((pendingFiles: number) => {
+    announceBrickMoves();
+    if (pendingFiles > 0) void rebuildMovedFiles();
+  }, [rebuildMovedFiles]);
+
+  async function reloadBricks() {
+    try {
+      const response = await fetch("/api/sales/database-mapping/bricks", { cache: "no-store" });
+      const payload = await readJson<ListResponse>(response);
+      if (payload.success) setRowsByMaster((current) => ({ ...current, bricks: payload.data ?? [] }));
+    } catch {
+      // The rows below keep what they showed; the Refresh button reloads them.
+    }
+  }
+
+  function openCorrection(brickId: string | null) {
+    setCorrectionBrickId(brickId);
+    setCorrectionNotice(null);
+    // Keep the address in step, so a reload lands on the same brick (or on none).
+    window.history.replaceState(null, "", brickId ? brickCorrectionHref(brickId) : "/sales/database-mapping?tab=bricks");
+  }
+
+  async function handleCorrectionMoved(moved: BrickCorrectionMoved) {
+    afterBrickMove(moved.pendingFiles);
+    await reloadBricks();
+    if (moved.newBrickId) openCorrection(moved.newBrickId);
+    setCorrectionNotice(moved.lines.length > 0 ? moved.lines : ["The brick moved."]);
+  }
 
   // Build + download the full 17-sheet master workbook, populated live from the current system data.
   async function handleDownloadMaster() {
@@ -801,6 +886,7 @@ export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialEr
   }
 
   const activeDef = activeTab === "validation" || activeTab === "profiles" ? null : MASTER_DEFINITIONS[activeTab];
+  const correctingBrickId = activeTab === "bricks" ? correctionBrickId : null;
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -875,6 +961,30 @@ export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialEr
           </Button>
         </div>
 
+        <BrickMoveRefreshStatus refresh={moveRefresh} />
+
+        {correctingBrickId && correctionNotice ? (
+          <AdminCallout tone="success">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <ul className="min-w-0 space-y-1">
+              {correctionNotice.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </AdminCallout>
+        ) : null}
+
+        {correctingBrickId ? (
+          <BrickAreaCorrection
+            brickId={correctingBrickId}
+            key={correctingBrickId}
+            onClose={() => openCorrection(null)}
+            onMoved={handleCorrectionMoved}
+            onOpenBrick={openCorrection}
+            rows={correctionRows}
+          />
+        ) : null}
+
         {activeDef === null ? (
           <DatabaseValidationTab
             headerGrid={initialHeaderGrid}
@@ -885,6 +995,7 @@ export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialEr
           <MasterTab
             allRows={rowsByMaster}
             def={activeDef}
+            onBrickMoved={afterBrickMove}
             onRowsChange={(rows) => setRowsByMaster((current) => ({ ...current, [activeTab as MasterKey]: rows }))}
             rows={rowsByMaster[activeTab as MasterKey]}
           />
