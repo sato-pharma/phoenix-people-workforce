@@ -15,6 +15,7 @@
  * service checks the object exists before it saves.
  */
 
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { isIsoDay } from "@/lib/phoenix-crm/calendar";
 import { isUsableFix } from "@/lib/phoenix-crm/geo";
 import { isUuid } from "@/lib/phoenix-crm/plan-rules";
@@ -87,14 +88,16 @@ export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<
   if (!isUsableFix(raw.lat, raw.lon)) {
     return { ok: false, error: "Your location was not captured. Allow location on your phone and capture it again at the clinic." };
   }
-  const accuracy = raw.accuracyMeters === null || raw.accuracyMeters === undefined ? null : Number(raw.accuracyMeters);
+  // Not `Number(...)`, which reads "" and " " as 0: a phone that reported no accuracy was saved as a
+  // perfect 0 m fix and shown to the manager as "within 0 m". A blank accuracy is unknown.
+  const accuracy = readAccuracyInput(raw.accuracyMeters);
   const deviceCapturedAt = typeof raw.deviceCapturedAt === "string" && !Number.isNaN(Date.parse(raw.deviceCapturedAt)) ? raw.deviceCapturedAt : null;
   return {
     ok: true,
     value: {
       lat: Number(raw.lat),
       lon: Number(raw.lon),
-      accuracyMeters: accuracy !== null && Number.isFinite(accuracy) && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
+      accuracyMeters: accuracy !== null && accuracy >= 0 ? Math.round(accuracy * 10) / 10 : null,
       deviceCapturedAt,
     },
   };
