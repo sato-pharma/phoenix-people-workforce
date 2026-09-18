@@ -182,6 +182,8 @@ export const RAW_DISTRIBUTOR_PROFILES: DistributorProfile[] = [
     distributorCode: "MC",
     distributorName: "mec",
     // Headers Mapping: item code = "دالصنف", item name = "إسم الصنف", date = "شهر".
+    // "شهر" is a month written YYYYMM ("202607"). It decides the row's month (owner, 2026-09-18),
+    // not "تاريخ المستند", even where the two differ, and it carries no day — see periodFrom.
     productCodeColumns: ["دالصنف"],
     productNameColumns: ["إسم الصنف"],
     productColumns: ["دالصنف", "إسم الصنف"],
