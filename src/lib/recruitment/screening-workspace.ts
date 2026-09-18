@@ -115,6 +115,7 @@ import {
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
 import { loadWhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicants-loader";
+import { splitWhatsAppPileByDecision, whatsAppPileHidesDecided } from "@/lib/recruitment/whatsapp-pile-decided";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -209,8 +210,19 @@ export type ScreeningWorkspace = {
    * job title, because then it narrowed nothing. See `whatsAppApplicantSearchParam`.
    */
   whatsapp: string | null;
+  /**
+   * Whether the link asked for the already-decided CVs to be kept in that pile. Echoed so every link
+   * the page builds keeps it, like the search itself. False on any other pile.
+   */
+  decided: boolean;
   /** That search in words, for the header. Null when there is none. */
   whatsAppSearchLabel: WhatsAppApplicantSearchLabel | null;
+  /**
+   * The already-decided CVs among the people that search found - shortlisted, sent, rejected or
+   * hired - and whether the list currently hides them. Null outside a WhatsApp search. The count is
+   * over everyone the search found, so it reads the same hidden or shown.
+   */
+  whatsAppDecided: { count: number; hidden: boolean } | null;
 };
 
 function text(value: string | null | undefined): string | null {
@@ -410,7 +422,25 @@ export async function loadScreeningWorkspace(
   // the rail both mean "of this search".
   const whatsAppIds =
     whatsAppSearch && whatsAppView ? whatsAppApplicantSearchCandidateIds(whatsAppView.rows, whatsAppSearch) : null;
-  const whatsAppMatches = whatsAppIds ? allCandidates.filter((candidate) => whatsAppIds.has(candidate.id)) : null;
+  const whatsAppEveryMatch = whatsAppIds ? allCandidates.filter((candidate) => whatsAppIds.has(candidate.id)) : null;
+
+  // THE CVs THE SCREENER HAS ALREADY DECIDED LEAVE THIS LIST. The owner, 2026-09-18: "hide the CVs I
+  // already decided from the WhatsApp screening list" - he shortlisted or rejected somebody and kept
+  // meeting the same CV again, because this pile deliberately holds everyone the search found.
+  //
+  // Hidden BEFORE the pile is counted, so the rail, the pool figure and the list all mean the same
+  // people; hiding them in the browser would leave a rail reporting CVs the list did not hold. A
+  // decision made in THIS sitting still leaves the row where it is until the page reloads - that is
+  // the browser's own record of the session and it never reaches this line.
+  //
+  // What switches the hiding off - the link's "decided" flag, a status picked on the filter bar, "sent
+  // to a manager" - is in whatsAppPileHidesDecided, so it can be tested without a database.
+  const hidesDecided = whatsAppEveryMatch !== null && whatsAppPileHidesDecided(narrowing);
+  const { decidedCount: whatsAppDecidedCount, shown: whatsAppShown } = splitWhatsAppPileByDecision(
+    whatsAppEveryMatch ?? [],
+    hidesDecided,
+  );
+  const whatsAppMatches = whatsAppEveryMatch ? whatsAppShown : null;
 
   // WHY EACH CV IS IN THIS SEAT'S PILE, in the words the row prints. Empty outside seat mode.
   const seatReasons = new Map<string, string>();
@@ -811,8 +841,11 @@ export async function loadScreeningWorkspace(
     // Spelled back the one way the WhatsApp page spells it, so a link edited by hand is tidied rather
     // than carried on as typed. Null when it named no job title, since then it narrowed nothing.
     whatsapp: whatsAppSearch ? whatsAppApplicantSearchParam(whatsAppSearch.title, whatsAppSearch.selections) : null,
+    // Only ever true beside a search: on any other pile the flag means nothing, so it is not carried.
+    decided: whatsAppSearch !== null && narrowing.decided,
     whatsAppSearchLabel:
       whatsAppSearch && whatsAppView ? whatsAppApplicantSearchLabel(whatsAppView, whatsAppSearch) : null,
+    whatsAppDecided: whatsAppEveryMatch ? { count: whatsAppDecidedCount, hidden: hidesDecided } : null,
   };
 }
 
