@@ -339,11 +339,12 @@ in the web app's required `test` check, runs the two side by side and fails on a
 wording, time, wrapping, geometry or draw call. Change the web stamp and that test says to change the
 copy in the same PR. Never loosen the test instead.
 
-**A missing position is said, never faked.** With no fix the stamp reads "no GPS fix" and the upload
-**leaves the coordinates out** rather than sending null: the route reads them with
-`Number(body.latitude)`, `Number(null)` is 0, and the approver would be told the photo was taken
-thousands of kilometres from the trip instead of "unknown". After the save, a photo with no position
-or only an approximate one says why, and what to change next time.
+**No location, no photo** (owner ruling, 2026-09-18). With location refused the camera never
+opens, and with no fix inside the 12 seconds the photo is dropped before it is stamped or sent; the
+message names the cause and says to take it again. The server refuses a departure photo without a
+position too (`src/lib/outstation/departure-photo-location.ts`), so an older build that sends none is
+told the same and stores nothing. After a save, a photo with only an approximate position says so,
+and what to change next time.
 
 **Foreground location only.** The `expo-location` plugin runs with background location, the
 foreground service and activity recognition all off, and `blockedPermissions` in `app.json` strips

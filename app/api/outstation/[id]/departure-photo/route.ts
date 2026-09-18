@@ -68,9 +68,9 @@ export async function POST(
       );
     }
 
-    // Coordinates are optional on purpose. The owner chose to FLAG a departure photo taken far
-    // from the trip rather than refuse it, so a device that cannot get a fix must still be able
-    // to submit — the review simply records the distance as unknown instead of as zero. Never
+    // Read here, judged in the service: a photo with no position is refused there (owner ruling,
+    // 2026-09-18, departure-photo-location.ts), and its message carries "required", so the status
+    // map above answers 400. A far or inaccurate position is still accepted and only flagged. Never
     // `Number(body.latitude)` here: `Number(null)` is 0, which stored a no-fix photo at 0,0.
     const { latitude, longitude } = readDeparturePhotoPosition(body);
 

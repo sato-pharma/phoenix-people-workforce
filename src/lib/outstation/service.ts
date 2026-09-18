@@ -76,6 +76,7 @@ import {
   reviewDepartureEvidence,
   type DepartureEvidenceReview,
 } from "@/lib/outstation/departure-evidence";
+import { departurePhotoLocationRefusal } from "@/lib/outstation/departure-photo-location";
 import {
   isOutstationExpenseInPayroll,
   isOutstationRequestHeldForRepair,
@@ -4541,6 +4542,11 @@ export async function captureOutstationDeparturePhoto(
       "The arrival photo is missing, so a departure photo cannot be accepted yet — capture the arrival photo first.",
     );
   }
+  // No location, no photo (owner ruling, 2026-09-18): refused like an arrival photo without GPS,
+  // and BEFORE the upload, so nothing is stored. It used to be saved stamped "no GPS fix" with its
+  // distance unknown and no flag, which cost the employee nothing. Distance is still only flagged.
+  const locationRefusal = departurePhotoLocationRefusal(input.latitude, input.longitude);
+  if (locationRefusal) throw new Error(locationRefusal);
 
   const capturedAt = new Date().toISOString();
   const review = reviewDepartureEvidence({

@@ -10,10 +10,8 @@ import {
   EVIDENCE_MAX_UPLOAD_BYTES,
   OUTSTATION_REVERSE_GEOCODE_PATH,
   departurePhotoReference,
-  evidenceLocationWithoutFix,
   readEvidenceLocationStamp,
   type EvidenceLocationResponse,
-  type ResolvedEvidenceLocation,
 } from "./evidence-stamp";
 import { prepareLocation, readCurrentPosition, type LocationAccess, type LocationFix } from "./location";
 
@@ -29,11 +27,10 @@ import { prepareLocation, readCurrentPosition, type LocationAccess, type Locatio
  *     person has just framed reads as the app losing it.
  *   - The time on the stamp is when the shutter fired. The web reads the clock after the address
  *     lookup, up to 24 seconds later; the moment the photo was taken is the truer of the two.
- *   - With no position, the coordinates are LEFT OUT of the upload rather than sent as null. The
- *     route reads them with `Number(body.latitude)`, and `Number(null)` is 0 — a finite number — so
- *     a null arrives as 0°N 0°E, thousands of kilometres from the trip, and the approver is told
- *     the photo was "taken well away from where the trip was" when the truth is "unknown". Leaving
- *     the keys out gives `Number(undefined)`, which is NaN, which the route turns into null.
+ *   - No location, no photo (owner ruling, 2026-09-18). With location refused the camera never
+ *     opens; with no fix in time the photo is dropped before it is stamped or sent. The server
+ *     refuses one without a position as well (src/lib/outstation/departure-photo-location.ts), so an
+ *     older build that still leaves the coordinates out is told why and stores nothing.
  *
  * NO QUEUE. A photo that fails to send is not kept and retried later: a departure photo is only
  * worth anything if it is taken at the destination, and one sent later from somewhere else would
@@ -49,7 +46,7 @@ export type DeparturePhotoOutcome =
       status: "saved";
       /** The server's review of the pair, e.g. "Departure photo captured 1.2 km from the arrival photo…". */
       message: string;
-      /** Why the position on this photo is missing or rough, when it is — said AFTER, never as a block. */
+      /** Why the position on this photo is rough, when it is — said AFTER, never as a block. */
       locationNote: string | null;
     }
   /** The person backed out of the camera. Nothing to report. */
@@ -95,17 +92,23 @@ async function lookUpPlace(
   }
 }
 
-/** What to tell the person after a save when the position is missing or rough. Null when it is fine. */
-function describeLocationGap(access: LocationAccess, fix: LocationFix): string | null {
+/**
+ * Why a departure photo cannot be taken without a position — no location, no photo (owner ruling,
+ * 2026-09-18; the server refuses it too, in src/lib/outstation/departure-photo-location.ts). Worded
+ * for the cause, so the person knows what to change before taking it again.
+ */
+function describeMissingLocation(access: LocationAccess): string {
   if (!access.granted) {
     return access.canAskAgain
-      ? "Location was not allowed, so this photo was saved without a position and your approver will see that. Choose Allow next time."
-      : "Location is turned off for Phoenix, so this photo was saved without a position and your approver will see that. Turn it on in Android Settings, under Apps, then Phoenix Workforce, then Permissions.";
+      ? "A departure photo needs your location, and location was not allowed. Choose Allow, then take the photo again."
+      : "A departure photo needs your location, and it is turned off for Phoenix. Turn it on in Android Settings, under Apps, then Phoenix Workforce, then Permissions, then take the photo again.";
   }
-  if (fix.status !== "fixed") {
-    return "The phone could not find its position in time, so this photo was saved without one and your approver will see that. Location may be switched off, or the signal is weak here.";
-  }
-  if (!access.precise) {
+  return "A departure photo needs your location, and the phone could not find its position in time. Switch location on, or step somewhere with a clearer signal, then take the photo again.";
+}
+
+/** What to tell the person after a save when the position is rough. Null when it is fine. */
+function describeRoughLocation(access: LocationAccess): string | null {
+  if (access.granted && !access.precise) {
     return "Phoenix only has your approximate location, so the position on this photo may be several kilometres out. Allow precise location for Phoenix in Android Settings.";
   }
   return null;
@@ -128,6 +131,9 @@ export async function captureDeparturePhoto(input: {
   // 1. Location permission, then the camera — see the module note for the order.
   onStep?.("opening");
   const access = await prepareLocation();
+  // No permission can never become a fix, so say so before the camera opens, not after a photo
+  // the person has just framed.
+  if (!access.granted) return { message: describeMissingLocation(access), status: "failed" };
 
   // Quality 1: the camera's own file, stamped and compressed once, below — see `capturePhoto`.
   const shot = await capturePhoto({ maxBytes: null, quality: 1 });
@@ -140,15 +146,12 @@ export async function captureDeparturePhoto(input: {
   // 2. Where it was taken.
   onStep?.("locating");
   const fix = await readCurrentPosition(access);
+  // No location, no photo: nothing is stamped or sent (owner ruling, 2026-09-18).
+  if (fix.status !== "fixed") return { message: describeMissingLocation(access), status: "failed" };
 
-  let location: ResolvedEvidenceLocation;
-  if (fix.status === "fixed") {
-    onStep?.("address");
-    const place = await lookUpPlace(fix, token);
-    location = readEvidenceLocationStamp(place, fix.latitude, fix.longitude, fix.accuracyMeters);
-  } else {
-    location = evidenceLocationWithoutFix();
-  }
+  onStep?.("address");
+  const place = await lookUpPlace(fix, token);
+  const location = readEvidenceLocationStamp(place, fix.latitude, fix.longitude, fix.accuracyMeters);
 
   // 3. The stamp, burnt into the pixels.
   onStep?.("stamping");
@@ -190,9 +193,9 @@ export async function captureDeparturePhoto(input: {
       {
         body: {
           imageDataUrl: `data:image/jpeg;base64,${stamped.base64}`,
+          latitude: fix.latitude,
           locationLabel: location.label,
-          // Present only with a fix — see the module note on why never null.
-          ...(fix.status === "fixed" ? { latitude: fix.latitude, longitude: fix.longitude } : {}),
+          longitude: fix.longitude,
         },
         method: "POST",
         // Bytes over a field connection, as `apiUpload` allows for, not a JSON read.
@@ -202,7 +205,7 @@ export async function captureDeparturePhoto(input: {
     );
     const summary = response?.review?.summary;
     return {
-      locationNote: describeLocationGap(access, fix),
+      locationNote: describeRoughLocation(access),
       message: typeof summary === "string" && summary.trim() ? summary : "Departure photo saved.",
       status: "saved",
     };
