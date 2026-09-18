@@ -9,8 +9,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
 import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { cairoDate } from "@/lib/format/cairo-datetime";
+import {
+  candidateDecisionTabLabels,
+  candidateMatchesDecisionTab,
+  countCandidatesByDecisionTab,
+  DEFAULT_CANDIDATE_DECISION_TAB,
+  statusFilterForDecisionTab,
+  type CandidateDecisionTab,
+} from "@/lib/recruitment/candidate-decision-tabs";
 import { candidatePageHref } from "@/lib/recruitment/candidate-page-link";
 import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
@@ -165,18 +174,46 @@ function ProgressCell({ row }: { row: WhatsAppApplicantRow }) {
   );
 }
 
+/** What an empty list says: which pile, and whether the filters are why. */
+function emptyMessage(filtered: boolean, tab: CandidateDecisionTab): string {
+  if (tab === "all") {
+    return filtered ? "Nobody who applied for this title matches these filters." : "Nobody who applied for this title is listed.";
+  }
+  const pile = `the “${candidateDecisionTabLabels[tab]}” tab`;
+  return filtered ? `Nobody on ${pile} matches these filters.` : `Nobody who applied for this title is on ${pile}.`;
+}
+
 export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsView }) {
   // /recruitment, or /hr/recruitment in the HR sidebar. See whatsAppApplicantsPoolHref.
   const pool = whatsAppApplicantsPoolHref(usePathname());
   const [title, setTitle] = useState("");
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [limit, setLimit] = useState(ROWS_PER_STEP);
+  // THE DECISION TAB — the owner, 2026-09-18: "in any screening page you must show did not decide
+  // yet ... shortlisted ... rejected", so a new CV is easy to see. Opens on "Not decided yet", like
+  // every screen that lists CVs, and stays put when the job title changes: it is a choice of pile,
+  // not of search.
+  const [decisionTab, setDecisionTab] = useState<CandidateDecisionTab>(DEFAULT_CANDIDATE_DECISION_TAB);
 
   const chosenTitle = view.titles.find((entry) => entry.value === title) ?? null;
   const filters = chosenTitle ? (view.filtersByTitle[chosenTitle.value] ?? []) : [];
-  const matches = useMemo(
+  // Everyone the title and the filters find, across every pile. The tab strip counts these, so each
+  // number on it is the list that tab opens.
+  const acrossTabs = useMemo(
     () => view.rows.filter((row) => applicantMatches(row, title, selections)),
     [view.rows, title, selections],
+  );
+  const decisionCounts = useMemo(() => countCandidatesByDecisionTab(acrossTabs), [acrossTabs]);
+  const matches = useMemo(
+    () => acrossTabs.filter((row) => candidateMatchesDecisionTab(row.status, decisionTab)),
+    [acrossTabs, decisionTab],
+  );
+  // The tab's own pile under this title before any filter, for "12 of 40".
+  const tabTotal = useMemo(
+    () =>
+      view.rows.filter((row) => row.titleValue === title && candidateMatchesDecisionTab(row.status, decisionTab))
+        .length,
+    [view.rows, title, decisionTab],
   );
   const shown = matches.slice(0, limit);
   const filtered = Object.values(selections).some(Boolean);
@@ -236,11 +273,19 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
 
       {chosenTitle ? (
         <section className="space-y-3">
+          <CandidateDecisionTabStrip
+            active={decisionTab}
+            counts={decisionCounts}
+            onSelect={(tab) => {
+              setDecisionTab(tab);
+              setLimit(ROWS_PER_STEP);
+            }}
+          />
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
             <div className="flex items-baseline gap-1.5">
               <span className="font-bold uppercase tracking-wide text-slate-400">People</span>
               <span className="text-sm font-bold tabular-nums text-slate-800">
-                {filtered ? `${matches.length} of ${chosenTitle.count}` : chosenTitle.count}
+                {filtered ? `${matches.length} of ${tabTotal}` : matches.length}
               </span>
             </div>
             {/* THE SAME PEOPLE ON THE SCREENING PAGE. The owner, 2026-09-18: "based on my filters, I
@@ -249,7 +294,11 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
             {matches.length > 0 ? (
               <Link
                 className="border border-orange-600 bg-orange-600 px-2 py-1 text-xs font-semibold text-white hover:bg-orange-700"
-                href={screeningHref(pool, { whatsapp: whatsAppApplicantSearchParam(title, selections) })}
+                // The tab travels too, so the screening page opens on the same pile this list shows.
+                href={screeningHref(pool, {
+                  status: statusFilterForDecisionTab(decisionTab),
+                  whatsapp: whatsAppApplicantSearchParam(title, selections),
+                })}
                 rel="noopener"
                 target="_blank"
                 title="Open exactly these people on the screening page, in a new tab"
@@ -278,9 +327,16 @@ export function WhatsAppApplicantsSearch({ view }: { view: WhatsAppApplicantsVie
             </p>
           ) : null}
 
+          {chosenTitle.inFolders > 0 ? (
+            <p className="break-words text-xs text-slate-500">
+              {chosenTitle.inFolders === 1 ? "1 more person" : `${chosenTitle.inFolders} more people`} applied for this
+              title, but their CV has been moved into a folder on the Folders tab, so they are shown only inside that folder.
+            </p>
+          ) : null}
+
           {matches.length === 0 ? (
             <p className="border border-slate-200 bg-white p-6 text-sm text-slate-600">
-              Nobody who applied for this title matches these filters.
+              {emptyMessage(filtered, decisionTab)}
             </p>
           ) : (
             <>

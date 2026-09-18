@@ -30,6 +30,12 @@
 // were parked on the question their `step` names, and all 531 the bot closed normally had
 // answered the last question of the flow they were on.
 //
+// A CV IN ONE OF THE OWNER'S OWN FOLDERS IS NOT LISTED. He asked on 2026-09-18 to "cut" CVs he is
+// done with into a folder he made (an "Archive") so they stop appearing with all the CVs, and chose
+// that such a CV appears only inside that folder. So it is left off this page too, and counted under
+// its title as `inFolders` rather than silently dropped. The same rule is `isInCvFolder` on the
+// screening page and the pool.
+//
 // REGION: THEIR ANSWER FIRST, THE CV AFTER. That is exactly `candidateScreeningFacts`'s region, so it
 // is called rather than re-derived. This page and the screening workstation cannot disagree about
 // where somebody is. Office coordinators have not been asked the region since 2026-09-05, so for most
@@ -37,6 +43,7 @@
 
 import { candidateRegionCodes, candidateRegionLabels, foreignRegionLabel } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
+import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import { candidateScreeningFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
 import {
@@ -110,6 +117,8 @@ export type WhatsAppApplicantCandidate = {
   governorate: string | null;
   /** The CV reader's governorate when it was NOT sure enough to write the column. */
   cv_unconfirmed_governorate: string | null;
+  /** Filed in one of the folders the owner built by hand, so it appears only inside that folder. */
+  in_cv_folder: boolean;
 };
 
 /** What an unfinished row says in place of a name nobody ever gave. */
@@ -474,6 +483,7 @@ export function buildWhatsAppApplicantsView(input: {
   const chosen = new Map<string, Candidacy>();
   const linkedSenders = new Map<string, Set<string>>();
   const unlinkedSenders = new Map<string, Set<string>>();
+  const filedCandidates = new Map<string, Set<string>>();
   const note = (map: Map<string, Set<string>>, family: string, sender: string) => {
     const senders = map.get(family) ?? new Set<string>();
     senders.add(sender);
@@ -490,6 +500,11 @@ export function buildWhatsAppApplicantsView(input: {
       continue;
     }
     note(linkedSenders, family, session.wa_id);
+    // Filed by hand into one of the owner's folders: counted under the title, never listed.
+    if (candidate.in_cv_folder) {
+      note(filedCandidates, family, candidate.id);
+      continue;
+    }
     const entry: Candidacy = { candidate, progress: conversationProgress(session, questionsByKey), session };
     const key = `${candidate.id}:${family}`;
     const holder = chosen.get(key);
@@ -507,6 +522,7 @@ export function buildWhatsAppApplicantsView(input: {
       key,
       name: text(candidate.full_name) ?? UNNAMED_APPLICANT,
       region: region.cell,
+      status: candidateDecisionTabOf(candidate.status),
       statusLabel: candidateStatusLabel(candidate.status),
       stillOpen: progress.stillOpen,
       titleValue: family,
@@ -517,13 +533,16 @@ export function buildWhatsAppApplicantsView(input: {
   });
   rows.sort((a, b) => Date.parse(b.appliedAt) - Date.parse(a.appliedAt) || a.name.localeCompare(b.name));
 
-  const families = [...new Set([...rows.map((row) => row.titleValue), ...unlinkedSenders.keys()])].sort(titleOrder);
+  const families = [
+    ...new Set([...rows.map((row) => row.titleValue), ...unlinkedSenders.keys(), ...filedCandidates.keys()]),
+  ].sort(titleOrder);
   const titles: WhatsAppApplicantTitle[] = families.map((family) => {
     // A sender who ALSO has a listed conversation under this title is already on the page.
     const linked = linkedSenders.get(family) ?? new Set<string>();
     const unlinked = [...(unlinkedSenders.get(family) ?? [])].filter((sender) => !linked.has(sender)).length;
     return {
       count: rows.filter((row) => row.titleValue === family).length,
+      inFolders: filedCandidates.get(family)?.size ?? 0,
       label: applicantTitleLabel(family),
       unlinked,
       value: family,

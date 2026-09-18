@@ -46,8 +46,15 @@ import {
   candidateFolderKindLabels,
   candidateFolderLabel,
   isCandidateFolderKind,
+  isInCvFolder,
   isShelvedFromReview,
 } from "@/lib/recruitment/candidate-folder";
+import {
+  candidateMatchesDecisionTab,
+  countCandidatesByDecisionTab,
+  decisionTabForStatusFilter,
+  type CandidateDecisionTab,
+} from "@/lib/recruitment/candidate-decision-tabs";
 import { listCandidateIdsWithInterviewToday } from "@/lib/recruitment/interviews";
 import {
   listCandidateViews,
@@ -99,7 +106,6 @@ import {
   type VacancyApplicantStats,
 } from "@/lib/recruitment/vacancy-applicants";
 import {
-  isSeatQueueDecided,
   readSeatQueueReason,
   seatPlaceName,
   statedSeatQueueMatch,
@@ -115,7 +121,6 @@ import {
   type WhatsAppApplicantsView,
 } from "@/lib/recruitment/whatsapp-applicant-filters";
 import { loadWhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicants-loader";
-import { splitWhatsAppPileByDecision, whatsAppPileHidesDecided } from "@/lib/recruitment/whatsapp-pile-decided";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import type { ScreeningRatingFilter } from "@/lib/recruitment/candidate-rating";
 import type { Candidate } from "@/lib/recruitment/types";
@@ -162,6 +167,13 @@ export type ScreeningWorkspace = {
    * instead of making him pick blind and wait out the round trip to find out.
    */
   filterCounts: ScreeningFilterCounts;
+  /**
+   * How many CVs each decision tab holds, over the pool narrowed by every OTHER filter on the page —
+   * so each number on the tab strip is the list that tab opens. "All" is their sum.
+   */
+  decisionCounts: Record<CandidateDecisionTab, number>;
+  /** The tab this link opened — "new" ("Not decided yet") unless the link named another. */
+  decisionTab: CandidateDecisionTab;
   /** How many the URL filters dropped, so the page can say so instead of silently shrinking. */
   filteredOut: number;
   /** The whole live pool, before the URL filters. The denominator every count is honest about. */
@@ -210,19 +222,8 @@ export type ScreeningWorkspace = {
    * job title, because then it narrowed nothing. See `whatsAppApplicantSearchParam`.
    */
   whatsapp: string | null;
-  /**
-   * Whether the link asked for the already-decided CVs to be kept in that pile. Echoed so every link
-   * the page builds keeps it, like the search itself. False on any other pile.
-   */
-  decided: boolean;
   /** That search in words, for the header. Null when there is none. */
   whatsAppSearchLabel: WhatsAppApplicantSearchLabel | null;
-  /**
-   * The already-decided CVs among the people that search found - shortlisted, sent, rejected or
-   * hired - and whether the list currently hides them. Null outside a WhatsApp search. The count is
-   * over everyone the search found, so it reads the same hidden or shown.
-   */
-  whatsAppDecided: { count: number; hidden: boolean } | null;
 };
 
 function text(value: string | null | undefined): string | null {
@@ -381,10 +382,20 @@ export async function loadScreeningWorkspace(
   //
   // THE SEAT MODE IS UNCHANGED. What follows applies only when the link names one open seat, and it
   // is the whole point of "screen a vacant seat": the shelf is where the CVs for an open seat are
-  // FILED, so for that one seat the shelf is read rather than skipped — and it drops its own decided
-  // rows on its own rule (isSeatQueueDecided, which counts rejected, sent and hired but NOT
-  // shortlisted). See vacancy-seat-queue.ts for the measured hour this cost.
+  // FILED, so for that one seat the shelf is read rather than skipped. See vacancy-seat-queue.ts for
+  // the measured hour this cost.
+  //
+  // A FOLDER THE OWNER BUILT BY HAND IS DIFFERENT FROM A SHELF, on every pile here, the seat's
+  // included. The owner, 2026-09-18: a CV he moves into one of his own folders ("Archive") appears
+  // only inside that folder, so the page stays clean and a new CV is easy to see. isShelvedFromReview
+  // takes those out of the review pool; the seat and the WhatsApp search read `outsideHandBuiltFolders`.
+  //
+  // WHAT HAS BEEN DECIDED no longer leaves any pile here — the DECISION TABS sort it instead. Every
+  // pile opens on "Not decided yet", and Shortlisted, Sent to manager, Rejected, Hired and All sit one
+  // click away, counted over the same pile. That replaced two rules that each hid a different subset:
+  // the seat's (rejected, sent and hired, but not shortlisted) and the WhatsApp search's (all four).
   const reviewPool = allCandidates.filter((candidate) => !isShelvedFromReview(candidate));
+  const outsideHandBuiltFolders = allCandidates.filter((candidate) => !isInCvFolder(candidate));
 
   const seat =
     narrowing.vacancy === null
@@ -414,43 +425,31 @@ export async function loadScreeningWorkspace(
   // go to screening page and only show those I filtered." The same match that page runs, over the
   // same rows, so the two pages name the same people. Null when the link carries no search.
   //
-  // Drawn from EVERY candidate, filed and decided ones included, because that page lists everyone
-  // who started the questions whatever has happened to their CV since. Drawn from the review pool,
+  // Drawn from every candidate, shelved and decided ones included, because that page lists everyone
+  // who started the questions whatever has happened to their CV since — except a CV the owner moved
+  // into a folder he built, which leaves that page too. Drawn from the review pool,
   // this pile would read fewer people than that page did, with nothing on screen to say why. This
   // page's own filters (status, stars and the rest) still narrow it after, like any other pile. With
   // a seat picked as well, the seat is read over these people only, so that pile and its count on
   // the rail both mean "of this search".
   const whatsAppIds =
     whatsAppSearch && whatsAppView ? whatsAppApplicantSearchCandidateIds(whatsAppView.rows, whatsAppSearch) : null;
-  const whatsAppEveryMatch = whatsAppIds ? allCandidates.filter((candidate) => whatsAppIds.has(candidate.id)) : null;
-
-  // THE CVs THE SCREENER HAS ALREADY DECIDED LEAVE THIS LIST. The owner, 2026-09-18: "hide the CVs I
-  // already decided from the WhatsApp screening list" - he shortlisted or rejected somebody and kept
-  // meeting the same CV again, because this pile deliberately holds everyone the search found.
   //
-  // Hidden BEFORE the pile is counted, so the rail, the pool figure and the list all mean the same
-  // people; hiding them in the browser would leave a rail reporting CVs the list did not hold. A
-  // decision made in THIS sitting still leaves the row where it is until the page reloads - that is
-  // the browser's own record of the session and it never reaches this line.
-  //
-  // What switches the hiding off - the link's "decided" flag, a status picked on the filter bar, "sent
-  // to a manager" - is in whatsAppPileHidesDecided, so it can be tested without a database.
-  const hidesDecided = whatsAppEveryMatch !== null && whatsAppPileHidesDecided(narrowing);
-  const { decidedCount: whatsAppDecidedCount, shown: whatsAppShown } = splitWhatsAppPileByDecision(
-    whatsAppEveryMatch ?? [],
-    hidesDecided,
-  );
-  const whatsAppMatches = whatsAppEveryMatch ? whatsAppShown : null;
+  // THE CVs ALREADY DECIDED ARE ON THEIR OWN TABS, not hidden. The owner asked on 2026-09-18 to stop
+  // meeting a CV he had already shortlisted or rejected here; the pile opens on "Not decided yet", so
+  // that is answered by the same tabs every other pile has, and the decided ones are one click away.
+  const whatsAppMatches = whatsAppIds
+    ? outsideHandBuiltFolders.filter((candidate) => whatsAppIds.has(candidate.id))
+    : null;
 
   // WHY EACH CV IS IN THIS SEAT'S PILE, in the words the row prints. Empty outside seat mode.
   const seatReasons = new Map<string, string>();
   let seatQueue: Candidate[] | null = null;
   if (seat) {
     seatQueue = [];
-    for (const candidate of whatsAppMatches ?? allCandidates) {
-      // A DECIDED CV NEVER COMES BACK. Rejected, already with a manager, or hired - somebody has
-      // finished with the record, and re-offering it is work the reader has already done.
-      if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
+    // Every CV the seat reads, whatever was decided about it: the decision tabs narrow this pile like
+    // any other, and "Not decided yet" is the one it opens on.
+    for (const candidate of whatsAppMatches ?? outsideHandBuiltFolders) {
       const input = seatInputFor(candidate);
       const match: SeatQueueMatch | null =
         statedSeatQueueMatch(input, seat) ??
@@ -667,22 +666,37 @@ export async function loadScreeningWorkspace(
   const orderedPool = orderForScreening(pool, describeForOrder);
   const byId = new Map(orderedPool.map((candidate) => [candidate.id, candidate] as const));
 
-  const visible = orderedPool.filter((candidate) =>
-    matchesScreeningNarrowing(candidate, narrowing, {
-      asOf,
-      seenByViewer: Boolean(views[candidate.id]),
-      // BOTH halves. `untouched` means nobody has opened it, and the caller's own map answers only
-      // for the caller - on a two-person queue that is most of the wrong answer.
-      seenByAnyone: Boolean(views[candidate.id]) || (otherViewers.get(candidate.id)?.length ?? 0) > 0,
-    }),
+  // EVERY FILTER BUT THE DECISION TAB first, then the tab. The middle list is what the tab strip
+  // counts: "Rejected 12" has to mean the twelve rejected CVs the OTHER filters on the page keep, so
+  // pressing it shows twelve. Counted over the whole pool instead, a tab would promise people a
+  // region filter had already taken away. The same matcher either way — the tab is only its status
+  // half, asked second.
+  const decisionTab = decisionTabForStatusFilter(narrowing.status);
+  const acrossTabs = orderedPool.filter((candidate) =>
+    matchesScreeningNarrowing(
+      candidate,
+      { ...narrowing, status: null },
+      {
+        asOf,
+        seenByViewer: Boolean(views[candidate.id]),
+        // BOTH halves. `untouched` means nobody has opened it, and the caller's own map answers only
+        // for the caller - on a two-person queue that is most of the wrong answer.
+        seenByAnyone: Boolean(views[candidate.id]) || (otherViewers.get(candidate.id)?.length ?? 0) > 0,
+      },
+    ),
   );
+  const decisionCounts = countCandidatesByDecisionTab(acrossTabs);
+  const visible = acrossTabs.filter((candidate) => candidateMatchesDecisionTab(candidate.status, decisionTab));
 
-  // WHAT EACH FILTER OPTION WOULD GIVE HIM, over the SAME population the bar's denominator counts
-  // (`pool`, reported as `poolSize`) rather than over the narrowed list — a dropdown whose numbers
-  // all collapse the moment you pick one of them cannot be used to change your mind, which is the
-  // reason `areaOptions` is built from the whole pool too. One pass, reusing the resolvers the
-  // matcher just used; see screening-filter-counts.ts.
-  const filterCounts = screeningFilterCounts(pool, {
+  // WHAT EACH FILTER OPTION WOULD GIVE HIM, over the decision tab he is on and NOT over the rest of
+  // the narrowed list — a dropdown whose numbers all collapse the moment you pick one of them cannot
+  // be used to change your mind, which is the reason `areaOptions` is built from the whole pool too.
+  // The tab is the one narrowing applied first, because it is not on the bar: on "Not decided yet",
+  // "District Manager (40)" has to mean the forty undecided ones picking it will show, not every
+  // district manager ever decided. One pass, reusing the resolvers the matcher just used; see
+  // screening-filter-counts.ts.
+  const inDecisionTab = pool.filter((candidate) => candidateMatchesDecisionTab(candidate.status, decisionTab));
+  const filterCounts = screeningFilterCounts(inDecisionTab, {
     asOf,
     seenByViewer: (candidate) => Boolean(views[candidate.id]),
     seenByAnyone: (candidate) =>
@@ -717,7 +731,7 @@ export async function loadScreeningWorkspace(
   //
   // A seat reading "3 waiting" that shows 17 when clicked is worse than no rail at all, so the
   // counts are taken over the SAME attribution and the SAME population the seat queue offers: every
-  // undecided candidate, filed ones included, matched through the stated sources and then through
+  // candidate on the decision tab being shown, shelved ones included, matched through the stated sources and then through
   // the existing place reader. That reader is asked ONCE per candidate against every seat at a time
   // - never once per pair - which is what keeps this a single pass over the pool.
   const seatVacancyStats = () => {
@@ -732,9 +746,10 @@ export async function loadScreeningWorkspace(
       });
     }
     // Over the WhatsApp search's people when there is one, the same population the seat queue was
-    // read from above, so a seat's count on the rail is the pile it opens.
+    // read from above, and on the decision tab the page is showing, so a seat's count on the rail is
+    // the pile it opens.
     for (const candidate of whatsAppMatches ?? poolBasis) {
-      if (isSeatQueueDecided(normalizeCandidateStatus(candidate.status))) continue;
+      if (!candidateMatchesDecisionTab(candidate.status, decisionTab)) continue;
       const input = seatInputFor(candidate);
       const read = new Set(vacanciesForCandidate(input, openVacancies));
       const row = rowsById.get(candidate.id) ?? null;
@@ -821,8 +836,12 @@ export async function loadScreeningWorkspace(
     areaOptions: screeningAreaOptions(poolBasis),
     canSendToManagers,
     counts: rows.length === 0 ? emptyWorkQueueCounts() : counts,
+    decisionCounts,
+    decisionTab,
     filterCounts,
-    filteredOut: pool.length - rows.length,
+    // What the FILTERS took away, never the tab: a CV on another decision tab is one press away on
+    // the strip, not hidden, and counting it here would tell the reader to clear filters he never set.
+    filteredOut: pool.length - acrossTabs.length,
     hiringManagers,
     openRow,
     overdueManagerFeedback,
@@ -841,11 +860,8 @@ export async function loadScreeningWorkspace(
     // Spelled back the one way the WhatsApp page spells it, so a link edited by hand is tidied rather
     // than carried on as typed. Null when it named no job title, since then it narrowed nothing.
     whatsapp: whatsAppSearch ? whatsAppApplicantSearchParam(whatsAppSearch.title, whatsAppSearch.selections) : null,
-    // Only ever true beside a search: on any other pile the flag means nothing, so it is not carried.
-    decided: whatsAppSearch !== null && narrowing.decided,
     whatsAppSearchLabel:
       whatsAppSearch && whatsAppView ? whatsAppApplicantSearchLabel(whatsAppView, whatsAppSearch) : null,
-    whatsAppDecided: whatsAppEveryMatch ? { count: whatsAppDecidedCount, hidden: hidesDecided } : null,
   };
 }
 

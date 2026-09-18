@@ -340,8 +340,8 @@ function runReadOnlyTests() {
   assert.match(page, /<WorkstationNotesTab canWrite=\{false\}/, "notes are shown without a note box");
   assert.match(
     page,
-    /href=\{screeningHref\(root, \{ candidate: candidate\.id \}\)\}/,
-    "a decision is one click away, on the screening page, in the same shell",
+    /href=\{screeningHref\(root, \{ candidate: candidate\.id, status: candidateDecisionTabOf\(candidate\.status\) \}\)\}/,
+    "a decision is one click away, on the screening page, in the same shell, on the tab this CV sits on",
   );
 }
 

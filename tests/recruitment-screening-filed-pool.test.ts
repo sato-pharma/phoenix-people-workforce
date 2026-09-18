@@ -70,10 +70,21 @@ export async function runScreeningFiledPoolTests() {
     false,
     "an undecided CV on a position shelf must stay in the screening queue — 371 of these were lost",
   );
+  // A HAND-BUILT FOLDER IS THE OPPOSITE CASE, by the owner's own answer on 2026-09-18. A shelf is
+  // filled by the system the evening a CV arrives; a folder in his tree is only ever somebody's own
+  // act, and he chose that a CV he moves there ("Archive") appears ONLY inside that folder — so the
+  // screening page stays clean and a new CV is easy to see. Undecided or not, it is off the queue.
+  for (const status of ["new", null, "shortlisted", "rejected"]) {
+    assert.equal(
+      shelved(row(null, status, ["folder-archive"])),
+      true,
+      `a ${JSON.stringify(status)} CV moved into a hand-built folder is off the screening queue`,
+    );
+  }
   assert.equal(
-    shelved(row(null, "new", ["folder-a"])),
-    false,
-    "…and so must one in a hand-built folder, which is the second way to be filed",
+    shelved(row({ key: "Sohag1", kind: "medical_rep" }, "new", ["folder-archive"])),
+    true,
+    "on a shelf AND in a hand-built folder: the folder wins, because a person put it there",
   );
 
   // A STATUS THE VOCABULARY CANNOT READ LEAVES THE CV VISIBLE. `normalizeCandidateStatus` answers

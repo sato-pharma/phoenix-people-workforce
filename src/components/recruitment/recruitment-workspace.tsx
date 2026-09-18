@@ -45,6 +45,15 @@ import { JobAdvertPanel } from "@/components/recruitment/job-advert-panel";
 import { CandidateFoldersTab } from "@/components/recruitment/candidate-folders-tab";
 import { deleteRequest, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import type { CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
+import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
+import {
+  candidateMatchesDecisionTab,
+  countCandidatesByDecisionTab,
+  DEFAULT_CANDIDATE_DECISION_TAB,
+  statusFilterForDecisionTab,
+  type CandidateDecisionTab,
+} from "@/lib/recruitment/candidate-decision-tabs";
+import { buildCvFolderTree, flattenCvFolderTree } from "@/lib/recruitment/cv-folder-tree";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -1195,8 +1204,10 @@ export function RecruitmentWorkspace(props: Props) {
           asOf={candidateStats.asOf}
           canDelete={props.canDelete}
           canImport={props.canImport}
+          canFileCandidates={props.canFileCandidates}
           canManage={props.canManageCandidates}
           candidates={props.candidates}
+          cvFolderCabinet={props.cvFolderCabinet}
           hiringManagers={props.hiringManagers}
           linkedCandidateId={linkedCandidateId}
           openRequisitions={requisitions.filter((requisition) =>
@@ -3324,9 +3335,11 @@ function CandidatesTab({
   areaOptions,
   asOf,
   canDelete,
+  canFileCandidates,
   canImport,
   canManage,
   candidates,
+  cvFolderCabinet,
   hiringManagers,
   linkedCandidateId,
   openRequisitions,
@@ -3342,9 +3355,17 @@ function CandidatesTab({
   /** The instant the server counted the stat cards from — see CandidatePoolStats. */
   asOf: string;
   canDelete: boolean;
+  /**
+   * `candidates: update` — what the cv-folders routes enforce, so what "Move to folder" gates on.
+   * Its own prop rather than `canManage` (`candidates: create` here): a button gated on a grant its
+   * route does not assert either hides from somebody who may press it or shows one that 403s.
+   */
+  canFileCandidates: boolean;
   canImport: boolean;
   canManage: boolean;
   candidates: Candidate[];
+  /** The folders the owner built by hand — the destinations "Move to folder" offers. */
+  cvFolderCabinet: CvFolderCabinetData;
   hiringManagers: HiringManagerOption[];
   linkedCandidateId: string | null;
   openRequisitions: Requisition[];
@@ -3380,7 +3401,11 @@ function CandidatesTab({
   const [sendFreeTitle, setSendFreeTitle] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<PoolDateFilter>("all");
-  const [statusFilter, setStatusFilter] = useState("");
+  // THE DECISION TAB, where the Status select used to be. The owner, 2026-09-18: "in any screening
+  // page you must show did not decide yet ... shortlisted ... rejected", so that when a new CV
+  // arrives he sees it at once. The pool opens on "Not decided yet", like every screen that lists
+  // CVs; the rule that places a CV on a tab is candidate-decision-tabs.ts, shared with them all.
+  const [decisionTab, setDecisionTab] = useState<CandidateDecisionTab>(DEFAULT_CANDIDATE_DECISION_TAB);
   const [sourceFilter, setSourceFilter] = useState("");
   // "Has this person sold pharma before?" — the first question asked of every Medical Rep CV, and
   // the AI has already answered it on 161 of the 227 people in the pool (81 yes, 80 no, 66 it could
@@ -3416,6 +3441,8 @@ function CandidatesTab({
   // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkManagerHrId, setBulkManagerHrId] = useState("");
+  // Which of the owner's own folders the ticked CVs are moved into — see "Move to folder" below.
+  const [bulkFolderId, setBulkFolderId] = useState("");
   // Same position choice as sendPosition/sendFreeArea/sendFreeTitle, held once rather than keyed
   // per candidate — the whole point of a bulk send is one manager and one filing for everybody in it.
   const [bulkPosition, setBulkPosition] = useState("");
@@ -3513,7 +3540,6 @@ function CandidatesTab({
       // One predicate, shared with the filed-CV band below. Two copies of it here is how a person
       // becomes findable on one half of the partition and invisible on the other.
       if (!candidateMatchesPoolQuery(c, q)) return false;
-      if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
       // Both are three-way for the same reason the experience filter is: "we were never told" is
@@ -3577,8 +3603,18 @@ function CandidatesTab({
   // search for "Ahmed" that turns up two rejected people says "Red-flagged 2", not the pool total.
   // Both sides are built in one pass over one predicate — two filters here would be two places for
   // the definition of red to drift apart from each other and from the pill on the row.
-  const cvTabCandidates = partitionCandidatesByRedFlag(filteredCandidates);
-  const visibleCandidates = cvTabCandidates[cvTab];
+  //
+  // THE DECISION TABS are counted over the same filtered list, before the tab itself narrows it, so
+  // each number on the strip is the list that tab opens under the filters now on screen.
+  const decisionCounts = countCandidatesByDecisionTab(filteredCandidates);
+  const inDecisionTab = filteredCandidates.filter((candidate) =>
+    candidateMatchesDecisionTab(candidate.status, decisionTab),
+  );
+  const cvTabCandidates = partitionCandidatesByRedFlag(inDecisionTab);
+  // On the Rejected tab the Active / Red-flagged split has nothing to say — a rejection IS a red flag
+  // (red-flag.ts), so "Active" would read zero on every visit. That tab shows its whole pile.
+  const showsRedSplit = decisionTab !== "rejected";
+  const visibleCandidates = showsRedSplit ? cvTabCandidates[cvTab] : inDecisionTab;
 
   // THE OTHER HALF OF THE PARTITION — searched only while somebody is actively looking for a person.
   //
@@ -3600,8 +3636,9 @@ function CandidatesTab({
   // neither clause is written unless it is actually withholding something.
   const poolShellDescription = [
     `${visibleCandidates.length} of ${candidates.length} shown, newest first.`,
+    decisionTab === "all" ? "" : "The decision tabs above the list hold the rest of the pool.",
     filedCount > 0 ? `${filedCount} are filed in folders and sit on the Folders tab, not here.` : "",
-    "Nobody is removed — the red tab holds the rest.",
+    showsRedSplit ? "Nobody is removed — the red tab holds the rest." : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -3636,7 +3673,15 @@ function CandidatesTab({
   }
   const firstUnsentId = groupByManager ? (unsentVisible[0]?.id ?? null) : null;
 
+  // The owner's own folders, flattened in the order his folder screen draws them.
+  const cvFolderChoices = flattenCvFolderTree(
+    buildCvFolderTree(cvFolderCabinet.rows, new Map(Object.entries(cvFolderCabinet.members))),
+  );
+
   const visibleIds = visibleCandidates.map((candidate) => candidate.id);
+  // The tick column is for whoever the bulk bar has a button for: sending (candidates: create) or
+  // moving into a folder (candidates: update).
+  const canSelect = canManage || canFileCandidates;
   const selectedVisibleIds = selectedIds.filter((id) => visibleIds.includes(id));
   const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
   const toggleSelected = (id: string) =>
@@ -3954,6 +3999,18 @@ function CandidatesTab({
               Both tabs always render, even at zero. A tab that disappears when it empties is a
               tab that reads as a bug the day it comes back, and "0 red-flagged" is the single
               most useful thing this strip can say. */}
+          {/* THE DECISION TABS come first of all: which verdict pile you are in changes what
+              every control below it is filtering, the red split included. */}
+          <CandidateDecisionTabStrip
+            active={decisionTab}
+            counts={decisionCounts}
+            onSelect={(tab) => {
+              setDecisionTab(tab);
+              // A tick on a row the new tab does not show would be acted on unseen by the bulk bar.
+              setSelectedIds([]);
+            }}
+          />
+          {showsRedSplit ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="inline-flex overflow-hidden rounded-md border border-phx-line">
               {candidateCvTabs.map((key) => {
@@ -3984,6 +4041,7 @@ function CandidatesTab({
             </div>
             <p className="text-xs text-slate-500">{candidateCvTabDescriptions[cvTab]}</p>
           </div>
+          ) : null}
           <Input
             placeholder="Search name, applying for, email, phone, status, source"
             value={query}
@@ -4039,21 +4097,6 @@ function CandidatesTab({
                 {poolDateFilterOrder.map((key) => (
                   <option key={key} value={key}>
                     {poolDateFilterLabels[key]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={poolFilterLabelClass}>
-              Status
-              <select
-                className={poolFilterSelectClass}
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="">Any status</option>
-                {candidateStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {candidateStatusLabels[status]}
                   </option>
                 ))}
               </select>
@@ -4163,7 +4206,7 @@ function CandidatesTab({
                 It takes the queue EXACTLY as filtered and ordered on screen, so narrowing to
                 "District Manager · Alex-BHR" and pressing this is a session with an end. */}
             {visibleCandidates.length > 0 ? (
-              <Button onClick={() => setScreeningQueue(filteredCandidates)}>
+              <Button onClick={() => setScreeningQueue(inDecisionTab)}>
                 Screen {visibleCandidates.length} {visibleCandidates.length === 1 ? "CV" : "CVs"}
               </Button>
             ) : null}
@@ -4173,7 +4216,7 @@ function CandidatesTab({
                 opens on the unread pile because that is the reason to come back a second time. */}
             <Link
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-              href={screeningHref(screeningBasePath, { seen: "unseen" })}
+              href={screeningHref(screeningBasePath, { seen: "unseen", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on its own page, starting with the CVs you have never read"
             >
               <Sparkles className="h-3.5 w-3.5" />
@@ -4186,19 +4229,18 @@ function CandidatesTab({
                 the one above is in the owner's bookmarks and answers a different question. */}
             <Link
               className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-              href={screeningHref(screeningBasePath, { seen: "untouched" })}
+              href={screeningHref(screeningBasePath, { seen: "untouched", status: statusFilterForDecisionTab(decisionTab) })}
               title="Open the screening queue on the CVs nobody has read yet — not you, not the other screener"
             >
               <Sparkles className="h-3.5 w-3.5" />
               Nobody has read
             </Link>
-            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
+            {dateFilter !== "all" || experienceFilter !== "all" || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
                 onClick={() => {
                   setDateFilter("all");
                   setExperienceFilter("all");
-                  setStatusFilter("");
                   setSourceFilter("");
                   setRoleFilter("");
                   setRegionFilter("");
@@ -4257,11 +4299,13 @@ function CandidatesTab({
           so per-person alerts are how a useful signal gets muted. Desktop only — the ticks live in
           the table, and picking twelve people out of a stack of cards on a phone is not a workflow.
         */}
-        {canManage && selectedVisibleIds.length > 0 ? (
+        {canSelect && selectedVisibleIds.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 border-y border-orange-200 bg-orange-50 px-3 py-2">
             <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
               {selectedVisibleIds.length} selected
             </span>
+            {canManage ? (
+            <>
             <div className="w-56 sm:w-64">
               <PositionPicker
                 disabled={pending}
@@ -4308,6 +4352,53 @@ function CandidatesTab({
             >
               Send
             </Button>
+            </>
+            ) : null}
+            {/* MOVE TO ONE OF THE OWNER'S OWN FOLDERS — his words, 2026-09-18: make a folder called
+                "Archive" and "cut the rejected CVs and put them there", so they stop appearing with
+                all the CVs and a new one is easy to see. So: the Rejected tab, tick, Move. A CV moved
+                into a folder he built appears only inside that folder (isInCvFolder), and it comes
+                back from the folder's own screen with "Back to the pool". Gated on `candidates:
+                update`, the grant the folder routes assert. */}
+            {canFileCandidates && cvFolderChoices.length > 0 ? (
+              <>
+                <label className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-700">
+                  Move to folder
+                  <select
+                    className="w-full border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 sm:w-auto"
+                    disabled={pending}
+                    onChange={(event) => setBulkFolderId(event.target.value)}
+                    value={bulkFolderId}
+                  >
+                    <option value="">Pick a folder…</option>
+                    {cvFolderChoices.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {`${"— ".repeat(node.depth - 1)}${node.name}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  disabled={pending || !bulkFolderId}
+                  variant="secondary"
+                  onClick={() =>
+                    run(async () => {
+                      const folder = cvFolderChoices.find((node) => node.id === bulkFolderId);
+                      const count = selectedVisibleIds.length;
+                      await postJson(`/api/recruitment/cv-folders/${bulkFolderId}/items`, {
+                        candidateIds: selectedVisibleIds,
+                        mode: "move",
+                      });
+                      setSelectedIds([]);
+                      setBulkFolderId("");
+                      return `${count} ${count === 1 ? "CV" : "CVs"} moved to ${folder ? folder.path.join(" › ") : "the folder"}.`;
+                    })
+                  }
+                >
+                  Move
+                </Button>
+              </>
+            ) : null}
             {/* The ticks were already there for bulk-send; this is the same selection, read into
                 screening mode instead. Sourced from visibleCandidates rather than the raw ids, so
                 the queue opens in the same newest-first order the table is already showing. */}
@@ -4446,7 +4537,7 @@ function CandidatesTab({
                * the profile card, where the text can breathe.
                */}
               <colgroup>
-                {canManage ? <col className="w-[36px]" /> : null}
+                {canSelect ? <col className="w-[36px]" /> : null}
                 <col className="w-[332px]" />
                 <col />
                 <col className="w-[112px]" />
@@ -4461,7 +4552,7 @@ function CandidatesTab({
                   reader has to check. Padding is all that is left to say. */}
               <thead className="font-black uppercase tracking-[0.08em]">
                 <tr>
-                  {canManage ? (
+                  {canSelect ? (
                     <th className="px-3 py-2.5">
                       <input
                         aria-label="Select every candidate shown"
@@ -4507,7 +4598,7 @@ function CandidatesTab({
                   // nested table, so all 200 lines of the row renderer below stay exactly as they
                   // are and the columns cannot come to disagree between one pile and the next.
                   const groupHeader = groupHeaderByCandidateId.get(candidate.id) ?? null;
-                  const headingColSpan = canManage ? 8 : 7;
+                  const headingColSpan = canSelect ? 8 : 7;
                   return (
                     <Fragment key={candidate.id}>
                       {groupHeader ? (
@@ -4537,7 +4628,7 @@ function CandidatesTab({
                         </tr>
                       ) : null}
                     <tr className="align-top transition-colors hover:bg-orange-50/50">
-                      {canManage ? (
+                      {canSelect ? (
                         <td className="px-3 py-2.5">
                           <input
                             aria-label={`Select ${displayName}`}

@@ -26,7 +26,7 @@
 // from the one displayed is not a narrower filter, it is a wrong one". Two things hold it:
 //
 //   1. Every bucket below is derived from the SAME function the matcher calls — screeningRoleFamilies,
-//      candidateScreeningFacts, candidateSourceChannel, matchesRatingFilter, normalizeCandidateStatus,
+//      candidateScreeningFacts, candidateSourceChannel, matchesRatingFilter, candidateDecisionTabOf,
 //      and this module's own screeningAreaKey/screeningSourceKey. There is no second reading of a
 //      column anywhere here.
 //   2. tests/recruitment-screening-filter-counts.test.ts asserts, for every filter and every option,
@@ -41,7 +41,7 @@ import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { matchesRatingFilter, screeningRatingFilters } from "@/lib/recruitment/candidate-rating";
 import { candidateScreeningFacts, screeningRoleFamilies } from "@/lib/recruitment/candidate-screening-facts";
 import { candidateSourceChannel } from "@/lib/recruitment/candidate-source-context";
-import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
+import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import {
   screeningAreaKey,
   screeningSourceKey,
@@ -139,11 +139,10 @@ export function screeningFilterCounts(
   for (const candidate of candidates) {
     counts.total += 1;
 
-    // Only a status the filter can actually ask for. A legacy value that normalizes to null is shown
-    // verbatim on the card but is not an option on the bar, so counting it would build a bucket
-    // nothing can ever select.
-    const status = normalizeCandidateStatus(candidate.status);
-    if (status) bump(counts.status, status);
+    // The decision tab, placed exactly as the matcher places it: a legacy value the list cannot read
+    // counts under "Not decided yet", which is the tab that shows it — so the five buckets always add
+    // up to the total, and every number on the tab strip is the pile that tab opens.
+    bump(counts.status, candidateDecisionTabOf(candidate.status));
 
     bump(counts.seen, context.seenByViewer(candidate) ? "seen" : "unseen");
     if (!context.seenByAnyone(candidate)) bump(counts.seen, "untouched");

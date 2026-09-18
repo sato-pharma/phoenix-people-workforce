@@ -140,9 +140,16 @@ const SEEN_BY_ANYBODY = new Set(["plain-rep", "coordinator", "abroad"]);
 const seenByViewer = (candidate: ScreeningFilterCandidateRow) => SEEN_BY_VIEWER.has(candidate.id);
 const seenByAnyone = (candidate: ScreeningFilterCandidateRow) => SEEN_BY_ANYBODY.has(candidate.id);
 
-/** What the matcher itself says, for one narrowing, over the same rows. The authority here. */
+/**
+ * What the matcher itself says, for one narrowing, over the same rows. The authority here.
+ *
+ * On "All" unless the option IS a status: since 2026-09-18 a bare screening link opens on the
+ * "Not decided yet" tab, and the page counts the options over whichever tab is open (the caller
+ * narrows the rows to the tab first). These rows are the pile being counted, so the matcher is asked
+ * over all of them too.
+ */
 function matcherCount(filters: ScreeningQueueFilters): number {
-  const narrowing = parseScreeningFilters(filters);
+  const narrowing = parseScreeningFilters({ status: "all", ...filters });
   return POPULATION.filter((candidate) =>
     matchesScreeningNarrowing(candidate, narrowing, {
       asOf: AS_OF,

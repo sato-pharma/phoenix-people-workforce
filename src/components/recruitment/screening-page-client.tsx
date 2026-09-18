@@ -30,7 +30,7 @@ import {
   type ScreeningRatingFilter,
 } from "@/lib/recruitment/candidate-rating";
 import { candidateRoleFamilies, candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
-import { candidateStatuses, candidateStatusLabels, type CandidateStatus } from "@/lib/recruitment/candidate-status";
+import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
 // Pure, and its whole import chain is — see the header of screening-filter.ts. These two fold an
 // area or source the way the counts are keyed, so the bar looks a count up the same way it was
@@ -241,7 +241,6 @@ export function ScreeningPageClient({
             role: null,
             seen: "any",
             source: null,
-            status: null,
           })
         }
         pending={pending}
@@ -253,7 +252,6 @@ export function ScreeningPageClient({
         seen={shown.seen}
         source={shown.source}
         sourceOptions={sourceOptions}
-        status={shown.status}
         totalCount={totalCount}
       />
       <CandidateScreeningSession
@@ -408,7 +406,6 @@ export function ScreeningFilterBar({
   seen,
   source,
   sourceOptions,
-  status,
   totalCount,
 }: {
   area: string | null;
@@ -441,11 +438,14 @@ export function ScreeningFilterBar({
   seen: ScreeningSeenFilter;
   source: string | null;
   sourceOptions: string[];
-  status: CandidateStatus | null;
+  /**
+   * The pile the bar narrows — the DECISION TAB's, never the whole pool. Status is not on this bar
+   * any more: it is the tab strip above the list (candidate-decision-tab-strip.tsx), which every
+   * screen that lists CVs shares, so "42 of 339" reads against the 339 "Not decided yet" CVs.
+   */
   totalCount: number;
 }) {
   const narrowed =
-    status !== null ||
     rating !== null ||
     seen !== "any" ||
     notified !== "any" ||
@@ -490,32 +490,15 @@ export function ScreeningFilterBar({
           Updating
         </span>
       ) : null}
-      <label className={filterLabelClass(status !== null)}>
-        Status
-        <select
-          className={filterSelectClass(status !== null)}
-          onChange={(event) => onChange({ status: event.target.value ? (event.target.value as CandidateStatus) : null })}
-          value={status ?? ""}
-        >
-          {/* THE "ANY" ROW CARRIES NO COUNT, on every select here. It is the escape from a
-              narrowing rather than a narrowing, its number is the bar's own headline pill one line
-              above, and printing it would invite reading the list below as a breakdown that sums to
-              it — which it deliberately does not: the windows nest, the star ladder nests, and one
-              candidate can sit in two role families. */}
-          <option value="">Any status</option>
-          {candidateStatuses.map((value) => (
-            <FilterOption
-              count={filterCounts.status[value]}
-              key={value}
-              label={candidateStatusLabels[value]}
-              selected={status === value}
-              value={value}
-            />
-          ))}
-        </select>
-      </label>
       {/* ── STARS ───────────────────────────────────────────────
-          Second on the bar, directly after Status, because it is the only filter here that reads
+          THE "ANY" ROW CARRIES NO COUNT, on every select here. It is the escape from a narrowing
+          rather than a narrowing, its number is the bar's own headline pill one line above, and
+          printing it would invite reading the list below as a breakdown that sums to it — which it
+          deliberately does not: the windows nest, the star ladder nests, and one candidate can sit
+          in two role families.
+
+          First on the bar since the Status select became the decision tabs (2026-09-18), because
+          it is the only filter here that reads
           something a PERSON put on the CV rather than something the system worked out about it.
           Everything else narrows by fact; this one narrows to "the ones I liked".
 
@@ -730,7 +713,7 @@ export function ScreeningFilterBar({
         <Action
           className="h-8 whitespace-nowrap px-2.5"
           onClick={onClear}
-          title="Drop every filter and show the whole pool"
+          title="Drop every filter on this bar. The decision tab stays where it is."
           tone="quiet"
         >
           <X aria-hidden className="h-3 w-3" />

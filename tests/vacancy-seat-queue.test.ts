@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
-  isSeatQueueDecided,
   seatQueueMatch,
   textNamesSeatArea,
 } from "../src/lib/recruitment/vacancy-seat-queue.ts";
@@ -132,17 +133,13 @@ export async function runVacancySeatQueueTests() {
   assert.ok(textNamesSeatArea("Tanta", "Gharbia 1 (Tanta)"), "a name inside the area's own name still matches");
   assert.ok(!textNamesSeatArea("Cairo, Egypt", "Menoufia 1"), "an unrelated address matches nothing");
 
-  // ── A DECIDED CV NEVER RE-ENTERS THE QUEUE ────────────────────────────────
-  assert.equal(isSeatQueueDecided("rejected"), true, "a rejection is a decision");
-  assert.equal(isSeatQueueDecided("sent_to_manager"), true, "a CV already with a manager is out of the pile");
-  assert.equal(isSeatQueueDecided("hired"), true, "so is somebody already hired");
-  assert.equal(isSeatQueueDecided("new"), false, "an unread CV is exactly what the queue is for");
-  assert.equal(
-    isSeatQueueDecided("shortlisted"),
-    false,
-    "shortlisted is agreement, not action — it stays in the pile",
-  );
-  assert.equal(isSeatQueueDecided(null), false, "no status on file is not a decision");
+  // ── WHAT WAS DECIDED IS SORTED BY THE DECISION TABS, NOT DROPPED HERE ─────
+  // The seat once hid rejected, sent and hired CVs by a rule of its own. Since 2026-09-18 every pile
+  // on the screening page opens on "Not decided yet" and the decided ones sit on their own tabs, so
+  // the seat reads every CV and the tabs narrow it like any other pile.
+  const workspace = readFileSync(path.join(process.cwd(), "src/lib/recruitment/screening-workspace.ts"), "utf8");
+  assert.doesNotMatch(workspace, /isSeatQueueDecided/, "the seat keeps no decided rule of its own");
+  assert.match(workspace, /for \(const candidate of whatsAppMatches \?\? outsideHandBuiltFolders\) \{/);
 
   // ── THE DEFAULT QUEUE IS UNCHANGED ────────────────────────────────────────
   // With no seat picked, nothing here runs: the rail and the list still answer through

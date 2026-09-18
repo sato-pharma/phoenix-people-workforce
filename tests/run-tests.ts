@@ -279,6 +279,7 @@ import { runRecruitmentDeclaredPreferencesTests } from "./recruitment-declared-p
 import { runRecruitmentRedFlagTests } from "./recruitment-red-flag.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runScreeningFilterCountsTests } from "./recruitment-screening-filter-counts.test.ts";
+import { runCandidateDecisionTabsTests } from "./candidate-decision-tabs.test.ts";
 import { runScreeningRoleMismatchTests } from "./recruitment-screening-role-mismatch.test.ts";
 import { runWhatsAppAnswersTests } from "./recruitment-whatsapp-answers.test.ts";
 import { runRecruitmentWhatsAppApplicantsTests } from "./recruitment-whatsapp-applicants.test.ts";
@@ -2501,6 +2502,10 @@ await runTest(
 await runTest(
   "recruitment screening filter counts (every filter option promises exactly the number of CVs the filter itself returns)",
   runScreeningFilterCountsTests,
+);
+await runTest(
+  "recruitment decision tabs (Not decided yet · Shortlisted · Sent to manager · Rejected · Hired · All on the screening page, the pool and WhatsApp Applicants; every screen opens on Not decided yet)",
+  runCandidateDecisionTabsTests,
 );
 await runTest(
   "recruitment WhatsApp answers (every answer an applicant gave the bot is listed beside the CV, each under its own question)",

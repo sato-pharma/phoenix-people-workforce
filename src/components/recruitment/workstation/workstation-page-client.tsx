@@ -64,6 +64,12 @@ import { ArrowLeft, ChevronDown, ChevronUp, Minimize2, ScanLine } from "lucide-r
 
 import type { CandidateStatus } from "@/lib/recruitment/candidate-status";
 import {
+  decisionTabForStatusFilter,
+  statusFilterForDecisionTab,
+  type CandidateDecisionTab,
+} from "@/lib/recruitment/candidate-decision-tabs";
+import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
+import {
   throughputDirection,
   type ThroughputSummary,
 } from "@/lib/recruitment/candidate-throughput";
@@ -107,7 +113,7 @@ export function WorkstationPageClient({
   canSendToManagers,
   canWriteNotes,
   counts,
-  decided,
+  decisionCounts,
   filterCounts,
   filteredOut,
   hiringManagers,
@@ -132,7 +138,6 @@ export function WorkstationPageClient({
   vacancy,
   vacancyStats,
   whatsapp,
-  whatsAppDecided,
   whatsAppSearchLabel,
 }: {
   area: string | null;
@@ -155,6 +160,11 @@ export function WorkstationPageClient({
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
+  /**
+   * How many CVs each decision tab holds, over the pile narrowed by every other filter on the page —
+   * the numbers on the tab strip, each the list that tab opens.
+   */
+  decisionCounts: Record<CandidateDecisionTab, number>;
   /** How many CVs each filter option would return — the numbers the bar prints in its options. */
   filterCounts: ScreeningFilterCounts;
   filteredOut: number;
@@ -198,13 +208,6 @@ export function WorkstationPageClient({
    * link this page builds, like every other narrowing, so changing a filter here keeps it.
    */
   whatsapp: string | null;
-  /**
-   * The link asked for the already-decided CVs to be KEPT in that pile. Carried on every link this
-   * page builds, like the search itself, so opening a CV and coming back stays on the same pile.
-   */
-  decided: boolean;
-  /** The decided CVs among that search's people, and whether the list hides them. Null with no search. */
-  whatsAppDecided: { count: number; hidden: boolean } | null;
   /** That search in words: the job title and each filter picked. Printed, never a code. */
   whatsAppSearchLabel: WhatsAppApplicantSearchLabel | null;
 }) {
@@ -289,7 +292,6 @@ export function WorkstationPageClient({
   // effect — which is the same set-state-in-effect the store rewrite above just removed.
   const serverNarrowing = {
     area,
-    decided,
     notified,
     rating,
     received,
@@ -308,14 +310,14 @@ export function WorkstationPageClient({
   // The list is fetched by the ROUTER, so `pending` is the only honest signal that it is on its way.
   const [pending, startTransition] = useTransition();
 
-  // How many of the nine URL narrowings are actually holding something. It is what the folded
+  // How many of the URL narrowings are actually holding something — the decision tab excepted, which
+  // is always on one tab and says so on its own strip. It is what the folded
   // filter bar says about itself: a bar that hides how many filters are on is a bar that makes
   // "why am I only seeing four people" unanswerable without opening it again. Reads the OPTIMISTIC
   // values, so a filter changed while the bar is folded is counted the moment it is picked.
   const activeFilters = [
     shown.area,
     shown.source,
-    shown.status,
     shown.rating,
     shown.role,
     shown.region,
@@ -341,7 +343,6 @@ export function WorkstationPageClient({
       screeningHref(shellPoolHref, {
         area,
         candidate: candidateId,
-        decided,
         notified,
         rating,
         received,
@@ -353,12 +354,11 @@ export function WorkstationPageClient({
         vacancy,
         whatsapp,
       }),
-    [area, decided, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy, whatsapp],
+    [area, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy, whatsapp],
   );
   // The same pile with no CV named: the list itself. It is where a CV's own page goes back to.
   const listHref = screeningHref(shellPoolHref, {
     area,
-    decided,
     notified,
     rating,
     received,
@@ -375,7 +375,6 @@ export function WorkstationPageClient({
     (next: ScreeningHrefOptions) => {
       const href = screeningHref(shellPoolHref, {
         area: next.area !== undefined ? next.area : area,
-        decided: next.decided !== undefined ? next.decided : decided,
         notified: next.notified !== undefined ? next.notified : notified,
         rating: next.rating !== undefined ? next.rating : rating,
         received: next.received !== undefined ? next.received : received,
@@ -397,7 +396,6 @@ export function WorkstationPageClient({
     },
     [
       area,
-      decided,
       notified,
       rating,
       received,
@@ -447,14 +445,24 @@ export function WorkstationPageClient({
   const pileTitle =
     seatLabel ?? (whatsAppSearchLabel ? `WhatsApp applicants · ${whatsAppSearchLabel.title}` : "CV screening");
 
+  // THE DECISION TAB the reader is on — the optimistic one, so the strip lights the tab the moment it
+  // is pressed, seconds before the server's list arrives. The list itself follows the SERVER's tab.
+  const shownTab = decisionTabForStatusFilter(shown.status);
+  const serverTab = decisionTabForStatusFilter(status);
+
   const workstation = (
     <ScreeningWorkstation
+      // A NEW TAB IS A NEW PILE, so the workstation starts afresh on it: the work queue back on
+      // "Everyone", the selection back on the first row. Keyed on the SERVER's tab, so the reset
+      // lands with the new list rather than a beat before it.
+      key={serverTab}
       canDecide={canDecide}
       candidateHref={candidateHref}
       canReply={canReply}
       canSendToManagers={canSendToManagers}
       canWriteNotes={canWriteNotes}
       counts={counts}
+      decisionTab={serverTab}
       filteredOut={filteredOut}
       focus={focus}
       openCandidateId={openCandidateId}
@@ -462,19 +470,7 @@ export function WorkstationPageClient({
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
       onSelectVacancy={(next) => goTo({ vacancy: next })}
-      // The button only exists while it can change something: the decided CVs are hidden (press to
-      // bring them back), or the link brought them back (press to hide them again). A status picked
-      // on the filter bar also keeps them, and then there is nothing for the button to do.
-      decidedControl={
-        whatsAppDecided && whatsAppDecided.count > 0 && (whatsAppDecided.hidden || decided)
-          ? {
-              count: whatsAppDecided.count,
-              hidden: whatsAppDecided.hidden,
-              onToggle: () => goTo({ decided: whatsAppDecided.hidden }),
-            }
-          : null
-      }
-      onLeaveWhatsAppSearch={() => goTo({ decided: false, whatsapp: null })}
+      onLeaveWhatsAppSearch={() => goTo({ whatsapp: null })}
       ownPage={ownPage}
       poolSize={poolSize}
       positionSuggestions={positionSuggestions}
@@ -535,10 +531,10 @@ export function WorkstationPageClient({
           figures={<BacklogFigures poolSize={poolSize} throughput={throughput} />}
           subtitle={
             seatLabel
-              ? "Every undecided CV for this seat — filed to its folder, chosen on WhatsApp, or named in an email. Why each one is here is printed under their name."
+              ? "Every CV for this seat — filed to its folder, chosen on WhatsApp, or named in an email. Why each one is here is printed under their name."
               : whatsAppSearchLabel
-                ? whatsAppSearchSubtitle(whatsAppSearchLabel, whatsAppDecided?.hidden ?? false)
-                : "The whole pool. Narrow it to one pile, or to one vacant seat, from the work queue on the left."
+                ? whatsAppSearchSubtitle(whatsAppSearchLabel)
+                : "The whole pool, sorted by what has been decided. Narrow it to one pile, or to one vacant seat, from the work queue on the left."
           }
           title={pileTitle}
         />
@@ -551,10 +547,11 @@ export function WorkstationPageClient({
           filterCounts={filterCounts}
           notified={shown.notified}
           onChange={goTo}
+          // The decision tab is NOT cleared: it is not on this bar, and "Clear" wiping the reader's
+          // tab back to "All" would undo the one choice he made above it.
           onClear={() =>
             goTo({
               area: null,
-              decided: false,
               notified: "any",
               rating: null,
               received: null,
@@ -562,7 +559,6 @@ export function WorkstationPageClient({
               role: null,
               seen: "any",
               source: null,
-              status: null,
               vacancy: null,
               whatsapp: null,
             })
@@ -576,8 +572,9 @@ export function WorkstationPageClient({
           seen={shown.seen}
           source={shown.source}
           sourceOptions={sourceOptions}
-          status={shown.status}
-          totalCount={poolSize}
+          // The tab's own pile before this bar's filters — the counts are taken over it — so the pill
+          // reads "42 of 339" on Not decided yet, never "42 of 1,142".
+          totalCount={filterCounts.total}
         />
       )}
 
@@ -659,6 +656,20 @@ export function WorkstationPageClient({
             </span>
           </div>
         ) : null}
+        {/* THE DECISION TABS — the owner, 2026-09-18: "in any screening page you must show did not
+            decide yet ... shortlisted ... rejected", so that a new CV is easy to see. Inside the
+            frame, above the three panes, so they stay on screen in full width as well and cost no
+            page height; never on a CV's own page (one CV is not a pile) and never in focus, which is
+            the whole screen for the document. */}
+        {ownPage || focus ? null : (
+          <div className="shrink-0 border-b border-phx-line bg-white px-3 py-2">
+            <CandidateDecisionTabStrip
+              active={shownTab}
+              counts={decisionCounts}
+              onSelect={(tab) => goTo({ status: statusFilterForDecisionTab(tab) })}
+            />
+          </div>
+        )}
         <div className="min-h-0 flex-1">{workstation}</div>
       </div>
     </ScreeningPageFrame>
@@ -669,12 +680,9 @@ export function WorkstationPageClient({
  * The header's second line for a search handed over by the WhatsApp Applicants page: the filters
  * picked, then what the pile holds. The job title is already in the header's name above it.
  */
-function whatsAppSearchSubtitle(label: WhatsAppApplicantSearchLabel, decidedHidden: boolean): string {
-  // The decided CVs are hidden by default, with a one-press way to bring them back - the strip above
-  // the list says how many. This line only has to tell the truth about which of the two it is.
-  const pile = decidedHidden
-    ? "Everyone that search found on the WhatsApp Applicants page whose CV has not been decided yet."
-    : "Everyone that search found on the WhatsApp Applicants page, including CVs already decided.";
+function whatsAppSearchSubtitle(label: WhatsAppApplicantSearchLabel): string {
+  // Everyone the search found, sorted onto the decision tabs like every other pile on this page.
+  const pile = "Everyone that search found on the WhatsApp Applicants page, sorted by what has been decided.";
   return label.filters.length > 0 ? `${label.filters.join(" · ")}. ${pile}` : pile;
 }
 

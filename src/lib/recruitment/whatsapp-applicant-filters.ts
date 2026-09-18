@@ -28,6 +28,11 @@ export type WhatsAppApplicantRow = {
   name: string;
   /** Where the candidate stands in the pipeline, in words ("New", "Rejected"). */
   statusLabel: string;
+  /**
+   * The same, as the status code the decision tabs sort on ("new", "rejected"). The page's tab strip
+   * reads it through `candidateDecisionTabOf`, the rule every screen that lists CVs shares.
+   */
+  status: string;
   /** The job-title filter's value: the role family they tapped. */
   titleValue: string;
   /** What they typed when they chose "Other" for the job. Null for every tapped title. */
@@ -69,6 +74,12 @@ export type WhatsAppApplicantTitle = {
    * row to show them in. Counted so they are named, not silently dropped.
    */
   unlinked: number;
+  /**
+   * People under this title whose CV the owner moved into one of his own folders. A CV in a folder he
+   * built leaves every list (the owner, 2026-09-18), so they are not rows here either, and counted so
+   * the title's number still accounts for them.
+   */
+  inFolders: number;
 };
 
 export type WhatsAppApplicantsView = {

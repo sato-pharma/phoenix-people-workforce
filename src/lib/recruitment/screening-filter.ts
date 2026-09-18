@@ -25,7 +25,7 @@ import {
   type ScreeningFactsCandidateRow,
 } from "@/lib/recruitment/candidate-screening-facts";
 import { matchesRatingFilter, type CandidateRating } from "@/lib/recruitment/candidate-rating";
-import { normalizeCandidateStatus } from "@/lib/recruitment/candidate-status";
+import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import {
   SCREENING_UNKNOWN,
   type ScreeningQueueNarrowing,
@@ -127,7 +127,9 @@ export function matchesScreeningNarrowing(
   narrowing: ScreeningQueueNarrowing,
   context: { seenByViewer: boolean; seenByAnyone?: boolean; asOf: number },
 ): boolean {
-  if (narrowing.status && normalizeCandidateStatus(candidate.status) !== narrowing.status) return false;
+  // The decision tab, placed by the one rule every screen shares: a status the list cannot read sits
+  // on "Not decided yet", never in a decided pile and never in no pile at all.
+  if (narrowing.status && candidateDecisionTabOf(candidate.status) !== narrowing.status) return false;
   if (narrowing.seen === "unseen" && context.seenByViewer) return false;
   if (narrowing.seen === "seen" && !context.seenByViewer) return false;
   // Fails CLOSED on a caller that did not supply the fact: `seenByAnyone ?? true` means an

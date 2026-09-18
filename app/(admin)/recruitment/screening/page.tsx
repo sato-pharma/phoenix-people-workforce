@@ -117,7 +117,7 @@ async function ScreeningContent({
       canSendToManagers={workspace.canSendToManagers}
       canWriteNotes={canUpdate}
       counts={workspace.counts}
-      decided={workspace.decided}
+      decisionCounts={workspace.decisionCounts}
       filterCounts={workspace.filterCounts}
       filteredOut={workspace.filteredOut}
       hiringManagers={workspace.hiringManagers}
@@ -144,7 +144,6 @@ async function ScreeningContent({
       vacancy={workspace.vacancy}
       vacancyStats={workspace.vacancyStats}
       whatsapp={workspace.whatsapp}
-      whatsAppDecided={workspace.whatsAppDecided}
       whatsAppSearchLabel={workspace.whatsAppSearchLabel}
     />
   );

@@ -3,12 +3,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import type { ScreeningQuestion } from "../src/lib/recruitment/inbound/whatsapp-screening-questions.ts";
-import { isDecidedCandidateStatus } from "../src/lib/recruitment/candidate-status.ts";
+import { countCandidatesByDecisionTab } from "../src/lib/recruitment/candidate-decision-tabs.ts";
 import { parseScreeningFilters, screeningHref } from "../src/lib/recruitment/screening-link.ts";
-import {
-  splitWhatsAppPileByDecision,
-  whatsAppPileHidesDecided,
-} from "../src/lib/recruitment/whatsapp-pile-decided.ts";
 import {
   ANSWERED_ALL,
   ANSWERED_FILTER_KEY,
@@ -82,6 +78,7 @@ function candidate(overrides: Partial<WhatsAppApplicantCandidate> = {}): WhatsAp
     full_name: "Mona Adel",
     governorate: null,
     id: "cand-1",
+    in_cv_folder: false,
     status: "new",
     ...overrides,
   };
@@ -515,8 +512,8 @@ function runScreeningHandOffTests() {
   assert.equal(parseScreeningFilters({ whatsapp: param }).whatsapp, param, "and reads it back unchanged");
   assert.equal(parseScreeningFilters({ whatsapp: "  " }).whatsapp, null);
   assert.equal(
-    screeningHref("/hr/recruitment", { candidate: "cand-1", status: "new", whatsapp: param }),
-    "/hr/recruitment/screening?status=new&whatsapp=title%3Doffice_coordinator%26extra%253Aoc_age_band%3D25%2Bto%2B30%26region%3DCA&candidate=cand-1",
+    screeningHref("/hr/recruitment", { candidate: "cand-1", status: "rejected", whatsapp: param }),
+    "/hr/recruitment/screening?status=rejected&whatsapp=title%3Doffice_coordinator%26extra%253Aoc_age_band%3D25%2Bto%2B30%26region%3DCA&candidate=cand-1",
     "it composes with the screening page's own filters under either shell, and the open CV still comes last",
   );
 
@@ -537,112 +534,99 @@ function runScreeningHandOffTests() {
   assert.match(station, /whatsapp: null,/, "and Clear drops it with the rest");
   assert.match(
     read("src/components/recruitment/whatsapp-applicants-search.tsx"),
-    /href=\{screeningHref\(pool, \{ whatsapp: whatsAppApplicantSearchParam\(title, selections\) \}\)\}/,
-    "the button on this page carries exactly the search on screen",
+    /href=\{screeningHref\(pool, \{\s+status: statusFilterForDecisionTab\(decisionTab\),\s+whatsapp: whatsAppApplicantSearchParam\(title, selections\),\s+\}\)\}/,
+    "the button on this page carries exactly the search on screen, and the tab it is on",
   );
-  // The pile opens on everyone the search found, not on the "New CVs" tab, which would hide the ones
-  // already read or decided that the WhatsApp page had just listed.
+  // The pile opens on everyone the search found on the open decision tab, not on the "New CVs" queue,
+  // which would hide the ones already read that the WhatsApp page had just listed.
   assert.match(
     read("src/components/recruitment/workstation/screening-workstation.tsx"),
-    /const pileIsChosen = vacancyId !== null \|\| whatsAppSearch !== null;/,
+    /const \[queue, setQueue\] = useState<ScreeningWorkQueue>\("all"\);/,
   );
-  // Filed and decided CVs are FOUND, because the WhatsApp page lists them too - the decided ones are
-  // then hidden from the pile by default (runDecidedHidingTests), never from the search itself.
+  // Shelved and decided CVs are FOUND, because the WhatsApp page lists them too - the decided ones then
+  // sit on their own tabs (runDecisionTabTests). A CV in one of the owner's own folders is not: that
+  // page leaves it off as well.
   assert.match(
     read("src/lib/recruitment/screening-workspace.ts"),
-    /const whatsAppEveryMatch = whatsAppIds \? allCandidates\.filter\(\(candidate\) => whatsAppIds\.has\(candidate\.id\)\) : null;/,
+    /const whatsAppMatches = whatsAppIds\s+\? outsideHandBuiltFolders\.filter\(\(candidate\) => whatsAppIds\.has\(candidate\.id\)\)\s+: null;/,
   );
   assert.match(read("src/lib/recruitment/screening-workspace.ts"), /const pool = seatQueue \?\? whatsAppMatches \?\? reviewPool;/);
 }
 
 /**
- * HIDING WHAT THE SCREENER HAS ALREADY DECIDED. The owner, 2026-09-18, after shortlisting and
- * rejecting CVs and meeting the same ones again: "hide the CVs I already decided from the WhatsApp
- * screening list". Measured that day: 55 decisions in 14 days, every one still on the record - the
- * CVs came back because the WhatsApp pile is everyone the search found, decided or not.
+ * THE DECISION TABS, and the owner's own folders. The owner, 2026-09-18, first: "hide the CVs I
+ * already decided from the WhatsApp screening list". Then, the same night, for every screen that
+ * lists CVs: "did not decide yet ... shortlisted ... rejected", each its own tab, and a CV he moves
+ * into a folder he built ("Archive") shown only inside that folder. So the decided CVs are no longer
+ * hidden by a WhatsApp-only rule; they sit on their own tabs, and the pile opens on "Not decided yet".
  */
-function runDecidedHidingTests() {
-  // "Decided" is every status past `new` - a shortlist counts, unlike the vacant-seat queue's rule.
-  for (const decided of ["shortlisted", "sent_to_manager", "rejected", "hired"]) {
-    assert.equal(isDecidedCandidateStatus(decided), true, `${decided} is a decision`);
-  }
-  assert.equal(isDecidedCandidateStatus("new"), false, "an unread CV is what the list is for");
-  assert.equal(isDecidedCandidateStatus("Candidate Created"), false, "the legacy default still means new");
-  assert.equal(isDecidedCandidateStatus(null), false, "no status is not a decision");
-  assert.equal(isDecidedCandidateStatus(""), false);
-  assert.equal(
-    isDecidedCandidateStatus("Not Eligible — Non-Egyptian (Dubai, UAE)"),
-    false,
-    "a status nobody can read is shown, never hidden on a guess",
-  );
-
-  const found = [
-    { id: "a", status: "new" },
-    { id: "b", status: "shortlisted" },
-    { id: "c", status: "rejected" },
-    { id: "d", status: null },
-    { id: "e", status: "sent_to_manager" },
-    { id: "f", status: "hired" },
+function runDecisionTabTests() {
+  // THE ROW CARRIES ITS PILE, as the code the tabs read, whatever the status was spelled as.
+  const sessions = [
+    session({ id: "s-new", wa_id: "201000000001", candidate_id: "cand-new" }),
+    session({ id: "s-rej", wa_id: "201000000002", candidate_id: "cand-rej" }),
+    session({ id: "s-legacy", wa_id: "201000000003", candidate_id: "cand-legacy" }),
+    session({ id: "s-filed", wa_id: "201000000004", candidate_id: "cand-filed" }),
   ];
-  const hidden = splitWhatsAppPileByDecision(found, true);
-  assert.deepEqual(
-    hidden.shown.map((row) => row.id),
-    ["a", "d"],
-    "hiding keeps only the CVs nobody has decided, in the order they were found",
-  );
-  assert.equal(hidden.decidedCount, 4, "and counts the four it hid");
-  const kept = splitWhatsAppPileByDecision(found, false);
-  assert.deepEqual(
-    kept.shown.map((row) => row.id),
-    ["a", "b", "c", "d", "e", "f"],
-    "showing keeps everyone the search found",
-  );
-  assert.equal(kept.decidedCount, 4, "the count is the same shown or hidden, so the button reads the same both ways");
+  const built = view({
+    candidates: [
+      candidate({ id: "cand-new", status: "new" }),
+      candidate({ id: "cand-rej", status: "rejected" }),
+      candidate({ id: "cand-legacy", status: "Candidate Created" }),
+      candidate({ id: "cand-filed", in_cv_folder: true, status: "rejected" }),
+    ],
+    sessions,
+  });
+  const statusOf = (id: string) => built.rows.find((row) => row.candidateId === id)?.status;
+  assert.equal(statusOf("cand-new"), "new");
+  assert.equal(statusOf("cand-rej"), "rejected");
+  assert.equal(statusOf("cand-legacy"), "new", "the legacy default reads as not decided yet, like every screen");
 
-  // WHO ASKS FOR THEM BACK. Default hides; the link's flag, a picked status and "sent" all keep them.
-  const narrowed = (filters: Parameters<typeof parseScreeningFilters>[0]) =>
-    whatsAppPileHidesDecided(parseScreeningFilters({ whatsapp: "title=office_coordinator", ...filters }));
-  assert.equal(narrowed({}), true, "a WhatsApp pile hides the decided CVs unless told otherwise");
-  assert.equal(narrowed({ decided: "1" }), false, "the link's decided flag keeps them");
-  assert.equal(narrowed({ status: "rejected" }), false, "a status on the filter bar keeps them - it asked for those");
-  assert.equal(narrowed({ sent: "1" }), false, "so does 'sent to a manager', which is a pile of decided CVs");
-  assert.equal(narrowed({ unseen: "1", region: "CA" }), true, "the reading and place filters do not");
-  assert.equal(narrowed({ decided: "nope" }), true, "a flag nobody can read narrows nothing");
+  // A CV IN ONE OF THE OWNER'S OWN FOLDERS is off the page, and counted under its title.
+  assert.equal(statusOf("cand-filed"), undefined, "a CV moved into a folder he built is not listed");
+  const title = built.titles.find((entry) => entry.value === "office_coordinator");
+  assert.ok(title, "the title is still offered");
+  assert.equal(title.count, 3, "three rows are listed");
+  assert.equal(title.inFolders, 1, "and the filed one is counted, never silently dropped");
+  assert.equal(title.unlinked, 0, "a filed CV is not an unmatched chat");
 
-  // THE LINK. `decided` round-trips, is left out when off, and rides beside the search and the open CV.
-  assert.equal(parseScreeningFilters({}).decided, false);
-  assert.equal(parseScreeningFilters({ decided: "1" }).decided, true);
-  assert.equal(parseScreeningFilters({ decided: "true" }).decided, true);
-  assert.equal(screeningHref("/recruitment", { whatsapp: "x", decided: false }), "/recruitment/screening?whatsapp=x");
-  assert.equal(
-    screeningHref("/recruitment", { candidate: "cand-1", decided: true, whatsapp: "x" }),
-    "/recruitment/screening?whatsapp=x&decided=1&candidate=cand-1",
-    "the flag stays on the link a CV's own page goes back to, so coming back finds the same pile",
-  );
+  // The tab counts the page prints: one pile each, "All" the sum.
+  assert.deepEqual(countCandidatesByDecisionTab(built.rows), {
+    all: 3,
+    hired: 0,
+    new: 2,
+    rejected: 1,
+    sent_to_manager: 0,
+    shortlisted: 0,
+  });
 
-  // THE WIRING. Each link the page builds must carry it, and the server must read it once, before
-  // the pile is counted - hidden in the browser instead, the rail would report CVs the list lacks.
+  // THE SCREENING LINK. No status now means "Not decided yet"; "All" is spelled out; a retired
+  // `decided=1` link, which asked to keep everybody, opens on "All".
+  assert.equal(parseScreeningFilters({ whatsapp: "x" }).status, "new", "a WhatsApp pile opens on Not decided yet");
+  assert.equal(parseScreeningFilters({ whatsapp: "x", status: "all" }).status, null, "status=all is every pile");
+  assert.equal(parseScreeningFilters({ whatsapp: "x", decided: "1" }).status, null, "the retired decided=1 opens on All");
+  assert.equal(parseScreeningFilters({ whatsapp: "x", status: "rejected", decided: "1" }).status, "rejected");
+  assert.equal(screeningHref("/recruitment", { status: "new", whatsapp: "x" }), "/recruitment/screening?whatsapp=x");
+  assert.equal(screeningHref("/recruitment", { status: null, whatsapp: "x" }), "/recruitment/screening?status=all&whatsapp=x");
+
+  // THE WIRING. The retired flag is gone from every link and page, and the tab strip is on the
+  // screening page and on this one.
   const workspace = read("src/lib/recruitment/screening-workspace.ts");
-  assert.match(workspace, /whatsAppPileHidesDecided\(narrowing\)/, "the server decides from the link, not the browser");
-  assert.match(workspace, /const whatsAppMatches = whatsAppEveryMatch \? whatsAppShown : null;/);
-  assert.match(workspace, /decided: whatsAppSearch !== null && narrowing\.decided,/, "the flag is echoed only beside a search");
+  assert.doesNotMatch(workspace, /whatsAppPileHidesDecided|whatsAppDecided/, "no WhatsApp-only hiding rule is left");
+  assert.match(workspace, /const decisionCounts = countCandidatesByDecisionTab\(acrossTabs\);/);
   const station = read("src/components/recruitment/workstation/workstation-page-client.tsx");
-  assert.match(station, /decided: next\.decided !== undefined \? next\.decided : decided,/, "changing a filter keeps the flag");
-  assert.match(station, /candidate: candidateId,\s+decided,/, "an opened CV's link keeps it");
-  assert.match(station, /const listHref = screeningHref\(shellPoolHref, \{\s+area,\s+decided,/, "and so does the way back to the list");
-  assert.match(station, /goTo\(\{ decided: false, whatsapp: null \}\)/, "leaving the search drops the flag with it");
+  assert.doesNotMatch(station, /decided: next\.decided|whatsAppDecided/, "the station carries no decided flag");
+  assert.match(station, /onSelect=\{\(tab\) => goTo\(\{ status: statusFilterForDecisionTab\(tab\) \}\)\}/);
   for (const [name, source] of [
     ["admin", read("app/(admin)/recruitment/screening/page.tsx")],
     ["portal", read("app/employee-portals/recruitment/screening/page.tsx")],
   ] as const) {
-    assert.match(source, /decided=\{workspace\.decided\}/, `the ${name} screening page must pass the flag on`);
-    assert.match(source, /whatsAppDecided=\{workspace\.whatsAppDecided\}/, `the ${name} screening page must pass the count on`);
+    assert.match(source, /decisionCounts=\{workspace\.decisionCounts\}/, `the ${name} screening page must pass the tab counts on`);
+    assert.doesNotMatch(source, /decided=\{workspace\.decided\}/, `the ${name} screening page must drop the retired flag`);
   }
-  assert.doesNotMatch(
-    station,
-    /including CVs already filed or decided/,
-    "the header must stop promising decided CVs the list now hides",
-  );
+  const page = read("src/components/recruitment/whatsapp-applicants-search.tsx");
+  assert.match(page, /<CandidateDecisionTabStrip/, "the WhatsApp Applicants page has the tabs");
+  assert.match(page, /useState<CandidateDecisionTab>\(DEFAULT_CANDIDATE_DECISION_TAB\)/, "and opens on Not decided yet");
 }
 
 export function runRecruitmentWhatsAppApplicantsTests() {
@@ -653,5 +637,5 @@ export function runRecruitmentWhatsAppApplicantsTests() {
   runMatchTests();
   runPoolHrefTests();
   runScreeningHandOffTests();
-  runDecidedHidingTests();
+  runDecisionTabTests();
 }
