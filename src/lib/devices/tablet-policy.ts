@@ -326,7 +326,7 @@ export const REP_TABLET_RULES: readonly PolicyRule[] = [
   },
   {
     detail:
-      "The tablet reports its model, serial number, Android version, security patch and network identity. It does not report which apps are used or where it is.",
+      "The tablet reports its model, serial number, IMEI, Android version, security patch and network identity, and Phoenix copies the IMEI into the custody register when the register has none. It does not report which apps are used or where it is.",
     title: "What the tablet reports",
   },
 ];

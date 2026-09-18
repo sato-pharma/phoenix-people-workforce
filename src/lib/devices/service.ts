@@ -1004,6 +1004,54 @@ export async function markDevice(input: MarkDeviceInput, actor: string): Promise
   return typeof data === "string" ? data : String(data ?? input.status);
 }
 
+/**
+ * Record the IMEI a managed tablet reports to Google on its register entry — ONLY where the entry
+ * holds none.
+ *
+ * The one register write whose value no person typed: Rep Tablets calls it with what the tablet
+ * itself reported, so the IMEI a police report or an operator asks for is on the entry without
+ * anybody dialling *#06#. It never overwrites. An IMEI somebody typed stays even when the tablet
+ * reports a different one — the Rep Tablets page shows the two side by side and a person decides
+ * which is wrong. The update is conditional on the entry still holding exactly what was read, so a
+ * value typed in between is not replaced either; the answer is then false and nothing is written.
+ *
+ * The same IMEI on a second entry is refused twice over: Rep Tablets never asks for one (it compares
+ * on digits, so a typed "35-123456-789012-3" counts), and `uq_company_devices_imei` refuses the
+ * same text at the database, whatever called this.
+ */
+export async function recordReportedImei(input: { deviceId: string; imei: string }, actor: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const imei = trimmed(input.imei);
+  if (!imei) throw new Error("There is no IMEI to record.");
+
+  const { data: before, error: readError } = await supabase
+    .from("company_devices")
+    .select(DEVICE_COLUMNS)
+    .eq("id", input.deviceId)
+    .maybeSingle();
+  if (readError) throw new Error(deviceErrorMessage(readError));
+  if (!before) throw new Error("That tablet is no longer in the custody register.");
+  const row = before as DeviceRow;
+  if (trimmed(row.imei)) return false;
+
+  await writeRequiredAuditLog({
+    actorLoginId: actor,
+    entityType: "company_device",
+    entityId: input.deviceId,
+    summary: `Recorded the IMEI ${row.asset_tag} reports to Google in the custody register`,
+    oldValues: { imei: row.imei },
+    newValues: { imei, source: "android_management" },
+  });
+
+  const update = supabase
+    .from("company_devices")
+    .update({ imei, updated_at: new Date().toISOString() })
+    .eq("id", input.deviceId);
+  const { data, error } = await (row.imei === null ? update.is("imei", null) : update.eq("imei", row.imei)).select("id");
+  if (error) throw new Error(deviceErrorMessage(error));
+  return Array.isArray(data) && data.length > 0;
+}
+
 export async function writeOffDevice(input: WriteOffDeviceInput, actor: string): Promise<string> {
   const supabase = getSupabaseAdmin();
 
