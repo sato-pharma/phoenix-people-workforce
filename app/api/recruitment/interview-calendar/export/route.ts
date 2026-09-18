@@ -4,7 +4,7 @@ import { recruitmentApiError } from "@/app/api/recruitment/_lib/http";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { ChromiumUnavailableError, withChromiumPage } from "@/lib/pdf/chromium";
-import { listInterviewBookingsForWeek, requireInterviewCalendarRole } from "@/lib/recruitment/interview-calendar";
+import { interviewCalendarCaller, listInterviewCalendarWeek } from "@/lib/recruitment/interview-calendar";
 import {
   buildInterviewCalendarExportModel,
   buildInterviewCalendarPdfHtml,
@@ -13,7 +13,7 @@ import {
   interviewCalendarPdfFooter,
   isInterviewCalendarExportFormat,
 } from "@/lib/recruitment/interview-calendar-export";
-import { isDateKey } from "@/lib/recruitment/interview-calendar-week";
+import { isDateKey, weekStartFor } from "@/lib/recruitment/interview-calendar-week";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
 
@@ -28,7 +28,7 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await requireInterviewCalendarRole(access, "view");
+    const caller = await interviewCalendarCaller(access, request);
     const params = new URL(request.url).searchParams;
     const week = params.get("week") ?? "";
     const format = params.get("format");
@@ -41,10 +41,10 @@ export async function GET(request: Request) {
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:recruitment:interview-calendar" });
 
     const model = buildInterviewCalendarExportModel({
-      bookings: await listInterviewBookingsForWeek(week, access.hrId),
+      ...(await listInterviewCalendarWeek(caller, week)),
       now: new Date(),
       origin: trustedOriginForRedirect(request),
-      weekStart: week,
+      weekStart: weekStartFor(week),
     });
     const filename = interviewCalendarFilename(model, format);
 

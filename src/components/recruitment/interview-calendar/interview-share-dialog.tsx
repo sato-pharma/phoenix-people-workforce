@@ -6,6 +6,9 @@
 // Viewer sees the calendar and opens the CVs on it; Commenter also leaves notes on an interview;
 // Editor also books, moves and cancels. Nobody but the owner can share it onward. The person is told
 // in Phoenix (in-app and push, never email) when they are added or their access changes.
+//
+// Below the people, COPY LINKS (the owner, 2026-09-18, "exactly as Google Sheets"): a link at a level
+// he picks, for the week on screen or the whole calendar, to copy or send on WhatsApp himself.
 
 import { Loader2, Search, Share2, Trash2, UserPlus, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,6 +28,8 @@ import {
   type InterviewCalendarShare,
 } from "@/lib/recruitment/interview-calendar-types";
 import { cn } from "@/lib/utils";
+
+import { CopyLinkSection } from "./copy-link-section";
 
 function AccessSelect({
   disabled,
@@ -55,7 +60,7 @@ function AccessSelect({
   );
 }
 
-export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
+export function InterviewShareDialog({ onClose, weekStart }: { onClose: () => void; weekStart: string }) {
   const dialogRef = useDialogA11y({ onClose, open: true });
   const mounted = useHydrated();
 
@@ -154,7 +159,7 @@ export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
             <h2 className="mt-0.5 text-[17px] font-bold text-slate-900" id="share-interview-calendar-title">
               Share the interview calendar
             </h2>
-            <p className="text-[12px] text-slate-500">They are told in Phoenix. Only you can share it.</p>
+            <p className="text-[12px] text-slate-500">People you add are told in Phoenix. A copy link reaches whoever you send it to. Only you can share it.</p>
           </div>
           <button
             aria-label="Close"
@@ -296,6 +301,8 @@ export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
               )}
             </ul>
           </section>
+
+          <CopyLinkSection weekStart={weekStart} />
         </div>
 
         <footer className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3 sm:px-5">

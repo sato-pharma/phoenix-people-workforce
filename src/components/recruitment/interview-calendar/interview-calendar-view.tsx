@@ -8,9 +8,16 @@
 // gets the same week as one card per day, because a five-column grid at 375px is a grid nobody can
 // read (the fits-the-screen rule: never a sideways scroll).
 //
+// A FREE TIME IS PRESSABLE (the owner, 2026-09-18): pressing an empty cell books someone there —
+// from Recruitment, or from outside with their CV — or sets up an interview SESSION: one Zoom
+// meeting for a block of the day, cut into slots. A session is drawn as a tinted block with its
+// chip at the top; its slots fill as people are booked into them.
+//
 // WHAT EACH PERSON CAN DO follows the access he gave them, and the server enforces every one of
 // these; the screen only stops offering what would be refused. Viewer: see it, open the CVs.
-// Commenter: also leave notes on an interview. Editor: also move and cancel. Owner: also share.
+// Commenter: also leave notes on an interview. Editor: also book, move and cancel. Owner: also share.
+// Someone who opened it from a COPY LINK without signing in views only; the link's own level
+// applies once they sign in.
 
 import {
   AlertTriangle,
@@ -21,22 +28,24 @@ import {
   Clock3,
   FileSpreadsheet,
   FileText,
+  Link2,
   Loader2,
+  LogIn,
+  Mail,
   MessageSquarePlus,
+  Phone,
+  Plus,
   RefreshCw,
   Share2,
   Trash2,
+  Users,
   Video,
-  X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useHydrated } from "@/hooks/use-hydrated";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
-import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
-import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import {
   ACCESS_LEVEL_LABEL,
@@ -44,15 +53,22 @@ import {
   canBookInterviews,
   canCommentOnInterviews,
   canShareInterviewCalendar,
+  sessionSlotStarts,
   zoomStatusSentence,
   type InterviewBooking,
+  type InterviewCalendarAccessLevel,
   type InterviewCalendarRole,
+  type InterviewSession,
 } from "@/lib/recruitment/interview-calendar-types";
 import {
+  SLOT_MINUTES,
+  WORKDAY_END_MINUTES,
+  WORKDAY_START_MINUTES,
   addDays,
   cairoDateKey,
   cairoMinutesOfDay,
   formatDayLong,
+  formatDuration,
   formatShortDate,
   formatTimeOfDay,
   formatTimeRange,
@@ -66,11 +82,30 @@ import {
 } from "@/lib/recruitment/interview-calendar-week";
 import { cn } from "@/lib/utils";
 
+import { calendarApi, reasonText, type CalendarApi } from "./calendar-api";
+import { CalendarDialog, ErrorLine } from "./calendar-dialog";
+import { CellDialog } from "./cell-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
+import { SessionDialog } from "./session-dialog";
+import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
 
 type CalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
+
+/** The calendar opened from a copy link — what the link gives, and how to sign in for more. */
+export type InterviewCalendarLinkView = {
+  token: string;
+  signedIn: boolean;
+  /** The one week the link opens, or null for the whole calendar. */
+  weekStart: string | null;
+  accessLevel: InterviewCalendarAccessLevel;
+  guestCvs: boolean;
+  /** Where to sign in and come back — null when already signed in. */
+  signInHref: string | null;
+};
+
+export type InterviewCalendarAbilities = { canSearchCandidates: boolean; canAddToRecruitment: boolean };
 
 /** The newest attachment filed as a CV that the preview can draw — the same choice screening makes. */
 function chooseCv(files: CalendarFile[]): CalendarFile | null {
@@ -84,7 +119,7 @@ function cairoStamp(iso: string): string {
   return `${formatShortDate(cairoDateKey(at))}, ${formatTimeOfDay(cairoMinutesOfDay(at))}`;
 }
 
-function sortBookings(list: InterviewBooking[]): InterviewBooking[] {
+function byTime<T extends { dateKey: string; startMinutes: number }>(list: T[]): T[] {
   return [...list].sort((a, b) => (a.dateKey === b.dateKey ? a.startMinutes - b.startMinutes : a.dateKey < b.dateKey ? -1 : 1));
 }
 
@@ -106,21 +141,55 @@ function readFilename(disposition: string | null, fallback: string): string {
   return plain ? plain[1] : fallback;
 }
 
+/** The first quarter hour from now — the earliest a booking made today may start. */
+function nextQuarter(minutes: number): number {
+  return Math.ceil(minutes / 15) * 15;
+}
+
+const LAST_START = WORKDAY_END_MINUTES - SLOT_MINUTES;
+
+type CellContent = {
+  sessions: InterviewSession[];
+  bookings: InterviewBooking[];
+  /** Long interviews that began in an earlier row and are still going. */
+  continuing: InterviewBooking[];
+  /** The session this half hour falls inside, if any. */
+  cover: InterviewSession | null;
+  /** Free slots of that session starting in this half hour. */
+  freeSlots: number;
+};
+
 export function InterviewCalendarView({
+  abilities,
   initialOpen,
   initialWeek,
+  link = null,
+  lockedWeek = null,
   role,
   todayKey,
   zoomConnected,
 }: {
+  abilities?: InterviewCalendarAbilities;
   initialOpen: string | null;
   initialWeek: string;
+  /** Set when the calendar was opened from a copy link. */
+  link?: InterviewCalendarLinkView | null;
+  /** The one week a week-limited link opens — the week cannot be changed. */
+  lockedWeek?: string | null;
   role: InterviewCalendarRole;
   todayKey: string;
   zoomConnected: boolean;
 }) {
-  const [weekStart, setWeekStart] = useState(() => weekStartFor(initialWeek));
+  const linkToken = link?.token ?? null;
+  const api = useMemo(() => calendarApi(linkToken), [linkToken]);
+  const hydrated = useHydrated();
+  const canBook = canBookInterviews(role);
+  const canSearch = abilities?.canSearchCandidates === true;
+  const canAdd = abilities?.canAddToRecruitment === true;
+
+  const [weekStart, setWeekStart] = useState(() => weekStartFor(lockedWeek ?? initialWeek));
   const [bookings, setBookings] = useState<InterviewBooking[]>([]);
+  const [sessions, setSessions] = useState<InterviewSession[]>([]);
   // The week the grid last finished reading. "Loading" is derived from it rather than stored, so no
   // state is written in an effect body — every write lands when an answer arrives.
   const [loadedWeek, setLoadedWeek] = useState<string | null>(null);
@@ -128,12 +197,23 @@ export function InterviewCalendarView({
   const [openId, setOpenId] = useState<string | null>(initialOpen);
   // An interview a link pointed at outside the week on screen, or one moved out of it while open.
   const [fetchedOpen, setFetchedOpen] = useState<InterviewBooking | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
+  const [cell, setCell] = useState<{ dateKey: string; start: number } | null>(null);
   const [sharing, setSharing] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerCursor, setPickerCursor] = useState<MonthCursor>(() => cursorFor(weekStartFor(initialWeek)));
+  const [pickerCursor, setPickerCursor] = useState<MonthCursor>(() => cursorFor(weekStartFor(lockedWeek ?? initialWeek)));
   const pickerRef = useRef<HTMLDivElement>(null);
+
+  // The clock the "is this time already past?" answers read, moved on each minute.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const nowKey = cairoDateKey(new Date(nowMs));
+  const earliestToday = nextQuarter(cairoMinutesOfDay(new Date(nowMs)));
 
   const days = useMemo(() => weekDays(weekStart), [weekStart]);
   const thisWeek = weekStartFor(todayKey);
@@ -141,6 +221,17 @@ export function InterviewCalendarView({
   const openBooking = openId
     ? (bookings.find((booking) => booking.id === openId) ?? (fetchedOpen && fetchedOpen.id === openId ? fetchedOpen : null))
     : null;
+
+  /** The earliest a booking may start in the half hour from `minutes`, or null when it is past. */
+  const bookableStart = useCallback(
+    (dateKey: string, minutes: number): number | null => {
+      if (dateKey < nowKey) return null;
+      const start = dateKey === nowKey ? Math.max(minutes, earliestToday) : minutes;
+      if (start >= minutes + SLOT_MINUTES || start > LAST_START) return null;
+      return start;
+    },
+    [earliestToday, nowKey],
+  );
 
   // The address keeps the week (and the open interview), so a copied link lands where it was copied.
   useEffect(() => {
@@ -155,16 +246,19 @@ export function InterviewCalendarView({
   // grid showing whichever answer happened to arrive last — a superseded answer finds `live` false.
   useEffect(() => {
     let live = true;
-    getJson(`/api/recruitment/interview-calendar/bookings?week=${encodeURIComponent(weekStart)}`)
+    api
+      .get(`/bookings?week=${encodeURIComponent(weekStart)}`)
       .then((data) => {
         if (!live) return;
-        setBookings(sortBookings(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []));
+        setBookings(byTime(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []));
+        setSessions(byTime(Array.isArray(data.sessions) ? (data.sessions as InterviewSession[]) : []));
         setLoadError(null);
       })
       .catch((reason: unknown) => {
         if (!live) return;
         setBookings([]);
-        setLoadError(reason instanceof Error ? reason.message : "The week could not be read.");
+        setSessions([]);
+        setLoadError(reasonText(reason, "The week could not be read."));
       })
       .finally(() => {
         if (live) setLoadedWeek(weekStart);
@@ -172,7 +266,7 @@ export function InterviewCalendarView({
     return () => {
       live = false;
     };
-  }, [weekStart]);
+  }, [api, weekStart]);
 
   // An interview in the week on screen is read straight from it (above). One a link points at outside
   // that week is asked for directly, and the grid moves to its week.
@@ -181,12 +275,13 @@ export function InterviewCalendarView({
     if (bookings.some((booking) => booking.id === openId)) return;
     if (fetchedOpen && fetchedOpen.id === openId) return;
     let live = true;
-    getJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(openId)}`)
+    api
+      .get(`/bookings/${encodeURIComponent(openId)}`)
       .then((data) => {
         if (!live) return;
         const booking = data.booking as InterviewBooking;
         setFetchedOpen(booking);
-        if (weekStartFor(booking.dateKey) !== weekStart) setWeekStart(weekStartFor(booking.dateKey));
+        if (!lockedWeek && weekStartFor(booking.dateKey) !== weekStart) setWeekStart(weekStartFor(booking.dateKey));
       })
       .catch(() => {
         if (live) setOpenId(null);
@@ -194,7 +289,7 @@ export function InterviewCalendarView({
     return () => {
       live = false;
     };
-  }, [bookings, fetchedOpen, loading, openId, weekStart]);
+  }, [api, bookings, fetchedOpen, loading, lockedWeek, openId, weekStart]);
 
   // Close the week picker on a click anywhere else.
   useEffect(() => {
@@ -207,6 +302,7 @@ export function InterviewCalendarView({
   }, [pickerOpen]);
 
   function goToWeek(week: string) {
+    if (lockedWeek) return;
     const sunday = weekStartFor(week);
     setWeekStart(sunday);
     setPickerCursor(cursorFor(sunday));
@@ -215,7 +311,7 @@ export function InterviewCalendarView({
   function replaceBooking(next: InterviewBooking) {
     setBookings((current) => {
       const rest = current.filter((booking) => booking.id !== next.id);
-      return weekStartFor(next.dateKey) === weekStart ? sortBookings([...rest, next]) : rest;
+      return weekStartFor(next.dateKey) === weekStart ? byTime([...rest, next]) : rest;
     });
     // An interview moved to another week stays open, though it has left the grid.
     if (next.id === openId) setFetchedOpen(next);
@@ -226,11 +322,53 @@ export function InterviewCalendarView({
     setOpenId(null);
   }
 
+  function upsertSession(next: InterviewSession) {
+    setSessions((current) => {
+      const rest = current.filter((session) => session.id !== next.id);
+      return weekStartFor(next.dateKey) === weekStart ? byTime([...rest, next]) : rest;
+    });
+  }
+
+  // The session dialog hands back the session and every interview in it, after any change there.
+  const sessionChanged = useCallback(
+    (next: InterviewSession, inSession: InterviewBooking[]) => {
+      setSessions((current) => {
+        const rest = current.filter((session) => session.id !== next.id);
+        return weekStartFor(next.dateKey) === weekStart ? byTime([...rest, next]) : rest;
+      });
+      setBookings((current) => {
+        const rest = current.filter((booking) => booking.sessionId !== next.id);
+        return byTime([...rest, ...inSession.filter((booking) => weekStartFor(booking.dateKey) === weekStart)]);
+      });
+    },
+    [weekStart],
+  );
+
+  function sessionRemoved(sessionId: string, bookingIds: string[]) {
+    const gone = new Set(bookingIds);
+    setSessions((current) => current.filter((session) => session.id !== sessionId));
+    setBookings((current) => current.filter((booking) => !gone.has(booking.id) && booking.sessionId !== sessionId));
+    setOpenSessionId(null);
+    if (openId && gone.has(openId)) setOpenId(null);
+  }
+
+  function openInterview(id: string) {
+    setOpenSessionId(null);
+    setCell(null);
+    setOpenId(id);
+  }
+
+  function openSession(id: string) {
+    setOpenId(null);
+    setCell(null);
+    setOpenSessionId(id);
+  }
+
   async function exportWeek(format: "pdf" | "xlsx") {
     setExporting(format);
     setExportError(null);
     try {
-      const response = await fetch(`/api/recruitment/interview-calendar/export?week=${encodeURIComponent(weekStart)}&format=${format}`);
+      const response = await api.fetch(`/export?week=${encodeURIComponent(weekStart)}&format=${format}`);
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         throw new Error(typeof data.message === "string" ? data.message : "The export could not be made.");
@@ -246,32 +384,76 @@ export function InterviewCalendarView({
       anchor.remove();
       window.setTimeout(() => URL.revokeObjectURL(href), 10_000);
     } catch (reason) {
-      setExportError(reason instanceof Error ? reason.message : "The export could not be made.");
+      setExportError(reasonText(reason, "The export could not be made."));
     } finally {
       setExporting(null);
     }
   }
 
-  const bySlot = useMemo(() => {
-    const map = new Map<string, InterviewBooking[]>();
+  // What each half hour of the grid holds.
+  const cells = useMemo(() => {
+    const map = new Map<string, CellContent>();
+    const at = (dateKey: string, minutes: number) => {
+      const key = `${dateKey}|${minutes}`;
+      let entry = map.get(key);
+      if (!entry) {
+        entry = { bookings: [], continuing: [], cover: null, freeSlots: 0, sessions: [] };
+        map.set(key, entry);
+      }
+      return entry;
+    };
+    const rows = slotStarts();
+    const takenBySession = new Map<string, Set<number>>();
     for (const booking of bookings) {
-      const key = `${booking.dateKey}|${slotFor(booking.startMinutes)}`;
-      map.set(key, [...(map.get(key) ?? []), booking]);
+      const first = slotFor(booking.startMinutes);
+      at(booking.dateKey, first).bookings.push(booking);
+      for (const row of rows) {
+        if (row > first && row < booking.startMinutes + booking.durationMinutes) at(booking.dateKey, row).continuing.push(booking);
+      }
+      if (booking.sessionId) {
+        const taken = takenBySession.get(booking.sessionId) ?? new Set<number>();
+        taken.add(booking.startMinutes);
+        takenBySession.set(booking.sessionId, taken);
+      }
+    }
+    for (const session of sessions) {
+      at(session.dateKey, slotFor(session.startMinutes)).sessions.push(session);
+      const taken = takenBySession.get(session.id) ?? new Set<number>();
+      const slots = sessionSlotStarts(session);
+      for (const row of rows) {
+        if (row + SLOT_MINUTES <= session.startMinutes || row >= session.startMinutes + session.durationMinutes) continue;
+        const entry = at(session.dateKey, row);
+        if (!entry.cover) entry.cover = session;
+        entry.freeSlots += slots.filter((start) => start >= row && start < row + SLOT_MINUTES && !taken.has(start)).length;
+      }
     }
     return map;
+  }, [bookings, sessions]);
+
+  const bookedInSession = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const booking of bookings) {
+      if (booking.sessionId) counts.set(booking.sessionId, (counts.get(booking.sessionId) ?? 0) + 1);
+    }
+    return counts;
   }, [bookings]);
 
   const counts = useMemo(
     () => ({
       office: bookings.filter((booking) => booking.platform === "in_office").length,
+      sessions: sessions.length,
       total: bookings.length,
       zoom: bookings.filter((booking) => booking.platform === "zoom").length,
     }),
-    [bookings],
+    [bookings, sessions],
   );
+
+  const cvsNeedSignIn = Boolean(link && !link.signedIn && !link.guestCvs);
 
   return (
     <div className="flex flex-col gap-4">
+      {link ? <LinkBanner link={link} role={role} /> : null}
+
       {/* ── The week bar ───────────────────────────────────────────────────────────────────── */}
       <section className="border border-slate-200 bg-white">
         <div className="flex flex-col gap-3 border-b-2 border-b-orange-600 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
@@ -282,50 +464,54 @@ export function InterviewCalendarView({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex">
-              <button
-                aria-label="Previous week"
-                className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                onClick={() => goToWeek(addDays(weekStart, -7))}
-                type="button"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                aria-label="Next week"
-                className="-ml-px inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
-                onClick={() => goToWeek(addDays(weekStart, 7))}
-                type="button"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-            <Action disabled={weekStart === thisWeek} onClick={() => goToWeek(thisWeek)} size="md" tone="quiet">
-              This week
-            </Action>
-            <div className="relative" ref={pickerRef}>
-              <Action aria-expanded={pickerOpen} onClick={() => setPickerOpen((open) => !open)} size="md" tone="quiet">
-                <CalendarDays className="h-4 w-4" />
-                Choose a week
-              </Action>
-              {pickerOpen ? (
-                <div className="absolute left-0 top-full z-30 mt-1 w-[18rem] border border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] sm:left-auto sm:right-0">
-                  <MonthPicker
-                    allowPast
-                    cursor={pickerCursor}
-                    highlightWeekOf={days}
-                    onCursor={setPickerCursor}
-                    onSelect={(key) => {
-                      goToWeek(key);
-                      setPickerOpen(false);
-                    }}
-                    selected={null}
-                    todayKey={todayKey}
-                  />
+            {lockedWeek ? null : (
+              <>
+                <div className="flex">
+                  <button
+                    aria-label="Previous week"
+                    className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                    onClick={() => goToWeek(addDays(weekStart, -7))}
+                    type="button"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    aria-label="Next week"
+                    className="-ml-px inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                    onClick={() => goToWeek(addDays(weekStart, 7))}
+                    type="button"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
                 </div>
-              ) : null}
-            </div>
-            <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-200 sm:inline-block" />
+                <Action disabled={weekStart === thisWeek} onClick={() => goToWeek(thisWeek)} size="md" tone="quiet">
+                  This week
+                </Action>
+                <div className="relative" ref={pickerRef}>
+                  <Action aria-expanded={pickerOpen} onClick={() => setPickerOpen((open) => !open)} size="md" tone="quiet">
+                    <CalendarDays className="h-4 w-4" />
+                    Choose a week
+                  </Action>
+                  {pickerOpen ? (
+                    <div className="absolute left-0 top-full z-30 mt-1 w-[18rem] border border-slate-200 bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] sm:left-auto sm:right-0">
+                      <MonthPicker
+                        allowPast
+                        cursor={pickerCursor}
+                        highlightWeekOf={days}
+                        onCursor={setPickerCursor}
+                        onSelect={(key) => {
+                          goToWeek(key);
+                          setPickerOpen(false);
+                        }}
+                        selected={null}
+                        todayKey={todayKey}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <span aria-hidden className="mx-1 hidden h-6 w-px bg-slate-200 sm:inline-block" />
+              </>
+            )}
             <Action disabled={exporting !== null} onClick={() => void exportWeek("pdf")} size="md" tone="quiet">
               {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
               Export PDF
@@ -354,8 +540,15 @@ export function InterviewCalendarView({
             <span aria-hidden className="inline-block h-2.5 w-2.5 bg-sky-600" />
             Zoom {counts.zoom}
           </span>
+          <span className="inline-flex items-center gap-1">
+            <Users aria-hidden className="h-3 w-3 text-slate-500" />
+            Sessions {counts.sessions}
+          </span>
           {role !== "owner" ? <span className="text-slate-500">Your access: {ACCESS_LEVEL_LABEL[role]}</span> : null}
-          <span className="text-slate-500">Click a name to open the CV.</span>
+          <span className="text-slate-500">
+            {cvsNeedSignIn ? "Sign in to open the CVs." : "Click a name to open the CV."}
+            {canBook ? " Press a free time to book someone or set up a Zoom session." : ""}
+          </span>
         </div>
         {exportError ? (
           <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-[12px] font-semibold text-red-700" role="alert">
@@ -407,14 +600,81 @@ export function InterviewCalendarView({
                   {formatTimeOfDay(minutes)}
                 </th>
                 {days.map((day) => {
-                  const here = bySlot.get(`${day}|${minutes}`) ?? [];
+                  const here = cells.get(`${day}|${minutes}`);
+                  const cover = here?.cover ?? null;
+                  const start = hydrated && canBook && !loading ? bookableStart(day, minutes) : null;
+                  const empty = !here || (here.bookings.length === 0 && here.sessions.length === 0 && here.continuing.length === 0);
                   return (
-                    <td className={cn("h-[46px] border-r border-slate-200 p-1 align-top last:border-r-0", day === todayKey && "bg-orange-50/40")} key={day}>
-                      <div className="flex flex-col gap-1">
-                        {here.map((booking) => (
-                          <BookingChip booking={booking} key={booking.id} onOpen={() => setOpenId(booking.id)} />
-                        ))}
-                      </div>
+                    <td
+                      className={cn(
+                        "group relative h-[46px] border-r border-slate-200 p-1 align-top last:border-r-0",
+                        cover
+                          ? cover.platform === "zoom"
+                            ? "bg-sky-50 shadow-[inset_3px_0_0_#0284c7]"
+                            : "bg-orange-50 shadow-[inset_3px_0_0_#ea580c]"
+                          : day === todayKey && "bg-orange-50/40",
+                      )}
+                      key={day}
+                    >
+                      {cover ? (
+                        <button
+                          aria-label={`Open the session ${cover.title ?? "Interview session"}`}
+                          className="absolute inset-0 z-0 cursor-pointer"
+                          onClick={() => openSession(cover.id)}
+                          type="button"
+                        />
+                      ) : start !== null ? (
+                        <button
+                          aria-label={`Book at ${formatTimeOfDay(start)}, ${formatDayLong(day)}`}
+                          className={cn(
+                            "absolute inset-0 z-0 flex cursor-pointer items-center justify-center text-[11px] font-bold text-orange-700 opacity-0 transition-opacity hover:bg-orange-50 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-500 group-hover:opacity-100",
+                            !empty && "items-end pb-0.5",
+                          )}
+                          onClick={() => setCell({ dateKey: day, start })}
+                          type="button"
+                        >
+                          <span className="inline-flex items-center gap-0.5">
+                            <Plus className="h-3 w-3" /> Book
+                          </span>
+                        </button>
+                      ) : null}
+                      {here ? (
+                        <div className="pointer-events-none relative z-[1] flex flex-col gap-1">
+                          {here.sessions.map((session) => (
+                            <SessionChip
+                              booked={bookedInSession.get(session.id) ?? 0}
+                              key={session.id}
+                              onOpen={() => openSession(session.id)}
+                              session={session}
+                            />
+                          ))}
+                          {here.bookings.map((booking) => (
+                            <BookingChip booking={booking} key={booking.id} onOpen={() => openInterview(booking.id)} />
+                          ))}
+                          {here.continuing.map((booking) => (
+                            <button
+                              aria-label={`${booking.candidateName}, until ${formatTimeOfDay(booking.startMinutes + booking.durationMinutes)}`}
+                              className={cn(
+                                "pointer-events-auto block h-2 w-full",
+                                booking.platform === "zoom" ? "bg-sky-300 hover:bg-sky-500" : "bg-orange-300 hover:bg-orange-500",
+                              )}
+                              key={booking.id}
+                              onClick={() => openInterview(booking.id)}
+                              title={`${booking.candidateName} — until ${formatTimeOfDay(booking.startMinutes + booking.durationMinutes)}`}
+                              type="button"
+                            />
+                          ))}
+                          {cover && here.freeSlots > 0 && canBook && !cover.ended ? (
+                            <button
+                              className="pointer-events-auto self-start text-[10.5px] font-bold text-sky-800 underline decoration-sky-300 underline-offset-2 hover:text-sky-950"
+                              onClick={() => openSession(cover.id)}
+                              type="button"
+                            >
+                              {here.freeSlots} free {here.freeSlots === 1 ? "slot" : "slots"}
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </td>
                   );
                 })}
@@ -427,71 +687,223 @@ export function InterviewCalendarView({
       {/* ── Phone: a card per day ──────────────────────────────────────────────────────────── */}
       <ul aria-busy={loading} className="flex flex-col gap-3 md:hidden">
         {days.map((day) => {
-          const today = bookings.filter((booking) => booking.dateKey === day);
+          const daySessions = sessions.filter((session) => session.dateKey === day);
+          const dayBookings = bookings.filter((booking) => booking.dateKey === day);
+          const items = [
+            ...daySessions.map((session) => ({ at: session.startMinutes, kind: "session" as const, order: 0, session })),
+            ...dayBookings.map((booking) => ({ at: booking.startMinutes, booking, kind: "booking" as const, order: 1 })),
+          ].sort((a, b) => a.at - b.at || a.order - b.order);
+          const firstFree =
+            hydrated && canBook && !loading
+              ? bookableStart(day, day === nowKey ? Math.max(WORKDAY_START_MINUTES, slotFor(earliestToday)) : WORKDAY_START_MINUTES)
+              : null;
           return (
             <li className="border border-slate-200 bg-white" key={day}>
               <p className={cn("flex items-baseline justify-between gap-2 px-3 py-2 text-white", day === todayKey ? "bg-orange-600" : "bg-slate-900")}>
                 <span className="text-[14px] font-bold">{weekdayName(day)}</span>
                 <span className="text-[12px] font-semibold opacity-80">{formatShortDate(day)}</span>
               </p>
-              {today.length === 0 ? (
+              {items.length === 0 ? (
                 <p className="px-3 py-3 text-[12px] text-slate-500">{loading ? "Reading…" : "No interviews."}</p>
               ) : (
                 <ul className="divide-y divide-slate-100">
-                  {today.map((booking) => (
-                    <li key={booking.id}>
-                      <button
-                        className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-orange-50"
-                        onClick={() => setOpenId(booking.id)}
-                        type="button"
-                      >
-                        <span className="w-[4.75rem] shrink-0 text-[12px] font-bold tabular-nums text-slate-700">
-                          {formatTimeOfDay(booking.startMinutes)}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block break-words text-[14px] font-bold text-orange-700 underline decoration-orange-300 underline-offset-2">
-                            {booking.candidateName}
+                  {items.map((item) =>
+                    item.kind === "session" ? (
+                      <li key={`s-${item.session.id}`}>
+                        <button
+                          className={cn(
+                            "flex w-full items-start gap-3 px-3 py-2.5 text-left",
+                            item.session.platform === "zoom" ? "bg-sky-50 hover:bg-sky-100" : "bg-orange-50 hover:bg-orange-100",
+                          )}
+                          onClick={() => openSession(item.session.id)}
+                          type="button"
+                        >
+                          <span className="w-[4.75rem] shrink-0 text-[12px] font-bold tabular-nums text-slate-700">
+                            {formatTimeOfDay(item.session.startMinutes)}
                           </span>
-                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
-                            <span className="inline-flex items-center gap-1">
-                              <PlatformIcon className="h-3 w-3" platform={booking.platform} />
-                              {PLATFORM_LABEL[booking.platform]}
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-slate-600">
+                              <Users className="h-3 w-3" /> Session
                             </span>
-                            <span>{booking.durationMinutes} min</span>
-                            {booking.candidateJobTitle ? <span className="break-words">{booking.candidateJobTitle}</span> : null}
+                            <span className="block break-words text-[14px] font-bold text-slate-900">{item.session.title ?? "Interview session"}</span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+                              <span>{formatTimeRange(item.session.startMinutes, item.session.durationMinutes)}</span>
+                              <span>
+                                {bookedInSession.get(item.session.id) ?? 0} of {sessionSlotStarts(item.session).length} booked
+                              </span>
+                            </span>
                           </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                        </button>
+                      </li>
+                    ) : (
+                      <li key={item.booking.id}>
+                        <button
+                          className="flex w-full items-start gap-3 px-3 py-2.5 text-left hover:bg-orange-50"
+                          onClick={() => openInterview(item.booking.id)}
+                          type="button"
+                        >
+                          <span className="w-[4.75rem] shrink-0 text-[12px] font-bold tabular-nums text-slate-700">
+                            {formatTimeOfDay(item.booking.startMinutes)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block break-words text-[14px] font-bold text-orange-700 underline decoration-orange-300 underline-offset-2">
+                              {item.booking.candidateName}
+                            </span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+                              <span className="inline-flex items-center gap-1">
+                                <PlatformIcon className="h-3 w-3" platform={item.booking.platform} />
+                                {PLATFORM_LABEL[item.booking.platform]}
+                              </span>
+                              <span>{formatDuration(item.booking.durationMinutes)}</span>
+                              {item.booking.sessionTitle ? <span className="break-words">in {item.booking.sessionTitle}</span> : null}
+                              {item.booking.external ? <span>from outside</span> : null}
+                              {item.booking.candidateJobTitle ? <span className="break-words">{item.booking.candidateJobTitle}</span> : null}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    ),
+                  )}
                 </ul>
               )}
+              {firstFree !== null ? (
+                <div className="border-t border-slate-100 px-3 py-2">
+                  <Action onClick={() => setCell({ dateKey: day, start: firstFree })} tone="quiet">
+                    <Plus className="h-3.5 w-3.5" />
+                    Book on this day
+                  </Action>
+                </div>
+              ) : null}
             </li>
           );
         })}
       </ul>
 
-      {!loading && bookings.length === 0 && !loadError ? (
+      {!loading && bookings.length === 0 && sessions.length === 0 && !loadError ? (
         <p className="border border-dashed border-slate-300 bg-white px-4 py-5 text-center text-[13px] text-slate-500">
           No interviews this week.
-          {canBookInterviews(role) ? " Book one from any CV with its Schedule interview button." : ""}
+          {canBook
+            ? " Press a free time on the calendar (on a phone, Book on this day) to book someone from Phoenix or from outside, or to set up a Zoom session. Any CV's Schedule interview button books too."
+            : ""}
         </p>
       ) : null}
 
       {openBooking ? (
         <InterviewDetail
+          api={api}
           booking={openBooking}
+          cvsNeedSignIn={cvsNeedSignIn}
           key={openBooking.id}
           onChanged={replaceBooking}
           onClose={() => setOpenId(null)}
+          onOpenSession={openSession}
           onRemoved={removeBooking}
           role={role}
           zoomConnected={zoomConnected}
         />
       ) : null}
 
-      {sharing ? <InterviewShareDialog onClose={() => setSharing(false)} /> : null}
+      {openSessionId ? (
+        <SessionDialog
+          api={api}
+          canAdd={canAdd}
+          canBook={canBook}
+          canSearch={canSearch}
+          key={openSessionId}
+          onChanged={sessionChanged}
+          onClose={() => setOpenSessionId(null)}
+          onOpenBooking={openInterview}
+          onRemoved={sessionRemoved}
+          sessionId={openSessionId}
+          zoomConnected={zoomConnected}
+        />
+      ) : null}
+
+      {cell ? (
+        <CellDialog
+          api={api}
+          canAdd={canAdd}
+          canSearch={canSearch}
+          dateKey={cell.dateKey}
+          initialStart={cell.start}
+          key={`${cell.dateKey}|${cell.start}`}
+          onBooked={replaceBooking}
+          onClose={() => setCell(null)}
+          onOpenBooking={openInterview}
+          onOpenSession={openSession}
+          onSessionCreated={upsertSession}
+          zoomConnected={zoomConnected}
+        />
+      ) : null}
+
+      {sharing ? <InterviewShareDialog onClose={() => setSharing(false)} weekStart={weekStart} /> : null}
     </div>
+  );
+}
+
+// ── The copy-link banner ───────────────────────────────────────────────────────────────────────
+
+function LinkBanner({ link, role }: { link: InterviewCalendarLinkView; role: InterviewCalendarRole }) {
+  const scope = link.weekStart ? `the week of ${formatWeekRange(link.weekStart)}` : "the whole calendar";
+  const more =
+    link.accessLevel === "editor" ? "book, move and cancel interviews" : link.accessLevel === "commenter" ? "leave notes on interviews" : null;
+  return (
+    <section className="flex flex-col gap-2 border border-sky-200 border-l-[3px] border-l-sky-600 bg-sky-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 text-[13px] text-slate-800">
+        <p className="inline-flex items-center gap-1.5 font-bold text-slate-900">
+          <Link2 className="h-4 w-4 text-sky-700" /> Opened from a shared link
+        </p>
+        <p className="mt-0.5">
+          {link.signedIn
+            ? `It opens ${scope}. You are ${ACCESS_LEVEL_LABEL[role]} here.`
+            : `It opens ${scope}, to view.${more ? ` Sign in to Phoenix to also ${more}.` : ""}${link.guestCvs ? "" : " The CVs open after signing in."}`}
+        </p>
+      </div>
+      {link.signInHref ? (
+        <a
+          className="inline-flex shrink-0 items-center justify-center gap-1.5 border border-orange-700 bg-orange-600 px-3 py-2 text-[13px] font-bold leading-none text-white hover:bg-orange-700"
+          href={link.signInHref}
+        >
+          <LogIn className="h-4 w-4" />
+          Sign in
+        </a>
+      ) : null}
+    </section>
+  );
+}
+
+// ── The chips ──────────────────────────────────────────────────────────────────────────────────
+
+function SessionChip({ booked, onOpen, session }: { booked: number; onOpen: () => void; session: InterviewSession }) {
+  const zoom = session.platform === "zoom";
+  const total = sessionSlotStarts(session).length;
+  const trouble = zoom && session.zoomStatus !== "created";
+  return (
+    <button
+      className={cn(
+        "pointer-events-auto block w-full border bg-white px-1.5 py-1 text-left transition-colors",
+        zoom ? "border-sky-300 hover:bg-sky-100" : "border-orange-300 hover:bg-orange-100",
+      )}
+      onClick={onOpen}
+      title="Open the session"
+      type="button"
+    >
+      <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide", zoom ? "text-sky-800" : "text-orange-800")}>
+        <Users className="h-3 w-3" /> Session · {PLATFORM_LABEL[session.platform]}
+      </span>
+      <span className="block break-words text-[12px] font-bold leading-tight text-slate-900">{session.title ?? "Interview session"}</span>
+      <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">
+        <span>{formatTimeRange(session.startMinutes, session.durationMinutes)}</span>
+        <span>
+          {booked} of {total} booked
+        </span>
+        {trouble ? (
+          <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700">
+            <AlertTriangle className="h-3 w-3" /> No link yet
+          </span>
+        ) : null}
+      </span>
+    </button>
   );
 }
 
@@ -501,14 +913,14 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
   return (
     <button
       className={cn(
-        "group block w-full border-l-[3px] px-1.5 py-1 text-left transition-colors",
-        zoom ? "border-l-sky-600 bg-sky-50 hover:bg-sky-100" : "border-l-orange-600 bg-orange-50 hover:bg-orange-100",
+        "group/chip pointer-events-auto block w-full border-l-[3px] px-1.5 py-1 text-left transition-colors",
+        zoom ? "border-l-sky-600 bg-sky-100 hover:bg-sky-200" : "border-l-orange-600 bg-orange-100 hover:bg-orange-200",
       )}
       onClick={onOpen}
       title={`Open ${booking.candidateName}'s CV`}
       type="button"
     >
-      <span className="block break-words text-[12px] font-bold leading-tight text-slate-900 group-hover:underline">
+      <span className="block break-words text-[12px] font-bold leading-tight text-slate-900 group-hover/chip:underline">
         {booking.candidateName}
       </span>
       <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10.5px] leading-tight text-slate-600">
@@ -516,6 +928,7 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
           <PlatformIcon className="h-3 w-3" platform={booking.platform} />
           {formatTimeRange(booking.startMinutes, booking.durationMinutes)}
         </span>
+        {booking.external ? <span className="font-semibold text-slate-500">outside</span> : null}
         {trouble ? (
           <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700">
             <AlertTriangle className="h-3 w-3" /> No link yet
@@ -529,115 +942,120 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
 
 // ── One interview, with its CV ─────────────────────────────────────────────────────────────────
 
+type OpenedCv = { downloadUrl: string; fileName: string; mimeType: string | null };
+
 function InterviewDetail({
+  api,
   booking,
+  cvsNeedSignIn,
   onChanged,
   onClose,
+  onOpenSession,
   onRemoved,
   role,
   zoomConnected,
 }: {
+  api: CalendarApi;
   booking: InterviewBooking;
+  cvsNeedSignIn: boolean;
   onChanged: (booking: InterviewBooking) => void;
   onClose: () => void;
+  onOpenSession: (id: string) => void;
   onRemoved: (id: string) => void;
   role: InterviewCalendarRole;
   zoomConnected: boolean;
 }) {
+  const candidateId = booking.candidateId;
   const [files, setFiles] = useState<CalendarFile[] | null>(null);
   const [filesError, setFilesError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!candidateId || cvsNeedSignIn) return;
     let live = true;
-    getJson(`/api/recruitment/interview-calendar/candidates/${encodeURIComponent(booking.candidateId)}/files`)
+    api
+      .get(`/candidates/${encodeURIComponent(candidateId)}/files`)
       .then((data) => {
         if (live) setFiles(Array.isArray(data.files) ? (data.files as CalendarFile[]) : []);
       })
       .catch((reason) => {
         if (!live) return;
         setFiles([]);
-        setFilesError(reason instanceof Error ? reason.message : "The CV could not be read.");
+        setFilesError(reasonText(reason, "The CV could not be read."));
       });
     return () => {
       live = false;
     };
-  }, [booking.candidateId]);
+  }, [api, candidateId, cvsNeedSignIn]);
 
-  const cv = files ? chooseCv(files) : null;
+  let cv: OpenedCv | null = null;
+  if (!cvsNeedSignIn && candidateId && files) {
+    const chosen = chooseCv(files);
+    if (chosen) {
+      cv = {
+        downloadUrl: api.href(`/candidates/${encodeURIComponent(candidateId)}/files/${encodeURIComponent(chosen.id)}`),
+        fileName: `${booking.candidateName} · ${chosen.fileName}`,
+        mimeType: chosen.mimeType,
+      };
+    }
+  } else if (!cvsNeedSignIn && !candidateId && booking.externalHasCv) {
+    // Someone from outside: the CV kept on the booking itself.
+    cv = {
+      downloadUrl: api.href(`/bookings/${encodeURIComponent(booking.id)}/cv`),
+      fileName: `${booking.candidateName} · ${booking.externalCvFileName ?? "CV"}`,
+      mimeType: booking.externalCvMimeType,
+    };
+  }
+
   const panel = (
-    <InterviewPanel booking={booking} onChanged={onChanged} onRemoved={onRemoved} role={role} zoomConnected={zoomConnected} />
+    <InterviewPanel
+      api={api}
+      booking={booking}
+      onChanged={onChanged}
+      onOpenSession={onOpenSession}
+      onRemoved={onRemoved}
+      role={role}
+      zoomConnected={zoomConnected}
+    />
   );
 
   if (cv) {
-    return (
-      <CvPreviewModal
-        downloadUrl={`/api/recruitment/interview-calendar/candidates/${encodeURIComponent(booking.candidateId)}/files/${encodeURIComponent(cv.id)}`}
-        fileName={`${booking.candidateName} · ${cv.fileName}`}
-        mimeType={cv.mimeType}
-        onClose={onClose}
-        sidePanel={panel}
-      />
-    );
+    return <CvPreviewModal downloadUrl={cv.downloadUrl} fileName={cv.fileName} mimeType={cv.mimeType} onClose={onClose} sidePanel={panel} />;
   }
 
+  const waiting = Boolean(candidateId) && !cvsNeedSignIn && files === null;
+  const why = cvsNeedSignIn
+    ? "Sign in to Phoenix to open this CV."
+    : candidateId
+      ? (filesError ?? "No readable CV is attached to this candidate.")
+      : "No CV was added for this person.";
   return (
-    <PlainDialog onClose={onClose} title={booking.candidateName}>
+    <CalendarDialog onClose={onClose} title={booking.candidateName} width="sm" z={200}>
       <p
         className={cn(
           "mb-4 px-3 py-2 text-[12px]",
-          files === null ? "bg-slate-50 text-slate-500" : "border-l-[3px] border-l-amber-500 bg-amber-50 text-slate-700",
+          waiting ? "bg-slate-50 text-slate-500" : "border-l-[3px] border-l-amber-500 bg-amber-50 text-slate-700",
         )}
       >
-        {files === null ? "Opening the CV…" : filesError ?? "No readable CV is attached to this candidate."}
+        {waiting ? "Opening the CV…" : why}
       </p>
       {panel}
-    </PlainDialog>
+    </CalendarDialog>
   );
-}
-
-function PlainDialog({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
-  const dialogRef = useDialogA11y({ onClose, open: true });
-  const mounted = useHydrated();
-  const body = (
-    <div
-      className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/45 sm:items-center sm:p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        aria-label={title}
-        aria-modal="true"
-        className="flex max-h-[92vh] w-full max-w-[520px] flex-col border border-slate-200 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
-        ref={dialogRef}
-        role="dialog"
-      >
-        <div className="flex justify-end border-b border-slate-200 px-3 py-2">
-          <button
-            aria-label="Close"
-            className="inline-flex h-8 w-8 items-center justify-center border border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-900"
-            onClick={onClose}
-            type="button"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-      </div>
-    </div>
-  );
-  return mounted ? createPortal(body, document.body) : null;
 }
 
 function InterviewPanel({
+  api,
   booking,
   onChanged,
+  onOpenSession,
   onRemoved,
   role,
   zoomConnected,
 }: {
+  api: CalendarApi;
   booking: InterviewBooking;
   onChanged: (booking: InterviewBooking) => void;
+  onOpenSession: (id: string) => void;
   onRemoved: (id: string) => void;
   role: InterviewCalendarRole;
   zoomConnected: boolean;
@@ -650,15 +1068,18 @@ function InterviewPanel({
 
   const zoomLine = zoomStatusSentence(booking.zoomStatus, booking.zoomError);
   const canBook = canBookInterviews(role);
+  const path = `/bookings/${encodeURIComponent(booking.id)}`;
+  const target: MeetingTarget = { id: booking.id, kind: "booking" };
+  const pollTarget: MeetingTarget = booking.sessionId ? { id: booking.sessionId, kind: "session" } : target;
 
   async function cancel() {
     setBusy("cancel");
     setError(null);
     try {
-      await deleteRequest(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}`);
+      await api.del(path);
       onRemoved(booking.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The interview could not be cancelled.");
+      setError(reasonText(reason, "The interview could not be cancelled."));
       setBusy(null);
     }
   }
@@ -667,10 +1088,10 @@ function InterviewPanel({
     setBusy("zoom");
     setError(null);
     try {
-      const data = await postJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}/zoom`, {});
+      const data = await api.post(`${path}/zoom`, {});
       onChanged(data.booking as InterviewBooking);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Zoom could not make the meeting.");
+      setError(reasonText(reason, "Zoom could not make the meeting."));
     } finally {
       setBusy(null);
     }
@@ -682,11 +1103,11 @@ function InterviewPanel({
     setBusy("note");
     setError(null);
     try {
-      const data = await postJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}/comments`, { body: text });
+      const data = await api.post(`${path}/comments`, { body: text });
       onChanged(data.booking as InterviewBooking);
       setNote("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The note could not be saved.");
+      setError(reasonText(reason, "The note could not be saved."));
     } finally {
       setBusy(null);
     }
@@ -698,6 +1119,7 @@ function InterviewPanel({
         <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-orange-700">Interview</p>
         <p className="mt-0.5 break-words text-[17px] font-bold text-slate-900">{booking.candidateName}</p>
         {booking.candidateJobTitle ? <p className="break-words text-[12px] text-slate-500">Applied for {booking.candidateJobTitle}</p> : null}
+        {booking.external ? <p className="text-[12px] text-slate-500">From outside Phoenix — kept on the calendar only, not in Recruitment.</p> : null}
       </div>
 
       <dl className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2 gap-y-2 text-[13px] text-slate-800">
@@ -709,8 +1131,26 @@ function InterviewPanel({
           <Clock3 aria-label="Time" className="h-4 w-4" />
         </dt>
         <dd>
-          {formatTimeRange(booking.startMinutes, booking.durationMinutes)} <span className="text-slate-500">({booking.durationMinutes} min)</span>
+          {formatTimeRange(booking.startMinutes, booking.durationMinutes)}{" "}
+          <span className="text-slate-500">({formatDuration(booking.durationMinutes)})</span>
         </dd>
+        {booking.sessionId ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <Users aria-label="Session" className="h-4 w-4" />
+            </dt>
+            <dd>
+              A slot in <span className="font-semibold">{booking.sessionTitle ?? "an interview session"}</span>
+              <button
+                className="ml-1.5 text-[12px] font-bold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
+                onClick={() => onOpenSession(booking.sessionId as string)}
+                type="button"
+              >
+                Open the session
+              </button>
+            </dd>
+          </>
+        ) : null}
         <dt className="pt-0.5 text-slate-400">
           <PlatformIcon className="h-4 w-4" platform={booking.platform} />
         </dt>
@@ -722,13 +1162,36 @@ function InterviewPanel({
             </a>
           ) : null}
           {zoomLine && booking.zoomStatus !== "created" ? <span className="mt-0.5 block text-[12px] text-amber-800">{zoomLine}</span> : null}
-          {canBook && booking.platform === "zoom" && booking.zoomStatus !== "created" && zoomConnected ? (
+          {canBook && !booking.sessionId && booking.platform === "zoom" && booking.zoomStatus !== "created" && zoomConnected ? (
             <Action className="mt-1.5" disabled={busy !== null} onClick={() => void retryZoom()} tone="quiet">
               {busy === "zoom" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Make the Zoom meeting
             </Action>
           ) : null}
+          {booking.sessionId && booking.platform === "zoom" && booking.zoomStatus !== "created" ? (
+            <span className="mt-0.5 block text-[12px] text-slate-500">The meeting belongs to the session; make it again from there.</span>
+          ) : null}
         </dd>
+        {booking.externalPhone ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <Phone aria-label="Phone" className="h-4 w-4" />
+            </dt>
+            <dd>
+              <a className="font-semibold text-slate-800 underline decoration-slate-300 underline-offset-2" dir="ltr" href={`tel:${booking.externalPhone}`}>
+                {booking.externalPhone}
+              </a>
+            </dd>
+          </>
+        ) : null}
+        {booking.externalEmail ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <Mail aria-label="E-mail" className="h-4 w-4" />
+            </dt>
+            <dd className="break-all">{booking.externalEmail}</dd>
+          </>
+        ) : null}
       </dl>
 
       {booking.notes ? (
@@ -739,7 +1202,10 @@ function InterviewPanel({
       {canBook ? (
         confirmCancel ? (
           <div className="border border-red-200 bg-red-50 p-3">
-            <p className="text-[12px] font-semibold text-red-800">Cancel this interview? It leaves the calendar with its notes{booking.zoomJoinUrl ? ", and its Zoom meeting is deleted" : ""}.</p>
+            <p className="text-[12px] font-semibold text-red-800">
+              Cancel this interview? It leaves the calendar with its notes
+              {booking.sessionId ? ", and its slot in the session is free again" : booking.zoomJoinUrl ? ", and its Zoom meeting is deleted" : ""}.
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Action onClick={() => setConfirmCancel(false)} tone="quiet">
                 Keep it
@@ -769,10 +1235,12 @@ function InterviewPanel({
         )
       ) : null}
 
-      {error ? (
-        <p className="border-l-[3px] border-l-red-600 bg-red-50 px-3 py-2 text-[12px] font-semibold text-red-700" role="alert">
-          {error}
-        </p>
+      {error ? <ErrorLine>{error}</ErrorLine> : null}
+
+      {booking.platform === "zoom" ? (
+        <section aria-label="Zoom" className="border-t border-slate-200 pt-3">
+          <ZoomMeetingPanels api={api} canBook={canBook} hasMeeting={booking.hasMeeting} pollTarget={pollTarget} target={target} zoomConnected={zoomConnected} />
+        </section>
       ) : null}
 
       <section aria-label="Notes" className="border-t border-slate-200 pt-3">
@@ -817,6 +1285,7 @@ function InterviewPanel({
 
       {moving ? (
         <ScheduleInterviewDialog
+          api={api}
           candidate={{ id: booking.candidateId, jobTitle: booking.candidateJobTitle, name: booking.candidateName }}
           existing={booking}
           onClose={() => setMoving(false)}

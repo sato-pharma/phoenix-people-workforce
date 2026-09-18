@@ -75,18 +75,36 @@ export function runRecruitmentApiRoutesExistTests() {
     return existsSync(join(dir, "route.ts")) || existsSync(join(dir, "route.tsx"));
   };
 
+  // The interview calendar's screens call through `calendarApi()` (it carries a copy link's token on
+  // every request), which puts ONE base in front of a short path: `api.get("/bookings")`. So the base
+  // is a prefix, not a call — and each short path is a call, checked here like any other.
+  const calendarHelper = join("src", "components", "recruitment", "interview-calendar", "calendar-api.ts");
+  const calendarBase = /export const INTERVIEW_CALENDAR_API = "(\/api\/recruitment\/[^"]+)";/.exec(readFileSync(calendarHelper, "utf8"))?.[1];
+  assert.ok(calendarBase, `${calendarHelper} no longer declares INTERVIEW_CALENDAR_API, so the calendar's calls went unchecked`);
+  let calendarCalls = 0;
+
   const calls = new Map<string, string>();
   for (const file of [
     ...sourceFilesUnder(join("src", "components", "recruitment")),
     ...sourceFilesUnder(join("src", "lib", "recruitment")),
   ]) {
     const text = readFileSync(file, "utf8");
+    const where = file.split(sep).join("/");
+    // Every interpolation collapses to one placeholder, so `${a.b}` and `${c}` are the same shape.
+    const record = (raw: string) => {
+      const path = raw.replace(/\$\{[^}]*\}/g, "${}");
+      if (!calls.has(path)) calls.set(path, where);
+    };
     for (const match of text.matchAll(/["'`](\/api\/recruitment\/[^"'`\s?]+)/g)) {
-      // Every interpolation collapses to one placeholder, so `${a.b}` and `${c}` are the same shape.
-      const path = match[1].replace(/\$\{[^}]*\}/g, "${}");
-      if (!calls.has(path)) calls.set(path, file.split(sep).join("/"));
+      if (file === calendarHelper && match[1] === calendarBase) continue;
+      record(match[1]);
+    }
+    for (const match of text.matchAll(/\bapi\.(?:get|post|postForm|patch|del|href|fetch)\(\s*["'`](\/[^"'`\s?]+)/g)) {
+      calendarCalls += 1;
+      record(`${calendarBase}${match[1]}`);
     }
   }
+  assert.ok(calendarCalls >= 10, `only ${calendarCalls} interview-calendar calls were found; the scan has stopped seeing them`);
 
   // A POSITIVE CONTROL. If the scan ever finds nothing — a moved folder, a changed call style — every
   // assertion below passes vacuously and the guard silently stops guarding.

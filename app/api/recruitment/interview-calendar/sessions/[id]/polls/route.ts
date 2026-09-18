@@ -1,0 +1,40 @@
+import { NextResponse } from "next/server";
+
+import { assertSameOriginMutation, readJsonObject, recruitmentApiError } from "@/app/api/recruitment/_lib/http";
+import { resolveAccessContext } from "@/lib/auth/server";
+import { interviewCalendarCaller } from "@/lib/recruitment/interview-calendar";
+import { addInterviewPoll, listInterviewPolls } from "@/lib/recruitment/interview-calendar-zoom-extras";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type Context = { params: Promise<{ id: string }> };
+
+// The polls on a session's meeting: listed for anyone who can see it; added by Editors and the owner
+// — from a saved poll (`pollSetId`) or typed here (`title`, `questions`).
+export async function GET(request: Request, { params }: Context) {
+  try {
+    const access = await resolveAccessContext(request);
+    const caller = await interviewCalendarCaller(access, request);
+    const { id } = await params;
+    const polls = await listInterviewPolls(caller, { id, kind: "session" });
+    return NextResponse.json({ polls, success: true }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return recruitmentApiError(error, "Could not load the polls.");
+  }
+}
+
+export async function POST(request: Request, { params }: Context) {
+  try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+    const access = await resolveAccessContext(request);
+    const caller = await interviewCalendarCaller(access, request);
+    const { id } = await params;
+    const body = await readJsonObject(request);
+    const polls = await addInterviewPoll(caller, { id, kind: "session" }, { pollSetId: body.pollSetId, questions: body.questions, title: body.title });
+    return NextResponse.json({ polls, success: true }, { status: 201 });
+  } catch (error) {
+    return recruitmentApiError(error, "Could not add the poll.");
+  }
+}

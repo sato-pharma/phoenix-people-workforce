@@ -18,12 +18,11 @@
 
 import { CalendarCheck2, Building2, Loader2, Video, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useHydrated } from "@/hooks/use-hydrated";
 import { Action, ActionLink } from "@/components/recruitment/workstation/workstation-look";
-import { getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import {
   PLATFORM_LABEL,
@@ -36,10 +35,12 @@ import {
 import {
   DEFAULT_DURATION_MINUTES,
   DURATION_CHOICES,
+  LONG_DURATION_CHOICES,
   addDays,
   cairoDateKey,
   cairoMinutesOfDay,
   formatDayLong,
+  formatDuration,
   formatTimeOfDay,
   formatTimeRange,
   isBookableDay,
@@ -49,9 +50,12 @@ import {
 } from "@/lib/recruitment/interview-calendar-week";
 import { cn } from "@/lib/utils";
 
+import { calendarApi, type CalendarApi } from "./calendar-api";
+import { useTopmostEscape } from "./calendar-dialog";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 
-export type ScheduleCandidate = { id: string; name: string; jobTitle?: string | null };
+/** The person: a Recruitment candidate, or (id null) someone from outside kept on the calendar only. */
+export type ScheduleCandidate = { id: string | null; name: string; jobTitle?: string | null };
 
 /** The first day an interview can still go on: today if it is a working day with time left, else the next one. */
 function firstBookableDay(todayKey: string, nowMinutes: number): string {
@@ -68,12 +72,15 @@ function overlaps(aStart: number, aDuration: number, bStart: number, bDuration: 
 }
 
 export function ScheduleInterviewDialog({
+  api: givenApi,
   candidate,
   existing,
   onClose,
   onSaved,
   zoomConnected,
 }: {
+  /** The calendar's requests, carrying a copy link when the calendar was opened from one. */
+  api?: CalendarApi;
   candidate: ScheduleCandidate;
   /** Set to move an interview already on the calendar; absent to book a new one. */
   existing?: InterviewBooking | null;
@@ -84,24 +91,15 @@ export function ScheduleInterviewDialog({
   const pathname = usePathname();
   const dialogRef = useDialogA11y({ onClose, open: true });
   const mounted = useHydrated();
+  const [ownApi] = useState(() => calendarApi(null));
+  const api = givenApi ?? ownApi;
 
   // Escape closes THIS pop-up only. It is often opened over a CV preview, which listens for Escape on
   // the document; answering first, on the window, and stopping the key there keeps the CV open
   // underneath. Closing both at once would also leave the page unable to scroll: each dialog puts
-  // back the scroll lock it found, and unmounted together the outer one restores first.
-  const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      onCloseRef.current();
-    }
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  // back the scroll lock it found, and unmounted together the outer one restores first. The shared
+  // stack also lets a pop-up opened over THIS one take Escape first.
+  useTopmostEscape(onClose);
 
   // "Now" is read once, when the pop-up opens: a clock ticking under the chips would disable the
   // one the person is reaching for.
@@ -129,7 +127,8 @@ export function ScheduleInterviewDialog({
   // Who already holds the chosen day.
   useEffect(() => {
     let live = true;
-    getJson(`/api/recruitment/interview-calendar/bookings?day=${encodeURIComponent(dateKey)}`)
+    api
+      .get(`/bookings?day=${encodeURIComponent(dateKey)}`)
       .then((data) => {
         if (live) setDayAnswer({ bookings: Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : [], dateKey });
       })
@@ -139,13 +138,14 @@ export function ScheduleInterviewDialog({
     return () => {
       live = false;
     };
-  }, [dateKey]);
+  }, [api, dateKey]);
 
   // What this candidate already has booked, so a second interview is never booked by accident.
   useEffect(() => {
-    if (existing) return;
+    if (existing || !candidate.id) return;
     let live = true;
-    getJson(`/api/recruitment/interview-calendar/bookings?candidateId=${encodeURIComponent(candidate.id)}`)
+    api
+      .get(`/bookings?candidateId=${encodeURIComponent(candidate.id)}`)
       .then((data) => {
         if (live) setUpcoming(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []);
       })
@@ -153,7 +153,7 @@ export function ScheduleInterviewDialog({
     return () => {
       live = false;
     };
-  }, [candidate.id, existing]);
+  }, [api, candidate.id, existing]);
 
   const others = useMemo(() => dayBookings.filter((booking) => booking.id !== existing?.id), [dayBookings, existing?.id]);
 
@@ -182,8 +182,8 @@ export function ScheduleInterviewDialog({
     try {
       const body = { dateKey, durationMinutes, notes: notes.trim(), platform, startMinutes };
       const data = existing
-        ? await patchJson(`/api/recruitment/interview-calendar/bookings/${existing.id}`, body)
-        : await postJson(`/api/recruitment/interview-calendar/bookings`, { ...body, candidateId: candidate.id });
+        ? await api.patch(`/bookings/${encodeURIComponent(existing.id)}`, body)
+        : await api.post(`/bookings`, { ...body, candidateId: candidate.id });
       const booking = data.booking as InterviewBooking;
       setSaved(booking);
       onSaved?.(booking);
@@ -254,18 +254,27 @@ export function ScheduleInterviewDialog({
               <Action onClick={onClose} size="md" tone="quiet">
                 Done
               </Action>
-              <ActionLink
-                className="px-3 py-2 text-[13px]"
-                href={interviewCalendarHref({ base, open: saved.id, weekStart: weekStartFor(saved.dateKey) })}
-                tone="primary"
-              >
-                Open the calendar
-              </ActionLink>
+              {givenApi ? null : (
+                <ActionLink
+                  className="px-3 py-2 text-[13px]"
+                  href={interviewCalendarHref({ base, open: saved.id, weekStart: weekStartFor(saved.dateKey) })}
+                  tone="primary"
+                >
+                  Open the calendar
+                </ActionLink>
+              )}
             </div>
           </div>
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+              {existing?.sessionId ? (
+                <p className="mb-4 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">
+                  This interview is a slot in {existing.sessionTitle ?? "an interview session"}. Moving it takes it out of the session: it
+                  becomes an interview of its own{existing.platform === "zoom" ? ", with its own Zoom meeting" : ""}. To give it another slot
+                  instead, cancel it and book the free slot from the session.
+                </p>
+              ) : null}
               {upcoming.length > 0 ? (
                 <div className="mb-4 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-[12px] text-slate-700">
                   <p className="font-bold text-slate-900">Already on the calendar</p>
@@ -300,6 +309,7 @@ export function ScheduleInterviewDialog({
                 <section aria-label="Time">
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <StepLabel number={2}>Time</StepLabel>
+                    <div className="flex flex-wrap items-center gap-1.5">
                     <div aria-label="How long" className="flex border border-slate-200" role="group">
                       {DURATION_CHOICES.map((minutes) => (
                         <button
@@ -315,6 +325,23 @@ export function ScheduleInterviewDialog({
                           {minutes} min
                         </button>
                       ))}
+                    </div>
+                    <select
+                      aria-label="Longer"
+                      className="h-[26px] border border-slate-200 bg-white px-1.5 text-[12px] font-bold text-slate-700 focus:border-orange-500 focus:outline-none"
+                      onChange={(event) => {
+                        const minutes = Number(event.target.value);
+                        if (minutes > 0) chooseDuration(minutes);
+                      }}
+                      value={(LONG_DURATION_CHOICES as readonly number[]).includes(durationMinutes) ? durationMinutes : 0}
+                    >
+                      <option value={0}>Longer…</option>
+                      {LONG_DURATION_CHOICES.map((minutes) => (
+                        <option key={minutes} value={minutes}>
+                          {formatDuration(minutes)}
+                        </option>
+                      ))}
+                    </select>
                     </div>
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
@@ -353,7 +380,7 @@ export function ScheduleInterviewDialog({
                     {dayLoading
                       ? "Reading the day…"
                       : startMinutes !== null
-                        ? `${formatTimeRange(startMinutes, durationMinutes)}`
+                        ? `${formatTimeRange(startMinutes, durationMinutes)} (${formatDuration(durationMinutes)})`
                         : others.length > 0
                           ? "A time with a name on it is already taken by that interview. You can still share it."
                           : "The whole day is free."}

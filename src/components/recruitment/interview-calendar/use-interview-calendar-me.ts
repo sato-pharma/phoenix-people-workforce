@@ -33,7 +33,12 @@ function loadMe(): Promise<InterviewCalendarMe> {
       .then(async (response) => {
         if (!response.ok) return NOBODY;
         const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-        const me: InterviewCalendarMe = { role: asRole(data?.role), zoomConnected: data?.zoomConnected === true };
+        const me: InterviewCalendarMe = {
+          canAddToRecruitment: data?.canAddToRecruitment === true,
+          canSearchCandidates: data?.canSearchCandidates === true,
+          role: asRole(data?.role),
+          zoomConnected: data?.zoomConnected === true,
+        };
         cached = me;
         return me;
       })
