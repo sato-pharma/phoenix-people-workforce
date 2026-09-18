@@ -52,6 +52,7 @@ import {
   normalizeCandidatePoolQuery,
 } from "@/lib/recruitment/candidate-pool-search";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import { candidatePageHref, recruitmentRootFromPathname } from "@/lib/recruitment/candidate-page-link";
 import { managerLabelOrNull } from "@/lib/recruitment/person-labels";
 import {
   candidateFolderKeyLabels,
@@ -2994,6 +2995,7 @@ function positionBody(
 function CandidatePoolCard({
   areaOptions,
   candidate,
+  candidateHref,
   canDelete,
   canManage,
   folderJobTitles,
@@ -3017,6 +3019,8 @@ function CandidatePoolCard({
 }: {
   areaOptions: CandidateFolderAreaOption[];
   candidate: Candidate;
+  /** The candidate's own page, in the shell the pool is in. */
+  candidateHref: string;
   canDelete: boolean;
   canManage: boolean;
   folderJobTitles: string[];
@@ -3101,7 +3105,18 @@ function CandidatePoolCard({
           <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
         </span>
       }
-      title={candidateDisplayName(candidate.fullName)}
+      title={
+        // Same as the desktop row: the name opens the candidate's own page in a new tab.
+        <a
+          className="hover:text-orange-600 hover:underline"
+          href={candidateHref}
+          rel="noopener"
+          target="_blank"
+          title={candidate.fullName}
+        >
+          {candidateDisplayName(candidate.fullName)}
+        </a>
+      }
     >
       <PortalRecordFields
         fields={[
@@ -3415,6 +3430,9 @@ function CandidatesTab({
   const screeningBasePath = poolPathname?.startsWith("/employee-portals")
     ? "/employee-portals/recruitment"
     : "/recruitment";
+  // Where a pressed name goes: that candidate's own page, in this same shell — /hr/recruitment
+  // included, so an HR seat keeps the HR sidebar (candidate-page-link.ts).
+  const candidatePageRoot = recruitmentRootFromPathname(poolPathname);
 
   // Every "how long ago" on this screen is measured from the SAME instant the stat cards were
   // counted from, stamped once on the server. Two benefits: the cards and the list can never
@@ -4324,6 +4342,7 @@ function CandidatesTab({
                 <CandidatePoolCard
                   areaOptions={areaOptions}
                   candidate={candidate}
+                  candidateHref={candidatePageHref(candidatePageRoot, candidate.id)}
                   canDelete={canDelete}
                   canManage={canManage}
                   folderJobTitles={folderJobTitles}
@@ -4513,12 +4532,17 @@ function CandidatesTab({
                        */}
                       <td className="px-3 py-2.5">
                         <div className="flex min-w-0 items-center gap-1.5">
-                          <span
-                            className="min-w-0 break-words font-semibold text-phx-ink"
+                          {/* The name opens everything on file for this person, in a new tab, so
+                              the filtered pool is still here when that tab is closed. */}
+                          <a
+                            className="min-w-0 break-words font-semibold text-phx-ink hover:text-orange-600 hover:underline"
+                            href={candidatePageHref(candidatePageRoot, candidate.id)}
+                            rel="noopener"
+                            target="_blank"
                             title={candidate.fullName}
                           >
                             {displayName}
-                          </span>
+                          </a>
                           {/* Phoenix recruits Egyptian nationals only. Flagged, never filtered —
                               the row still lists and every action still works; a person decides. */}
                           {isStatedNonEgyptian(candidate.nationality) ? (
