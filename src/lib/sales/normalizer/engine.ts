@@ -90,6 +90,27 @@ function discountFrac(value: unknown): number {
   return fraction;
 }
 
+/**
+ * A date cell formatted as General reaches the engine as its Excel serial day: Sofico's BILLINGDATE
+ * arrives as "46247", which is 13 Aug 2026 (days since 30 Dec 1899 — the importer's own
+ * excelSerialToDate in monthly-distributor-import.ts). Read as text, JavaScript takes it for the year
+ * 46247, so every Sofico row landed in its own impossible month and the uploader had to pick the
+ * month by hand.
+ *
+ * ONLY A FIVE-DIGIT WHOLE NUMBER is a serial (10000–99999 spans 1927–2173). mec's date column is the
+ * month "شهر" ("202607", six digits): as a serial that would be the year 2454, and it is not a day at
+ * all, so it is left alone. Measured on production 2026-09-18, these are the only all-digit date
+ * values any distributor has sent: Sofico 46235–46265 (166 rows) and mec 202607–202609 (13 rows).
+ *
+ * Both periodFrom and dateFrom read the serial through this one helper, so the month and the day
+ * cannot disagree.
+ */
+function excelSerialParts(text: string): { y: number; m: number; d: number } | null {
+  if (!/^\d{5}$/.test(text)) return null;
+  const date = new Date(Date.UTC(1899, 11, 30) + Number(text) * 86_400_000);
+  return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
+}
+
 // Timezone-safe YYYY-MM. dayFirst disambiguates DD-MM-YYYY vs MM-DD-YYYY when both parts are <= 12
 // (e.g. "08-04-2026" is 8 April in DD-MM, but August in MM-DD). The caller detects the column's
 // orientation from values that can't be ambiguous (a part > 12) — see detectDayFirst.
@@ -98,6 +119,8 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
   if (value instanceof Date) return ym(value.getUTCFullYear(), value.getUTCMonth() + 1);
   const text = String(value ?? "").trim();
   if (!text) return null;
+  const serial = excelSerialParts(text);
+  if (serial) return ym(serial.y, serial.m);
   const iso = text.match(/^(\d{4})[-/.](\d{1,2})/);
   if (iso) return ym(Number(iso[1]), Number(iso[2]));
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
@@ -127,10 +150,10 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
  *
  * THE YEAR IS CAPPED AT 9999 — the importer's own bound (isoFromYmd in monthly-distributor-import.ts).
  * A cell holding only digits reaches the `new Date(text)` fallback below, and JavaScript reads a bare
- * number as a YEAR: Sofico's BILLINGDATE arrives as an Excel serial day ("46247", 13 Aug 2026) and was
- * stored as 46247-01-01; mec's date column is the month "شهر" ("202607") and was stored as
- * 202607-01-01. Measured on production 2026-09-18: 166 Sofico and 13 mec rows. Neither is a day, so the
- * answer is null — "the sheet carries no date" — never an impossible year. The period is untouched.
+ * number as a YEAR: mec's date column is the month "شهر" ("202607") and was stored as 202607-01-01
+ * (13 rows on production, 2026-09-18). A month is not a day, so the answer is null — "the sheet
+ * carries no date" — never an impossible year. Sofico's BILLINGDATE serial ("46247") was stored the
+ * same way (46247-01-01, 166 rows); it is now read as the real day it is, by excelSerialParts above.
  */
 function dateFrom(value: unknown, dayFirst?: boolean): string | null {
   const ymd = (y: number, m: number, d: number) =>
@@ -140,6 +163,8 @@ function dateFrom(value: unknown, dayFirst?: boolean): string | null {
   if (value instanceof Date) return ymd(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
   const text = String(value ?? "").trim();
   if (!text) return null;
+  const serial = excelSerialParts(text);
+  if (serial) return ymd(serial.y, serial.m, serial.d);
   const iso = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
