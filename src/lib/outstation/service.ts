@@ -69,6 +69,7 @@ import {
   applyCairoNoAllowance,
   cairoTripEarnsNoAllowance,
 } from "@/lib/outstation/cairo-allowance-rule";
+import { usablePosition } from "@/lib/outstation/captured-coordinates";
 import { outstationClaimedTotal } from "@/lib/outstation/claimed-total";
 import {
   cairoDateOnly,
@@ -76,6 +77,11 @@ import {
   reviewDepartureEvidence,
   type DepartureEvidenceReview,
 } from "@/lib/outstation/departure-evidence";
+import {
+  readDepartureLocationRefusals,
+  withDepartureLocationRefusal,
+  type DepartureLocationRefusalReason,
+} from "@/lib/outstation/departure-location-refusals";
 import { departurePhotoLocationRefusal } from "@/lib/outstation/departure-photo-location";
 import {
   isOutstationExpenseInPayroll,
@@ -2210,6 +2216,8 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
       row.departure_evidence_metadata,
       null,
     ),
+    // A row read before the 2026-09-18 migration has no such column: no refused tries, never an error.
+    departureLocationRefusals: readDepartureLocationRefusals(row.departure_location_refusals),
     // Fall back to the pre-gate states, not to the strict ones: a row read before the 2026-08-04
     // migration has applied genuinely IS exempt, and defaulting it to "pending" would make the
     // gate withhold payroll from every historical request the moment this code deploys ahead of
@@ -4491,6 +4499,55 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
   return { processed, errors };
 }
 
+// ── Departure photos refused for having no location ──────────────────────────
+// Owner, 2026-09-18, "Record refused tries": each refusal is kept on the request with its time and
+// its cause (departure-location-refusals.ts), and the approver sees it where the departure photo
+// would be. Best effort on purpose: recording must never turn the refusal the employee reads into a
+// different error, so a failed write is logged and nothing more.
+async function appendDepartureLocationRefusal(
+  request: OutstationExpenseRequest,
+  reason: DepartureLocationRefusalReason,
+): Promise<void> {
+  try {
+    const refusals = withDepartureLocationRefusal(request.departureLocationRefusals, {
+      at: new Date().toISOString(),
+      reason,
+    });
+    const { error } = await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .update({ departure_location_refusals: refusals })
+      .eq("id", request.id);
+    if (error) throw error;
+  } catch (error) {
+    logError("Outstation departure photo refusal could not be recorded", {
+      labels: { event: "outstation_departure_refusal_record_failed", requestId: String(request.id) },
+      error,
+    });
+  }
+}
+
+/**
+ * A departure photo the web card or the app refused for having no location, recorded with its
+ * cause. The same ownership rule as the capture: the employee's own request, or an outstation
+ * admin. It throws only when the request is missing or the caller may not touch it.
+ */
+export async function recordOutstationDepartureLocationRefusal(
+  access: AccessContext,
+  input: { reason: DepartureLocationRefusalReason; requestId: number },
+): Promise<void> {
+  const request = await getOutstationRequestById(input.requestId);
+  if (!request) throw new Error("That outstation request is not available.");
+
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  const ownsRequest =
+    Boolean(callerHrId) && callerHrId === normalizeHrIdForAccess(request.employeeHrId);
+  if (!ownsRequest) {
+    await assertOutstationAdminAccess(access, "approve");
+  }
+
+  await appendDepartureLocationRefusal(request, input.reason);
+}
+
 // ── Departure photo capture ───────────────────────────────────────────────────
 // The second of the two photos every request must carry (owner request 2026-08-04). Records the
 // photo, reviews it against the arrival capture, and advances the evidence gate.
@@ -4545,6 +4602,12 @@ export async function captureOutstationDeparturePhoto(
   // No location, no photo (owner ruling, 2026-09-18): refused like an arrival photo without GPS,
   // and BEFORE the upload, so nothing is stored. It used to be saved stamped "no GPS fix" with its
   // distance unknown and no flag, which cost the employee nothing. Distance is still only flagged.
+  // The refused try is recorded first, with its cause, for the approver (owner, 2026-09-18). The web
+  // card and the current app refuse before they get here and record through the refusal route; this
+  // catches an older app build that still sends a photo without a position, and says no cause.
+  if (!usablePosition(input.latitude, input.longitude)) {
+    await appendDepartureLocationRefusal(request, "not_reported");
+  }
   const locationRefusal = departurePhotoLocationRefusal(input.latitude, input.longitude);
   if (locationRefusal) throw new Error(locationRefusal);
 
