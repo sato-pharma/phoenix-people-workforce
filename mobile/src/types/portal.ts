@@ -72,3 +72,15 @@ export type PortalHome = {
   // appears on any overview or landing screen for any role — not the amount, not the month label.
   // If you find yourself wanting it here, the answer is a Payslips screen, not a home-screen tile.
 };
+
+/**
+ * One of the caller's own outstation trips still owing its departure photo, from
+ * `/api/outstation/departure-photo-due` — `OutstationDeparturePhotoDue` on the server, the same list
+ * the portal's "Departure photo needed" card renders. The dates are calendar dates, `YYYY-MM-DD`.
+ */
+export type DeparturePhotoDue = {
+  destination: string;
+  id: number;
+  tripEndDate: string;
+  tripStartDate: string;
+};

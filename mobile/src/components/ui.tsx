@@ -143,11 +143,18 @@ export function StatTile({
 
 export function PrimaryButton({
   busy = false,
+  busyLabel,
   disabled = false,
   label,
   onPress,
 }: {
   busy?: boolean;
+  /**
+   * Said next to the spinner while `busy`. For work that goes through stages long enough to notice
+   * — a departure photo waits on the GPS, then the address, then the upload — where a bare spinner
+   * for half a minute reads as the app having frozen.
+   */
+  busyLabel?: string;
   disabled?: boolean;
   label: string;
   onPress: () => void;
@@ -172,7 +179,12 @@ export function PrimaryButton({
         paddingHorizontal: space.lg,
       })}
     >
-      {busy ? (
+      {busy && busyLabel ? (
+        <View style={{ alignItems: "center", flexDirection: "row", gap: space.sm }}>
+          <ActivityIndicator color={palette.accentInk} />
+          <Text style={[type.bodyStrong, { color: palette.accentInk, flexShrink: 1 }]}>{busyLabel}</Text>
+        </View>
+      ) : busy ? (
         <ActivityIndicator color={palette.accentInk} />
       ) : (
         <Text style={[type.bodyStrong, { color: palette.accentInk }]}>{label}</Text>

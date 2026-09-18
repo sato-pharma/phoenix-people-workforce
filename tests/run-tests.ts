@@ -1738,6 +1738,7 @@ import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
+import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5966,6 +5967,11 @@ await runTest(
 await runTest(
   "the native app may write, and nothing else gained anything: a request declaring x-phoenix-client with NO session cookie skips the origin check at BOTH refusal sites, while the same header alongside a session cookie is still refused 403 — the cookie clause is what keeps the exemption from becoming 'any request that sets a header skips CSRF'",
   runNativeClientCsrfExemptionTests,
+);
+
+await runTest(
+  "the Android app's departure-photo stamp is the portal's: the Cairo time, every location fallback, the wrapped lines, the panel geometry and every draw call's text, baseline, font, ink, shadow and gradient stop match drawEvidenceWatermark, and the JPEG quality, title, reference, routes, timeouts, size limit and watermark file are the portal card's own",
+  runMobileEvidenceStampParityTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

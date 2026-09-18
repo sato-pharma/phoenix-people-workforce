@@ -122,6 +122,25 @@ the build, not before.
 
 ---
 
+## What the app reads from the phone
+
+In one place, because a store form or a device policy may ask:
+
+| Permission | Used for | When |
+| --- | --- | --- |
+| Camera | The profile photo, and evidence photos — today the outstation departure photo | Only while the person is taking a photo |
+| Precise and approximate location | Where an evidence photo was taken: stamped on the photo and sent to Phoenix with it | Only while an evidence photo is being taken — never in the background |
+
+The Phoenix server sends the coordinates to Google's geocoding service to word the address, exactly
+as it does for the portal's own departure photo. Background location is not merely unused:
+`app.json` blocks `ACCESS_BACKGROUND_LOCATION` and `FOREGROUND_SERVICE_LOCATION` from the manifest,
+so no library can add them back.
+
+🔴 **The departure photo added native modules** (`expo-location`, `@shopify/react-native-skia`), so
+it reaches a phone only in a new binary with a higher `versionCode` — there is no over-the-air path.
+
+---
+
 ## What no session will do
 
 - Create the company Google account.
@@ -136,3 +155,6 @@ Both need the owner's own identity. Everything after them is ordinary work this 
   authenticates in production — the Google Cloud org policy
   (`constraints/iam.disableServiceAccountKeyCreation`) blocks long-lived service-account keys, and
   that applies here too.
+- **Whether a private app is asked for Google Play's Data safety form.** Public apps must fill it in;
+  nothing here confirms whether the managed Play iframe asks for it. If it does, the table above is
+  the answer.

@@ -917,6 +917,10 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/notifications/process", permission: { resource: "admin", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/test", permission: { resource: "admin", action: "update" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/outstation/workload-evidence", permission: { resource: "outstation", action: "read" }, guard: "domain-helper" }),
+  // The native app's "which of my trips still owe a departure photo" list. It declares
+  // `outstation:create` because that is the capture it leads to; a caller without it is answered
+  // an empty list, never a 403, since the app signs out on any 403 (see the route's own comment).
+  sessionApi({ methods: readOnly, pattern: "/api/outstation/departure-photo-due", permission: { resource: "outstation", action: "create" } }),
   sessionApi({ methods: allMethods, pattern: "/api/outstation/**", permission: { resource: "outstation", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/outstation/expenses", permission: null, guard: "domain-helper", csrfRequired: true }),

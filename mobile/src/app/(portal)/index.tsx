@@ -1,13 +1,14 @@
 import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DeparturePhotoCard } from "@/components/departure-photo-card";
 import { Card, ErrorNotice, LoadingScreen, MicroLabel, OfflineNotice, StatTile } from "@/components/ui";
 import { describeCachedAt } from "@/lib/offline-cache";
 import { useSession } from "@/lib/session";
 import { usePhoenixQuery } from "@/lib/use-phoenix-query";
 import { space, type } from "@/theme/tokens";
 import { usePalette } from "@/theme/use-palette";
-import type { PortalHome } from "@/types/portal";
+import type { DeparturePhotoDue, PortalHome } from "@/types/portal";
 
 function percent(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
@@ -25,6 +26,14 @@ export default function PortalHomeScreen() {
   const { user } = useSession();
   const { cachedAt, data, error, loading, refresh, refreshing } =
     usePhoenixQuery<PortalHome>("/api/employee-portals/home");
+  // Its own request, not a field on the home snapshot: it is the portal's own list, from the same
+  // server function, so the two can never disagree about which trip is still waiting.
+  const departures = usePhoenixQuery<{ requests: DeparturePhotoDue[] }>("/api/outstation/departure-photo-due");
+
+  const onRefresh = () => {
+    refresh();
+    departures.refresh();
+  };
 
   if (loading) {
     return <LoadingScreen label="Loading your command center…" />;
@@ -47,7 +56,11 @@ export default function PortalHomeScreen() {
         paddingTop: insets.top + space.lg,
       }}
       refreshControl={
-        <RefreshControl onRefresh={refresh} refreshing={refreshing} tintColor={palette.accent} />
+        <RefreshControl
+          onRefresh={onRefresh}
+          refreshing={refreshing || departures.refreshing}
+          tintColor={palette.accent}
+        />
       }
       style={{ backgroundColor: palette.paper }}
     >
@@ -63,6 +76,17 @@ export default function PortalHomeScreen() {
       {cachedAt ? <OfflineNotice takenAt={describeCachedAt(cachedAt)} /> : null}
 
       {error ? <ErrorNotice message={error} /> : null}
+
+      {/* First among the figures, because it is the one thing here that holds up money: the trip
+          does not reach payroll until the photo is taken, and it can only be taken at the
+          destination. Never from the offline copy — a stale list offers the camera for a trip
+          already photographed, and the approver's summary then counts the needless retake. */}
+      {departures.data && !departures.cachedAt ? (
+        <DeparturePhotoCard onSaved={departures.refresh} requests={departures.data.requests ?? []} />
+      ) : null}
+      {/* Only when the rest of the screen is fine: offline, or failing as a whole, the notices above
+          already say so, and a second one for the same cause reads as two problems. */}
+      {departures.error && !cachedAt && !error ? <ErrorNotice message={departures.error} /> : null}
 
       {data ? (
         <>

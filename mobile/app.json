@@ -22,6 +22,10 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.POST_NOTIFICATIONS"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "ios": {
@@ -43,9 +47,18 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Phoenix uses the camera so you can take your profile photo.",
+          "cameraPermission": "Phoenix uses the camera for your profile photo and for evidence photos, such as the departure photo at the end of a trip.",
           "microphonePermission": false,
           "photosPermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Phoenix records where each evidence photo is taken, such as your departure photo at the end of a trip.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false,
+          "isAndroidMotionActivityEnabled": false
         }
       ]
     ],
