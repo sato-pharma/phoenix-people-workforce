@@ -334,10 +334,13 @@ export function MonthlySalesWizard({
             <div className="ml-auto flex items-center gap-3">
               <div className="text-right">
                 <p className="text-xs font-black uppercase tracking-wide text-slate-500">Monthly closing complete</p>
-                <p className="text-2xl font-black text-slate-900">{run.completionPct}%</p>
+                <p className="text-2xl font-black text-slate-900">{run.completionPct === null ? "—" : `${run.completionPct}%`}</p>
+                <p className="text-xs font-semibold text-slate-500">
+                  {run.completionPct === null ? "Sales shares could not be read" : "by sales value"}
+                </p>
               </div>
               <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full bg-phx-accent" style={{ width: `${run.completionPct}%` }} />
+                <div className="h-full bg-phx-accent" style={{ width: `${run.completionPct ?? 0}%` }} />
               </div>
             </div>
           ) : null}

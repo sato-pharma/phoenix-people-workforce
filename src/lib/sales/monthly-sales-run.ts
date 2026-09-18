@@ -13,7 +13,8 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // Monthly Sales guided workflow — resumable run state. A run walks one period distributor-by-
 // distributor (pending → uploaded → validated → confirmed, or skipped), with Direct then Office
 // pinned to the tail (Office is computed last). Completion % is weighted by each distributor's
-// trailing sales share. Locking a period freezes its uploads (enforced in the import service).
+// trailing sales share, worked out afresh on every load. Locking a period freezes its uploads
+// (enforced in the import service).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
@@ -41,7 +42,8 @@ export type MonthlySalesRun = {
   locked: boolean;
   lockedBy: string | null;
   lockedAt: string | null;
-  completionPct: number;
+  /** Share of sales value confirmed or skipped; null when the shares could not be read. */
+  completionPct: number | null;
   steps: MonthlySalesStep[];
 };
 
@@ -71,8 +73,7 @@ async function computeDistributorWeights(period: string, orderedCodes: string[])
   const allPeriods = await listMonthlyClosingPeriods();
   const prior = allPeriods.filter((p) => p < period).slice(0, TRAILING_PERIODS);
 
-  const shareSumByKey = new Map<string, number>();
-  let periodsUsed = 0;
+  const periodValues: Map<string, number>[] = [];
   for (const p of prior) {
     const rows = await rpcAll<{ distributor_code: string; value: number | string }>(
       supabase,
@@ -81,17 +82,36 @@ async function computeDistributorWeights(period: string, orderedCodes: string[])
       ["distributor_code", "product_code"],
     );
     const valueByKey = new Map<string, number>();
-    let total = 0;
     for (const r of rows) {
       const v = Number(r.value ?? 0);
       if (!(v > 0)) continue;
       const key = normalizeCodeKey(r.distributor_code);
       valueByKey.set(key, (valueByKey.get(key) ?? 0) + v);
-      total += v;
+    }
+    periodValues.push(valueByKey);
+  }
+  return weightsFromTrailingValues(orderedCodes, periodValues);
+}
+
+/**
+ * Each distributor's average share of the sales value over the trailing months, normalized to sum 1
+ * across `orderedCodes`, with a small floor so no step weighs nothing. `periodValues` holds one map
+ * per month, of sales value by normalized distributor code; a month with no value is skipped.
+ */
+export function weightsFromTrailingValues(orderedCodes: string[], periodValues: Map<string, number>[]): Map<string, number> {
+  const shareSumByKey = new Map<string, number>();
+  let periodsUsed = 0;
+  for (const valueByKey of periodValues) {
+    let total = 0;
+    for (const v of valueByKey.values()) {
+      if (v > 0) total += v;
     }
     if (!(total > 0)) continue;
     periodsUsed += 1;
-    for (const [key, v] of valueByKey) shareSumByKey.set(key, (shareSumByKey.get(key) ?? 0) + v / total);
+    for (const [key, v] of valueByKey) {
+      if (!(v > 0)) continue;
+      shareSumByKey.set(key, (shareSumByKey.get(key) ?? 0) + v / total);
+    }
   }
 
   const weights = new Map<string, number>();
@@ -111,6 +131,35 @@ async function computeDistributorWeights(period: string, orderedCodes: string[])
   }
   for (const code of orderedCodes) weights.set(code, sum > 0 ? (raw.get(code) ?? 0) / sum : 0);
   return weights;
+}
+
+/**
+ * "Monthly closing complete": the confirmed and skipped steps' share of the weight, where the weight
+ * is each distributor's CURRENT trailing share of sales (`liveWeights`), never the `weight` stored on
+ * the step row. That column is frozen when the run opens and goes stale as months are re-imported:
+ * on production the 2026-05 run, opened on 2026-06-17, weighted EGD at 33% and Office at 0.66% while
+ * the closing puts them at 1% and 37%, so 5 confirmed steps out of 17 read "95% complete". The stored
+ * weights also summed to 98%, so that month could never reach 100%.
+ *
+ * Owner, 2026-09-18: the figure stays a share of money, kept current. It reads 100% exactly when
+ * every step is confirmed or skipped (which is when the month can be locked), and at most 99%
+ * before that, so a pending feed too small to move the rounding still shows the month as open.
+ */
+export function withLiveWeights(
+  steps: MonthlySalesStep[],
+  liveWeights: Map<string, number>,
+): { steps: MonthlySalesStep[]; completionPct: number } {
+  const weightByKey = new Map<string, number>();
+  for (const [code, weight] of liveWeights) weightByKey.set(normalizeCodeKey(code), weight);
+
+  const weighted = steps.map((s) => ({ ...s, weight: weightByKey.get(normalizeCodeKey(s.distributorCode)) ?? 0 }));
+  const isDone = (s: MonthlySalesStep) => s.stepStatus === "confirmed" || s.stepStatus === "skipped";
+  if (weighted.length > 0 && weighted.every(isDone)) return { steps: weighted, completionPct: 100 };
+
+  const total = weighted.reduce((acc, s) => acc + s.weight, 0);
+  const done = weighted.filter(isDone).reduce((acc, s) => acc + s.weight, 0);
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return { steps: weighted, completionPct: Math.min(99, pct) };
 }
 
 /**
@@ -307,10 +356,19 @@ export async function loadRun(period: string): Promise<MonthlySalesRun> {
     };
   });
 
-  const doneWeight = steps
-    .filter((s) => s.stepStatus === "confirmed" || s.stepStatus === "skipped")
-    .reduce((acc, s) => acc + s.weight, 0);
-  const completionPct = Math.round(Math.min(1, Math.max(0, doneWeight)) * 100);
+  // Weigh the steps by today's trailing shares, never the frozen `weight` column (see withLiveWeights).
+  // When the shares cannot be read the figure is withheld, not guessed: the wizard shows it as unavailable.
+  let weightedSteps = steps;
+  let completionPct: number | null = null;
+  try {
+    const liveWeights = await computeDistributorWeights(period, steps.map((s) => s.distributorCode));
+    ({ steps: weightedSteps, completionPct } = withLiveWeights(steps, liveWeights));
+  } catch (error) {
+    logError("Monthly Sales run could not work out the distributors' sales shares", {
+      labels: { event: "monthly_sales_run_weights_failed", period },
+      error,
+    });
+  }
 
   const locked = Boolean(lockResult.data?.locked);
   return {
@@ -321,7 +379,7 @@ export async function loadRun(period: string): Promise<MonthlySalesRun> {
     lockedBy: runResult.data.locked_by ? String(runResult.data.locked_by) : null,
     lockedAt: runResult.data.locked_at ? String(runResult.data.locked_at) : null,
     completionPct,
-    steps,
+    steps: weightedSteps,
   };
 }
 
