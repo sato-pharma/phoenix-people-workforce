@@ -31,6 +31,7 @@ import {
   weekHasDecumulationGap,
 } from "@/lib/sales/weekly/decumulate";
 import { latestStockOnly } from "@/lib/sales/weekly/latest-stock";
+import { livePriceMap, liveSalesValue } from "@/lib/sales/weekly/live-price";
 import { narrowWeeklyRowsToOwnAreaShare, type WeeklyOwnAreaShare } from "@/lib/sales/weekly/own-area-share";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
@@ -1265,21 +1266,21 @@ export async function loadWeeklyDashboard(filters?: {
   // non-Direct row's value from the CURRENT master price (netQty × price) so any price edit in
   // Product Master reflects immediately across every weekly surface (dashboard, export, portal) —
   // without re-uploading. Runs on the cumulative rows BEFORE de-cumulation, so value stays linear in
-  // qty and all downstream numbers stay consistent.
+  // qty and all downstream numbers stay consistent. The rule lives in live-price.ts, which the
+  // Upload screen's Combined Report reads too:
   //   • Direct channel keeps its own sheet Value (locked invariant — never recompute from price).
   //   • A missing/zero current master price falls back to the stored value (never zero a row).
-  const priceMap = new Map<string, number>();
+  let priceMap = new Map<string, number>();
   const mappedCodes = new Set<string>(); // master products that have a line (i.e. properly mapped)
   // product_code -> family NAME. Deliberately the name, not family_code: the code is NOT unique —
   // "DO" is shared by both Dopaminict and Dolabactin, so grouping on it would merge two families.
   const familyByCode = new Map<string, string>();
   try {
     const reference = await loadSalesReferenceData({ includeCustomerBricks: false });
+    priceMap = livePriceMap(reference.products);
     for (const masterProduct of reference.products) {
       const code = normalizeCode(masterProduct.productCode);
       if (!code) continue;
-      const price = Number(masterProduct.factoryPrice);
-      if (Number.isFinite(price) && price > 0) priceMap.set(code, price);
       if ((masterProduct.line ?? "").trim()) mappedCodes.add(code);
       const family = (masterProduct.family ?? "").trim();
       if (family) familyByCode.set(code, family);
@@ -1289,10 +1290,10 @@ export async function loadWeeklyDashboard(filters?: {
   }
   if (priceMap.size > 0) {
     for (const row of allRows) {
-      if (normalizeCode(row.distributorCode) === "DIRECT") continue; // Direct = sheet's own Value
-      const price = priceMap.get(normalizeCode(row.productCode));
-      if (price == null) continue; // no current master price → keep the stored value
-      row.salesValue = Number((row.netQty * price).toFixed(6));
+      row.salesValue = liveSalesValue(
+        { distributorCode: row.distributorCode, productCode: row.productCode, netQty: row.netQty, storedValue: row.salesValue },
+        priceMap,
+      );
     }
   }
 

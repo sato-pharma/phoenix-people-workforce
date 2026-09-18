@@ -524,6 +524,7 @@ import { runWeeklyStockWorkbookTotalsTests } from "./weekly-stock-workbook-total
 import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison-stock-total.test.ts";
 import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
 import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-paging.test.ts";
+import { runWeeklyCombinedReportLivePriceTests } from "./weekly-combined-report-live-price.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -6197,6 +6198,11 @@ await runTest(
 await runTest(
   "a flat sales sheet keeps a stated Target Units when Factory Price is missing: 120 units stay 120 with a zero Target Value and a note naming the missing price, never a zeroed target under a note saying the sheet gave none",
   runSalesFlatSheetKeepsStatedTargetUnitsTests,
+);
+
+await runTest(
+  "the weekly Combined Report prices every row at today's Product Master price, the same rule as the dashboard: a row imported at 50 a unit reads 60 when the master says 60, on its upload sheet and the Summary total; Direct keeps its sheet value, a product with no price or a retired one keeps the stored value, and a price list that cannot be read fails the export",
+  runWeeklyCombinedReportLivePriceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
