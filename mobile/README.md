@@ -45,6 +45,10 @@ refused. 🔴 **Creating that account and paying the fee is the owner's own acti
 details and a payment method, and no session does it on his behalf. The fee is not refunded if the
 identity details are rejected, so it is worth getting right first time.
 
+**[PLAY-CONSOLE-SETUP.md](PLAY-CONSOLE-SETUP.md) is the order to do it in** — which Google account to
+register with, the free enterprise step that comes before the fee, and the one account-type decision
+that cannot be reversed.
+
 `eas.json` carries both profiles, and `production` is now the live one:
 
 | Profile | Produces | Route | Status |
@@ -81,7 +85,8 @@ documents a custom app appearing in the managed store **in as little as five min
 two hours through the Play Console UI. That is worth designing releases around: it keeps Phoenix the
 place a release is made from, instead of the Play Console becoming a manual step in every ship.
 
-Not wired up. The account has to exist first.
+Not wired up. The account has to exist first — the setup order, including the Google Cloud service
+account this needs, is in [PLAY-CONSOLE-SETUP.md](PLAY-CONSOLE-SETUP.md).
 
 ### Signing — which key, and which one can be replaced
 
