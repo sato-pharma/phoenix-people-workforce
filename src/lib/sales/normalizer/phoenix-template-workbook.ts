@@ -81,7 +81,7 @@ export async function buildPhoenixTemplateWorkbook(input: {
   ws.mergeCells(`A2:${lastColLetter}2`);
   const sub = ws.getCell("A2");
   sub.value =
-    "One distributor per file · pick the distributor and the product by name — the codes fill in automatically · the two Helper columns are yours";
+    "Several distributors can share one file · pick the distributor and the product by name — the codes fill in automatically · the two Helper columns are yours";
   sub.font = { italic: true, color: { argb: MUTED }, name: "Calibri", size: 10 };
   sub.alignment = { vertical: "middle", horizontal: "left", indent: 5 };
   sub.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLACK } };
@@ -154,7 +154,7 @@ export async function buildPhoenixTemplateWorkbook(input: {
   const distributorDV = listDV(
     `${q(PHOENIX_TEMPLATE_DISTRIBUTORS_SHEET)}!$A$2:$A$${1 + Math.max(distributors.length, 1)}`,
     "Distributor",
-    "Pick the distributor — the code fills in automatically. One distributor per file.",
+    "Pick the distributor — the code fills in automatically. Name it on the first row of each block; the rows under it follow.",
   );
   const productDV = listDV(
     `${q(PHOENIX_TEMPLATE_PRODUCTS_SHEET)}!$A$2:$A$${1 + Math.max(products.length, 1)}`,
@@ -227,7 +227,7 @@ function buildReadMe(wb: ExcelJS.Workbook, distributorCount: number, productCoun
   const lines: Array<{ text: string; heading?: boolean }> = [
     { text: "" },
     { text: "Fill the amber columns. The grey columns fill themselves. The teal columns are yours.", heading: true },
-    { text: "   1.  Distributor Name   — pick from the dropdown. Distributor Code fills in automatically. ONE distributor per file." },
+    { text: "   1.  Distributor Name   — pick from the dropdown. Distributor Code fills in automatically. Name it on the first row of each block." },
     { text: "   2.  Invoice Date       — the date on the invoice (DD-MM-YYYY). The month decides which period the sale is booked in." },
     { text: "   3.  Customer Code      — the distributor's own code for the pharmacy or customer." },
     { text: "   4.  Customer Name      — the customer's name as the distributor writes it." },
@@ -243,7 +243,9 @@ function buildReadMe(wb: ExcelJS.Workbook, distributorCount: number, productCoun
     { text: "" },
     { text: "Rules the upload enforces:", heading: true },
     { text: "   •  Distributor Name, Invoice Date, Customer Code, Customer Name, Customer Address, Product Name and Quantity are obligatory." },
-    { text: "   •  One distributor per file — a second distributor in the same sheet is refused, because a batch is one distributor per month." },
+    { text: "   •  Several distributors can share one file — each one is filed as its own batch, because a batch is one distributor and one month." },
+    { text: "   •  Name the distributor on the first row of its block — every row under it belongs to that distributor, until the next name appears." },
+    { text: "   •  Sales sitting above the first named distributor are refused when the file carries more than one, and the message names the row." },
     { text: "   •  Type nothing into the grey Distributor Code / Product Code columns; they are formulas, and they are what the file is read by." },
     { text: "   •  Blank rows are ignored, so you never need to delete the spare ones." },
     { text: "" },

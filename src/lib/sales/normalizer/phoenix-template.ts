@@ -51,7 +51,7 @@ export const PHOENIX_TEMPLATE_COLUMNS: TemplateColumn[] = [
     kind: "input",
     required: true,
     width: 30,
-    note: "Pick the distributor from the dropdown — Distributor Code fills in automatically. One distributor per file.",
+    note: "Pick the distributor from the dropdown — Distributor Code fills in automatically. Name it on the first row of each block.",
   },
   {
     header: "Distributor Code",
