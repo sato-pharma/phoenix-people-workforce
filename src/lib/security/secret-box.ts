@@ -46,6 +46,28 @@ function envSecret(): string {
   return raw;
 }
 
+/**
+ * Which feature a sealed value belongs to. Omitted, the key is exactly the one every existing blob
+ * was sealed under — so the mailbox monitor's stored passwords open unchanged.
+ *
+ * WHY A CONTEXT EXISTS. The personal mailbox (src/lib/personal-mailbox/) stores each employee's OWN
+ * app password, and the owner's rule is that no one else can open that mailbox through Phoenix — the
+ * compliance monitor least of all. Separate tables already keep the two apart in code; the context
+ * makes it hold in the cryptography too. A value sealed under "personal-mailbox" derives a different
+ * key, so the monitor's openSecret(sealed) fails the GCM tag check on it instead of decrypting it,
+ * even if a blob were ever copied from one table into the other.
+ */
+export type SecretBoxOptions = {
+  context?: string;
+};
+
+function keyMaterial(options?: SecretBoxOptions): string {
+  const secret = envSecret();
+  const context = options?.context?.trim();
+  // NUL cannot appear in an env value, so no secret+context pair can collide with a bare secret.
+  return context ? `${secret}\u0000${context}` : secret;
+}
+
 function deriveKey(secret: string, salt: Buffer): Buffer {
   // scrypt with library defaults (N=16384, r=8, p=1) — comfortably fast for the handful of
   // seal/open calls this feature makes, and far past brute-force reach for a strong passphrase.
@@ -68,11 +90,11 @@ function fromB64(value: string, label: string): Buffer {
  * Encrypt a plaintext secret into a self-describing sealed string.
  * Returns the `v1:…` blob; store it verbatim.
  */
-export function sealSecret(plaintext: string): string {
+export function sealSecret(plaintext: string, options?: SecretBoxOptions): string {
   if (typeof plaintext !== "string" || plaintext.length === 0) {
     throw new SecretBoxError("Nothing to seal — plaintext is empty.");
   }
-  const secret = envSecret();
+  const secret = keyMaterial(options);
   const salt = randomBytes(SALT_LENGTH);
   const iv = randomBytes(IV_LENGTH);
   const key = deriveKey(secret, salt);
@@ -91,7 +113,7 @@ export function sealSecret(plaintext: string): string {
  * Decrypt a sealed string back to plaintext. Throws SecretBoxError if the blob is malformed, the
  * key is wrong, or the authentication tag does not verify (tampering / corruption).
  */
-export function openSecret(sealed: string): string {
+export function openSecret(sealed: string, options?: SecretBoxOptions): string {
   if (typeof sealed !== "string" || sealed.length === 0) {
     throw new SecretBoxError("Nothing to open — sealed value is empty.");
   }
@@ -108,7 +130,7 @@ export function openSecret(sealed: string): string {
     throw new SecretBoxError("Sealed value has a segment of the wrong length.");
   }
 
-  const key = deriveKey(envSecret(), salt);
+  const key = deriveKey(keyMaterial(options), salt);
   // `authTagLength` is passed explicitly so NODE enforces the 128-bit tag, not just the length
   // check above. GCM permits truncated tags (96, 64, even 32 bits), and a shorter tag is
   // exponentially easier to forge — at 32 bits a blind forgery succeeds about 1 attempt in 4
