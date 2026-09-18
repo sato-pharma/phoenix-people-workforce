@@ -131,7 +131,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
     );
   }, []);
   // A new-mail pop-up's "Open": the envelope opens on My email with that email in the reader. Only
-  // offered while the envelope is drawn — it is hidden on a phone, where the pop-up still tells them.
+  // offered while the envelope is actually drawn; a page without it still shows the pop-up.
   const canOpenEmail = useCallback(() => (buttonRef.current?.getClientRects().length ?? 0) > 0, []);
   const openNonce = useRef(0);
   const openEmail = useCallback(
@@ -240,10 +240,13 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
 
   return (
     <div className="relative" ref={containerRef}>
+      {/* Drawn at every width: on a phone it is the only place the unread counts show. Summed from
+          the classes at 375px, both bars keep room for it — the admin bar's icons and account button
+          come to about 262 of its 351px, and the portal's leave its title about 180px. */}
       <button
         aria-expanded={open}
         aria-label={badgeLabel ? `Messages, ${badgeLabel} unread` : "Messages"}
-        className={`relative hidden h-9 w-9 items-center justify-center rounded sm:inline-flex ${
+        className={`relative inline-flex h-9 w-9 items-center justify-center rounded ${
           isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
         }`}
         onClick={() => {
@@ -267,6 +270,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
         <div
           className={cn(
             "absolute left-0 top-full z-30 mt-1.5 overflow-hidden rounded border shadow-lg",
+            // On a phone the two columns stack, so the panel is taller than the screen, and it hangs
+            // from a header that does not scroll away: past the screen's bottom it could never be
+            // reached. There it stops at the screen and scrolls itself instead.
+            "max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto",
             isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white",
           )}
           style={{ marginLeft: placement.offsetLeft, width: placement.width }}
@@ -361,7 +368,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className={cn("whitespace-nowrap text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>{message.subject}</p>
+                            {/* Wraps, never `whitespace-nowrap`: this list scrolls, so an unwrapped
+                                long subject slid the whole list sideways — on a phone's narrow
+                                column, most subjects. */}
+                            <p className={cn("break-words text-sm font-black", isAdminMode ? "text-white" : "text-phx-ink")}>{message.subject}</p>
                             <p className={cn("mt-1 text-xs", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>
                               {message.direction === "inbox" ? `From ${message.sender.name}` : `To ${message.recipient.name}`}
                             </p>

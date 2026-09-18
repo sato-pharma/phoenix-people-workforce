@@ -64,7 +64,7 @@ export function usePersonalMailboxAlerts({
   canOpenEmail,
   onOpenEmail,
 }: {
-  /** Whether "Open" can show the email right now (the envelope is not drawn on a phone). */
+  /** Whether "Open" can show the email right now (the envelope is drawn on this page). */
   canOpenEmail: () => boolean;
   onOpenEmail: (uid: number) => void;
 }): { unread: number | null } {

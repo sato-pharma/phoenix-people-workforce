@@ -425,4 +425,24 @@ export async function runPersonalMailboxTests() {
     "the notification permission is asked from the My email tab's click, never from a timer",
   );
   assert.ok(menu.includes("usePersonalMailboxAlerts("), "the envelope runs the unread watch");
+
+  // 13f. ON A PHONE TOO (owner request 2026-09-18). The envelope was `hidden sm:inline-flex`, so a
+  //      phone showed no unread count and "Open" had nothing to open. It is drawn at every width;
+  //      its panel stops at the screen's bottom and scrolls, because it hangs from a header that
+  //      does not scroll away; and a message subject wraps rather than sliding its list sideways.
+  const trigger = /<button\s+aria-expanded=\{open\}[\s\S]*?className=\{`([^`]*)/.exec(menu);
+  assert.ok(trigger, "the envelope's trigger button is where this test expects it");
+  const triggerClasses = trigger[1].split(/\s+/);
+  assert.ok(
+    triggerClasses.includes("inline-flex") && !triggerClasses.includes("hidden"),
+    "the envelope must be drawn on a phone — `hidden` there hides the unread count it carries",
+  );
+  assert.ok(
+    menu.includes("max-sm:max-h-[calc(100dvh-5rem)] max-sm:overflow-y-auto"),
+    "on a phone the panel must stop at the screen and scroll, or its lower half can never be reached",
+  );
+  assert.ok(
+    !/className=\{cn\("whitespace-nowrap text-sm font-black"/.test(menu),
+    "a message subject must wrap — unwrapped, it slides the scrolling list sideways",
+  );
 }
