@@ -442,9 +442,11 @@ export async function runRecruitmentScreeningWorkstationTests() {
       /import \{ WorkstationPageClient \} from "@\/components\/recruitment\/workstation\/workstation-page-client"/,
       `the ${name} screening route must render the workstation`,
     );
+    // Every row, to every page but a CV's own — that page draws the one CV it was opened on
+    // (`openRow`) and has no list to put the rest in. See recruitment-screening-row-link.test.ts.
     assert.match(
       source,
-      /rows=\{workspace\.rows\}/,
+      /rows=\{parseOpenCandidateId\(filters\.candidate\) \? \[\] : workspace\.rows\}/,
       `the ${name} screening route must hand over the loaded rows`,
     );
     // The vacancy rail and the work queue are the two AREAS the rebuild added. Both are server-fed,

@@ -9,7 +9,12 @@ import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { WorkstationPageClient } from "@/components/recruitment/workstation/workstation-page-client";
 import { canAccess, isHrAuthorityRole, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { parseScreeningFilters, screeningHref, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
+import {
+  parseOpenCandidateId,
+  parseScreeningFilters,
+  screeningHref,
+  type ScreeningQueueFilters,
+} from "@/lib/recruitment/screening-link";
 import { loadScreeningWorkspace } from "@/lib/recruitment/screening-workspace";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +42,15 @@ export default async function EmployeePortalScreeningPage({
     // queue with every filter reset and nothing to say why. `screeningHref` is what rebuilds it,
     // rather than forwarding the raw query string, so an edited address bar cannot be bounced
     // through this redirect unvalidated.
-    redirect(screeningHref("/recruitment", parseScreeningFilters(filters)));
+    //
+    // THE OPEN CV TRAVELS TOO. It is not a filter, so `parseScreeningFilters` rightly drops it, and
+    // a pasted link to one CV then landed on the whole list instead of on that CV's own page.
+    redirect(
+      screeningHref("/recruitment", {
+        ...parseScreeningFilters(filters),
+        candidate: parseOpenCandidateId(filters.candidate),
+      }),
+    );
   }
   if (!isHrAuthorityRole(access.role) || !(await canAccess(access, "recruitment", "read"))) {
     return (
@@ -57,10 +70,16 @@ export default async function EmployeePortalScreeningPage({
     >
       <Suspense
         fallback={
-          <AppRouteLoadingState
-            description="Loading the CVs and where you left off."
-            title="Loading Screening"
-          />
+          // A CV opened in its own tab says so while it loads — "where you left off" is the list's
+          // sentence, and the list is the tab this one was opened from.
+          parseOpenCandidateId(filters.candidate) ? (
+            <AppRouteLoadingState description="Loading this candidate's CV and details." title="Opening the CV" />
+          ) : (
+            <AppRouteLoadingState
+              description="Loading the CVs and where you left off."
+              title="Loading Screening"
+            />
+          )
         }
       >
         <ScreeningContent access={access} filters={filters} />
@@ -102,6 +121,7 @@ async function ScreeningContent({
       filteredOut={workspace.filteredOut}
       hiringManagers={workspace.hiringManagers}
       notified={workspace.notified}
+      openRow={workspace.openRow}
       overdueManagerFeedback={workspace.overdueManagerFeedback}
       poolHref="/employee-portals/recruitment"
       poolSize={workspace.poolSize}
@@ -110,7 +130,9 @@ async function ScreeningContent({
       received={workspace.received}
       region={workspace.region}
       role={workspace.role}
-      rows={workspace.rows}
+      // A CV's own page draws `openRow` and nothing else, so the list is not sent to it — a
+      // thousand rows the tab would throw away, on every CV opened.
+      rows={parseOpenCandidateId(filters.candidate) ? [] : workspace.rows}
       seen={workspace.seen}
       source={workspace.source}
       sourceOptions={workspace.sourceOptions}

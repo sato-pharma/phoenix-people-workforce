@@ -51,6 +51,12 @@
 // leaving a single line above the document. The state lives HERE rather than inside the workstation
 // because the two bars this page owns have to fold with it; the panes keep their own flags
 // underneath and get them back untouched when the reader comes out.
+//
+// A CV'S OWN PAGE. When the link names a CV — which is what a press in the list opens, in a new tab
+// — this page is that CV's page: one slim line, then the CV, its details and its decisions. No
+// header of pile figures, no filter bar, no queue: none of them describe one CV, and the list they
+// belong to is still open in the tab the reader came from. The owner, 2026-09-18: "why not when i
+// press on the cv i am redirected into a new tab and page with full details".
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useOptimistic, useState, useSyncExternalStore, useTransition } from "react";
@@ -103,6 +109,7 @@ export function WorkstationPageClient({
   filteredOut,
   hiringManagers,
   notified,
+  openRow,
   overdueManagerFeedback,
   poolHref,
   poolSize,
@@ -140,6 +147,11 @@ export function WorkstationPageClient({
   filteredOut: number;
   hiringManagers: WorkspaceManager[];
   notified: ScreeningNotifiedFilter;
+  /**
+   * The CV the link names, built by the server whether or not the filters would have kept it.
+   * Null when the link names none, or names a record that no longer exists. See `ownPage`.
+   */
+  openRow: WorkspaceCandidateRow | null;
   overdueManagerFeedback: number;
   /**
    * Where "back to the pool" goes. Passed in rather than hard-coded because this page exists in both
@@ -172,6 +184,11 @@ export function WorkstationPageClient({
   const router = useRouter();
   const [fullBleed, setFullBleed] = useState(false);
   const [focus, setFocus] = useState(false);
+  // A CV'S OWN PAGE is the one whose link names a CV — see the header. Read from the browser's own
+  // address bar rather than threaded down from the two server shells: the rewrite this component
+  // already handles (see screeningShellPoolHref) means the browser's URL is the only honest source.
+  const openCandidateId = parseOpenCandidateId(useSearchParams().get("candidate"));
+  const ownPage = openCandidateId !== null;
   // FILTERS START CLOSED, AND THE CHOICE IS REMEMBERED.
   //
   // Open was the default until 2026-09-12, which put eight dropdowns between the reader and the
@@ -188,11 +205,14 @@ export function WorkstationPageClient({
   // whole page for a view preference, and the compiler lint rejects it by name. Closed-then-open is
   // the harmless direction for the one flicker either way leaves; open-then-closed, which a lazy
   // initial state would give, is the one that moves the list under the cursor.
-  const filtersOpen = useSyncExternalStore(
+  const filtersRemembered = useSyncExternalStore(
     subscribeFiltersOpen,
     readRememberedFiltersOpen,
     filtersClosedOnServer,
   );
+  // A CV's own page never opens the bar: its filters narrow a list that page does not draw. The
+  // remembered choice is left alone, so the list tab keeps it.
+  const filtersOpen = filtersRemembered && !ownPage;
   // What full-bleed was before focus took it, so leaving focus puts the shell back exactly as it
   // was rather than deciding for the reader that he also wanted his sidebar returned.
   const [bleedBeforeFocus, setBleedBeforeFocus] = useState(false);
@@ -278,18 +298,14 @@ export function WorkstationPageClient({
   // WHICH SHELL AM I ACTUALLY IN? Not always the one that rendered me — see screeningShellPoolHref.
   const shellPoolHref = screeningShellPoolHref(usePathname(), poolHref);
 
-  // ── EVERY ROW IS A REAL LINK ────────────────────────────────────────────────────────────────
+  // ── EVERY ROW IS A REAL LINK, AND A PRESS OPENS IT IN A NEW TAB ─────────────────────────────
   //
-  // Read here rather than threaded down from the two server shells, because both of them would have
-  // to pass it and neither has anything to do with it — and the rewrite this component already
-  // handles (see screeningShellPoolHref) means the browser's own URL is the only honest source for
-  // anything in the address bar.
-  //
-  // The href carries the CURRENT filters plus this candidate, so the second tab opens the same pile
-  // with that CV already open — not a stripped queue. Ctrl-click, middle-click and the context
-  // menu's "Open in new tab" all work from this and nothing else: a `<button>` cannot be opened in
-  // a tab by any of them, which is exactly what the owner asked for on 2026-09-18.
-  const openCandidateId = parseOpenCandidateId(useSearchParams().get("candidate"));
+  // The link names the CV, which makes the tab it opens that CV's own page (see the header). It
+  // carries the CURRENT filters too, so the page's "Screening list" line — and nothing else there —
+  // goes back to the same pile the reader was in, not a stripped queue. A plain press, ctrl-click,
+  // middle-click and the context menu's "Open in new tab" all open it: a `<button>` could be
+  // opened in a tab by none of them. The owner, 2026-09-18: "when i press on the cv i am redirected
+  // into a new tab and page with full details".
   const candidateHref = useCallback(
     (candidateId: string) =>
       screeningHref(shellPoolHref, {
@@ -307,6 +323,19 @@ export function WorkstationPageClient({
       }),
     [area, notified, rating, received, region, role, seen, shellPoolHref, source, status, vacancy],
   );
+  // The same pile with no CV named: the list itself. It is where a CV's own page goes back to.
+  const listHref = screeningHref(shellPoolHref, {
+    area,
+    notified,
+    rating,
+    received,
+    region,
+    role,
+    seen,
+    source,
+    status,
+    vacancy,
+  });
 
   const goTo = useCallback(
     (next: ScreeningHrefOptions) => {
@@ -389,9 +418,10 @@ export function WorkstationPageClient({
       onToggleFocus={toggleFocus}
       overdueManagerFeedback={overdueManagerFeedback}
       onSelectVacancy={(next) => goTo({ vacancy: next })}
+      ownPage={ownPage}
       poolSize={poolSize}
       positionSuggestions={positionSuggestions}
-      rows={rows}
+      rows={ownPage ? (openRow ? [openRow] : []) : rows}
       seatLabel={seatLabel}
       vacancies={vacancies}
       vacancyId={vacancy}
@@ -402,8 +432,9 @@ export function WorkstationPageClient({
   return (
     <ScreeningPageFrame>
       {/* THE PAGE'S OWN CHROME, IN ONE HEADER. It answers focus, and it is gone in full bleed —
-          which draws its own single line inside the frame below. */}
-      {focus || fullBleed ? null : (
+          which draws its own single line inside the frame below. A CV's own page has no use for
+          it either: every figure in it describes the pile, and that page is one CV. */}
+      {focus || fullBleed || ownPage ? null : (
         <WorkHeader
           controls={
             <>
@@ -502,6 +533,31 @@ export function WorkstationPageClient({
             : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col border border-phx-line bg-white"
         }
       >
+        {/* A CV'S OWN PAGE: one slim line, and the rest of the screen is the CV. The way back to
+            the list is here for a link opened on its own — from the list, that tab is still open
+            exactly where it was, which is the point of opening this one in a new tab.
+            `shrink-0` beside `flex-wrap` is safe HERE: the frame is a column, so it holds the
+            line's height, and its width is the frame's — the two actions still drop to a second
+            line on a phone. */}
+        {ownPage && !fullBleed && !focus ? (
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-white px-3 py-1.5">
+            <Eyebrow>{seatLabel ?? "CV screening"}</Eyebrow>
+            <span className="flex flex-wrap items-center gap-1.5">
+              <ActionLink href={listHref} title="The whole screening list, in this tab" tone="ghost">
+                <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
+                Screening list
+              </ActionLink>
+              <Action
+                onClick={enterFocus}
+                title="Give the whole screen to the CV — Escape comes back"
+                tone="primary"
+              >
+                <ScanLine aria-hidden className="h-3.5 w-3.5" />
+                CV full screen
+              </Action>
+            </span>
+          </div>
+        ) : null}
         {fullBleed && !focus ? (
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-phx-line bg-white px-3 py-1.5">
             <Eyebrow>{seatLabel ?? "CV screening"}</Eyebrow>

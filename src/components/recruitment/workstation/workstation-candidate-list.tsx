@@ -300,18 +300,22 @@ function CandidateBlock({
   // `min-w-0 flex-1` rather than `w-full`: the row sits in a flex line beside an optional tick-box
   // (see the call site). Alone in that line it is exactly the width it always was, so a reader who
   // cannot decide sees the list unchanged.
-  // ── THE ROW IS A LINK, AND A PLAIN CLICK STILL DOES WHAT IT ALWAYS DID ────────────────────────
+  // ── PRESSING A CV OPENS IT ON ITS OWN PAGE, IN A NEW TAB ──────────────────────────────────────
   //
-  // It was a `<button>`, and a button is unreachable by every way a person opens something in a
-  // second tab: ctrl-click, middle-click, ⌘-click, the context menu, dragging it to the tab strip.
-  // So reading a CV could only ever happen in the one pane, on the one shared scroll, and the price
-  // of every CV was finding your place in the list again afterwards.
+  // The owner, 2026-09-18: "when i view cv and pushed to the end of the screen and i really hustle
+  // to go back where i where why not when i press on the cv i am redirected into a new tab and page
+  // with full details". Reading a CV in the pane beside the list cost him his place in the list on
+  // every single CV.
   //
-  // An anchor costs nothing and buys all of them. A plain left-click is intercepted and selects in
-  // place, which is the fast path a screener uses all day and it is unchanged — no navigation, no
-  // refetch, no history entry. A MODIFIED click is not ours: it falls through untouched and the
-  // browser does what the reader asked, in a tab of its own, with this list left exactly where it
-  // is. Middle-click never reaches this handler at all (it fires `auxclick`), so it works for free.
+  // The first fix made this row an anchor but still SWALLOWED a plain click (`preventDefault`, then
+  // select in place), so only a ctrl-click opened a tab — and the tab it opened was the whole list
+  // again. He pressed a CV the ordinary way, nothing opened, and he said so the next day: "What we do
+  // yesterday is not implemented." A plain press is the one he makes, so a plain press is the one
+  // that opens the tab now, and that tab is the CV's own page (see workstation-page-client.tsx).
+  //
+  // `onSelect` still runs — it does not stop the browser, it only marks this row as the current one,
+  // so the reader comes back to this tab with the CV he opened highlighted and the list exactly where
+  // he left it. `noopener` because the new tab has no business reaching back into this one.
   //
   // `no-underline` because an anchor is underlined by default and this row's type scale is drawn,
   // not inherited.
@@ -328,11 +332,9 @@ function CandidateBlock({
           : "border-l-2 border-l-transparent hover:bg-phx-paper",
       )}
       href={href}
-      onClick={(event) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-        event.preventDefault();
-        onSelect();
-      }}
+      onClick={onSelect}
+      rel="noopener"
+      target="_blank"
     >
       <span className="flex items-start gap-2.5">
         <span className="min-w-0 flex-1">

@@ -129,7 +129,12 @@ export function WorkstationReviewHeader({
   focus: boolean;
   hiringManagers: readonly ManagerPickerOption[];
   onDecide: (status: CandidateStatus, note: string | null) => void;
-  onNext: () => void;
+  /**
+   * Null on a CV's OWN page — the tab a press in the list opens. There is no queue in that tab to
+   * move along (the list stays in the tab it was opened from), so the button would do nothing and
+   * Shortlist's promise to move on would be false. Both go rather than lie.
+   */
+  onNext: (() => void) | null;
   /** `null` takes the star off. Never 0 — see candidate-rating.ts. */
   onRate: (next: CandidateRating | null) => void;
   onSend: () => void;
@@ -227,7 +232,11 @@ export function WorkstationReviewHeader({
         icon={<ThumbsUp className="h-3.5 w-3.5" />}
         label="Shortlist"
         onClick={() => onDecide("shortlisted", null)}
-        title="Keep this one — press S. The queue moves to the next CV on its own."
+        title={
+          onNext
+            ? "Keep this one — press S. The queue moves to the next CV on its own."
+            : "Keep this one — press S."
+        }
         tone="ok"
       />
       <DecisionButton
@@ -259,15 +268,17 @@ export function WorkstationReviewHeader({
         </span>
       ) : null}
 
-      <DecisionButton
-        disabled={busy}
-        hotkey="J"
-        icon={<SkipForward className="h-3.5 w-3.5" />}
-        label="Next candidate"
-        onClick={onNext}
-        title="The next CV in the queue — press J or the down arrow. K or the up arrow goes back one."
-        tone="accent"
-      />
+      {onNext ? (
+        <DecisionButton
+          disabled={busy}
+          hotkey="J"
+          icon={<SkipForward className="h-3.5 w-3.5" />}
+          label="Next candidate"
+          onClick={onNext}
+          title="The next CV in the queue — press J or the down arrow. K or the up arrow goes back one."
+          tone="accent"
+        />
+      ) : null}
     </>
   );
   const afterBands = (

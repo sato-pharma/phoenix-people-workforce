@@ -39,6 +39,15 @@
 // THE RESPONSIVE COLLAPSE. Four panes at a workstation; three at a laptop; one at a time on a
 // phone, chosen by a segmented control. No pane ever overflows sideways — the fits-the-screen rule
 // is absolute, so every fixed column is `shrink-0` and the CV pane is `min-w-0 flex-1`.
+//
+// ── A CV'S OWN PAGE ─────────────────────────────────────────────────────────────────────────────
+//
+// Pressing a CV in the list opens it in a NEW TAB, on a page of its own (`ownPage`): the CV, its
+// details and its decisions — no work queue, no list. The owner asked for exactly that on
+// 2026-09-18, because reading in the pane beside the list cost him his place in it on every CV.
+// It is this same component rather than a second screen, so a verdict given there is the same
+// verdict, through the same code, as one given here; and the two tabs report their writes to each
+// other (screening-tab-sync.ts), so the list he goes back to already shows what he decided.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Layers, PanelLeft, X } from "lucide-react";
@@ -77,6 +86,11 @@ import {
 import { WorkstationQueuePanel } from "@/components/recruitment/workstation/workstation-queue-panel";
 import { WorkstationReviewHeader, type SendState } from "@/components/recruitment/workstation/workstation-review-header";
 import { parseCandidateRating, type CandidateRating } from "@/lib/recruitment/candidate-rating";
+import {
+  openScreeningTabChannel,
+  type ScreeningTabChannel,
+  type ScreeningTabMessage,
+} from "@/lib/recruitment/screening-tab-sync";
 import { Action, Band, BandSays } from "@/components/recruitment/workstation/workstation-look";
 import { EmptyNote, PaneSpine } from "@/components/recruitment/workstation/workstation-ui";
 import { cn } from "@/lib/utils";
@@ -150,6 +164,7 @@ export function ScreeningWorkstation({
   onToggleFocus,
   hiringManagers,
   overdueManagerFeedback,
+  ownPage,
   poolSize,
   onSelectVacancy,
   positionSuggestions,
@@ -179,12 +194,19 @@ export function ScreeningWorkstation({
   /**
    * The CV named in the URL, opened on arrival. Null on an ordinary load.
    *
-   * Only the INITIAL selection. A plain left-click stays component state and deliberately does NOT
-   * push a URL: the row is a link so the browser can open it elsewhere, not so that reading forty
-   * CVs leaves forty entries in the back button and forty server round-trips through a 1,121-row
-   * pool.
+   * Only the INITIAL selection. Moving through the list with J and K stays component state and
+   * deliberately pushes no URL, so reading forty CVs never leaves forty entries in the back button.
    */
   openCandidateId: string | null;
+  /**
+   * This tab is ONE CV's own page — the tab a press in the list opens — rather than the list.
+   *
+   * `rows` then holds that one CV and nothing else, and the screen is the CV, its details and the
+   * decisions: no work queue, no list, no seat line, no "next candidate". Every narrowing is
+   * skipped, because the reader pressed THIS CV and must get it whatever the list's filters say —
+   * the "New CVs" default alone would otherwise hide a CV that was decided last week.
+   */
+  ownPage: boolean;
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
@@ -234,7 +256,8 @@ export function ScreeningWorkstation({
   const [railOpen, setRailOpen] = useState(true);
   const [listOpen, setListOpen] = useState(true);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [mobilePane, setMobilePane] = useState<MobilePane>("list");
+  // A CV's own page has no list to start on — it IS the CV.
+  const [mobilePane, setMobilePane] = useState<MobilePane>(ownPage ? "cv" : "list");
   const showRail = railOpen && !focus;
   const showList = listOpen && !focus;
   const showPanel = panelOpen && !focus;
@@ -292,6 +315,12 @@ export function ScreeningWorkstation({
   const [cvSearching, setCvSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  /**
+   * The line to every other screening tab in this browser — see screening-tab-sync.ts. A ref, not
+   * state: nothing renders from it, and every write below reports through it once the server has
+   * confirmed. Null until mounted, and for good where the browser has no BroadcastChannel.
+   */
+  const tabs = useRef<ScreeningTabChannel | null>(null);
   const [sendState, setSendState] = useState<SendState>({
     freeAreaName: "",
     freeJobTitle: "",
@@ -306,6 +335,9 @@ export function ScreeningWorkstation({
   // server already resolved — a list that re-runs the band computation over 555 rows on every
   // keystroke is the page this replaces.
   const visible = useMemo(() => {
+    // A CV's own page shows the CV that was pressed, whatever pile the list was on — only an
+    // archive made on this page takes it away. See `ownPage`.
+    if (ownPage) return rows.filter((row) => !archived[row.id]);
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
       // Archived in this session: gone from every pile at once, the way a reload would show it.
@@ -331,7 +363,7 @@ export function ScreeningWorkstation({
         .filter(Boolean)
         .some((field) => String(field).toLowerCase().includes(needle));
     });
-  }, [archived, cvSearch, queue, rows, search, vacancyId]);
+  }, [archived, cvSearch, ownPage, queue, rows, search, vacancyId]);
 
   // FROM THE VISIBLE LIST, not from every row the server sent.
   //
@@ -463,6 +495,24 @@ export function ScreeningWorkstation({
     setMobilePane("cv");
   }, []);
 
+  // A press on a list row. The row's own link opens that CV on its own page in a NEW tab; what is
+  // left to do in THIS tab is to remember which one was pressed. So the mark moves to it and nothing
+  // else does — no pane switch, no scroll — and the reader comes back to the list with the CV they
+  // opened highlighted, exactly where they left it.
+  const markOpened = useCallback((id: string) => {
+    setSelectedId(id);
+    setActionError(null);
+  }, []);
+
+  // A CV's own page has no list to move within, so a twin opens on its own page too, in a tab of
+  // its own — the same thing a press on it in the list does.
+  const openTwin = useCallback(
+    (id: string) => {
+      window.open(candidateHref(id), "_blank", "noopener");
+    },
+    [candidateHref],
+  );
+
   const decide = useCallback(
     async (status: CandidateStatus, note: string | null) => {
       // `selected`, not `selectedId`: a decision must never land on a candidate the list in front of
@@ -489,6 +539,9 @@ export function ScreeningWorkstation({
         }
         setDecided((prev) => ({ ...prev, [selectedId]: status }));
         setDecidedNote((prev) => ({ ...prev, [selectedId]: note }));
+        // The list this CV was opened from is still open in another tab, and it must not go on
+        // offering a decided CV as "New".
+        tabs.current?.post({ id: selectedId, kind: "decided", note, status });
         // No previous status means there is nothing to put back — a row whose stored status is not
         // in the vocabulary at all. Offering an undo that cannot run is worse than offering none.
         setUndoable(
@@ -558,7 +611,9 @@ export function ScreeningWorkstation({
         if (!res.ok) throw new Error(data.message ?? "Could not save that star.");
         // Trust the row that came back over the one that was asked for. They agree today; if the
         // ladder ever widens they might not, and the screen must show what was actually stored.
-        setRated((prev) => ({ ...prev, [row.id]: parseCandidateRating(data.candidate?.rating) }));
+        const stored = parseCandidateRating(data.candidate?.rating);
+        setRated((prev) => ({ ...prev, [row.id]: stored }));
+        tabs.current?.post({ id: row.id, kind: "rated", rating: stored });
       } catch (caught) {
         setRated((prev) => ({ ...prev, [row.id]: was }));
         setActionError(caught instanceof Error ? caught.message : "Could not save that star.");
@@ -678,6 +733,8 @@ export function ScreeningWorkstation({
           for (const row of moved) next[row.id] = null;
           return next;
         });
+        // Any of these may be open on its own page in another tab.
+        for (const row of moved) tabs.current?.post({ id: row.id, kind: "decided", note: null, status });
 
         // Only rows whose previous status is a real one can be put back. The rest are dropped from
         // the undo rather than failing it, so one unrecognised legacy row cannot cost the other 49.
@@ -754,6 +811,10 @@ export function ScreeningWorkstation({
         for (const row of restored) next[row.id] = noteById.get(row.id) ?? null;
         return next;
       });
+      // An undo is a decision too, as far as the other tab can tell — it must see the verdict go.
+      for (const row of restored) {
+        tabs.current?.post({ id: row.id, kind: "decided", note: noteById.get(row.id) ?? null, status: row.status });
+      }
       setUndoable(null);
     } catch (caught) {
       setActionError(caught instanceof Error ? caught.message : "Could not undo that.");
@@ -785,12 +846,14 @@ export function ScreeningWorkstation({
       if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
 
       const key = event.key.toLowerCase();
-      if (key === "j" || event.key === "ArrowDown") {
+      // A CV's own page has no queue to move through, so these keys are left to the browser there:
+      // the arrows scroll the page the reader is on instead of doing nothing at all.
+      if (!ownPage && (key === "j" || event.key === "ArrowDown")) {
         event.preventDefault();
         goToNext();
         return;
       }
-      if (key === "k" || event.key === "ArrowUp") {
+      if (!ownPage && (key === "k" || event.key === "ArrowUp")) {
         event.preventDefault();
         goToPrevious();
         return;
@@ -817,7 +880,7 @@ export function ScreeningWorkstation({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canDecide, decide, goToNext, goToPrevious, rate, selected, undoLast, undoable]);
+  }, [canDecide, decide, goToNext, goToPrevious, ownPage, rate, selected, undoLast, undoable]);
 
   // The window closes on its own. A timer rather than a rendered countdown: nothing here needs to
   // re-render ten times a second, and a ticking number beside a live control invites a race.
@@ -889,6 +952,7 @@ export function ScreeningWorkstation({
           ? { vacancyId: Number(sendState.position) }
           : {};
     const sent: string[] = [];
+    const sentTo: string[] = [];
     const failed: string[] = [];
     for (const managerHrId of targets) {
       const localName = hiringManagers.find((manager) => manager.hrId === managerHrId)?.name ?? "that manager";
@@ -903,6 +967,7 @@ export function ScreeningWorkstation({
         // Recorded only on a CONFIRMED send. A failure must stay retryable — marking the pair here
         // regardless would turn one network blip into a CV nobody can ever send to that manager.
         sentPairs.current.add(`${selectedId}:${managerHrId}`);
+        sentTo.push(managerHrId);
         // The name the SERVER confirmed — it is the thing that knows who was actually told, and no
         // raw HR_ID ever reaches a person.
         sent.push(data.result?.managerName ?? localName);
@@ -910,10 +975,46 @@ export function ScreeningWorkstation({
         failed.push(localName);
       }
     }
-    if (sent.length > 0) setSentInSession((prev) => ({ ...prev, [selectedId]: sent.join(", ") }));
+    if (sent.length > 0) {
+      setSentInSession((prev) => ({ ...prev, [selectedId]: sent.join(", ") }));
+      // The OTHER tab's guard has to hear this too. It has this same CV and very likely this same
+      // manager still picked, and without the report one press there is a second real notification
+      // — the exact accident the guard above exists to prevent, arriving by the tab it cannot see.
+      tabs.current?.post({ id: selectedId, kind: "sent", managerHrIds: sentTo, names: sent.join(", ") });
+    }
     if (failed.length > 0) setActionError(`Could not send this CV to ${failed.join(", ")}.`);
     setBusy(false);
   }, [busy, hiringManagers, selected, sendState]);
+
+  // ── WHAT THE OTHER TABS DID ─────────────────────────────────────────────────
+  //
+  // A CV pressed in the list is read and decided in a tab of its own (screening-tab-sync.ts). What
+  // that tab reports is recorded here exactly as if it had been done here — the same maps the
+  // optimistic writes above fill — so the row keeps its place and wears the verdict, and nothing
+  // moves under the reader. Archiving is deliberately NOT reported: it takes a row OUT of the list,
+  // and a list that shrinks while the reader is away snaps back to the top, which is the lost place
+  // this whole change exists to remove. An archived CV leaves the list on the next load.
+  useEffect(() => {
+    const receive = (message: ScreeningTabMessage) => {
+      if (message.kind === "decided") {
+        setDecided((prev) => ({ ...prev, [message.id]: message.status }));
+        setDecidedNote((prev) => ({ ...prev, [message.id]: message.note }));
+      } else if (message.kind === "rated") {
+        setRated((prev) => ({ ...prev, [message.id]: message.rating }));
+      } else if (message.kind === "sent") {
+        for (const hrId of message.managerHrIds) sentPairs.current.add(`${message.id}:${hrId}`);
+        setSentInSession((prev) => ({ ...prev, [message.id]: message.names }));
+      } else {
+        setNoteCounts((prev) => ({ ...prev, [message.id]: message.count }));
+      }
+    };
+    const channel = openScreeningTabChannel(receive);
+    tabs.current = channel;
+    return () => {
+      channel?.close();
+      tabs.current = null;
+    };
+  }, []);
 
   /**
    * Put this record on the Duplicates shelf.
@@ -1022,6 +1123,8 @@ export function ScreeningWorkstation({
 
   const listTitle = screeningWorkQueueLabels[queue];
   const chosenVacancy = vacancyId === null ? null : vacancies.find((vacancy) => vacancy.id === vacancyId) ?? null;
+  // The phone's pane switch. A CV's own page has no list pane, so it offers none.
+  const mobilePanes: readonly MobilePane[] = ownPage ? ["cv", "panel"] : ["list", "cv", "panel"];
 
   return (
     <div
@@ -1034,49 +1137,55 @@ export function ScreeningWorkstation({
         "[&_:focus-visible]:outline-2 [&_:focus-visible]:outline-offset-[-2px] [&_:focus-visible]:outline-phx-accent",
       )}
     >
-      {/* ── AREA 1 ─────────────────────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "z-20 w-[212px] shrink-0",
-          queueOpen && !focus ? "absolute inset-y-0 left-0 flex shadow-[6px_0_18px_rgba(15,23,42,0.14)]" : "hidden",
-          showRail ? "xl:static xl:flex xl:shadow-none" : "xl:hidden",
-        )}
-      >
-        <WorkstationQueuePanel
-          counts={counts}
-          onCollapse={() => setRailOpen(false)}
-          onSelectQueue={(next) => {
-            setQueue(next);
-            setQueueOpen(false);
-            setMobilePane("list");
-          }}
-          onSelectVacancy={(next) => {
-            // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
-            // for that seat the filed CVs are read back in and the email applicants are matched.
-            onSelectVacancy(next);
-            setQueue(next === null ? "new" : "all");
-            setQueueOpen(false);
-            setMobilePane("list");
-          }}
-          overdueManagerFeedback={overdueManagerFeedback}
-          queue={queue}
-          vacancies={vacancies}
-          vacancyId={vacancyId}
-          vacancyStats={vacancyStats}
-        />
-      </div>
-      {/* What the folded rail leaves behind. It replaces the pane in the flex row rather than
-          overlaying it, so folding actually GIVES the width to the CV — which is the only reason
-          somebody folds it. */}
-      {!showRail && !focus ? <PaneSpine label="Work queue" onOpen={() => setRailOpen(true)} side="left" /> : null}
-      {queueOpen && !focus ? (
-        <button
-          aria-label="Close the work queue"
-          className="absolute inset-0 z-10 bg-phx-ink/20 xl:hidden"
-          onClick={() => setQueueOpen(false)}
-          type="button"
-        />
-      ) : null}
+      {/* ── AREA 1 ─────────────────────────────────────────────────────────────────────────────
+          Not on a CV's own page: the work queue picks piles, and that page is one CV. The list it
+          was opened from is still open in the other tab, with its queue exactly as it was. */}
+      {ownPage ? null : (
+        <>
+          <div
+            className={cn(
+              "z-20 w-[212px] shrink-0",
+              queueOpen && !focus ? "absolute inset-y-0 left-0 flex shadow-[6px_0_18px_rgba(15,23,42,0.14)]" : "hidden",
+              showRail ? "xl:static xl:flex xl:shadow-none" : "xl:hidden",
+            )}
+          >
+            <WorkstationQueuePanel
+              counts={counts}
+              onCollapse={() => setRailOpen(false)}
+              onSelectQueue={(next) => {
+                setQueue(next);
+                setQueueOpen(false);
+                setMobilePane("list");
+              }}
+              onSelectVacancy={(next) => {
+                // A LINK, not a piece of state: picking a seat changes what the SERVER loads, because
+                // for that seat the filed CVs are read back in and the email applicants are matched.
+                onSelectVacancy(next);
+                setQueue(next === null ? "new" : "all");
+                setQueueOpen(false);
+                setMobilePane("list");
+              }}
+              overdueManagerFeedback={overdueManagerFeedback}
+              queue={queue}
+              vacancies={vacancies}
+              vacancyId={vacancyId}
+              vacancyStats={vacancyStats}
+            />
+          </div>
+          {/* What the folded rail leaves behind. It replaces the pane in the flex row rather than
+              overlaying it, so folding actually GIVES the width to the CV — which is the only reason
+              somebody folds it. */}
+          {!showRail && !focus ? <PaneSpine label="Work queue" onOpen={() => setRailOpen(true)} side="left" /> : null}
+          {queueOpen && !focus ? (
+            <button
+              aria-label="Close the work queue"
+              className="absolute inset-0 z-10 bg-phx-ink/20 xl:hidden"
+              onClick={() => setQueueOpen(false)}
+              type="button"
+            />
+          ) : null}
+        </>
+      )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* The one bar that exists only on smaller screens: the queue drawer's handle, and the
@@ -1090,26 +1199,36 @@ export function ScreeningWorkstation({
             // are drawn as one object with a shared frame — which is also what stops the row from
             // reading as five competing controls on a 375px phone.
             focus ? "hidden" : "flex",
+            // A CV's own page has no queue to open, so all that is left here is the CV / Details
+            // switch — and that is a phone's control. At a laptop both are on screen already, and
+            // the bar would be an empty strip.
+            ownPage && "lg:hidden",
           )}
         >
-          <Action
-            onClick={() => setQueueOpen((open) => !open)}
-            title={queueOpen ? "Close the work queue" : "Open the work queue"}
-            tone="ghost"
-          >
-            {queueOpen ? (
-              <X aria-hidden className="h-3.5 w-3.5" />
-            ) : (
-              <PanelLeft aria-hidden className="h-3.5 w-3.5" />
-            )}
-            Queue
-          </Action>
+          {ownPage ? null : (
+            <Action
+              onClick={() => setQueueOpen((open) => !open)}
+              title={queueOpen ? "Close the work queue" : "Open the work queue"}
+              tone="ghost"
+            >
+              {queueOpen ? (
+                <X aria-hidden className="h-3.5 w-3.5" />
+              ) : (
+                <PanelLeft aria-hidden className="h-3.5 w-3.5" />
+              )}
+              Queue
+            </Action>
+          )}
           <span className="min-w-0 flex-1 break-words text-[12px] font-semibold leading-snug text-phx-ink-soft">
-            {listTitle}
-            {chosenVacancy ? ` · ${chosenVacancy.jobTitle}` : ""}
+            {ownPage ? (selected?.fullName ?? null) : (
+              <>
+                {listTitle}
+                {chosenVacancy ? ` · ${chosenVacancy.jobTitle}` : ""}
+              </>
+            )}
           </span>
           <span className="flex shrink-0 border border-phx-line lg:hidden">
-            {(["list", "cv", "panel"] as const).map((pane) => (
+            {mobilePanes.map((pane) => (
               <button
                 aria-pressed={mobilePane === pane}
                 className={cn(
@@ -1185,8 +1304,9 @@ export function ScreeningWorkstation({
             than up there because leaving seat mode also puts the work queue back on "New CVs", which
             is state the workstation owns.
 
-            Wraps at 375px rather than scrolling sideways; no ellipsis, no id. */}
-        {seatLabel ? (
+            Wraps at 375px rather than scrolling sideways; no ellipsis, no id. Not on a CV's own page,
+            which is one CV and not a pile — leaving seat mode there would change nothing on it. */}
+        {seatLabel && !ownPage ? (
           <Band tone="accent">
             <BandSays>One vacant seat: {seatLabel}</BandSays>
             <Action
@@ -1232,34 +1352,39 @@ export function ScreeningWorkstation({
         ) : null}
 
         <div className="flex min-h-0 flex-1">
-          {/* ── AREA 2 ───────────────────────────────────────────────────────── */}
-          <div
-            className={cn(
-              "min-h-0 w-full shrink-0 lg:flex lg:w-[288px]",
-              mobilePane === "list" && !focus ? "flex" : "hidden",
-              showList ? undefined : "lg:hidden",
-            )}
-          >
-            <WorkstationCandidateList
-              candidateHref={candidateHref}
-              decidedById={decided}
-              emptyLabel={emptyLabelFor(queue, chosenVacancy?.jobTitle ?? null, search, poolSize, filteredOut)}
-              markedIds={marked}
-              onCollapse={() => setListOpen(false)}
-              onSelect={openCandidate}
-              onToggleMark={canDecide ? toggleMark : null}
-              onSearchChange={setSearch}
-              ratedById={rated}
-              rows={visible}
-              search={search}
-              selectedId={selectedId}
-              title={listTitle}
-              totalLabel={`${visible.length} of ${poolSize}`}
-            />
-          </div>
-          {!showList && !focus ? (
-            <PaneSpine label="Candidates" onOpen={() => setListOpen(true)} side="left" />
-          ) : null}
+          {/* ── AREA 2 ─────────────────────────────────────────────────────────────────────────
+              Not on a CV's own page — that page is the tab a press in THIS list opens. */}
+          {ownPage ? null : (
+            <>
+              <div
+                className={cn(
+                  "min-h-0 w-full shrink-0 lg:flex lg:w-[288px]",
+                  mobilePane === "list" && !focus ? "flex" : "hidden",
+                  showList ? undefined : "lg:hidden",
+                )}
+              >
+                <WorkstationCandidateList
+                  candidateHref={candidateHref}
+                  decidedById={decided}
+                  emptyLabel={emptyLabelFor(queue, chosenVacancy?.jobTitle ?? null, search, poolSize, filteredOut)}
+                  markedIds={marked}
+                  onCollapse={() => setListOpen(false)}
+                  onSelect={markOpened}
+                  onToggleMark={canDecide ? toggleMark : null}
+                  onSearchChange={setSearch}
+                  ratedById={rated}
+                  rows={visible}
+                  search={search}
+                  selectedId={selectedId}
+                  title={listTitle}
+                  totalLabel={`${visible.length} of ${poolSize}`}
+                />
+              </div>
+              {!showList && !focus ? (
+                <PaneSpine label="Candidates" onOpen={() => setListOpen(true)} side="left" />
+              ) : null}
+            </>
+          )}
 
           {/* ── AREA 3 + the CV ──────────────────────────────────────────────── */}
           <div
@@ -1280,7 +1405,7 @@ export function ScreeningWorkstation({
                   hiringManagers={hiringManagers}
                   canRate={canDecide}
                   onDecide={decide}
-                  onNext={goToNext}
+                  onNext={ownPage ? null : goToNext}
                   onRate={rate}
                   rating={ratingOf(selected)}
                   onSend={() => void send()}
@@ -1297,7 +1422,7 @@ export function ScreeningWorkstation({
                   <DuplicateBanner
                     archiving={busy}
                     onArchive={(id) => void archiveDuplicate(id)}
-                    onOpen={openCandidate}
+                    onOpen={ownPage ? openTwin : openCandidate}
                     row={selected}
                   />
                 ) : null}
@@ -1311,6 +1436,14 @@ export function ScreeningWorkstation({
                   />
                 </div>
               </>
+            ) : ownPage ? (
+              // The page for ONE CV with no CV on it. Said plainly, because "pick somebody from the
+              // list" points at a list this page does not have.
+              <EmptyNote>
+                {selectedId && archived[selectedId]
+                  ? "Archived as a duplicate. It is in the Duplicates folder and can be put back from there."
+                  : "This CV could not be found. It may have been merged into another record."}
+              </EmptyNote>
             ) : (
               <EmptyNote>Nothing is selected. Pick somebody from the list to read their CV.</EmptyNote>
             )}
@@ -1339,6 +1472,7 @@ export function ScreeningWorkstation({
                 // is fed from `selected`, so counting a note against anything else is impossible.
                 if (!selected) return;
                 setNoteCounts((prev) => ({ ...prev, [selected.id]: count }));
+                tabs.current?.post({ count, id: selected.id, kind: "notes" });
               }}
               onTabChange={setTab}
               screeningQuestions={entry?.screeningQuestions ?? null}

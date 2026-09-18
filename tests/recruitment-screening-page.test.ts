@@ -486,11 +486,13 @@ export async function runRecruitmentScreeningPageTests() {
   // query string, so HR Advisory — whose navigation mode is not the portal, so this branch is the
   // one they always take — followed a filtered link and landed on the unfiltered 481-row queue,
   // with nothing on screen to say a filter had been thrown away. Rebuilt through `screeningHref`
-  // rather than by forwarding the raw query, so an edited address bar cannot ride the redirect.
+  // rather than by forwarding the raw query, so an edited address bar cannot ride the redirect. The
+  // open CV rides with them since 2026-09-18: a CV pressed in the list opens on its own page, and a
+  // link to that page bounced through here would otherwise land on the whole list instead.
   assert.match(
     portalPage,
-    /redirect\(screeningHref\("\/recruitment", parseScreeningFilters\(filters\)\)\)/,
-    "the shell redirect must carry the filters, or every filtered link is dead for HR Advisory",
+    /redirect\(\s*screeningHref\("\/recruitment", \{\s*\.\.\.parseScreeningFilters\(filters\),\s*candidate: parseOpenCandidateId\(filters\.candidate\),\s*\}\),\s*\)/,
+    "the shell redirect must carry the filters and the open CV, or every filtered link is dead for HR Advisory",
   );
 
   // Same gate on both, and that is not laziness: screening reads every field on every candidate, so
