@@ -198,6 +198,36 @@ const KEY_SEP = "␟"; // unit-separator: cannot occur in a code, so a safe comp
 const IMPORT_CHUNK = 500;
 
 export type CustomerMapImportBlockedRow = { key: string; reason: string; row: number };
+
+// How many blocked rows one import's history record keeps. The largest import ever run blocked 969;
+// the cap and the per-field lengths only bound a pathological sheet, so the record itself — which
+// writeAuditLog sends with a 3-second timeout and drops silently on failure — always saves.
+export const CUSTOMER_MAP_BLOCKED_ROWS_KEPT = 5000;
+const BLOCKED_KEY_MAX = 200;
+const BLOCKED_REASON_MAX = 400;
+
+/**
+ * Every import's blocked rows, kept on the import's own history record in row order. The screen
+ * shows them only until the page reloads, and the record used to keep just the count, so the 969
+ * rows the 6 July 2026 import blocked could never be read again. `blocked` on the record stays the
+ * full count; the note says when a sheet blocked more rows than the record keeps.
+ */
+export function customerMapImportBlockedRecord(blockedRows: CustomerMapImportBlockedRow[]): {
+  note: string;
+  values: { blockedRows: CustomerMapImportBlockedRow[]; blockedRowsKept: number };
+} {
+  const kept = [...blockedRows]
+    .sort((a, b) => a.row - b.row)
+    .slice(0, CUSTOMER_MAP_BLOCKED_ROWS_KEPT)
+    .map((b) => ({ key: b.key.slice(0, BLOCKED_KEY_MAX), reason: b.reason.slice(0, BLOCKED_REASON_MAX), row: b.row }));
+  const note = blockedRows.length === 0
+    ? ""
+    : kept.length === blockedRows.length
+      ? " (each listed in this record)"
+      : ` (the first ${kept.length} listed in this record)`;
+  return { note, values: { blockedRows: kept, blockedRowsKept: kept.length } };
+}
+
 export type CustomerMapImportResult = {
   /** How many of the landed rows reached the per-row mapping history. */
   audited: number;
@@ -575,12 +605,14 @@ export async function importCustomerMap(input: { actorLoginId: string; file: Fil
   // summary row below stays: it is the batch header this trail hangs from.
   const audited = await writeMappingAuditBatch(auditEntries);
 
+  // The blocked rows ride on the summary record itself, so the list outlives the page that showed it.
+  const blockedRecord = customerMapImportBlockedRecord(blockedRows);
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: "source_of_sales_customer_map",
     entityType: "sales_import_batch",
-    newValues: { audited, backfilled, blocked: blockedRows.length, inserted, skipped, source: "customer_map_import", totalRead, updated },
-    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked${backfilled ? `, ${backfilled} historical rows healed` : ""}, ${audited} recorded in the mapping history.`,
+    newValues: { audited, backfilled, blocked: blockedRows.length, ...blockedRecord.values, inserted, skipped, source: "customer_map_import", totalRead, updated },
+    summary: `Customer map import — ${inserted} added, ${updated} updated, ${skipped} skipped, ${blockedRows.length} blocked${blockedRecord.note}${backfilled ? `, ${backfilled} historical rows healed` : ""}, ${audited} recorded in the mapping history.`,
   });
 
   return { audited, backfillSkipped, backfilled, blockedRows, inserted, skipped, totalRead, updated };
