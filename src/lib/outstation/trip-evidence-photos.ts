@@ -123,7 +123,7 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
     },
     {
       capturedAt: text(departureMeta?.capturedAt),
-      gpsMissingReason: departureGpsMissingReason,
+      gpsMissingReason: null,
       isFlagged: departureFlags.length > 0,
       kind: "departure",
       label: "Departure photo",
