@@ -13,7 +13,10 @@ export type HeaderValidationResult = {
 
 // ── small self-contained parsers (kept local so the normalizer doesn't reach into the importer) ──
 
-function cellText(cell: ExcelJS.Cell | undefined): string {
+// Exported so the Phoenix-template detector reads a cell exactly the way the engine does — the
+// template's Distributor Code column is a VLOOKUP formula, and the {formula} / {result} / richText
+// cases below are precisely what a hand-rolled second reader gets wrong.
+export function cellText(cell: ExcelJS.Cell | undefined): string {
   const v = cell?.value;
   if (v == null) return "";
   if (v instanceof Date) return v.toISOString();
@@ -322,10 +325,20 @@ function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefi
 
 // ── engine ──
 
+export type NormalizeRowsOptions = {
+  /**
+   * Which sheet rows to read, by 1-based row number. Only the Phoenix universal template passes one:
+   * a file naming several distributors is normalized once per distributor, over that distributor's
+   * own rows, so each becomes its own batch. Left out, every row is read — as always.
+   */
+  includeRow?: (rowNumber: number) => boolean;
+};
+
 export function normalizeRows(
   sheet: ExcelJS.Worksheet,
   profile: DistributorProfile,
   maps: Crosswalks,
+  options?: NormalizeRowsOptions,
 ): NormalizeResult {
   const header = buildHeaderMap(sheet, profile);
   // Read once per sheet, not once per row: the header row does not change while we walk the data.
@@ -350,6 +363,7 @@ export function normalizeRows(
   const customerBrickCorrections = new Map<string, CustomerBrickCorrection>();
 
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
+    if (options?.includeRow && !options.includeRow(r)) continue;
     const row = sheet.getRow(r);
     // skip fully-empty rows
     let any = false;

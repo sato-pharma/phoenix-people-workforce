@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { buildCodedWorkbook, normalizeUploadedFile } from "@/lib/sales/normalizer/service";
+import { buildCodedWorkbook, recognitionErrorMessage, recognizeWorkbookParts } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -26,13 +26,24 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await recognizeWorkbookParts(distributorCode, file);
     if (normalized.status !== "ok") {
-      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+      return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
-    const { result, period } = normalized;
-    const buffer = await buildCodedWorkbook(result);
-    const fileName = `phoenix-coded-${slug(distributorCode)}-${slug(period)}.xlsx`;
+    const { parts } = normalized;
+    // Several distributors come down as ONE coded sheet, not one file each: every coded row carries
+    // its own "Distrub ID", so the sheet is complete and readable either way, and this is the file a
+    // person re-uploads by hand. The IMPORT is still one batch per distributor.
+    const buffer = await buildCodedWorkbook({
+      coded: parts.flatMap((part) => part.result.coded),
+      exceptions: parts.flatMap((part) => part.result.exceptions),
+    });
+    const period = parts[0].period;
+    // Named for the RESOLVED distributor — a Phoenix-template upload would otherwise download as
+    // "phoenix-coded-phx-template-2026-09.xlsx" and tell nobody whose month it is.
+    const fileName = parts.length === 1
+      ? `phoenix-coded-${slug(parts[0].distributorCode)}-${slug(period)}.xlsx`
+      : `phoenix-coded-${parts.length}-distributors-${slug(period)}.xlsx`;
 
     return new Response(new Uint8Array(buffer as ArrayBuffer), {
       headers: {

@@ -5,7 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { hasAiKey } from "@/lib/sales/normalizer/ai-suggest";
-import { listMappingReferences, listNormalizerDistributors, type MappingReferences } from "@/lib/sales/normalizer/service";
+import { listMappingReferences, listNormalizerSourceOptions, type MappingReferences } from "@/lib/sales/normalizer/service";
 import { listWeeklyNormalizeReferences, listWeeklyNormalizerDistributors, type WeeklyNormalizeReferences } from "@/lib/sales/weekly/normalizer";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export default async function NormalizerPage() {
   return (
     <NormalizerTabs
       aiEnabled={hasAiKey()}
-      distributors={listNormalizerDistributors()}
+      distributors={listNormalizerSourceOptions()}
       references={references}
       weeklyDistributors={listWeeklyNormalizerDistributors()}
       weeklyReferences={weeklyReferences}

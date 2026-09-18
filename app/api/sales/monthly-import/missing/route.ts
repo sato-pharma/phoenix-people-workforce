@@ -64,6 +64,12 @@ export async function POST(request: Request) {
       }, { status: 422 });
     }
 
+    if (normalized.status === "template_error") {
+      // Unreachable from this page (it always posts a real distributor), but the recognizer's result
+      // is a closed union and this keeps the message the recognizer wrote rather than a cast.
+      return NextResponse.json({ success: false, code: "template_error", error: normalized.message }, { status: 422 });
+    }
+
     const { result, distributorName, products } = normalized;
     // Confidential products (LA003/LA004/SS001) must never appear in this raw row sample for a
     // viewer who isn't cleared to see them.

@@ -293,6 +293,11 @@ export async function analyzeMonthlyUpload(distributorCode: string, file: File, 
     const aiExplanation = await explainHeaderMismatch({ distributorName: rec.distributorName, observedHeaders: rec.observedHeaders, missingGroups: rec.missingGroups });
     return { status: "header_error", distributorName: rec.distributorName, missingGroups: rec.missingGroups, fingerprintWarning: rec.fingerprintWarning, aiExplanation };
   }
+  if (rec.status === "template_error") {
+    // Sales Upload always posts a real distributor, so this is unreachable here — but the
+    // recognizer's result is a closed union and the template's own message is the right words.
+    throw new SalesWorkflowError("template_error", rec.message, 422);
+  }
   const preview = summarizePreview(distributorCode, rec.distributorName, rec.result, rec.products, excludeProductCodes);
   // Same exclusion list as the preview and the breakdowns below, or the receipt total states what
   // the tables under it are hiding.
@@ -349,6 +354,7 @@ export async function commitMonthlyUpload(input: {
   if (rec.status === "header_error") {
     throw new SalesWorkflowError("header_validation_error", headerErrorMessage(rec.distributorName, rec.missingGroups), 422);
   }
+  if (rec.status === "template_error") throw new SalesWorkflowError("template_error", rec.message, 422);
   const result = rec.result;
   // The commit receipt goes back to the same viewer as the analyze one, so it carries the same
   // exclusion. What was PERSISTED is unaffected — this is the receipt, not the import.
@@ -542,6 +548,8 @@ function codedPreview(distributorCode: string, r: DistributorSalesValidationResu
     unknownCustomers: [],
     unknownProducts: [],
     unknownTerritories: [],
+    // Nothing is capped here because nothing is unknown: this channel arrives fully coded.
+    unknownTotals: { customers: 0, products: 0, territories: 0 },
     ignoredItems: [],
     blankCustomerSkipped: 0,
     blankCustomerErrors: 0,
@@ -633,6 +641,8 @@ function emptyOfficePreview(distributorCode: string): NormalizePreview {
     unknownCustomers: [],
     unknownProducts: [],
     unknownTerritories: [],
+    // Nothing is capped here because nothing is unknown: this channel arrives fully coded.
+    unknownTotals: { customers: 0, products: 0, territories: 0 },
     ignoredItems: [],
     blankCustomerSkipped: 0,
     blankCustomerErrors: 0,

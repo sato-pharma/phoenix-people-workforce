@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildUnmappedWorkbook, distinctUnknowns } from "@/lib/sales/normalizer/mapping";
-import { normalizeUploadedFile } from "@/lib/sales/normalizer/service";
+import { recognitionErrorMessage, recognizeWorkbookParts } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -25,16 +25,21 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await recognizeWorkbookParts(distributorCode, file);
     if (normalized.status !== "ok") {
-      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+      return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
-    const { result, products } = normalized;
-    const buffer = await buildUnmappedWorkbook(distinctUnknowns(result.exceptions, products));
+    // The unmapped list is PER DISTRIBUTOR: the Phoenix Code written beside a raw customer code is
+    // learned under ONE distributor, and that same code is a different customer under another. So
+    // this answers for the distributor the screen is showing — the only file that can hold more
+    // than one is a Phoenix template, and every other upload has exactly one part to pick from.
+    const wanted = String(form.get("partDistributorCode") ?? "");
+    const part = normalized.parts.find((p) => p.distributorCode === wanted) ?? normalized.parts[0];
+    const buffer = await buildUnmappedWorkbook(distinctUnknowns(part.result.exceptions, normalized.products));
     return new Response(new Uint8Array(buffer as ArrayBuffer), {
       headers: {
         "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename="phoenix-unmapped-${distributorCode}.xlsx"`,
+        "Content-Disposition": `attachment; filename="phoenix-unmapped-${part.distributorCode}.xlsx"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });

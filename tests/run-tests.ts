@@ -1733,6 +1733,7 @@ import { runSalesImportUploadPathTests } from "./sales-import-upload-path.test.t
 import { runDuplicateUploadNameAndFiguresTests } from "./duplicate-upload-name-and-figures.test.ts";
 import { runWeeklyScopeRegionNamesTests } from "./weekly-scope-region-names.test.ts";
 import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
+import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5933,6 +5934,11 @@ await runTest(
 await runTest(
   "native bearer session: only a well-formed Bearer header yields a token (Basic, bare and empty all yield null), and the native-client marker is presence-based so a browser never receives a session token in the response body",
   runNativeSessionBearerTests,
+);
+
+await runTest(
+  "the Phoenix universal upload template: the obligatory columns are distributor, customer code, name and address with two helper columns, it sits beside the distributors in the picker and never inside the profiled list, a filled sheet resolves to the REAL distributor and may carry SEVERAL (each becoming its own batch, the name carrying down a block, an unknown one refused by name), the emitted workbook carries the dropdowns and the VLOOKUP auto-codes, and one preview carries 2,000 unknowns per kind while reporting the true total",
+  runSosPhoenixTemplateTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
