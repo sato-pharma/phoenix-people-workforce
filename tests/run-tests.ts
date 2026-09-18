@@ -54,6 +54,7 @@ import {
 import { runSidebarRoleScopedHeadingsTests } from "./sidebar-role-scoped-headings.test.ts";
 import { runPersonalWorkspaceNavTests } from "./personal-workspace-nav.test.ts";
 import { runSosProductMappingCheckTests } from "./sos-product-mapping-checks.test.ts";
+import { runSosProductMappingCheckPerMonthTests } from "./sos-product-mapping-check-per-month.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -1895,6 +1896,10 @@ await runTest(
 await runTest(
   "source-of-sales product mapping checks (duplicate item codes + zero-sales gaps)",
   runSosProductMappingCheckTests,
+);
+await runTest(
+  "source-of-sales product mapping CHECK 2 judges each month on its own (it added every month together, so the corrected July hid the March-to-June months Pharma Overseas sold zero Rispadex syrup, and one month with sales blinded it to every later mis-map of that product; it now reads the invoice month and reports each zero month, newest first)",
+  runSosProductMappingCheckPerMonthTests,
 );
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
