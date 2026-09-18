@@ -7,10 +7,13 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   buildSourceOfSalesWarningExport,
   classifySourceOfSalesWarning,
+  describeStoredValidationStates,
+  explainNoStoredWarnings,
   normalizeSourceOfSalesCode,
   normalizeSourceOfSalesKey,
   revalidateSourceOfSalesWarningRow,
   summarizeRevalidation,
+  type SourceOfSalesLeftOutTotals,
   type SourceOfSalesReferenceData,
   type SourceOfSalesValidationIssue,
   type SourceOfSalesWarningRow,
@@ -234,6 +237,13 @@ async function exportWarnings(options: Options) {
   const supabase = supabaseClient();
   const out = optionText(options, "out", "outputs/sos-warning-cleanup.xlsx");
   const rows = await loadWarningRows(supabase, optionNumber(options, "limit"));
+  // A workbook with no sheets and "Exported 0 warning rows" read as clean data. The importers
+  // never store a warning row (see explainNoStoredWarnings), so say that instead of writing a file.
+  if (rows.length === 0) {
+    console.log(`Nothing exported: no stored row is marked warning, so ${out} was not written.`);
+    for (const line of explainNoStoredWarnings(await loadLeftOutTotals(supabase))) console.log(line);
+    return;
+  }
   const grouped = buildSourceOfSalesWarningExport(rows);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Phoenix Workforce";
@@ -462,9 +472,9 @@ async function writeDryRunWorkbook(
 async function verify() {
   const supabase = supabaseClient();
   const stateCounts = await countValidationStates(supabase);
-  console.log(`valid: ${stateCounts.valid ?? 0}`);
-  console.log(`warning: ${stateCounts.warning ?? 0}`);
-  console.log(`failed: ${stateCounts.failed ?? 0}`);
+  // Not the three counts alone: "warning: 0" is all this table can ever say, because the importers
+  // store only the rows they keep, each marked valid. What they left out is counted on the batches.
+  for (const line of describeStoredValidationStates(stateCounts, await loadLeftOutTotals(supabase))) console.log(line);
   const started = Date.now();
   const { data, error } = await supabase.rpc("phx_marketing_roi_customer_dashboard", {
     p_attribution_qualities: [],
@@ -482,6 +492,30 @@ async function verify() {
   if (error) throw new Error(`Marketing ROI RPC failed: ${error.message}`);
   console.log(`marketing_roi_rpc_ms: ${Date.now() - started}`);
   console.log(`marketing_roi_request_count: ${data?.summary?.marketingRequestCount ?? 0}`);
+}
+
+async function loadLeftOutTotals(supabase: SupabaseClient): Promise<SourceOfSalesLeftOutTotals> {
+  const totals: SourceOfSalesLeftOutTotals = { batches: 0, blankCustomer: 0, failed: 0, ignored: 0, warnings: 0 };
+  const whole = (value: unknown) => Number(value ?? 0) || 0;
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    // Ordered by the primary key so no batch is skipped or read twice across pages.
+    const { data, error } = await supabase
+      .from("source_of_sales_import_batches")
+      .select("id,rows_ignored,rows_blank,warning_rows,failed_rows")
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`left-out scan: ${error.message}`);
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      totals.batches += 1;
+      totals.ignored += whole(row.rows_ignored);
+      totals.blankCustomer += whole(row.rows_blank);
+      totals.warnings += whole(row.warning_rows);
+      totals.failed += whole(row.failed_rows);
+    }
+    if (!data || data.length < pageSize) break;
+  }
+  return totals;
 }
 
 async function countValidationStates(supabase: SupabaseClient) {

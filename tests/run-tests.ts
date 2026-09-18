@@ -634,6 +634,7 @@ import { runSosAtomicFinalizeTests } from "./sos-atomic-finalize.test.ts";
 import { runSosHeaderAliasesTests } from "./sos-header-aliases.test.ts";
 import { runSosGuardrailsTests } from "./sos-guardrails.test.ts";
 import { runSosWarningCleanupTests } from "./sos-warning-cleanup.test.ts";
+import { runSosWarningCleanupHonestZeroTests } from "./sos-warning-cleanup-honest-zero.test.ts";
 import { runCustomerMapImportTests } from "./customer-map-import.test.ts";
 import { runMarketingManagerRoleTests } from "./marketing-manager-role.test.ts";
 import { runMarketingMasterResolutionTests } from "./marketing-master-resolution.test.ts";
@@ -2960,6 +2961,7 @@ await runTest("sos atomic finalize (lock + supersede + refresh + reconcile, all-
 await runTest("sos header aliases", runSosHeaderAliasesTests);
 await runTest("sos guardrails", runSosGuardrailsTests);
 await runTest("sos warning cleanup", runSosWarningCleanupTests);
+await runTest("sos warning cleanup verify says an all-valid table is not a clean bill of health (the importers store only the rows they keep, each marked valid, so \"warning: 0\" was printed by construction; it now prints what the batches say was left out, and export no longer writes an empty workbook)", runSosWarningCleanupHonestZeroTests);
 await runTest("customer map import", runCustomerMapImportTests);
 await runTest("customer directory rollup", runCustomerDirectoryRollupTests);
 await runTest("marketing manager role", runMarketingManagerRoleTests);

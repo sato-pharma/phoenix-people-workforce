@@ -380,3 +380,56 @@ export function summarizeRevalidation(rows: RevalidatedSourceOfSalesRow[]) {
     { total: 0, valid: 0, warning: 0 },
   );
 }
+
+/** What the imports left OUT of source_of_sales_import_rows, summed from the counts each batch recorded. */
+export type SourceOfSalesLeftOutTotals = {
+  batches: number;
+  /** `rows_blank`: rows with no customer, territory or brick at all, skipped. */
+  blankCustomer: number;
+  /** `failed_rows`. */
+  failed: number;
+  /** `rows_ignored`: a product mapped as "we don't sell this", or a free-goods row. */
+  ignored: number;
+  /** `warning_rows`. A normalizer batch counts the rows it could not code here, and stores none of them. */
+  warnings: number;
+};
+
+const count = (value: number) => value.toLocaleString("en-US");
+
+/**
+ * Why a stored warning count of zero proves nothing, and what the batches say was left out instead.
+ *
+ * The importers that write source_of_sales_import_rows — the normalizer, the Office allocation and
+ * Direct orders — store only the rows they keep, and mark every one of them valid. A problem row is
+ * left out of the table, never stored as a warning. Production on 2026-09-18: 362,338 stored rows, all
+ * valid, none carrying an issue, while the batches recorded 7,667 rows ignored and 13 skipped for a
+ * blank customer. `verify` printed "warning: 0" and nothing else, which read as a clean bill of health
+ * it could never fail to give.
+ */
+export function explainNoStoredWarnings(leftOut: SourceOfSalesLeftOutTotals): string[] {
+  return [
+    "NOT a clean bill of health: the importers store only the rows they keep, each marked valid. A problem row is left out of source_of_sales_import_rows instead of being stored as a warning, so a zero here cannot mean \"no issues\".",
+    leftOutLine(leftOut),
+  ];
+}
+
+/** The lines `verify` prints: the stored states, then what was left out at import. */
+export function describeStoredValidationStates(
+  stateCounts: Record<string, number>,
+  leftOut: SourceOfSalesLeftOutTotals,
+): string[] {
+  const warning = stateCounts.warning ?? 0;
+  const failed = stateCounts.failed ?? 0;
+  const lines = [`valid: ${stateCounts.valid ?? 0}`, `warning: ${warning}`, `failed: ${failed}`];
+  // Rows really stored as warning or failed are the real thing: report them without the disclaimer.
+  if (warning + failed === 0) return [...lines, ...explainNoStoredWarnings(leftOut)];
+  return [...lines, leftOutLine(leftOut)];
+}
+
+function leftOutLine(leftOut: SourceOfSalesLeftOutTotals) {
+  return `Left out at import, as ${count(leftOut.batches)} batch${leftOut.batches === 1 ? "" : "es"} recorded it: `
+    + `${count(leftOut.ignored)} ignored (a product we don't sell, or free goods) · `
+    + `${count(leftOut.blankCustomer)} blank customer · `
+    + `${count(leftOut.warnings)} warnings · `
+    + `${count(leftOut.failed)} failed.`;
+}
