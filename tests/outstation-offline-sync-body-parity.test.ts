@@ -80,7 +80,7 @@ export function runOutstationOfflineSyncBodyParityTests() {
   assert.equal(honest.meetingAmount, 0, "a traveling trip files no meeting amount");
   assert.equal(honest.amWorkload, 4, "the resolved AM visit count");
   assert.equal(honest.pmWorkload, 3, "the resolved PM visit count");
-  assert.equal(honest.hr, "Field Employee", "no HR override, so the row falls back");
+  assert.equal(honest.hr, "Approved", "HR Status is the request's own decision, never the employee's name (F-26)");
 
   // report_travel_cost REPLACES fuel + ticket outright.
   const inflatedTravel = mapOutstationRequestRowToPayrollApproval({

@@ -304,7 +304,11 @@ export function mapOutstationRequestRowToPayrollApproval(
   // report_am_workload/report_pm_workload are never read on either side.
   const amWorkload = outstationWorkloadCount(row.am_workload);
   const pmWorkload = outstationWorkloadCount(row.pm_workload);
-  const hrStatus = toText(row.employee_name);
+  // The HR Status column is the request's own decision — Approved, Rejected or Pending — the same
+  // value claims-read.ts gives a claim and the push mapper stamps on an approved trip. Until
+  // 2026-09-19 it fell back to the EMPLOYEE'S NAME (audit F-26), because the report_hr_status
+  // column it preferred was never filled; that column is dropped now, and a name is not a status.
+  const hrStatus = status;
   const hrNotes = toText(row.eligibility_reason);
   // The LABEL, and only the label. `report_trip_type` is the report-facing stay/duration wording
   // ("Return same day", "Overnight / 3 days") that `reportTripTypeLabel` in service.ts derives
