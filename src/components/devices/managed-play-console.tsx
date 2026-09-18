@@ -117,11 +117,16 @@ export function ManagedPlayConsole({
   const [status, setStatus] = useState<"idle" | "opening" | "open" | "failed">("idle");
   const [error, setError] = useState<string | null>(null);
   const [signupBusy, setSignupBusy] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  /** Google's frame host — the element `gapi` writes into, and the one React never renders into. */
+  const frameHostRef = useRef<HTMLDivElement | null>(null);
   const openedRef = useRef(false);
 
   const openIframe = useCallback(async () => {
-    if (!containerRef.current) return;
+    const host = frameHostRef.current;
+    if (!host) return;
+    // Emptied up front, so neither "Opening…" nor "Nothing is loaded." ever sits over a stale frame.
+    // Safe only because React owns none of the host's children — see the element in the JSX.
+    host.replaceChildren();
     setStatus("opening");
     setError(null);
     try {
@@ -134,11 +139,10 @@ export function ManagedPlayConsole({
       const context = window.gapi?.iframes?.getContext();
       if (!context) throw new Error("Google's iframe context was not available.");
 
-      containerRef.current.replaceChildren();
       context.openChild({
         attributes: { style: "width: 100%; height: 720px; border: 0;" },
         url: payload.iframeUrl,
-        where: containerRef.current,
+        where: host,
       });
       setStatus("open");
     } catch (caught) {
@@ -297,13 +301,23 @@ export function ManagedPlayConsole({
             </div>
           ) : null}
 
-          <div className="border border-slate-200" ref={containerRef}>
+          <div className="border border-slate-200">
             {status !== "open" ? (
               <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
                 {status === "failed" ? null : <Loader2 aria-hidden className="size-4 animate-spin" />}
                 {status === "failed" ? "Nothing is loaded." : "Opening managed Google Play…"}
               </div>
             ) : null}
+            {/*
+              🔴 REACT RENDERS NOTHING INSIDE THIS ELEMENT — keep it self-closing. gapi's openChild
+              writes Google's frame into it and openIframe empties it, so any child React placed here
+              would be removed behind React's back, and React's next commit — the setStatus("open")
+              straight after openChild — would throw "Failed to execute 'removeChild' on 'Node'" and
+              take the whole admin page down to "This page stopped unexpectedly". That is exactly what
+              production did on 2026-09-18, when the placeholder above sat inside the element gapi
+              wrote into. The placeholder is a SIBLING of the host for that reason.
+            */}
+            <div data-managed-play-frame-host="" ref={frameHostRef} />
           </div>
         </div>
       )}
