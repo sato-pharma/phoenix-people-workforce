@@ -139,7 +139,7 @@ through PostgREST, not 42P01.
 
 Automatic, no approval needed: branch first, stage only the migration and the files that belong to
 it, conventional message (`feat(db): …` / `fix(db): …`). The required checks are `validate`, `lint`,
-`typecheck` and `secret-scan`. **Merging needs the owner's separate approval** — never
+`typecheck`, `test`, `secret-scan` and `mobile`. **Merging needs the owner's separate approval** — never
 `gh pr merge --auto`.
 
 Remember that CI is grading the file, not the database. A green pull request on a migration that

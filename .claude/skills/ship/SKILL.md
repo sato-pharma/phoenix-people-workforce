@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Merge an approved PR and prove it reached production — read the five required checks, merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
+description: Merge an approved PR and prove it reached production — read the six required checks, merge with a plain `gh pr merge` from a non-git directory, settle the PR state (a merge run from a worktree exits non-zero AFTER it already succeeded), then prove the live `/api/healthz` revision contains the merge and read main's own CI run (a docs-only PR's green checks ran no tests at all). Use when the owner's own message approves merging a specific PR — "merge it", "merge 3805 when green" — never on your own initiative.
 argument-hint: '[PR number, e.g. 3947]'
 ---
 
@@ -44,15 +44,17 @@ something newly on `main`.
 gh pr checks <n>
 ```
 
-Five checks block the merge, and only these five: **`validate`, `lint`, `typecheck`, `test`,
-`secret-scan`** (branch protection, `enforce_admins: true`). Anything else in the list — e.g.
-`sast-scan` reading `skipping` — is not a gate and not a failure. **`test` was added on 2026-09-17
-(#3950)**, when the unit suite left `validate` for its own job: a run that reads only the old four
-is now reading four of five, and the one it drops is the tests.
+Six checks block the merge, and only these six: **`validate`, `lint`, `typecheck`, `test`,
+`secret-scan`, `mobile`** (branch protection, `enforce_admins: true`). Anything else in the list —
+e.g. `sast-scan` reading `skipping` — is not a gate and not a failure. **`test` and `mobile` were
+added on 2026-09-18**: `test` had left `validate` for its own job the day before (#3950) and nobody
+added the new name, so for that day a red unit suite showed four green required checks and merged;
+`mobile` runs `npm ci` and a typecheck inside `mobile/` (#3974). A run that reads only the old four
+is now reading four of six, and the two it drops are the tests and the mobile app.
 
-- All five `pass` → merge.
+- All six `pass` → merge.
 - Any `pending` → it is not green. Wait in the background and report when it lands; never merge on
-  four of five.
+  five of six.
 - Red → fix the cause and push. Do not re-run a job hoping, and report a failure your change caused
   separately from one that was already there.
 - **Do not run a local full validation before the merge** — those PR checks are the gate and they

@@ -56,12 +56,14 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
 ## Deployment Workflow
 
 1. Develop on a branch/worktree, open a PR to `main`.
-2. `.github/workflows/ci.yml` runs on the PR — exactly three jobs: `validate`
-   (routes/migrations/sql-backups/deductions/stale-domain checks, test, build, and a Playwright
+2. `.github/workflows/ci.yml` runs on the PR — five jobs: `validate`
+   (routes/migrations/sql-backups/deductions/stale-domain checks, build, and a Playwright
    login smoke test run against the built app **inside the CI runner**, pointed at the staging
-   Supabase project — it does not deploy or hit any live preview URL), `lint`, and `typecheck`.
-   The smoke test used to be a fourth `preview-smoke` job; it now runs as a step inside `validate`,
-   so there is no separate job to wait on.
+   Supabase project — it does not deploy or hit any live preview URL), `lint`, `typecheck`,
+   `test` (the unit suite, split out of `validate` on 2026-09-17) and `mobile` (`npm ci` plus a
+   typecheck inside `mobile/`, added 2026-09-18 and seconds long on a PR that leaves that folder
+   alone). The smoke test used to be a separate `preview-smoke` job; it now runs as a step inside
+   `validate`, so there is no separate job to wait on.
 3. Do **not** run a local full validation before pushing — those PR checks are the gate, and they
    are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
@@ -71,8 +73,8 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
 
-> ⚠️ Branch protection does gate the merge itself: 5 required status checks (`validate`, `lint`,
-> `typecheck`, `test`, `secret-scan`) must be green on the PR head commit, with
+> ⚠️ Branch protection does gate the merge itself: 6 required status checks (`validate`, `lint`,
+> `typecheck`, `test`, `secret-scan`, `mobile`) must be green on the PR head commit, with
 > `enforce_admins: true`. So a merged commit has passed CI. But CI passing is the *only* gate —
 > once merged, it serves live traffic. **Never merge anything you are not willing to have serving
 > employees within minutes.**

@@ -203,8 +203,8 @@ All variables are documented in [`.env.example`](.env.example) with comments. Se
 | `pnpm run check:edit` | Fast inner loop — TypeScript only |
 | `pnpm run ci` | The whole gate in one command — only when you actually need the answer before pushing |
 
-**CI is the gate.** Push the branch and let the PR's checks answer: `validate`, `lint`, `typecheck`
-and `secret-scan` are required and block a red merge. There is no local pre-push gate — the old
+**CI is the gate.** Push the branch and let the PR's checks answer: `validate`, `lint`, `typecheck`,
+`test`, `secret-scan` and `mobile` are required and block a red merge. There is no local pre-push gate — the old
 `check:harden` script was retired on 2026-08-18 because it only duplicated, slowly, what CI was
 about to run anyway. `check:edit` remains available as an optional fast typecheck mid-task, and
 `pnpm run ci` is there for the rare case where you need the full answer before you push.

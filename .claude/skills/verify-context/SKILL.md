@@ -33,10 +33,12 @@ point there. **This skill never changes infra, settings, or the database — it 
 4. **Branch protection** (§2)
    ```bash
    gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection \
-     --jq '{checks:[.required_status_checks.checks[].context], reviews:.required_pull_request_reviews.required_approving_review_count}'
+     --jq '{checks:[.required_status_checks.checks[]|"\(.context) app=\(.app_id)"], reviews:.required_pull_request_reviews.required_approving_review_count}'
    ```
-   Expect the 5 required checks (`validate`, `lint`, `typecheck`, `test`, `secret-scan`) and
-   `reviews: 0` (solo owner can't self-approve). AGENTS.md §2 must match.
+   Expect the 6 required checks (`validate`, `lint`, `typecheck`, `test`, `secret-scan`, `mobile`),
+   every one of them `app=15368` (GitHub Actions — a context with `app_id: null` can be satisfied by
+   any app that reports that name), and `reviews: 0` (solo owner can't self-approve). AGENTS.md §2
+   must match.
 
 5. **Supabase project refs** (§3, §8)
    Call `mcp__supabase-production__list_projects`. Expect exactly production `ozucdzovmcqvepbozvqf`

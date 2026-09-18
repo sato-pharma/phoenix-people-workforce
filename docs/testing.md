@@ -82,7 +82,7 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs five required checks — four from `.github/workflows/ci.yml`, one from
+CI runs six required checks — five from `.github/workflows/ci.yml`, one from
 `.github/workflows/security-scan.yml`:
 
 | Check | Workflow | What it runs |
@@ -91,6 +91,7 @@ CI runs five required checks — four from `.github/workflows/ci.yml`, one from
 | `test` | ci.yml | The **unit/integration suite** (`pnpm run test`, i.e. `tests/run-tests.ts`) on its own parallel job. **It left `validate` on 2026-09-17 (#3950)** — it read nothing the build produced, and was 96s of a 364s job; `validate` came back at 267s and the new job at 129s, under `typecheck`, so the wait fell by the whole 96s. **Anything that says a pinned test "runs in the required `validate` job" means this one.** |
 | `lint` | ci.yml | `pnpm run lint` (parallel job). |
 | `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
+| `mobile` | ci.yml | `npm ci` and `npm run typecheck` inside `mobile/` — the Expo app, which keeps its own npm lockfile outside the pnpm workspace. **Added 2026-09-18 (#3974)**, after #3970 found `mobile/package-lock.json` could not be installed without `--legacy-peer-deps` and nothing in CI would ever have noticed. The job always runs and always reports; a detect step decides whether to do the work, so a PR that leaves `mobile/` alone pays about nine seconds. |
 | `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. **Blocking** — any finding fails the check. |
 
 `.github/workflows/security-scan.yml` was deleted on 2026-08-08 by #1889 and restored the same day
@@ -103,6 +104,6 @@ account (`security_and_analysis: null`), this job is the repo's only automated s
 
 There is no longer a separate `preview-smoke` job — the login smoke test moved into
 `validate`. The full Playwright E2E suite runs only on manual `workflow_dispatch` (the
-`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 4 checks green before a merge can
+`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 6 checks green before a merge can
 land** (there is no required human review — solo owner); per AGENTS.md §3 a merge to `main` then
 deploys to production immediately.
