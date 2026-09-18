@@ -24,3 +24,13 @@ export function readCoordinateInput(value: unknown): number | null {
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
+
+/**
+ * A GPS fix's accuracy radius in metres, exactly as a client posted it, or null when it posted
+ * none. The same one-value read as {@link readCoordinateInput}, for the same reason: `Number("")`
+ * and `Number(" ")` are 0, so a blank accuracy was stored as a perfect 0 m fix. There is no range
+ * check, because no caller has one.
+ */
+export function readAccuracyInput(value: unknown): number | null {
+  return readCoordinateInput(value);
+}
