@@ -10,6 +10,10 @@ import {
 } from "@/components/outstation/evidence-watermark";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
+import {
+  departureRefusalReasonFromBrowserErrorCode,
+  type DepartureLocationRefusalReason,
+} from "@/lib/outstation/departure-location-refusals";
 import { DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE } from "@/lib/outstation/departure-photo-location";
 
 /** One request still owing its departure photo. */
@@ -19,6 +23,23 @@ export type DeparturePhotoPendingRequest = {
   tripEndDate: string;
   tripStartDate: string;
 };
+
+/**
+ * Tell Phoenix a departure photo was refused for having no location, and why, so the approver sees
+ * the try (owner, 2026-09-18: "Record refused tries"). Best effort: the employee is reading the
+ * refusal either way, and a failed report must never replace it with another error.
+ */
+async function reportRefusedTry(requestId: number, reason: DepartureLocationRefusalReason) {
+  try {
+    await fetch(`/api/outstation/${requestId}/departure-photo/location-refusal`, {
+      body: JSON.stringify({ reason }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+  } catch {
+    // Nothing to do: the refusal below is what the employee needs.
+  }
+}
 
 type CaptureState =
   | { kind: "idle" }
@@ -156,16 +177,22 @@ export function DeparturePhotoCard({
         // or sent. The server refuses the same photo (departure-photo-location.ts); saying so first
         // saves an upload the employee would only see refused. A far or fuzzy fix is still sent,
         // and flagged rather than blocked.
-        const position = await new Promise<GeolocationPosition | null>((resolve) => {
-          if (!navigator.geolocation) return resolve(null);
+        // The browser's own error code is the cause the approver reads for a refused try.
+        const located = await new Promise<{
+          position: GeolocationPosition | null;
+          reason: DepartureLocationRefusalReason | null;
+        }>((resolve) => {
+          if (!navigator.geolocation) return resolve({ position: null, reason: "unsupported" });
           navigator.geolocation.getCurrentPosition(
-            (value) => resolve(value),
-            () => resolve(null),
+            (value) => resolve({ position: value, reason: null }),
+            (error) => resolve({ position: null, reason: departureRefusalReasonFromBrowserErrorCode(error.code) }),
             { enableHighAccuracy: true, maximumAge: 0, timeout: 12_000 },
           );
         });
+        const position = located.position;
 
         const fix = usablePosition(position?.coords.latitude, position?.coords.longitude);
+        if (!fix) await reportRefusedTry(request.id, located.reason ?? "position_unavailable");
         if (!fix) throw new Error(DEPARTURE_PHOTO_LOCATION_REQUIRED_MESSAGE);
         const { latitude, longitude } = fix;
         const location = await resolveEvidenceLocationStamp(

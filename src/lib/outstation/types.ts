@@ -1,4 +1,5 @@
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
+import type { DepartureLocationRefusal } from "@/lib/outstation/departure-location-refusals";
 
 export type OutstationEligibilityStatus =
   | "eligible"
@@ -313,6 +314,9 @@ export type OutstationExpenseRequest = {
    * carEvidenceImageUrl so an approver sees the two photos side by side. */
   departureEvidenceImageUrl?: string | null;
   departureEvidenceMetadata: OutstationDepartureEvidenceMetadata | null;
+  /** Departure photos refused for having no GPS location, with time and cause (owner, 2026-09-18).
+   * Optional so a hand-built request (a preview, a fixture) need not carry one. */
+  departureLocationRefusals?: DepartureLocationRefusal[];
   evidenceGateStatus: OutstationEvidenceGateStatus;
   /** How many times the CRM workload grab has been tried. Drives the admin repair screen. */
   workloadCaptureAttempts: number;
