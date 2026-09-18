@@ -1789,6 +1789,7 @@ import { runDatabaseMappingCustomerMapOpeningTests } from "./database-mapping-cu
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
 import { runMonthlySalesRunSkipHoldsOnlyWhileTrueTests } from "./monthly-sales-run-skip-holds-only-while-true.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
+import { runNormalizerUnmappedListCustomersTests } from "./normalizer-unmapped-list-customers.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6214,6 +6215,11 @@ await runTest(
 await runTest(
   "the weekly Combined Report prices every row at today's Product Master price, the same rule as the dashboard: a row imported at 50 a unit reads 60 when the master says 60, on its upload sheet and the Summary total; Direct keeps its sheet value, a product with no price or a retired one keeps the stored value, and a price list that cannot be read fails the export",
   runWeeklyCombinedReportLivePriceTests,
+);
+
+await runTest(
+  "the normalizer's Download list (Excel) carries every unknown pharmacy the screen shows, with its name, address and area text, and Upload filled list learns a filled pharmacy row as a customer mapping under the list's distributor; before the fix the file held products and territories only and a customer row was dropped on upload",
+  runNormalizerUnmappedListCustomersTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
