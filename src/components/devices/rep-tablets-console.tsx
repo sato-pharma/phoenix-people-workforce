@@ -345,7 +345,9 @@ type PolicyChangeBody =
 
 export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolean }) {
   const [data, setData] = useState<RepTabletsState | null>(null);
-  const [loading, setLoading] = useState(false);
+  // True from the first render when the enterprise is bound: the first load starts in an effect,
+  // which may not set state synchronously (see below).
+  const [loading, setLoading] = useState(enterpriseBound);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [setupRequired, setSetupRequired] = useState(!enterpriseBound);
 
@@ -363,24 +365,43 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
   const [enrollment, setEnrollment] = useState<EnrollmentResult | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // One read of the page, shared by the first load and every refresh. It sets state only inside
+  // the promise's callbacks, which is what lets the first load run from an effect: an async loader
+  // called straight from an effect body trips react-hooks/set-state-in-effect. BiometricDevicesCard
+  // solves the same problem the same way.
+  const readState = useCallback(
+    (isCurrent: () => boolean) =>
+      requestJson<RepTabletsState>("/api/devices/tablets")
+        .then((state) => {
+          if (!isCurrent()) return;
+          setData(state);
+          setSetupRequired(false);
+        })
+        .catch((caught: unknown) => {
+          if (!isCurrent()) return;
+          if (caught instanceof RequestFailure && caught.setupRequired) setSetupRequired(true);
+          else setLoadError(messageOf(caught, "Could not load the rep tablets."));
+        })
+        .finally(() => {
+          if (isCurrent()) setLoading(false);
+        }),
+    [],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    try {
-      setData(await requestJson<RepTabletsState>("/api/devices/tablets"));
-      setSetupRequired(false);
-    } catch (caught) {
-      if (caught instanceof RequestFailure && caught.setupRequired) setSetupRequired(true);
-      else setLoadError(messageOf(caught, "Could not load the rep tablets."));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    await readState(() => true);
+  }, [readState]);
 
   useEffect(() => {
     if (!enterpriseBound) return;
-    void load();
-  }, [enterpriseBound, load]);
+    let current = true;
+    void readState(() => current);
+    return () => {
+      current = false;
+    };
+  }, [enterpriseBound, readState]);
 
   // The expiry line turns into "expired" on its own while the code is on screen.
   useEffect(() => {
