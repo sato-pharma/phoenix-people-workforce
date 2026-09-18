@@ -165,8 +165,9 @@ export type NormalizeException = {
 };
 
 // A number cell written in a form with one meaning only — Arabic-Indic digits, space-grouped
-// thousands — that the engine rewrote and then read (normalizeNumberText). Kept so the upload says
-// exactly what it read, instead of quietly reading it: before, each of these refused the whole file.
+// thousands, dots for thousands before a decimal comma ("1.234,56") — that the engine rewrote and then
+// read (normalizeNumberText). Kept so the upload says exactly what it read, instead of quietly reading
+// it: before, the first two refused the whole file and "1.234,56" was read silently as 1.23456.
 export type CellCorrection = {
   rawRowNumber: number;
   field: "quantity" | "value" | "discount";
