@@ -597,6 +597,7 @@ import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
 import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSalesChannelsByRepClosingValueTests } from "./sales-channels-by-rep-closing-value.test.ts";
+import { runProductScopeOneListTests } from "./product-scope-one-list.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runUnitsAreUnitsNoDiscountFactorTests } from "./units-are-units-no-discount-factor.test.ts";
@@ -2977,6 +2978,10 @@ await runTest("sales channels by rep (stems derived, restricted fail-closed, una
 await runTest(
   "channels by rep values a distributor row at paid units x factory price and a direct order at its own value, as the closing does",
   runSalesChannelsByRepClosingValueTests,
+);
+await runTest(
+  "a product list saved on Scope & Visibility or the Weekly Sales screen is written to both, so Source of Sales sees it",
+  runProductScopeOneListTests,
 );
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);

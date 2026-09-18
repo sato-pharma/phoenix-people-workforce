@@ -5,6 +5,8 @@
  *                         organogram, and vacancies (overrides role-default single line).
  * product_scope_override: which product codes restrict sales and marketing-request
  *                         visibility (null = use line scope, [] = sees nothing, [...] = those codes only).
+ *                         It is the same list as the person's Weekly Sales product scope: both screens
+ *                         save through src/lib/sales/product-scope-list.ts, which writes the two together.
  */
 
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
@@ -165,8 +167,14 @@ export type UpdateUserScopeInput = {
   salesScopeOverride: string | null;
 };
 
-export async function updateUserScopeOverride(input: UpdateUserScopeInput): Promise<void> {
-  const supabase = getSupabaseAdmin();
+/**
+ * Only `src/lib/sales/product-scope-list.ts` calls this: the products saved here are also the
+ * person's Weekly Sales product list, and that module writes both.
+ */
+export async function updateUserScopeOverride(
+  input: UpdateUserScopeInput,
+  supabase: Pick<ReturnType<typeof getSupabaseAdmin>, "from"> = getSupabaseAdmin(),
+): Promise<void> {
   const { error } = await supabase
     .from("app_auth_users")
     .update({
