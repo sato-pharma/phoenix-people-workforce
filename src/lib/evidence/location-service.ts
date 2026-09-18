@@ -14,7 +14,7 @@
  */
 
 import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
-import { readAccuracyInput } from "@/lib/geo/coordinate-input";
+import { readAccuracyInput, readCoordinateInput } from "@/lib/geo/coordinate-input";
 import { googleReverseGeocode } from "@/lib/google-maps/server";
 
 import type { EvidenceLocationStamp } from "./location-stamp";
@@ -36,11 +36,6 @@ export type EvidenceLocationPayload = EvidenceLocationStamp & {
   /** The lines for the photo's watermark panel, already worded and ordered. */
   lines: string[];
 };
-
-function finiteOrNull(value: unknown): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 /**
  * Google's best single-string address, falling back to the components it did return.
@@ -113,14 +108,22 @@ export async function resolveEvidenceLocation(input: {
 }
 
 /**
- * Shared request parsing for the three evidence-location endpoints. Returns the coordinates or a
- * reason string — the routes differ only in which permission they assert, never in what they read.
+ * Shared request parsing for the four evidence-location endpoints (outstation, direct orders,
+ * marketing, Phoenix CRM). Returns the coordinates, or null, which every one of those routes
+ * answers as "no position" — the routes differ only in which permission they assert, never in
+ * what they read.
+ *
+ * Each coordinate is read with readCoordinateInput, never `Number(...)`: `Number(null)`, `Number("")`
+ * and `Number(" ")` are all 0, so a request with a blank latitude and longitude was stamped at
+ * 0°N 0°E, in the Gulf of Guinea, and that fake pin was burned into the photo as the rep's
+ * position. A blank coordinate now takes the same refusal a missing one always did, and the phone
+ * falls back to its own "lookup unavailable" stamp, so the photo is never lost over it.
  */
 export function parseEvidenceLocationBody(body: Record<string, unknown>):
   | { accuracyMeters: number | null; latitude: number; longitude: number }
   | null {
-  const latitude = finiteOrNull(body.latitude);
-  const longitude = finiteOrNull(body.longitude);
+  const latitude = readCoordinateInput(body.latitude);
+  const longitude = readCoordinateInput(body.longitude);
   if (latitude == null || longitude == null) return null;
   // A pin outside these bounds is a unit mix-up (radians, or lat/lng swapped), not a place.
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
