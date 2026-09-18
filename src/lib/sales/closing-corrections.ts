@@ -16,7 +16,7 @@
 // row, so the page never shows a bare number the reader has to decode. Detection thresholds live
 // in the SQL only; nothing here filters further — the page shows exactly what the RPC found.
 
-import { listMonthlyClosingPeriods } from "@/lib/sales/monthly-distributor-import";
+import { buildRegionNameByCode, listMonthlyClosingPeriods } from "@/lib/sales/monthly-distributor-import";
 import { previousPeriod } from "@/lib/sales/source-coverage";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
@@ -29,6 +29,13 @@ export type ClosingCorrectionRow = {
   distributorName: string;
   areaCode: string;
   areaName: string;
+  /**
+   * Set ONLY on a net_negative row that is a region's company Direct row: Direct money with no area
+   * of its own, which the closing books by REGION (one "Direct orders (company)" row per region),
+   * never in an area cell. NULL or absent on every other row. It is part of the cell's identity —
+   * two regions' Direct rows are two cells, and netting them was the bug.
+   */
+  regionCode?: string | null;
   productCode: string;
   productName: string;
   clientName: string | null;
@@ -135,10 +142,22 @@ const SECTION_LABEL: Record<ClosingCorrectionRow["kind"], string> = {
   reversal_pair: "Corrections that span two months",
 };
 
-/** One situation = one (line, area, product) cell — the grain the closing is read at. */
-function situationKey(row: { areaCode: string; line: string; productCode?: string; productName: string }): string {
-  return [row.line, row.areaCode, row.productCode ?? row.productName].join("|").toLowerCase();
+/**
+ * One situation = one (line, area, product) cell — the grain the closing is read at. A region's
+ * company Direct row is its own cell, so its region is part of the key.
+ */
+function situationKey(row: {
+  areaCode: string;
+  line: string;
+  productCode?: string;
+  productName: string;
+  regionCode?: string | null;
+}): string {
+  return [row.line, row.areaCode, row.regionCode ?? "", row.productCode ?? row.productName].join("|").toLowerCase();
 }
+
+/** The label the closing itself prints on the synthetic company Direct row. */
+export const COMPANY_DIRECT_LABEL = "Direct orders (company)";
 
 function egp(value: number): string {
   return `${Math.abs(value).toLocaleString("en-US", {
@@ -204,6 +223,7 @@ export function groupClosingCorrections(
     } else if (row.kind === "net_negative") {
       // No distributor: the RPC sends distributorCode NULL for this kind because the row IS the
       // closing's cell, summed across every distributor. See NetNegativeCell.
+      const isRegionDirectRow = row.regionCode != null;
       netNegatives.push({
         line: row.line,
         areaCode: row.areaCode,
@@ -211,9 +231,12 @@ export function groupClosingCorrections(
         productName: row.productName,
         units: row.units,
         value: row.value,
-        impact:
-          `Across every distributor, returns exceed sales in this cell by ${units(row.units)} ` +
-          `(${egp(row.value)}) this month.`,
+        impact: isRegionDirectRow
+          ? `Company direct orders with no area of their own net below zero in this region by ` +
+            `${units(row.units)} (${egp(row.value)}) this month — the closing shows it on the ` +
+            `region's own "${COMPANY_DIRECT_LABEL}" row.`
+          : `Across every distributor, returns exceed sales in this cell by ${units(row.units)} ` +
+            `(${egp(row.value)}) this month.`,
         alsoSeenIn: alsoSeenInFor(row),
       });
     } else {
@@ -284,15 +307,18 @@ export async function loadClosingCorrections(input?: {
   }
 
   const supabase = getSupabaseAdmin();
-  const [raw, areasResult, batchesResult] = await Promise.all([
+  const [raw, areasResult, regionsResult, batchesResult] = await Promise.all([
     rpcAll(supabase, "phx_closing_corrections", { p_period: period }, [
-      "kind", "distributor_code", "area_code", "product_code",
+      "kind", "distributor_code", "area_code", "region_code", "product_code",
     ]),
     supabase.from("source_of_sales_areas").select("area_code,area_name"),
+    supabase.from("source_of_sales_regions").select("region_code,region_name"),
     supabase.from("source_of_sales_import_batches").select("distributor_code,distributor_name"),
   ]);
   if (areasResult.error) throw areasResult.error;
+  if (regionsResult.error) throw regionsResult.error;
   if (batchesResult.error) throw batchesResult.error;
+  const regionNameByCode = buildRegionNameByCode((regionsResult.data ?? []) as Array<Record<string, unknown>>);
 
   const areaNameByCode = new Map<string, string>();
   for (const row of areasResult.data ?? []) {
@@ -312,6 +338,14 @@ export async function loadClosingCorrections(input?: {
   const rows: ClosingCorrectionRow[] = (raw as Record<string, unknown>[]).map((row) => {
     const distributorCode = String(row.distributor_code ?? "");
     const areaCode = String(row.area_code ?? "").trim().toUpperCase();
+    // Present only on a region's company Direct row (see ClosingCorrectionRow.regionCode). That row
+    // has no area, so it is named the way the closing names it: the company Direct label and its
+    // region — never "(no area)", which pointed at a cell the closing does not have.
+    const regionCode = row.region_code == null ? null : String(row.region_code).trim().toUpperCase();
+    const regionName = regionCode ? regionNameByCode.get(regionCode) || regionCode : "";
+    const areaName = regionCode != null
+      ? (regionName ? `${COMPANY_DIRECT_LABEL} · ${regionName}` : COMPANY_DIRECT_LABEL)
+      : areaNameByCode.get(areaCode) ?? (areaCode || "(no area)");
     return {
       kind: String(row.kind ?? "") as ClosingCorrectionRow["kind"],
       period: String(row.period ?? ""),
@@ -320,7 +354,8 @@ export async function loadClosingCorrections(input?: {
       distributorCode,
       distributorName: distributorNameByCode.get(distributorCode) ?? distributorCode,
       areaCode,
-      areaName: areaNameByCode.get(areaCode) ?? (areaCode || "(no area)"),
+      areaName,
+      regionCode,
       productCode: String(row.product_code ?? ""),
       productName: String(row.product_name ?? "") || String(row.product_code ?? ""),
       clientName: row.client_name == null ? null : String(row.client_name),

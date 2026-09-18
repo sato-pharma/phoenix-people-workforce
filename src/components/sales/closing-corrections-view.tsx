@@ -78,6 +78,14 @@ function withCrossReference(impact: string, alsoSeenIn: readonly string[]): stri
   );
 }
 
+/**
+ * The area cell as the page prints it: the name, then its code in brackets when there is one. A row
+ * with no area code — a region's company Direct row — prints its name alone, never an empty "()".
+ */
+function areaLabel(areaName: string, areaCode: string): string {
+  return areaCode ? `${areaName} (${areaCode})` : areaName;
+}
+
 export function ClosingCorrectionsView({ initialData, initialError }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -188,7 +196,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                     rows={data.reversalPairs.map((pair) => [
                       pair.distributorName,
                       pair.line,
-                      `${pair.areaName} (${pair.areaCode})`,
+                      areaLabel(pair.areaName, pair.areaCode),
                       pair.productName,
                       `${pair.positivePeriod}: +${UNITS.format(pair.positiveUnits)} u / ${EGP.format(pair.positiveValue)}`,
                       `${pair.negativePeriod}: ${UNITS.format(pair.negativeUnits)} u / ${EGP.format(pair.negativeValue)}`,
@@ -218,7 +226,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                     emptyText={`No cell of ${data.period} nets negative beyond the noise floor.`}
                     rows={data.netNegatives.map((cell) => [
                       cell.line,
-                      `${cell.areaName} (${cell.areaCode})`,
+                      areaLabel(cell.areaName, cell.areaCode),
                       cell.productName,
                       UNITS.format(cell.units),
                       EGP.format(cell.value),
@@ -242,7 +250,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                       entry.clientName,
                       entry.distributorName,
                       entry.line,
-                      `${entry.areaName} (${entry.areaCode})`,
+                      areaLabel(entry.areaName, entry.areaCode),
                       entry.productName,
                       `${UNITS.format(entry.units)} u / ${EGP.format(entry.value)}`,
                       withCrossReference(entry.impact, entry.alsoSeenIn),
