@@ -7,8 +7,9 @@ import { getVacationActionCenterData } from "@/lib/vacation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { getManagerPendingExcuses } from "@/lib/excuses/service";
 import { listOutstationRequests } from "@/lib/outstation/service";
+import { viewedPersonCanApproveOutstation } from "@/lib/outstation/admin-access";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
-import { getPlansAwaitingAction, type ApproverPendingPlan } from "@/lib/weekly-planning/service";
+import { authRoleForHrId, getPlansAwaitingAction, type ApproverPendingPlan } from "@/lib/weekly-planning/service";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { ActionHubItem } from "@/components/action-center/types";
 import type { VacationActionCenterRow } from "@/lib/vacation/types";
@@ -94,13 +95,22 @@ function mapWeeklyPlan(plan: ApproverPendingPlan): ActionHubItem {
 
 // Marketing requests are intentionally excluded from this consolidated inbox — they keep
 // their own dedicated approval inbox at /workspace/marketing-requests + portal equivalents.
-async function fetchAllItems(viewAccess: AccessContext): Promise<ActionHubItem[]> {
+//
+// Outstation is the one feed that takes no access context: listOutstationRequests() reads every
+// request in the company. It is included only when the VIEWED person may decide outstation
+// requests (viewedPersonCanApproveOutstation), the same gate the Action Center applies to its own
+// viewer — otherwise every submitted trip landed in the queue of whichever manager was picked
+// (audit F-31).
+async function fetchAllItems(
+  viewAccess: AccessContext,
+  options: { includeOutstation: boolean },
+): Promise<ActionHubItem[]> {
   const planManagerAccess: AccessContext = { ...viewAccess, role: "Manager", scope: "team" };
   const settled = await Promise.allSettled([
     getVacationActionCenterData(viewAccess).catch(() => null),
     getResignationsDashboardData(viewAccess).catch(() => null),
     getManagerPendingExcuses(viewAccess).catch(() => null),
-    listOutstationRequests().catch(() => null),
+    options.includeOutstation ? listOutstationRequests().catch(() => null) : Promise.resolve(null),
     getContractRenewalDashboardData(viewAccess).catch(() => null),
     getPlansAwaitingAction(planManagerAccess).catch(() => null),
   ]);
@@ -136,7 +146,11 @@ export async function GET(request: Request) {
     const offset = Math.max(0, Number(url.searchParams.get("offset") ?? "0"));
 
     const viewAccess: AccessContext = { ...access, hrId: viewAs };
-    const allItems = await fetchAllItems(viewAccess);
+    // The viewed person's OWN app role — viewAccess still carries the caller's Super Admin role.
+    const viewedRole = await authRoleForHrId(viewAs);
+    const allItems = await fetchAllItems(viewAccess, {
+      includeOutstation: viewedPersonCanApproveOutstation(viewedRole),
+    });
     const total = allItems.length;
     const page = allItems.slice(offset, offset + limit);
     return NextResponse.json({ items: page, total, limit, offset });

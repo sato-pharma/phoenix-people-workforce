@@ -13,6 +13,7 @@ import {
   planApprovalsBasePath,
 } from "../src/lib/approvals-hub/service.ts";
 import { slaTone, APPROVALS_SLA_THRESHOLDS } from "../src/components/approvals-hub/sla-thresholds.ts";
+import { viewedPersonCanApproveOutstation } from "../src/lib/outstation/admin-access.ts";
 
 const superAdmin: AccessContext = { hrId: "S-1", role: "Super Admin", scope: "system", source: "system" };
 const ceo: AccessContext = { hrId: "C-1", role: "CEO", scope: "company", source: "session" };
@@ -388,6 +389,33 @@ export function runApprovalsHubTests() {
   assert.match(approvalsHubManagersRoute, /const ALLOWED_CALLER_ROLES = new Set\(\["Super Admin"\]\);/, "managers endpoint caller allowlist must be Super Admin only");
   const approvalsHubDataRoute = readFileSync("app/api/approvals-hub/hub-data/route.ts", "utf8");
   assert.match(approvalsHubDataRoute, /const ALLOWED_VIEW_AS_ROLES = new Set\(\["Super Admin"\]\);/, "hub-data view-as allowlist must be Super Admin only");
+
+  // ── F-31: the view-as outstation feed follows the VIEWED person, not the caller ──
+  // listOutstationRequests() is a company-wide read with no access context, so until 2026-09-19
+  // every submitted trip appeared in the queue of whichever manager the Super Admin picked. Only
+  // someone who can decide outstation requests has any in their queue.
+  assert.equal(viewedPersonCanApproveOutstation("Super Admin"), true, "a Super Admin decides outstation requests, so his queue holds them");
+  for (const role of ["CEO", "Finance Manager", "National Sales Manager", "Regional Manager", "District Manager", "Manager", "HR Operations", "HR Advisory", "Employee"]) {
+    assert.equal(viewedPersonCanApproveOutstation(role), false, `a ${role} cannot decide an outstation request, so none may appear in their queue`);
+  }
+  for (const missing of [null, undefined, "", "Not A Role"]) {
+    assert.equal(viewedPersonCanApproveOutstation(missing), false, `an unknown role (${String(missing)}) fails closed`);
+  }
+  assert.match(
+    approvalsHubDataRoute,
+    /options\.includeOutstation \? listOutstationRequests\(\)\.catch\(\(\) => null\) : Promise\.resolve\(null\)/,
+    "hub-data reads the outstation list only behind includeOutstation",
+  );
+  assert.equal(
+    approvalsHubDataRoute.replace(/^\s*\/\/.*$/gm, "").match(/listOutstationRequests\(/g)?.length,
+    1,
+    "hub-data has exactly one outstation read (comments aside), the gated one",
+  );
+  assert.match(
+    approvalsHubDataRoute,
+    /const viewedRole = await authRoleForHrId\(viewAs\);[\s\S]*?includeOutstation: viewedPersonCanApproveOutstation\(viewedRole\)/,
+    "the gate is decided from the VIEWED person's own role, never the caller's Super Admin context",
+  );
 
   // Plan notifications repoint approver-facing CTAs to the new plan pages; employee-facing stays.
   const planSvc = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
