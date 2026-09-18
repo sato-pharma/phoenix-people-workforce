@@ -80,6 +80,9 @@ type Props = CvDownloadAllowance & {
   // fields, for comparing them against the source CV). Omitted -> unchanged single-column
   // modal, exactly as every existing caller already renders it.
   sidePanel?: ReactNode;
+  // Controls beside Download in the header — the Schedule interview button, from a caller that knows
+  // which candidate the CV belongs to. Omitted -> the header is unchanged.
+  headerActions?: ReactNode;
 };
 
 // Every supported kind is shown as the ACTUAL document, never as extracted text: PDFs are
@@ -624,6 +627,7 @@ export function CvPreviewModal({
   fileName,
   mimeType,
   downloadUrl,
+  headerActions,
   onClose,
   redactPhones = false,
   sidePanel,
@@ -655,7 +659,8 @@ export function CvPreviewModal({
       >
         <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
           <p className="break-all text-sm font-semibold text-slate-900">{fileName}</p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {headerActions}
             {allowDownload ? (
               <a
                 className="text-xs font-semibold text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"

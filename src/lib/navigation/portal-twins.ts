@@ -139,6 +139,10 @@ const TWIN_RULES: readonly TwinRule[] = [
   { from: "/organogram", to: "/employee-portals/organogram" },
   { from: "/probation", to: "/employee-portals/probation" },
   { from: "/recruitment/contact-review", to: "/employee-portals/contact-review" },
+  // The interview calendar. Shared with a portal-mode person (a manager sitting in on interviews),
+  // a link to it — from the share notice, or behind a name in an exported PDF — lands them on the
+  // portal twin with the same week open and the same interview's CV up.
+  { from: "/recruitment/interview-calendar", to: "/employee-portals/interview-calendar", carryQuery: ["week", "open"] },
   // The silent manager-engagement report. Its admin page sends a portal-mode viewer (a National
   // Sales Manager) to the portal twin, which scopes him to his own line — this table is what makes
   // that hop resolve before the (admin) layout's blanket redirect drops him on the portal home.

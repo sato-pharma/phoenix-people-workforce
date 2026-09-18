@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
@@ -29,10 +30,16 @@ type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeTy
  */
 export function CandidateCvActions({
   candidateId,
+  candidateName,
   initialFiles,
   showPhoneNumbers = false,
 }: {
   candidateId: string;
+  /**
+   * Who the CV belongs to, for the preview's Schedule interview button. That button draws only for
+   * someone the interview calendar's owner made an editor, so on most managers' screens it is absent.
+   */
+  candidateName?: string | null;
   /**
    * TRUE only for the manager holding the reservation on this candidate.
    *
@@ -128,6 +135,9 @@ export function CandidateCvActions({
           allowDownload={false}
           downloadUrl={href}
           fileName={cvFile.fileName}
+          headerActions={
+            candidateName ? <ScheduleInterviewButton candidate={{ id: candidateId, name: candidateName }} /> : null
+          }
           mimeType={cvFile.mimeType}
           onClose={() => setPreviewOpen(false)}
           redactPhones={!showPhoneNumbers}

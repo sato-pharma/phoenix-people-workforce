@@ -225,6 +225,7 @@ function buildEmployeePortalSections({
   showVacanciesTab = false,
   showMyCandidatesTab = false,
   showManagerEngagementTab = false,
+  showInterviewCalendarTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
   showPlansTab = false,
@@ -356,6 +357,9 @@ function buildEmployeePortalSections({
         ...(showMyCandidatesTab ? [{ href: "/employee-portals/recruitment-candidates", label: "My Candidates", icon: UsersRound }] : []),
         // NSM-only, scoped to his line server-side. Silent — the managers it measures never see it.
         ...(showManagerEngagementTab ? [{ href: "/employee-portals/recruitment-engagement", label: "Manager CV Engagement", icon: ClipboardList }] : []),
+        // Only for someone the owner shared his interview calendar with — a data flag, never a role.
+        // Beside My Candidates: the same people, the CVs they will sit across the table from.
+        ...(showInterviewCalendarTab ? [{ href: "/employee-portals/interview-calendar", label: "Interview Calendar", icon: CalendarClock }] : []),
         ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
         ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
         ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),

@@ -24,6 +24,7 @@ import { FolderInput, FolderOpen, IdCard, Undo2 } from "lucide-react";
 import { BackgroundReviewPanel } from "@/components/recruitment/background-review-panel";
 import { Button } from "@/components/ui/button";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
 import { CvFolderCabinet, type CvFolderCabinetData } from "@/components/recruitment/cv-folder-cabinet";
 import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
@@ -393,6 +394,11 @@ function FiledCvName({ candidate }: { candidate: Candidate }) {
         <CvPreviewModal
           downloadUrl={`/api/recruitment/files/${file.id}/download`}
           fileName={file.fileName}
+          headerActions={
+            <ScheduleInterviewButton
+              candidate={{ id: candidate.id, jobTitle: candidate.appliedForJobTitle, name: label }}
+            />
+          }
           mimeType={file.mimeType}
           onClose={() => setOpen(false)}
         />

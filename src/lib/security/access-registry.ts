@@ -1126,6 +1126,24 @@ export const accessRegistry = [
   // above waive it: this one leaves the building with every manager's name and numbers in a file that
   // can be forwarded, which is the thing worth having a trail of.
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/manager-engagement/export", permission: null, guard: "domain-helper" }),
+  // The interview calendar (owner, 2026-09-18). Gated in-route by requireInterviewCalendarRole —
+  // the owner (Super Admin) plus the people he shares it with as Viewer, Commenter or Editor — and
+  // NOT by a permission resource: a Viewer may hold no recruitment grant at all, which is the point
+  // of sharing. So "domain-helper" with permission null, like the Manager CV Engagement routes
+  // above. `/me` answers every signed-in caller (a null role means "no Schedule interview button").
+  // The CV routes serve only a candidate who is booked, and only that candidate's own files. The
+  // export leaves the building with candidates' names in it, so it is audited; so are the shares.
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/me", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET", "PATCH", "DELETE"], pattern: "/api/recruitment/interview-calendar/bookings/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/comments", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/zoom", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files", permission: null, guard: "domain-helper" }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files/*", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/people", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/interview-calendar/export", permission: null, guard: "domain-helper" }),
   // A district manager hands a CV back to the administrator ("area not match — or any other
   // situation"), and the administrator later clears it from the Returned CVs queue. TWO DIFFERENT
   // GRANTS on purpose: returning is `hiring_interviews:update` — the same folder grant every district
