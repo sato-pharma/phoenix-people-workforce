@@ -67,6 +67,33 @@ export async function listCustomerMap(filter?: { distributorCode?: string }): Pr
   return rows;
 }
 
+// Active customers per distributor, counted exactly as listCustomerMap filters them (active rows, the
+// code as given). A count that fails to load is left out, never read as zero.
+export async function countCustomerMapByDistributor(codes: string[]): Promise<Map<string, number>> {
+  const supabase = getSupabaseAdmin();
+  const counts = new Map<string, number>();
+  await Promise.all(
+    [...new Set(codes)].map(async (code) => {
+      try {
+        const { count, error } = await supabase
+          .from("source_of_sales_customer_map")
+          .select("*", { count: "exact", head: true })
+          .eq("active", true)
+          .eq("distributor_code", code);
+        if (!error && count !== null) counts.set(code, count);
+      } catch { /* left out: unknown, not zero */ }
+    }),
+  );
+  return counts;
+}
+
+// The distributor the Database Mapping customer map opens on: the first, in the header grid's order,
+// that has customers. Measured on production 2026-09-18, the grid's first distributor (chimipharm) had
+// none, so the map opened empty on every visit. With no count loaded it opens on the first, as before.
+export function pickOpeningCustomerDistributor(codes: string[], counts: Map<string, number>): string {
+  return codes.find((code) => (counts.get(code) ?? 0) > 0) ?? codes[0] ?? "ALL";
+}
+
 // Clamp UI paging params into safe bounds (pure, unit-tested). Caps page size so a huge customer
 // map (21k+ rows for PS) can never be pulled into the browser in one request.
 export const CUSTOMER_MAP_PAGE_MAX = 200;

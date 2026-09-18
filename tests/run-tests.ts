@@ -1780,6 +1780,7 @@ import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-c
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
 import { runDatabaseMappingTablesFitTests } from "./database-mapping-tables-fit.test.ts";
 import { runDatabaseMappingCustomerMapNamesTests } from "./database-mapping-customer-map-names.test.ts";
+import { runDatabaseMappingCustomerMapOpeningTests } from "./database-mapping-customer-map-opening.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 
@@ -6165,6 +6166,11 @@ await runTest(
 await runTest(
   "the Database Mapping customer map shows names, never codes: brick, area, region and distributor resolve against the master rows the page holds (inactive rows included), a code the master does not know stays visible and flagged, and the workbook export keeps its codes for re-import",
   runDatabaseMappingCustomerMapNamesTests,
+);
+
+await runTest(
+  "the Database Mapping customer map opens on the first distributor, in header-grid order, that has customers, never on an empty one (chimipharm had 0 on production); a count that failed is unknown, not zero, and with nothing loaded it opens where it always did",
+  runDatabaseMappingCustomerMapOpeningTests,
 );
 
 await runTest(

@@ -6,6 +6,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { MASTER_ORDER, type MasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows, type MasterRowRecord } from "@/lib/sales/master-data/list";
+import { countCustomerMapByDistributor, pickOpeningCustomerDistributor } from "@/lib/sales/normalizer/customer-map";
 import { listMergedDistributorProfiles } from "@/lib/sales/normalizer/distributor-profile-store";
 import { profilesToHeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 
@@ -41,6 +42,16 @@ export default async function DatabaseMappingPage() {
   // The Database Validation tab's header grid — MERGED profiles (code ∪ DB overrides) so a saved
   // in-app edit shows here too. Fails closed to code profiles if the override table is absent.
   const initialHeaderGrid = profilesToHeaderGrid(await listMergedDistributorProfiles());
+  // The customer map opens on the first distributor that has customers, never on an empty one.
+  const gridCodes = initialHeaderGrid.rows.map((row) => row.distributorCode);
+  const initialCustomerDistributor = pickOpeningCustomerDistributor(gridCodes, await countCustomerMapByDistributor(gridCodes));
 
-  return <DatabaseMappingWorkspace initialError={initialError} initialHeaderGrid={initialHeaderGrid} initialRows={initialRows} />;
+  return (
+    <DatabaseMappingWorkspace
+      initialCustomerDistributor={initialCustomerDistributor}
+      initialError={initialError}
+      initialHeaderGrid={initialHeaderGrid}
+      initialRows={initialRows}
+    />
+  );
 }

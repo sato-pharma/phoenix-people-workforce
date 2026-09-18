@@ -74,5 +74,5 @@ export function runDatabaseMappingCustomerMapNamesTests() {
 
   const workspace = readFileSync(WORKSPACE, "utf8");
   assert.match(workspace, /buildCustomerMapNameIndex\(rowsByMaster\)/, `${WORKSPACE}: the name index must come from the master rows the page holds.`);
-  assert.match(workspace, /<DatabaseValidationTab headerGrid=\{initialHeaderGrid\} nameIndex=\{customerMapNameIndex\} \/>/, `${WORKSPACE}: the Distributor Mapping tab must receive the name index.`);
+  assert.match(workspace, /<DatabaseValidationTab\s+headerGrid=\{initialHeaderGrid\}\s+nameIndex=\{customerMapNameIndex\}/, `${WORKSPACE}: the Distributor Mapping tab must receive the name index.`);
 }
