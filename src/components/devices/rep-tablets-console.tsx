@@ -33,6 +33,7 @@ import {
   ShieldAlert,
   Trash2,
   TriangleAlert,
+  Usb,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -56,7 +57,17 @@ const INPUT_CLASS =
   "mt-1 w-full min-w-0 border border-slate-300 bg-white px-2 py-1.5 text-[12px] font-semibold text-slate-900";
 
 // ---------------------------------------------------------------------------------------------
-// Talking to the three routes
+// WebUSB — only the few members this page reads. The DOM lib does not declare `navigator.usb`.
+// ---------------------------------------------------------------------------------------------
+
+type UsbDeviceInfo = { serialNumber?: string; manufacturerName?: string; productName?: string };
+type UsbNavigator = Navigator & {
+  usb?: { requestDevice(options: { filters: Array<Record<string, number>> }): Promise<UsbDeviceInfo> };
+};
+type UsbRegistered = { registerDeviceId: string; assetTag: string; created: boolean };
+
+// ---------------------------------------------------------------------------------------------
+// Talking to the four routes
 // ---------------------------------------------------------------------------------------------
 
 class RequestFailure extends Error {
@@ -412,6 +423,9 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
   const [enrollBusy, setEnrollBusy] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
   const [enrollment, setEnrollment] = useState<EnrollmentResult | null>(null);
+  const [usbBusy, setUsbBusy] = useState(false);
+  const [usbError, setUsbError] = useState<string | null>(null);
+  const [usbNotice, setUsbNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // One read of the page, shared by the first load and every refresh. It sets state only inside
@@ -548,13 +562,13 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
 
   const effectiveValidity: EnrollmentValidity = validFor ?? data?.defaultValidity ?? "24h";
 
-  const makeCode = useCallback(async () => {
+  const makeCode = useCallback(async (forTablet?: string) => {
     setEnrollBusy(true);
     setEnrollError(null);
     setEnrollment(null);
     try {
       const created = await requestJson<EnrollmentResult>("/api/devices/tablets/enrollment", {
-        registerDeviceId: target || null,
+        registerDeviceId: (forTablet ?? target) || null,
         validFor: effectiveValidity,
       });
       setNow(Date.now());
@@ -565,6 +579,45 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
       setEnrollBusy(false);
     }
   }, [effectiveValidity, target]);
+
+  // Plug the tablet in, pick it once in the browser's USB chooser: its serial number comes from the
+  // USB descriptor (no Developer mode), Phoenix files it under the next PHX-TAB number, and the
+  // tablet's own one-time QR code is made straight away.
+  const connectUsb = useCallback(async () => {
+    setUsbError(null);
+    setUsbNotice(null);
+    const usb = (navigator as UsbNavigator).usb;
+    if (!usb) {
+      setUsbError("This browser cannot read USB devices. Open this page in Chrome or Edge on a computer.");
+      return;
+    }
+    let picked: UsbDeviceInfo;
+    try {
+      picked = await usb.requestDevice({ filters: [] });
+    } catch {
+      return; // The chooser was closed without picking a tablet.
+    }
+    setUsbBusy(true);
+    try {
+      const registered = await requestJson<UsbRegistered>("/api/devices/tablets/usb", {
+        manufacturer: picked.manufacturerName ?? null,
+        model: picked.productName ?? null,
+        serialNumber: picked.serialNumber ?? null,
+      });
+      setUsbNotice(
+        registered.created
+          ? `Added to the custody register as ${registered.assetTag}. Its QR code is below.`
+          : `Already in the custody register as ${registered.assetTag}. Its QR code is below.`,
+      );
+      await load();
+      setTarget(registered.registerDeviceId);
+      await makeCode(registered.registerDeviceId);
+    } catch (caught) {
+      setUsbError(messageOf(caught, "Could not add the tablet to the custody register."));
+    } finally {
+      setUsbBusy(false);
+    }
+  }, [load, makeCode]);
 
   const qr = useMemo(() => {
     if (!enrollment) return null;
@@ -867,14 +920,28 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
                   </select>
                 </Field>
                 <div className="flex flex-wrap gap-2 md:col-span-2">
-                  <button className={PRIMARY_BUTTON} disabled={enrollBusy} onClick={() => void makeCode()} type="button">
+                  <button className={PRIMARY_BUTTON} disabled={enrollBusy || usbBusy} onClick={() => void makeCode()} type="button">
                     {enrollBusy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <QrCode aria-hidden className="size-4" />}
                     {enrollBusy ? "Making the code…" : "Make the QR code"}
                   </button>
+                  <button className={SECONDARY_BUTTON} disabled={enrollBusy || usbBusy} onClick={() => void connectUsb()} type="button">
+                    {usbBusy ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Usb aria-hidden className="size-4" />}
+                    {usbBusy ? "Reading the tablet…" : "Connect a tablet by USB"}
+                  </button>
                 </div>
+                <p className="text-[11px] font-semibold text-slate-500 md:col-span-2">
+                  Plug the tablet into this computer, press Connect and pick it in the list. Phoenix reads its serial
+                  number, adds it to the custody register under the next PHX-TAB number and makes its QR code. A tablet
+                  that enrolls with an &ldquo;Any rep tablet&rdquo; code is added by itself too, the next time this page
+                  loads.
+                </p>
               </div>
             )}
 
+            {usbError ? <ErrorBox message={usbError} title="The tablet was not added" /> : null}
+            {usbNotice ? (
+              <p className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{usbNotice}</p>
+            ) : null}
             {enrollError ? <ErrorBox message={enrollError} title="No code was made" /> : null}
 
             {enrollment ? (
@@ -982,6 +1049,19 @@ export function RepTabletsConsole({ enterpriseBound }: { enterpriseBound: boolea
                 {loading ? "Checking…" : "Check again"}
               </button>
             </div>
+
+            {data.autoRegistered.length > 0 ? (
+              <p className="mt-4 border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                Added to the custody register by themselves: {data.autoRegistered.join(", ")}.
+              </p>
+            ) : null}
+            {data.autoRegisterError ? (
+              <div className="mt-4">
+                <WarningBox title="A tablet was not added to the register">
+                  <p>{data.autoRegisterError}</p>
+                </WarningBox>
+              </div>
+            ) : null}
 
             {data.registerError ? (
               <div className="mt-4">

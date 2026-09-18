@@ -1082,7 +1082,7 @@ function source(relative: string): string {
 function runDoorTests() {
   const approve = { action: "approve", resource: "company_devices" };
   assert.deepEqual(findAccessRegistryEntry("/api/devices/tablets", "GET")?.permission, approve);
-  for (const route of ["/api/devices/tablets/policy", "/api/devices/tablets/enrollment", "/api/devices/tablets/imei"]) {
+  for (const route of ["/api/devices/tablets/policy", "/api/devices/tablets/enrollment", "/api/devices/tablets/imei", "/api/devices/tablets/usb"]) {
     const entry = findAccessRegistryEntry(route, "POST");
     assert.equal(entry?.pattern, route, `${route} has its own entry`);
     assert.deepEqual(entry?.permission, approve);
@@ -1096,11 +1096,12 @@ function runDoorTests() {
     imei: source("app/api/devices/tablets/imei/route.ts"),
     policy: source("app/api/devices/tablets/policy/route.ts"),
     read: source("app/api/devices/tablets/route.ts"),
+    usb: source("app/api/devices/tablets/usb/route.ts"),
   };
   for (const [name, text] of Object.entries(routes)) {
     assert.match(text, /assertPermission\(access, "company_devices", "approve"\)/, `${name} route asserts approve`);
   }
-  for (const text of [routes.enrollment, routes.imei, routes.policy]) {
+  for (const text of [routes.enrollment, routes.imei, routes.policy, routes.usb]) {
     assert.match(text, /const csrf = assertSameOriginMutation\(request\);\s*if \(csrf\) return csrf;/);
   }
   assert.match(routes.enrollment, /"cache-control": "no-store"/, "the enrollment code must not be cached between Phoenix and the browser");
@@ -1162,6 +1163,8 @@ function runDoorTests() {
     "app/api/devices/tablets/policy/route.ts",
     "app/api/devices/tablets/enrollment/route.ts",
     "app/api/devices/tablets/imei/route.ts",
+    "app/api/devices/tablets/usb/route.ts",
+    "src/lib/devices/tablet-auto-register.ts",
     "src/components/devices/rep-tablets-console.tsx",
   ]) {
     assert.doesNotMatch(source(file), /\bconsole\.(log|info|warn|error|debug)\(/, `${file} logs nothing — an enrollment code must never reach a log`);
