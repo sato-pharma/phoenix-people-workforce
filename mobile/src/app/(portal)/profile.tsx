@@ -15,6 +15,7 @@ import { ApiError, apiUpload } from "@/lib/api";
 import { capturePhoto, describeCaptureFailure } from "@/lib/camera";
 import { apiBaseUrl, isProductionTarget } from "@/lib/config";
 import { describeCachedAt } from "@/lib/offline-cache";
+import { describePushStatus, usePush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { hairline, space, type } from "@/theme/tokens";
 import { usePalette } from "@/theme/use-palette";
@@ -59,6 +60,42 @@ function Row({ label, value }: { label: string; value: string }) {
         {value}
       </Text>
     </View>
+  );
+}
+
+/**
+ * Where notifications stand on this phone, and the way to turn them on.
+ *
+ * The app asks for the permission by itself only once per install (`push.tsx` says why), so this
+ * button is the lasting way back for someone who said no. It shows only while notifications are
+ * off: when they are on there is nothing to press, and in every other state pressing would not help.
+ */
+function NotificationsCard() {
+  const palette = usePalette();
+  const { enable, status } = usePush();
+  const [asking, setAsking] = useState(false);
+
+  const onEnable = useCallback(async () => {
+    setAsking(true);
+    try {
+      await enable();
+    } finally {
+      setAsking(false);
+    }
+  }, [enable]);
+
+  return (
+    <Card>
+      <MicroLabel>Notifications</MicroLabel>
+      <Text style={[type.body, { color: palette.ink2, marginTop: space.sm }]}>
+        {describePushStatus(status)}
+      </Text>
+      {status === "off" ? (
+        <View style={{ marginTop: space.lg }}>
+          <PrimaryButton busy={asking} label="Turn on notifications" onPress={() => void onEnable()} />
+        </View>
+      ) : null}
+    </Card>
   );
 }
 
@@ -184,6 +221,8 @@ export default function ProfileScreen() {
         <Row label="Area" value={employee?.area ?? "—"} />
         <Row label="Reports to" value={employee?.manager ?? "—"} />
       </Card>
+
+      <NotificationsCard />
 
       {!isProductionTarget ? (
         <Card>

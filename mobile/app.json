@@ -33,6 +33,16 @@
       "supportsTablet": false
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "disableLocation": true,
+          "smallIcons": ["./assets/phoenix/notification-icon.png"],
+          "smallIconAccentColor": "#f97316"
+        }
+      ],
+      "./plugins/with-onesignal-opens-the-app",
       "expo-router",
       "expo-secure-store",
       [

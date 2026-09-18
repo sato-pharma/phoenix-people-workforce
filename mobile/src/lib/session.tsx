@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { ApiError, apiRequest } from "./api";
 import { clearCache } from "./offline-cache";
+import { endPushSession } from "./push";
 
 /**
  * Who is signed in, and where the proof of it lives.
@@ -154,11 +155,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await clearCache();
     setState({ status: "signed-out" });
 
+    // Before the logout call, while the token still authenticates: the phone stops receiving this
+    // employee's notifications, and Phoenix is told this device no longer reaches them.
+    await endPushSession(token);
+
     if (token) {
       await apiRequest("/api/auth/logout", { method: "POST", token }).catch(() => undefined);
     }
   }, [state]);
 
+  // Deliberately leaves push alone. The same employee is still holding the phone when a session
+  // lapses on its 12-hour clock, and ending push there would silence their notifications twice a
+  // day. Only a deliberate sign-out hands the phone to someone else — `push.tsx` has the account.
   const handleExpiredSession = useCallback(async () => {
     await clearStoredSession();
     await clearCache();

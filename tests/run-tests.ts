@@ -1743,6 +1743,7 @@ import { runNativeSessionBearerTests } from "./native-session-bearer.test.ts";
 import { runSosPhoenixTemplateTests } from "./sos-phoenix-template.test.ts";
 import { runNativeClientCsrfExemptionTests } from "./native-client-csrf-exemption.test.ts";
 import { runMobileEvidenceStampParityTests } from "./mobile-evidence-stamp-parity.test.ts";
+import { runMobilePushLinkTests } from "./mobile-push-link.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -5984,6 +5985,11 @@ await runTest(
 await runTest(
   "My email is private to each person: the owner comes from the session only and no route reads a person from the request, the compliance monitor can neither reach the personal table nor decrypt a personal app password (its own context-free blobs still open), the email reader is a script-less sandbox, a refused password stops all further logins before the password is opened again, and leavers are purged daily",
   runPersonalMailboxTests,
+);
+
+await runTest(
+  "a tapped notification on the Android app goes where the server's own link says: the portal home and profile open the app's screens, any other Phoenix page (its query kept) opens in the browser, and a link that is not Phoenix's — another host, a look-alike, http, another port, a backslash, a control character, a script, a production link on a staging build — opens nothing; the push context route hands the phone the OneSignal app ID the server sends with",
+  runMobilePushLinkTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
