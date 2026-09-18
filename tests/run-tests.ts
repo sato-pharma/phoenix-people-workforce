@@ -504,6 +504,7 @@ import { runSalesRoleMappingTests } from "./sales-role-mapping.test.ts";
 import { runSalesPeriodTests } from "./sales-period.test.ts";
 import { runSalesSourceOfTruthTests } from "./sales-source-of-truth.test.ts";
 import { runSosMonthlyReportCheckTests } from "./sos-monthly-report-check.test.ts";
+import { runSosReportPeriodTests } from "./sos-report-period.test.ts";
 import { runTerritoryScheduledSyncTests } from "./territory-scheduled-sync.test.ts";
 import { runSalesDistributorImportTests } from "./sales-distributor-import.test.ts";
 import { runCustomerNormalizeTests } from "./customer-normalize.test.ts";
@@ -2824,6 +2825,10 @@ await runTest("sales role mapping", runSalesRoleMappingTests);
 await runTest("sales period", runSalesPeriodTests);
 await runTest("sales source of truth", runSalesSourceOfTruthTests);
 await runTest("sos monthly-closing report check (fully-published period detection)", runSosMonthlyReportCheckTests);
+await runTest(
+  "the executive BI report is the month it is named for (a month with no data is refused, never sent the newest month's workbook under its name and send key)",
+  runSosReportPeriodTests,
+);
 await runTest("territory scheduled re-stamp never touches a published closing", runTerritoryScheduledSyncTests);
 await runTest("sales distributor import", runSalesDistributorImportTests);
 await runTest("customer normalize + pharmacy chains", runCustomerNormalizeTests);
