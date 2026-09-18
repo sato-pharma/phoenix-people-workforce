@@ -8,9 +8,10 @@
 // in Phoenix (in-app and push, never email) when they are added or their access changes.
 
 import { Loader2, Search, Share2, Trash2, UserPlus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
@@ -24,8 +25,6 @@ import {
   type InterviewCalendarShare,
 } from "@/lib/recruitment/interview-calendar-types";
 import { cn } from "@/lib/utils";
-
-const API = "/api/recruitment/interview-calendar";
 
 function AccessSelect({
   disabled,
@@ -58,21 +57,26 @@ function AccessSelect({
 
 export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useDialogA11y({ onClose, open: true });
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHydrated();
 
   const [shares, setShares] = useState<InterviewCalendarShare[] | null>(null);
   const [query, setQuery] = useState("");
-  const [people, setPeople] = useState<InterviewCalendarPerson[]>([]);
-  const [searching, setSearching] = useState(false);
+  // The last answer, with the text it answered. What is shown is derived from it during render, so
+  // an answer to an older spelling is never shown against the current one.
+  const [found, setFound] = useState<{ people: InterviewCalendarPerson[]; text: string } | null>(null);
   const [picked, setPicked] = useState<InterviewCalendarPerson | null>(null);
   const [level, setLevel] = useState<InterviewCalendarAccessLevel>("viewer");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const searchSeq = useRef(0);
+
+  const searchText = query.trim();
+  const searchable = searchText.length >= 2;
+  const answered = searchable && found !== null && found.text === searchText;
+  const people = answered && found ? found.people : [];
+  const searching = searchable && !answered;
 
   useEffect(() => {
-    getJson(`${API}/shares`)
+    getJson("/api/recruitment/interview-calendar/shares")
       .then((data) => setShares(Array.isArray(data.shares) ? (data.shares as InterviewCalendarShare[]) : []))
       .catch((reason) => {
         setShares([]);
@@ -83,33 +87,28 @@ export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
   // Search as the name is typed, a quarter-second after the last key; only the latest answer lands.
   useEffect(() => {
     const text = query.trim();
-    if (text.length < 2) {
-      setPeople([]);
-      setSearching(false);
-      return;
-    }
-    const seq = ++searchSeq.current;
-    setSearching(true);
+    if (text.length < 2) return;
+    let live = true;
     const timer = window.setTimeout(() => {
-      getJson(`${API}/people?q=${encodeURIComponent(text)}`)
+      getJson(`/api/recruitment/interview-calendar/people?q=${encodeURIComponent(text)}`)
         .then((data) => {
-          if (seq === searchSeq.current) setPeople(Array.isArray(data.people) ? (data.people as InterviewCalendarPerson[]) : []);
+          if (live) setFound({ people: Array.isArray(data.people) ? (data.people as InterviewCalendarPerson[]) : [], text });
         })
         .catch(() => {
-          if (seq === searchSeq.current) setPeople([]);
-        })
-        .finally(() => {
-          if (seq === searchSeq.current) setSearching(false);
+          if (live) setFound({ people: [], text });
         });
     }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
   }, [query]);
 
   async function share(hrId: string, accessLevel: InterviewCalendarAccessLevel) {
     setBusy(hrId);
     setError(null);
     try {
-      const data = await postJson(`${API}/shares`, { accessLevel, hrId });
+      const data = await postJson(`/api/recruitment/interview-calendar/shares`, { accessLevel, hrId });
       setShares(data.shares as InterviewCalendarShare[]);
       setPicked(null);
       setQuery("");
@@ -124,7 +123,7 @@ export function InterviewShareDialog({ onClose }: { onClose: () => void }) {
     setBusy(hrId);
     setError(null);
     try {
-      const data = await deleteRequest(`${API}/shares/${encodeURIComponent(hrId)}`);
+      const data = await deleteRequest(`/api/recruitment/interview-calendar/shares/${encodeURIComponent(hrId)}`);
       setShares(data.shares as InterviewCalendarShare[]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Removing failed.");

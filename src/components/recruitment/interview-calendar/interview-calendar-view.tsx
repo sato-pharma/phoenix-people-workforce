@@ -29,9 +29,10 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useHydrated } from "@/hooks/use-hydrated";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import { deleteRequest, getJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
@@ -68,8 +69,6 @@ import { cn } from "@/lib/utils";
 import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
-
-const API = "/api/recruitment/interview-calendar";
 
 type CalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
 
@@ -122,10 +121,13 @@ export function InterviewCalendarView({
 }) {
   const [weekStart, setWeekStart] = useState(() => weekStartFor(initialWeek));
   const [bookings, setBookings] = useState<InterviewBooking[]>([]);
-  const [loading, setLoading] = useState(true);
+  // The week the grid last finished reading. "Loading" is derived from it rather than stored, so no
+  // state is written in an effect body — every write lands when an answer arrives.
+  const [loadedWeek, setLoadedWeek] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(initialOpen);
-  const [openBooking, setOpenBooking] = useState<InterviewBooking | null>(null);
+  // An interview a link pointed at outside the week on screen, or one moved out of it while open.
+  const [fetchedOpen, setFetchedOpen] = useState<InterviewBooking | null>(null);
   const [sharing, setSharing] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -135,6 +137,10 @@ export function InterviewCalendarView({
 
   const days = useMemo(() => weekDays(weekStart), [weekStart]);
   const thisWeek = weekStartFor(todayKey);
+  const loading = loadedWeek !== weekStart;
+  const openBooking = openId
+    ? (bookings.find((booking) => booking.id === openId) ?? (fetchedOpen && fetchedOpen.id === openId ? fetchedOpen : null))
+    : null;
 
   // The address keeps the week (and the open interview), so a copied link lands where it was copied.
   useEffect(() => {
@@ -146,48 +152,40 @@ export function InterviewCalendarView({
   }, [openId, weekStart]);
 
   // Only the latest week asked for may land: clicking through three weeks quickly must not leave the
-  // grid showing whichever answer happened to arrive last.
-  const loadSeq = useRef(0);
-  const loadWeek = useCallback(async (week: string) => {
-    const seq = ++loadSeq.current;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const data = await getJson(`${API}/bookings?week=${encodeURIComponent(week)}`);
-      if (seq !== loadSeq.current) return;
-      setBookings(sortBookings(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []));
-    } catch (reason) {
-      if (seq !== loadSeq.current) return;
-      setBookings([]);
-      setLoadError(reason instanceof Error ? reason.message : "The week could not be read.");
-    } finally {
-      if (seq === loadSeq.current) setLoading(false);
-    }
-  }, []);
-
+  // grid showing whichever answer happened to arrive last — a superseded answer finds `live` false.
   useEffect(() => {
-    void loadWeek(weekStart);
-  }, [loadWeek, weekStart]);
-
-  // Resolve `open` to an interview: from the week on screen, or asked for directly when a link
-  // points at one outside it.
-  useEffect(() => {
-    if (!openId) {
-      setOpenBooking(null);
-      return;
-    }
-    const inWeek = bookings.find((booking) => booking.id === openId);
-    if (inWeek) {
-      setOpenBooking(inWeek);
-      return;
-    }
-    if (loading) return;
     let live = true;
-    getJson(`${API}/bookings/${encodeURIComponent(openId)}`)
+    getJson(`/api/recruitment/interview-calendar/bookings?week=${encodeURIComponent(weekStart)}`)
+      .then((data) => {
+        if (!live) return;
+        setBookings(sortBookings(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []));
+        setLoadError(null);
+      })
+      .catch((reason: unknown) => {
+        if (!live) return;
+        setBookings([]);
+        setLoadError(reason instanceof Error ? reason.message : "The week could not be read.");
+      })
+      .finally(() => {
+        if (live) setLoadedWeek(weekStart);
+      });
+    return () => {
+      live = false;
+    };
+  }, [weekStart]);
+
+  // An interview in the week on screen is read straight from it (above). One a link points at outside
+  // that week is asked for directly, and the grid moves to its week.
+  useEffect(() => {
+    if (!openId || loading) return;
+    if (bookings.some((booking) => booking.id === openId)) return;
+    if (fetchedOpen && fetchedOpen.id === openId) return;
+    let live = true;
+    getJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(openId)}`)
       .then((data) => {
         if (!live) return;
         const booking = data.booking as InterviewBooking;
-        setOpenBooking(booking);
+        setFetchedOpen(booking);
         if (weekStartFor(booking.dateKey) !== weekStart) setWeekStart(weekStartFor(booking.dateKey));
       })
       .catch(() => {
@@ -196,7 +194,7 @@ export function InterviewCalendarView({
     return () => {
       live = false;
     };
-  }, [bookings, loading, openId, weekStart]);
+  }, [bookings, fetchedOpen, loading, openId, weekStart]);
 
   // Close the week picker on a click anywhere else.
   useEffect(() => {
@@ -219,7 +217,8 @@ export function InterviewCalendarView({
       const rest = current.filter((booking) => booking.id !== next.id);
       return weekStartFor(next.dateKey) === weekStart ? sortBookings([...rest, next]) : rest;
     });
-    setOpenBooking((current) => (current && current.id === next.id ? next : current));
+    // An interview moved to another week stays open, though it has left the grid.
+    if (next.id === openId) setFetchedOpen(next);
   }
 
   function removeBooking(id: string) {
@@ -231,7 +230,7 @@ export function InterviewCalendarView({
     setExporting(format);
     setExportError(null);
     try {
-      const response = await fetch(`${API}/export?week=${encodeURIComponent(weekStart)}&format=${format}`);
+      const response = await fetch(`/api/recruitment/interview-calendar/export?week=${encodeURIComponent(weekStart)}&format=${format}`);
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         throw new Error(typeof data.message === "string" ? data.message : "The export could not be made.");
@@ -363,7 +362,7 @@ export function InterviewCalendarView({
             {exportError}
           </p>
         ) : null}
-        {loadError ? (
+        {loadError && !loading ? (
           <p className="border-t border-red-200 bg-red-50 px-4 py-2 text-[12px] font-semibold text-red-700" role="alert">
             {loadError}
           </p>
@@ -550,7 +549,7 @@ function InterviewDetail({
 
   useEffect(() => {
     let live = true;
-    getJson(`${API}/candidates/${encodeURIComponent(booking.candidateId)}/files`)
+    getJson(`/api/recruitment/interview-calendar/candidates/${encodeURIComponent(booking.candidateId)}/files`)
       .then((data) => {
         if (live) setFiles(Array.isArray(data.files) ? (data.files as CalendarFile[]) : []);
       })
@@ -572,7 +571,7 @@ function InterviewDetail({
   if (cv) {
     return (
       <CvPreviewModal
-        downloadUrl={`${API}/candidates/${encodeURIComponent(booking.candidateId)}/files/${encodeURIComponent(cv.id)}`}
+        downloadUrl={`/api/recruitment/interview-calendar/candidates/${encodeURIComponent(booking.candidateId)}/files/${encodeURIComponent(cv.id)}`}
         fileName={`${booking.candidateName} · ${cv.fileName}`}
         mimeType={cv.mimeType}
         onClose={onClose}
@@ -598,8 +597,7 @@ function InterviewDetail({
 
 function PlainDialog({ children, onClose, title }: { children: ReactNode; onClose: () => void; title: string }) {
   const dialogRef = useDialogA11y({ onClose, open: true });
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHydrated();
   const body = (
     <div
       className="fixed inset-0 z-[200] flex items-end justify-center bg-slate-900/45 sm:items-center sm:p-4"
@@ -657,7 +655,7 @@ function InterviewPanel({
     setBusy("cancel");
     setError(null);
     try {
-      await deleteRequest(`${API}/bookings/${encodeURIComponent(booking.id)}`);
+      await deleteRequest(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}`);
       onRemoved(booking.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The interview could not be cancelled.");
@@ -669,7 +667,7 @@ function InterviewPanel({
     setBusy("zoom");
     setError(null);
     try {
-      const data = await postJson(`${API}/bookings/${encodeURIComponent(booking.id)}/zoom`, {});
+      const data = await postJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}/zoom`, {});
       onChanged(data.booking as InterviewBooking);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Zoom could not make the meeting.");
@@ -684,7 +682,7 @@ function InterviewPanel({
     setBusy("note");
     setError(null);
     try {
-      const data = await postJson(`${API}/bookings/${encodeURIComponent(booking.id)}/comments`, { body: text });
+      const data = await postJson(`/api/recruitment/interview-calendar/bookings/${encodeURIComponent(booking.id)}/comments`, { body: text });
       onChanged(data.booking as InterviewBooking);
       setNote("");
     } catch (reason) {

@@ -21,6 +21,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Action, ActionLink } from "@/components/recruitment/workstation/workstation-look";
 import { getJson, patchJson, postJson } from "@/components/recruitment/recruitment-fetch";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
@@ -52,8 +53,6 @@ import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 
 export type ScheduleCandidate = { id: string; name: string; jobTitle?: string | null };
 
-const API = "/api/recruitment/interview-calendar";
-
 /** The first day an interview can still go on: today if it is a working day with time left, else the next one. */
 function firstBookableDay(todayKey: string, nowMinutes: number): string {
   let key = todayKey;
@@ -84,8 +83,7 @@ export function ScheduleInterviewDialog({
 }) {
   const pathname = usePathname();
   const dialogRef = useDialogA11y({ onClose, open: true });
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useHydrated();
 
   // Escape closes THIS pop-up only. It is often opened over a CV preview, which listens for Escape on
   // the document; answering first, on the window, and stopping the key there keeps the CV open
@@ -118,8 +116,11 @@ export function ScheduleInterviewDialog({
   const [platform, setPlatform] = useState<InterviewPlatform | null>(existing?.platform ?? null);
   const [notes, setNotes] = useState(existing?.notes ?? "");
 
-  const [dayBookings, setDayBookings] = useState<InterviewBooking[]>([]);
-  const [dayLoading, setDayLoading] = useState(false);
+  // The chosen day's answer, with the day it answered. Whether it is still reading is derived from
+  // that, during render — so a day clicked a moment ago never shows the previous day's holders.
+  const [dayAnswer, setDayAnswer] = useState<{ bookings: InterviewBooking[]; dateKey: string } | null>(null);
+  const dayLoading = dayAnswer === null || dayAnswer.dateKey !== dateKey;
+  const dayBookings = useMemo(() => (dayAnswer && dayAnswer.dateKey === dateKey ? dayAnswer.bookings : []), [dayAnswer, dateKey]);
   const [upcoming, setUpcoming] = useState<InterviewBooking[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,16 +129,12 @@ export function ScheduleInterviewDialog({
   // Who already holds the chosen day.
   useEffect(() => {
     let live = true;
-    setDayLoading(true);
-    getJson(`${API}/bookings?day=${encodeURIComponent(dateKey)}`)
+    getJson(`/api/recruitment/interview-calendar/bookings?day=${encodeURIComponent(dateKey)}`)
       .then((data) => {
-        if (live) setDayBookings(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []);
+        if (live) setDayAnswer({ bookings: Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : [], dateKey });
       })
       .catch(() => {
-        if (live) setDayBookings([]);
-      })
-      .finally(() => {
-        if (live) setDayLoading(false);
+        if (live) setDayAnswer({ bookings: [], dateKey });
       });
     return () => {
       live = false;
@@ -148,7 +145,7 @@ export function ScheduleInterviewDialog({
   useEffect(() => {
     if (existing) return;
     let live = true;
-    getJson(`${API}/bookings?candidateId=${encodeURIComponent(candidate.id)}`)
+    getJson(`/api/recruitment/interview-calendar/bookings?candidateId=${encodeURIComponent(candidate.id)}`)
       .then((data) => {
         if (live) setUpcoming(Array.isArray(data.bookings) ? (data.bookings as InterviewBooking[]) : []);
       })
@@ -170,10 +167,11 @@ export function ScheduleInterviewDialog({
   }
 
   // A duration change can push the chosen time past 5:00 PM; drop it rather than book something the
-  // server will refuse.
-  useEffect(() => {
-    if (startMinutes !== null && !isBookableWindow(startMinutes, durationMinutes)) setStartMinutes(null);
-  }, [durationMinutes, startMinutes]);
+  // server will refuse. Done in the press itself, never in an effect after it.
+  function chooseDuration(minutes: number) {
+    setDurationMinutes(minutes);
+    if (startMinutes !== null && !isBookableWindow(startMinutes, minutes)) setStartMinutes(null);
+  }
 
   const ready = startMinutes !== null && platform !== null && !saving;
 
@@ -184,8 +182,8 @@ export function ScheduleInterviewDialog({
     try {
       const body = { dateKey, durationMinutes, notes: notes.trim(), platform, startMinutes };
       const data = existing
-        ? await patchJson(`${API}/bookings/${existing.id}`, body)
-        : await postJson(`${API}/bookings`, { ...body, candidateId: candidate.id });
+        ? await patchJson(`/api/recruitment/interview-calendar/bookings/${existing.id}`, body)
+        : await postJson(`/api/recruitment/interview-calendar/bookings`, { ...body, candidateId: candidate.id });
       const booking = data.booking as InterviewBooking;
       setSaved(booking);
       onSaved?.(booking);
@@ -311,7 +309,7 @@ export function ScheduleInterviewDialog({
                             durationMinutes === minutes ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50",
                           )}
                           key={minutes}
-                          onClick={() => setDurationMinutes(minutes)}
+                          onClick={() => chooseDuration(minutes)}
                           type="button"
                         >
                           {minutes} min
