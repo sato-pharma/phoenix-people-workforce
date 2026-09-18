@@ -1,4 +1,4 @@
-import { normalizeNumberText } from "@/lib/sales/normalizer/number-text";
+import { misplacedComma, normalizeNumberText, twoReadings } from "@/lib/sales/normalizer/number-text";
 import type { CellCorrection, NormalizeException } from "@/lib/sales/normalizer/types";
 
 // What an upload tells a person about a row it refuses, and about a number it read only after fixing
@@ -52,9 +52,14 @@ function hasLetters(written: string): boolean {
 
 // Why a number cell cannot be read, in the terms the person will recognise in their sheet. Only forms
 // normalizeNumberText refuses to guess at reach here: it has already read everything with one meaning.
+// A number-typed cell is never refused, so "1.234" arriving here was text, and two readings is the
+// truth about it (engine's parseNum, needsAGuess).
 function numberProblem(written: string): string {
   if (hasLetters(written)) return "has letters in it";
   if (/^\(.*\)$/.test(written)) return "is in brackets";
+  const readings = twoReadings(written);
+  if (readings) return `could mean ${readings[0]} or ${readings[1]}, so it is not guessed`;
+  if (/^[-+]?[\d.,]+$/.test(written) && misplacedComma(written)) return "has a comma in the wrong place";
   return "is not a number";
 }
 
