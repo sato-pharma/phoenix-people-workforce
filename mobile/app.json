@@ -75,6 +75,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "59942570-1f74-4f9c-8ff0-949f28d747cd"
+      }
+    },
+    "owner": "phoenix-sato-crm"
   }
 }
