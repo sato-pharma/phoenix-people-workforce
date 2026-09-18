@@ -140,7 +140,7 @@ export function runOutstationAccuracyInputTests() {
   );
   assert.match(
     submit,
-    /detectedHoldReasons = \[[^\]]*gpsAccuracyHoldReason/s,
+    /detectedHoldReasons = \[[^\]]*gpsAccuracyHoldReason/,
     "the missing-accuracy hold must reach the approver through detectedHoldReasons",
   );
   assert.match(
