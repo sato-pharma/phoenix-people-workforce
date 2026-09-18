@@ -298,7 +298,7 @@ export async function runManagedPlayIframeTests() {
         recordingFetch({ body: {} }, []),
       ),
     "signup URL name is missing",
-    "The name lives in a ten-minute cookie, so losing it is the realistic failure and must say so",
+    "The name lives in an hour-long cookie, so losing it is the realistic failure and must say so",
   );
 
   await rejects(

@@ -139,14 +139,17 @@ Use the iframe.
 
 The enterprise is created **once**, from the page's own setup panel, and the Google account that
 signs in becomes its permanent owner with no transfer path afterwards — so it must be a company
-account, never a personal one.
+account, never a personal one. Google's return has to reach Phoenix **within an hour** of the click:
+the signup name waits in a cookie that long. It was ten minutes until the first real signup
+(2026-09-18) came back after twelve and a half, because Google's email-first enrolment includes a
+round trip to the company mailbox.
 
 | Variable | Description | Default |
 |---|---|---|
 | ANDROID_MANAGEMENT_ENTERPRISE_NAME | The binding in full, starting `enterprises/` (it looks like `enterprises/LC0123456789`). The setup panel prints it after the one-time signup; set it and restart. Everything else refuses until it is set | |
-| ANDROID_MANAGEMENT_PROJECT_ID | The Google Cloud project the Android Management API is enabled on. Needed only for the one-time signup — **the quota is 2 projects for the whole company**, so this is Phoenix's own, never a new one | |
-| ANDROID_MANAGEMENT_ACCESS_TOKEN | A short-lived OAuth token (`gcloud auth print-access-token`). Read first, ahead of the key — the working path while the production credential is decided, because the owner's Google org blocks long-lived service-account keys | |
-| ANDROID_MANAGEMENT_KEY | A service-account JSON key, base64-encoded. A fleet-wide approval credential — server-only, never exposed to a browser | |
+| ANDROID_MANAGEMENT_PROJECT_ID | The Google Cloud project the Android Management API is enabled on — `phoenix-hr-2026` in production. **The quota is 2 projects for the whole company**, so this is Phoenix's own, never a new one | |
+| ANDROID_MANAGEMENT_ACCESS_TOKEN | A short-lived OAuth token (`gcloud auth print-access-token`) for a one-off local run. Read first, ahead of the key — **so never set it on Railway**: it would outrank the key and die within the hour | |
+| ANDROID_MANAGEMENT_KEY | A service-account JSON key, base64-encoded — production's credential since 2026-09-18: `phoenix-amapi` on `phoenix-hr-2026`, holding the Android Management User role and nothing else. A fleet-wide approval credential — server-only, never exposed to a browser. The owner's Google org blocks key creation (`iam.disableServiceAccountKeyCreation`), so a rotation means lifting that block on the one project, minting, and restoring it — **the owner's own action**, never a session's | |
 
 ## Observability
 
