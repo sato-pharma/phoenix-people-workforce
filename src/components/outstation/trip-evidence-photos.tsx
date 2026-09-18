@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, ImageOff, TriangleAlert } from "lucide-react";
+import { ExternalLink, ImageOff, MapPinOff, TriangleAlert } from "lucide-react";
 
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { formatDateTimeValue } from "@/lib/i18n/format";
@@ -49,6 +49,12 @@ export function TripEvidencePhotos({
               {photo.locationLabel ? (
                 <p className="break-words text-xs text-slate-600" dir="auto">
                   {photo.locationLabel}
+                </p>
+              ) : null}
+              {photo.gpsMissingReason ? (
+                <p className="flex items-start gap-1.5 break-words text-xs font-semibold leading-relaxed text-amber-800">
+                  <MapPinOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0">{photo.gpsMissingReason}</span>
                 </p>
               ) : null}
               {photo.sourceNote ? <p className="text-xs font-semibold text-amber-800">{photo.sourceNote}</p> : null}
