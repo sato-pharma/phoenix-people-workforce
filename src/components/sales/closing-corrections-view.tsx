@@ -176,7 +176,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                   <CheckCircle2 className="mt-0.5 h-4 w-4" />
                   <p>
                     No cross-month reversals, oversized returns, or late returns touch {data.period}.
-                    Nothing on this page distorts the month&apos;s closing.
+                    Smaller ones fall below this page&apos;s thresholds and are not listed.
                   </p>
                 </AdminCallout>
               </div>
@@ -188,7 +188,8 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
                   </h3>
                   <p className="px-4 pb-2 text-xs text-slate-500 md:px-5">
                     A distributor posted units in one month and took them back the next — the first
-                    month reads high, the second reads low.
+                    month reads high, the second reads low. Returns are matched pharmacy by pharmacy,
+                    so the second month&apos;s other sales cannot hide one.
                   </p>
                   <SectionTable
                     columns={["Distributor", "Line", "Area", "Product", "Added", "Taken back", "What it means"]}
