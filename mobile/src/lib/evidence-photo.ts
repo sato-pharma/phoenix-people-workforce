@@ -106,6 +106,43 @@ function describeMissingLocation(access: LocationAccess): string {
   return "A departure photo needs your location, and the phone could not find its position in time. Switch location on, or step somewhere with a clearer signal, then take the photo again.";
 }
 
+/**
+ * The cause the approver reads for a refused try, as one of the server's codes
+ * (src/lib/outstation/departure-location-refusals.ts). `fix` is null when the camera never opened.
+ */
+function refusedTryReason(
+  access: LocationAccess,
+  fix: LocationFix | null,
+): "permission_denied" | "location_off" | "timeout" | "position_unavailable" {
+  if (!access.granted || !fix || fix.status === "no-permission") return "permission_denied";
+  return fix.status === "unavailable" ? fix.reason : "position_unavailable";
+}
+
+/**
+ * Tell Phoenix the departure photo was refused for having no location, and why, so the approver
+ * sees the try (owner, 2026-09-18: "Record refused tries"). Nothing else is sent. Best effort: a
+ * lost report changes nothing for the person, who is still told what to change. Returns that message.
+ */
+async function refuseWithoutLocation(
+  requestId: number,
+  token: string | null,
+  access: LocationAccess,
+  fix: LocationFix | null,
+): Promise<string> {
+  try {
+    await apiRequest(`/api/outstation/${requestId}/departure-photo/location-refusal`, {
+      body: { reason: refusedTryReason(access, fix) },
+      method: "POST",
+      // Short: this is often a spot with no signal, and the person is waiting to read why.
+      timeoutMs: 8_000,
+      token,
+    });
+  } catch {
+    // The refusal below is what the person needs.
+  }
+  return describeMissingLocation(access);
+}
+
 /** What to tell the person after a save when the position is rough. Null when it is fine. */
 function describeRoughLocation(access: LocationAccess): string | null {
   if (access.granted && !access.precise) {
@@ -133,7 +170,7 @@ export async function captureDeparturePhoto(input: {
   const access = await prepareLocation();
   // No permission can never become a fix, so say so before the camera opens, not after a photo
   // the person has just framed.
-  if (!access.granted) return { message: describeMissingLocation(access), status: "failed" };
+  if (!access.granted) return { message: await refuseWithoutLocation(requestId, token, access, null), status: "failed" };
 
   // Quality 1: the camera's own file, stamped and compressed once, below — see `capturePhoto`.
   const shot = await capturePhoto({ maxBytes: null, quality: 1 });
@@ -147,7 +184,7 @@ export async function captureDeparturePhoto(input: {
   onStep?.("locating");
   const fix = await readCurrentPosition(access);
   // No location, no photo: nothing is stamped or sent (owner ruling, 2026-09-18).
-  if (fix.status !== "fixed") return { message: describeMissingLocation(access), status: "failed" };
+  if (fix.status !== "fixed") return { message: await refuseWithoutLocation(requestId, token, access, fix), status: "failed" };
 
   onStep?.("address");
   const place = await lookUpPlace(fix, token);

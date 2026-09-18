@@ -57,6 +57,17 @@ export function TripEvidencePhotos({
                   <span className="min-w-0">{photo.gpsMissingReason}</span>
                 </p>
               ) : null}
+              {photo.refusedTries.map((refusedTry, index) => (
+                <p
+                  className="flex items-start gap-1.5 break-words text-xs font-semibold leading-relaxed text-amber-800"
+                  key={`${index}-${refusedTry.at}`}
+                >
+                  <MapPinOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span className="min-w-0">
+                    Tried {formatDateTimeValue(refusedTry.at)}: {refusedTry.text}
+                  </span>
+                </p>
+              ))}
               {photo.sourceNote ? <p className="text-xs font-semibold text-amber-800">{photo.sourceNote}</p> : null}
               {photo.review ? (
                 <p

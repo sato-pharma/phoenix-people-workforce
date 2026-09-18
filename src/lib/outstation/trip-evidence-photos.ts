@@ -11,10 +11,15 @@
  * Pure and type-only on purpose, so the approval screens (client) and the attachments route
  * (server) read one answer. It must never import departure-evidence.ts, which pulls the sales geo
  * module into the browser bundle: the review was computed when the photo was taken and stored in
- * the metadata, and it is read from there. evidence-waiver.ts and captured-coordinates.ts pull in
- * nothing heavier than a number reader, so both are safe here.
+ * the metadata, and it is read from there. evidence-waiver.ts, captured-coordinates.ts and
+ * departure-location-refusals.ts pull in nothing heavier than a number reader, so all are safe here.
  */
 import { usablePosition } from "@/lib/outstation/captured-coordinates";
+import {
+  NO_GPS_CAUSE_NOT_REPORTED,
+  noGpsLocationText,
+  readDepartureLocationRefusals,
+} from "@/lib/outstation/departure-location-refusals";
 import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
 import type {
   OutstationCarEvidenceMetadata,
@@ -39,6 +44,11 @@ export type ApproverTripPhoto = {
   locationLabel: string | null;
   /** Why no picture is shown, in words: never taken, or on file but not openable right now. */
   missingNote: string | null;
+  /**
+   * Departure photos refused for having no GPS location, oldest first, each with its time and its
+   * cause in the owner's words ("No GPS location because ..."). Always empty on the arrival photo.
+   */
+  refusedTries: Array<{ at: string; text: string }>;
   /** How many earlier captures this one replaced. Every earlier version is kept in the metadata. */
   retakeCount: number;
   /** The departure review stored with the photo, for example "Departure photo captured 3 km ...". */
@@ -55,6 +65,8 @@ export type ApproverTripPhotosInput = {
   departureEvidenceImagePath?: string | null;
   departureEvidenceImageUrl?: string | null;
   departureEvidenceMetadata?: OutstationDepartureEvidenceMetadata | null;
+  /** The stored refused tries (departure_location_refusals), read defensively. */
+  departureLocationRefusals?: unknown;
   employeeRole?: string | null;
   evidenceGateStatus?: OutstationEvidenceGateStatus | null;
 };
@@ -63,10 +75,9 @@ export type ApproverTripPhotosInput = {
  * What the approver reads under a departure photo on file with no GPS position (owner, 2026-09-18:
  * "the system must record the reason"). Since the same day such a photo is refused at capture and
  * nothing is stored (departure-photo-location.ts), so only one saved before then reaches here, and
- * nothing recorded why its position was missing. Said plainly, never guessed.
+ * nothing recorded why its position was missing. Owner, same day: short, the fact only, no history.
  */
-export const DEPARTURE_PHOTO_NO_GPS_NOTE =
-  "No GPS location. The phone sent no position with this photo, and the reason was not recorded: it was saved before Phoenix began refusing a departure photo without a location.";
+export const DEPARTURE_PHOTO_NO_GPS_NOTE = NO_GPS_CAUSE_NOT_REPORTED;
 
 function text(value: string | null | undefined): string | null {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -106,6 +117,10 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
     departurePath && departureMeta && !usablePosition(departureMeta.capturedLatitude, departureMeta.capturedLongitude)
       ? DEPARTURE_PHOTO_NO_GPS_NOTE
       : null;
+  const refusedTries = readDepartureLocationRefusals(input.departureLocationRefusals).map((refusal) => ({
+    at: refusal.at,
+    text: noGpsLocationText(refusal.reason),
+  }));
 
   return [
     {
@@ -116,6 +131,7 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       label: "Arrival photo",
       locationLabel: text(arrivalMeta?.capturedLocationLabel),
       missingNote: missingNote("Arrival photo", arrivalPath, arrivalUrl, notOwed),
+      refusedTries: [],
       retakeCount: 0,
       review: null,
       sourceNote: arrivalMeta?.source === "upload" ? "Uploaded, not captured with the live camera." : null,
@@ -130,6 +146,7 @@ export function approverTripPhotos(input: ApproverTripPhotosInput): [ApproverTri
       // "Location unavailable" beside the reason would say the same thing twice, less well.
       locationLabel: departureGpsMissingReason ? null : text(departureMeta?.capturedLocationLabel),
       missingNote: missingNote("Departure photo", departurePath, departureUrl, notOwed),
+      refusedTries,
       retakeCount: Number.isFinite(version) ? Math.max(0, Math.trunc(version) - 1) : 0,
       review: text(departureMeta?.summary),
       sourceNote: null,
