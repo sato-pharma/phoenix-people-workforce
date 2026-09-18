@@ -365,14 +365,73 @@ drawing with a single typeface prints empty boxes. It adds a few megabytes to th
 `versionCode`. There are no over-the-air updates (see above), so a phone on an older build simply
 does not have the departure photo until it installs the new one.
 
+## Notifications
+
+The phone gets the notifications the browser gets — an approval waiting, a request answered, a
+reminder — from the same send. **The server's send path did not change.**
+
+**How.** Phoenix sends every push through OneSignal, addressed to an HR ID rather than to a device
+(`sendPushNotification` in [`src/lib/notifications/push.ts`](../src/lib/notifications/push.ts)), and
+OneSignal delivers to every device signed in under that ID. [`src/lib/push.tsx`](src/lib/push.tsx)
+signs the phone into the **same OneSignal app** as the web portal, under the employee's HR ID, so the
+existing send reaches the phone and the browser alike. The OneSignal app ID is not built into the
+app: `GET /api/notifications/push/context` returns it beside the HR ID, read from the same
+`NEXT_PUBLIC_ONESIGNAL_APP_ID` the server sends with, so there is one value to keep right, not two.
+The phone then records itself with Phoenix (`POST /api/notifications/push/register`, device type
+`mobile`) exactly as a browser does, because Phoenix sends only to someone with at least one
+subscribed device.
+
+**One switch for both.** Push is on unless the employee turned it off in the web portal's
+notification settings, and that switch covers the phone too.
+
+**Asking for the permission.** Android 13 and later ask before an app may show notifications. The app
+asks by itself **once per install**, the first time it opens signed in with notifications ready to
+deliver — the web portal's rule (`push-opt-in-nudge-rules.ts`) is that a nudge asked more than once
+becomes wallpaper. After that, the Notifications card on Profile says where things stand, and "Turn
+on notifications" there is the way back for someone who said no.
+
+**What a tap opens.** Every push carries a link to the web portal, because the same send reaches
+browsers. A manifest flag set by [`plugins/with-onesignal-opens-the-app.js`](plugins/with-onesignal-opens-the-app.js)
+stops OneSignal opening that link in the phone's browser, and
+[`src/lib/push-link.ts`](src/lib/push-link.ts) decides instead:
+
+| The link | A tap opens |
+| --- | --- |
+| The portal home, or the portal profile | That screen, in the app |
+| Any other Phoenix page | That page in a browser tab over the app, because the app has no screen for it yet. The tab does not share the app's sign-in, so someone not already signed in to the portal in Chrome signs in there. |
+| Anything that is not Phoenix's own address | The app, and nothing else |
+
+[`tests/mobile-push-link.test.ts`](../tests/mobile-push-link.test.ts), in the web app's required
+`test` check, builds the links with the server's own `sendPushNotification` and holds that table —
+including the look-alike addresses a browser would resolve to another site.
+
+**Signing out ends it; a lapsed session does not.** A deliberate sign-out logs the phone out of
+OneSignal and tells Phoenix the device no longer reaches that employee, while the token still
+works. A session that runs out on its 12-hour clock leaves push alone: the same person is still
+holding the phone, and ending push there would silence their notifications twice a day.
+
+🔴 **"Log out everywhere" does not stop notifications on a phone.** To the app, a revoked session
+looks like a lapsed one, so push is left alone, and a lost phone keeps showing that employee's
+notifications. Stopping them today means deleting that phone's subscription in OneSignal —
+`push_subscriptions` holds its ID, on the row with device type `mobile`.
+
+**Not in Expo Go.** OneSignal is a native module that Expo Go does not contain. There the app runs
+without push, and Profile says "Expo Go cannot receive notifications. The installed app can." Push
+needs an EAS build, and before one can deliver anything the owner has two things to create — the
+Firebase key uploaded to OneSignal, and the Expo account. [PUBLISHING.md](PUBLISHING.md) has both.
+
+**No location.** OneSignal's SDK can collect the phone's location. `disableLocation: true` in
+`app.json` builds it without its location module, so the only place this app reads a position is
+still the evidence photo.
+
+**The status-bar icon** is `assets/phoenix/notification-icon.png`. Android draws only the shape of a
+notification icon, so it is the Phoenix mark as a white silhouette on transparency, with Phoenix
+orange as the accent colour.
+
+🔴 **OneSignal is a native module, so this needs a new build** with a higher `versionCode`, like the
+departure photo before it.
+
 ## What is not here yet
-
-Push notifications. They exist in the web portal and need a native equivalent in this app — the next
-phase, not an oversight.
-
-🔴 **Push notifications are gated on the app signing key**, not on code: Firebase has to be
-registered with the **app signing** key's fingerprint, never the upload key's. See the signing
-section above before starting that phase.
 
 **The other evidence photos are still web-only**: the arrival photo (taken inside the expense
 wizard, which this app does not have), direct-order storefronts and marketing venue validation. Each
