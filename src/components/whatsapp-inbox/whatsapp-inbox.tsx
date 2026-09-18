@@ -196,8 +196,16 @@ export function WhatsAppInbox({
 
   const filtered = Boolean(filters.search || filters.unreadOnly || filters.line || filters.position);
 
+  // Height and floor are divided by the display scale: this frame sits inside <main>'s zoom, which
+  // does not compensate viewport units, so a bare 100vh painted it at 80% of the window. See the
+  // screening page's frame (workstation-page-client.tsx) and the display-scale block in globals.css.
   return (
-    <div className={cn("flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col", adminPanelClassName)}>
+    <div
+      className={cn(
+        "flex h-[calc((100vh_-_4rem)_/_var(--phx-scale-applied,1))] min-h-[calc(32rem_/_var(--phx-scale-applied,1))] flex-col",
+        adminPanelClassName,
+      )}
+    >
       {/* ── The header: the admin shell's premium page header, in the inbox's own frame ── */}
       <header className="relative shrink-0 bg-[linear-gradient(180deg,#FFFFFF_0%,#FFFBF7_100%)]">
         <div className="relative px-3 pb-2.5 pt-3 sm:px-4">
