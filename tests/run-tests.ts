@@ -1773,6 +1773,7 @@ import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-n
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
+import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6122,6 +6123,11 @@ await runTest(
 await runTest(
   "the Database Validation header grid fits the screen: no sideways scroller and no nowrap, six table-fixed columns over a 100% colgroup with Distrub ID in the Distributor cell and every other Phoenix header in exactly one labelled group, long sheet headers wrap, nothing is truncated or rounded, and mobile gets one card per distributor",
   runDatabaseValidationHeaderGridFitsTests,
+);
+
+await runTest(
+  "the Monthly Sales wizard's closing-complete figure weighs each step by today's share of sales, never the weight frozen when the run opened: May 2026 with 5 of 17 steps confirmed reads 62%, not 95%, and 100% only when every step is confirmed or skipped",
+  runMonthlySalesRunLiveWeightsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
