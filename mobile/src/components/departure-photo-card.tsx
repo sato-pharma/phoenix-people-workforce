@@ -201,7 +201,7 @@ export function DeparturePhotoCard({
               <View style={{ alignItems: "center", flexDirection: "row", gap: space.xs }}>
                 <Ionicons color={palette.inkSoft} name="location-outline" size={14} />
                 <Text style={[type.meta, { color: palette.inkSoft, flexShrink: 1 }]}>
-                  Your location is recorded with the photo.
+                  Your location is recorded with the photo. Without it, the photo is refused.
                 </Text>
               </View>
             ) : null}

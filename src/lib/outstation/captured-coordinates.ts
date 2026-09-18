@@ -10,9 +10,10 @@
  * which direct orders shares.
  *
  * What "no position" MEANS is the caller's decision, not this module's: the departure photo is
- * optional and records its distance as unknown (the owner flags that photo, never blocks it),
- * the arrival location is required and its routes refuse with "Captured coordinates are
- * required.", and an admin edit refuses with "Provided destination must have valid coordinates."
+ * refused without one since 2026-09-18 (departure-photo-location.ts; a photo stored before then
+ * still reviews with its distance unknown), the arrival location is required and its routes
+ * refuse with "Captured coordinates are required.", and an admin edit refuses with "Provided
+ * destination must have valid coordinates."
  *
  * Pure, so a route can call it before it touches the database.
  */
