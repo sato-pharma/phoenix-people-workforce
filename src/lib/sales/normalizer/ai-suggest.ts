@@ -34,6 +34,12 @@ export function hasAiKey(): boolean {
   return resolveProvider() !== null;
 }
 
+// The model answering right now. customer-ai-answers.ts keeps each model's answers apart, so a
+// model change asks again instead of serving another model's answers.
+export function aiSuggestModel(): string | null {
+  return resolveProvider()?.model ?? null;
+}
+
 function systemPrompt(kind: AiKind): string {
   if (kind === "product") {
     return "You match a pharmaceutical distributor's raw product names (English or Arabic) to an official product catalog. Match ONLY when you are confident it is the SAME medicine (same active product); otherwise use null. Ignore pack size / tablet count differences. Reply with JSON only.";

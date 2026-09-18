@@ -105,4 +105,22 @@ export function runSosAutoApplyTests() {
   const textPartition = partitionAutoApply(textCandidates, MIN);
   assert.deepEqual(textPartition.accepted.map((c) => c.id), ["t1"]);
   assert.deepEqual(textPartition.parked.map((c) => c.id), ["t2"]);
+
+  // ---------------------------------------------------------------------------------------
+  // The free steps (2026-09-18, customer-free-steps.ts). An address match measured more accurate
+  // than the AI, so it gets the twin's geographic gate; a place in the name measured exactly as
+  // accurate as the AI, so it gets the AI's. Neither is a twin, so neither ever saves itself
+  // without a geocode.
+  // ---------------------------------------------------------------------------------------
+  assert.equal(shouldAutoAccept({ confidence: 95, signals: signals({ distanceKm: 10 }), source: "address" }, MIN), true);
+  assert.equal(shouldAutoAccept({ confidence: 95, signals: signals({ markazMatch: true }), source: "address" }, MIN), true);
+  assert.equal(shouldAutoAccept({ confidence: 96, signals: signals({ distanceKm: 40 }), source: "address" }, MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 94, signals: signals({ distanceKm: 1 }), source: "address" }, MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 95, signals: signals({ distanceKm: 3 }), source: "place" }, MIN), true);
+  assert.equal(shouldAutoAccept({ confidence: 95, signals: signals({ distanceKm: 10 }), source: "place" }, MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 95, signals: signals({ markazMatch: true }), source: "place" }, MIN), false);
+  // No geocode: never, whatever textual evidence travels with it.
+  assert.equal(shouldAutoAccept({ confidence: 97, propagation: corroborated, signals: signals({ geocoded: false }), source: "address" }, MIN, TEXT_MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 97, propagation: corroborated, signals: undefined, source: "address" }, MIN, TEXT_MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 97, propagation: corroborated, signals: signals({ geocoded: false }), source: "place" }, MIN, TEXT_MIN), false);
 }
