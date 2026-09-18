@@ -8,6 +8,7 @@ import {
   parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { syncOfflineOutstationRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -72,7 +73,9 @@ export async function POST(request: Request) {
     //
     // Adding a field back requires the owner's approval and an explicit gate here — not a default.
     const result = await syncOfflineOutstationRequest(access, {
-      capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
+      // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a
+      // claim with no accuracy for Super Admin review (owner, 2026-09-18).
+      capturedAccuracyMeters: readAccuracyInput(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: position.latitude,
       capturedLongitude: position.longitude,

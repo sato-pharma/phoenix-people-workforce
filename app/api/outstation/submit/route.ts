@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { submitOutstationRequest } from "@/lib/outstation/service";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
@@ -81,7 +82,9 @@ export async function POST(request: Request) {
     const result = await submitOutstationRequest(
       access,
       {
-      capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
+      // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix. The service holds a
+      // claim with no accuracy for Super Admin review (owner, 2026-09-18).
+      capturedAccuracyMeters: readAccuracyInput(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: position.latitude,
       capturedLongitude: position.longitude,

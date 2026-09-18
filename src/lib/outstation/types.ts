@@ -177,7 +177,8 @@ export type OutstationAllowanceBreakdown = {
 };
 
 export type OutstationCaptureResult = {
-  capturedAccuracyMeters: number;
+  /** GPS accuracy radius in metres; null when the device reported none. */
+  capturedAccuracyMeters: number | null;
   capturedAt: string;
   capturedLatitude: number;
   capturedLocationSource: "browser_gps";
@@ -218,7 +219,7 @@ export type OutstationCaptureResult = {
 export type OutstationCalculationInput = {
   amWorkload?: number;
   attachmentCount?: number;
-  capturedAccuracyMeters: number;
+  capturedAccuracyMeters: number | null;
   capturedAt?: string;
   capturedLatitude: number;
   capturedLongitude: number;
@@ -293,7 +294,11 @@ export type OutstationExpenseRequest = {
   attachmentCount: number;
   approvalRecommendation: OutstationApprovalRecommendation;
   approvalReason: string;
-  capturedAccuracyMeters: number;
+  /**
+   * Null when a live capture's device reported no accuracy. 0 is the marker the admin-entered and
+   * medical-rep manual paths write (see expense-command.ts), never a live reading.
+   */
+  capturedAccuracyMeters: number | null;
   capturedAt: string;
   capturedLatitude: number;
   capturedLongitude: number;

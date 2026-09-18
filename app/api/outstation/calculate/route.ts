@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -50,7 +51,8 @@ export async function POST(request: Request) {
     }
 
     const result = await calculateOutstationExpense(access, {
-      capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
+      // Never `Number(...)`: a blank accuracy is null, not a perfect 0 m fix.
+      capturedAccuracyMeters: readAccuracyInput(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
       capturedLatitude: position.latitude,
       capturedLongitude: position.longitude,
