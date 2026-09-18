@@ -16,6 +16,7 @@ import { houseGeneratedRow } from "@/lib/export/house-xlsx-identity";
 import { isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { listMasterRows } from "@/lib/sales/master-data/list";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
+import { freeGoodsFlagNote } from "@/lib/sales/normalizer/free-goods-flag";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeAliasKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -428,7 +429,7 @@ export async function buildMasterWorkbookBuffer(
     rows: RAW_DISTRIBUTOR_PROFILES.map((p) => {
       const notes = [
         p.productColumns[1] ? `Product name col = "${p.productColumns[1]}"` : "",
-        p.bonusColumns?.[0] ? `Bonus qty col = "${p.bonusColumns[0]}"` : "",
+        p.bonusColumns?.[0] ? freeGoodsFlagNote(p.bonusColumns[0]) : "",
         p.valueSource === "sheet" ? "Value taken from the sheet (Direct)" : "Value recomputed = Qty x factory price",
         (p.territoryColumns?.length ?? 0) > 1 ? `Territory fallbacks: ${p.territoryColumns!.slice(1).map((c) => `"${c}"`).join(", ")}` : "",
         p.discountColumns?.[0] ? `Discount col = "${p.discountColumns[0]}"` : "",
