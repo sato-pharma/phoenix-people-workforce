@@ -1773,6 +1773,7 @@ import { runNormalizerBonusNeverDropsPaidUnitsTests } from "./normalizer-bonus-n
 import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-label.test.ts";
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
+import { runDatabaseMappingTablesFitTests } from "./database-mapping-tables-fit.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -6123,6 +6124,11 @@ await runTest(
 await runTest(
   "the Database Validation header grid fits the screen: no sideways scroller and no nowrap, six table-fixed columns over a 100% colgroup with Distrub ID in the Distributor cell and every other Phoenix header in exactly one labelled group, long sheet headers wrap, nothing is truncated or rounded, and mobile gets one card per distributor",
   runDatabaseValidationHeaderGridFitsTests,
+);
+
+await runTest(
+  "every Database Mapping table fits the screen: the master rows table merges its locked columns into one identity cell, hangs each parent lookup under the code it resolves from and shares Status between Active and Updated, so every master is at most five columns totalling 100%, while the customer map (address in full, wrapping) and both blocked-rows tables are table-fixed over a colgroup, with no sideways scroller, nowrap, min-width floor or ellipsis, and mobile gets cards",
+  runDatabaseMappingTablesFitTests,
 );
 
 await runTest(

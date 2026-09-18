@@ -173,8 +173,12 @@ import path from "node:path";
  * 194 -> 193 on 2026-09-18: Expense Approvals' ticket and receipt tiles (trip-attachments.tsx). A
  * long file name ended in an ellipsis under the picture; it is `break-words` now and wraps. Pinned
  * by tests/outstation-approver-trip-photos.test.ts.
+ *
+ * 193 -> 192 on 2026-09-18: Database Mapping's Validation tab customer map
+ * (database-validation-tab.tsx). The address was cut short with a hover title; it now shows in full
+ * and wraps. Pinned by tests/database-mapping-tables-fit.test.ts.
  */
-const BASELINE = 193;
+const BASELINE = 192;
 
 const ROOTS = ["app", "src"];
 
