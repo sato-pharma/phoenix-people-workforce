@@ -569,11 +569,11 @@ as $function$
   select coalesce((select d.refreshed from done d), false);
 $function$;
 
-revoke all on function public.sos_move_brick_sales(text) from public, anon, authenticated;
-revoke all on function public.sos_relocate_brick(text, text, text, text, text, text, text) from public, anon, authenticated;
-revoke all on function public.sos_move_brick_sales_after_hold(bigint) from public, anon, authenticated;
-revoke all on function public.sos_claim_brick_move_file(text) from public, anon, authenticated;
-revoke all on function public.sos_finish_brick_move_file(text, uuid, timestamptz, boolean) from public, anon, authenticated;
+revoke execute on function public.sos_move_brick_sales(text) from public, anon, authenticated;
+revoke execute on function public.sos_relocate_brick(text, text, text, text, text, text, text) from public, anon, authenticated;
+revoke execute on function public.sos_move_brick_sales_after_hold(bigint) from public, anon, authenticated;
+revoke execute on function public.sos_claim_brick_move_file(text) from public, anon, authenticated;
+revoke execute on function public.sos_finish_brick_move_file(text, uuid, timestamptz, boolean) from public, anon, authenticated;
 
 grant execute on function public.sos_move_brick_sales(text) to service_role;
 grant execute on function public.sos_relocate_brick(text, text, text, text, text, text, text) to service_role;

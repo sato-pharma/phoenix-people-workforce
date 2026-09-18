@@ -36,5 +36,5 @@ begin
 end;
 $function$;
 
-revoke all on function public.sos_map_guard_decide_and_move_sales(bigint, text, text) from public, anon, authenticated;
+revoke execute on function public.sos_map_guard_decide_and_move_sales(bigint, text, text) from public, anon, authenticated;
 grant execute on function public.sos_map_guard_decide_and_move_sales(bigint, text, text) to service_role;

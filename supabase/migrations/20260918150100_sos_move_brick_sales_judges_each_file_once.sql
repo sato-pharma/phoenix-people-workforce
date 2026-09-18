@@ -146,5 +146,5 @@ begin
 end;
 $function$;
 
-revoke all on function public.sos_move_brick_sales(text) from public, anon, authenticated;
+revoke execute on function public.sos_move_brick_sales(text) from public, anon, authenticated;
 grant execute on function public.sos_move_brick_sales(text) to service_role;

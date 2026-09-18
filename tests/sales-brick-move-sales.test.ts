@@ -78,7 +78,7 @@ function pinMigrations() {
     const escaped = signature.replace(/[()]/g, "\\$&");
     assert.match(
       moveSql,
-      new RegExp(`revoke all on function public\\.${escaped} from public, anon, authenticated;`),
+      new RegExp(`revoke execute on function public\\.${escaped} from public, anon, authenticated;`),
       `${signature} is taken away from every browser role`,
     );
     assert.match(
@@ -170,7 +170,7 @@ function pinMigrations() {
   assert.match(decide, /set statement_timeout to '120s'/, "the whole decision has two minutes");
   assert.match(
     decideSql,
-    /revoke all on function public\.sos_map_guard_decide_and_move_sales\(bigint, text, text\) from public, anon, authenticated;/,
+    /revoke execute on function public\.sos_map_guard_decide_and_move_sales\(bigint, text, text\) from public, anon, authenticated;/,
     "no browser role can decide a hold",
   );
   assert.match(
