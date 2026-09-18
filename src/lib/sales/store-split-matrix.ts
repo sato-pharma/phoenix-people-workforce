@@ -55,6 +55,13 @@ export type StoreSplitApplication = {
    * skipped here, and a second implementation of that rule would be free to drift from it.
    */
   applied: { qty: number; value: number };
+  /**
+   * The same landed deltas cell by cell, keyed by areaProductKey(area, product). `applied` is
+   * their sum. The admin workbook's Total sheet adds each one to that area's Data rows, so every
+   * area there agrees with the Closing Matrix and not only the grand total (owner, 2026-09-18).
+   * Only deltas that found a cell appear; the map is empty when nothing moved.
+   */
+  cells: ReadonlyMap<string, { qty: number; value: number }>;
 };
 
 /** Add a delta to one cell, leaving both target columns exactly as they were. */
@@ -81,11 +88,14 @@ function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: numbe
  */
 export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): StoreSplitApplication {
   const nothingApplied = { qty: 0, value: 0 };
-  if (net.size === 0) return { applied: nothingApplied, matrix };
+  if (net.size === 0) return { applied: nothingApplied, cells: new Map(), matrix };
 
   // Per product column, the total delta applied across every area — used to move the grand total
   // by exactly the same amount the areas moved (which is zero, but derived rather than assumed).
   const columnDelta = matrix.columns.map(() => ({ qty: 0, value: 0 }));
+  // Every delta that landed, by the key it was looked up under. Accumulated rather than set, so an
+  // area the matrix happens to list twice reports what its two rows received between them.
+  const landed = new Map<string, { qty: number; value: number }>();
   let anyChange = false;
 
   const regions = matrix.regions.map((region) => {
@@ -108,10 +118,13 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
       const cells = area.cells.map((cell, index) => {
         const column = matrix.columns[index];
         if (!column) return cell;
-        const delta = net.get(areaProductKey(area.areaCode, column.productCode));
+        const key = areaProductKey(area.areaCode, column.productCode);
+        const delta = net.get(key);
         if (!delta || (delta.qty === 0 && delta.value === 0)) return cell;
         areaChanged = true;
         anyChange = true;
+        const soFar = landed.get(key) ?? { qty: 0, value: 0 };
+        landed.set(key, { qty: soFar.qty + delta.qty, value: soFar.value + delta.value });
         regionDelta[index].qty += delta.qty;
         regionDelta[index].value += delta.value;
         columnDelta[index].qty += delta.qty;
@@ -140,7 +153,7 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
     };
   });
 
-  if (!anyChange) return { applied: nothingApplied, matrix };
+  if (!anyChange) return { applied: nothingApplied, cells: new Map(), matrix };
 
   // A non-zero net at grand level only happens on a filtered matrix — a one-sided move whose
   // counterpart areas were filtered out. A whole-month split cancels to zero here, and an
@@ -159,6 +172,7 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
     // here. Without this a filtered-export disclosure line would appear on an unfiltered workbook
     // reading 0.000000, which in a reconciliation reads as a defect rather than as reassurance.
     applied: { qty: Number(applied.qty.toFixed(6)), value: Number(applied.value.toFixed(6)) },
+    cells: landed,
     matrix: {
       ...matrix,
       grandTotal: {

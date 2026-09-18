@@ -40,6 +40,7 @@ import {
   isStoreCitySplitActive,
   summariseStoreSplitByArea,
   summariseStoreSplitByCustomer,
+  areaProductKey,
   type StoreSplitAreaSummary,
   type StoreSplitCustomerSummary,
   type StoreSplitDetailRow,
@@ -57,8 +58,9 @@ import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/sou
 //
 //   "Data"  — one row per distributor invoice line exactly as imported, with the Phoenix
 //             brick -> area -> region master joined on and an Included-in-Closing flag.
-//   "Total" — an Area x Product grid whose every number is a live SUMIFS over "Data",
-//             plus a reconciliation block that proves it ties to the Closing Matrix.
+//   "Total" — an Area x Product grid built by live SUMIFS over "Data", plus each area's store
+//             split share and direct orders, so every area matches the Closing Matrix; and a
+//             reconciliation block that proves the grand total ties to it.
 //
 // Confidential products (LA003 / LA004 / SS001) never appear on Data/Total. When a CEO or
 // Super Admin opts in they get their own separate "Confidential" sheet, so the audit grid
@@ -328,14 +330,103 @@ function writeRawDataSheet(
 }
 
 /**
- * Area x Product grid where every number is a live SUMIFS over the visible Data sheet — the
- * Phoenix equivalent of the SFE closing file's Total tab. Edit a Qty on Data and this
- * recalculates, which is the whole point: the arithmetic is checkable in the file itself.
+ * Area x Product grid built by live SUMIFS over the visible Data sheet — the Phoenix equivalent of
+ * the SFE closing file's Total tab. Edit a Qty on Data and this recalculates, which is the whole
+ * point: the arithmetic is checkable in the file itself.
+ *
+ * Beside a Closing Matrix it also carries what that matrix adds to each area's Data rows: the
+ * area's share of its city's wholesaler sales (the store split) and the direct orders folded into
+ * it. Sales = Data + Store Split + Direct, area by area, so every row agrees with the Closing
+ * Matrix and not only the grand total. Owner's ruling, 2026-09-18 ("Make Total match the Matrix"):
+ * the grid used to stop at Data, so Anti Infective 2026-07 showed Mahalla D15 25,785.00 away from
+ * the Closing Matrix on the sheet the Dashboard calls the proof.
  */
 // The company-wide grand total to reconcile Data/Total against, when one is available. A scoped
 // export (a viewer with no whole-line/whole-company visibility) has no such headline to compare
 // to — writeTotalSheet degrades to showing only its own internal totals in that case.
 type ClosingHeadline = { salesUnits: number; salesValue: number };
+
+type ClosingCellAmount = { units: number; value: number };
+
+/**
+ * What the Closing Matrix beside the Total sheet adds to each area's Data rows. `matrix` is that
+ * Closing Matrix, and names the rows only it has (an area with no invoice line, a region's Direct
+ * row). `storeSplit` is applyStoreSplitToMatrix's `cells`; `direct` is directByTotalCell's answer.
+ */
+type TotalSheetMatrixCells = {
+  direct: ReadonlyMap<string, ClosingCellAmount>;
+  matrix: MonthlyClosingMatrix;
+  storeSplit: ReadonlyMap<string, { qty: number; value: number }>;
+};
+
+const NO_AMOUNT: ClosingCellAmount = { units: 0, value: 0 };
+
+/**
+ * One Total-grid cell's key: its area and product. The synthetic "Direct orders (company)" row is
+ * the exception — every region carries one under the same area code, so its key names the region
+ * too, or two regions' direct would collapse into one row.
+ */
+function totalCellKey(regionCode: string, areaCode: string, productCode: string, syntheticDirect: boolean): string {
+  const area = syntheticDirect ? `${normalizeCode(areaCode)}@${normalizeCode(regionCode)}` : normalizeCode(areaCode);
+  return `${area}||${normalizeCode(productCode)}`;
+}
+
+function matrixCellsByTotalKey(matrix: MonthlyClosingMatrix): Map<string, ClosingCellAmount> {
+  const cells = new Map<string, ClosingCellAmount>();
+  matrix.regions.forEach((region) => region.areas.forEach((area) => {
+    const synthetic = isSyntheticDirectArea(area);
+    area.cells.forEach((cell, index) => {
+      const column = matrix.columns[index];
+      if (!column) return;
+      const key = totalCellKey(region.regionCode, area.areaCode, column.productCode, synthetic);
+      const soFar = cells.get(key) ?? NO_AMOUNT;
+      cells.set(key, { units: soFar.units + cell.salesUnits, value: soFar.value + cell.salesValue });
+    });
+  }));
+  return cells;
+}
+
+/**
+ * The direct money inside each cell of a Closing Matrix, keyed for the Total sheet: the matrix
+ * with direct minus the same matrix without it, cell by cell. Derived as a difference for the same
+ * reason the Total sheet's grand-total bridge is — a direct order whose area or product has no cell
+ * on the matrix is never placed, and summing the direct rows would count it anyway. Where the store
+ * split was written back to both halves alike (the retail channel beside the master), it cancels
+ * and the difference is still exactly the direct.
+ */
+export function directByTotalCell(
+  withDirect: MonthlyClosingMatrix,
+  withoutDirect: MonthlyClosingMatrix,
+): Map<string, ClosingCellAmount> {
+  const withCells = matrixCellsByTotalKey(withDirect);
+  const withoutCells = matrixCellsByTotalKey(withoutDirect);
+  const direct = new Map<string, ClosingCellAmount>();
+  for (const key of new Set([...withCells.keys(), ...withoutCells.keys()])) {
+    const inWith = withCells.get(key) ?? NO_AMOUNT;
+    const inWithout = withoutCells.get(key) ?? NO_AMOUNT;
+    // Rounded because both sides are rounded money: an unrounded difference leaves a float residue
+    // on cells that hold no direct at all, and a row of 0.0000000001 reads as a defect.
+    const units = Number((inWith.units - inWithout.units).toFixed(6));
+    const value = Number((inWith.value - inWithout.value).toFixed(2));
+    if (units !== 0 || value !== 0) direct.set(key, { units, value });
+  }
+  return direct;
+}
+
+type TotalGridEntry = {
+  areaCode: string;
+  areaName: string;
+  direct: ClosingCellAmount;
+  factoryPrice: number | null;
+  productCode: string;
+  productName: string;
+  regionCode: string;
+  regionName: string;
+  split: ClosingCellAmount;
+  // False only for a region's synthetic Direct row: it has no invoice lines, and a SUMIFS on its
+  // shared area code would sum every region's Direct into each of them.
+  sumsData: boolean;
+};
 
 function writeTotalSheet(
   workbook: ExcelJS.Workbook,
@@ -362,10 +453,16 @@ function writeTotalSheet(
     national: { units: 0, value: 0 },
     placed: { units: 0, value: 0 },
   },
+  // What the Closing Matrix beside this sheet adds to each area's Data rows. Null only for the
+  // details-only workbook, which has no Closing Matrix to agree with and keeps the Data columns alone.
+  matrixCells: TotalSheetMatrixCells | null = null,
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
     views: [{ state: "frozen", ySplit: 5 }],
   });
+  // Columns 8-10 are the Data sheet's own sums on every workbook. Beside a Closing Matrix they are
+  // named for what they are, and the columns after them carry the matrix's additions and the
+  // area's Sales. Data Value stays column 10: the reconciliation below reads its TOTAL.
   const columns: TableColumn[] = [
     { label: "Region Code", width: 11 },
     { label: "Region", width: 18 },
@@ -374,11 +471,29 @@ function writeTotalSheet(
     { label: "Product Code", width: 12 },
     { label: "Product", width: 22 },
     { label: "Factory Price", numFmt: VALUE_FMT, right: true },
-    { label: "Sales Units", numFmt: UNITS_FMT, right: true },
+    { label: matrixCells ? "Data Units" : "Sales Units", numFmt: UNITS_FMT, right: true },
     { label: "Effective Units", numFmt: VALUE_FMT, right: true, width: 14 },
-    { label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 15 },
+    { label: matrixCells ? "Data Value" : "Sales Value", numFmt: VALUE_FMT, right: true, width: 15 },
+    ...(matrixCells
+      ? [
+        { label: "Store Split Units", numFmt: UNITS_FMT, right: true, width: 14 },
+        { label: "Store Split Value", numFmt: VALUE_FMT, right: true, width: 15 },
+        { label: "Direct Units", numFmt: UNITS_FMT, right: true, width: 13 },
+        { label: "Direct Value", numFmt: VALUE_FMT, right: true, width: 15 },
+        { label: "Sales Units", numFmt: UNITS_FMT, right: true, width: 13 },
+        { label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 15 },
+      ]
+      : []),
   ];
-  bandHeader(sheet, details.line, details.period, "Total — live SUMIFS over the Data sheet", columns.length);
+  bandHeader(
+    sheet,
+    details.line,
+    details.period,
+    matrixCells
+      ? "Total — the Data sheet by SUMIFS, plus the store split and direct orders: each area as on the Closing Matrix"
+      : "Total — live SUMIFS over the Data sheet",
+    columns.length,
+  );
 
   const areaRange = rawCol(dataSheetName, "Area Code");
   const productRange = rawCol(dataSheetName, "Product Code");
@@ -396,19 +511,73 @@ function writeTotalSheet(
       [inClosingRange, "Yes"],
     ]);
 
-  // Grid keys: every (area, product) pair that actually has a row, ordered region → area → product.
+  // Grid keys: every (area, product) pair that actually has a row, then — beside a Closing Matrix —
+  // every cell the store split or direct orders add to. Ordered region → area → product.
   const included = details.rows.filter((row) => row.includedInClosing);
-  const keys = new Map<string, ClosingDetailRow>();
-  for (const row of included) {
-    const key = `${row.areaCode}||${row.productCode}`;
-    if (!keys.has(key)) keys.set(key, row);
-  }
   // Region labels are the matrix's own (see RAW_COLUMNS). The SUMIFS key on area and product only,
   // so relabelling moves no number.
   const regionCodeOf = (row: ClosingDetailRow) => row.operationalRegionCode || row.regionCode;
-  const ordered = [...keys.values()].sort(
+  const entries = new Map<string, TotalGridEntry>();
+  for (const row of included) {
+    const key = totalCellKey(regionCodeOf(row), row.areaCode, row.productCode, false);
+    if (entries.has(key)) continue;
+    entries.set(key, {
+      areaCode: row.areaCode,
+      areaName: row.areaName,
+      direct: NO_AMOUNT,
+      factoryPrice: row.factoryPrice,
+      productCode: row.productCode,
+      productName: row.productName,
+      regionCode: regionCodeOf(row),
+      regionName: row.operationalRegionName || row.regionName,
+      split: NO_AMOUNT,
+      sumsData: true,
+    });
+  }
+  if (matrixCells) {
+    const { matrix } = matrixCells;
+    // A product's price for the rows only the matrix has. Any Data row of the product carries it;
+    // a product with none (a region's direct on a product nobody invoiced) leaves the cell blank.
+    const priceOf = new Map<string, number>();
+    for (const row of details.rows) {
+      if (row.factoryPrice && !priceOf.has(normalizeCode(row.productCode))) priceOf.set(normalizeCode(row.productCode), row.factoryPrice);
+    }
+    const seen = new Set<string>();
+    for (const region of matrix.regions) {
+      for (const area of region.areas) {
+        const synthetic = isSyntheticDirectArea(area);
+        area.cells.forEach((_, index) => {
+          const column = matrix.columns[index];
+          if (!column) return;
+          const key = totalCellKey(region.regionCode, area.areaCode, column.productCode, synthetic);
+          // Both maps already hold a key's whole amount, so a key the matrix lists twice is taken once.
+          if (seen.has(key)) return;
+          seen.add(key);
+          // The split never touches a synthetic Direct row (applyStoreSplitToMatrix skips it).
+          const landed = synthetic ? undefined : matrixCells.storeSplit.get(areaProductKey(area.areaCode, column.productCode));
+          const split = landed ? { units: landed.qty, value: landed.value } : NO_AMOUNT;
+          const direct = matrixCells.direct.get(key) ?? NO_AMOUNT;
+          if (split.units === 0 && split.value === 0 && direct.units === 0 && direct.value === 0) return;
+          const existing = entries.get(key);
+          entries.set(key, existing ? { ...existing, direct, split } : {
+            areaCode: area.areaCode,
+            areaName: area.areaName,
+            direct,
+            factoryPrice: priceOf.get(normalizeCode(column.productCode)) ?? null,
+            productCode: column.productCode,
+            productName: column.productName,
+            regionCode: region.regionCode,
+            regionName: region.regionName,
+            split,
+            sumsData: !synthetic,
+          });
+        });
+      }
+    }
+  }
+  const ordered = [...entries.values()].sort(
     (left, right) =>
-      regionCodeOf(left).localeCompare(regionCodeOf(right)) ||
+      left.regionCode.localeCompare(right.regionCode) ||
       left.areaName.localeCompare(right.areaName) ||
       left.productName.localeCompare(right.productName),
   );
@@ -416,25 +585,51 @@ function writeTotalSheet(
   const sumOf = (predicate: (row: ClosingDetailRow) => boolean, pick: (row: ClosingDetailRow) => number) =>
     details.rows.reduce((total, row) => (predicate(row) ? total + pick(row) : total), 0);
 
-  const rows: CellValue[][] = ordered.map((row) => {
+  // writeTable puts its title on the start row and the column headers under it, so the grid's
+  // first row is two below. Sales Units and Sales Value are formulas over their own row's cells.
+  const gridStartRow = 4;
+  const firstGridRow = gridStartRow + 2;
+  const sum = { directUnits: 0, directValue: 0, splitUnits: 0, splitValue: 0 };
+  const rows: CellValue[][] = ordered.map((entry, index) => {
     const match = (candidate: ClosingDetailRow) =>
       candidate.includedInClosing &&
-      candidate.areaCode === row.areaCode &&
-      candidate.productCode === row.productCode;
+      normalizeCode(candidate.areaCode) === normalizeCode(entry.areaCode) &&
+      normalizeCode(candidate.productCode) === normalizeCode(entry.productCode);
+    const dataUnits = entry.sumsData ? sumOf(match, (r) => r.qty) : 0;
+    const dataEffective = entry.sumsData ? sumOf(match, (r) => r.effectiveUnits) : 0;
+    const dataValue = entry.sumsData ? sumOf(match, (r) => r.salesValue) : 0;
+    const base: CellValue[] = [
+      entry.regionCode,
+      entry.regionName,
+      entry.areaCode,
+      entry.areaName,
+      entry.productCode,
+      entry.productName,
+      entry.factoryPrice,
+      entry.sumsData ? F(cellFor(qtyRange, entry.areaCode, entry.productCode), dataUnits) : 0,
+      entry.sumsData ? F(cellFor(effRange, entry.areaCode, entry.productCode), dataEffective) : 0,
+      entry.sumsData ? F(cellFor(valueRange, entry.areaCode, entry.productCode), dataValue) : 0,
+    ];
+    if (!matrixCells) return base;
+    sum.splitUnits += entry.split.units;
+    sum.splitValue += entry.split.value;
+    sum.directUnits += entry.direct.units;
+    sum.directValue += entry.direct.value;
+    const at = firstGridRow + index;
     return [
-      regionCodeOf(row),
-      row.operationalRegionName || row.regionName,
-      row.areaCode,
-      row.areaName,
-      row.productCode,
-      row.productName,
-      row.factoryPrice,
-      F(cellFor(qtyRange, row.areaCode, row.productCode), sumOf(match, (r) => r.qty)),
-      F(cellFor(effRange, row.areaCode, row.productCode), sumOf(match, (r) => r.effectiveUnits)),
-      F(cellFor(valueRange, row.areaCode, row.productCode), sumOf(match, (r) => r.salesValue)),
+      ...base,
+      entry.split.units,
+      entry.split.value,
+      entry.direct.units,
+      entry.direct.value,
+      F(`${columnLetter(8)}${at}+${columnLetter(11)}${at}+${columnLetter(13)}${at}`, dataUnits + entry.split.units + entry.direct.units),
+      F(`${columnLetter(10)}${at}+${columnLetter(12)}${at}+${columnLetter(14)}${at}`, dataValue + entry.split.value + entry.direct.value),
     ];
   });
 
+  const totalsAt = firstGridRow + rows.length;
+  const columnSum = (column: number, cached: number): CellValue =>
+    F(`SUM(${columnLetter(column)}${firstGridRow}:${columnLetter(column)}${totalsAt - 1})`, cached);
   const totalsRow: CellValue[] = [
     "TOTAL",
     null,
@@ -446,15 +641,38 @@ function writeTotalSheet(
     F(sumifs(qtyRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.units),
     F(sumifs(effRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.effectiveUnits),
     F(sumifs(valueRange, [[inClosingRange, "Yes"]]), details.reconciliation.includedInClosing.salesValue),
+    ...(matrixCells
+      ? [
+        columnSum(11, sum.splitUnits),
+        columnSum(12, sum.splitValue),
+        columnSum(13, sum.directUnits),
+        columnSum(14, sum.directValue),
+        F(
+          `${columnLetter(8)}${totalsAt}+${columnLetter(11)}${totalsAt}+${columnLetter(13)}${totalsAt}`,
+          details.reconciliation.includedInClosing.units + sum.splitUnits + sum.directUnits,
+        ),
+        F(
+          `${columnLetter(10)}${totalsAt}+${columnLetter(12)}${totalsAt}+${columnLetter(14)}${totalsAt}`,
+          details.reconciliation.includedInClosing.salesValue + sum.splitValue + sum.directValue,
+        ),
+      ]
+      : []),
   ];
 
-  const row = writeTable(sheet, 4, {
+  const row = writeTable(sheet, gridStartRow, {
     columns,
-    note:
-      "Every number above is =SUMIFS over the Data sheet, filtered to In Closing = \"Yes\". " +
-      "Change a Qty on Data and this grid recalculates.",
+    note: matrixCells
+      ? "Data Units, Effective Units and Data Value are =SUMIFS over the Data sheet, filtered to In Closing = "
+        + "\"Yes\" — change a Qty on Data and they recalculate. Store Split is the area's share of its city's "
+        + "wholesaler sales, moved in or out exactly as on the Closing Matrix. Direct is the direct orders the "
+        + "Closing Matrix counts in the area; they never arrive as an invoice line. Sales = Data + Store Split + "
+        + "Direct, and equals the same area and product on the Closing Matrix."
+      : "Every number above is =SUMIFS over the Data sheet, filtered to In Closing = \"Yes\". " +
+        "Change a Qty on Data and this grid recalculates.",
     rows,
-    title: "Area × Product (matrix-eligible rows only)",
+    title: matrixCells
+      ? "Area × Product — each area as on the Closing Matrix"
+      : "Area × Product (matrix-eligible rows only)",
     totals: totalsRow,
   });
 
@@ -3129,8 +3347,8 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     en: "Every imported invoice line with its brick and area, and why any excluded line was excluded.",
   },
   Total: {
-    ar: "شبكة المنطقة×المنتج محسوبة بالمعادلات من شيت Data — لإثبات أن الأرقام تطابق الرئيسي.",
-    en: "An area × product grid recomputed by formula from Data — the proof it ties to the master.",
+    ar: "شبكة المنطقة×المنتج: شيت Data بالمعادلات، مضافًا إليه توزيع مبيعات المخازن على مناطق المدينة والطلبات المباشرة — فتطابق كل منطقة شيت Closing Matrix.",
+    en: "An area × product grid: Data by formula, plus the store split and direct orders, so every area matches the Closing Matrix.",
   },
   Confidential: {
     ar: "منتجات سرية (LA003 / LA004 / SS001) — تظهر فقط عند طلب إظهارها.",
@@ -3346,6 +3564,18 @@ export async function buildMonthlyClosingWorkbook(
      * in a cell, so counting it would bridge money that is not on the sheet.
      */
     directPlaced?: { units: number; value: number };
+    /**
+     * `directPlaced` cell by cell, from directByTotalCell(matrix with direct, the same without), so
+     * the Total sheet can add each area's own direct. Needed on the same terms as `directPlaced`;
+     * with `channels` present it is derived from the retail half instead.
+     */
+    directPlacedCells?: ReadonlyMap<string, { units: number; value: number }>;
+    /**
+     * `storeSplitApplied` cell by cell — applyStoreSplitToMatrix's `cells`, summed across the months
+     * on a consolidated export. The Total sheet adds each to that area's Data rows, so every area
+     * there agrees with the Closing Matrix (owner, 2026-09-18). Omitted, no area is adjusted.
+     */
+    storeSplitCells?: ReadonlyMap<string, { qty: number; value: number }>;
     /**
      * The Office slice of `matrix`, on the same grid (MonthlyClosingParts.office). Adds an
      * "of wh. Office" column to every product block and to the Grand Total on the Closing Matrix,
@@ -3570,6 +3800,15 @@ export async function buildMonthlyClosingWorkbook(
       options?.consolidatedMonths ? options.consolidatedMonths.filtered : Boolean(options?.filterNote),
       options?.storeSplitApplied,
       directInMatrix,
+      {
+        // The same derivation as `placed` above, cell by cell: the master minus its retail half, or
+        // the caller's own (with direct) minus (without) under a row-level filter.
+        direct: options?.channels?.retail
+          ? directByTotalCell(matrix, options.channels.retail)
+          : options?.directPlacedCells ?? new Map(),
+        matrix,
+        storeSplit: options?.storeSplitCells ?? new Map(),
+      },
     );
     if (confidential.length > 0) {
       writeRawDataSheet(
@@ -3757,6 +3996,9 @@ export async function buildPortalClosingWorkbook(
         value: Number(placedDirect.value.toFixed(2)),
       },
     },
+    // No store split column: these rows already carry each area's share (see above), so Data is
+    // already after the split. Only the folded direct separates an area here from its matrix row.
+    { direct: directByTotalCell(rebuiltMatrix, invoiceOnly), matrix: rebuiltMatrix, storeSplit: new Map() },
   );
   if (confidential.length > 0) {
     writeRawDataSheet(

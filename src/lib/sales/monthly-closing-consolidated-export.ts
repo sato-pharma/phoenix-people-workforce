@@ -79,6 +79,8 @@ type ConsolidatedMonth = {
   regions: SplitRegions;
   retail: MonthlyClosingMatrix;
   scopedAreaCodes: string[];
+  /** Where this month's split landed, cell by cell — applyStoreSplitToMatrix's `cells`. */
+  storeSplitCells: ReadonlyMap<string, { qty: number; value: number }>;
 };
 
 function sameLine(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -128,7 +130,7 @@ async function loadConsolidatedMonth(
   ]);
 
   const { details, net } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, sharedSplit);
-  const { applied, matrix: splitMatrix } = applyStoreSplitToMatrix(matrix, net);
+  const { applied, cells: storeSplitCells, matrix: splitMatrix } = applyStoreSplitToMatrix(matrix, net);
   return {
     applied,
     details,
@@ -143,6 +145,7 @@ async function loadConsolidatedMonth(
     // The retail half gets the SAME write-back, which keeps "Retail + Direct = master" true.
     retail: applyStoreSplitToMatrix(retail, net).matrix,
     scopedAreaCodes,
+    storeSplitCells,
   };
 }
 
@@ -247,6 +250,15 @@ export async function buildConsolidatedClosingWorkbook(input: {
     (sum, month) => ({ ...sum, qty: sum.qty + month.applied.qty, value: sum.value + month.applied.value }),
     { qty: 0, value: 0 } as StoreSplitApplied,
   );
+  // The same sum cell by cell, for the Total sheet: each month split on its own, then added, as the
+  // Store Split sheets are. Keys are area and product, so one area's months land on one row.
+  const storeSplitCells = new Map<string, { qty: number; value: number }>();
+  for (const month of months) {
+    for (const [key, landed] of month.storeSplitCells) {
+      const soFar = storeSplitCells.get(key) ?? { qty: 0, value: 0 };
+      storeSplitCells.set(key, { qty: soFar.qty + landed.qty, value: soFar.value + landed.value });
+    }
+  }
 
   // From rows, over the whole span: the aggregate comparison RPC reads one month at a time.
   // `input.access`: the rows carry the real source, and the comparison masks El Qema for this reader.
@@ -281,6 +293,7 @@ export async function buildConsolidatedClosingWorkbook(input: {
     includeTargetSheet: true,
     office,
     storeSplitApplied,
+    storeSplitCells,
     // Masked by code from EVERY month's whole rows, because a split entry carries no distributor to
     // recognise and an El Qema store can appear in any month of the span.
     storeSplitMaskedClients: maskedClosingClientCodes(allMonthRows, input.access),
