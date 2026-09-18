@@ -23,6 +23,7 @@
 // outstation service's graph, and its other imports are type-only and erased at build.
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { readCapturedPosition, usablePosition } from "@/lib/outstation/captured-coordinates";
 
 /**
  * How far apart the two photos may be before the pair is worth a human look. Not a rejection
@@ -55,57 +56,18 @@ export type DepartureEvidenceReview = {
   summary: string;
 };
 
-function finiteNumber(value: number | null | undefined): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-/**
- * A usable position, or null. Both halves must be finite numbers, and the exact pair 0,0 is no
- * position at all: it is what a failed browser geolocation writes, never a real Egyptian capture
- * (the same rule captured-location.ts applies before resolving a brick). A single 0 on its own is
- * still a real coordinate and passes.
- */
-function usablePosition(
-  latitude: number | null | undefined,
-  longitude: number | null | undefined,
-): { latitude: number; longitude: number } | null {
-  const lat = finiteNumber(latitude);
-  const lon = finiteNumber(longitude);
-  if (lat == null || lon == null) return null;
-  if (lat === 0 && lon === 0) return null;
-  return { latitude: lat, longitude: lon };
-}
-
-/**
- * One coordinate exactly as the client sent it, or null when it sent no number. Deliberately
- * NOT `Number(value)`: `Number(null)`, `Number("")` and `Number(" ")` are all 0, which is finite,
- * so a phone with no GPS fix used to be stored at 0°N 0°E and then flagged as taken thousands of
- * kilometres from the trip. Only a real number or a non-blank numeric string counts.
- */
-function coordinateFromBody(value: unknown): number | null {
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 /**
  * The departure photo's position from a request body, for every client: the web card sends nulls
  * when it has no fix, the Android app leaves the keys out. Either way the answer is null/null, so
- * the review records the distance as UNKNOWN instead of measuring it from 0,0. Half a pair is no
- * position either, and is dropped whole.
+ * the review records the distance as UNKNOWN instead of measuring it from 0,0 — a phone with no
+ * fix used to be stored there and flagged as taken thousands of kilometres from the trip. The
+ * reading itself is shared with the arrival routes (captured-coordinates.ts).
  */
 export function readDeparturePhotoPosition(body: {
   latitude?: unknown;
   longitude?: unknown;
 }): { latitude: number | null; longitude: number | null } {
-  const position = usablePosition(
-    coordinateFromBody(body.latitude),
-    coordinateFromBody(body.longitude),
-  );
-  return position ?? { latitude: null, longitude: null };
+  return readCapturedPosition(body.latitude, body.longitude) ?? { latitude: null, longitude: null };
 }
 
 function instant(value: string | null | undefined): Date | null {

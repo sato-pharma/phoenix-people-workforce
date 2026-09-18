@@ -1,3 +1,4 @@
+import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import {
   INVALID_EXPENSE_TYPE,
   INVALID_TRANSPORTATION_TYPE,
@@ -15,6 +16,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/**
+ * The refusal for an arrival body with no usable GPS fix — capture-location's own 400, word for
+ * word, now given by every route the arrival position enters through (capture-location, calculate,
+ * submit, sync-offline). The arrival position is REQUIRED; only the departure photo's is optional.
+ */
+export const MISSING_CAPTURED_COORDINATES = {
+  error: "missing_coordinates",
+  message: "Captured coordinates are required.",
+} as const;
+
 export function parseCarEvidenceMetadata(body: Record<string, unknown>) {
   const raw = body.carEvidenceMetadata;
   if (!isRecord(raw)) return undefined;
@@ -25,10 +36,14 @@ export function parseCarEvidenceMetadata(body: Record<string, unknown>) {
   const source =
     raw.source === "live_camera" || raw.source === "upload" ? raw.source : null;
   const capturedAt = typeof raw.capturedAt === "string" ? raw.capturedAt : null;
-  const capturedLatitude = Number(raw.capturedLatitude);
+  // Never `Number(raw.capturedLatitude)`: `Number(null)` is 0, so an arrival photo with no fix
+  // passed validateLiveArrivalEvidence's GPS check stamped at 0,0. No usable position stays NaN —
+  // what an omitted key always produced here — and that check refuses it as an incomplete photo.
+  const position = readCapturedPosition(raw.capturedLatitude, raw.capturedLongitude);
+  const capturedLatitude = position?.latitude ?? Number.NaN;
   const capturedLocationLabel =
     typeof raw.capturedLocationLabel === "string" ? raw.capturedLocationLabel : null;
-  const capturedLongitude = Number(raw.capturedLongitude);
+  const capturedLongitude = position?.longitude ?? Number.NaN;
   const employeeHrId = typeof raw.employeeHrId === "string" ? raw.employeeHrId : "";
   const requestDraftId =
     typeof raw.requestDraftId === "string" ? raw.requestDraftId : null;

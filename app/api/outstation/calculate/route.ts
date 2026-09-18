@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
+  MISSING_CAPTURED_COORDINATES,
   parseCarEvidenceMetadata,
   parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
@@ -40,11 +42,18 @@ export async function POST(request: Request) {
       );
     }
 
+    // The arrival position is required. Never `Number(body.capturedLatitude)`: `Number(null)` is
+    // 0, so a body with no GPS fix was priced as a trip to 0°N 0°E.
+    const position = readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
+    if (!position) {
+      return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
+    }
+
     const result = await calculateOutstationExpense(access, {
       capturedAccuracyMeters: Number(body.capturedAccuracyMeters),
       capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : undefined,
-      capturedLatitude: Number(body.capturedLatitude),
-      capturedLongitude: Number(body.capturedLongitude),
+      capturedLatitude: position.latitude,
+      capturedLongitude: position.longitude,
       claimedTotalAmount: Number(body.claimedTotalAmount ?? 0),
       expenseType: outstationTypes.expenseType,
       goTicketAmount: Number(body.goTicketAmount ?? 0),
