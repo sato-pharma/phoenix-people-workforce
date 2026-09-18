@@ -1400,6 +1400,50 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
   color: var(--phx-ink);
 }
 
+/* ── THE CV'S SELECTABLE TEXT (cv-preview-modal.tsx) ─────────────────────────
+   pdf.js lays a PDF page's text over its canvas as transparent spans, so a
+   recruiter can select and copy the words of what is otherwise a picture.
+   These are pdf.js's own `.textLayer` rules (pdfjs-dist 5.4.296,
+   web/pdf_viewer.css), cut to the ones a bare TextLayer uses.
+
+   They live here, UNLAYERED, for two reasons. The spans are made by pdf.js,
+   not by JSX, so no utility class can reach them. And the two `::selection`
+   rules above are unlayered and paint selected text in ink: over a canvas that
+   already shows the same word, that is every selected word printed twice, a
+   hair out of register. So the selection keeps the house tint from the rule
+   above and loses only the ink — `:is(span, br)` lifts this rule's
+   specificity past `.admin-shell ::selection` rather than relying on order. */
+.cv-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 0;
+}
+
+.cv-text-layer :is(span, br) {
+  position: absolute;
+  z-index: 1;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.cv-text-layer :is(span, br)::selection {
+  color: transparent;
+}
+
+/* A line break's selection box is the full line height at the page edge. */
+.cv-text-layer br::selection {
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-shell tbody tr {
     transition: none;

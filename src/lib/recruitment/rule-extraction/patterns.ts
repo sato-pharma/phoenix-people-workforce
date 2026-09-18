@@ -130,23 +130,9 @@ export function findEgyptianMobiles(text: string): string[] {
 // Profile links
 // ---------------------------------------------------------------------------
 
-const LINKEDIN = /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/(?:in|pub)\/[A-Za-z0-9%_-]+(?:\/[A-Za-z0-9%_-]+)*/gi;
-
-/**
- * The candidate's LinkedIn profile, canonicalised to https://www.linkedin.com/in/<slug>.
- *
- * Prefers the LONGEST match, which is what makes it correct on the 13% of CVs where pdf-parse
- * emitted a markdown link: the visible label is a TRUNCATED copy of the URL
- * ("linkedin.com/in/aban") sitting right beside the real one, and the short one resolves to
- * nobody.
- */
-export function findLinkedInUrl(text: string): string | null {
-  const matches = [...text.matchAll(LINKEDIN)].map((match) => match[0]);
-  if (matches.length === 0) return null;
-  const best = matches.sort((a, b) => b.length - a.length)[0];
-  const slug = best.replace(/^.*linkedin\.com\/(?:in|pub)\//i, "").replace(/\/+$/, "");
-  return slug ? `https://www.linkedin.com/in/${slug}` : null;
-}
+// The matcher lives in linkedin-profile.ts so the screens can use it without this file's
+// dictionaries. Re-exported here so the reader keeps importing every pattern from one place.
+export { findLinkedInUrl } from "@/lib/recruitment/linkedin-profile";
 
 // ---------------------------------------------------------------------------
 // Egyptian national ID

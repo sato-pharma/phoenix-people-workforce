@@ -1756,6 +1756,7 @@ import { runBackgroundFolderFilingGateTests } from "./background-folder-filing-g
 import { runPhoenixOfficialLogoTests } from "./phoenix-official-logo.test.ts";
 import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.test.ts";
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
+import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
@@ -5999,6 +6000,11 @@ await runTest(
 await runTest(
   "a CV that fails to open is reported to the error monitor with its kind, never its file name or candidate, and designed notices stay out",
   runCvPreviewFailureReportTests,
+);
+
+await runTest(
+  "a CV that gives a LinkedIn profile gets a LinkedIn button beside WhatsApp, Shortlist and Reject that opens only a https://www.linkedin.com/in/ address in a new tab; a PDF CV's text can be selected and copied, except on the manager's portal and on any page whose phone numbers were painted out",
+  runCvLinkedInAndSelectableTextTests,
 );
 
 await runTest(

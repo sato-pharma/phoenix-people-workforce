@@ -33,8 +33,13 @@ export class CvPreviewNotice extends Error {
   }
 }
 
-/** Where in the load the failure happened. Narrows a row without needing the stack. */
-export type CvPreviewStage = "fetch" | "decode" | "render";
+/**
+ * Where in the load the failure happened. Narrows a row without needing the stack.
+ *
+ * "text-layer" is the one stage that does NOT fail the preview: the PDF page is already on screen
+ * and only its selectable text is lost, so it is reported and the reader keeps the document.
+ */
+export type CvPreviewStage = "fetch" | "decode" | "render" | "text-layer";
 
 export type CvPreviewFailureInput = {
   caught: unknown;

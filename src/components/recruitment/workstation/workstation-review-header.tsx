@@ -37,6 +37,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ExternalLink,
   Loader2,
   Mail,
   MapPin,
@@ -226,6 +227,29 @@ export function WorkstationReviewHeader({
           owner asked for; opened, its panel is `w-full`, which in this wrapping row puts it on its
           own line underneath and takes the space back the moment it is closed. */}
       {canReply && focus ? <WhatsAppReplyBox candidateId={row.id} /> : null}
+      {/* ── LINKEDIN, WHEN THE CV GAVE ONE ──────────────────────────────────────────────────────
+          Beside WhatsApp because it is the same kind of press: it reaches the PERSON and decides
+          nothing, so it sits with the other way of reaching them and before the verdicts. That is
+          where the owner asked for it (2026-09-18): beside WhatsApp, Shortlist and Reject.
+
+          A LINK, NOT A BUTTON, and it opens a NEW TAB. The recruiter is mid-queue with a CV open;
+          leaving the page to look somebody up would throw away the place in the queue, the open
+          panels and the half-typed rejection reason. `noopener noreferrer` so LinkedIn's page gets
+          no handle on this one and is not told which candidate record sent it.
+
+          Absent, not disabled, when there is no profile: a greyed LinkedIn button on every CV that
+          never gave one would be a control that can never be pressed.
+          `row.linkedinUrl` is already the checked https://www.linkedin.com/in/ address — the
+          server resolved it through linkedInProfileHref, so nothing the column holds reaches an href
+          raw. */}
+      {row.linkedinUrl ? (
+        <DecisionLink
+          href={row.linkedinUrl}
+          icon={<ExternalLink className="h-3.5 w-3.5" />}
+          label="LinkedIn"
+          title="Open this applicant's LinkedIn profile in a new tab."
+        />
+      ) : null}
       <DecisionButton
         disabled={busy}
         hotkey="S"
@@ -510,6 +534,23 @@ export function WorkstationReviewHeader({
   );
 }
 
+type DecisionTone = "ok" | "danger" | "info" | "accent";
+
+/** Every press on the strip is this size and weight — a button and a link alike. */
+const DECISION_SHAPE =
+  "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45";
+
+/** A press at rest: white, the meaning in the ink, its own tint only under the pointer. */
+function decisionRest(tone: DecisionTone): string {
+  return tone === "ok"
+    ? "border-phx-line bg-white text-phx-ok hover:border-phx-ok-line hover:bg-phx-ok-bg"
+    : tone === "danger"
+      ? "border-phx-line bg-white text-phx-danger hover:border-phx-danger-line hover:bg-phx-danger-bg"
+      : tone === "info"
+        ? "border-phx-line bg-white text-phx-info hover:border-phx-info-line hover:bg-phx-info-bg"
+        : "border-phx-accent-press bg-phx-accent text-phx-accent-ink shadow-[0_1px_2px_rgba(13,16,21,0.10)] hover:bg-phx-accent-hover";
+}
+
 function DecisionButton({
   disabled,
   hotkey,
@@ -546,7 +587,7 @@ function DecisionButton({
   pressed?: boolean;
   /** Says what the press does, and names the key — or says why this one has none. */
   title?: string;
-  tone: "ok" | "danger" | "info" | "accent";
+  tone: DecisionTone;
 }) {
   // ── ONE LOUD BUTTON PER ROW, AND IT IS THE ONE THAT MOVES THE WORK ─────────────────────────────
   //
@@ -565,14 +606,7 @@ function DecisionButton({
   // A PRESSED BUTTON HAS A PANEL OPEN UNDERNEATH IT, so it wears the filled tint and an inset
   // shadow — pushed in, not glowing. The old `ring-1` read as a halo, which is the one ornament this
   // design system does not own.
-  const rest =
-    tone === "ok"
-      ? "border-phx-line bg-white text-phx-ok hover:border-phx-ok-line hover:bg-phx-ok-bg"
-      : tone === "danger"
-        ? "border-phx-line bg-white text-phx-danger hover:border-phx-danger-line hover:bg-phx-danger-bg"
-        : tone === "info"
-          ? "border-phx-line bg-white text-phx-info hover:border-phx-info-line hover:bg-phx-info-bg"
-          : "border-phx-accent-press bg-phx-accent text-phx-accent-ink shadow-[0_1px_2px_rgba(13,16,21,0.10)] hover:bg-phx-accent-hover";
+  const rest = decisionRest(tone);
   const held =
     tone === "ok"
       ? "border-phx-ok-line bg-phx-ok-bg text-phx-ok"
@@ -585,7 +619,7 @@ function DecisionButton({
     <button
       aria-pressed={pressed}
       className={cn(
-        "inline-flex items-center gap-1.5 border px-3 py-1.5 text-[13px] font-bold leading-none transition-colors disabled:cursor-not-allowed disabled:opacity-45",
+        DECISION_SHAPE,
         pressed ? cn(held, "shadow-[inset_0_1px_2px_rgba(13,16,21,0.14)]") : rest,
       )}
       disabled={disabled}
@@ -603,6 +637,32 @@ function DecisionButton({
           first push. The bracket literal is the always-safe spelling. */}
       {hotkey ? <kbd className="text-[10px] font-normal opacity-70">{hotkey}</kbd> : null}
     </button>
+  );
+}
+
+/**
+ * A press on the strip that GOES somewhere rather than does something — the LinkedIn profile.
+ *
+ * Wears exactly the DecisionButton shape in the info ink, so it reads as a sibling of WhatsApp and
+ * not as a stray hyperlink in a row of controls. It has no pressed state and no hotkey: it opens a
+ * page in another tab and leaves nothing open here to be held.
+ */
+function DecisionLink({
+  href,
+  icon,
+  label,
+  title,
+}: {
+  href: string;
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+}) {
+  return (
+    <a className={cn(DECISION_SHAPE, decisionRest("info"))} href={href} rel="noopener noreferrer" target="_blank" title={title}>
+      {icon}
+      {label}
+    </a>
   );
 }
 

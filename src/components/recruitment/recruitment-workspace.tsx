@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  ExternalLink,
   Eye,
   FileSpreadsheet,
   FolderPlus,
@@ -144,6 +145,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extraction-panel";
 import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
 import { WhatsAppReplyBox } from "@/components/recruitment/whatsapp-reply-box";
+import { ActionLink } from "@/components/recruitment/workstation/workstation-look";
+import { linkedInProfileHref } from "@/lib/recruitment/linkedin-profile";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
@@ -2219,6 +2222,25 @@ function RequisitionsTab({
         />
       </AdminTableShell>
     </div>
+  );
+}
+
+/**
+ * The candidate's LinkedIn profile, opened in a new tab — or nothing, when the CV gave none.
+ *
+ * The stored column goes through linkedInProfileHref first, so the only address this can ever link
+ * to is a https://www.linkedin.com/in/ profile: a portfolio or a `javascript:` value somebody saved
+ * there renders no link at all rather than a LinkedIn button that goes somewhere else. The quiet tone
+ * is the reply box's own idle button, so the two read as a pair.
+ */
+function LinkedInProfileLink({ linkedinUrl }: { linkedinUrl: string | null }) {
+  const href = linkedInProfileHref(linkedinUrl);
+  if (!href) return null;
+  return (
+    <ActionLink href={href} rel="noopener noreferrer" target="_blank" title="Open this applicant's LinkedIn profile in a new tab." tone="quiet">
+      <ExternalLink aria-hidden className="h-3.5 w-3.5" />
+      LinkedIn
+    </ActionLink>
   );
 }
 
@@ -4905,10 +4927,17 @@ function CandidatesTab({
               {/* Answering them on WhatsApp, directly under the number it would be sent to. Gated on
                   canManage, the same recruitment:update the route enforces, so a reader is not shown
                   a box that would refuse them. It draws only a small button until opened, and checks
-                  the 24-hour window before offering to type — see whatsapp-reply-box.tsx. */}
-              {canManage ? (
-                <div className="mt-2">
-                  <WhatsAppReplyBox candidateId={profile.candidate.id} />
+                  the 24-hour window before offering to type — see whatsapp-reply-box.tsx.
+
+                  Their LinkedIn profile sits beside it, because it is the other way of reaching the
+                  person (the owner asked for it there, 2026-09-18). NOT gated on canManage: it opens a
+                  page and changes nothing, and anybody on this panel can already read the email and
+                  phone printed above it. It wraps under the reply box's panel when that is opened,
+                  which is `w-full`, and comes back beside the button when it is closed. */}
+              {canManage || linkedInProfileHref(profile.candidate.linkedinUrl) ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {canManage ? <WhatsAppReplyBox candidateId={profile.candidate.id} /> : null}
+                  <LinkedInProfileLink linkedinUrl={profile.candidate.linkedinUrl} />
                 </div>
               ) : null}
             </div>

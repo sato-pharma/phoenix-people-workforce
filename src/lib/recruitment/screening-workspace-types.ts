@@ -149,6 +149,13 @@ export type WorkspaceCandidateRow = {
 
   phone: string | null;
   email: string | null;
+  /**
+   * The applicant's LinkedIn profile as a link that is safe to open, or null when the CV gave none.
+   *
+   * Resolved here rather than printed raw, because the stored column is not guaranteed to hold a
+   * LinkedIn address at all — see linkedInProfileHref. Null is what hides the button.
+   */
+  linkedinUrl: string | null;
   createdAt: string;
   notACv: boolean;
 

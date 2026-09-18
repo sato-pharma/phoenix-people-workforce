@@ -279,6 +279,26 @@ export function CvDocumentView({
           if (!active || !container) return;
           container.innerHTML = "";
 
+          // ── THE WORDS ON THE PAGE CAN BE SELECTED AND COPIED ──────────────────────────────────
+          //
+          // A canvas is a picture, so until 2026-09-18 a recruiter could not select a single word of
+          // a PDF CV — not a name to search, not an email to paste, not a university to look up. The
+          // owner asked for it in both tabs in plain words: "I can select, I can copy". Word CVs
+          // never had the problem (docx-preview paints real text), and a photographed CV has no text
+          // to select at all.
+          //
+          // pdf.js's own answer is its TEXT LAYER: the page's text laid over the canvas as invisible
+          // spans at the exact positions the glyphs were drawn, so a drag selects what the eye sees
+          // and a copy carries the words. The ink still comes from the canvas; the spans are
+          // transparent and only the selection tint shows (`.cv-text-layer` in app/globals.css).
+          //
+          // NEVER WHERE THE READER MAY NOT TAKE THE DOCUMENT AWAY, and never on a redacted page.
+          // The manager's portal blocks the download (allowDownload=false), and copying every word
+          // out is the download by another name. And a redacted page covers the phone numbers on the
+          // CANVAS only — the text under a black box is still text, so a layer over it would hand
+          // back, invisibly and one drag away, the exact number the box was painted to hide.
+          const selectable = allowDownload && !redactPhones;
+
           // isEvalSupported: false — pdf.js otherwise uses eval()/new Function() to JIT-compile
           // embedded font programs for speed, which this app's production CSP forbids
           // (`script-src` has no 'unsafe-eval' outside dev — next.config.ts). pdf.js would detect
@@ -295,16 +315,23 @@ export function CvDocumentView({
             const canvas = document.createElement("canvas");
             canvas.width = viewport.width;
             canvas.height = viewport.height;
-            canvas.className = "mx-auto mb-3 block bg-white shadow-sm";
+            canvas.className = "block bg-white shadow-sm";
+            // NEVER SHRUNK BY THE SHELL. The admin shell caps every canvas at its container's width
+            // (`.admin-shell :where(... canvas ...)` in app/globals.css, unlayered, so no utility
+            // class can undo it — only an inline style). A capped canvas is drawn smaller than its own
+            // pixels while the text layer keeps the page's true size, so every selection would land
+            // beside the word it belongs to. Fitting the page to its column is the zoom's job below,
+            // and the zoom shrinks the canvas and its text together.
+            canvas.style.maxWidth = "none";
             await page.render({ canvas, viewport }).promise;
             if (!active) return;
 
             // ── PAINT OUT THE PHONE NUMBERS PRINTED ON THE PAGE ──────────────────────────────
             //
             // AFTER the render, onto the same canvas, so what the reader sees and what any copy of
-            // it would contain are the one image. There is no text layer over this canvas and no
-            // second copy of the page anywhere: pdf.js draws pixels, and the covered pixels are
-            // simply never drawn back.
+            // it would contain are the one image. A redacted page never gets a text layer (see
+            // `selectable` above) and there is no second copy of the page anywhere: pdf.js draws
+            // pixels, and the covered pixels are simply never drawn back.
             //
             // The whole TEXT ITEM is covered rather than the matching characters inside it. An item
             // is one run in the PDF's own layout, which for a contact line is the number by itself,
@@ -339,7 +366,47 @@ export function CvDocumentView({
               }
             }
 
-            container.appendChild(canvas);
+            // One box per page, holding the canvas and — when the text may be taken — the layer
+            // over it. `w-fit` makes the box exactly the canvas, which is what the layer's own
+            // width and its percentage positions are measured against.
+            const pageBox = document.createElement("div");
+            pageBox.className = "relative mx-auto mb-3 w-fit";
+            pageBox.appendChild(canvas);
+            container.appendChild(pageBox);
+
+            if (selectable) {
+              // pdf.js sizes the layer and every run of text from these three custom properties.
+              // The scale is the canvas's: this canvas is drawn at `viewport.scale` CSS pixels per
+              // PDF unit (times the page's own user unit), and nothing else resizes it but the zoom.
+              pageBox.style.setProperty("--total-scale-factor", String(viewport.scale * viewport.userUnit));
+              pageBox.style.setProperty("--scale-round-x", "1px");
+              pageBox.style.setProperty("--scale-round-y", "1px");
+              const textLayer = document.createElement("div");
+              textLayer.className = "cv-text-layer";
+              pageBox.appendChild(textLayer);
+              try {
+                await new pdfjsLib.TextLayer({
+                  container: textLayer,
+                  textContentSource: page.streamTextContent(),
+                  viewport,
+                }).render();
+              } catch (layerError) {
+                // A page whose text cannot be laid out is still a page that can be READ, so this
+                // never takes the CV down with it: the layer goes, the picture stays, and the
+                // monitor hears about it under its own stage.
+                textLayer.remove();
+                const report = buildCvPreviewFailureReport({
+                  caught: layerError,
+                  fileName,
+                  httpStatus,
+                  kind,
+                  route: typeof window !== "undefined" ? window.location.pathname : null,
+                  stage: "text-layer",
+                });
+                if (report) reportClientError(report);
+              }
+              if (!active) return;
+            }
           }
           return;
         }
@@ -416,9 +483,11 @@ export function CvDocumentView({
     };
     // redactPhones is a dependency because it changes what gets PAINTED, not just what is read: a
     // manager who reserves the CV while the preview is open must see the page redrawn with the
-    // number, and one who releases it must see it painted out again, without a reload. fileName is
-    // read only to scrub it out of a failure report; it changes together with bytesUrl.
-  }, [kind, bytesUrl, fileName, mimeType, redactPhones]);
+    // number, and one who releases it must see it painted out again, without a reload. It decides
+    // the text layer too, and so does allowDownload: a page drawn while its text was allowed must
+    // be drawn again, without the layer, the moment it is not. fileName is read only to scrub it out
+    // of a failure report; it changes together with bytesUrl.
+  }, [kind, bytesUrl, fileName, mimeType, redactPhones, allowDownload]);
 
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
@@ -458,8 +527,9 @@ export function CvDocumentView({
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
         {failureNotice}
-        {/* One <canvas> per page, painted by pdfjs-dist — see the useEffect above for why this
-            isn't an <iframe> on the browser's native PDF viewer. */}
+        {/* One <canvas> per page, painted by pdfjs-dist, each in a box with its selectable text
+            layer over it — see the useEffect above for why this isn't an <iframe> on the browser's
+            native PDF viewer. */}
         <div ref={pdfContainerRef} />
       </div>
     ) : kind === "image" ? (
