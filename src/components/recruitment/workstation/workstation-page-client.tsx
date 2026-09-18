@@ -103,6 +103,7 @@ export function WorkstationPageClient({
   area,
   areaOptions,
   canDecide,
+  canReply,
   canSendToManagers,
   canWriteNotes,
   counts,
@@ -138,12 +139,19 @@ export function WorkstationPageClient({
   areaOptions: string[];
   /**
    * May this reader decide candidates — the gate on both the single verdict and the bulk one.
+   * `candidates: update`, the grant every verdict route asserts.
    *
    * Its own prop rather than a second use of `canWriteNotes`, even though the two are the same
    * value today. They answer different questions, and the day notes are gated separately from
    * decisions, a shared prop would move who can reject fifty CVs without anybody editing this file.
    */
   canDecide: boolean;
+  /**
+   * May this reader answer an applicant on WhatsApp in their own words — `recruitment: update`, the
+   * grant the reply route asserts. Its own prop, not `canDecide`: until 2026-09-18 the reply box rode
+   * on `canDecide`, so it followed the verdict grant rather than its own route's.
+   */
+  canReply: boolean;
   canSendToManagers: boolean;
   canWriteNotes: boolean;
   counts: WorkQueueCounts;
@@ -443,6 +451,7 @@ export function WorkstationPageClient({
     <ScreeningWorkstation
       canDecide={canDecide}
       candidateHref={candidateHref}
+      canReply={canReply}
       canSendToManagers={canSendToManagers}
       canWriteNotes={canWriteNotes}
       counts={counts}

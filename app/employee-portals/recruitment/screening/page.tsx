@@ -104,16 +104,20 @@ async function ScreeningContent({
     );
   }
 
-  // Same gate as the admin twin: the send picker and the note box appear only for a caller who may
-  // actually write. Everything else on the workspace is readable without it.
+  // Same gates as the admin twin: the send picker, the note box and the WhatsApp reply box appear
+  // only for a caller holding `recruitment: update`, and the verdicts (Shortlist, Reject, stars, bulk
+  // marks) only for one holding `candidates: update` — each the grant its own route asserts.
+  // Everything else on the workspace is readable without them.
   const canUpdate = await canAccess(access, "recruitment", "update");
+  const canDecide = await canAccess(access, "candidates", "update");
   const workspace = await loadScreeningWorkspace(access.hrId, filters, { canSendToManagers: canUpdate });
 
   return (
     <WorkstationPageClient
       area={workspace.area}
       areaOptions={workspace.areaOptions}
-      canDecide={canUpdate}
+      canDecide={canDecide}
+      canReply={canUpdate}
       canSendToManagers={workspace.canSendToManagers}
       canWriteNotes={canUpdate}
       counts={workspace.counts}

@@ -93,17 +93,27 @@ async function ScreeningContent({
   }
 
   // Sending a CV to a manager is a `recruitment: update` act — the same grant the send route
-  // enforces, and the same grant the notes route enforces on a write. A screener without it still
-  // gets the whole workspace and can still shortlist, reject and read every note; they simply get
-  // no send picker and no note box, rather than ones that answer 403.
+  // enforces, the same grant the notes route enforces on a write, and the same grant the WhatsApp
+  // reply route enforces. A screener without it still gets the whole workspace and can still
+  // shortlist, reject and read every note; they simply get no send picker, no note box and no reply
+  // box, rather than ones that answer 403.
+  //
+  // DECIDING is `candidates: update`, not `recruitment: update`: Shortlist, Reject, the stars, the
+  // bulk marks and Undo all land on /api/recruitment/candidates/** routes that assert
+  // candidates:update. Until 2026-09-18 canDecide was spelled `recruitment: update` — the two are held
+  // by the same seats today, so nobody saw it, but a gate spelled differently from its server
+  // boundary either hides a button somebody may press or shows one that 403s. Pinned by
+  // tests/screening-decide-gate.test.ts.
   const canUpdate = await canAccess(access, "recruitment", "update");
+  const canDecide = await canAccess(access, "candidates", "update");
   const workspace = await loadScreeningWorkspace(access.hrId, filters, { canSendToManagers: canUpdate });
 
   return (
     <WorkstationPageClient
       area={workspace.area}
       areaOptions={workspace.areaOptions}
-      canDecide={canUpdate}
+      canDecide={canDecide}
+      canReply={canUpdate}
       canSendToManagers={workspace.canSendToManagers}
       canWriteNotes={canUpdate}
       counts={workspace.counts}

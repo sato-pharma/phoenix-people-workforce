@@ -85,6 +85,7 @@ export type SendState = {
 
 export function WorkstationReviewHeader({
   busy,
+  canDecide,
   canRate,
   canReply,
   canSend,
@@ -107,6 +108,15 @@ export function WorkstationReviewHeader({
   vacancies,
 }: {
   busy: boolean;
+  /**
+   * May this reader shortlist or reject this CV?
+   *
+   * The same `candidates:update` the status route enforces. Until 2026-09-18 the Shortlist and
+   * Reject buttons here were drawn for every reader of the page whatever this said — only the S
+   * hotkey and the bulk marks honoured it — so a reader without the grant would have been shown two
+   * verdicts that answer 403. Absent, not disabled, like every other control this strip withholds.
+   */
+  canDecide: boolean;
   /**
    * May this reader put a star on a CV?
    *
@@ -272,28 +282,32 @@ export function WorkstationReviewHeader({
           />
         )}
       />
-      <DecisionButton
-        disabled={busy}
-        hotkey="S"
-        icon={<ThumbsUp className="h-3.5 w-3.5" />}
-        label="Shortlist"
-        onClick={() => onDecide("shortlisted", null)}
-        title={
-          onNext
-            ? "Keep this one — press S. The queue moves to the next CV on its own."
-            : "Keep this one — press S."
-        }
-        tone="ok"
-      />
-      <DecisionButton
-        disabled={busy}
-        icon={<ThumbsDown className="h-3.5 w-3.5" />}
-        label="Reject"
-        onClick={() => setRejecting((open) => !open)}
-        pressed={rejecting}
-        title="Turn this one down. No keyboard shortcut on purpose — it asks you for a reason first."
-        tone="danger"
-      />
+      {canDecide ? (
+        <>
+          <DecisionButton
+            disabled={busy}
+            hotkey="S"
+            icon={<ThumbsUp className="h-3.5 w-3.5" />}
+            label="Shortlist"
+            onClick={() => onDecide("shortlisted", null)}
+            title={
+              onNext
+                ? "Keep this one — press S. The queue moves to the next CV on its own."
+                : "Keep this one — press S."
+            }
+            tone="ok"
+          />
+          <DecisionButton
+            disabled={busy}
+            icon={<ThumbsDown className="h-3.5 w-3.5" />}
+            label="Reject"
+            onClick={() => setRejecting((open) => !open)}
+            pressed={rejecting}
+            title="Turn this one down. No keyboard shortcut on purpose — it asks you for a reason first."
+            tone="danger"
+          />
+        </>
+      ) : null}
       {canSend ? (
         <DecisionButton
           disabled={busy}
@@ -339,7 +353,7 @@ export function WorkstationReviewHeader({
           Sent to {sentConfirmation}.
         </p>
       ) : null}
-      {rejecting ? (
+      {rejecting && canDecide ? (
         <RejectPanel
           busy={busy}
           onCancel={() => setRejecting(false)}
