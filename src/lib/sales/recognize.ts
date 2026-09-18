@@ -6,8 +6,16 @@ import { loadCrosswalks } from "@/lib/sales/normalizer/crosswalks";
 import { listMergedDistributorProfiles, resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-profile-store";
 import { headerRowTexts, normalizeRows, pickBestSheet, validateSheetHeaders, type HeaderValidationFailure } from "@/lib/sales/normalizer/engine";
 import { distinctUnknowns, type DistinctUnknown, type ProductRef } from "@/lib/sales/normalizer/mapping";
+import {
+  PHOENIX_TEMPLATE_BASE_PROFILE,
+  PHOENIX_TEMPLATE_NAME,
+  detectTemplateDistributor,
+  isPhoenixTemplateCode,
+  phoenixTemplateProfile,
+  type TemplateDistributorRun,
+} from "@/lib/sales/normalizer/phoenix-template";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
-import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
+import type { CodedRow, DistributorProfile, NormalizeResult } from "@/lib/sales/normalizer/types";
 
 // ── The Sales recognition spine ──────────────────────────────────────────────────────────────
 // THE single place that classifies an uploaded distributor workbook. Every sales workflow
@@ -53,16 +61,88 @@ export type NormalizePreview = {
   unknownTerritories: DistinctUnknown[];
   // Items the user must explicitly confirm (ignore or include) before importing
   ignoredItems: DistinctIgnoredItem[];
+  // How many distinct unknowns there REALLY are, before PREVIEW_UNKNOWN_LIMIT truncates the three
+  // lists above. Without these the UI silently showed the first 500 and looked like the whole job,
+  // which is how "the normalizer maps a very small number per click" was invisible from the screen.
+  unknownTotals: { customers: number; products: number; territories: number };
   // Surfaced to the UI for actionable callouts
   blankCustomerSkipped: number;
   blankCustomerErrors: number;
   darkCount: number;
 };
 
+/**
+ * How many distinct unknowns of each kind one preview carries back.
+ *
+ * Was 500, which quietly capped a month's mapping work at 500 customers however many the file
+ * actually had. 2,000 matches BACKFILL_MAX_MAPPINGS (the biggest save the mapping layer will do in
+ * one go), so the screen can no longer promise less than one click can deliver.
+ */
+export const PREVIEW_UNKNOWN_LIMIT = 2000;
+
 export type NormalizeFileResult =
-  | { status: "ok"; result: NormalizeResult; period: string | null; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; hasDateColumn: boolean; regionOnly: boolean }
+  // `distributorCode` is the RESOLVED distributor, which is only ever different from the code the
+  // caller passed when the file came in on the Phoenix template (where the sheet names its own
+  // distributor). Every caller must file mappings, the batch and the customer crosswalk under THIS
+  // code — passing the sentinel through would file a month under a distributor that does not exist.
+  | { status: "ok"; result: NormalizeResult; period: string | null; distributorCode: string; distributorName: string; products: ProductRef[]; valueSource: "recompute" | "sheet"; priceByCode: Map<string, number>; hasDateColumn: boolean; regionOnly: boolean }
   | { status: "header_error"; distributorName: string; missingGroups: HeaderValidationFailure[]; fingerprintWarning?: { likelyCode: string; likelyName: string }; observedHeaders: string[] }
+  // The file came in on the Phoenix template but the template itself cannot be read — no distributor
+  // named, a name the system does not know, or two distributors in one file. `message` is already
+  // written for the user, so callers surface it verbatim instead of a generic refusal.
+  | { status: "template_error"; distributorName: string; message: string }
   | { status: "coded_sheet"; distributorName: string };
+
+/** One distributor's worth of a recognized file — the unit a batch is filed in. */
+export type NormalizePart = {
+  distributorCode: string;
+  distributorName: string;
+  result: NormalizeResult;
+  period: string | null;
+};
+
+/**
+ * A recognized file, split into one part per distributor.
+ *
+ * Every real distributor's own export is one part, always. Only the Phoenix universal template can
+ * produce several, because it is the one sheet that names its distributor per row — and the
+ * owner's rule is that one filled template may carry as many as he likes, each landing as its own
+ * batch (2026-09-18).
+ */
+export type NormalizePartsResult =
+  | {
+      status: "ok";
+      parts: NormalizePart[];
+      products: ProductRef[];
+      valueSource: "recompute" | "sheet";
+      priceByCode: Map<string, number>;
+      hasDateColumn: boolean;
+      regionOnly: boolean;
+    }
+  | Exclude<NormalizeFileResult, { status: "ok" }>;
+
+/**
+ * The sentence to show the user for a non-ok recognition.
+ *
+ * Every normalizer route used to answer the same generic "The sheet could not be normalized — check
+ * the distributor selection or sheet format", which told the user nothing about WHICH column was
+ * missing or WHICH distributor name the template carried. The recognizer already knows; this is the
+ * one place that turns what it knows into words.
+ */
+export function recognitionErrorMessage(result: Exclude<NormalizeFileResult, { status: "ok" }>): string {
+  if (result.status === "template_error") return result.message;
+  if (result.status === "coded_sheet") {
+    return "This is already a coded Phoenix sheet, not a raw distributor file. Import it on Source of Sales instead.";
+  }
+  const missing = result.missingGroups
+    .map((g) => (g.expected.length > 0 ? `${g.label} (expected the column "${g.expected[0]}")` : g.label))
+    .join("; ");
+  const warning = result.fingerprintWarning
+    ? ` The columns look like ${result.fingerprintWarning.likelyName}'s file — check the distributor you picked.`
+    : "";
+  const observed = result.observedHeaders.length > 0 ? ` The file's own columns are: ${result.observedHeaders.join(", ")}.` : "";
+  return `${result.distributorName}: the sheet is missing ${missing || "the required columns"}.${warning}${observed}`;
+}
 
 // Phoenix product code -> master factory price, keyed the same way the engine keys productByCode,
 // so the post-analyze validator can sanity-check per-unit prices without re-loading the masters.
@@ -75,11 +155,21 @@ function buildPriceMap(products: { productCode: string; factoryPrice: number }[]
 // Recognize + normalize a raw distributor workbook WITHOUT persisting anything. Resolves the
 // distributor profile, detects an already-coded sheet, validates the headers, then normalizes every
 // row against the shared mapping dictionary (crosswalks). Returns a discriminated result the callers
-// branch on. This is the canonical recognizer; `normalizeUploadedFile` is kept as an alias for the
-// many existing call sites.
-export async function recognizeDistributorWorkbook(distributorCode: string, file: File): Promise<NormalizeFileResult> {
-  const profile = await resolveDistributorProfile(distributorCode);
+// branch on, SPLIT INTO ONE PART PER DISTRIBUTOR — one for every file but a Phoenix template naming
+// several. `recognizeDistributorWorkbook` below is the one-distributor face of this, and what every
+// caller outside the Source Normalizer uses (`normalizeUploadedFile` is its long-standing alias).
+export async function recognizeWorkbookParts(distributorCode: string, file: File): Promise<NormalizePartsResult> {
+  // The Phoenix template is not a distributor: the sheet NAMES its distributor, and we resolve that
+  // name to a real code below, after the workbook is open. Until then it borrows the template's
+  // headers-only profile so the right worksheet can be picked.
+  const isTemplate = isPhoenixTemplateCode(distributorCode);
+  let profile: DistributorProfile | null = isTemplate
+    ? PHOENIX_TEMPLATE_BASE_PROFILE
+    : await resolveDistributorProfile(distributorCode);
   if (!profile) throw new Error(`No normalizer profile for distributor ${distributorCode}.`);
+  // Loaded at most once per call, and only when something actually needs it.
+  let mergedProfiles: DistributorProfile[] | null = null;
+  const merged = async () => (mergedProfiles ??= await listMergedDistributorProfiles());
   // Load masters + file buffer in parallel; load crosswalks only after coded-sheet and header checks pass.
   // No customer→brick crosswalk here: loadCrosswalks reads the customer map itself.
   const [refs, buffer] = await Promise.all([loadSalesReferenceData({ includeCustomerBricks: false }), file.arrayBuffer()]);
@@ -115,9 +205,29 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
     if (codedHits >= 2) return { status: "coded_sheet", distributorName: profile.distributorName };
   }
 
+  // Phoenix template: read the distributor off the sheet and rebuild the profile under its REAL code,
+  // so normalizeRows stamps the real distributor on every coded row and keys the customer crosswalk
+  // `${realDistributor} ${customerCode}` exactly as it does for that distributor's own file.
+  let templateRuns: TemplateDistributorRun[] = [];
+  let rowOwner: Map<number, string> = new Map();
+  if (isTemplate) {
+    const detection = detectTemplateDistributor(
+      sheet,
+      (await merged()).map((p) => ({ distributorCode: p.distributorCode, distributorName: p.distributorName })),
+    );
+    if (!detection.ok) {
+      return { status: "template_error", distributorName: profile.distributorName, message: detection.message };
+    }
+    templateRuns = detection.distributors;
+    rowOwner = detection.distributorByRow;
+    // Header validation below runs against the FIRST distributor's profile: every part of a template
+    // file shares the template's headers, so one check answers for all of them.
+    profile = phoenixTemplateProfile(templateRuns[0].distributorCode, templateRuns[0].distributorName);
+  }
+
   // Per-distributor pre-flight header validation. The fingerprint cross-check scores against the MERGED
   // profile set (code ∪ DB overrides) so an in-app edited/onboarded distributor participates too.
-  const headerValidation = validateSheetHeaders(sheet, profile, await listMergedDistributorProfiles());
+  const headerValidation = validateSheetHeaders(sheet, profile, await merged());
   if (!headerValidation.valid) {
     return {
       status: "header_error",
@@ -129,9 +239,57 @@ export async function recognizeDistributorWorkbook(distributorCode: string, file
   }
 
   const maps = await loadCrosswalks(refs);
-  const result = normalizeRows(sheet, profile, maps);
   const products: ProductRef[] = refs.products.map((p) => ({ code: p.productCode, family: p.family, name: p.productName }));
-  return { status: "ok", result, period: dominantPeriod(result.coded), distributorName: profile.distributorName, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
+  const parts: NormalizePart[] = [];
+  if (templateRuns.length > 1) {
+    // One pass of the engine per distributor, over that distributor's own rows. Each pass carries
+    // its OWN profile, so every coded row is stamped with the real distributor and the customer
+    // crosswalk is keyed `${realDistributor} ${customerCode}` exactly as that distributor's own file
+    // would have keyed it.
+    for (const run of templateRuns) {
+      const partProfile = phoenixTemplateProfile(run.distributorCode, run.distributorName);
+      const result = normalizeRows(sheet, partProfile, maps, { includeRow: (r) => rowOwner.get(r) === run.distributorCode });
+      parts.push({ distributorCode: partProfile.distributorCode, distributorName: run.distributorName, period: dominantPeriod(result.coded), result });
+    }
+  } else {
+    // The ordinary file: one distributor, no filter, byte-for-byte the pass this has always made.
+    const result = normalizeRows(sheet, profile, maps);
+    parts.push({ distributorCode: profile.distributorCode, distributorName: profile.distributorName, period: dominantPeriod(result.coded), result });
+  }
+  return { status: "ok", parts, products, valueSource: profile.valueSource, priceByCode: buildPriceMap(refs.products), hasDateColumn: (profile.dateColumns ?? []).length > 0, regionOnly: Boolean(profile.regionOnly) };
+}
+
+/**
+ * The canonical recognizer, one distributor at a time — what every sales workflow outside the
+ * Source Normalizer calls, and what its contract has always been.
+ *
+ * A file carrying several distributors can only be a Phoenix template (nothing else names its
+ * distributor per row), and only the Source Normalizer offers that option, so this refuses it in
+ * words rather than silently recognizing the first one and dropping the rest.
+ */
+export async function recognizeDistributorWorkbook(distributorCode: string, file: File): Promise<NormalizeFileResult> {
+  const recognized = await recognizeWorkbookParts(distributorCode, file);
+  if (recognized.status !== "ok") return recognized;
+  const [first, ...rest] = recognized.parts;
+  if (rest.length > 0) {
+    return {
+      status: "template_error",
+      distributorName: PHOENIX_TEMPLATE_NAME,
+      message: `This file carries ${recognized.parts.length} distributors (${recognized.parts.map((p) => p.distributorName).join(", ")}). Upload it on the Source Normalizer, which files one batch per distributor.`,
+    };
+  }
+  return {
+    status: "ok",
+    result: first.result,
+    period: first.period,
+    distributorCode: first.distributorCode,
+    distributorName: first.distributorName,
+    products: recognized.products,
+    valueSource: recognized.valueSource,
+    priceByCode: recognized.priceByCode,
+    hasDateColumn: recognized.hasDateColumn,
+    regionOnly: recognized.regionOnly,
+  };
 }
 
 // Backwards-compatible alias for the canonical recognizer (kept for existing call sites).
@@ -178,9 +336,14 @@ export function summarizePreview(
     // same way buildPreviewBreakdowns already protects the aggregated tables.
     sampleCoded: stripRestrictedRows(result.coded, excludeProductCodes).slice(0, 50),
     summary: result.summary,
-    unknownCustomers: distinct.customers.slice(0, 500),
-    unknownProducts: distinct.products.slice(0, 500),
-    unknownTerritories: distinct.territories.slice(0, 500),
+    unknownCustomers: distinct.customers.slice(0, PREVIEW_UNKNOWN_LIMIT),
+    unknownProducts: distinct.products.slice(0, PREVIEW_UNKNOWN_LIMIT),
+    unknownTerritories: distinct.territories.slice(0, PREVIEW_UNKNOWN_LIMIT),
+    unknownTotals: {
+      customers: distinct.customers.length,
+      products: distinct.products.length,
+      territories: distinct.territories.length,
+    },
     ignoredItems: [...ignoredMap.values()],
     blankCustomerSkipped: result.summary.blankCustomerSkipped,
     blankCustomerErrors: distinct.blankCustomerErrors,

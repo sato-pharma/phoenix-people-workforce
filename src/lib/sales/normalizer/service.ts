@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { logError } from "@/lib/observability/log";
+import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { collectUnmappedProducts, computeBrickCoverage, countBrickDrift, saveBrickCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { assertNotADuplicateUpload } from "@/lib/sales/import-duplicate-guard";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -11,18 +12,19 @@ import { applyCustomerBrickCorrections } from "@/lib/sales/normalizer/customer-m
 import { pickBestSheet } from "@/lib/sales/normalizer/engine";
 import { HEADER_SCAN_ROWS } from "@/lib/sales/normalizer/header-normalize";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
+import { PHOENIX_TEMPLATE_CODE, PHOENIX_TEMPLATE_NAME } from "@/lib/sales/normalizer/phoenix-template-code";
 import { RAW_DISTRIBUTOR_PROFILES } from "@/lib/sales/normalizer/profiles";
 import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import type { CodedRow, NormalizeResult } from "@/lib/sales/normalizer/types";
-import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, summarizePreview, type NormalizeFileResult, type NormalizePreview } from "@/lib/sales/recognize";
+import { RECOGNITION_ENGINE_VERSION, dominantPeriod, normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview, type NormalizeFileResult, type NormalizePart, type NormalizePreview } from "@/lib/sales/recognize";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeStoreSplitNetForBatch } from "@/lib/sales/attribution-store-split-refresh";
 
 // Recognition lives in `@/lib/sales/recognize` (the single Sales recognition spine). Re-exported
 // here so existing import sites (`@/lib/sales/normalizer/service`) keep working unchanged.
-export { normalizeUploadedFile, summarizePreview };
-export type { NormalizeFileResult, NormalizePreview };
+export { normalizeUploadedFile, recognitionErrorMessage, recognizeWorkbookParts, summarizePreview };
+export type { NormalizeFileResult, NormalizePart, NormalizePreview };
 
 export type MappingReferences = { bricks: { id: string; name: string }[]; products: { code: string; name: string }[] };
 
@@ -190,6 +192,17 @@ export function listNormalizerDistributors(): NormalizerDistributorOption[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * The Source Normalizer's picker: the Phoenix template first, then every distributor by name.
+ *
+ * Deliberately separate from listNormalizerDistributors(), whose other caller (the Sales Upload
+ * page) feeds the list straight into `profiledDistributorCodes` — the template sentinel is not a
+ * profiled distributor and must never appear there.
+ */
+export function listNormalizerSourceOptions(): NormalizerDistributorOption[] {
+  return [{ code: PHOENIX_TEMPLATE_CODE, name: PHOENIX_TEMPLATE_NAME }, ...listNormalizerDistributors()];
+}
+
 // ── Coded XLSX (the format the user produces by hand today; Phoenix-branded) ──
 
 // "Discount%" carries the discount fraction the engine read off the raw sheet. It is CARRIED, not
@@ -201,7 +214,10 @@ export const CODED_HEADERS = [
   "Qty", "B. Qty", "Value", "Discount%", "Invoice Date", "Customer", "Customer Name", "Customer Address", "Official Line",
 ] as const;
 
-export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buffer> {
+// Takes only what it writes, so the Source Normalizer can hand it the rows of SEVERAL distributors
+// at once for one downloadable coded sheet. Every coded row carries its own "Distrub ID", so a
+// mixed sheet is as readable as a single-distributor one — the IMPORT still runs per distributor.
+export function buildCodedWorkbook(result: Pick<NormalizeResult, "coded" | "exceptions">): Promise<ExcelJS.Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
   const sheet = workbook.addWorksheet("Coded");
@@ -257,12 +273,46 @@ export function buildCodedWorkbook(result: NormalizeResult): Promise<ExcelJS.Buf
 // Normalize a raw distributor file and return its coded XLSX as an in-memory buffer — used by the
 // one-click "Import (validated)" path so the coded sheet can be fed straight into the Source-of-Sales
 // validator without writing a temp file.
-export async function buildCodedBuffer(distributorCode: string, file: File): Promise<{ buffer: ExcelJS.Buffer; distributorName: string; period: string | null; result: NormalizeResult }> {
+// `distributorCode` comes back RESOLVED: for a Phoenix-template upload the caller passed a sentinel
+// and the sheet named the real distributor, so the caller must use the returned code (never the one
+// it passed) when it files the batch.
+export async function buildCodedBuffer(distributorCode: string, file: File): Promise<CodedPart> {
   const normalized = await normalizeUploadedFile(distributorCode, file);
-  if (normalized.status === "coded_sheet") throw new Error("This sheet has already been processed — use the direct import path instead.");
-  if (normalized.status === "header_error") throw new Error(`Header validation failed: ${normalized.missingGroups.map((g) => g.label).join(", ")} columns missing.`);
+  if (normalized.status !== "ok") throw new SalesWorkflowError("normalizer_unreadable", recognitionErrorMessage(normalized), 422);
   const buffer = await buildCodedWorkbook(normalized.result);
-  return { buffer, distributorName: normalized.distributorName, period: normalized.period, result: normalized.result };
+  return {
+    buffer,
+    distributorCode: normalized.distributorCode,
+    distributorName: normalized.distributorName,
+    period: normalized.period,
+    result: normalized.result,
+  };
+}
+
+export type CodedPart = { buffer: ExcelJS.Buffer; distributorCode: string; distributorName: string; period: string | null; result: NormalizeResult };
+
+/**
+ * The same thing, one entry per distributor in the file — what the Source Normalizer uses.
+ *
+ * A distributor's own export always yields exactly one; only a Phoenix template can yield several,
+ * and each one is a batch of its own. Built one after another rather than all at once: a month can
+ * be a hundred thousand rows, and holding every distributor's workbook in memory together is how a
+ * 16 GB machine runs out of it.
+ */
+export async function buildCodedParts(distributorCode: string, file: File): Promise<CodedPart[]> {
+  const recognized = await recognizeWorkbookParts(distributorCode, file);
+  if (recognized.status !== "ok") throw new SalesWorkflowError("normalizer_unreadable", recognitionErrorMessage(recognized), 422);
+  const parts: CodedPart[] = [];
+  for (const part of recognized.parts) {
+    parts.push({
+      buffer: await buildCodedWorkbook(part.result),
+      distributorCode: part.distributorCode,
+      distributorName: part.distributorName,
+      period: part.period,
+      result: part.result,
+    });
+  }
+  return parts;
 }
 
 // ── Direct import of coded rows (bypasses templates — rows are already coded + validated) ──

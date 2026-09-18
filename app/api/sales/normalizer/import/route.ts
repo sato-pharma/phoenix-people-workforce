@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
-import { normalizeUploadedFile, persistNormalizedBatch } from "@/lib/sales/normalizer/service";
+import { persistNormalizedBatch, recognitionErrorMessage, recognizeWorkbookParts } from "@/lib/sales/normalizer/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -23,22 +23,41 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return NextResponse.json({ success: false, error: "No file uploaded." }, { status: 400 });
     if (!distributorCode) return NextResponse.json({ success: false, error: "Pick a distributor." }, { status: 400 });
 
-    const normalized = await normalizeUploadedFile(distributorCode, file);
+    const normalized = await recognizeWorkbookParts(distributorCode, file);
     if (normalized.status !== "ok") {
-      return NextResponse.json({ success: false, error: "The sheet could not be normalized — check the distributor selection or sheet format." }, { status: 422 });
+      return NextResponse.json({ success: false, error: recognitionErrorMessage(normalized) }, { status: 422 });
     }
-    const { result, distributorName } = normalized;
-    if (result.coded.length === 0) {
+    const { parts } = normalized;
+    const coded = parts.reduce((n, part) => n + part.result.coded.length, 0);
+    if (coded === 0) {
       return NextResponse.json({ success: false, error: "Nothing to import — no rows could be coded. Map the exceptions first." }, { status: 400 });
     }
-    const persisted = await persistNormalizedBatch({
-      distributorCode,
-      distributorName,
-      fileName: file.name,
-      result,
-      uploadedBy: access.loginId ?? access.hrId ?? "admin",
+    // One batch per distributor — a batch is one distributor and one month everywhere in the
+    // system, so a template naming several is imported as several, never merged into one.
+    const batches: Array<{ batchId: string; distributorName: string; exceptions: number; importedRows: number; period: string | null }> = [];
+    for (const part of parts) {
+      if (part.result.coded.length === 0) continue;
+      const persisted = await persistNormalizedBatch({
+        // RESOLVED, never the posted code: a Phoenix-template upload posts a sentinel and the sheet
+        // names the real distributor. Filing the batch under the sentinel would invent a distributor.
+        distributorCode: part.distributorCode,
+        distributorName: part.distributorName,
+        fileName: file.name,
+        result: part.result,
+        uploadedBy: access.loginId ?? access.hrId ?? "admin",
+      });
+      batches.push({ ...persisted, distributorName: part.distributorName, exceptions: part.result.exceptions.length });
+    }
+    return NextResponse.json({
+      success: true,
+      data: {
+        batches,
+        batchId: batches[0]?.batchId ?? null,
+        exceptions: parts.reduce((n, part) => n + part.result.exceptions.length, 0),
+        importedRows: batches.reduce((n, b) => n + b.importedRows, 0),
+        period: batches[0]?.period ?? null,
+      },
     });
-    return NextResponse.json({ success: true, data: { ...persisted, exceptions: result.exceptions.length } });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });

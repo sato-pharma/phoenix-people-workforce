@@ -19,6 +19,7 @@ import { resolveDistributorProfile } from "@/lib/sales/normalizer/distributor-pr
 import {
   buildCodedWorkbook,
   normalizeUploadedFile,
+  recognitionErrorMessage,
   summarizePreview,
 } from "@/lib/sales/normalizer/service";
 
@@ -106,7 +107,10 @@ async function main() {
   // ── Run the real engine against the live masters/crosswalks ──
   const normalized = await normalizeUploadedFile(distributorCode, file);
   if (normalized.status !== "ok") {
-    console.error(`\nERROR: ${normalized.status === "coded_sheet" ? "Coded sheet detected — run on a raw distributor file." : `Header validation failed: ${normalized.missingGroups.map((g) => g.label).join(", ")}`}`);
+    // The recognizer already writes the sentence for every way a file can be refused - a missing
+    // column group, a coded sheet, or a template naming no distributor the system knows.
+    console.error(`
+ERROR: ${recognitionErrorMessage(normalized)}`);
     process.exit(1);
   }
   const { result, period, distributorName, products } = normalized;

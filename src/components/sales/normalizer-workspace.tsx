@@ -9,6 +9,7 @@ type IconType = typeof Sparkles;
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
 import { Button } from "@/components/ui/button";
+import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -28,12 +29,21 @@ type CustomerCluster = {
   suggestedBricks: { brickId: string; distanceKm: number | null }[];
 };
 type Preview = {
+  // The RESOLVED distributor. Equals the picked code for a named distributor; for a Phoenix-template
+  // upload the picker posted a sentinel and the sheet named its own distributor, so every mapping,
+  // auto-map and history call below must use THIS code, never the one in the picker.
+  distributorCode: string;
   distributorName: string; period: string | null;
   periods: { period: string; rows: number }[];
   sampleCoded: CodedRow[];
   unknownProducts: Unknown[]; unknownTerritories: Unknown[]; unknownCustomers: Unknown[];
+  // Distinct unknowns BEFORE the preview's per-list cap — so the screen can say "showing 2,000 of
+  // 7,318" instead of silently presenting a truncated list as the whole job.
+  unknownTotals?: { customers: number; products: number; territories: number };
   summary: { totalRows: number; productResolved: number; brickResolved: number; fullyCoded: number; ignored: number };
 };
+
+type UnknownKind = "p" | "t" | "c";
 
 const pct = (n: number, d: number) => (d ? `${((100 * n) / d).toFixed(1)}%` : "—");
 
@@ -53,6 +63,41 @@ function inGroups<T>(list: readonly T[], size: number): T[][] {
   return groups;
 }
 
+// Groups used to run strictly one after another, so 400 customers meant 20 round trips end to end —
+// the whole reason one click mapped so few. They now run several at a time: the groups stay small
+// (each request is still short and still isolated from its neighbours' failures) but the wall-clock
+// is divided by the pool size. Four is deliberate — enough to matter, few enough that the AI and
+// geocode calls behind each request are not stampeded.
+const GROUP_CONCURRENCY = 4;
+
+/** Run `worker` over `items` with at most `limit` in flight, preserving result order. */
+async function inPool<T, R>(items: readonly T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length) as R[];
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+      for (;;) {
+        const index = next;
+        next += 1;
+        if (index >= items.length) return;
+        results[index] = await worker(items[index], index);
+      }
+    }),
+  );
+  return results;
+}
+
+// One Save posts every pick in a single request, and with bulk assign a person can now pick
+// thousands at once. The save route is capped at 60 s and each customer mapping can heal history
+// rows behind it, so the picks go up in chunks — a slow save shows progress and a failed chunk
+// leaves every earlier chunk saved.
+const SAVE_CHUNK_SIZE = 200;
+
+// How many unknown rows each table renders before "Show all". Every row carries a live combo box, so
+// painting several thousand at once locks the tab — but SELECTION and bulk assign always cover the
+// full list, not just what is painted.
+const ROW_RENDER_LIMIT = 300;
+
 // A timed-out or cut request returns a non-JSON platform page, so the status is all there is to report.
 function failedStatusReason(status: number) {
   return status === 502 || status === 504
@@ -67,10 +112,87 @@ function requestErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+/**
+ * The bar above each unknown table: tick everything, see how many are ticked, and give all of them
+ * ONE code in a single action.
+ *
+ * This is the bulk mapping the owner asked for. Before it, a person could only pick a code on one
+ * row at a time, so a file with 800 unknown pharmacies in the same district cost 800 pickers. Select
+ * all covers the WHOLE list, not the rows painted on screen, so the cap below never limits a bulk
+ * assign.
+ */
+function BulkAssignBar({ assignLabel, busy, onAssign, onSelectAll, options, selectedCount, total }: {
+  assignLabel: string;
+  busy: boolean;
+  onAssign: (code: string) => void;
+  onSelectAll: (on: boolean) => void;
+  options: { label: string; value: string }[];
+  selectedCount: number;
+  total: number;
+}) {
+  const allTicked = total > 0 && selectedCount >= total;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      <label className="inline-flex cursor-pointer items-center gap-1.5 font-bold text-slate-700">
+        <input
+          checked={allTicked}
+          className="h-3.5 w-3.5 accent-orange-600"
+          disabled={busy}
+          onChange={(e) => onSelectAll(e.target.checked)}
+          type="checkbox"
+        />
+        Select all {total.toLocaleString()}
+      </label>
+      <span className={cn("font-semibold tabular-nums", selectedCount > 0 ? "text-orange-700" : "text-slate-400")}>
+        {selectedCount.toLocaleString()} ticked
+      </span>
+      {selectedCount > 0 ? (
+        <button className="font-semibold text-slate-500 underline transition hover:text-orange-600" onClick={() => onSelectAll(false)} type="button">Clear</button>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        <span className="font-semibold text-slate-500">{assignLabel}</span>
+        <ComboBox disabled={busy || selectedCount === 0} onChange={onAssign} options={options} placeholder={selectedCount === 0 ? "Tick rows first…" : `Give all ${selectedCount.toLocaleString()} this code…`} value="" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Under each unknown table: how many rows are painted, the way to paint the rest, and - when the
+ * preview itself capped the list - how many distinct unknowns the file actually holds. The count is
+ * said out loud rather than quietly showing a cut list as if it were the whole job.
+ */
+function RowLimitFoot({ listLength, onShowAll, previewTotal, shown }: { listLength: number; onShowAll: () => void; previewTotal: number; shown: number }) {
+  if (shown >= listLength && previewTotal <= listLength) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      {shown < listLength ? (
+        <>
+          <span>Showing {shown.toLocaleString()} of {listLength.toLocaleString()} — ticking, Select all and bulk assign still cover all {listLength.toLocaleString()}.</span>
+          <button className="font-bold text-orange-700 underline transition hover:text-orange-800" onClick={onShowAll} type="button">Show all {listLength.toLocaleString()}</button>
+        </>
+      ) : null}
+      {previewTotal > listLength ? (
+        <span className="font-semibold text-amber-700">This file has {previewTotal.toLocaleString()} distinct unknowns here. Map these {listLength.toLocaleString()}, save, then Analyze again for the rest.</span>
+      ) : null}
+    </div>
+  );
+}
+
 export function NormalizerWorkspace({ aiEnabled, distributors, references }: { aiEnabled: boolean; distributors: DistributorOption[]; references: MappingReferences }) {
-  const [distributorCode, setDistributorCode] = useState(distributors[0]?.code ?? "");
+  // The template is offered FIRST in the picker (the owner asked for it beside the distributors), but
+  // the default selection stays a real distributor — the per-distributor path is still the daily one.
+  const [distributorCode, setDistributorCode] = useState(
+    distributors.find((d) => !isPhoenixTemplateCode(d.code))?.code ?? distributors[0]?.code ?? "",
+  );
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
+  // A filled Phoenix template may name SEVERAL distributors, so one Analyze answers with one preview
+  // per distributor. `preview` is the one on screen, and everything below reads it exactly as it did
+  // when a file was always a single distributor.
+  const [parts, setParts] = useState<Preview[]>([]);
+  const [activePart, setActivePart] = useState(0);
+  const preview = parts[activePart] ?? null;
+  function resetParts() { setParts([]); setActivePart(0); }
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [aiConfidence, setAiConfidence] = useState<Record<string, number>>({});
   const [aiOrigin, setAiOrigin] = useState<Record<string, { source: "ai" | "propagated"; matchedFrom?: { distributorCode: string; customerCode: string; customerName: string } }>>({});
@@ -83,6 +205,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   const [backfillHistory, setBackfillHistory] = useState(true);
   const [clusterView, setClusterView] = useState(false);
   const [clusters, setClusters] = useState<CustomerCluster[] | null>(null);
+  // Bulk mapping: which unknown rows are ticked, keyed exactly like `picks` (`p:`/`t:`/`c:` + raw).
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [showAll, setShowAll] = useState<Record<UnknownKind, boolean>>({ c: false, p: false, t: false });
   const mapFileRef = useRef<HTMLInputElement>(null);
   const cleanFileRef = useRef<HTMLInputElement>(null);
 
@@ -109,12 +234,62 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     });
   }
 
+  // What the picker posted — the sentinel on the Phoenix-template path.
+  const templateSelected = isPhoenixTemplateCode(distributorCode);
+  // What the sheet turned out to BE. Mappings, auto-map and history mining are filed under this, so a
+  // template upload teaches the real distributor's dictionary rather than a distributor that isn't.
+  const effectiveDistributorCode = preview?.distributorCode || distributorCode;
+  const effectiveDistributorName = preview?.distributorName
+    || distributors.find((d) => d.code === distributorCode)?.name
+    || distributorCode;
+
+  // Learn, Learn from Excel and Mine history each file what they learn under ONE distributor. On the
+  // template path that distributor is only known once the sheet has been read, so they wait for it
+  // rather than writing a dictionary under the sentinel.
+  function resolvedDistributor(): string | null {
+    if (!isPhoenixTemplateCode(effectiveDistributorCode)) return effectiveDistributorCode;
+    setError("Analyze the filled template first — the distributor is read off the sheet, and this saves what it learns under that distributor.");
+    return null;
+  }
+
   function fd(extra?: File) {
     const f = new FormData();
     f.set("distributorCode", distributorCode);
+    // Which distributor of the file is on SCREEN. Only a Phoenix template can hold more than one,
+    // and only a route that answers per distributor reads it (the unmapped list, whose Phoenix Code
+    // column is learned under one distributor). The rest act on the whole file and ignore it.
+    if (preview?.distributorCode) f.set("partDistributorCode", preview.distributorCode);
     if (extra) f.set("file", extra);
     else if (file) f.set("file", file);
     return f;
+  }
+
+  /** The product suggestions a preview already carries, pre-ticked, and every other pick cleared. */
+  function seedPicks(p: Preview) {
+    const seed: Record<string, string> = {};
+    p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
+    setPicks(seed);
+    setAiConfidence({});
+    setAiOrigin({});
+    setClusters(null);
+    setClusterView(false);
+    setSelected({});
+    setShowAll({ c: false, p: false, t: false });
+  }
+
+  /**
+   * Show another distributor from the same file.
+   *
+   * Nothing carries across: a customer CODE belongs to the distributor who issued it, so the same
+   * "10025" is a different pharmacy under a different distributor. Keeping the picks or the ticks
+   * would quietly offer one distributor's answers for another one's rows.
+   */
+  function switchPart(index: number) {
+    const p = parts[index];
+    if (!p) return;
+    setActivePart(index);
+    seedPicks(p);
+    setError(null);
   }
 
   async function analyze(keepNotice = false, options: { quietFailure?: boolean } = {}): Promise<Preview | null> {
@@ -125,17 +300,15 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     setBusy("analyze"); setError(null); if (!keepNotice) setNotice(null);
     try {
       const res = await fetch("/api/sales/normalizer/preview", { body: fd(), method: "POST" });
-      const json = await res.json().catch(() => null) as { data?: Preview; error?: string; success?: boolean } | null;
-      if (json?.success && json.data) {
-        const p: Preview = json.data;
-        setPreview(p);
-        const seed: Record<string, string> = {};
-        p.unknownProducts.forEach((u) => { if (u.suggestionCode) seed[`p:${u.raw}`] = u.suggestionCode; });
-        setPicks(seed);
-        setAiConfidence({});
-        setAiOrigin({});
-        setClusters(null);
-        setClusterView(false);
+      const json = await res.json().catch(() => null) as { data?: { parts?: Preview[] }; error?: string; success?: boolean } | null;
+      const list = json?.success ? json.data?.parts ?? [] : [];
+      if (list.length > 0) {
+        // Re-analyzing after a save keeps you on the distributor you were working on.
+        const index = Math.min(activePart, list.length - 1);
+        setParts(list);
+        setActivePart(index);
+        const p = list[index];
+        seedPicks(p);
         return p;
       }
       if (!options.quietFailure) setError(json?.error ?? `Failed to analyze. (${res.status})`);
@@ -148,8 +321,19 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   async function blobPost(url: string, fallback: string) {
-    const res = await fetch(url, { body: fd(), method: "POST" });
-    if (!res.ok) throw new Error("Request failed");
+    await saveBlob(await fetch(url, { body: fd(), method: "POST" }), fallback);
+  }
+
+  async function blobGet(url: string, fallback: string) {
+    await saveBlob(await fetch(url), fallback);
+  }
+
+  async function saveBlob(res: Response, fallback: string) {
+    if (!res.ok) {
+      // A refused download answers JSON, and that sentence is the one worth showing.
+      const json = await res.json().catch(() => null) as { error?: string } | null;
+      throw new Error(json?.error ?? failedStatusReason(res.status));
+    }
     const blob = await res.blob();
     const match = /filename="(.+?)"/.exec(res.headers.get("Content-Disposition") ?? "");
     const a = document.createElement("a");
@@ -165,20 +349,44 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   async function saveMappings() {
     if (!preview) return;
     const mappings: { type: "product" | "territory" | "customer"; raw: string; code: string; distributorCode?: string; confidence?: number }[] = [];
-    preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c, distributorCode }); });
-    preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c, distributorCode }); });
-    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode, confidence: aiConfidence[`c:${u.raw}`] }); });
+    const dist = effectiveDistributorCode;
+    preview.unknownProducts.forEach((u) => { const c = picks[`p:${u.raw}`]; if (c) mappings.push({ type: "product", raw: u.raw, code: c, distributorCode: dist }); });
+    preview.unknownTerritories.forEach((u) => { const c = picks[`t:${u.raw}`]; if (c) mappings.push({ type: "territory", raw: u.raw, code: c, distributorCode: dist }); });
+    preview.unknownCustomers.forEach((u) => { const c = picks[`c:${u.raw}`]; if (c) mappings.push({ type: "customer", raw: u.raw, code: c, distributorCode: dist, confidence: aiConfidence[`c:${u.raw}`] }); });
     if (mappings.length === 0) { setError("Pick at least one Phoenix code to save."); return; }
     setBusy("save"); setError(null); setNotice(null);
     try {
-      const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ backfill: backfillHistory, mappings }), headers: { "Content-Type": "application/json" }, method: "POST" });
-      const json = await res.json().catch(() => null) as { data?: { backfilled?: number; invalid?: number; saved?: number; skipped?: number }; error?: string; success?: boolean } | null;
-      if (!res.ok || !json?.success || !json.data) { setError(json?.error ?? `Save failed. (${res.status})`); return; }
-      const saved = Number(json.data.saved ?? 0);
-      const skipped = Number(json.data.skipped ?? 0);
-      const invalid = Number(json.data.invalid ?? 0);
-      const backfilled = Number(json.data.backfilled ?? 0);
+      // Sent in chunks, two at a time: a bulk assign can now carry thousands of picks, and one
+      // 60-second request holding all of them (each customer mapping able to heal history behind it)
+      // is exactly the shape that times out and loses the lot. A failed chunk keeps the rest saved.
+      const chunks = inGroups(mappings, SAVE_CHUNK_SIZE);
+      let saved = 0; let skipped = 0; let invalid = 0; let backfilled = 0;
+      let failedMappings = 0; let failureReason = "";
+      let doneChunks = 0;
+      await inPool(chunks, 2, async (chunk) => {
+        try {
+          const res = await fetch("/api/sales/normalizer/mappings/save", { body: JSON.stringify({ backfill: backfillHistory, mappings: chunk }), headers: { "Content-Type": "application/json" }, method: "POST" });
+          const json = await res.json().catch(() => null) as { data?: { backfilled?: number; invalid?: number; saved?: number; skipped?: number }; error?: string; success?: boolean } | null;
+          if (!res.ok || !json?.success || !json.data) {
+            failedMappings += chunk.length;
+            failureReason = json?.error ?? failedStatusReason(res.status);
+            return;
+          }
+          saved += Number(json.data.saved ?? 0);
+          skipped += Number(json.data.skipped ?? 0);
+          invalid += Number(json.data.invalid ?? 0);
+          backfilled += Number(json.data.backfilled ?? 0);
+        } catch (e) {
+          failedMappings += chunk.length;
+          failureReason = requestErrorMessage(e, "the request failed");
+        } finally {
+          doneChunks += 1;
+          if (chunks.length > 1) setNotice(`Saving — ${Math.min(doneChunks * SAVE_CHUNK_SIZE, mappings.length).toLocaleString()} of ${mappings.length.toLocaleString()} mapping(s) sent…`);
+        }
+      });
+      if (saved === 0 && failedMappings > 0) { setError(`Save failed for all ${failedMappings.toLocaleString()} mapping(s) — ${failureReason.replace(/\.$/, "")}.`); return; }
       const detail = [
+        failedMappings ? ` ${failedMappings.toLocaleString()} could not be sent (${failureReason.replace(/\.$/, "")}) — click Save mappings again for those.` : "",
         skipped || invalid ? ` ${skipped} skipped, ${invalid} invalid.` : "",
         backfilled ? ` ${backfilled} historical row(s) healed.` : "",
       ].join("");
@@ -221,8 +429,10 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         if (list.length === 0) continue;
         const groups = kind === "customer" ? inGroups(list, CUSTOMER_REQUEST_SIZE) : [list];
         let failedRows = 0; let reason = "";
-        for (const [index, group] of groups.entries()) {
-          if (groups.length > 1) setNotice(`AI suggest — ${index * CUSTOMER_REQUEST_SIZE} of ${list.length} customers done…`);
+        let doneGroups = 0;
+        // Several groups in flight at once. Each stays small (a short request, its own failure), but
+        // the list no longer waits for one round trip to finish before the next one starts.
+        await inPool(groups, GROUP_CONCURRENCY, async (group) => {
           // One group failing must not throw away the groups before or after it.
           try {
             const res = await fetch("/api/sales/normalizer/mappings/ai-suggest", { body: JSON.stringify({ kind, unknowns: group.map((u) => ({ raw: u.raw, rawName: u.rawName, rawAddress: u.rawAddress, rawTerritory: u.rawTerritory })) }), headers: { "Content-Type": "application/json" }, method: "POST" });
@@ -232,18 +442,21 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
             if (!res.ok || !json?.success || !json.data) {
               failedRows += group.length;
               reason = json?.error ?? failedStatusReason(res.status);
-              continue;
+              return;
             }
             const sugg = json.data.suggestions ?? [];
-            if (sugg.length === 0) continue;
+            if (sugg.length === 0) return;
             filled += sugg.length;
             if (kind === "customer") applyCustomerSuggestions(sugg);
             else setPicks((p) => { const n = { ...p }; sugg.forEach((s) => { n[`${prefix}:${s.raw}`] = s.code; }); return n; });
           } catch (e) {
             failedRows += group.length;
             reason = requestErrorMessage(e, "the request failed");
+          } finally {
+            doneGroups += 1;
+            if (groups.length > 1) setNotice(`AI suggest — ${Math.min(doneGroups * CUSTOMER_REQUEST_SIZE, list.length)} of ${list.length} customers done…`);
           }
-        }
+        });
         if (failedRows) failures.push(`${failedRows} of ${list.length} ${kind} rows — ${reason.replace(/\.$/, "")}`);
       }
       if (failures.length) setError(`AI suggest failed for ${failures.join("; ")}. Click AI suggest again to retry them.`);
@@ -261,13 +474,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       const groups = inGroups(customers, CUSTOMER_REQUEST_SIZE);
       let applied = 0; let parked = 0; let backfilled = 0; let minConfidence: number | undefined;
       let failedRows = 0; let reason = "";
-      for (const [index, group] of groups.entries()) {
-        if (groups.length > 1) setNotice(`Auto-map — ${index * CUSTOMER_REQUEST_SIZE} of ${customers.length} customers done, ${applied} applied so far…`);
+      let doneGroups = 0;
+      await inPool(groups, GROUP_CONCURRENCY, async (group) => {
         // Each group is saved and audited on its own, so a failed group leaves every earlier one applied.
         try {
           const res = await fetch("/api/sales/normalizer/mappings/auto-map", {
             body: JSON.stringify({
-              distributorCode,
+              distributorCode: effectiveDistributorCode,
               unknowns: group.map((u) => ({ raw: u.raw, rawAddress: u.rawAddress, rawName: u.rawName, rawTerritory: u.rawTerritory })),
             }),
             headers: { "Content-Type": "application/json" },
@@ -281,7 +494,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           if (!res.ok || !json?.success || !json.data) {
             failedRows += group.length;
             reason = json?.error ?? failedStatusReason(res.status);
-            continue;
+            return;
           }
           // Parked suggestions pre-fill the dropdowns for manual review; applied ones are saved already.
           applyCustomerSuggestions([...(json.data.applied ?? []), ...(json.data.parked ?? [])]);
@@ -292,8 +505,11 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         } catch (e) {
           failedRows += group.length;
           reason = requestErrorMessage(e, "the request failed");
+        } finally {
+          doneGroups += 1;
+          if (groups.length > 1) setNotice(`Auto-map — ${Math.min(doneGroups * CUSTOMER_REQUEST_SIZE, customers.length)} of ${customers.length} customers done, ${applied} applied so far…`);
         }
-      }
+      });
       const healed = backfilled ? `, healed ${backfilled} historical row(s)` : "";
       if (applied > 0) {
         setNotice(`Auto-mapped ${applied} customer(s) (gate ≥${minConfidence ?? 95}%)${healed}. ${parked} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
@@ -333,21 +549,25 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   async function learnFromCleaned(f: File) {
+    const dist = resolvedDistributor();
+    if (!dist) { if (cleanFileRef.current) cleanFileRef.current.value = ""; return; }
     setBusy("bootstrap"); setError(null); setNotice(null);
     try {
-      const form = new FormData(); form.set("distributorCode", distributorCode); form.set("file", f);
+      const form = new FormData(); form.set("distributorCode", dist); form.set("file", f);
       const res = await fetch("/api/sales/normalizer/mappings/bootstrap", { body: form, method: "POST" });
       const json = await res.json();
-      if (json.success) setNotice(`Learned ${json.data.saved} new mapping(s) from ${json.data.scannedRows.toLocaleString()} rows of the cleaned ${distributorCode} file (${json.data.skipped} already known). Re-analyze a raw file to see the higher coverage.`);
+      if (json.success) setNotice(`Learned ${json.data.saved} new mapping(s) from ${json.data.scannedRows.toLocaleString()} rows of the cleaned ${effectiveDistributorName} file (${json.data.skipped} already known). Re-analyze a raw file to see the higher coverage.`);
       else setError(json.error ?? "Learn failed.");
     } catch (e) { setError(e instanceof Error ? e.message : "Learn failed."); }
     finally { setBusy(null); if (cleanFileRef.current) cleanFileRef.current.value = ""; }
   }
 
   async function learnFromExcel(f: File) {
+    const dist = resolvedDistributor();
+    if (!dist) { if (mapFileRef.current) mapFileRef.current.value = ""; return; }
     setBusy("learn"); setError(null); setNotice(null);
     try {
-      const form = new FormData(); form.set("file", f); form.set("distributorCode", distributorCode);
+      const form = new FormData(); form.set("file", f); form.set("distributorCode", dist);
       const res = await fetch("/api/sales/normalizer/mappings/learn", { body: form, method: "POST" });
       const json = await res.json();
       if (!json.success) { setError(json.error ?? "Learn failed."); return; }
@@ -358,10 +578,12 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   }
 
   async function mineHistory() {
+    const dist = resolvedDistributor();
+    if (!dist) return;
     setBusy("mine"); setError(null); setNotice(null);
     try {
       const res = await fetch("/api/sales/normalizer/mappings/learn-from-history", {
-        body: JSON.stringify({ distributorCode }),
+        body: JSON.stringify({ distributorCode: dist }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -373,7 +595,73 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
     finally { setBusy(null); }
   }
 
+  // ── Bulk mapping ───────────────────────────────────────────────────────────────────────────────
+  // Everything below works on the FULL unknown list, never on the rows painted on screen.
+  function keyOf(kind: UnknownKind, raw: string) { return `${kind}:${raw}`; }
+
+  function countSelected(kind: UnknownKind) {
+    let n = 0;
+    for (const [k, on] of Object.entries(selected)) if (on && k.startsWith(`${kind}:`)) n += 1;
+    return n;
+  }
+
+  function toggleRow(kind: UnknownKind, raw: string, on: boolean) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (on) next[keyOf(kind, raw)] = true;
+      else delete next[keyOf(kind, raw)];
+      return next;
+    });
+  }
+
+  function selectAll(kind: UnknownKind, list: readonly Unknown[], on: boolean) {
+    setSelected((prev) => {
+      const next = { ...prev };
+      for (const u of list) {
+        if (on) next[keyOf(kind, u.raw)] = true;
+        else delete next[keyOf(kind, u.raw)];
+      }
+      return next;
+    });
+  }
+
+  /** One code onto every ticked row of that table — the owner's bulk map. */
+  function bulkAssign(kind: UnknownKind, list: readonly Unknown[], options: { label: string; value: string }[], code: string) {
+    if (!code) return;
+    const keys = list.map((u) => keyOf(kind, u.raw)).filter((k) => selected[k]);
+    if (keys.length === 0) { setError("Tick the rows you want to map first, or use Select all."); return; }
+    setPicks((prev) => {
+      const next = { ...prev };
+      for (const k of keys) next[k] = code;
+      return next;
+    });
+    setError(null);
+    const label = options.find((o) => o.value === code)?.label ?? code;
+    setNotice(`${keys.length.toLocaleString()} row(s) set to ${label}. Review them, then click Save mappings.`);
+  }
+
+  /** Rows painted before "Show all" — a live combo box per row makes several thousand at once unusable. */
+  function visibleRows(kind: UnknownKind, list: readonly Unknown[]): Unknown[] {
+    return showAll[kind] || list.length <= ROW_RENDER_LIMIT ? [...list] : list.slice(0, ROW_RENDER_LIMIT);
+  }
+
+  /** The preview caps each list, so say "N of M" rather than presenting a cut list as the whole job. */
+  function unknownTotal(kind: UnknownKind, shown: number) {
+    const totals = preview?.unknownTotals;
+    const total = kind === "c" ? totals?.customers : kind === "p" ? totals?.products : totals?.territories;
+    return typeof total === "number" && total > shown ? total : shown;
+  }
+
+  function countLabel(kind: UnknownKind, shown: number) {
+    const total = unknownTotal(kind, shown);
+    return total > shown ? `${shown.toLocaleString()} of ${total.toLocaleString()}` : shown.toLocaleString();
+  }
+
   const s = preview?.summary;
+  // The two buttons below act on the WHOLE file, not on the distributor showing: a template naming
+  // three of them downloads one coded sheet and imports three batches in a single click. So they are
+  // enabled by what the FILE can code, never by the tab you happen to be looking at.
+  const fileCoded = parts.reduce((n, part) => n + part.summary.fullyCoded, 0);
   const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
   const brickOptions = references.bricks.map((b) => ({ label: b.name, value: b.id }));
@@ -425,13 +713,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
-              <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); setPreview(null); }} value={distributorCode}>
-                {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
+              <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); resetParts(); }} value={distributorCode}>
+                {distributors.map((d) => <option key={d.code} value={d.code}>{isPhoenixTemplateCode(d.code) ? d.name : `${d.name} / ${d.code}`}</option>)}
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
               <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>
-              <input accept=".xlsx,.xls" className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} type="file" />
+              <input accept=".xlsx,.xls" className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); resetParts(); }} type="file" />
             </label>
             <Button className="gap-2" disabled={busy !== null || !file} onClick={() => void analyze()}>
               {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analyze
@@ -445,8 +733,32 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
           {error ? <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4" /><p>{error}</p></AdminCallout> : null}
           {notice ? <AdminCallout tone="success"><Sparkles className="mt-0.5 h-4 w-4" /><p>{notice}</p></AdminCallout> : null}
 
+          {templateSelected ? (
+            <div className="border border-orange-200 bg-orange-50/50">
+              <div className="flex flex-wrap items-center gap-2 bg-slate-900 px-4 py-3">
+                <span className="h-4 w-1 bg-orange-500" />
+                <p className="text-sm font-black uppercase tracking-wide text-white">Phoenix template — one sheet for any distributor</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 p-4">
+                <p className="min-w-[260px] flex-1 text-xs leading-relaxed text-slate-700">
+                  Download it, then pick the distributor from the dropdown inside the sheet — its code fills in by itself. Customer code, customer name, customer address, the product, the quantity and the invoice date are obligatory; the product code fills in from the product name. Two Helper columns are yours for anything you need (invoice number, branch, a note) and the system keeps them and ignores them. Fill it, choose it as the Raw file above, and click Analyze: from there it behaves exactly like a distributor’s own export, and everything it teaches is filed under the distributor named in the sheet. You may put SEVERAL distributors in one file — name the first one, fill its rows, name the next one below it — and each is mapped on its own tab here and imported as its own batch.
+                </p>
+                <button
+                  className="inline-flex h-10 shrink-0 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50"
+                  disabled={busy !== null}
+                  onClick={() => void run("phoenix-template", () => blobGet("/api/sales/normalizer/phoenix-template", "phoenix-sales-template.xlsx"))}
+                  type="button"
+                >
+                  {busy === "phoenix-template" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download the template
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {!preview ? (
-            <AdminCallout tone="neutral"><Upload className="mt-0.5 h-4 w-4" /><p>Pick the distributor, choose its raw export file, and click Analyze. Nothing is saved until you choose Download or Import.</p></AdminCallout>
+            <AdminCallout tone="neutral"><Upload className="mt-0.5 h-4 w-4" /><p>{templateSelected
+              ? "Download the template above, fill it, choose it as the Raw file and click Analyze. Nothing is saved until you choose Download or Import."
+              : "Pick the distributor, choose its raw export file, and click Analyze. Nothing is saved until you choose Download or Import."}</p></AdminCallout>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -478,6 +790,28 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {parts.length > 1 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{parts.length} distributors in this file</span>
+                    {parts.map((part, i) => (
+                      <button
+                        className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs font-bold transition ${i === activePart ? "border-orange-600 bg-orange-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}`}
+                        disabled={busy !== null}
+                        key={part.distributorCode}
+                        onClick={() => switchPart(i)}
+                        type="button"
+                      >
+                        {part.distributorName}
+                        <span className={i === activePart ? "text-orange-100" : "text-slate-400"}>{part.summary.totalRows.toLocaleString()}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : templateSelected ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected distributor</span>
+                    <span className="inline-flex items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-800"><Sparkles className="h-3.5 w-3.5 text-orange-500" />{preview.distributorName}</span>
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-2">
                   <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
                   <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-900"><CalendarDays className="h-3.5 w-3.5 text-orange-500" />{preview.period ?? "—"}</span>
@@ -487,28 +821,38 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     <button className="inline-flex h-10 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50" disabled={busy !== null} onClick={() => void run("download", () => blobPost("/api/sales/normalizer/download", "phoenix-coded.xlsx"))} type="button">
                       {busy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download coded XLSX
                     </button>
-                    <button className="inline-flex h-10 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => void run("import", async () => {
+                    <button className="inline-flex h-10 items-center gap-2 border border-orange-600 bg-orange-600 px-4 text-sm font-bold text-white transition hover:bg-orange-700 disabled:opacity-50" disabled={busy !== null || fileCoded === 0} onClick={() => void run("import", async () => {
                       const res = await fetch("/api/sales/normalizer/import-validated", { body: fd(), method: "POST" });
                       const json = await res.json();
-                      if (json.success) setNotice(`Imported ${json.data.importableRows} validated row(s) for ${json.data.period ?? "—"} into Source of Sales.`);
+                      if (json.success) {
+                        const landed = (json.data?.batches ?? []) as Array<{ distributorName: string; importableRows: number }>;
+                        setNotice(landed.length > 1
+                          ? `Imported ${json.data.importableRows.toLocaleString()} validated row(s) for ${json.data.period ?? "—"} into Source of Sales, as ${landed.length} batches: ${landed.map((b) => `${b.distributorName} (${b.importableRows.toLocaleString()})`).join(", ")}.`
+                          : `Imported ${json.data.importableRows} validated row(s) for ${json.data.period ?? "—"} into Source of Sales.`);
+                      }
                       else { const reasons = (json.data?.blockingReasons ?? []) as string[]; setError(`${json.error ?? "Import failed."}${reasons.length ? " — " + reasons.slice(0, 3).join("; ") : ""}`); }
                     })} type="button">
                       {busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import (validated)
                     </button>
                   </div>
                   <div className="flex items-center gap-2 text-phx-xs text-slate-400">
-                    <span>Download → upload on Source of Sales (it now passes validation), or import straight here.</span>
+                    <span>Download → upload on Source of Sales (it now passes validation), or import straight here.{parts.length > 1 ? ` Both cover all ${parts.length} distributors in this file.` : ""}</span>
                     <button className="underline transition hover:text-orange-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
                   </div>
                   {advanced ? (
-                    <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-phx-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => {
+                    <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-phx-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || fileCoded === 0} onClick={() => {
                       // Writing unvalidated rows straight to Source of Sales is irreversible from here —
                       // require an explicit confirmation, not just the Advanced toggle.
                       if (!window.confirm("Direct import SKIPS Source of Sales validation and writes the coded rows straight to the database. This cannot be previewed or undone here. Proceed?")) return;
                       void run("import-direct", async () => {
                         const res = await fetch("/api/sales/normalizer/import", { body: fd(), method: "POST" });
                         const json = await res.json();
-                        if (json.success) setNotice(`Direct import: ${json.data.importedRows} row(s) for ${json.data.period ?? "—"} (validation skipped).`);
+                        if (json.success) {
+                          const landed = (json.data?.batches ?? []) as Array<{ distributorName: string; importedRows: number }>;
+                          setNotice(landed.length > 1
+                            ? `Direct import: ${json.data.importedRows.toLocaleString()} row(s) for ${json.data.period ?? "—"} as ${landed.length} batches (${landed.map((b) => b.distributorName).join(", ")}) — validation skipped.`
+                            : `Direct import: ${json.data.importedRows} row(s) for ${json.data.period ?? "—"} (validation skipped).`);
+                        }
                         else setError(json.error ?? "Import failed.");
                       });
                     }} title="Skips the Source of Sales validation — use only if you trust the coded rows." type="button">
@@ -581,12 +925,22 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
                   {preview.unknownProducts.length > 0 ? (
                     <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown products ({countLabel("p", preview.unknownProducts.length)})</p>
+                      <BulkAssignBar
+                        assignLabel="Bulk map to"
+                        busy={busy !== null}
+                        onAssign={(v) => bulkAssign("p", preview.unknownProducts, productOptions, v)}
+                        onSelectAll={(on) => selectAll("p", preview.unknownProducts, on)}
+                        options={productOptions}
+                        selectedCount={countSelected("p")}
+                        total={preview.unknownProducts.length}
+                      />
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
-                          {preview.unknownProducts.map((u) => (
+                          {visibleRows("p", preview.unknownProducts).map((u) => (
                             <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
+                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`p:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("p", u.raw, e.target.checked)} type="checkbox" /></td>
                               <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
                               <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
@@ -597,17 +951,33 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           ))}
                         </tbody>
                       </table>
+                      <RowLimitFoot
+                        listLength={preview.unknownProducts.length}
+                        onShowAll={() => setShowAll((v) => ({ ...v, p: true }))}
+                        previewTotal={unknownTotal("p", preview.unknownProducts.length)}
+                        shown={visibleRows("p", preview.unknownProducts).length}
+                      />
                     </div>
                   ) : null}
 
                   {preview.unknownTerritories.length > 0 ? (
                     <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown territories ({preview.unknownTerritories.length})</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown territories ({countLabel("t", preview.unknownTerritories.length)})</p>
+                      <BulkAssignBar
+                        assignLabel="Bulk map to"
+                        busy={busy !== null}
+                        onAssign={(v) => bulkAssign("t", preview.unknownTerritories, brickOptions, v)}
+                        onSelectAll={(on) => selectAll("t", preview.unknownTerritories, on)}
+                        options={brickOptions}
+                        selectedCount={countSelected("t")}
+                        total={preview.unknownTerritories.length}
+                      />
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Raw territory", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Raw territory", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
-                          {preview.unknownTerritories.map((u) => (
+                          {visibleRows("t", preview.unknownTerritories).map((u) => (
                             <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
+                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.raw}`} checked={selected[`t:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("t", u.raw, e.target.checked)} type="checkbox" /></td>
                               <td className="px-3 py-1.5 text-slate-700"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-slate-700">{u.count.toLocaleString()}</td>
                               <td className="px-3 py-1.5">
@@ -617,12 +987,18 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           ))}
                         </tbody>
                       </table>
+                      <RowLimitFoot
+                        listLength={preview.unknownTerritories.length}
+                        onShowAll={() => setShowAll((v) => ({ ...v, t: true }))}
+                        previewTotal={unknownTotal("t", preview.unknownTerritories.length)}
+                        shown={visibleRows("t", preview.unknownTerritories).length}
+                      />
                     </div>
                   ) : null}
 
                   {preview.unknownCustomers.length > 0 ? (
                     <div className="overflow-x-auto border border-phx-line">
-                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
+                      <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({countLabel("c", preview.unknownCustomers.length)}) — map by pharmacy when the area text is unreliable</p>
                       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
                         {geoCoverage ? (
                           <>
@@ -671,11 +1047,22 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                         </div>
                       ) : null}
                       {!clusterView ? (
+                      <>
+                      <BulkAssignBar
+                        assignLabel="Bulk map to"
+                        busy={busy !== null}
+                        onAssign={(v) => bulkAssign("c", preview.unknownCustomers, brickOptions, v)}
+                        onSelectAll={(on) => selectAll("c", preview.unknownCustomers, on)}
+                        options={brickOptions}
+                        selectedCount={countSelected("c")}
+                        total={preview.unknownCustomers.length}
+                      />
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-100"><tr>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <thead className="bg-slate-100"><tr><th className="w-9 px-2 py-2" scope="col"><span className="sr-only">Tick</span></th>{["Customer code", "Pharmacy name", "Address", "Territory / Gov", "Rows", "Phoenix brick", "Confidence"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
                         <tbody>
-                          {preview.unknownCustomers.map((u) => (
+                          {visibleRows("c", preview.unknownCustomers).map((u) => (
                             <tr className="border-t border-slate-100 transition-colors hover:bg-orange-50/40" key={u.raw}>
+                              <td className="px-2 py-1.5"><input aria-label={`Tick ${u.rawName || u.raw}`} checked={selected[`c:${u.raw}`] ?? false} className="h-3.5 w-3.5 accent-orange-600" onChange={(e) => toggleRow("c", u.raw, e.target.checked)} type="checkbox" /></td>
                               <td className="px-3 py-1.5 font-semibold text-slate-900"><span className="inline-flex items-center">{u.raw}<CopyBtn text={u.raw} /></span></td>
                               <td className="px-3 py-1.5 text-slate-600"><span className="inline-flex items-center">{u.rawName}<CopyBtn text={u.rawName} /></span></td>
                               <td className="px-3 py-1.5 text-slate-500 text-xs max-w-[200px]">{u.rawAddress ? <span className="inline-flex items-center gap-0.5">{u.rawAddress}<CopyBtn text={u.rawAddress} /></span> : <span className="text-slate-300">—</span>}</td>
@@ -705,6 +1092,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                           ))}
                         </tbody>
                       </table>
+                      <RowLimitFoot
+                        listLength={preview.unknownCustomers.length}
+                        onShowAll={() => setShowAll((v) => ({ ...v, c: true }))}
+                        previewTotal={unknownTotal("c", preview.unknownCustomers.length)}
+                        shown={visibleRows("c", preview.unknownCustomers).length}
+                      />
+                      </>
                       ) : null}
                     </div>
                   ) : null}

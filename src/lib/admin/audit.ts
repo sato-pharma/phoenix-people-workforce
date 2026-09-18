@@ -127,6 +127,9 @@ export type AuditEntityType =
   // the mirror is older than the board claims.
   | "crm_contact_list_sync"
   | "sos_raw_template_export"
+  // The Phoenix UNIVERSAL upload template (one layout, any distributor) — a different sheet from
+  // `sos_raw_template_export`, which mimics one distributor's own export.
+  | "sos_phoenix_template_export"
   | "deduction_export"
   | "deduction_finalization"
   | "deduction_payroll_import"
