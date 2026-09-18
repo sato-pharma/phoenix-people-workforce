@@ -9,6 +9,7 @@ type IconType = typeof Sparkles;
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { ComboBox, ConfidenceBadge, CopyBtn } from "@/components/sales/normalizer-controls";
 import { Button } from "@/components/ui/button";
+import { mappingLeft, needsMappingTabLabel, stillNeedMappingSentence } from "@/lib/sales/normalizer/mapping-left";
 import { isPhoenixTemplateCode } from "@/lib/sales/normalizer/phoenix-template-code";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -39,7 +40,7 @@ type Preview = {
   unknownProducts: Unknown[]; unknownTerritories: Unknown[]; unknownCustomers: Unknown[];
   // Distinct unknowns BEFORE the preview's per-list cap — so the screen can say "showing 2,000 of
   // 7,318" instead of silently presenting a truncated list as the whole job.
-  unknownTotals?: { customers: number; products: number; territories: number };
+  unknownTotals?: { customers: number; products: number; territories: number; rows?: number };
   summary: { totalRows: number; productResolved: number; brickResolved: number; fullyCoded: number; ignored: number };
 };
 
@@ -393,10 +394,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       setNotice(`Saved ${saved} mapping(s). Refreshing coverage...`);
       const p = await analyze(true, { quietFailure: true });
       if (p) {
-        const remaining = p.unknownProducts.length + p.unknownTerritories.length + p.unknownCustomers.length;
-        setNotice(remaining === 0
-          ? `Saved ${saved} mapping(s). Everything is mapped now.${detail}`
-          : `Saved ${saved} mapping(s). ${remaining} item(s) still need mapping.${detail}`);
+        // The true totals, never the lists: those refill to 2,000 after every save while more are left.
+        setNotice(`Saved ${saved} mapping(s). ${stillNeedMappingSentence(mappingLeft(p))}${detail}`);
       } else {
         setNotice(`Saved ${saved} mapping(s). Automatic coverage refresh could not complete. Click Analyze to refresh coverage.${detail}`);
       }
@@ -514,7 +513,10 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
       if (applied > 0) {
         setNotice(`Auto-mapped ${applied} customer(s) (gate ≥${minConfidence ?? 95}%)${healed}. ${parked} parked for your review — undo any auto-mapping from the Mapping Database page. Refreshing coverage...`);
         const p = await analyze(true, { quietFailure: true });
-        if (p) setNotice(`Auto-mapped ${applied} customer(s)${healed}. ${p.unknownCustomers.length} customer(s) still need manual mapping.`);
+        if (p) {
+          const left = mappingLeft(p).pharmacies;
+          setNotice(`Auto-mapped ${applied} customer(s)${healed}. ${left.toLocaleString("en-US")} ${left === 1 ? "pharmacy still needs" : "pharmacies still need"} manual mapping.`);
+        }
       } else {
         setNotice(failedRows === customers.length ? null : `Nothing cleared the auto-map gate — ${parked} suggestion(s) pre-filled for manual review instead.`);
       }
@@ -662,7 +664,8 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
   // three of them downloads one coded sheet and imports three batches in a single click. So they are
   // enabled by what the FILE can code, never by the tab you happen to be looking at.
   const fileCoded = parts.reduce((n, part) => n + part.summary.fullyCoded, 0);
-  const distinctCount = (preview?.unknownProducts.length ?? 0) + (preview?.unknownTerritories.length ?? 0) + (preview?.unknownCustomers.length ?? 0);
+  // What is really left, from the true totals: the lists stop at 2,000 and refill after every save.
+  const codesLeft = preview ? mappingLeft(preview).codes : 0;
   const productOptions = [{ label: "🚫 Ignore — we don't sell this", value: "IGNORE" }, ...references.products.map((p) => ({ label: `${p.name} (${p.code})`, value: p.code }))];
   const brickOptions = references.bricks.map((b) => ({ label: b.name, value: b.id }));
   const selectClass = "h-11 w-full border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-900 outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:opacity-60";
@@ -863,7 +866,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </div>
 
               <div className="flex gap-1 border-b border-slate-200">
-                {([["coded", `Coded preview (${preview.sampleCoded.length})`], ["map", `Needs mapping — ${distinctCount} codes (${Math.max(0, s!.totalRows - s!.fullyCoded - s!.ignored).toLocaleString()} rows${s!.ignored ? `, ${s!.ignored.toLocaleString()} ignored` : ""})`]] as const).map(([key, label]) => (
+                {([["coded", `Coded preview (${preview.sampleCoded.length})`], ["map", needsMappingTabLabel(preview)]] as const).map(([key, label]) => (
                   <button className={cn("-mb-px border-b-2 px-3.5 py-2 text-sm font-semibold transition-colors", tab === key ? "border-orange-500 text-slate-900" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900")} key={key} onClick={() => setTab(key)} type="button">{label}</button>
                 ))}
               </div>
@@ -1103,7 +1106,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     </div>
                   ) : null}
 
-                  {distinctCount === 0 ? <AdminCallout tone="success"><Sparkles className="mt-0.5 h-4 w-4" /><p>Everything coded — nothing to map. 🎉</p></AdminCallout> : null}
+                  {codesLeft === 0 ? <AdminCallout tone="success"><Sparkles className="mt-0.5 h-4 w-4" /><p>Everything coded — nothing to map. 🎉</p></AdminCallout> : null}
                 </div>
               )}
             </>
