@@ -17,7 +17,9 @@ import type { CodedRow, Crosswalks, DistributorProfile } from "@/lib/sales/norma
 //   • mec 2026-07 and 2026-08 — 13 rows stored as 202607-01-01 … 202609-01-01. mec's date column is
 //     the month "شهر" ("202607"), read the same way.
 // The month on those rows was right only because the upload's chosen period overwrote it. The day
-// had no such rescue. The fix caps the year at 9999, the importer's own bound, so neither is a day.
+// had no such rescue. The fix caps the year at 9999, the importer's own bound, so mec's month is no
+// day. Sofico's serial is now read as the real day it is — pinned, month and day together, in
+// normalizer-reads-sofico-excel-serial-billing-dates.test.ts. Here it must only never be a year.
 
 const BRICK_ID = "CA101";
 
@@ -78,13 +80,9 @@ export function runNormalizerInvoiceDayImpossibleYearTests() {
   );
   const sf = codedByRow(sofico.coded, 4);
 
-  // HEADLINE: an Excel serial day is not a year. It used to come out as "46247-01-01".
-  assert.equal(
-    sf.get(2)?.invoiceDay,
-    null,
-    `Sofico BILLINGDATE 46247 (an Excel serial) must give no day, never an impossible year — got ${sf.get(2)?.invoiceDay}`,
-  );
-  assert.equal(sf.get(3)?.invoiceDay, null, "the last serial of the month (46265) gives no day either");
+  // An Excel serial day is not a year. It used to come out as "46247-01-01"; it is now its real day.
+  assert.equal(sf.get(2)?.invoiceDay, "2026-08-13", `Sofico BILLINGDATE 46247 is 13 Aug 2026 — got ${sf.get(2)?.invoiceDay}`);
+  assert.equal(sf.get(3)?.invoiceDay, "2026-08-31", "the last serial of the month (46265) is 31 Aug 2026");
 
   // The source value is still kept exactly as the distributor sent it — the audit trail is untouched.
   assert.equal(sf.get(2)?.rawRow.BILLINGDATE, "46247");
@@ -108,7 +106,8 @@ export function runNormalizerInvoiceDayImpossibleYearTests() {
     crosswalks("الازاريطة"),
   );
   const mc = codedByRow(mec.coded, 2);
-  assert.equal(mc.get(2)?.invoiceDay, null, `mec month "202607" must give no day — got ${mc.get(2)?.invoiceDay}`);
+  // HEADLINE: a month is not a day. It used to come out as "202607-01-01".
+  assert.equal(mc.get(2)?.invoiceDay, null, `mec month "202607" must give no day, never an impossible year — got ${mc.get(2)?.invoiceDay}`);
   assert.equal(mc.get(3)?.invoiceDay, null, `mec month 202608 must give no day — got ${mc.get(3)?.invoiceDay}`);
 
   // Whatever a date column holds, nothing the engine emits is an impossible year.
