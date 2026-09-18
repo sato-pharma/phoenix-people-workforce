@@ -195,7 +195,7 @@ export function runOutstationNotificationsTests() {
   );
 
   // ── Rule 1: Reject-only decision notification ─────────────────────────────────
-  // The ONLY email for outstation/expenses is when HR Manager rejects.
+  // The ONLY decision notice is a rejection — in-app, Telegram and push, never email (owner, 2026-09-19).
   const decisionSlice = functionSlice(service, "async function notifyOutstationDecision");
   assert.match(decisionSlice, /decision: "reject"/, "decision function must be reject-only");
   assert.doesNotMatch(decisionSlice, /"approve"/, "decision function must NOT handle approve");
@@ -216,6 +216,11 @@ export function runOutstationNotificationsTests() {
     /notifyExpensesAddedToPayroll\(/,
     "RULE 1: payroll import must NOT emit an added-to-payroll alert",
   );
+  // The unused added-to-payroll sender (in-app + EMAIL + Telegram to the employee) was deleted on
+  // 2026-09-19 at the owner's instruction, so no one can wire an expense email back in by calling it.
+  // expenses.ts sends no notification of any kind; a new one is new work, channels agreed first.
+  assert.doesNotMatch(expenses, /notifyExpensesAddedToPayroll/, "the unused added-to-payroll email sender must stay deleted");
+  assert.doesNotMatch(expenses, /createSystemNotification/, "expenses.ts must not send a notification — payroll import is silent");
 
   // ── Governance non-regression: must NOT mark these as payroll-sensitive ────────
   assert.doesNotMatch(
