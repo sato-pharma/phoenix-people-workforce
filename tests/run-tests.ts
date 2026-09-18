@@ -1477,6 +1477,7 @@ import { runScopedClosingExportMatchesScreenTests } from "./scoped-closing-expor
 import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
+import { runCustomerMapReadGateTests } from "./customer-map-read-gate.test.ts";
 import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
 import { runEmployeeAchievementGroupingTests } from "./employee-achievement-grouping.test.ts";
 import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.test.ts";
@@ -1704,6 +1705,7 @@ import { runRetentionRiskRecipientExclusionTests } from "./retention-risk-recipi
 import { runCrmAccountSetupTests } from "./crm-account-setup.test.ts";
 import { runCsrfBlockIsLoggedTests } from "./csrf-block-is-logged.test.ts";
 import { runPortalSosSourceMaskTests } from "./portal-sos-source-mask.test.ts";
+import { runPortalTotalValueDeltaTests } from "./portal-total-value-delta.test.ts";
 import {
   runEmployeeManagementCanEditReachTests,
   runEmployeeManagementCanEditTests,
@@ -1778,7 +1780,10 @@ import { runProfileFreeGoodsFlagLabelTests } from "./profile-free-goods-flag-lab
 import { runNormalizerMecMonthColumnTests } from "./normalizer-reads-mec-month-column.test.ts";
 import { runDatabaseValidationHeaderGridFitsTests } from "./database-validation-header-grid-fits.test.ts";
 import { runDatabaseMappingTablesFitTests } from "./database-mapping-tables-fit.test.ts";
+import { runDatabaseMappingCustomerMapNamesTests } from "./database-mapping-customer-map-names.test.ts";
+import { runDatabaseMappingCustomerMapOpeningTests } from "./database-mapping-customer-map-opening.test.ts";
 import { runMonthlySalesRunLiveWeightsTests } from "./monthly-sales-run-live-weights.test.ts";
+import { runMonthlySalesRunSkipHoldsOnlyWhileTrueTests } from "./monthly-sales-run-skip-holds-only-while-true.test.ts";
 import { runSalesFlatSheetKeepsStatedTargetUnitsTests } from "./sales-flat-sheet-keeps-stated-target-units.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -4887,6 +4892,11 @@ await runTest(
 );
 
 await runTest(
+  "customer map read gate (the Database Validation customer list and its export refuse every role but Super Admin before reading a customer; sales:read/export alone admits Employee and Medical Rep)",
+  runCustomerMapReadGateTests,
+);
+
+await runTest(
   "sos team performance active periods (a stray Direct Order booked before a month's distributor upload lands must not activate that month's full target in the default cumulative keycard view)",
   runSosTeamPerformanceTests,
 );
@@ -5723,6 +5733,10 @@ await runTest(
   runPortalSosSourceMaskTests,
 );
 await runTest(
+  "the portal SoS Total Value arrow compares the picked month with the month before it (never the trend's newest two months, and no arrow when that month has no sales)",
+  runPortalTotalValueDeltaTests,
+);
+await runTest(
   "employee master canEdit (every page rendering it passes the grant, found by scanning rather than by a hand-kept list, and the default fails closed)",
   runEmployeeManagementCanEditTests,
 );
@@ -6156,8 +6170,23 @@ await runTest(
 );
 
 await runTest(
+  "the Database Mapping customer map shows names, never codes: brick, area, region and distributor resolve against the master rows the page holds (inactive rows included), a code the master does not know stays visible and flagged, and the workbook export keeps its codes for re-import",
+  runDatabaseMappingCustomerMapNamesTests,
+);
+
+await runTest(
+  "the Database Mapping customer map opens on the first distributor, in header-grid order, that has customers, never on an empty one (chimipharm had 0 on production); a count that failed is unknown, not zero, and with nothing loaded it opens where it always did",
+  runDatabaseMappingCustomerMapOpeningTests,
+);
+
+await runTest(
   "the Monthly Sales wizard's closing-complete figure weighs each step by today's share of sales, never the weight frozen when the run opened: May 2026 with 5 of 17 steps confirmed reads 62%, not 95%, and 100% only when every step is confirmed or skipped",
   runMonthlySalesRunLiveWeightsTests,
+);
+
+await runTest(
+  "a skipped Monthly Sales step holds only while it is true: a skipped distributor whose file is validated later is confirmed with that file on the next load, never left skipped with its rows in the closing; a skip is refused over a validated file, and the lock refuses while a skipped step's file is in the closing",
+  runMonthlySalesRunSkipHoldsOnlyWhileTrueTests,
 );
 
 await runTest(

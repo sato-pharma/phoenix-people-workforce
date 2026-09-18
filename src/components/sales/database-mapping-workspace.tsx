@@ -46,6 +46,7 @@ import {
   type MasterRowRecord,
 } from "@/lib/sales/master-data/definitions";
 import type { MasterImportResult } from "@/lib/sales/master-data/import-service";
+import { buildCustomerMapNameIndex } from "@/lib/sales/master-data/customer-map-names";
 import { masterRowLayout } from "@/lib/sales/master-data/row-layout";
 import { cn } from "@/lib/utils";
 
@@ -70,6 +71,7 @@ const MASTER_ICONS: Record<MasterKey, LucideIcon> = {
 };
 
 type Props = {
+  initialCustomerDistributor: string;
   initialError: string | null;
   initialHeaderGrid: HeaderGrid;
   initialRows: Record<MasterKey, MasterRowRecord[]>;
@@ -754,11 +756,13 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   );
 }
 
-export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, initialRows }: Props) {
+export function DatabaseMappingWorkspace({ initialCustomerDistributor, initialError, initialHeaderGrid, initialRows }: Props) {
   const [rowsByMaster, setRowsByMaster] = useState(initialRows);
   const [activeTab, setActiveTab] = useState<MasterKey | "validation" | "profiles">(MASTER_ORDER[0]);
   const [downloadingMaster, setDownloadingMaster] = useState(false);
   const [masterError, setMasterError] = useState<string | null>(null);
+  // The customer map shows names, not codes: resolved from the master rows this page already holds.
+  const customerMapNameIndex = useMemo(() => buildCustomerMapNameIndex(rowsByMaster), [rowsByMaster]);
 
   // Build + download the full 17-sheet master workbook, populated live from the current system data.
   async function handleDownloadMaster() {
@@ -872,7 +876,11 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
         </div>
 
         {activeDef === null ? (
-          <DatabaseValidationTab headerGrid={initialHeaderGrid} />
+          <DatabaseValidationTab
+            headerGrid={initialHeaderGrid}
+            nameIndex={customerMapNameIndex}
+            openingDistributor={initialCustomerDistributor}
+          />
         ) : (
           <MasterTab
             allRows={rowsByMaster}

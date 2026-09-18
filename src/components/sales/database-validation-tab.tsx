@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
+import { customerMapNames, type CustomerMapNameIndex, type CustomerMapNames, type ResolvedName } from "@/lib/sales/master-data/customer-map-names";
 import type { HeaderGrid } from "@/lib/sales/normalizer/profile-grid";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -69,30 +70,52 @@ function HeaderPairs({ pairs }: { pairs: HeaderPair[] }) {
   );
 }
 
-function CustomerCell({ customer }: { customer: CustomerRow }) {
+// Brick, area, region and distributor read as NAMES (customer-map-names.ts). A code the master does
+// not know still shows, flagged, so a broken mapping is visible rather than blank. The customer code
+// stays: it is the distributor's own account number, which the import matches on, with no name of
+// its own beyond the customer name above it.
+function MasterName({ value }: { value: ResolvedName }) {
+  return (
+    <>
+      {value.name}
+      {value.resolved ? null : <span className="text-phx-2xs font-semibold text-[#991B1B]"> · not in the master</span>}
+    </>
+  );
+}
+
+function CustomerCell({ customer, names }: { customer: CustomerRow; names: CustomerMapNames }) {
   return (
     <>
       <p className="break-words font-semibold text-[#0B0B0B]">{customer.customerName || "—"}</p>
       <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Code</span> {customer.customerCode}</p>
-      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Distributor</span> {customer.distributorCode}</p>
+      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Distributor</span> <MasterName value={names.distributor} /></p>
     </>
   );
 }
 
-function TerritoryCell({ customer }: { customer: CustomerRow }) {
+function TerritoryCell({ names }: { names: CustomerMapNames }) {
   return (
     <>
-      <p className="break-words font-semibold text-[#1D4ED8]">{customer.brickId || "—"}</p>
-      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Area</span> {customer.areaCode || "—"}</p>
-      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Region</span> {customer.regionCode || "—"}</p>
+      <p className="break-words font-semibold text-[#1D4ED8]"><MasterName value={names.brick} /></p>
+      <p className="mt-1 break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Area</span> <MasterName value={names.area} /></p>
+      <p className="break-words text-slate-500"><span className="text-phx-2xs font-semibold text-slate-400">Region</span> <MasterName value={names.region} /></p>
     </>
   );
 }
 
-export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }) {
+export function DatabaseValidationTab({
+  headerGrid,
+  nameIndex,
+  openingDistributor,
+}: {
+  headerGrid: HeaderGrid;
+  nameIndex: CustomerMapNameIndex;
+  openingDistributor: string;
+}) {
   const distributors = headerGrid.rows.map((r) => ({ code: r.distributorCode, name: r.distributorName }));
   const [headerFilter, setHeaderFilter] = useState("ALL");
-  const [custFilter, setCustFilter] = useState(distributors[0]?.code ?? "ALL");
+  // Opens on the first distributor with customers (pickOpeningCustomerDistributor), not an empty one.
+  const [custFilter, setCustFilter] = useState(openingDistributor);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loadingCust, setLoadingCust] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -327,24 +350,30 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
                     </tr>
                   </thead>
                   <tbody>
-                    {pageRows.map((c, i) => (
-                      <tr className="border-b border-[#F1D9C0]/50" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
-                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><CustomerCell customer={c} /></td>
-                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top">{c.address || "—"}</td>
-                        <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><TerritoryCell customer={c} /></td>
-                      </tr>
-                    ))}
+                    {pageRows.map((c, i) => {
+                      const names = customerMapNames(nameIndex, c);
+                      return (
+                        <tr className="border-b border-[#F1D9C0]/50" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><CustomerCell customer={c} names={names} /></td>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top">{c.address || "—"}</td>
+                          <td className="break-words border-l border-[#F1D9C0]/40 px-3 py-2 align-top"><TerritoryCell names={names} /></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
               <div className="space-y-2 text-xs md:hidden">
-                {pageRows.map((c, i) => (
-                  <div className="border border-phx-line bg-white p-3" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
-                    <CustomerCell customer={c} />
-                    <p className="mt-2 break-words text-slate-700">{c.address || "—"}</p>
-                    <div className="mt-2"><TerritoryCell customer={c} /></div>
-                  </div>
-                ))}
+                {pageRows.map((c, i) => {
+                  const names = customerMapNames(nameIndex, c);
+                  return (
+                    <div className="border border-phx-line bg-white p-3" key={`${c.distributorCode}:${c.customerCode}:${i}`}>
+                      <CustomerCell customer={c} names={names} />
+                      <p className="mt-2 break-words text-slate-700">{c.address || "—"}</p>
+                      <div className="mt-2"><TerritoryCell names={names} /></div>
+                    </div>
+                  );
+                })}
               </div>
               <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
                 <span>{customers.length.toLocaleString()} customer{customers.length === 1 ? "" : "s"}</span>
