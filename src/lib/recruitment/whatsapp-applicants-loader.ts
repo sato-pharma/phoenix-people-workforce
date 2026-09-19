@@ -19,12 +19,14 @@
 // leave it pointing at a candidate that no longer exists. When it does, the next rule is tried
 // instead of the conversation being lost.
 
-import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
+import { mapCandidate, recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { loadSavedAudiences } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { loadAllQuestions } from "@/lib/recruitment/inbound/whatsapp-screening-questions-session";
-import type { WhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicant-filters";
+import type { WhatsAppApplicantRow, WhatsAppApplicantsView } from "@/lib/recruitment/whatsapp-applicant-filters";
+import type { Candidate } from "@/lib/recruitment/types";
 import {
+  applicantTitleLabel,
   buildWhatsAppApplicantsView,
   type WhatsAppApplicantCandidate,
   type WhatsAppApplicantSession,
@@ -270,15 +272,15 @@ async function markCvFolderMembers(candidates: Map<string, WhatsAppApplicantCand
   for (const candidate of candidates.values()) candidate.in_cv_folder = filed.has(candidate.id);
 }
 
-/** Everything the WhatsApp Applicants page shows, read once per visit. */
-export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsView> {
-  const [sessions, questions, audiences] = await Promise.all([
-    loadStartedSessions(),
-    loadAllQuestions(),
-    loadSavedAudiences(),
-  ]);
-
-  const candidates = new Map<string, WhatsAppApplicantCandidate>();
+/**
+ * Joins every conversation to a candidate by the rules in the header, surest first, loading each
+ * candidate it lands on into `candidates`. A conversation no rule reaches is simply absent from the
+ * result. One place, so the list and a single application cannot disagree about whose chat it is.
+ */
+async function joinToCandidates(
+  sessions: readonly SessionDbRow[],
+  candidates: Map<string, WhatsAppApplicantCandidate>,
+): Promise<Map<string, string>> {
   const joined = new Map<string, string>();
   for (const rule of [byBotLink, byOpeningCv, bySendersOnlyCandidate]) {
     const open = sessions.filter((session) => !joined.has(session.id));
@@ -289,6 +291,19 @@ export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsVi
       if (candidates.has(candidateId)) joined.set(sessionId, candidateId);
     }
   }
+  return joined;
+}
+
+/** Everything the WhatsApp Applicants page shows, read once per visit. */
+export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsView> {
+  const [sessions, questions, audiences] = await Promise.all([
+    loadStartedSessions(),
+    loadAllQuestions(),
+    loadSavedAudiences(),
+  ]);
+
+  const candidates = new Map<string, WhatsAppApplicantCandidate>();
+  const joined = await joinToCandidates(sessions, candidates);
   await Promise.all([attachUnconfirmedGovernorates(candidates), markCvFolderMembers(candidates)]);
 
   return buildWhatsAppApplicantsView({
@@ -297,4 +312,76 @@ export async function loadWhatsAppApplicantsView(): Promise<WhatsAppApplicantsVi
     questions,
     sessions: sessions.map((session) => ({ ...session, candidate_id: joined.get(session.id) ?? null })),
   });
+}
+
+/**
+ * One applicant's application: their row as the list shows it, the title in words, how to reach them, and
+ * the candidate's record, which the old paper form's fields (address, birthday, education, jobs, skills)
+ * are read from. The record is null only when the candidate row could not be read back.
+ */
+export type WhatsAppApplication = {
+  row: WhatsAppApplicantRow;
+  titleLabel: string;
+  contact: { email: string | null; phone: string | null };
+  candidate: Candidate | null;
+};
+
+/**
+ * One conversation as an application, or null when it is not one: no such conversation, the job
+ * title never tapped, or no candidate it can be joined to.
+ *
+ * Built by the SAME builder as the list, from that one conversation alone, so the sheet says exactly
+ * what the row said. A candidate the owner has since filed into a folder still prints: the person
+ * pressing Print is looking at the row, and `markCvFolderMembers` is left out on purpose because it is
+ * the only step that would drop them.
+ */
+export async function loadWhatsAppApplication(sessionId: string): Promise<WhatsAppApplication | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from(SESSIONS_TABLE)
+    .select(SESSION_COLUMNS)
+    .eq("id", sessionId)
+    .not("job_title_family", "is", null)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const session = data as unknown as SessionDbRow;
+
+  const candidates = new Map<string, WhatsAppApplicantCandidate>();
+  const candidateId = (await joinToCandidates([session], candidates)).get(session.id);
+  if (!candidateId) return null;
+
+  // The fourth read fills a map the builder below reads, so it is awaited with the rest and answers nothing.
+  const [questions, audiences, candidate] = await Promise.all([
+    loadAllQuestions(),
+    loadSavedAudiences(),
+    loadRecord(candidateId),
+    attachUnconfirmedGovernorates(candidates),
+  ]);
+  const contact = { email: textOrNull(candidate?.email), phone: textOrNull(candidate?.phone) };
+  const view = buildWhatsAppApplicantsView({
+    audiences,
+    candidates,
+    questions,
+    sessions: [{ ...session, candidate_id: candidateId }],
+  });
+  const row = view.rows[0];
+  if (!row) return null;
+  return {
+    candidate,
+    contact,
+    row,
+    titleLabel: view.titles.find((title) => title.value === row.titleValue)?.label ?? applicantTitleLabel(row.titleValue),
+  };
+}
+
+/**
+ * The candidate's whole record, mapped the way every other recruitment screen maps it. The phone and email
+ * on it may be blank, and so may the rest: the sheet prints what there is and leaves the rest to a pen.
+ */
+async function loadRecord(candidateId: string): Promise<Candidate | null> {
+  const { data, error } = await recruitmentDb().from("ats_candidates").select("*").eq("id", candidateId).maybeSingle();
+  if (error) throw error;
+  // `select("*")` types as an untyped row, the shape `mapCandidate` takes; this file's own CandidateDbRow is the narrower list read.
+  return data ? mapCandidate(data as Record<string, unknown>) : null;
 }

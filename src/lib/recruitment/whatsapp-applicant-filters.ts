@@ -24,6 +24,11 @@ export type WhatsAppApplicantAnswer = {
 export type WhatsAppApplicantRow = {
   /** Unique on the page. The candidate and the title together, because one person can apply for two jobs. */
   key: string;
+  /**
+   * The conversation this row shows. The application sheet is built from THIS conversation, so a
+   * person who chatted twice under one title prints the one the row is showing, not the other.
+   */
+  sessionId: string;
   candidateId: string;
   name: string;
   /** Where the candidate stands in the pipeline, in words ("New", "Rejected"). */

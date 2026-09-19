@@ -522,6 +522,7 @@ export function buildWhatsAppApplicantsView(input: {
       key,
       name: text(candidate.full_name) ?? UNNAMED_APPLICANT,
       region: region.cell,
+      sessionId: session.id,
       status: candidateDecisionTabOf(candidate.status),
       statusLabel: candidateStatusLabel(candidate.status),
       stillOpen: progress.stillOpen,
