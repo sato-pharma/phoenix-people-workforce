@@ -1,4 +1,5 @@
-import { systemEmail, systemLegalEntity } from "@/config/system-settings";
+import { systemLegalEntity } from "@/config/system-settings";
+import { receivingDomain, toReceivableAddress, toReceivableHeader } from "@/lib/email/receivable-address";
 
 /**
  * Who a job offer comes FROM.
@@ -13,13 +14,15 @@ import { systemEmail, systemLegalEntity } from "@/config/system-settings";
  * the same `systemLegalEntity`. Everything visible to the candidate (From name, letterhead,
  * signature block, footer) is Sato; nothing says Phoenix.
  *
- * ── On DNS ──
- * The sending domain `send.satopharma.com` is already SPF/DKIM-verified — Phoenix's own mail has
- * gone out from it for months. SPF and DKIM authenticate the DOMAIN, not the local part, so a new
- * mailbox on that same domain inherits the existing records and needs no DNS change. What it does
- * need is for the address to exist at the ESP as a verified sender, and for the Reply-To mailbox
- * to be real and monitored — a candidate WILL reply to an offer, and a reply that bounces is
- * worse than no offer at all.
+ * ── On DNS, and why an offer is sent FROM the apex ──
+ * `send.satopharma.com` is SPF/DKIM-verified, but it is a SENDING-ONLY host: its MX is Amazon SES's
+ * bounce collector, so it owns no mailboxes. An offer that named it as its From address made every
+ * reply that skipped the Reply-To header — a client that ignores it, a provider that drops it (Resend
+ * did, #4090), a forwarded copy — bounce with "this mailbox is not available", twice, to real
+ * candidates. So the From and the Reply-To of an offer are both mapped onto the apex, where the
+ * mailboxes are (`toReceivableAddress`), whatever the environment says. The apex is verified in
+ * Resend too (the Sato Email Composer already sends from it), so authentication is unchanged.
+ * A candidate WILL reply to an offer, and a reply that bounces is worse than no offer at all.
  */
 
 /** Display name on the From header. The company as it appears on legal paperwork. */
@@ -28,17 +31,16 @@ export const OFFER_SENDER_NAME = systemLegalEntity.legalNameEn;
 /**
  * Fallback mailbox, used only when `JOB_OFFER_EMAIL_FROM` is unset.
  *
- * On the already-verified sending subdomain, so an unconfigured environment still sends from an
- * authenticated domain rather than failing SPF. The local part is a placeholder pending the
- * owner's chosen HR address — see `resolveOfferSender`.
+ * On the apex, where `hr@` is a real mailbox — never on the sending subdomain, which cannot
+ * receive (see the note above).
  */
-const fallbackOfferFromEmail = `hr@${systemEmail.defaultFromEmail.split("@")[1] ?? "send.satopharma.com"}`;
+const fallbackOfferFromEmail = `hr@${receivingDomain}`;
 
 /** Where a candidate's reply lands. The apex domain, like every other Reply-To here. */
 const fallbackOfferReplyTo = "hr@satopharma.com";
 
 export type OfferSender = {
-  /** Fully-formed From header: `Sato Pharma <hr@send.satopharma.com>`. */
+  /** Fully-formed From header: `Sato Pharma <hr@satopharma.com>`. */
   from: string;
   /** True when the address came from configuration rather than the placeholder default. */
   isConfigured: boolean;
@@ -56,7 +58,7 @@ export type OfferSender = {
  */
 export function resolveOfferSender(): OfferSender {
   const configured = (process.env.JOB_OFFER_EMAIL_FROM ?? "").trim();
-  const replyTo = (process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo;
+  const replyTo = toReceivableAddress((process.env.JOB_OFFER_REPLY_TO ?? "").trim() || fallbackOfferReplyTo);
 
   if (!configured) {
     return {
@@ -66,9 +68,9 @@ export function resolveOfferSender(): OfferSender {
     };
   }
 
-  const from = configured.includes("<")
-    ? configured
-    : `${OFFER_SENDER_NAME} <${configured}>`;
+  const from = toReceivableHeader(
+    configured.includes("<") ? configured : `${OFFER_SENDER_NAME} <${configured}>`,
+  );
 
   return { from, isConfigured: true, replyTo };
 }
