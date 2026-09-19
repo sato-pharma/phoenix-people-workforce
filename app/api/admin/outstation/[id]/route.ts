@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
   approveOutstationRequestForPayroll,
   deleteOutstationRequestAsAdmin,
@@ -77,8 +78,8 @@ export async function GET(
     await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     requestId = rawId;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },
@@ -116,8 +117,8 @@ export async function POST(
     await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     requestId = rawId;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },
@@ -160,8 +161,8 @@ export async function PATCH(
     await assertOutstationAdminAccess(access, "approve");
     const { id: rawId } = await params;
     requestId = rawId;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },
@@ -208,8 +209,8 @@ export async function DELETE(
     await assertOutstationAdminAccess(access, "delete");
     const { id: rawId } = await params;
     requestId = rawId;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },

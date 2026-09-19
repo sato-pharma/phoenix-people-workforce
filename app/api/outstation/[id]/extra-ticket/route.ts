@@ -6,6 +6,7 @@ import { addExtraTicketsToOwnOutstationRequest } from "@/lib/outstation/service"
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,8 +44,8 @@ export async function POST(
     await assertPermission(access, "outstation", "create");
 
     const { id: rawId } = await params;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },

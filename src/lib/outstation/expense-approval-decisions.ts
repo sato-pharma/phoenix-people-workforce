@@ -20,6 +20,7 @@
 
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
 import { outstationStatusLabel } from "@/lib/outstation/payroll-expense-mapping";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 /** Trip-id prefix that marks a queue row as an app-submitted request (`outstationPayrollTripId`). */
 export const OUTSTATION_REQUEST_TRIP_PREFIX = "OUTSTATION-";
@@ -34,10 +35,7 @@ export const OUTSTATION_REQUEST_TRIP_PREFIX = "OUTSTATION-";
 export function outstationRequestIdFromTripId(tripId: string | null | undefined): number | null {
   const raw = String(tripId ?? "");
   if (!raw.startsWith(OUTSTATION_REQUEST_TRIP_PREFIX)) return null;
-  const suffix = raw.slice(OUTSTATION_REQUEST_TRIP_PREFIX.length);
-  if (!/^\d+$/.test(suffix)) return null;
-  const id = Number(suffix);
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
+  return parseOutstationRequestId(raw.slice(OUTSTATION_REQUEST_TRIP_PREFIX.length));
 }
 
 /** Splits one Save payload into the rows each write path owns. */

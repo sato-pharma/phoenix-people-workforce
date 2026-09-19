@@ -229,8 +229,8 @@ export function runOutstationDeparturePhotoResendTests() {
   );
   assert.match(
     route,
-    /if \(!Number\.isFinite\(id\)\)/,
-    "a non-numeric id is refused before it reaches the service",
+    /const id = parseOutstationRequestId\(rawId\);\s*if \(id === null\)/,
+    "a malformed id (non-numeric, fractional, blank) is refused before it reaches the service",
   );
   assert.match(
     route,
