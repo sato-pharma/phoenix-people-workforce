@@ -425,3 +425,15 @@ export function weeklyZeroSalesBranches(
       stockUnits: Number(branch.stockUnits.toFixed(2)),
     }));
 }
+
+// A REP'S UNITS ARE AN ALLOCATION, SO A SHARE CAN BE UNDER ONE UNIT (owner, 2026-09-19). A depot's
+// shipment is spread across the areas its name places it in, so a product's slice of it can be a
+// fraction of a unit while the money is real: Guamusin sat on a rep's screen as EGP 20 beside a "0" and
+// three dashes. A share that is really there but rounds to nothing now reads "<1". A week the product
+// never reached stays a dash, and a net of returns is not a share, so neither is touched.
+export const WEEKLY_UNITS_UNDER_ONE = "<1";
+
+/** A positive share of one product that rounds to zero whole units. Zero and negative nets are not one. */
+export function weeklyUnitsUnderOne(units: number): boolean {
+  return Number.isFinite(units) && units > 0 && Math.round(units) === 0;
+}

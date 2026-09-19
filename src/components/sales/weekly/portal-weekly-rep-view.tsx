@@ -46,6 +46,7 @@ import type {
   PortalWeeklyRepStatus,
   RepWeeklyWeek,
 } from "@/lib/sales/weekly/portal-weekly-rep";
+import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 
 type RepTab = "month" | "detail";
 
@@ -76,6 +77,13 @@ function shortMonthOf(cycleMonth: string | null | undefined): string {
 
 /** A figure that rounds to nothing reads as a dash, so an empty week never looks like a measured zero. */
 const isNil = (value: number) => Math.round(value) === 0;
+
+/** A unit figure in a week cell: a share under one unit reads "<1", never the dash of an empty week. */
+const unitsCell = (units: number) =>
+  weeklyUnitsUnderOne(units) ? WEEKLY_UNITS_UNDER_ONE : isNil(units) ? "—" : formatNumber(units);
+
+/** A product's unit total: a share under one unit reads "<1", never a "0" beside the money it earned. */
+const unitsTotal = (units: number) => (weeklyUnitsUnderOne(units) ? WEEKLY_UNITS_UNDER_ONE : formatNumber(units));
 
 export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
   const router = useRouter();
@@ -425,14 +433,14 @@ function ProductTable({ products, weeks }: { products: ProductRow[]; weeks: RepW
                       <span className="inline-flex flex-wrap items-center justify-end gap-x-0.5">
                         <DirectionArrow direction={weekDirection(units, previous, week.spansGap)} />
                         <span className={`tabular-nums ${rank.text} ${weekMark(rank, week.spansGap)}`}>
-                          {isNil(units) ? "—" : formatNumber(units)}
+                          {unitsCell(units)}
                         </span>
                       </span>
                     </td>
                   );
                 })}
                 <td className="px-2 py-2 text-right text-xs font-black tabular-nums text-slate-900">
-                  {formatNumber(product.units)}
+                  {unitsTotal(product.units)}
                 </td>
                 {/* px-2, not px-3: at 1024px (the narrowest desktop, sidebar open) px-3 broke "EGP 81.2K" onto two lines. */}
                 <td className="px-2 py-2 text-right text-xs font-bold tabular-nums text-slate-500">
@@ -458,7 +466,7 @@ function ProductCards({ products, weeks }: { products: ProductRow[]; weeks: RepW
               <p className="min-w-0 flex-1 break-words text-sm font-black text-slate-900">{product.productName}</p>
               <div className="text-right">
                 <p className="whitespace-nowrap text-sm font-black tabular-nums text-slate-900">
-                  {`${formatNumber(product.units)} units`}
+                  {`${unitsTotal(product.units)} units`}
                 </p>
                 <p className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
                   {formatEgp(product.value)}
@@ -483,7 +491,7 @@ function ProductCards({ products, weeks }: { products: ProductRow[]; weeks: RepW
                   >
                     <span className="text-slate-400">{`W${week.weekNumber}`}</span>
                     <DirectionArrow direction={weekDirection(units, previous, week.spansGap)} />
-                    {isNil(units) ? "—" : formatNumber(units)}
+                    {unitsCell(units)}
                   </span>
                 );
               })}
