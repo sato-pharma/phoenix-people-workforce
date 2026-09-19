@@ -513,6 +513,8 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     externalHasCv: false,
     externalPhone: null,
     hasMeeting: false,
+    interviewerHrId: null,
+    interviewerName: null,
     notes: null,
     platform: "in_office",
     sessionId: null,
@@ -712,6 +714,12 @@ function runWiringTests() {
     "getInterviewInvitation(caller",
     "getInterviewZoomInsights(caller",
     "listInterviewPolls(caller",
+    // The invitation module's three entry points and the "Zoom is starting" check; each is pinned to
+    // its own gate in tests/interview-invitation.test.ts.
+    "getInterviewInvitationPlan(caller",
+    "emailInterviewInvitation(caller",
+    "recordInterviewWhatsAppOpened(caller",
+    "listDueZoomInterviews(caller",
   ];
   const routes = routeFiles("app/api/recruitment/interview-calendar");
   assert.ok(routes.length >= 27, `the calendar's routes were found (${routes.length})`);

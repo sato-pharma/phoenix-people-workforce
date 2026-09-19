@@ -1769,6 +1769,7 @@ import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
+import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
@@ -6065,6 +6066,11 @@ await runTest(
 await runTest(
   "the interview calendar's CV screen gets Download application and Print application beside the CV's own Download: the button opens the WhatsApp conversation the list would show for that person (finished first, then newest as an instant); it is offered only to someone who could open the same file from WhatsApp Applicants (HR authority with recruitment:read and candidates:read — never a guest, an outside interviewee or a person the calendar was merely shared with); the lookup goes through the calendar's own gate, answers an id and builds nothing; and the four gates on an application say the same three things",
   runInterviewCalendarApplicationTests,
+);
+
+await runTest(
+  "the interview calendar invites both people: the message is the owner's own wording (date 21-9-2026, time 04:00 PM, map pin, Arabic address, LinkedIn, website; a Zoom interview swaps the place for its link), the candidate's WhatsApp is the number they applied on unless it is a forwarder's, WhatsApp is only ever logged as opened while e-mail is sent or failed, the company details go by WhatsApp or e-mail on their own, an interviewer is checked against Employee Master, and only the interviewer (or the owner when none is chosen) has a Zoom opened for them",
+  runInterviewInvitationTests,
 );
 
 await runTest(
