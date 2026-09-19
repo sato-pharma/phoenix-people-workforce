@@ -191,6 +191,7 @@ import { runRecruitmentManagerEngagementExportTests } from "./recruitment-manage
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvExtractionQualityTests } from "./recruitment-cv-extraction-quality.test.ts";
 import { runRecruitmentRuleExtractionTests } from "./recruitment-rule-extraction.test.ts";
+import { runRecruitmentEducationLineTests } from "./recruitment-education-line.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
 import { runRecruitmentCvFactCorrectionTests } from "./recruitment-cv-fact-correction.test.ts";
 import { runRecruitmentCvRereadStalenessTests } from "./recruitment-cv-reread-staleness.test.ts";
@@ -2220,6 +2221,10 @@ await runTest(
 await runTest(
   "recruitment RULE cv extraction (no-AI primary path: ligature/shredded repair, phone+email+LinkedIn patterns, section slicing, district-first governorate, work history, rule-vs-AI merge policy, escalation gate)",
   runRecruitmentRuleExtractionTests,
+);
+await runTest(
+  "recruitment education line (one CV line taken apart into degree, field of study, university, year and grade; a line that will not split cleanly keeps the old whole-line answer)",
+  runRecruitmentEducationLineTests,
 );
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank email and phone are filled, a MATCHED one's never are, and a value that is not an address never reaches the UNIQUE index)", runRecruitmentCvAutoApplyTests);
 await runTest("recruitment cv fact correction (the OVERWRITE half: identity is never correctable, a declared WhatsApp answer always wins, \"Chemist.\" is not a correction, and only graduationYear may be blanked — and only on request)", runRecruitmentCvFactCorrectionTests);

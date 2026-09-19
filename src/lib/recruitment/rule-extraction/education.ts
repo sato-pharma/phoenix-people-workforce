@@ -16,12 +16,9 @@ import {
   LANGUAGE_KEYWORDS,
   LANGUAGE_PROFICIENCY,
 } from "@/lib/recruitment/rule-extraction/dictionaries";
-import {
-  containsPhrase,
-  matchDictionary,
-  parseDateRange,
-  PRESENT_WORDS,
-} from "@/lib/recruitment/rule-extraction/patterns";
+import type { EducationParts } from "@/lib/recruitment/rule-extraction/education-line";
+import { isOngoingEducationLine, splitEducationLine } from "@/lib/recruitment/rule-extraction/education-line";
+import { containsPhrase, matchDictionary } from "@/lib/recruitment/rule-extraction/patterns";
 import { high, low } from "@/lib/recruitment/rule-extraction/result";
 import type { CvSection } from "@/lib/recruitment/rule-extraction/sections";
 import { linesOfKind, textOfKind } from "@/lib/recruitment/rule-extraction/sections";
@@ -157,20 +154,6 @@ export function findGrade(sections: readonly CvSection[]): ExtractedField<string
 }
 
 /**
- * Whether `line` describes a degree still in progress ("2023 - Present", "2023 – حتى الآن") rather
- * than one that has finished. Such a line's own start year is not a graduation year — a student
- * still enrolled must never read as having graduated the year they started.
- */
-function isOngoingEducationLine(line: string): boolean {
-  const range = parseDateRange(line);
-  if (range) return range.isCurrent;
-  // parseDateRange's own "to" side only recognises a fixed short list of present words, missing
-  // "till now" and the Arabic forms PRESENT_WORDS carries — still worth a direct check so a CV
-  // written with one of those does not fall through as a completed degree.
-  return /\b(19[7-9]\d|20[0-4]\d)\b/.test(line) && PRESENT_WORDS.some((word) => containsPhrase(line, word));
-}
-
-/**
  * Graduation year — the LATEST plausible year in the education section.
  *
  * Latest, because the section routinely carries a range ("2015 - 2019") and the qualification is
@@ -191,23 +174,20 @@ export function findGraduationYear(sections: readonly CvSection[]): ExtractedFie
   return high(Math.max(...years));
 }
 
-export type EducationEntry = {
-  readonly degree: string | null;
-  readonly institution: string | null;
-  readonly year: number | null;
-};
+export type EducationEntry = EducationParts;
 
-/** One entry per line of the education section that names an institution or a degree. */
+/**
+ * One entry per line of the education section that names an institution or a degree, each line taken
+ * apart into degree, field of study, university, year and grade — see splitEducationLine. A line that
+ * will not split cleanly is stored the way it always was: the whole line under the university.
+ */
 export function extractEducationHistory(sections: readonly CvSection[]): EducationEntry[] {
   const entries: EducationEntry[] = [];
   for (const line of linesOfKind(sections, "education")) {
     const hasInstitution = /universit|academy|institute|college|school|جامعة|معهد|أكاديمية/i.test(line);
     const degree = matchDictionary(line, DEGREE_KEYWORDS);
     if (!hasInstitution && !degree) continue;
-    const year = isOngoingEducationLine(line)
-      ? null
-      : ([...line.matchAll(/\b(19[7-9]\d|20[0-4]\d)\b/g)].map((match) => Number(match[1])).pop() ?? null);
-    entries.push({ degree, institution: hasInstitution ? line.replace(/\s{2,}/g, " ").trim() : null, year });
+    entries.push(splitEducationLine(line));
   }
   return entries;
 }
