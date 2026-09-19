@@ -15,7 +15,7 @@ import type {
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
-import { weeklyProductKeysAreOne, weeklyUploadUnitScope } from "@/lib/sales/weekly/unit-totals";
+import { weeklyProductKeysAreOne, weeklyUploadThisWeekUnits, weeklyUploadUnitScope } from "@/lib/sales/weekly/unit-totals";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -1540,18 +1540,18 @@ function ValidationResultPanel({
   const validated = result.status === "validated";
   const isPS = result.distributor.code === "PS";
   const hasFailures = result.failedRows > 0;
-  const t = result.totals;
   const tw = result.thisWeekOnly;
-  // Every unit figure below except By product adds the upload's products, so it prints only while the
-  // upload holds ONE product (owner, 2026-09-17); otherwise a dash holds its place.
+  // Units of different products are never added (owner, 2026-08-27), so a sheet of several products is
+  // shown one product at a time — see the pick below. This only words the note under This week only.
   const unitsAreOneProduct = weeklyProductKeysAreOne(result.byProduct.map((p) => p.productCode || p.productName));
-  const units = (value: number) => (unitsAreOneProduct ? num(value) : "—");
   // The tiles, By branch and By region are one product's: the whole sheet's when it holds one, else the
   // product picked below (owner, 2026-09-19). Every figure they print comes from this scope.
   const [pickedProduct, setPickedProduct] = useState<string | null>(null);
   const unitScope = weeklyUploadUnitScope(result, pickedProduct);
   const scopeUnits = (value: number | undefined) => (unitScope && value !== undefined ? num(value) : "—");
   const ofProduct = unitScope?.productName ? ` · ${unitScope.productName}` : "";
+  // "This week only" is that same product's de-cumulated units, so the one pick drives it too (owner, 2026-09-19).
+  const thisWeekUnits = tw ? weeklyUploadThisWeekUnits(tw, unitScope) : null;
   const columns = rowIssueColumns();
   const weekMismatch =
     result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
@@ -1599,19 +1599,19 @@ function ValidationResultPanel({
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-phx-ink">
-            <span>Net units: <span className="text-phx-accent">{units(tw.netQty)}</span></span>
+            <span>Net units{ofProduct}: <span className="text-phx-accent">{thisWeekUnits == null ? "—" : num(thisWeekUnits)}</span></span>
             <span className="text-xs font-medium text-phx-ink-soft">
               {tw.priorWeekStart
-                ? unitsAreOneProduct
-                  ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
-                  : `= this sheet − previous sheet of the month (${tw.priorWeekStart})`
+                ? thisWeekUnits == null
+                  ? `the previous sheet of the month (${tw.priorWeekStart}) could not be read by product, so no figure is shown`
+                  : `= this sheet (cumulative ${scopeUnits(unitScope?.totals.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
                 : "first sheet of the month — equals the full cumulative figure"}
             </span>
           </div>
           <div className="mt-1 text-xs font-medium text-phx-ink-faint">
             {unitsAreOneProduct
-              ? `Stock ${num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.`
-              : `This sheet holds ${result.byProduct.length} products, and units of different products are never added — each product's own units are under By product.`}
+              ? `Stock ${scopeUnits(unitScope?.totals.stockQty)} units is a snapshot — shown as-is, never subtracted.`
+              : `This sheet holds ${result.byProduct.length} products, and units of different products are never added — this is the product picked under Units for. Stock ${scopeUnits(unitScope?.totals.stockQty)} units is its snapshot, never subtracted.`}
           </div>
         </div>
       )}
@@ -1679,7 +1679,7 @@ function ValidationResultPanel({
           </div>
           <p className="min-w-0 flex-1 basis-64 break-words text-xs font-medium text-phx-ink-soft">
             This sheet holds {num(result.byProduct.length)} products, and units of different products are never
-            added — so the tiles, By branch and By region show one product at a time. By product lists them all.
+            added — so This week only, the tiles, By branch and By region show one product at a time. By product lists them all.
           </p>
         </div>
       )}
