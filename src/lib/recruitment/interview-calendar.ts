@@ -80,6 +80,8 @@ import {
   weekInstantRange,
   weekStartFor,
 } from "@/lib/recruitment/interview-calendar-week";
+import { canOpenWhatsAppApplications } from "@/lib/recruitment/whatsapp-application-access";
+import { findWhatsAppApplicationSessionId } from "@/lib/recruitment/whatsapp-applicants-loader";
 import {
   createZoomMeeting,
   createZoomPoll,
@@ -1599,6 +1601,29 @@ export async function getInterviewCalendarCandidateFile(
   const files = await listCandidateFiles(candidateId);
   if (!files.some((file) => file.id === fileId)) throw new Error("Forbidden: that file does not belong to this candidate.");
   return getFileForDownload(fileId);
+}
+
+/** The WhatsApp conversation an interviewee's application is built from. It names nobody: the routes find the person from it. */
+export type InterviewCalendarApplication = { sessionId: string };
+
+/**
+ * Whether the person opening this interview has an application to print, and which one.
+ *
+ * THE CV OPENS FOR ANYONE THE CALENDAR IS SHARED WITH; THE APPLICATION DOES NOT. It holds the phone, the
+ * email and the salary they typed, so it is offered only to someone who could open the same file from
+ * WhatsApp Applicants (`canOpenWhatsAppApplications`). Everyone else gets `null`, which the screen reads
+ * as "draw no buttons", and the two routes behind the buttons refuse them again on their own. Null is also
+ * the answer for a candidate who never applied on WhatsApp — there is no application to print.
+ */
+export async function getInterviewCalendarCandidateApplication(
+  caller: InterviewCalendarCaller,
+  candidateId: string,
+): Promise<InterviewCalendarApplication | null> {
+  requireCalendarAccess(caller, "view", "any");
+  await assertCandidateOnCalendar(caller, candidateId);
+  if (!isSignedInCaller(caller.access) || !(await canOpenWhatsAppApplications(caller.access))) return null;
+  const sessionId = await findWhatsAppApplicationSessionId(candidateId);
+  return sessionId ? { sessionId } : null;
 }
 
 /** The CV of someone from outside, kept on their booking alone. */

@@ -656,6 +656,7 @@ function runWiringTests() {
     [domain, "createInterviewBooking", "book"],
     [domain, "createInterviewSession", "book"],
     [domain, "getInterviewBooking", "view"],
+    [domain, "getInterviewCalendarCandidateApplication", "view"],
     [domain, "getInterviewCalendarCandidateFile", "view"],
     [domain, "getInterviewExternalCv", "view"],
     [domain, "getInterviewSession", "view"],

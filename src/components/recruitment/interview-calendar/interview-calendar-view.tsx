@@ -45,6 +45,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useHydrated } from "@/hooks/use-hydrated";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { WhatsAppApplicationActions } from "@/components/recruitment/whatsapp-application-actions";
 import { Action } from "@/components/recruitment/workstation/workstation-look";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import {
@@ -968,6 +969,9 @@ function InterviewDetail({
   const candidateId = booking.candidateId;
   const [files, setFiles] = useState<CalendarFile[] | null>(null);
   const [filesError, setFilesError] = useState<string | null>(null);
+  // The candidate's WhatsApp application, when there is one this viewer may open: the id of the
+  // conversation the Download and Print buttons act on. Null draws no buttons.
+  const [applicationSessionId, setApplicationSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!candidateId || cvsNeedSignIn) return;
@@ -986,6 +990,26 @@ function InterviewDetail({
       live = false;
     };
   }, [api, candidateId, cvsNeedSignIn]);
+
+  useEffect(() => {
+    if (!candidateId || cvsNeedSignIn) return;
+    let live = true;
+    api
+      .get(`/candidates/${encodeURIComponent(candidateId)}/application`)
+      .then((data) => {
+        const application = data.application as { sessionId?: unknown } | null | undefined;
+        if (live) setApplicationSessionId(typeof application?.sessionId === "string" && application.sessionId !== "" ? application.sessionId : null);
+      })
+      // A lookup that fails only means no buttons; the CV and the interview panel do not depend on it.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [api, candidateId, cvsNeedSignIn]);
+
+  const applicationActions = applicationSessionId ? (
+    <WhatsAppApplicationActions applicantName={booking.candidateName} sessionId={applicationSessionId} />
+  ) : null;
 
   let cv: OpenedCv | null = null;
   if (!cvsNeedSignIn && candidateId && files) {
@@ -1019,7 +1043,16 @@ function InterviewDetail({
   );
 
   if (cv) {
-    return <CvPreviewModal downloadUrl={cv.downloadUrl} fileName={cv.fileName} mimeType={cv.mimeType} onClose={onClose} sidePanel={panel} />;
+    return (
+      <CvPreviewModal
+        downloadUrl={cv.downloadUrl}
+        fileName={cv.fileName}
+        headerActions={applicationActions}
+        mimeType={cv.mimeType}
+        onClose={onClose}
+        sidePanel={panel}
+      />
+    );
   }
 
   const waiting = Boolean(candidateId) && !cvsNeedSignIn && files === null;
@@ -1038,6 +1071,7 @@ function InterviewDetail({
       >
         {waiting ? "Opening the CV…" : why}
       </p>
+      {applicationActions ? <div className="mb-4">{applicationActions}</div> : null}
       {panel}
     </CalendarDialog>
   );
