@@ -2280,10 +2280,7 @@ export async function submitOutstationRequest(
   // fails must never fail the submission the employee just made. The shared idempotency key means
   // the daily job will not repeat whatever this raises.
   try {
-    // A Meeting or Other claim is not a trip, so there is no departure photo to remind anyone of.
-    if (!nonTravel) {
-      await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
-    }
+    await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
   } catch (reminderError) {
     logError("Outstation departure-photo reminder on submit failed", {
       error: reminderError,
@@ -4531,6 +4528,9 @@ export async function sendOutstationDeparturePhotoReminder(
   // genuinely-owed employee silent forever. The way out is a NEW key, never a re-run of the old.
   options?: { idempotencyKey?: string },
 ): Promise<boolean> {
+  // A Meeting or Other claim is not a trip, so there is no departure photo to remind anyone of.
+  // Decided here rather than at one caller, so the daily job and the Super Admin resend agree.
+  if (isNonTravelExpenseType(row.expenseType)) return false;
   const gate = resolveOutstationGateState({
     employeeRole: row.employeeRole,
     evidenceGateStatus: row.evidenceGateStatus,

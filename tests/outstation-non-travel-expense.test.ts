@@ -66,10 +66,18 @@ export function runOutstationNonTravelExpenseTests() {
     "evidence_gate_status: nextEvidenceGateStatus({",
     "grandfathered: nonTravel",
     "noInvoiceHoldReason",
-    "if (!nonTravel) {",
   ]) {
     assert.ok(submit.includes(needle), `submitOutstationRequest must carry: ${needle}`);
   }
+
+  // A Meeting or Other claim owes no departure photo, so the reminder skips it. The skip lives in the
+  // function itself, not at the submit call site: the daily job and the Super Admin resend call it too,
+  // and the submit-time call must stay a bare `try { await … }` (outstation-departure-photo-reminder).
+  const reminder = functionBody(service, "sendOutstationDeparturePhotoReminder");
+  assert.ok(
+    reminder.includes("if (isNonTravelExpenseType(row.expenseType)) return false;"),
+    "sendOutstationDeparturePhotoReminder must return false for a Meeting or Other expense",
+  );
 
   // --- the routes ----------------------------------------------------------------------------
   for (const route of ["app/api/outstation/submit/route.ts", "app/api/outstation/calculate/route.ts"]) {
