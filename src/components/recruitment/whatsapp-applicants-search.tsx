@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 
 import { CandidateDecisionTabStrip } from "@/components/recruitment/candidate-decision-tab-strip";
 import { ScheduleInterviewButton } from "@/components/recruitment/interview-calendar/schedule-interview-button";
+import { WhatsAppApplicationActions } from "@/components/recruitment/whatsapp-application-actions";
 import { cairoDate } from "@/lib/format/cairo-datetime";
 import {
   candidateDecisionTabLabels,
@@ -96,6 +97,9 @@ function ApplicantCell({ pool, row, titleLabel }: { pool: string; row: WhatsAppA
         candidate={{ id: row.candidateId, jobTitle: row.typedTitle ?? titleLabel, name: row.name }}
         className="mt-2"
       />
+      {/* The CV as she sent it plus one page of every WhatsApp question and answer (owner, 2026-09-19).
+          Added under what the cell already held; the CV's own download is not touched. */}
+      <WhatsAppApplicationActions applicantName={row.name} className="mt-2" sessionId={row.sessionId} />
     </div>
   );
 }

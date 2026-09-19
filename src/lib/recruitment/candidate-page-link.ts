@@ -67,3 +67,14 @@ export function parseCandidatePageId(value: string | string[] | null | undefined
   }
   return isUuid(text) ? text.toLowerCase() : null;
 }
+
+/**
+ * The page "Print record" opens: the candidate's whole page as a sheet of paper (owner, 2026-09-19).
+ *
+ * The same path in every shell, unlike the candidate page's own. It sits under /print, outside both
+ * shells, so the paper holds the record and nothing else — and a link that never enters a shell has no
+ * shell to stay inside. The id is encoded, so it cannot add a path.
+ */
+export function candidateRecordPrintHref(candidateId: string): string {
+  return `/print/candidate-record/${encodeURIComponent(candidateId)}`;
+}

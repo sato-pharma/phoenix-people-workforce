@@ -1768,6 +1768,8 @@ import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
+import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
+import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
@@ -6305,6 +6307,16 @@ await runTest(
 await runTest(
   "the screening verdicts (Shortlist, Reject, the reject panel, the stars, the bulk marks) are gated on candidates:update, the grant their routes assert, and the WhatsApp reply box on recruitment:update, its own route's grant; before the fix canDecide was recruitment:update, the reply box rode on it, and the header drew Shortlist and Reject whatever it said",
   runScreeningDecideGateTests,
+);
+
+await runTest(
+  "WhatsApp Applicants gets Download application and Print application beside the CV download it already had: the sheet is every question the bot asked and every answer, in the bot's order, on ONE A4 page that shrinks its type to fit and never puts a CV-derived region in the bot's mouth; the route, the registry entry and the print page carry the list's own gate, and the raw chat store is never read",
+  runWhatsAppApplicationPrintTests,
+);
+
+await runTest(
+  "the candidate page's Print record prints every section the page draws, in its order, except Where they stand (the owner's removal); nothing unpopulated prints; the salary and the questions HR itself added come before the five the bot always asks; the name is plain body ink; a stranger's name and notes are escaped; the sheet has no fill and no rounded corner; and the print page repeats the shell's gate read-only",
+  runCandidateRecordPrintTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

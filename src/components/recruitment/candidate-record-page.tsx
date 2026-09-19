@@ -20,7 +20,7 @@
 // hairlines, one display-type name, sections that fold with their summary still showing. Every value
 // wraps — nothing is cut short with an ellipsis and nothing scrolls sideways.
 
-import { ArrowLeft, Download, ExternalLink, ScanLine } from "lucide-react";
+import { ArrowLeft, Download, ExternalLink, Printer, ScanLine } from "lucide-react";
 import { usePathname } from "next/navigation";
 import type React from "react";
 
@@ -47,7 +47,7 @@ import {
   DUPLICATE_FOLDER_KIND,
   DUPLICATE_FOLDER_LABEL,
 } from "@/lib/recruitment/candidate-folder";
-import { recruitmentRootFromPathname } from "@/lib/recruitment/candidate-page-link";
+import { candidateRecordPrintHref, recruitmentRootFromPathname } from "@/lib/recruitment/candidate-page-link";
 import { candidateRatingLabels } from "@/lib/recruitment/candidate-rating";
 import type { CandidateRecord, CandidateRecordPart } from "@/lib/recruitment/candidate-record";
 import { candidateRecordSections, type CandidateRecordRow } from "@/lib/recruitment/candidate-record-fields";
@@ -289,6 +289,18 @@ export function CandidateRecordPage({ record }: { record: CandidateRecord }) {
             <ScheduleInterviewButton
               candidate={{ id: candidate.id, jobTitle: appliedFor.text, name: displayName }}
             />
+            {/* Every section of this page as a sheet of paper (owner, 2026-09-19: "all data appearing
+                here I want it printed"). A new tab, outside the shell, so the paper holds the record and
+                nothing else. The CV is not on it: it prints from its own pane. */}
+            <ActionLink
+              href={candidateRecordPrintHref(candidate.id)}
+              rel="noopener noreferrer"
+              target="_blank"
+              title="Print everything on this page — the data, not the CV, which prints from its own pane"
+            >
+              <Printer aria-hidden className="h-3.5 w-3.5" />
+              Print record
+            </ActionLink>
             <ActionLink href={root} title="Back to the candidate pool" tone="ghost">
               <ArrowLeft aria-hidden className="h-3.5 w-3.5" />
               Recruitment

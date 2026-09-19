@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { buildCandidateTimeline } from "@/lib/recruitment/candidate-timeline";
-import { getCandidateProfile, listCandidateStatusEvents } from "@/lib/recruitment/candidates";
-import { getLatestCvExtraction } from "@/lib/recruitment/cv-extraction";
-import { listCandidateComments } from "@/lib/recruitment/candidate-comments";
-import { listSendsForCandidate } from "@/lib/recruitment/manager-sends";
+import { loadCandidateTimeline } from "@/lib/recruitment/candidate-timeline-loader";
+import { getCandidateProfile } from "@/lib/recruitment/candidates";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
 export const runtime = "nodejs";
@@ -40,43 +37,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "not_found", message: "Candidate not found.", success: false }, { status: 404 });
     }
 
-    // Fired together: four independent reads, and awaiting them in sequence is four round trips for
-    // a panel the reader is already looking at. Each falls back to empty rather than failing the
-    // whole tab — a timeline missing its comments is still a timeline.
-    const [statusEvents, sends, comments, extraction] = await Promise.all([
-      listCandidateStatusEvents(id).catch(() => []),
-      listSendsForCandidate(id).catch(() => []),
-      listCandidateComments(id).catch(() => []),
-      getLatestCvExtraction(id).catch(() => null),
-    ]);
-
-    const events = buildCandidateTimeline({
-      comments,
-      createdAt: profile.candidate.createdAt,
-      extractions: extraction
-        ? [{ createdAt: extraction.createdAt, extractionId: extraction.extractionId, isCv: extraction.isCv }]
-        : [],
-      files: profile.files.map((file) => ({
-        createdAt: file.createdAt,
-        fileName: file.fileName,
-        id: file.id,
-        kind: file.kind,
-      })),
-      interviews: profile.interviews.map(({ interview }) => ({
-        createdAt: interview.createdAt,
-        id: interview.id,
-        interviewType: interview.interviewType,
-        outcome: interview.outcome,
-        scheduledAt: interview.scheduledAt,
-      })),
-      sends: sends.map((send) => ({
-        managerName: send.managerName,
-        position: send.position,
-        sentAt: send.sentAt,
-      })),
-      source: profile.candidate.source,
-      statusEvents,
-    });
+    // The five reads and the wording live in one place, shared with the printed candidate record.
+    const events = await loadCandidateTimeline(profile);
 
     return NextResponse.json({ events, success: true });
   } catch (error) {
