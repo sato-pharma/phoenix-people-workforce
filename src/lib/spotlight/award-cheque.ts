@@ -33,6 +33,13 @@ import { withChromiumPage } from "@/lib/pdf/chromium";
 
 const C = HOUSE_COLORS;
 
+// The three boxes (Rank, Achievement, Amount) and the Arabic words share one width — the words line
+// runs exactly the span of the boxes and never past it (owner, 2026-09-20).
+const STAT_ROW_WIDTH_MM = 118 + 6 + 120;
+const AMOUNT_WIDTH_MM = 226;
+const FOOT_GAP_MM = 16;
+const BOXES_WIDTH_MM = STAT_ROW_WIDTH_MM + FOOT_GAP_MM + AMOUNT_WIDTH_MM;
+
 // The house documents are A4 (210 mm wide); this sheet is 914 mm wide. Every house measure that is
 // drawn (the band, the hairlines, the mark) is scaled by this factor so the identity keeps its
 // proportions instead of shrinking to a thread on a 36-inch sheet.
@@ -108,6 +115,21 @@ function dateParts(iso: string | null): { d: string; m: string; y: string; digit
 }
 
 /** Shrinks a long name to its line instead of letting it wrap or clip — never truncates. */
+/** Shrinks the Arabic words until they sit on their one line — measured on the page once the face has
+ *  loaded, because a per-character estimate under-counts some spellings and the words wrapped. */
+const FIT_WORDS_SCRIPT = `
+document.fonts.ready.then(function () {
+  document.querySelectorAll(".words__ar").forEach(function (el) {
+    var pt = parseFloat(el.style.fontSize) || 70;
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    while (pt > 30 && range.getBoundingClientRect().width > el.clientWidth - 1) {
+      pt -= 1;
+      el.style.fontSize = pt + "pt";
+    }
+  });
+});`;
+
 function namePt(name: string, widthMm: number, maxPt: number, minPt: number): number {
   const fit = widthMm / (Math.max(name.length, 1) * 0.6 * 0.3528);
   return Math.max(minPt, Math.min(maxPt, Math.floor(fit)));
@@ -190,15 +212,7 @@ function chequeBody(row: AwardChequeRow): string {
       <div class="cap"><span>The sum of</span><span class="ar" dir="rtl" lang="ar">مبلغ وقدره</span></div>
       <div class="words__ruled">
         <div class="words__rule"></div>
-        <p class="words__ar" dir="rtl" lang="ar" style="font-size:${wordsPt(words, 585, 70, 44)}pt">${escapeHtml(words)}</p>
-      </div>
-    </section>
-
-    <section class="amount">
-      <div class="cap"><span>Amount</span><span class="ar" dir="rtl" lang="ar">المبلغ</span></div>
-      <div class="amount__box">
-        <p class="amount__cur">EGP <span class="ar" dir="rtl" lang="ar">ج.م</span></p>
-        <p class="amount__fig">${egpFigures(row.amountEgp)}<small>.${row.amountEgp === null ? "XX" : "00"}</small></p>
+        <p class="words__ar" dir="rtl" lang="ar" style="font-size:${wordsPt(words, BOXES_WIDTH_MM, 76, 40)}pt">${escapeHtml(words)}</p>
       </div>
     </section>
 
@@ -217,6 +231,13 @@ function chequeBody(row: AwardChequeRow): string {
         </div>`
             : `<p class="memo__line">${escapeHtml(row.awardTitle)}</p>`
         }
+      </div>
+      <div class="amount">
+        <div class="cap"><span>Amount</span><span class="ar" dir="rtl" lang="ar">المبلغ</span></div>
+        <div class="amount__box">
+          <p class="amount__cur">EGP <span class="ar" dir="rtl" lang="ar">ج.م</span></p>
+          <p class="amount__fig">${egpFigures(row.amountEgp)}<small>.${row.amountEgp === null ? "XX" : "00"}</small></p>
+        </div>
       </div>
       <div class="sig">
         <div class="sig__rule">${
@@ -296,7 +317,7 @@ const CSS = `
   /* The cheque's grid: title | cheque no. and date, payee and position, the words and the figures
      box between two rules, memo and signatures, machine line. */
   .inner { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 226mm;
-    column-gap: 24mm; grid-template-rows: 54mm 64mm 68mm 72mm 1fr; row-gap: 3mm; padding-top: 10mm; }
+    column-gap: 24mm; grid-template-rows: 54mm 64mm 60mm 80mm 1fr; row-gap: 3mm; padding-top: 10mm; }
 
   /* Bilingual caption row: English left, Arabic right, the way a bilingual cheque prints it. The
      house micro label: small, bold, upper case, tracked; the Arabic keeps no letter-spacing. */
@@ -330,17 +351,16 @@ const CSS = `
 
   /* The words and the figures sit between two rules — a deep one above and a hairline below. No
      fill anywhere: the house ink rule allows only the 6% zebra row. */
-  .sumrule { grid-column: 1 / -1; grid-row: 3; border-top: var(--rule-w) solid var(--deep);
-    border-bottom: var(--hair-w) solid var(--hair); }
-  .words { grid-column: 1; grid-row: 3; display: flex; flex-direction: column; justify-content: center; }
+  .sumrule { grid-column: 1 / -1; grid-row: 3; border-top: var(--rule-w) solid var(--deep); }
+  .words { grid-column: 1 / -1; grid-row: 3; width: ${BOXES_WIDTH_MM}mm; border-bottom: var(--hair-w) solid var(--hair); display: flex; flex-direction: column; justify-content: center; }
   .words__ruled { position: relative; margin-top: 2mm; height: 42mm; }
   .words__rule { position: absolute; left: 0; right: 0; top: 34mm; border-top: var(--hair-w) solid var(--deep); }
   .words__ar { position: relative; top: 2.2mm; font-family: var(--quran); font-weight: 400; font-size: 70pt;
-    line-height: 34mm; word-spacing: .12em; color: var(--ink); text-align: right; text-wrap: pretty; }
+    line-height: 34mm; word-spacing: .12em; color: var(--ink); text-align: right; white-space: nowrap; }
 
-  .amount { grid-column: 2; grid-row: 3; display: flex; flex-direction: column; justify-content: center; }
+  .amount { width: ${AMOUNT_WIDTH_MM}mm; display: flex; flex-direction: column; padding-bottom: 8mm; }
   /* A double keyline — Deep outside, Light inside — instead of a fill. */
-  .amount__box { position: relative; background: rgba(255, 255, 255, .8); margin-top: 2mm; height: 58mm; border: var(--rule-w) solid var(--deep);
+  .amount__box { position: relative; background: rgba(255, 255, 255, .8); margin-top: 3mm; height: 48mm; border: var(--rule-w) solid var(--deep);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5mm; }
   .amount__box::after { content: ""; position: absolute; inset: 2.6mm; border: ${0.25 * SCALE}pt solid var(--light); pointer-events: none; }
   .amount__cur { font-size: 16pt; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--blue); }
@@ -349,17 +369,17 @@ const CSS = `
     font-variant-numeric: lining-nums tabular-nums; }
   .amount__fig small { font-size: 36pt; }
 
-  .foot { grid-column: 1 / -1; grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) 226mm;
-    column-gap: 24mm; align-items: end; }
+  .foot { grid-column: 1 / -1; grid-row: 4; display: grid; grid-template-columns: ${STAT_ROW_WIDTH_MM}mm ${AMOUNT_WIDTH_MM}mm minmax(0, 1fr);
+    column-gap: ${FOOT_GAP_MM}mm; align-items: end; }
   .memo__line { margin-top: 3mm; border-bottom: var(--hair-w) solid var(--hair); padding-bottom: 2mm;
     font-size: 25pt; line-height: 1.5; color: var(--body); white-space: nowrap; }
   .stats { margin-top: 3mm; margin-bottom: 8mm; display: flex; gap: 6mm; }
   .stat { flex: 0 0 auto; min-width: 64mm; background: rgba(255, 255, 255, .8); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2mm 8mm 2.5mm; }
-  .stat--wide { min-width: 120mm; }
-  .stat { display: flex; flex-direction: column; justify-content: center; }
+  .stat--wide { width: 120mm; min-width: 120mm; }
+  .stat { display: flex; flex-direction: column; justify-content: center; height: 48mm; box-sizing: border-box; }
   /* The rank is the headline: a larger box, a double keyline (Deep outside, Light inside) and the
      ordinal set beside the figure. Still no fill. */
-  .stat--rank { position: relative; min-width: 118mm; padding-top: 3mm; padding-bottom: 3.5mm; }
+  .stat--rank { position: relative; width: 118mm; min-width: 118mm; padding-top: 3mm; padding-bottom: 3.5mm; }
   .stat--rank::after { content: ""; position: absolute; inset: 2mm; border: ${0.25 * SCALE}pt solid var(--light); pointer-events: none; }
   .stat.stat--rank b { font-size: 84pt; }
   .stat.stat--rank b small { font-size: 40pt; margin-left: 1.5mm; }
@@ -369,8 +389,9 @@ const CSS = `
   .stat b { display: block; margin-top: 1mm; font-size: 50pt; font-weight: 700; line-height: 1.05; color: var(--deep);
     font-variant-numeric: lining-nums tabular-nums; }
   .stat b small { font-size: 30pt; }
-  .sig__rule { position: relative; height: 24mm; border-bottom: var(--hair-w) solid var(--deep); margin-bottom: 4mm; }
-  .sig__img { position: absolute; left: 50%; bottom: -1.5mm; height: 42mm; transform: translateX(-50%); }
+  .sig { justify-self: end; width: 260mm; padding-bottom: 8mm; }
+  .sig__rule { position: relative; height: 36mm; border-bottom: var(--hair-w) solid var(--deep); margin-bottom: 4mm; }
+  .sig__img { position: absolute; left: 50%; bottom: 0; height: 76mm; transform: translateX(-50%); }
   .sig .cap { font-size: 13pt; letter-spacing: .16em; }
   .sig .ar { font-size: 19pt; }
 
@@ -389,7 +410,7 @@ const CSS = `
 export function awardChequeDocumentHtml(row: AwardChequeRow = AWARD_CHEQUE_PLACEHOLDER): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${escapeHtml(row.recipientName)} — ${escapeHtml(row.awardTitle)}</title><style>${CSS}</style></head>
-<body>${pageShell(row)}</body></html>`;
+<body>${pageShell(row)}<script>${FIT_WORDS_SCRIPT}</script></body></html>`;
 }
 
 /** Render one cheque to PDF. Throws `ChromiumUnavailableError` when the runtime cannot produce one. */
