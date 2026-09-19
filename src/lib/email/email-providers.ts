@@ -135,7 +135,11 @@ export const resendProvider: EmailProvider = {
           from: email.from,
           headers: email.headers,
           html: email.html,
-          replyTo: email.replyTo,
+          // 🔴 `reply_to`, NOT `replyTo`. This is the raw REST API: only Resend's Node SDK maps the
+          // camelCase name across. Resend does not reject `replyTo` — it drops it, answers 200 and
+          // sends the mail with NO Reply-To header, so every reply to any Phoenix email went to the
+          // From address on the sending subdomain, which has no mailbox, and bounced.
+          reply_to: email.replyTo,
           subject: email.subject,
           text: email.text,
           to: email.to,
