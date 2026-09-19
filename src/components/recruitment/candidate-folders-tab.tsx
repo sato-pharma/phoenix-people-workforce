@@ -574,7 +574,7 @@ function DeclaredFilingsPanel({
                   <div key={group.cause}>
                     <p className="text-xs font-bold text-phx-ink">
                       {group.heading}
-                      <span className="ml-2 whitespace-nowrap font-bold tabular-nums text-phx-accent-press">
+                      <span className="ml-2 font-bold tabular-nums text-phx-accent-press">
                         {group.rows.length}
                       </span>
                     </p>
