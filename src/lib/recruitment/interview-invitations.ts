@@ -17,14 +17,9 @@
 
 import { createHash } from "node:crypto";
 
-import { systemEmail, systemIdentity } from "@/config/system-settings";
-import {
-  renderEmailParagraphs,
-  renderPhoenixEmailHtml,
-  renderPhoenixEmailText,
-} from "@/emails/phoenix-email-layout";
+import { systemEmail } from "@/config/system-settings";
 import { hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
-import { emailSignatureUrl, recordManualEmailSendAudit } from "@/lib/email/email-composer-service";
+import { recordManualEmailSendAudit } from "@/lib/email/email-composer-service";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
@@ -46,12 +41,13 @@ import {
   type InvitationFacts,
   type InvitationKind,
   type InvitationLogEntry,
-  type InvitationMessage,
   type InvitationMessageOption,
   type InvitationPlan,
   type InvitationRecipient,
   type InvitationRecipientPlan,
 } from "@/lib/recruitment/interview-invitation";
+import { renderInvitationEmail } from "@/lib/recruitment/interview-invitation-email";
+import { satoEmailFrom } from "@/lib/sato-email/service";
 import { firstNameOf } from "@/lib/recruitment/whatsapp-templates/candidate-context";
 import { findWhatsAppApplicantNumber } from "@/lib/recruitment/whatsapp-applicants-loader";
 import { formatDialNumberForDisplay, toWhatsAppDialNumber, whatsAppSendUrl } from "@/lib/recruitment/whatsapp-templates/send-link";
@@ -245,29 +241,11 @@ export async function recordInterviewWhatsAppOpened(caller: InterviewCalendarCal
 
 // ── E-mail ──────────────────────────────────────────────────────────────────────────────────────
 
-function renderEmail(name: string, message: InvitationMessage, requestUrl: string): { html: string; text: string } {
-  const layout = {
-    action: message.action ?? undefined,
-    closingText: "We look forward to meeting you.",
-    greeting: `Hello ${name},`,
-    metadataRows: message.rows,
-    signatureImageSrc: emailSignatureUrl(requestUrl),
-    signatureName: systemIdentity.hrSignatureName,
-    title: message.subject,
-  };
-  const intro = "Kindly find below the details.";
-  return {
-    html: renderPhoenixEmailHtml({ ...layout, bodyHtml: renderEmailParagraphs(intro), previewText: message.subject, subject: message.subject }),
-    text: renderPhoenixEmailText({ ...layout, bodyText: intro }),
-  };
-}
-
 /** E-mail the invitation from Phoenix and log what the mail provider answered. */
 export async function emailInterviewInvitation(
   caller: InterviewCalendarCaller,
   bookingId: string,
   input: InvitationRequest,
-  requestUrl: string,
 ): Promise<{ status: "sent" | "failed"; message: string; log: InvitationLogEntry[] }> {
   const { kind, recipient } = readRequest(input);
   const prepared = await prepare(caller, bookingId);
@@ -278,7 +256,7 @@ export async function emailInterviewInvitation(
 
   const greeting = firstNameOf(plan.name);
   const message = buildInvitationMessage({ facts: factsOf(prepared.booking), kind, name: greeting, recipient });
-  const rendered = renderEmail(greeting, message, requestUrl);
+  const rendered = renderInvitationEmail(greeting, message, kind);
 
   const record = (status: "sent" | "failed", detail: string | null) =>
     writeLog(caller, bookingId, { channel: "email", destination: to, detail, kind, recipient, status });
@@ -287,11 +265,8 @@ export async function emailInterviewInvitation(
     await record("failed", "E-mail sending is switched off in Phoenix.");
     return { log: await loadLog(bookingId), message: "E-mail sending is switched off in Phoenix, so nothing was sent.", status: "failed" };
   }
-  const from = process.env.HR_REPLY_EMAIL_FROM || process.env.NOTIFICATION_EMAIL_FROM;
-  if (!from) {
-    await record("failed", "No sender address is set up for e-mail.");
-    return { log: await loadLog(bookingId), message: "No sender address is set up for e-mail, so nothing was sent.", status: "failed" };
-  }
+  // The company's own name in the inbox list, from the mailbox the Sato Email Composer sends from.
+  const from = satoEmailFrom(systemEmail.satoComposerFromEmail);
 
   // A one-minute bucket: a double press is one e-mail, a deliberate second send a minute later is another.
   const minute = Math.floor(Date.now() / 60_000);
@@ -305,7 +280,9 @@ export async function emailInterviewInvitation(
       from,
       html: rendered.html,
       idempotencyKey,
-      replyTo: systemEmail.seatReplyTo[caller.access.role],
+      // The composer's reply-to, for the reason it records: a seat-keyed address fell through to an
+      // inbox Resend suppresses for a Super Admin send, and the replies bounced.
+      replyTo: systemEmail.satoComposerReplyToEmail,
       subject: message.subject,
       text: rendered.text,
       to: [to],
