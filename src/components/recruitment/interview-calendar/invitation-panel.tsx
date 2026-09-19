@@ -81,7 +81,8 @@ export function InvitationPanel({ api, bookingId }: { api: CalendarApi; bookingI
   }, [api, path]);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const planOf = (recipient: InvitationRecipient) => (recipient === "candidate" ? plan?.candidate ?? null : plan?.interviewer ?? null);
