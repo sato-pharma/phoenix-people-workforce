@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 
 import {
+  areasThatCouldBeMeant,
   collectSuggestedFilings,
   degreeEligibilityAppliesToDeclaredRole,
+  groupUnplacedFilings,
   readDeclaredRegionFreeText,
   suggestFolderFromDeclaredAnswers,
 } from "../src/lib/recruitment/candidate-folder-suggestion.ts";
@@ -478,4 +480,66 @@ export async function runCandidateFolderSuggestionTests() {
       "a held candidate must still say the DEGREE is why, or the reason reads as a missing answer",
     );
   }
+
+  // ── 9 · The unplaced list is grouped, and every group says what to do ─────
+  // Measured on the owner's screen 2026-09-20: 48 rows under "answered but cannot be placed", 30 of
+  // them the same sentence about an area — "Minia" typed six ways, "Nagaa Hammadi", "Maadi". A list
+  // that long is read as noise. The refusal text is unchanged (asserted above); what is new is that
+  // each row carries WHY as a value, so the screen can say the instruction once per group.
+  const LIVE_AREAS = ["Minia 1", "Minia 2", "Qena 1", "Qena 2", "Helwan-Maadi", "Sharkia 1", "North Sinai", "Cairo East 1"];
+  const unplaced = collectSuggestedFilings(
+    [
+      declared("minya", { title: "Medical Representative", area: "Minya" }),
+      declared("elminia", { title: "Medical Representative", area: "El minia" }),
+      declared("qena", { title: "Medical Representative", area: "Qena north (nagga hammadi + fardhout)" }),
+      declared("maadi", { title: "Medical Representative", area: "Maadi" }),
+      declared("arabic", { title: "Medical Representative", area: "المنيا" }),
+      declared("none", { title: "Medical Representative", area: null }),
+      declared("dm", { title: "District Manager", regionName: "Behira, Alex, Kafr El-Sheikh" }),
+      declared("law", { title: "Medical Representative", area: "Minia 1", faculty: "Faculty of Commerce" }),
+    ],
+    LIVE_AREAS,
+  );
+  const causeOf = (id: string) => unplaced.skipped.find((row) => row.candidateId === id)?.cause;
+  assert.equal(causeOf("minya"), "area_not_listed");
+  assert.equal(causeOf("none"), "no_area");
+  assert.equal(causeOf("dm"), "region");
+  assert.equal(causeOf("law"), "degree", "the degree hold is its own group, pointing at the panel that resolves it");
+
+  const typedOf = (id: string) => unplaced.skipped.find((row) => row.candidateId === id)?.typed;
+  assert.equal(typedOf("minya"), "Minya", "the row keeps what they TYPED, so the screen can show it beside the name");
+  assert.equal(typedOf("none"), null);
+
+  const couldBe = (id: string) => unplaced.skipped.find((row) => row.candidateId === id)?.couldBe;
+  assert.deepEqual(couldBe("minya"), ["Minia 1", "Minia 2"], "Minya and Minia meet — both real Minia areas are named");
+  assert.deepEqual(couldBe("elminia"), ["Minia 1", "Minia 2"]);
+  assert.deepEqual(couldBe("qena"), ["Qena 1", "Qena 2"], '"north" is a direction, so it must NOT also hint North Sinai');
+  assert.deepEqual(couldBe("maadi"), ["Helwan-Maadi"]);
+  assert.deepEqual(couldBe("arabic"), [], "an Arabic answer shares no Latin place word, and no hint is invented for it");
+  assert.deepEqual(areasThatCouldBeMeant("North", LIVE_AREAS), [], "a bare direction names no place, so it hints nothing");
+
+  // A hint is NEVER a filing. The module's rule is that territory is not inferred from free text.
+  assert.ok(
+    !unplaced.filings.some((filing) => ["minya", "elminia", "qena", "maadi"].includes(filing.candidateId)),
+    "a hint must not turn into a filing — 'Minia' names two areas and the applicant did not say which",
+  );
+
+  const grouped = groupUnplacedFilings(unplaced.skipped);
+  assert.deepEqual(
+    grouped.map((group) => group.cause),
+    ["degree", "area_not_listed", "no_area", "region"],
+    "groups come in working order and empty groups are dropped",
+  );
+  assert.equal(grouped.find((group) => group.cause === "area_not_listed")?.rows.length, 5);
+  for (const group of grouped) {
+    assert.ok(
+      group.instruction.length > 20 && group.heading.length > 5,
+      "every group carries a heading and an instruction — a group with no route out is the dead end this grouping ends",
+    );
+  }
+  assert.match(
+    grouped.find((group) => group.cause === "degree")?.instruction ?? "",
+    /Degrees waiting for you to check/,
+    "the degree group names the panel that resolves it",
+  );
 }

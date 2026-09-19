@@ -37,6 +37,7 @@ import {
 } from "@/lib/recruitment/candidate-folder";
 import {
   collectSuggestedFilings,
+  groupUnplacedFilings,
   type SuggestedFiling,
 } from "@/lib/recruitment/candidate-folder-suggestion";
 import type { CandidateFolderAreaOption } from "@/lib/recruitment/candidate-folder-options";
@@ -193,7 +194,11 @@ export function CandidateFoldersTab({
         </section>
       ) : null}
 
-      <DeclaredFilingsPanel areaOptions={areaOptions} candidates={candidates} />
+      <DeclaredFilingsPanel
+        areaOptions={areaOptions}
+        candidates={candidates}
+        onOpenCandidate={onOpenCandidate}
+      />
 
       {/* Above the shelves and below the one-press panel, in the order the two decisions happen: the
           people who told us where they belong are filed first, and what is left is the queue of
@@ -423,9 +428,13 @@ function FiledCvName({ candidate }: { candidate: Candidate }) {
 function DeclaredFilingsPanel({
   areaOptions,
   candidates,
+  onOpenCandidate,
 }: {
   areaOptions: CandidateFolderAreaOption[];
   candidates: Candidate[];
+  /** Opens the candidate's profile, where File to folder lives — the unplaced rows are unplaced
+   * because a person has to do exactly that, so the way there is on the row. */
+  onOpenCandidate: (candidateId: string) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -449,6 +458,9 @@ function DeclaredFilingsPanel({
     else byFolder.set(id, { label: filing.suggestion.label, names: [name] });
   }
   const groups = Array.from(byFolder.values()).sort((a, b) => b.names.length - a.names.length);
+  // The people who could not be placed, gathered under the one instruction each group needs. Forty-odd
+  // rows repeating the same sentence read as noise; a handful of instructions read as a to-do list.
+  const unplacedGroups = groupUnplacedFilings(skipped);
 
   // The owner's own split, made after reading the first fifteen: nine had arrived that morning and
   // five were already shortlisted. Filing everything in one press takes live prospects off the
@@ -552,18 +564,55 @@ function DeclaredFilingsPanel({
                   one wording change away from the sideways scroll. Labels and counts below keep
                   their `whitespace-nowrap`; prose does not get it. */}
               <p className="mt-1 text-xs font-bold text-slate-600 first:mt-0">
-                {skipped.length} answered but cannot be placed
+                {skipped.length} answered but cannot be filed automatically — a person has to place each one
               </p>
-              <ul className="mt-1 space-y-0.5">
-                {skipped.map((row) => (
-                  <li className="flex flex-wrap items-baseline gap-x-2 text-phx-xs" key={row.candidateId}>
-                    <span className="whitespace-nowrap font-semibold text-phx-ink">
-                      {candidateDisplayName(row.fullName)}
-                    </span>
-                    <span className="font-medium text-slate-500">{row.reason}</span>
-                  </li>
+              {/* One block per instruction, not one sentence per person. Heading and instruction are
+                  prose and WRAP; only a name keeps its `whitespace-nowrap`. The typed answer and the
+                  "could be" hint wrap too — they are free text of unbounded length. */}
+              <div className="mt-2 space-y-3">
+                {unplacedGroups.map((group) => (
+                  <div key={group.cause}>
+                    <p className="text-xs font-bold text-phx-ink">
+                      {group.heading}
+                      <span className="ml-2 font-bold tabular-nums text-phx-accent-press">
+                        {group.rows.length}
+                      </span>
+                    </p>
+                    <p className="text-phx-xs font-medium text-slate-500">{group.instruction}</p>
+                    <ul className="mt-1 divide-y divide-phx-accent/20">
+                      {group.rows.map((row) => (
+                        <li
+                          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-1 text-phx-xs"
+                          key={row.candidateId}
+                        >
+                          <span className="whitespace-nowrap font-semibold text-phx-ink">
+                            {candidateDisplayName(row.fullName)}
+                          </span>
+                          {row.typed ? (
+                            <span className="font-medium text-slate-500">typed “{row.typed}”</span>
+                          ) : group.cause === "degree" ? null : (
+                            <span className="font-medium text-slate-500">{row.reason}</span>
+                          )}
+                          {row.couldBe.length > 0 ? (
+                            <span className="font-medium text-slate-500">
+                              — could be {row.couldBe.join(" or ")}
+                            </span>
+                          ) : null}
+                          {group.cause === "degree" ? null : (
+                            <button
+                              className="ml-auto border border-phx-line bg-white px-2 py-0.5 text-[12px] font-semibold text-phx-ink-2 transition hover:bg-phx-paper"
+                              onClick={() => onOpenCandidate(row.candidateId)}
+                              type="button"
+                            >
+                              Open profile
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </>
           ) : null}
         </div>

@@ -32,6 +32,7 @@ import {
   candidateFolderRefusal,
   cleanFolderKey,
   isFiledCandidate,
+  normalizedAreaMatchKey,
   resolveCanonicalMedicalRepArea,
   type CandidateFolderKind,
 } from "@/lib/recruitment/candidate-folder";
@@ -81,7 +82,24 @@ export type CandidateFolderSuggestion = {
  */
 export type CandidateFolderSuggestionResult =
   | { suggestion: CandidateFolderSuggestion; refusal: null }
-  | { suggestion: null; refusal: string };
+  | { suggestion: null; refusal: string; cause?: UnplacedCause; typed?: string };
+
+/**
+ * WHY somebody who answered still has no folder, as a value a screen can group on.
+ *
+ * The refusal SENTENCE says it to one person; this says it to forty, so the Folders tab can put the
+ * thirty who typed an unlisted area under one instruction instead of repeating that instruction on
+ * thirty rows. Optional on the result because only the refusals a recruiter can act on carry it —
+ * the guard clauses ("Already filed.", "Candidate not found.") never reach a screen.
+ */
+export type UnplacedCause =
+  | "degree"
+  | "area_not_listed"
+  | "no_area"
+  | "region"
+  | "job_title"
+  | "no_role"
+  | "other";
 
 /**
  * A declared job title, read: which family it names, and whether the applicant TAPPED it or typed it.
@@ -270,7 +288,7 @@ export function suggestFolderFromDeclaredAnswers(
 
   const declaredRole = readDeclaredRole(candidate.appliedForJobTitle);
   if (!declaredRole) {
-    return { refusal: "Answered the questions but named no role.", suggestion: null };
+    return { refusal: "Answered the questions but named no role.", suggestion: null, cause: "no_role" };
   }
   const family = declaredRole.family;
 
@@ -283,6 +301,7 @@ export function suggestFolderFromDeclaredAnswers(
       return {
         refusal: "Applied as a medical rep but named no area, so there is no area folder to file into.",
         suggestion: null,
+        cause: "no_area",
       };
     }
     // The area is FREE TEXT — the applicant either tapped a live area or typed one because theirs
@@ -294,6 +313,8 @@ export function suggestFolderFromDeclaredAnswers(
       return {
         refusal: `Applied as a medical rep, but ${resolved.refusal}`,
         suggestion: null,
+        cause: "area_not_listed",
+        typed: area,
       };
     }
     return { refusal: null, suggestion: buildSuggestion("medical_rep", resolved.area) };
@@ -306,7 +327,11 @@ export function suggestFolderFromDeclaredAnswers(
     const code = cleanFolderKey(candidate.preferredRegionCode)?.toUpperCase() ?? null;
     if (code) {
       if (!isKnownRegionCode(code)) {
-        return { refusal: `Named a region this system no longer lists (${code}).`, suggestion: null };
+        return {
+          refusal: `Named a region this system no longer lists (${code}).`,
+          suggestion: null,
+          cause: "region",
+        };
       }
       return { refusal: null, suggestion: buildSuggestion("district_manager", code) };
     }
@@ -320,6 +345,7 @@ export function suggestFolderFromDeclaredAnswers(
         refusal:
           "Applied as a district manager but named no region from the list, so there is no region folder to file into.",
         suggestion: null,
+        cause: "region",
       };
     }
 
@@ -332,11 +358,13 @@ export function suggestFolderFromDeclaredAnswers(
       return {
         refusal: `Typed "${typedRegion}" as their region, which spans ${names} — there is no single region folder for that.`,
         suggestion: null,
+        cause: "region",
       };
     }
     return {
       refusal: `Typed "${typedRegion}" as their region, but it names no region this app recognises.`,
       suggestion: null,
+      cause: "region",
     };
   }
 
@@ -366,11 +394,12 @@ export function suggestFolderFromDeclaredAnswers(
   // title a recruiter types, so the owner's split survives whole. What it no longer does is let an
   // unread sentence name a folder with nobody looking.
   const title = cleanFolderKey(candidate.appliedForJobTitle);
-  if (!title) return { refusal: "Answered the questions but named no role.", suggestion: null };
+  if (!title) return { refusal: "Answered the questions but named no role.", suggestion: null, cause: "no_role" };
   if (!declaredRole.tapped && !namesAnOccupation(title)) {
     return {
       refusal: `Typed "${title}" as their job title, which names no job — a folder cannot be opened from it. File this CV by hand under the title it should have.`,
       suggestion: null,
+      cause: "job_title",
     };
   }
   return { refusal: null, suggestion: buildSuggestion("other", title) };
@@ -405,7 +434,47 @@ export type SkippedFiling = {
   candidateId: string;
   fullName: string | null;
   reason: string;
+  /** Which instruction on the Folders tab this row sits under — see `groupUnplacedFilings`. */
+  cause: UnplacedCause;
+  /** The area they TYPED, verbatim, when the cause is `area_not_listed`; null otherwise. */
+  typed: string | null;
+  /**
+   * Live areas that share a place-name word with what they typed — a hint for the person choosing,
+   * NEVER a filing. "Minia" names two areas and does not say which, and the module's rule
+   * (resolveCanonicalMedicalRepArea) is that territory is not inferred from free text; this only
+   * shows the recruiter which real areas the typed word could mean so they need not go and look.
+   */
+  couldBe: string[];
 };
+
+// Words that name a DIRECTION or a kind of place rather than the place itself. "Qena north" must hint
+// the two Qena areas, not also North Sinai; "Cairo East" must not hint every "East".
+const AREA_HINT_STOP_WORDS = new Set([
+  "north", "south", "east", "west", "center", "centers", "centre", "upper", "lower",
+  "government", "governorate", "city", "town", "district", "and",
+]);
+
+/** Latin place-name words of at least four letters, "y" read as "i" so Minya and Minia meet. */
+function areaHintWords(value: string): string[] {
+  return normalizedAreaMatchKey(value)
+    .replace(/[^a-z]+/g, " ")
+    .replace(/y/g, "i")
+    .split(" ")
+    .filter((word) => word.length >= 4 && !AREA_HINT_STOP_WORDS.has(word));
+}
+
+/**
+ * The live areas a typed answer could mean, at most four. Empty when it shares no place-name word
+ * with any area — an Arabic answer, or a town that is not the name of an area. Pure hinting: the
+ * caller shows these and files nothing.
+ */
+export function areasThatCouldBeMeant(typed: string, canonicalAreas: readonly string[]): string[] {
+  const typedWords = new Set(areaHintWords(typed));
+  if (typedWords.size === 0) return [];
+  return canonicalAreas
+    .filter((area) => areaHintWords(area).some((word) => typedWords.has(word)))
+    .slice(0, 4);
+}
 
 /**
  * Every candidate whose own answers name a folder, grouped for a screen.
@@ -484,6 +553,9 @@ export function collectSuggestedFilings(
         candidateId: candidate.id,
         fullName: candidate.fullName,
         reason: "Their degree reads as something outside the five disciplines — answer it in Degrees waiting for you to check.",
+        cause: "degree",
+        typed: null,
+        couldBe: [],
       });
       continue;
     }
@@ -498,9 +570,84 @@ export function collectSuggestedFilings(
         untouched: isUnreviewedCandidateStatus(candidate.status),
       });
     } else {
-      skipped.push({ candidateId: candidate.id, fullName: candidate.fullName, reason: result.refusal });
+      const typed = result.typed ?? null;
+      skipped.push({
+        candidateId: candidate.id,
+        fullName: candidate.fullName,
+        reason: result.refusal,
+        cause: result.cause ?? "other",
+        typed,
+        couldBe: typed ? areasThatCouldBeMeant(typed, canonicalMedicalRepAreas) : [],
+      });
     }
   }
 
   return { filings, skipped, rejectedCount };
+}
+
+/** One instruction on the Folders tab, with every person it applies to under it. */
+export type UnplacedGroup = {
+  cause: UnplacedCause;
+  /** What is wrong, in a few words a recruiter reads at a glance. */
+  heading: string;
+  /** What to do about it, once for the whole group — the sentence that used to repeat on every row. */
+  instruction: string;
+  rows: SkippedFiling[];
+};
+
+// In the order a recruiter works them: the ones with a single clear next click first, the ones that
+// need a question put to the applicant last. The copy lives here rather than in the component so a
+// test can pin it — a group with no instruction is the dead end this whole grouping exists to end.
+const UNPLACED_GROUPS: ReadonlyArray<Pick<UnplacedGroup, "cause" | "heading" | "instruction">> = [
+  {
+    cause: "degree",
+    heading: "Their degree has to be checked by a person first",
+    instruction:
+      "Answer each one in “Degrees waiting for you to check”, on this same tab just below. Once the degree is confirmed they can be filed.",
+  },
+  {
+    cause: "area_not_listed",
+    heading: "The area they typed is not one of our areas",
+    instruction:
+      "Open the CV, choose their real area and press File to folder. The system does not guess: some places, like Minia, hold more than one of our areas and they did not say which.",
+  },
+  {
+    cause: "no_area",
+    heading: "They never named an area",
+    instruction:
+      "Open the CV. If it says where they live or work, file it by hand under that area; if it does not, ask them.",
+  },
+  {
+    cause: "region",
+    heading: "Their region does not match one region folder",
+    instruction: "Open the CV, choose the region folder that fits and press File to folder.",
+  },
+  {
+    cause: "job_title",
+    heading: "The job title they typed names no job",
+    instruction: "Open the CV and file it by hand under the title it should have.",
+  },
+  {
+    cause: "no_role",
+    heading: "They named no role",
+    instruction: "Open the CV and file it by hand under the role it is for.",
+  },
+  {
+    cause: "other",
+    heading: "Could not be placed",
+    instruction: "The reason is beside each name.",
+  },
+];
+
+/**
+ * The skipped rows, gathered under the one instruction each needs — the screen used to print 48
+ * near-identical sentences, and a list that long reads as noise rather than as a to-do.
+ *
+ * Empty groups are dropped; a group keeps the input order of its rows.
+ */
+export function groupUnplacedFilings(skipped: readonly SkippedFiling[]): UnplacedGroup[] {
+  return UNPLACED_GROUPS.map((group) => ({
+    ...group,
+    rows: skipped.filter((row) => row.cause === group.cause),
+  })).filter((group) => group.rows.length > 0);
 }
