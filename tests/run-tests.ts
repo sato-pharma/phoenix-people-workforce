@@ -760,6 +760,7 @@ import { runExpenseImportSheetHrIdWinsTests } from "./expense-import-sheet-hr-id
 import { runSalaryRecordsUniqueBatchHrTests } from "./salary-records-unique-batch-hr.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
+import { runOutstationTicketAttachmentLimitsTests } from "./outstation-ticket-attachment-limits.test.ts";
 import { runGeocodePrecisionTests } from "./geocode-precision.test.ts";
 import { runOutstationDistanceFailureTests } from "./outstation-distance-failure.test.ts";
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
@@ -3259,6 +3260,7 @@ await runTest(
 await runTest("salary_records unique per employee per batch", runSalaryRecordsUniqueBatchHrTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("outstation notifications", runOutstationNotificationsTests);
+await runTest("outstation ticket attachment limits", runOutstationTicketAttachmentLimitsTests);
 await runTest("outstation employee-lookup status (isActive cosmetic field)", runOutstationEmployeeLookupStatusTests);
 await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);

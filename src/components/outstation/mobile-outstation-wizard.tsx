@@ -32,6 +32,16 @@ import {
   parseOutstationLocalDraft,
   type OutstationLocalDraft,
 } from "@/lib/outstation/local-draft";
+import {
+  checkSubmitBodySize,
+  checkTicketAttachmentFile,
+  jpegFileName,
+  TICKET_IMAGE_FALLBACK_QUALITY,
+  TICKET_IMAGE_MAX_DIMENSION,
+  TICKET_IMAGE_QUALITY,
+  TICKET_MAX_FILES,
+  TICKET_PDF_MAX_BYTES,
+} from "@/lib/outstation/ticket-attachment-limits";
 import type {
   OutstationCalculationResult,
   OutstationCaptureResult,
@@ -104,6 +114,59 @@ function fileToDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Unable to read the selected file."));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * One ticket or invoice, ready to send.
+ *
+ * A photo is decoded and re-encoded as a JPEG no longer than TICKET_IMAGE_MAX_DIMENSION on its
+ * long side — the same canvas route the arrival photo takes — because the server refuses anything
+ * over 5 MB and a phone camera shot is routinely larger, and a HEIC or WebP file (which the picker
+ * offers as `image/*`) is not a type the server accepts at all. A PDF cannot be shrunk here, so it
+ * goes as it is; checkTicketAttachmentFile has already held it to the size cap.
+ */
+async function prepareTicketAttachment(file: File): Promise<{ dataUrl: string; name: string }> {
+  const verdict = checkTicketAttachmentFile(file);
+  if (!verdict.ok) throw new Error(verdict.message);
+
+  if (verdict.kind === "pdf") {
+    return { dataUrl: await fileToDataUrl(file), name: file.name };
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () =>
+        reject(
+          new Error(
+            `"${file.name}" could not be read as a photo on this phone. Take the photo again, or choose a JPG, PNG or PDF.`,
+          ),
+        );
+      element.src = objectUrl;
+    });
+
+    const scale = Math.min(
+      1,
+      TICKET_IMAGE_MAX_DIMENSION / Math.max(image.naturalWidth || 1, image.naturalHeight || 1),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
+    canvas.height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Unable to process the selected photo.");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    let dataUrl = canvas.toDataURL("image/jpeg", TICKET_IMAGE_QUALITY);
+    // Roughly 4.5 MB decoded: over that, try once more at a lower quality before giving up.
+    if (dataUrl.length > TICKET_PDF_MAX_BYTES * 1.37) {
+      dataUrl = canvas.toDataURL("image/jpeg", TICKET_IMAGE_FALLBACK_QUALITY);
+    }
+    return { dataUrl, name: jpegFileName(file.name) };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 function getDurationSummary(start: string, end: string) {
@@ -1235,15 +1298,25 @@ export function MobileOutstationWizard({
     try {
       const endpoint = isOffline ? "/api/outstation/sync-offline" : "/api/outstation/submit";
       // Ticket files are uploaded on the online path only; the offline path cannot carry them.
-      const ticketAttachments =
-        !isOffline && isTicketBased && ticketFiles.length > 0
-          ? await Promise.all(
-              ticketFiles.map(async (file) => ({
-                dataUrl: await fileToDataUrl(file),
-                name: file.name,
-              })),
-            )
-          : undefined;
+      let ticketAttachments: Array<{ dataUrl: string; name: string }> | undefined;
+      if (!isOffline && isTicketBased && ticketFiles.length > 0) {
+        try {
+          ticketAttachments = await Promise.all(ticketFiles.map(prepareTicketAttachment));
+        } catch (error) {
+          setMessage(
+            error instanceof Error ? error.message : "Unable to read the attached ticket. Attach it again.",
+          );
+          return;
+        }
+        const bodyCheck = checkSubmitBodySize(
+          ticketAttachments.reduce((sum, attachment) => sum + attachment.dataUrl.length, 0) +
+            (carEvidence?.imageDataUrl?.length ?? 0),
+        );
+        if (!bodyCheck.ok) {
+          setMessage(bodyCheck.message);
+          return;
+        }
+      }
       // claimedTotalAmount is deliberately left at requestPayload's 0 here, for both the online
       // and offline paths. The server always recalculates the whole trip itself and only trusts a
       // posted claim when it is a real positive number (outstationClaimedTotal, in
@@ -1949,7 +2022,27 @@ export function MobileOutstationWizard({
           them — optional, but offered. */}
       <TicketUploadCard
         attachmentCount={ticketFiles.length}
-        onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
+        onFilesSelected={(files) => {
+          // Judged when picked, so a PDF that is too big or a file that is not a ticket is named
+          // here and never survives to a submit that could only refuse it.
+          const picked = files ? Array.from(files) : [];
+          const accepted: File[] = [];
+          let refusal: string | null = null;
+          for (const file of picked) {
+            const verdict = checkTicketAttachmentFile(file);
+            if (!verdict.ok) {
+              refusal ??= verdict.message;
+              continue;
+            }
+            if (accepted.length >= TICKET_MAX_FILES) {
+              refusal ??= `Attach at most ${TICKET_MAX_FILES} files. The first ${TICKET_MAX_FILES} were kept.`;
+              continue;
+            }
+            accepted.push(file);
+          }
+          setTicketFiles(accepted);
+          setMessage(refusal);
+        }}
         required={isTicketRequired}
         transportationType={transportationType}
         visible={isTicketBased}

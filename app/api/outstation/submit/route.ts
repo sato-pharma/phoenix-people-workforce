@@ -12,6 +12,7 @@ import {
   parseCarEvidenceMetadata,
   parseOutstationTypeFields,
 } from "@/app/api/outstation/request-body";
+import { logError } from "@/lib/observability/log";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -131,6 +132,14 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = clientSafeErrorMessage(error, "Unable to submit outstation request.");
     const status = outstationSubmitStatus(error);
+    // Every refusal used to leave no trace at all, so "she gets an error when she submits" could
+    // not be answered from anything: no row is saved and the HTTP log window is minutes long.
+    if (status !== 403) {
+      logError("Outstation submit failed", {
+        error,
+        labels: { event: "outstation_submit_failed", status: String(status) },
+      });
+    }
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_submit_failed", message },
       { status },
