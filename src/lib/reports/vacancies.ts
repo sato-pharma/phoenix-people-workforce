@@ -1,6 +1,7 @@
 ﻿import { getRequiredEnv } from "@/lib/env";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 
 import {
   applyOrganogramMirrorSafety,
@@ -323,6 +324,21 @@ async function loadLookup(table: string, idsToLoad: number[], label = "name") {
   );
 }
 
+/** `id -> code` for a lookup table that carries one (`areas`, `lines`). */
+async function loadCodeLookup(table: string, idsToLoad: number[]) {
+  if (idsToLoad.length === 0) {
+    return new Map<number, string>();
+  }
+
+  const params = new URLSearchParams({
+    select: "id,code",
+    id: inFilter(idsToLoad),
+  });
+  const rows = await supabaseRest<Array<{ id: number; code?: string | null }>>(`${table}?${params}`);
+
+  return new Map(rows.map((row) => [row.id, String(row.code ?? "").trim()]));
+}
+
 async function loadEmployeeNames(hrIds: string[]) {
   if (hrIds.length === 0) {
     return new Map<string, string>();
@@ -425,11 +441,22 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
     loadVacancyRows(),
     getEmployeeDirectory(),
   ]);
-  const [departmentNames, lineNames, areaNames, teamNames, positionTitles, managerNames] =
+  const [
+    departmentNames,
+    lineNames,
+    areaNames,
+    lineCodes,
+    areaCodes,
+    teamNames,
+    positionTitles,
+    managerNames,
+  ] =
     await Promise.all([
       loadLookup("departments", ids(vacancyRows, "department_id")),
       loadLookup("lines", ids(vacancyRows, "line_id")),
       loadLookup("areas", ids(vacancyRows, "area_id")),
+      loadCodeLookup("lines", ids(vacancyRows, "line_id")),
+      loadCodeLookup("areas", ids(vacancyRows, "area_id")),
       loadLookup("teams", ids(vacancyRows, "team_id")),
       loadLookup("positions", ids(vacancyRows, "position_id"), "title"),
       loadEmployeeNames(textValues(vacancyRows, "manager_hr_id")),
@@ -440,7 +467,13 @@ export async function getVacancyReport(): Promise<VacancyReportData> {
 
   const mappedRows = vacancyRows.map((row): VacancyReportRow => ({
     areaId: row.area_id,
-    areaName: row.area_id ? areaNames.get(row.area_id) ?? null : null,
+    // Ismailia and Suez are ONE area on Anti Infective from 2026-09 (owner, 2026-09-19), so the
+    // Delta (3) seat reads "Ismailia and Suez", not "Suez"; every other line keeps the plain name.
+    areaName: row.area_id
+      ? (row.line_id && areaCodes.get(row.area_id)
+          ? getMergedAreaName(lineCodes.get(row.line_id), areaCodes.get(row.area_id) ?? "")
+          : null) ?? areaNames.get(row.area_id) ?? null
+      : null,
     createdAt: row.created_at,
     departmentId: row.department_id,
     departmentName: row.department_id

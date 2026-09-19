@@ -751,6 +751,24 @@ all**: `D11` stays Delta (1), `D24`/`D25` stay Delta (2), `OT2`/`OT9` stay Other
 a sweep that finds these five "half-migrated" across lines is reading the **CORRECT** state — never
 extend the move to CNS or Pedia to make the map look consistent.
 
+### 🔒 Ismailia and Suez are ONE area on Anti Infective Delta (3) — owner, 2026-09-19
+
+In his words: *"Ismailia and Suez, one area … not separate areas."* From **2026-09-01**, `OT2` (Suez)
+and `OT9` (Ismailia) are ONE area named **"Ismailia and Suez"** on the Anti Infective line, in the
+organogram, closing, targets and weekly reports. Delta (3) had been opened with one rep for both
+governorates, but only Suez carried the seat and the target, so the organogram read "Suez" alone.
+
+How it is built — the Pedia Fayoum + Beni Suef precedent, not a re-key of sales data:
+`CLOSING_AREA_MERGES.anti_infective` (`fromPeriod: "2026-09"`) folds `OT9` under `OT2`; migration
+`20260919213858` puts both open Delta (3) `au.line_area_map` rows on `SEAT-AIF-REP-OT2` (so a hire
+occupies both together) and relabels the seat "AIF Ismailia and Suez rep". Sales, bricks, customers
+and targets stay on the two codes. The recruitment vacancy picker and vacancy report read the same
+rule (`vacancyAreaName`). **July and August are untouched — Suez and Ismailia stay separate in Others;
+the DATE is the mechanism.** Recruitment place geography (Suez and Ismailia as two places for
+candidates and CV folders) is deliberately unchanged. Pre-image tables:
+`au.bak_20260919_ismailia_suez_line_area_map` and `au.bak_20260919_ismailia_suez_seats`. Pinned by
+`tests/anti-infective-ismailia-suez-one-area.test.ts`.
+
 ### 🔒 The closing golden rule — a closing is never done or sent during the month it covers
 
 In his words: *"no closing is ever done or sent during the month. Closing after the month closes."*
