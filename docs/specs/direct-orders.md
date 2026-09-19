@@ -142,6 +142,57 @@ changes the value of an approved order in place.
 
 Do not build on the assumption that any row in the table above exists.
 
+## Weekly Sales injection (owner, 2026-09-19)
+
+Weekly Sales had a "Direct (Company)" feed that was an **Excel upload** — May, June and July — and it
+stopped when this module took over. From August the weekly screens carried no direct sales while the
+Monthly Closing did. The owner's instruction: *"based on these rules inject weekly sales also with
+direct orders"* — the rules being the ones the Source of Sales already follows. So:
+
+- An approved order counts in the month **Finance books** it (`sales_month`).
+- An approved order with no sales month counts **nowhere**.
+- Collection never moves an order between periods.
+
+**Which week.** An order has a month but no week, so the owner chose the date: the order's
+**`collection_date`**, clamped **inside** its booked month (so weekly and monthly agree month for
+month) and bucketed 1–7 / 8–14 / 15–21 / 22–end into weeks 1–4. `collection_date` is the date the
+*requester* enters at submit — the agreed collection date — **not** when cash arrived (`payment_date`).
+An order with none (only the hand-entered one) falls back to its approval date, then its creation day.
+Consequence to expect: an order whose collection date is still ahead lands in a week that has not
+happened yet, so a batch can carry a future `week_start`.
+
+**How.** `phx_rebuild_direct_order_weekly_batches(period, actor)` — rebuild-from-truth, like the
+Source-of-Sales rebuild: advisory lock per period, delete what it wrote last time, re-insert from the
+approved non-reversal orders of that month. One validated batch per (month, week), `template_key =
+'direct_orders_system'`, one row per **region × product** (the grain the uploaded Direct sheets had,
+branch `Direct – <Region>`, area null). Values are the items' own `sales_value`; units are the paid `qty`.
+It touches only its own `template_key` — never an uploaded batch of any distributor.
+
+**Bonus.** Written as `bonus_qty = 0`; the recorded free units ride in `raw_row.bonusUnitsNotCounted`
+for audit. Weekly's net units and value never included bonus, and from September no distributor bonus
+is counted (`docs/agents-owner-rules.md`).
+
+**Why a trigger, and why it swallows errors.** `trg_direct_order_weekly_sync_ins/_upd` on
+`direct_order_requests` rebuild both the month an order left and the one it entered, on any change to
+status, sales month, collection date, value or pharmacy — one place that catches approval, booking,
+re-booking, reversal and a date correction. `phx_apply_direct_order_decision` runs **atomically** with
+a real approval, so a weekly failure inside it would roll a genuine approval back. The trigger
+therefore catches its own error, raises a WARNING and writes a `weekly_sync_failed` event on the order.
+**A `weekly_sync_failed` event means weekly is stale for that month** — re-run the rebuild for it.
+
+**Floor.** Periods before `2026-08` are refused by the function (they came from uploaded sheets;
+rebuilding would double count). The backfill covered 2026-08 and 2026-09, and every later booking is
+automatic.
+
+**Guards in the application** (`src/lib/sales/weekly/distributors.ts`, `service.ts`): an uploaded Direct
+sheet whose cycle month **or** date is 2026-08 or later is refused with a 409 — on the dry-run too — and
+a `direct_orders_system` batch cannot be deleted or re-tagged by hand (re-tagging would strand it
+outside the month the rebuild owns). Pinned by `tests/weekly-direct-orders-injection.test.ts`, which
+also reads the migration and fails if the SQL and the TypeScript disagree on the floor or the key.
+
+**Rollback.** `delete from weekly_sales_batches where template_key = 'direct_orders_system'` (rows
+cascade) and drop the two triggers. Nothing else was written.
+
 ## Performance
 
 Loading is **view-aware**: data a view cannot show is not fetched. Pharmacy Control and Commercial

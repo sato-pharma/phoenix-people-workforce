@@ -81,6 +81,52 @@ export function weeklyDistributorIsCumulative(code: string | null | undefined): 
   return weeklyDistributorByCode(code)?.cumulative !== false;
 }
 
+// ── Direct (Company) from August 2026: written by the Direct Orders module, never uploaded ───────
+//
+// OWNER RULE, 2026-09-19: weekly sales carry direct orders on the same rules as the Source of Sales —
+// an order counts in the month Finance books it. From 2026-08 the database writes those batches itself
+// (`phx_rebuild_direct_order_weekly_batches`, template_key `direct_orders_system`), so an uploaded
+// Direct sheet for the same months would count every order twice. The floor and the template key below
+// MUST match that migration; `tests/weekly-direct-orders-injection.test.ts` reads the SQL and fails
+// when they drift.
+
+/** First cycle month (first of the month, YYYY-MM-DD) whose Direct weekly sales come from orders. */
+export const DIRECT_WEEKLY_FROM_ORDERS_CYCLE = "2026-08-01";
+
+/** `template_key` of the batches the Direct Orders module writes. Uploaded sheets carry `Direct`. */
+export const DIRECT_ORDERS_WEEKLY_TEMPLATE_KEY = "direct_orders_system";
+
+/**
+ * Why an uploaded Direct sheet is refused, or null when the upload may go ahead.
+ *
+ * Both dates are checked because a batch's `cycle_month` is operator-tagged and can differ from the
+ * month of its `week_start`: a sheet dated in August but tagged July is still August's money.
+ */
+export function directWeeklyUploadRefusal(
+  distributorCode: string | null | undefined,
+  cycleMonth: string | null | undefined,
+  weekStart: string | null | undefined,
+): string | null {
+  if (weeklyDistributorByCode(distributorCode)?.code !== "Direct") return null;
+  const months = [cycleMonth, weekStart]
+    .map((value) => String(value ?? "").trim().slice(0, 7))
+    .filter((value) => /^\d{4}-\d{2}$/.test(value))
+    .map((value) => `${value}-01`);
+  const closed = months.find((month) => month >= DIRECT_WEEKLY_FROM_ORDERS_CYCLE);
+  if (!closed) return null;
+  return (
+    `Direct (Company) weekly sales for ${closed.slice(0, 7)} come from the Direct Orders module — every ` +
+    `approved order Finance books into a month is placed in the week of its collection date automatically. ` +
+    `An uploaded Direct sheet would count each order twice, so it is not accepted from ` +
+    `${DIRECT_WEEKLY_FROM_ORDERS_CYCLE.slice(0, 7)} onwards.`
+  );
+}
+
+/** True for a batch the Direct Orders module wrote — it is rebuilt from the orders, never edited by hand. */
+export function isDirectOrdersWeeklyBatch(templateKey: string | null | undefined): boolean {
+  return String(templateKey ?? "").trim() === DIRECT_ORDERS_WEEKLY_TEMPLATE_KEY;
+}
+
 export function weeklyDistributorOptions(): { code: string; name: string }[] {
   return WEEKLY_DISTRIBUTORS.map((distributor) => ({ code: distributor.code, name: distributor.name }));
 }

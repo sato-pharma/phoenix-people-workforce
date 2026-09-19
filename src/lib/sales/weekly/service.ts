@@ -17,6 +17,8 @@ import { loadBranchRegionIndex } from "@/lib/sales/weekly/branch-region-map";
 import {
   WEEKLY_DISTRIBUTORS,
   canonicalWeeklyDistributorCode,
+  directWeeklyUploadRefusal,
+  isDirectOrdersWeeklyBatch,
   weeklyDistributorByCode,
   weeklyDistributorIsCumulative,
 } from "@/lib/sales/weekly/distributors";
@@ -286,6 +288,11 @@ export async function importWeeklySalesFile(input: {
   parsed.result.suggestedWeekNumber = suggestedWeek;
   parsed.result.cycleMonth = cycleMonth;
   parsed.result.weekNumber = weekNumber;
+  // From August 2026 Direct's weekly sales are written from the approved orders themselves; an
+  // uploaded sheet would double count them. Refused here — before the dry-run preview as well as the
+  // store — so the operator learns it on the review screen, not after confirming.
+  const directRefusal = directWeeklyUploadRefusal(parsed.result.distributor.code, cycleMonth, parsed.result.weekStart);
+  if (directRefusal) throw new SalesWorkflowError("direct_weekly_from_orders", directRefusal, 409);
   // De-cumulated "this week only" preview vs the previous cumulative sheet of this cycle.
   parsed.result.thisWeekOnly = await computeThisWeekOnly(
     parsed.result.distributor.code,
@@ -486,7 +493,22 @@ export async function listWeeklyBatches(limit = 100): Promise<WeeklyBatch[]> {
 // What the audit row keeps of an upload. A delete leaves nothing to read afterwards — the batch goes,
 // and every row it stored goes with it (ON DELETE CASCADE) — so this is read BEFORE the change.
 const WEEKLY_BATCH_AUDIT_COLUMNS =
-  "id,distributor_code,distributor_name,file_name,week_start,cycle_month,week_number,status,total_rows,total_net_qty,total_sales_value,uploaded_by,created_at";
+  "id,distributor_code,distributor_name,template_key,file_name,week_start,cycle_month,week_number,status,total_rows,total_net_qty,total_sales_value,uploaded_by,created_at";
+
+/**
+ * A batch the Direct Orders module wrote is rebuilt from the orders on every change to one. Deleting
+ * it would leave the weeks short until the next order moves; re-tagging it would strand it outside
+ * the month the rebuild owns, where it would be counted beside its own replacement.
+ */
+function refuseDirectOrdersBatchEdit(row: Record<string, unknown>, verb: "deleted" | "re-tagged"): void {
+  if (!isDirectOrdersWeeklyBatch(row.template_key as string | null | undefined)) return;
+  throw new SalesWorkflowError(
+    "direct_orders_batch",
+    `This weekly batch is written by the Direct Orders module from the orders Finance booked, so it cannot be ${verb} ` +
+      `by hand. Change the order (its sales month or collection date) and the batch follows.`,
+    409,
+  );
+}
 
 /**
  * Only tests pass these. The suite runs with production credentials, so a test hands in the fixture
@@ -551,6 +573,7 @@ export async function deleteWeeklyBatch(
     .maybeSingle();
   if (existing.error) throw new SalesWorkflowError("delete_failed", existing.error.message, 500);
   if (!existing.data) return false;
+  refuseDirectOrdersBatchEdit(existing.data as Record<string, unknown>, "deleted");
   const before = weeklyBatchAuditSnapshot(existing.data as Record<string, unknown>);
 
   const { error } = await supabase.from("weekly_sales_batches").delete().eq("id", batchId);
@@ -598,6 +621,7 @@ export async function retagWeeklyBatch(
     .maybeSingle();
   if (existing.error) throw new SalesWorkflowError("update_failed", existing.error.message, 500);
   if (!existing.data) throw new SalesWorkflowError("update_failed", "Batch not found.", 404);
+  refuseDirectOrdersBatchEdit(existing.data as Record<string, unknown>, "re-tagged");
   const before = weeklyBatchAuditSnapshot(existing.data as Record<string, unknown>);
 
   const batchUpdate = await supabase
