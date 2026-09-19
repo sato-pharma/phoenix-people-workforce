@@ -130,8 +130,8 @@ export function runOutstationAccuracyInputTests() {
   const submit = functionSlice(service, "export async function submitOutstationRequest");
   assert.match(
     submit,
-    /const gpsAccuracyHoldReason = outstationGpsAccuracyHoldReason\(\{\s*capturedAccuracyMeters: calculation\.capturedAccuracyMeters,/,
-    "the submit path applies the shared GPS accuracy rule to the accuracy as read",
+    /const gpsAccuracyHoldReason = nonTravel\s*\?\s*null\s*:\s*outstationGpsAccuracyHoldReason\(\{\s*capturedAccuracyMeters: calculation\.capturedAccuracyMeters,/,
+    "the submit path applies the shared GPS accuracy rule to the accuracy as read, while skipping it for non-travel requests",
   );
   assert.doesNotMatch(
     submit,

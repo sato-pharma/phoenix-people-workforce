@@ -355,9 +355,11 @@ export function validateManualWorkloadInput(input: {
  * the write path and the read path cannot disagree about what "complete" means.
  */
 export function nextEvidenceGateStatus(input: {
+  grandfathered?: boolean;
   hasArrivalPhoto: boolean;
   hasDeparturePhoto: boolean;
 }): OutstationEvidenceGateStatus {
+  if (input.grandfathered) return "grandfathered";
   if (!input.hasArrivalPhoto) return "pending_arrival_photo";
   if (!input.hasDeparturePhoto) return "pending_departure_photo";
   return "complete";
