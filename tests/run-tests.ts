@@ -1812,6 +1812,7 @@ import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-fai
 import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-gate.test.ts";
 import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
+import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6323,6 +6324,11 @@ await runTest(
 await runTest(
   "a comment on a candidate: its link names the candidate (?candidate=), the portal My Candidates page forwards an admin-shell viewer to the candidate's admin page instead of /overview, and the Super Admin is told IN THE APP only (never added to the email's To or CC, and HR Advisory is not on the copy), except for a comment they wrote themselves",
   runCandidateCommentLinksAndInAppTests,
+);
+
+await runTest(
+  "the portal My Candidates link: the Super Admin is answered by the PROXY with a real 307 (never the page redirect, which paints the portal first because of app/employee-portals/loading.tsx) to the candidate's admin page or the hub, from a verified session cookie alone, with no-store; every other role, a forged or expired cookie, a mutation and every other address are left to the page, and the CSRF path list is not widened",
+  runPortalCandidatesProxyRedirectTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
