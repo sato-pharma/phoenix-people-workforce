@@ -13,8 +13,8 @@ import { OFFICE_GOLDEN_RULE } from "../src/lib/sales/office-golden-rule.ts";
 /**
  * THE LOCK. The owner set the Office allocation rule on 2026-08-10 and locked it on 2026-08-11: it
  * may not change unless he supplies his password. This test is the enforcement — it runs inside
- * `pnpm run test`, which is the required CI `validate` check, so a PR that changes the rule cannot
- * merge.
+ * `pnpm run test`, which is the required CI `test` check (split out of `validate` on 2026-09-17,
+ * #3950), so a PR that changes the rule cannot merge.
  *
  * If this test is red and you did not mean to touch the Office rule, revert your edit. If you DID
  * mean to, the rule is his, not yours: ask him, and he runs `pnpm run office-rule:unlock`.
