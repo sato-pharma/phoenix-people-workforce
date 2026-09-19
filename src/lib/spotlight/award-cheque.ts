@@ -7,7 +7,7 @@
 // The layout is a cheque's: cheque number, segmented transfer date, "pay to the order of" on a rule
 // with the recipient's position beneath it, the sum in words on a ruled line, a figures box, the
 // rank and achievement highlighted, two signature lines and a machine-readable foot. The amount in
-// words is written in Arabic, in the Ruq'ah hand.
+// words is written in Arabic, in the Amiri Quran hand.
 //
 // What is deliberately NOT here: a bank name, an account number, a routing or sort code — the sheet
 // is a ceremonial presentation cheque for an amount transferred through payroll on the date printed
@@ -53,8 +53,8 @@ function dataUri(file: string, mime: string): string {
 // Always the ON-LIGHT mark on paper: the stock mark sets "SATO" in white (house-identity.ts).
 const houseMark = () => `<img alt="" src="${dataUri("public/brand/sato-pharma-logo-on-light.svg", "image/svg+xml")}">`;
 const arabicMark = () => `<img alt="" src="${dataUri("public/brand/sato-pharma-arabic-on-light.png", "image/png")}">`;
-// Aref Ruqaa Bold (SIL Open Font License 1.1, fontsource build) — the Ruq'ah hand the owner asked for.
-const ruqaaFace = () => dataUri("public/fonts/aref-ruqaa-700.woff2", "font/woff2");
+// Amiri Quran (SIL Open Font License 1.1, aliftype/amiri) — the Quranic naskh the owner supplied for the amount in words.
+const quranFace = () => dataUri("public/fonts/amiri-quran-regular.ttf", "font/ttf");
 
 export type AwardChequeRow = {
   recipientName: string;
@@ -110,9 +110,9 @@ function namePt(name: string, widthMm: number, maxPt: number, minPt: number): nu
   return Math.max(minPt, Math.min(maxPt, Math.floor(fit)));
 }
 
-/** Fits the Arabic words on their one ruled line — measured, at 70 pt, at ~0.114 mm per pt per character. */
+/** Fits the Arabic words on their one ruled line — measured on Amiri Quran, ~0.117 mm per pt per character (0.12 with a margin). */
 function wordsPt(words: string, widthMm: number, maxPt: number, minPt: number): number {
-  const fit = widthMm / (Math.max(words.length, 1) * 0.114);
+  const fit = widthMm / (Math.max(words.length, 1) * 0.12);
   return Math.max(minPt, Math.min(maxPt, Math.floor(fit)));
 }
 
@@ -252,8 +252,8 @@ const CSS = `
   /* A real cheque's own proportions (~2.25:1), printed at a common oversized presentation-cheque
      size — 36in x 16in. */
   @page { size: 914mm 406mm; margin: 0; }
-  @font-face { font-family: "Aref Ruqaa"; font-weight: 700; font-style: normal;
-    src: url("${ruqaaFace()}") format("woff2"); }
+  @font-face { font-family: "Amiri Quran"; font-weight: 400; font-style: normal;
+    src: url("${quranFace()}") format("truetype"); }
   :root {
     --ink: ${C.ink}; --deep: ${C.deep}; --blue: ${C.blue}; --light: ${C.light};
     --hair: ${C.hair}; --muted: ${C.muted}; --body: ${C.body};
@@ -261,7 +261,7 @@ const CSS = `
        faces that are actually there. */
     --text: "Noto Sans", "Segoe UI", Calibri, Helvetica, Arial, sans-serif;
     --arabic: "Noto Naskh Arabic", "Noto Sans Arabic", "Segoe UI", Tahoma, Arial, sans-serif;
-    --ruqaa: "Aref Ruqaa", "Noto Naskh Arabic", "Segoe UI", Tahoma, serif;
+    --quran: "Amiri Quran", "Noto Naskh Arabic", "Segoe UI", Tahoma, serif;
     --mono: "Noto Sans Mono", "Consolas", "Courier New", monospace;
     /* The house hairline is 0.5 pt on A4; on this sheet it is scaled with everything else. */
     --hair-w: ${0.5 * SCALE}pt; --rule-w: ${0.6 * SCALE}pt;
@@ -335,7 +335,7 @@ const CSS = `
   .words { grid-column: 1; grid-row: 3; display: flex; flex-direction: column; justify-content: center; }
   .words__ruled { position: relative; margin-top: 2mm; height: 42mm; }
   .words__rule { position: absolute; left: 0; right: 0; top: 34mm; border-top: var(--hair-w) solid var(--deep); }
-  .words__ar { position: relative; font-family: var(--ruqaa); font-weight: 700; font-size: 70pt;
+  .words__ar { position: relative; top: 2.2mm; font-family: var(--quran); font-weight: 400; font-size: 70pt;
     line-height: 34mm; word-spacing: .12em; color: var(--ink); text-align: right; text-wrap: pretty; }
 
   .amount { grid-column: 2; grid-row: 3; display: flex; flex-direction: column; justify-content: center; }
@@ -396,7 +396,7 @@ export async function renderAwardChequePdf(row: AwardChequeRow = AWARD_CHEQUE_PL
   const html = awardChequeDocumentHtml(row);
   return withChromiumPage(async (page) => {
     await page.setContent(html, { waitUntil: "networkidle0" });
-    // The Ruq'ah face arrives as a data URI; print before it has decoded and the words fall back.
+    // The Amiri Quran face arrives as a data URI; print before it has decoded and the words fall back.
     await page.evaluate("document.fonts.ready.then(() => document.fonts.size)");
     await page.emulateMediaType("print");
     return page.pdf({
