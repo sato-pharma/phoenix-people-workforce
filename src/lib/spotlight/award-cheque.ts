@@ -60,10 +60,8 @@ export type AwardChequeRow = {
   recipientName: string;
   /** What the cheque is for — the memo line ("For / عن") when no rank and achievement are given. */
   awardTitle: string;
-  /** The recipient's position, written under the name ("Senior Medical Rep"). */
+  /** The recipient's position in full, written under the name ("Senior Medical Representative"). */
   positionTitle?: string | null;
-  /** The sales line the position sits in ("Pedia") — printed after the position. */
-  lineName?: string | null;
   /** Semester rank and achievement (percent, one decimal) — highlighted in the memo. */
   rank?: number | null;
   achievementPct?: number | null;
@@ -81,7 +79,6 @@ export const AWARD_CHEQUE_PLACEHOLDER: AwardChequeRow = {
   recipientName: "[ RECIPIENT NAME ]",
   awardTitle: "[ AWARD TITLE — e.g. Rank 1 · Achievement ]",
   positionTitle: "[ POSITION ]",
-  lineName: null,
   rank: null,
   achievementPct: null,
   programName: "Semester Achievers Award — S1 2026",
@@ -113,6 +110,19 @@ function namePt(name: string, widthMm: number, maxPt: number, minPt: number): nu
   return Math.max(minPt, Math.min(maxPt, Math.floor(fit)));
 }
 
+/** Fits the Arabic words on their one ruled line — measured, at 70 pt, at ~0.114 mm per pt per character. */
+function wordsPt(words: string, widthMm: number, maxPt: number, minPt: number): number {
+  const fit = widthMm / (Math.max(words.length, 1) * 0.114);
+  return Math.max(minPt, Math.min(maxPt, Math.floor(fit)));
+}
+
+/** 1 -> "st", 2 -> "nd", 3 -> "rd", 11-13 -> "th". */
+function ordinalSuffix(n: number): string {
+  const tail = n % 100;
+  if (tail >= 11 && tail <= 13) return "th";
+  return ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+}
+
 const bare = (serial: string) => serial.replace(/[\[\]\s]/g, "");
 
 /**
@@ -140,9 +150,7 @@ function bandSvg(widthMm: number): string {
 function chequeBody(row: AwardChequeRow): string {
   const date = dateParts(row.transferDate);
   const words = chequeAmountInArabic(row.amountEgp);
-  const position = [row.positionTitle, row.lineName ? `${row.lineName} Line` : null]
-    .filter((part): part is string => typeof part === "string" && part.trim() !== "")
-    .join("  ·  ");
+  const position = row.positionTitle?.trim() ?? "";
   const stats = row.rank != null || row.achievementPct != null;
   const machine = `| ${bare(row.serial)} | ${date.digits} : ${
     row.amountEgp === null ? "0000000000" : String(Math.round(row.amountEgp * 100)).padStart(10, "0")
@@ -180,7 +188,7 @@ function chequeBody(row: AwardChequeRow): string {
       <div class="cap"><span>The sum of</span><span class="ar" dir="rtl" lang="ar">مبلغ وقدره</span></div>
       <div class="words__ruled">
         <div class="words__rule"></div>
-        <p class="words__ar" dir="rtl" lang="ar">${escapeHtml(words)}</p>
+        <p class="words__ar" dir="rtl" lang="ar" style="font-size:${wordsPt(words, 585, 70, 44)}pt">${escapeHtml(words)}</p>
       </div>
     </section>
 
@@ -198,8 +206,10 @@ function chequeBody(row: AwardChequeRow): string {
         ${
           stats
             ? `<div class="stats">
-          <div class="stat"><i>Rank</i><b>${row.rank ?? "&ndash;"}</b></div>
-          <div class="stat stat--wide"><i>Achievement</i><b>${
+          <div class="stat stat--rank"><i>Rank <span class="ar" dir="rtl" lang="ar">الترتيب</span></i><b>${
+            row.rank == null ? "&ndash;" : `${row.rank}<small>${ordinalSuffix(row.rank)}</small>`
+          }</b></div>
+          <div class="stat stat--wide"><i>Achievement <span class="ar" dir="rtl" lang="ar">نسبة التحقيق</span></i><b>${
             row.achievementPct == null ? "&ndash;" : `${row.achievementPct.toFixed(1)}<small>%</small>`
           }</b></div>
         </div>`
@@ -264,8 +274,8 @@ const CSS = `
 
   /* The Arabic wordmark as the certificate carries it: large, one ink, faint, on the right, its
      ink laid to the trim and never past it, behind everything else. */
-  .watermark { position: absolute; right: 0; top: 96mm; height: 214mm; z-index: 0; pointer-events: none; }
-  .watermark img { display: block; height: 100%; width: auto; opacity: .085; }
+  .watermark { position: absolute; right: 0; top: 46mm; height: 262mm; z-index: 0; pointer-events: none; }
+  .watermark img { display: block; height: 100%; width: auto; opacity: .12; filter: brightness(0); }
 
   .frame { position: absolute; inset: 12mm; border: var(--hair-w) solid var(--hair); z-index: 1; }
   .frame::after { content: ""; position: absolute; inset: 3.4mm; border: ${0.25 * SCALE}pt solid var(--light); }
@@ -286,7 +296,7 @@ const CSS = `
   /* The cheque's grid: title | cheque no. and date, payee and position, the words and the figures
      box between two rules, memo and signatures, machine line. */
   .inner { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 226mm;
-    column-gap: 24mm; grid-template-rows: 56mm 66mm 80mm 46mm 1fr; row-gap: 3mm; padding-top: 10mm; }
+    column-gap: 24mm; grid-template-rows: 54mm 64mm 76mm 64mm 1fr; row-gap: 3mm; padding-top: 10mm; }
 
   /* Bilingual caption row: English left, Arabic right, the way a bilingual cheque prints it. The
      house micro label: small, bold, upper case, tracked; the Arabic keeps no letter-spacing. */
@@ -305,7 +315,7 @@ const CSS = `
     font-variant-numeric: lining-nums tabular-nums; }
   .cap--date { margin-top: 1mm; }
   .date { margin-top: 2.5mm; display: flex; gap: 3mm; }
-  .date__cell { flex: 1 1 0; background: #FFF; border: var(--rule-w) solid var(--deep); text-align: center; padding: 2.2mm 0 1.4mm; }
+  .date__cell { flex: 1 1 0; background: rgba(255, 255, 255, .8); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2.2mm 0 1.4mm; }
   .date__cell--y { flex: 1.9 1 0; }
   .date__cell b { display: block; font-size: 32pt; font-weight: 700; color: var(--body);
     font-variant-numeric: lining-nums tabular-nums; }
@@ -330,7 +340,7 @@ const CSS = `
 
   .amount { grid-column: 2; grid-row: 3; display: flex; flex-direction: column; justify-content: center; }
   /* A double keyline — Deep outside, Light inside — instead of a fill. */
-  .amount__box { position: relative; background: #FFF; margin-top: 2mm; height: 58mm; border: var(--rule-w) solid var(--deep);
+  .amount__box { position: relative; background: rgba(255, 255, 255, .8); margin-top: 2mm; height: 58mm; border: var(--rule-w) solid var(--deep);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5mm; }
   .amount__box::after { content: ""; position: absolute; inset: 2.6mm; border: ${0.25 * SCALE}pt solid var(--light); pointer-events: none; }
   .amount__cur { font-size: 16pt; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: var(--blue); }
@@ -344,8 +354,16 @@ const CSS = `
   .memo__line { margin-top: 3mm; border-bottom: var(--hair-w) solid var(--hair); padding-bottom: 2mm;
     font-size: 25pt; line-height: 1.5; color: var(--body); white-space: nowrap; }
   .stats { margin-top: 3mm; display: flex; gap: 6mm; }
-  .stat { flex: 0 0 auto; min-width: 64mm; background: #FFF; border: var(--rule-w) solid var(--deep); text-align: center; padding: 2mm 8mm 2.5mm; }
-  .stat--wide { min-width: 112mm; }
+  .stat { flex: 0 0 auto; min-width: 64mm; background: rgba(255, 255, 255, .8); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2mm 8mm 2.5mm; }
+  .stat--wide { min-width: 120mm; }
+  .stat { display: flex; flex-direction: column; justify-content: center; }
+  /* The rank is the headline: a larger box, a double keyline (Deep outside, Light inside) and the
+     ordinal set beside the figure. Still no fill. */
+  .stat--rank { position: relative; min-width: 118mm; padding-top: 3mm; padding-bottom: 3.5mm; }
+  .stat--rank::after { content: ""; position: absolute; inset: 2mm; border: ${0.25 * SCALE}pt solid var(--light); pointer-events: none; }
+  .stat.stat--rank b { font-size: 84pt; }
+  .stat.stat--rank b small { font-size: 40pt; margin-left: 1.5mm; }
+  .stat i .ar { font-size: 15pt; letter-spacing: 0; margin-left: 3mm; }
   .stat i { display: block; font-style: normal; font-size: 13pt; font-weight: 700; letter-spacing: .3em;
     text-transform: uppercase; color: var(--blue); }
   .stat b { display: block; margin-top: 1mm; font-size: 50pt; font-weight: 700; line-height: 1.05; color: var(--deep);
