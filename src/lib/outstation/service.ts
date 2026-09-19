@@ -2094,14 +2094,13 @@ export async function submitOutstationRequest(
     // but a submitted request already HAS its arrival photo, so inheriting the default records a
     // state the row's own evidence contradicts. The column default exists to make a row that
     // skips this path fail CLOSED; it is not the value a real submission should carry.
-    // A Meeting or Other claim has no arrival photo to wait for; `grandfathered` is the value
-    // that clears the payroll gate for a row that never carried one.
-    evidence_gate_status: nonTravel
-      ? "grandfathered"
-      : nextEvidenceGateStatus({
-          hasArrivalPhoto: Boolean(carEvidenceImagePath),
-          hasDeparturePhoto: false,
-        }),
+    // A Meeting or Other claim has no arrival photo to wait for, so the shared resolver marks it
+    // `grandfathered`: exempt from the photo gate, but distinct from a two-photo `complete` row.
+    evidence_gate_status: nextEvidenceGateStatus({
+      grandfathered: nonTravel,
+      hasArrivalPhoto: Boolean(carEvidenceImagePath),
+      hasDeparturePhoto: false,
+    }),
     // The RESOLVED figure, never the raw posted one. This is also the OFFLINE entry point —
     // syncOfflineOutstationRequest delegates here — and the offline draft replay posts a
     // hardcoded `claimedTotalAmount: 0`, because a phone with no signal was never able to price

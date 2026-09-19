@@ -63,7 +63,8 @@ export function runOutstationNonTravelExpenseTests() {
   for (const needle of [
     "const nonTravel = isNonTravelExpenseType(calculation.expenseType);",
     "!nonTravel && !input.carEvidenceImageDataUrl",
-    'evidence_gate_status: nonTravel',
+    "evidence_gate_status: nextEvidenceGateStatus({",
+    "grandfathered: nonTravel",
     "noInvoiceHoldReason",
     "if (!nonTravel) {",
   ]) {
