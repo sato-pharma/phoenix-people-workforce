@@ -1444,6 +1444,25 @@ html:has(.admin-shell):not(:has(.employee-portal-shell)) {
   background: transparent;
 }
 
+/* pdf.js's MEASURING CANVAS — the one rule of web/pdf_viewer.css the cut above
+   left out, and the one that is not optional. To size each run of text,
+   TextLayer appends a `<canvas class="hiddenCanvasElement">` to <body>, one per
+   language it meets, drawn with `alpha: false` — so it is OPAQUE BLACK — and it
+   relies on this rule to hide it. Without it, Tailwind's preflight makes every
+   canvas a 300x150 block, and they stack under the whole app shell: opening one
+   CV left a black band in the bottom-left of every page the tab visited next,
+   since pdf.js reuses the canvases and never removes them. Seen on Direct
+   Orders, 2026-09-19: three languages, a 300x450 black block, and a page 450px
+   taller than its content. pdf.js's own rule, verbatim. */
+.hiddenCanvasElement {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .admin-shell tbody tr {
     transition: none;
