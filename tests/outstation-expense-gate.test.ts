@@ -232,7 +232,7 @@ export function runOutstationExpenseGateTests() {
   // card to fix it — silent, and unrecoverable except by hand.
   assert.match(
     service,
-    /evidence_gate_status: nextEvidenceGateStatus\(\{/,
+    /evidence_gate_status: (?:nonTravel\s*\? "grandfathered"\s*: )?nextEvidenceGateStatus\(\{/,
     "the submit insert must SET the gate status from the photos it actually has, never inherit the column default",
   );
 

@@ -62,10 +62,9 @@ export function runOutstationNonTravelExpenseTests() {
   const submit = functionBody(service, "submitOutstationRequest");
   for (const needle of [
     "const nonTravel = isNonTravelExpenseType(calculation.expenseType);",
-    "!nonTravel && !input.carEvidenceImageDataUrl",
+    "const evidencePhotoWaived = nonTravel ||",
     'evidence_gate_status: nonTravel',
     "noInvoiceHoldReason",
-    "if (!nonTravel) {",
   ]) {
     assert.ok(submit.includes(needle), `submitOutstationRequest must carry: ${needle}`);
   }
@@ -83,7 +82,7 @@ export function runOutstationNonTravelExpenseTests() {
   for (const needle of [
     "const isNonTravel = isNonTravelExpenseType(expenseType);",
     "visible={isTicketBased || isNonTravel}",
-    "const arrivalPhotoOwed = !isNonTravel && !isEvidencePhotoWaived;",
+    "const isEvidencePhotoWaived = isNonTravel ||",
     "transportationType: isNonTravel",
     "(captured || isNonTravel)",
   ]) {

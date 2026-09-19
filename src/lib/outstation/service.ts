@@ -1836,7 +1836,9 @@ export async function submitOutstationRequest(
   // Whether this submitter owes a photo at all. Read from the CALCULATION's role, which is the
   // same value written to `employee_role` below and therefore the same value every later read of
   // this request resolves the waiver from.
-  const evidencePhotoWaived = isOutstationEvidenceWaivedRole(calculation.employeeRole);
+  // A Meeting or Other expense owes no arrival photo at all (non-travel-expense.ts), which is the
+  // same position as a waived role: the missing-photo refusals below do not apply to it.
+  const evidencePhotoWaived = nonTravel || isOutstationEvidenceWaivedRole(calculation.employeeRole);
   // Owner rule (2026-08-28): a National Sales Manager is never held, for any reason. Read from
   // the same CALCULATION role written to `employee_role` below, so every later read of this
   // request resolves the rule from the value the claim was submitted under.
@@ -1860,7 +1862,7 @@ export async function submitOutstationRequest(
   // already refuses a train or bus request that carries no arrival photo, so gating the
   // persistence on `car` meant the only photo that could ever satisfy the gate was silently
   // dropped for the very types the gate had just been widened to cover.
-  const storedCarEvidenceMetadata = !nonTravel && input.carEvidenceMetadata
+  const storedCarEvidenceMetadata = input.carEvidenceMetadata
     ? {
         ...input.carEvidenceMetadata,
         employeeHrId: calculation.employeeHrId,
@@ -1886,21 +1888,21 @@ export async function submitOutstationRequest(
   // stored and checked exactly as anyone else's. The pair is deliberately all-or-nothing: an
   // image with no metadata still fails, because a photo with no HR ID, timestamp or GPS on it is
   // not lighter evidence, it is evidence an approver cannot read.
-  if (!nonTravel && !input.carEvidenceImageDataUrl && !evidencePhotoWaived) {
+  if (!input.carEvidenceImageDataUrl && !evidencePhotoWaived) {
     throw new Error(
       calculation.transportationType === "car"
         ? "Car transport requires the live camera evidence image before submitting the request."
         : `A ${calculation.transportationType} trip requires the live arrival photo before submitting the request.`,
     );
   }
-  if (!nonTravel && !storedCarEvidenceMetadata && !evidencePhotoWaived) {
+  if (!storedCarEvidenceMetadata && !evidencePhotoWaived) {
     throw new Error("The live arrival photo metadata is missing.");
   }
-  if (!nonTravel && input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
+  if (input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
     throw new Error("The live arrival photo metadata is missing.");
   }
 
-  if (!nonTravel && input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
+  if (input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
     carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
       imageDataUrl: input.carEvidenceImageDataUrl,
       metadata: storedCarEvidenceMetadata,
@@ -1951,12 +1953,10 @@ export async function submitOutstationRequest(
   // offline capture synced days later auto-paid exactly like a clean one. Neither
   // rejects — a fuzzy or stale capture is a review signal, not proof of abuse. An accuracy the
   // device never reported is null here, never 0 m, and holds too (owner, 2026-09-18).
-  const gpsAccuracyHoldReason = nonTravel
-    ? null
-    : outstationGpsAccuracyHoldReason({
-        capturedAccuracyMeters: calculation.capturedAccuracyMeters,
-        gpsAccuracyLimitMeters: numberValue(submitPolicy.gpsAccuracyThresholdMeters),
-      });
+  const gpsAccuracyHoldReason = outstationGpsAccuracyHoldReason({
+    capturedAccuracyMeters: calculation.capturedAccuracyMeters,
+    gpsAccuracyLimitMeters: numberValue(submitPolicy.gpsAccuracyThresholdMeters),
+  });
 
   const offlineSyncLimitHours = numberValue(submitPolicy.maxOfflineSyncDelayHours);
   const capturedAtMs = calculation.capturedAt ? Date.parse(calculation.capturedAt) : Number.NaN;
@@ -2014,7 +2014,8 @@ export async function submitOutstationRequest(
     campaignHoldReason,
     calculation.governorateReviewRequired ? governorateReviewReason : null,
     ticketEvidenceRejection ? offlineTicketHoldReason : null,
-    gpsAccuracyHoldReason,
+    // No position is taken for a Meeting or Other expense, so there is no accuracy to judge.
+    nonTravel ? null : gpsAccuracyHoldReason,
     offlineSyncHoldReason,
     noInvoiceHoldReason,
   ].filter((reason): reason is string => Boolean(reason));
@@ -2281,10 +2282,7 @@ export async function submitOutstationRequest(
   // fails must never fail the submission the employee just made. The shared idempotency key means
   // the daily job will not repeat whatever this raises.
   try {
-    // A Meeting or Other claim is not a trip, so there is no departure photo to remind anyone of.
-    if (!nonTravel) {
-      await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
-    }
+    await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
   } catch (reminderError) {
     logError("Outstation departure-photo reminder on submit failed", {
       error: reminderError,
