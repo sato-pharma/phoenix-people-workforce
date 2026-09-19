@@ -77,7 +77,7 @@ const GROUP_NEVER_SUMMED = ["Weeks of Cover", "Products"];
 function tableTabs(view: WeeklyStockView) {
   return [
     {
-      name: "Stock by Depot",
+      name: "Stock by Branch",
       dataRows: view.cells.length,
       summed: ["Stock Value (EGP)"],
       neverSummed: ["Stock Units", "Avg Weekly Units", "Weeks of Cover"],
@@ -86,9 +86,9 @@ function tableTabs(view: WeeklyStockView) {
       name: "By Product",
       dataRows: view.products.length,
       summed: ["Stock Value (EGP)", "Low Stock", "Overstock", "No Sales"],
-      neverSummed: ["Stock Units", "Avg Weekly Units", "Weeks of Cover", "Depots"],
+      neverSummed: ["Stock Units", "Avg Weekly Units", "Weeks of Cover", "Branches"],
     },
-    { name: "By Depot", dataRows: view.depots.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },
+    { name: "By Branch", dataRows: view.depots.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },
     { name: "By Area", dataRows: view.areas.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },
     { name: "By Region", dataRows: view.regions.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },
     { name: "By Distributor", dataRows: view.distributors.length, summed: GROUP_SUMMED, neverSummed: GROUP_NEVER_SUMMED },

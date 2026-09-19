@@ -62,6 +62,7 @@ export async function GET(request: Request) {
       productFilterMode: parseMode(searchParams.get("productsMode")),
       lineCodes: splitList(searchParams.get("lines")),
       lineFilterMode: parseMode(searchParams.get("linesMode")),
+      unitProductCode: searchParams.get("unitProduct")?.trim() || null,
     };
 
     const { data, scope, comparison, fieldForce } = await getPortalWeeklyDashboard(filters, access, { includeFieldForce: true });

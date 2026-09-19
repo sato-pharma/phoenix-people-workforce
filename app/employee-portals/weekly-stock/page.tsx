@@ -58,7 +58,7 @@ export default async function PortalWeeklyStockPage() {
   return (
     <EmployeePortalPageShell
       badge="Sales Operations"
-      description="Stock on hand for every product at every depot in your scope, with weeks of cover from recent sales."
+      description="Stock on hand for every product at every branch in your scope, with weeks of cover from recent sales."
       errorBoundaryTitle="Weekly Stock unavailable"
       title="Weekly Stock"
     >

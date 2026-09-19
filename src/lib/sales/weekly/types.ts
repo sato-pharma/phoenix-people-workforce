@@ -37,6 +37,18 @@ export type WeeklyBranchSummary = WeeklyTotals & {
   regionName: string;
 };
 
+/**
+ * One product's own By branch and By region. Units of different products are never added (owner rule,
+ * 2026-08-27), so once a sheet carries several products a branch's or region's units mean something only
+ * product by product — these are the tables the Upload screen shows for the product picked there.
+ * `productCode` is byProduct's key, so the two join one to one.
+ */
+export type WeeklyProductGeography = {
+  productCode: string;
+  byRegion: WeeklyRegionSummary[];
+  byBranch: WeeklyBranchSummary[];
+};
+
 // One parsed fact row (branch × product × week). Internal — persisted to weekly_sales_rows.
 export type WeeklyParsedRow = {
   rowNumber: number;
@@ -216,6 +228,8 @@ export type WeeklySalesValidationResult = {
   byRegion: WeeklyRegionSummary[];
   byProduct: WeeklyProductSummary[];
   byBranch: WeeklyBranchSummary[];
+  /** byBranch and byRegion again, one product at a time — see WeeklyProductGeography */
+  byProductGeography: WeeklyProductGeography[];
   issues: WeeklyValidationIssue[];
   /** items excluded on purpose via an IGNORE alias — informational, never blocking */
   excludedItems: WeeklyExcludedItem[];
@@ -559,6 +573,35 @@ export type WeeklyDashboard = {
    * present when `includeFactRows` is requested.
    */
   factRowDepotWeekGaps?: import("./decumulate").DepotWeekGap[];
+  /**
+   * ONE product's units, for every unit figure above that would add products (owner, 2026-09-19): units of
+   * different products are never added, so a selection holding several products shows its tiles, its
+   * region, distributor and branch units and its week comparison for one product at a time — the one
+   * picked on the screen (`unitProductCode`), else the top product by value. Present whenever no product
+   * filter pins the selection to one code; see WeeklyDashboardUnitView.
+   */
+  unitView?: WeeklyDashboardUnitView | null;
+};
+
+/** One product's sales (net) and stock units at one place. */
+export type WeeklyUnitFigures = { salesUnits: number; stockUnits: number };
+
+/**
+ * The picked product's own units, keyed exactly as the dashboard's own rows are: `regions` by
+ * WeeklyRanked.code of `regions`, `distributors` by that of `distributorBreakdown`, `branches` by that of
+ * `branchBreakdown` (and `zeroSalesBranches`' branchCode), `weeks` by weeklyWeekKey(cycleMonth,
+ * weekNumber). A place the product never reached is absent, and reads as zero units.
+ */
+export type WeeklyDashboardUnitView = {
+  productCode: string;
+  productName: string;
+  kpis: WeeklyUnitFigures;
+  compare: { salesUnits: WeeklyDelta; stockUnits: WeeklyDelta };
+  regions: Record<string, WeeklyUnitFigures>;
+  distributors: Record<string, WeeklyUnitFigures>;
+  branches: Record<string, WeeklyUnitFigures>;
+  /** salesUnits is null where the week spans an upload gap, exactly as weekComparison nulls it */
+  weeks: Record<string, { salesUnits: number | null; stockUnits: number }>;
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

@@ -2271,6 +2271,40 @@ const round = (totals: WeeklyTotals): WeeklyTotals => ({
   stockQty: Number(totals.stockQty.toFixed(2)),
 });
 
+/** The rows' By region and By branch, still being added up. */
+type GeographyTally = {
+  regions: Map<string, { regionName: string; totals: WeeklyTotals }>;
+  branches: Map<string, { branchName: string; regionCode: string; regionName: string; totals: WeeklyTotals }>;
+};
+const emptyGeography = (): GeographyTally => ({ regions: new Map(), branches: new Map() });
+
+const addGeography = (tally: GeographyTally, row: WeeklyParsedRow) => {
+  // Region/branch breakdowns are geographic — only rows with a resolved region/branch belong.
+  // Rows with no resolved region (e.g. branchless stock fallbacks) stay in totals + by-product
+  // but must not form a phantom "—" region/branch row.
+  if (row.regionCode) {
+    const region = tally.regions.get(row.regionCode) ?? { regionName: row.regionName || row.regionCode, totals: emptyTotals() };
+    addTotals(region.totals, row);
+    tally.regions.set(row.regionCode, region);
+  }
+
+  const branchKey = row.branchCode || row.branchName;
+  if (branchKey) {
+    const branch = tally.branches.get(branchKey) ?? { branchName: row.branchName || branchKey, regionCode: row.regionCode, regionName: row.regionName, totals: emptyTotals() };
+    addTotals(branch.totals, row);
+    tally.branches.set(branchKey, branch);
+  }
+};
+
+const geographyTables = (tally: GeographyTally): Pick<WeeklySalesValidationResult, "byRegion" | "byBranch"> => ({
+  byRegion: [...tally.regions.entries()]
+    .map(([regionCode, entry]) => ({ regionCode, regionName: entry.regionName, ...round(entry.totals) }))
+    .sort((left, right) => right.salesValue - left.salesValue),
+  byBranch: [...tally.branches.entries()]
+    .map(([branchCode, entry]) => ({ branchCode, branchName: entry.branchName, regionCode: entry.regionCode, regionName: entry.regionName, ...round(entry.totals) }))
+    .sort((left, right) => right.salesValue - left.salesValue),
+});
+
 export function summarizeWeekly(input: {
   rows: WeeklyParsedRow[];
   distributor: { code: string; name: string };
@@ -2287,9 +2321,11 @@ export function summarizeWeekly(input: {
 }): WeeklySalesValidationResult {
   const { rows } = input;
   const totals = emptyTotals();
-  const regions = new Map<string, { regionName: string; totals: WeeklyTotals }>();
+  const geography = emptyGeography();
   const products = new Map<string, { productName: string; officialLine: string; totals: WeeklyTotals }>();
-  const branches = new Map<string, { branchName: string; regionCode: string; regionName: string; totals: WeeklyTotals }>();
+  // The same geography again, one product at a time: the only grain where a branch's or a region's units
+  // mean anything once the sheet carries several products (see WeeklyProductGeography).
+  const productGeography = new Map<string, GeographyTally>();
   const issues: WeeklyValidationIssue[] = [];
   let importableRows = 0;
   let failedRows = 0;
@@ -2304,26 +2340,16 @@ export function summarizeWeekly(input: {
     }
     for (const issue of row.validationIssues) issues.push(issue);
 
-    // Region/branch breakdowns are geographic — only rows with a resolved region/branch belong.
-    // Rows with no resolved region (e.g. branchless stock fallbacks) stay in totals + by-product
-    // but must not form a phantom "—" region/branch row.
-    if (row.regionCode) {
-      const region = regions.get(row.regionCode) ?? { regionName: row.regionName || row.regionCode, totals: emptyTotals() };
-      addTotals(region.totals, row);
-      regions.set(row.regionCode, region);
-    }
+    addGeography(geography, row);
 
     const productKey = row.productCode || row.productName || "—";
     const product = products.get(productKey) ?? { productName: row.productName || productKey, officialLine: row.officialLine, totals: emptyTotals() };
     addTotals(product.totals, row);
     products.set(productKey, product);
 
-    const branchKey = row.branchCode || row.branchName;
-    if (branchKey) {
-      const branch = branches.get(branchKey) ?? { branchName: row.branchName || branchKey, regionCode: row.regionCode, regionName: row.regionName, totals: emptyTotals() };
-      addTotals(branch.totals, row);
-      branches.set(branchKey, branch);
-    }
+    const ownGeography = productGeography.get(productKey) ?? emptyGeography();
+    addGeography(ownGeography, row);
+    productGeography.set(productKey, ownGeography);
   }
 
   // STRICT: any failure issue blocks the batch (and nothing persists).
@@ -2335,6 +2361,11 @@ export function summarizeWeekly(input: {
     );
   }
   const status: "blocked" | "validated" = blockingReasons.length > 0 ? "blocked" : "validated";
+
+  const { byRegion, byBranch } = geographyTables(geography);
+  const byProduct = [...products.entries()]
+    .map(([productCode, entry]) => ({ productCode, productName: entry.productName, officialLine: entry.officialLine, ...round(entry.totals) }))
+    .sort((left, right) => right.salesValue - left.salesValue);
 
   return {
     distributor: { code: input.distributor.code, name: input.distributor.name },
@@ -2357,15 +2388,13 @@ export function summarizeWeekly(input: {
     failedRows,
     warningRows,
     totals: round(totals),
-    byRegion: [...regions.entries()]
-      .map(([regionCode, entry]) => ({ regionCode, regionName: entry.regionName, ...round(entry.totals) }))
-      .sort((left, right) => right.salesValue - left.salesValue),
-    byProduct: [...products.entries()]
-      .map(([productCode, entry]) => ({ productCode, productName: entry.productName, officialLine: entry.officialLine, ...round(entry.totals) }))
-      .sort((left, right) => right.salesValue - left.salesValue),
-    byBranch: [...branches.entries()]
-      .map(([branchCode, entry]) => ({ branchCode, branchName: entry.branchName, regionCode: entry.regionCode, regionName: entry.regionName, ...round(entry.totals) }))
-      .sort((left, right) => right.salesValue - left.salesValue),
+    byRegion,
+    byProduct,
+    byBranch,
+    byProductGeography: byProduct.map((product) => ({
+      productCode: product.productCode,
+      ...geographyTables(productGeography.get(product.productCode) ?? emptyGeography()),
+    })),
     issues: issues.slice(0, 500),
     excludedItems: input.excludedItems ?? [],
     excludedBranches: input.excludedBranches ?? [],

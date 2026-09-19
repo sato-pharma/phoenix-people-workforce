@@ -216,7 +216,7 @@ export function PortalWeeklyFieldForceView({
           <p className="text-xs font-semibold text-amber-900">
             {`${gapWeeks.size === 1 ? "Week" : "Weeks"} ${[...gapWeeks].join(", ")} ${
               gapWeeks.size === 1 ? "carries" : "carry"
-            } sales from a depot that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. Marked with a dot in the table below.`}
+            } sales from a branch that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. Marked with a dot in the table below.`}
           </p>
         </div>
       ) : null}
@@ -293,7 +293,7 @@ export function PortalWeeklyFieldForceView({
                   <th
                     key={week}
                     className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
-                    title={gapWeeks.has(week) ? "Also holds a week a depot never uploaded" : undefined}
+                    title={gapWeeks.has(week) ? "Also holds a week a branch never uploaded" : undefined}
                   >
                     {`W${week}`}
                     {gapWeeks.has(week) ? <span className="ml-0.5 text-amber-500">•</span> : null}
@@ -919,7 +919,7 @@ function AttributionDot({ rep }: { rep: FieldForceRep }) {
   if (exactShare >= 0.5) return null;
   return (
     <span
-      title={`${formatPct(1 - exactShare)} of this figure is allocated from depot names, not mapped by hand.`}
+      title={`${formatPct(1 - exactShare)} of this figure is allocated from branch names, not mapped by hand.`}
       className="inline-flex items-center gap-1 whitespace-nowrap bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-700"
     >
       Allocated
@@ -941,7 +941,7 @@ function AttributionStrip({
   const safe = total > 0 ? total : 1;
   const parts = [
     { label: "Mapped by hand", value: exactValue, className: "bg-emerald-500", tone: "text-emerald-700" },
-    { label: "Allocated from depot name", value: allocatedValue, className: "bg-amber-400", tone: "text-amber-700" },
+    { label: "Allocated from branch name", value: allocatedValue, className: "bg-amber-400", tone: "text-amber-700" },
     { label: "Reached no rep", value: unattributedValue, className: "bg-slate-300", tone: "text-slate-500" },
   ];
   return (
@@ -980,10 +980,10 @@ function AttributionStrip({
           ))}
         </div>
         <p className="text-xs font-semibold leading-relaxed text-slate-500">
-          Weekly sales arrive at distributor-depot level, not per customer. A depot mapped to an area by
-          hand credits that area&rsquo;s rep exactly. Any other depot has its money spread evenly across the
+          Weekly sales arrive at distributor-branch level, not per customer. A branch mapped to an area by
+          hand credits that area&rsquo;s rep exactly. Any other branch has its money spread evenly across the
           governorates its name states, then evenly again across that governorate&rsquo;s areas on that line —
-          so a rep&rsquo;s figure here is an allocation of depot shipments, not a record of visits or of sales
+          so a rep&rsquo;s figure here is an allocation of branch shipments, not a record of visits or of sales
           observed in his territory.
         </p>
       </div>

@@ -356,6 +356,8 @@ export type PortalWeeklyFilters = {
   productFilterMode?: WeeklyFilterMode;
   lineCodes?: string[];
   lineFilterMode?: WeeklyFilterMode;
+  /** The "Units for" pick — see loadWeeklyDashboard unitProductCode. Moves units only, never a value. */
+  unitProductCode?: string | null;
 };
 
 export async function getPortalWeeklyDashboard(
@@ -408,6 +410,7 @@ export async function getPortalWeeklyDashboard(
       productFilterMode: filters.productFilterMode,
       lineCodes: filters.lineCodes,
       lineFilterMode: filters.lineFilterMode,
+      unitProductCode: filters.unitProductCode,
       accessScope: scope.accessScope,
       allWeeks: true,
       // The row grain the Field Force tab is built from. Deliberately NOT paired with

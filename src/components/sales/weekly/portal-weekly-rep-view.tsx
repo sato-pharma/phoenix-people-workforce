@@ -217,13 +217,13 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
             <Notice>
               {`${gapWeeks.length === 1 ? "Week" : "Weeks"} ${gapWeeks.join(", ")} ${
                 gapWeeks.length === 1 ? "carries" : "carry"
-              } sales from a depot that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
+              } sales from a branch that sent no sheet for the week before, so the figure also holds the week(s) it skipped and reads high. It is marked with a dotted amber line and is never counted as your best week.`}
             </Notice>
           ) : null}
 
           {data.allocationUnavailable ? (
             <Notice>
-              The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and
+              The branch-to-area map did not load just now, so only branches mapped to your area by hand are counted and
               your figure reads low. Press Sync now in a moment.
             </Notice>
           ) : null}
@@ -325,7 +325,7 @@ export function PortalWeeklyRepView({ data }: { data: PortalWeeklyRepSales }) {
 function RepTabBar({ active, onChange }: { active: RepTab; onChange: (next: RepTab) => void }) {
   const tabs: { key: RepTab; label: string; hint: string; icon: typeof Coins }[] = [
     { key: "month", label: "My Month", hint: "Week by week, per product", icon: CalendarRange },
-    { key: "detail", label: "Depot Detail", hint: "Every product at every depot", icon: Building2 },
+    { key: "detail", label: "Branch Detail", hint: "Every product at every branch", icon: Building2 },
   ];
   return (
     <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
@@ -396,7 +396,7 @@ function ProductTable({ products, weeks }: { products: ProductRow[]; weeks: RepW
               <th
                 key={week.weekNumber}
                 className="px-1.5 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
-                title={week.spansGap ? "Also holds a week a depot never uploaded" : undefined}
+                title={week.spansGap ? "Also holds a week a branch never uploaded" : undefined}
               >
                 {`W${week.weekNumber}`}
                 {week.spansGap ? <span className="ml-0.5 text-amber-500">•</span> : null}
@@ -647,7 +647,7 @@ function AttributionStrip({ exactValue, allocatedValue }: { exactValue: number; 
   const safe = total > 0 ? total : 1;
   const parts = [
     { label: "Mapped by hand", value: exactValue, fill: "bg-emerald-500", tone: "text-emerald-700" },
-    { label: "Allocated from depot name", value: allocatedValue, fill: "bg-amber-400", tone: "text-amber-700" },
+    { label: "Allocated from branch name", value: allocatedValue, fill: "bg-amber-400", tone: "text-amber-700" },
   ];
   const showBar = total > 0 && exactValue >= 0 && allocatedValue >= 0;
   return (
@@ -682,10 +682,10 @@ function AttributionStrip({ exactValue, allocatedValue }: { exactValue: number; 
           ))}
         </div>
         <p className="text-xs font-semibold leading-relaxed text-slate-500">
-          Weekly sales arrive at distributor-depot level, not per customer. A depot mapped to your area by hand
-          credits you exactly. Any other depot has its money spread evenly across the governorates its name
+          Weekly sales arrive at distributor-branch level, not per customer. A branch mapped to your area by hand
+          credits you exactly. Any other branch has its money spread evenly across the governorates its name
           states, then evenly again across that governorate&rsquo;s areas on your line &mdash; so this figure is an
-          allocation of depot shipments, not a record of visits or of sales observed in your territory. Products
+          allocation of branch shipments, not a record of visits or of sales observed in your territory. Products
           with no product-master mapping are left out. The Monthly Closing remains the official number.
         </p>
       </div>

@@ -23,8 +23,12 @@ import { guardsOf, initializerOf, parse, walk } from "./weekly-units-one-product
 // cell stays and holds a dash. This file pins that three ways, like weekly-units-one-product.test.ts:
 //
 //   1. THE RULE ITSELF — the cuts and tests only the admin page and the workbook ask.
-//   2. THE SCREEN — every unit read and label in the dashboard's JSX tree sits under the rule's guard.
+//   2. THE SCREEN — every unit read and label in the dashboard's JSX tree is the rule's own supply.
 //   3. THE EMITTED WORKBOOK — reloaded from its bytes, never read off the builder's inputs.
+//
+// The SCREEN changed on 2026-09-19 (owner): where its rows add products it no longer hides the unit column,
+// it shows the "Units for" product's units at each row and names that product on the table. The workbook
+// keeps the 2026-09-17 rule above, dashes and all.
 
 /** The sample dashboard (two products) narrowed to ONE product, its Data rows included. */
 function oneProduct(options: { filtered: boolean }): WeeklyDashboard {
@@ -53,8 +57,13 @@ const TABLE_GUARD: Record<string, string> = {
   WeekComparisonTable: "showUnits",
   ZeroStockTable: "showStock",
 };
-/** The two charts that draw a branch's units and stock; the page renders each only under `showBranchUnits`. */
-const UNIT_CHARTS = ["BranchSalesStockChart", "ZeroSalesStockChart"];
+/** What may guard a unit read in each function: a table's prop, or the row list a chart is handed (null draws no chart). */
+const READ_GUARDS: Record<string, string[]> = {
+  ...Object.fromEntries(Object.entries(TABLE_GUARD).map(([name, guard]) => [name, [guard]])),
+  DashboardCharts: ["branchUnitRows", "zeroStockUnitRows"],
+};
+/** The two charts that draw a branch's units and stock; the page renders each only when it has rows to draw. */
+const UNIT_CHARTS: Record<string, string> = { BranchSalesStockChart: "branchRows", ZeroSalesStockChart: "stockRiskRows" };
 const PAGE = "WeeklyDashboardView";
 
 function enclosingFunction(node: ts.Node): string | null {
@@ -81,21 +90,24 @@ function attribute(element: ts.JsxSelfClosingElement | ts.JsxOpeningElement, nam
 function assertDashboardDrawsUnitsOnlyUnderTheRule() {
   const source = parse(DASHBOARD);
 
-  // Each guard is the rule's own answer for its cut, not a copy of it.
+  // Each figure's source is the rule's own answer for its cut (unit-totals.ts), not a copy of it: the
+  // picked product's units where the rows add products, the rows' own where they are one product's.
   const initializers: [string, string][] = [
-    ["showUnitTiles", "weeklyKpiUnitsAreOneProduct(data)"],
-    ["showUnitDeltas", "weeklyKpiUnitDeltaIsOneProduct(data)"],
-    ["regionUnits", `weeklyBreakdownUnitsAreOneProduct(data, "region")`],
-    ["productUnits", `weeklyBreakdownUnitsAreOneProduct(data, "product")`],
-    ["distributorUnits", `weeklyBreakdownUnitsAreOneProduct(data, "distributor")`],
-    ["branchUnits", `weeklyBreakdownUnitsAreOneProduct(data, "branch")`],
-    ["weekUnits", "weeklyWeekComparisonUnitsAreOneProduct(data)"],
+    ["unitTiles", "weeklyUnitTiles(data)"],
+    ["regionUnits", `weeklyCutUnits(data, "region")`],
+    ["productUnits", `weeklyCutUnits(data, "product")`],
+    ["distributorUnits", `weeklyCutUnits(data, "distributor")`],
+    ["branchUnits", `weeklyCutUnits(data, "branch")`],
+    ["weekUnits", "weeklyWeekUnits(data)"],
+    ["branchUnitRows", "weeklyRowsWithCutUnits(branchRows, branchUnits, (row) => row.code)"],
+    ["zeroStockUnitRows", "weeklyRowsWithCutUnits(zeroStockRows, branchUnits, (row) => row.branchCode)"],
   ];
   for (const [name, expected] of initializers) {
-    assert.equal(initializerOf(source, name), expected, `the page's ${name} is the rule's own test`);
+    assert.equal(initializerOf(source, name), expected, `the page's ${name} is the rule's own answer`);
   }
 
-  // Every unit figure the file reads. A read in a function the rule does not guard is a new unit figure.
+  // Every unit figure the file reads. The page reads none of the selection's own totals — a tile is
+  // unitTiles' — and a table or chart reads a row's only under its own guard.
   const seen = new Map<string, number>();
   walk(source, (node) => {
     if (!ts.isPropertyAccessExpression(node)) return;
@@ -104,26 +116,45 @@ function assertDashboardDrawsUnitsOnlyUnderTheRule() {
     const where = enclosingFunction(node) ?? "(top level)";
     const guards = guardsOf(node);
     const line = lineOf(source, node);
-    if (where === PAGE && text.startsWith("data.kpis.")) {
-      assert.ok(guards.includes("showUnitTiles"), `${text} is drawn at line ${line} without the showUnitTiles guard`);
-    } else if (where === PAGE && text.startsWith("data.compare.")) {
+    if (where === PAGE) {
       assert.ok(
-        guards.includes("showUnitDeltas") && guards.includes("showUnitTiles"),
-        `${text} is drawn at line ${line} without the showUnitDeltas guard: a change against weeks of other products`,
+        text.startsWith("unitTiles."),
+        `${text} is read at line ${line} of the page: only the rule's tiles (unitTiles) may be, or units of every product are added`,
       );
+      assert.ok(guards.includes("unitTiles"), `${text} is drawn at line ${line} without the unitTiles guard`);
     } else {
-      const guard = TABLE_GUARD[where];
-      assert.ok(guard, `${text} is read at line ${line} in ${where}, where no unit rule guards it`);
-      assert.ok(guards.includes(guard), `${text} is read at line ${line} in ${where} without the ${guard} guard`);
+      const allowed = READ_GUARDS[where];
+      assert.ok(allowed, `${text} is read at line ${line} in ${where}, where no unit rule guards it`);
+      assert.ok(
+        allowed.some((guard) => guards.includes(guard)),
+        `${text} is read at line ${line} in ${where} without a ${allowed.join(" / ")} guard`,
+      );
     }
-    const key = text.startsWith("data.") ? text : where;
+    const key = where === PAGE ? "tiles" : where;
     seen.set(key, (seen.get(key) ?? 0) + 1);
   });
-  for (const key of ["data.kpis.salesUnits", "data.kpis.stockUnits", "data.compare.salesUnits", ...Object.keys(TABLE_GUARD)]) {
+  for (const key of ["tiles", ...Object.keys(READ_GUARDS)]) {
     assert.ok(seen.get(key), `positive control: the dashboard still reads units in ${key}, so the checks above are not vacuous`);
   }
 
-  // The labels that announce a unit figure sit under the same guards: tiles, column heads, phone cards.
+  // The two tiles' labels name the product they count, under the tile guard.
+  const tiles: string[] = [];
+  walk(source, (node) => {
+    if (!ts.isJsxAttribute(node) || node.name.getText() !== "label" || !node.initializer || !ts.isJsxExpression(node.initializer)) return;
+    const expression = node.initializer.expression;
+    if (!expression || !ts.isTemplateExpression(expression) || !/^(Sales|Stock) units$/.test(expression.head.text)) return;
+    const line = lineOf(source, node);
+    assert.ok(guardsOf(node).includes("unitTiles"), `the "${expression.head.text}" tile at line ${line} is drawn without the unitTiles guard`);
+    assert.deepEqual(
+      expression.templateSpans.map((span) => span.expression.getText()),
+      ["unitTiles.of"],
+      `the "${expression.head.text}" tile at line ${line} names the product it counts`,
+    );
+    tiles.push(expression.head.text);
+  });
+  assert.deepEqual(tiles.sort(), ["Sales units", "Stock units"], "positive control: both unit tiles are found");
+
+  // The plain labels that announce a unit figure — column heads and phone cards — sit under their table's guard.
   const UNIT_LABELS = new Set(["Sales units", "Stock units", "Units", "Stock"]);
   let labels = 0;
   walk(source, (node) => {
@@ -135,58 +166,74 @@ function assertDashboardDrawsUnitsOnlyUnderTheRule() {
     }
     if (!label || !UNIT_LABELS.has(label)) return;
     const where = enclosingFunction(node) ?? "(top level)";
-    if (UNIT_CHARTS.includes(where)) return; // the chart element itself is held below
-    const guard = where === PAGE ? "showUnitTiles" : TABLE_GUARD[where];
+    if (where in UNIT_CHARTS) return; // the chart element itself is held below
+    const guard = TABLE_GUARD[where];
     const line = lineOf(source, node);
     assert.ok(guard, `"${label}" is drawn at line ${line} in ${where}, where no unit rule guards it`);
     assert.ok(guardsOf(node).includes(guard), `"${label}" is drawn at line ${line} in ${where} without the ${guard} guard`);
     labels += 1;
   });
-  assert.ok(labels >= 10, `positive control: the dashboard still labels its unit figures (found ${labels})`);
+  assert.ok(labels >= 8, `positive control: the tables still label their unit figures (found ${labels})`);
 
-  // The two unit charts, and each call site passing the answer for its own cut.
-  const RANK_CUT: Record<string, string> = {
-    "data.regions": "regionUnits",
-    "data.products": "productUnits",
-    "data.distributorBreakdown": "distributorUnits",
-  };
-  const CALL_CUT: Record<string, string> = {
-    BranchComparisonTable: "branchUnits",
-    WeekComparisonTable: "weekUnits",
-    ZeroStockTable: "branchUnits",
-    DashboardCharts: "branchUnits",
-  };
-  const expectedGuard = (tag: string, rows: string | null): string | null =>
-    (tag === "RankTable" ? RANK_CUT[rows ?? ""] : CALL_CUT[tag]) ?? null;
+  // Each table and chart, and each call site passing the answer for its OWN cut: the rows it draws come
+  // through the same cut that decides whether its unit column shows.
+  const RANK_CUT: Record<string, string> = { "data.regions": "regionUnits", "data.distributorBreakdown": "distributorUnits" };
   const calls: string[] = [];
   walk(source, (node) => {
     if (!ts.isJsxSelfClosingElement(node) && !ts.isJsxOpeningElement(node)) return;
     const tag = node.tagName.getText();
-    if (UNIT_CHARTS.includes(tag)) {
-      assert.ok(guardsOf(node).includes("showBranchUnits"), `<${tag}> is drawn at line ${lineOf(source, node)} without the showBranchUnits guard`);
+    const at = lineOf(source, node);
+    if (tag in UNIT_CHARTS) {
+      assert.ok(guardsOf(node).includes(UNIT_CHARTS[tag]), `<${tag}> is drawn at line ${at} without the ${UNIT_CHARTS[tag]} guard`);
       calls.push(tag);
       return;
     }
-    if (!(tag in TABLE_GUARD) && tag !== "DashboardCharts") return;
-    const prop = tag === "ZeroStockTable" ? "showStock" : tag === "DashboardCharts" ? "showBranchUnits" : "showUnits";
-    const expected = expectedGuard(tag, attribute(node, "rows"));
-    assert.ok(expected, `<${tag}> at line ${lineOf(source, node)} draws rows this test does not know: ${attribute(node, "rows")}`);
-    assert.equal(attribute(node, prop), expected, `<${tag} rows={${attribute(node, "rows")}}> is told ${prop} by its own cut`);
+    if (tag === "DashboardCharts") {
+      assert.equal(attribute(node, "branchUnitRows"), "branchUnits ? branchUnitRows : null", `<DashboardCharts> at line ${at} hands over branch rows only when the cut has units`);
+      assert.equal(attribute(node, "zeroStockUnitRows"), "branchUnits ? zeroStockUnitRows : null", `<DashboardCharts> at line ${at} hands over stock rows only when the cut has units`);
+      assert.equal(attribute(node, "unitsFor"), "unitsFor(branchUnits)", `<DashboardCharts> at line ${at} names the product its unit charts count`);
+      calls.push(tag);
+      return;
+    }
+    if (!(tag in TABLE_GUARD)) return;
+    const rows = attribute(node, "rows");
+    let cut: string | null = null;
+    if (tag === "RankTable") {
+      const match = /^weeklyRowsWithCutUnits\((data\.\w+), (\w+), \(row\) => row\.code\)$/.exec(rows ?? "");
+      cut = rows === "data.products" ? "productUnits" : match && RANK_CUT[match[1]] === match[2] ? match[2] : null;
+    } else if (tag === "BranchComparisonTable") {
+      cut = rows === "branchUnitRows" ? "branchUnits" : null;
+    } else if (tag === "ZeroStockTable") {
+      cut = rows === "zeroStockUnitRows" ? "branchUnits" : null;
+    } else {
+      cut = rows === "weeklyWeekRowsWithUnits(data.weekComparison, weekUnits)" ? "weekUnits" : null;
+    }
+    assert.ok(cut, `<${tag}> at line ${at} draws rows that do not come through their own cut: ${rows}`);
+    const prop = tag === "ZeroStockTable" ? "showStock" : "showUnits";
+    assert.equal(attribute(node, prop), `${cut} != null`, `<${tag} rows={${rows}}> is told ${prop} by its own cut`);
     // A sortable table remounts when its columns come and go, so no sort survives on a hidden column.
-    if (tag !== "WeekComparisonTable" && tag !== "DashboardCharts") {
+    if (tag !== "WeekComparisonTable") {
       assert.ok(
-        (attribute(node, "key") ?? "").includes(`\${${expected}}`),
-        `<${tag}> at line ${lineOf(source, node)} is keyed on ${expected}, so a hidden column's sort is dropped`,
+        (attribute(node, "key") ?? "").includes(`\${${cut} != null}`),
+        `<${tag}> at line ${at} is keyed on ${cut}, so a hidden column's sort is dropped`,
       );
     }
-    calls.push(`${tag}:${expected}`);
+    // The product a column counts is named on its table: in the props of one, the title of another.
+    if (cut !== "productUnits") {
+      const named = tag === "RankTable" ? attribute(node, "title") : attribute(node, "unitsFor");
+      assert.ok(
+        (named ?? "").includes(`unitsFor(${cut})`),
+        `<${tag}> at line ${at} names the product its ${cut} column counts`,
+      );
+    }
+    calls.push(`${tag}:${cut}`);
   });
   assert.deepEqual(
     [...calls].sort(),
     [
       "BranchComparisonTable:branchUnits",
       "BranchSalesStockChart",
-      "DashboardCharts:branchUnits",
+      "DashboardCharts",
       "RankTable:distributorUnits",
       "RankTable:productUnits",
       "RankTable:regionUnits",
@@ -197,14 +244,22 @@ function assertDashboardDrawsUnitsOnlyUnderTheRule() {
     "positive control: every table and chart that draws units is found and checked",
   );
 
-  // Said on the screen whenever a unit column is missing, and only then.
-  let note = 0;
+  // The "Units for" picker: drawn only when there is a product to show and several to pick from, holding
+  // the product the server used, and the pick rides on the feed request only — never on the Export.
+  const pickers: (ts.JsxSelfClosingElement | ts.JsxOpeningElement)[] = [];
   walk(source, (node) => {
-    if (!ts.isJsxText(node) || !node.getText().includes("Units and stock appear only where")) return;
-    note += 1;
-    assert.ok(guardsOf(node).some((guard) => guard.includes("!weekUnits")), "the note shows only while units are hidden somewhere");
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText() === "WeeklyUnitProductPicker") {
+      pickers.push(node);
+    }
   });
-  assert.equal(note, 1, "the page says why units are missing");
+  assert.equal(pickers.length, 1, "the page carries exactly one Units for picker");
+  const guards = guardsOf(pickers[0]).join(" | ");
+  assert.ok(guards.includes("data.unitView") && guards.includes("data.products.length > 1"), "the picker shows only when there is a product to show and several to pick from");
+  assert.equal(attribute(pickers[0], "tone"), "admin", "the picker wears the admin shell's look");
+  assert.equal(attribute(pickers[0], "value"), "data.unitView.productCode", "the picker holds the product the server used");
+  assert.equal(attribute(pickers[0], "onChange"), "setUnitProduct", "the picker's pick is what the next request carries");
+  assert.equal(source.text.split(`params.set("unitProduct", unitProduct)`).length - 1, 1, "the pick is added to the feed request once, and to no other");
+  assert.ok(!source.text.includes("Units and stock appear only where"), "the note that explained hidden unit columns is gone: the picker says what the figures are");
 }
 
 // ── 3. the emitted workbook ───────────────────────────────────────────────────────────────────────

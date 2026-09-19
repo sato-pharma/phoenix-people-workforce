@@ -47,6 +47,7 @@ import type {
   WeeklyBatch,
   WeeklyBranchComparisonRow,
   WeeklyDashboard,
+  WeeklyDashboardUnitView,
   WeeklyDelta,
   WeeklyDistributorOption,
   WeeklyFilterMode,
@@ -56,8 +57,9 @@ import type {
   WeeklySalesValidationResult,
   WeeklyThisWeekOnly,
   WeeklyTotals,
+  WeeklyUnitFigures,
 } from "@/lib/sales/weekly/types";
-import { weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
+import { weeklyUnitViewProduct, weeklyWeekKey, weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
@@ -952,6 +954,11 @@ export async function loadWeeklyDashboard(filters?: {
    * alongside the rows; it must not reject. No effect on a viewer who may not lift (mayLiftWeeklyGeography).
    */
   ownAreaShare?: WeeklyOwnAreaShare | Promise<WeeklyOwnAreaShare | null> | null;
+  /**
+   * The product whose units `unitView` holds — the screen's "Units for" pick. Omitted, or a code this
+   * selection no longer holds, reads as the top product by value (weeklyUnitViewProduct).
+   */
+  unitProductCode?: string | null;
 }): Promise<WeeklyDashboard> {
   const supabase = getSupabaseAdmin();
 
@@ -1576,6 +1583,58 @@ export async function loadWeeklyDashboard(filters?: {
         (a.weekNumber ?? 0) - (z.weekNumber ?? 0),
     );
 
+  // One product's units for every unit figure that would add products (WeeklyDashboardUnitView). A
+  // product filter pinning one code already makes every figure that product's, so there is none then.
+  // Built with the same rank / rankBranches as the rows it stands beside, so its codes are theirs.
+  const productRanking = rank(weekRowsAdj, (row) => row.productCode, (row) => row.productName);
+  const unitProduct = appliedFilters.productCode ? null : weeklyUnitViewProduct(productRanking, filters?.unitProductCode);
+  let unitView: WeeklyDashboardUnitView | null = null;
+  if (unitProduct) {
+    const isUnitProduct = (row: FactRow) => row.productCode === unitProduct.code;
+    const unitRows = weekRowsAdj.filter(isUnitProduct);
+    const unitPriorRows = !timeFilterActive && priorCanonical ? priorRowsAdj.filter(isUnitProduct) : null;
+    const unitsByCode = (ranked: WeeklyRanked[]): Record<string, WeeklyUnitFigures> =>
+      Object.fromEntries(ranked.map((row) => [row.code, { salesUnits: row.salesUnits, stockUnits: row.stockUnits }]));
+    const unitWeeks = new Map<string, WeeklyUnitFigures>();
+    for (const row of scopedRows) {
+      if (!isUnitProduct(row) || !row.cycleMonth || row.weekNumber == null) continue;
+      const key = weeklyWeekKey(row.cycleMonth, row.weekNumber);
+      const current = unitWeeks.get(key) ?? { salesUnits: 0, stockUnits: 0 };
+      current.salesUnits += row.netQty;
+      current.stockUnits += row.stockQty;
+      unitWeeks.set(key, current);
+    }
+    unitView = {
+      productCode: unitProduct.code,
+      productName: unitProduct.name,
+      kpis: {
+        salesUnits: Number(sum(unitRows, (row) => row.netQty).toFixed(2)),
+        stockUnits: Number(sum(unitRows, (row) => row.stockQty).toFixed(2)),
+      },
+      compare: {
+        salesUnits: delta(sum(unitRows, (row) => row.netQty), unitPriorRows ? sum(unitPriorRows, (row) => row.netQty) : null),
+        stockUnits: delta(sum(unitRows, (row) => row.stockQty), unitPriorRows ? sum(unitPriorRows, (row) => row.stockQty) : null),
+      },
+      regions: unitsByCode(rank(unitRows, (row) => row.regionCode, (row) => row.regionName)),
+      distributors: unitsByCode(rank(unitRows, (row) => row.distributorCode, (row) => row.distributorName)),
+      branches: unitsByCode(rankBranches(unitRows)),
+      // The week's own gap rule, not the product's: a week whose figure spans a missing upload is nulled
+      // for every product alike, exactly as weekComparison nulls it.
+      weeks: Object.fromEntries(
+        weekComparison.map((week) => {
+          const own = unitWeeks.get(weeklyWeekKey(week.cycleMonth, week.weekNumber));
+          return [
+            weeklyWeekKey(week.cycleMonth, week.weekNumber),
+            {
+              salesUnits: suppressGapSpannedValue(week.spansGap, Number((own?.salesUnits ?? 0).toFixed(2))),
+              stockUnits: Number((own?.stockUnits ?? 0).toFixed(2)),
+            },
+          ];
+        }),
+      ),
+    };
+  }
+
   return {
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
@@ -1617,11 +1676,12 @@ export async function loadWeeklyDashboard(filters?: {
       stockUnits: delta(sum(weekRowsAdj, (row) => row.stockQty), !timeFilterActive && priorCanonical ? sum(priorRowsAdj, (row) => row.stockQty) : null),
     },
     regions: rank(weekRowsAdj, (row) => row.regionCode, (row) => row.regionName),
-    products: rank(weekRowsAdj, (row) => row.productCode, (row) => row.productName),
+    products: productRanking,
     distributorBreakdown: rank(weekRowsAdj, (row) => row.distributorCode, (row) => row.distributorName),
     branchBreakdown: rankBranches(weekRowsAdj),
     zeroSalesBranches: zeroSalesBranches.slice(0, 100),
     weekComparison,
+    unitView,
     sources,
     trend,
     // Row-level grain for the BI export (hidden Data sheet → pivots/charts/formulas). Mirrors the exact

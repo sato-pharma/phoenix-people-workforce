@@ -2915,7 +2915,7 @@ export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
     href: "/sales/weekly/stock",
     icon: Package,
     label: "Weekly Stock",
-    description: "Stock on hand per product at every depot, with weeks of cover, filters and export.",
+    description: "Stock on hand per product at every branch, with weeks of cover, filters and export.",
     permissions: [{ resource: "weekly_sales" }],
     excludedRoles: ["Marketing Manager"],
   },

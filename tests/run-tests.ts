@@ -1627,7 +1627,9 @@ import { runWeeklySalesDepotDetailTests } from "./weekly-sales-depot-detail.test
 import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
 import { runWeeklyUnitsOneProductTests } from "./weekly-units-one-product.test.ts";
 import { runWeeklyAdminUnitsOneProductTests } from "./weekly-admin-units-one-product.test.ts";
+import { runWeeklyUnitsForPickerTests } from "./weekly-units-for-picker.test.ts";
 import { runWeeklyUnitsAcrossProductsFollowupsTests } from "./weekly-units-across-products-followups.test.ts";
+import { runWeeklyUploadOneProductAtATimeTests } from "./weekly-upload-one-product-at-a-time.test.ts";
 import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
@@ -5438,16 +5440,24 @@ await runTest(
 );
 await runTest("weekly territory gate (a medical rep is refused the admin weekly dashboard API and its three workbooks; every manager role still passes)", runWeeklyTerritoryGateTests);
 await runTest(
-  "weekly sales unit totals appear only for one product (the Sales Units and Stock Units tiles, the Units column on a region or distributor cut, the export's Summary and Week Comparison)",
+  "weekly sales unit totals name ONE product (the Sales Units and Stock Units tiles and the Breakdown Units column show the picked product's units, never a sum of products; the export's Summary and Week Comparison keep the one-product rule)",
   runWeeklyUnitsOneProductTests,
 );
 await runTest(
-  "admin weekly sales unit totals appear only for one product (the dashboard's unit tiles and their changes, its region, branch, distributor and week tables, its unit charts and watchlist stock; the Weekly BI workbook dashes every unit total that adds products and keeps each product's own)",
+  "admin weekly sales unit totals name ONE product (the dashboard's unit tiles and their changes, its region, branch, distributor and week tables, its unit charts and watchlist stock all show the picked product's units; the Weekly BI workbook dashes every unit total that adds products and keeps each product's own)",
   runWeeklyAdminUnitsOneProductTests,
+);
+await runTest(
+  "weekly Units for picker (a sheet of several products shows ONE picked product's units everywhere: the helpers never add two products or read a sum for a place the product never reached, the per-group units are keyed exactly like the group rows on Weekly Stock and Branch Detail, the default is the top product by value and a stale pick falls back, and the request, the server and every group table carry the same product)",
+  runWeeklyUnitsForPickerTests,
 );
 await runTest(
   "weekly units of different products are never added, follow-ups (Summarized Report: Month vs Target, the MTD/YTD and Low Sales totals dashed for several products, trends and rankings by value; stock with no sales judged product by product on the dashboard and the NSM/DSM export; the Upload screen)",
   runWeeklyUnitsAcrossProductsFollowupsTests,
+);
+await runTest(
+  "weekly Upload screen shows units one product at a time (a sheet of several products gets a product picker; the tiles, By branch and By region hold the picked product's own units, never a sum of products)",
+  runWeeklyUploadOneProductAtATimeTests,
 );
 await runTest(
   "weekly sales fits the screen with square corners (Distribution and Field Force tabs: no round corner, scroll box, width floor or ellipsis; every table fixed, its columns, head row, body row and colSpans one shape totalling 100%)",
