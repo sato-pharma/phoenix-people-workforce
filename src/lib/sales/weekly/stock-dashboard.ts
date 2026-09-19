@@ -15,6 +15,8 @@
 //   • Weeks of cover = stock ÷ average weekly net sales over the last 4 weeks.
 //     Low < 2 weeks · Healthy 2–8 · Overstock > 8 · stock with no sales in the window = No sales.
 //   • A depot with no area mapping is reported under "Area not mapped", never dropped.
+//   • One product at a time (owner, 2026-09-19): a group row still totals VALUE only, and beside it the
+//     screen shows ONE picked product's own units there (weeklyStockProductUnitsByGroup).
 
 export const WEEKLY_STOCK_COVER_LOW_WEEKS = 2;
 export const WEEKLY_STOCK_COVER_OVER_WEEKS = 8;
@@ -160,6 +162,62 @@ const round2 = (value: number) => Number(value.toFixed(2));
 /** Stable depot identity inside one distributor: its code, or its name when it has no code. */
 export function depotKey(row: { distributorCode: string; branchCode: string; branchName: string }): string {
   return `${up(row.distributorCode)}|${up(row.branchCode) || up(row.branchName)}`;
+}
+
+/** The tables that group several products — a branch, an area, a region, a distributor. */
+export type WeeklyStockGroupCut = "depots" | "areas" | "regions" | "distributors";
+
+/** A cell's key in one grouping: exactly the `code` its group row carries. */
+export function weeklyStockGroupKey(
+  cell: Pick<WeeklyStockCell, "branchKey" | "areaCode" | "regionCode" | "regionName" | "distributorCode">,
+  cut: WeeklyStockGroupCut,
+): string {
+  if (cut === "depots") return cell.branchKey;
+  if (cut === "areas") return cell.areaCode ?? WEEKLY_STOCK_UNMAPPED_AREA;
+  if (cut === "regions") return up(cell.regionCode) || cell.regionName;
+  return up(cell.distributorCode);
+}
+
+/** One product's own stock at one group. */
+export type WeeklyStockProductUnits = { stockUnits: number; avgWeeklyUnits: number };
+
+/**
+ * "Units for" (owner, 2026-09-19): a group row adds several products, so its value is the only total it
+ * carries — but ONE product's units at each group are valid, and this is that product's stock and average
+ * weekly sales in units at every group, keyed as weeklyStockGroupKey keys it. Built from the view's own
+ * cells, so it follows every filter the rows do. A group the product never reached is absent (zero).
+ */
+export function weeklyStockProductUnitsByGroup(
+  cells: readonly WeeklyStockCell[],
+  productCode: string,
+  cut: WeeklyStockGroupCut,
+): Record<string, WeeklyStockProductUnits> {
+  const code = up(productCode);
+  const groups: Record<string, WeeklyStockProductUnits> = {};
+  for (const cell of cells) {
+    if (up(cell.productCode) !== code) continue;
+    const key = weeklyStockGroupKey(cell, cut);
+    const group = groups[key] ?? { stockUnits: 0, avgWeeklyUnits: 0 };
+    group.stockUnits += cell.stockUnits;
+    group.avgWeeklyUnits += cell.avgWeeklyUnits;
+    groups[key] = group;
+  }
+  for (const group of Object.values(groups)) {
+    group.stockUnits = round2(group.stockUnits);
+    group.avgWeeklyUnits = round2(group.avgWeeklyUnits);
+  }
+  return groups;
+}
+
+/** The "Units for" product: the one picked while the view still holds it, else the one with the most stock value. */
+export function weeklyStockUnitProduct(
+  products: readonly WeeklyStockProductRow[],
+  pickedCode: string | null | undefined,
+): WeeklyStockProductRow | null {
+  const picked = up(pickedCode);
+  const found = picked ? products.find((product) => up(product.productCode) === picked) : undefined;
+  if (found) return found;
+  return [...products].sort((a, b) => b.stockValue - a.stockValue || a.productName.localeCompare(b.productName))[0] ?? null;
 }
 
 export function classifyWeeklyStock(stockUnits: number, avgWeeklyUnits: number): {
@@ -415,10 +473,10 @@ export function buildWeeklyStockView(
     if (cell.status === "no_sales") product.noSalesDepots += 1;
     products.set(cell.productCode, product);
 
-    accumulate(depots, cell.branchKey, cell.branchName, cell.regionName, cell, avgWeeklyValue);
-    accumulate(areas, cell.areaCode ?? WEEKLY_STOCK_UNMAPPED_AREA, cell.areaName, cell.regionName, cell, avgWeeklyValue);
-    accumulate(regions, up(cell.regionCode) || cell.regionName, cell.regionName, "", cell, avgWeeklyValue);
-    accumulate(distributors, up(cell.distributorCode), cell.distributorName, "", cell, avgWeeklyValue);
+    accumulate(depots, weeklyStockGroupKey(cell, "depots"), cell.branchName, cell.regionName, cell, avgWeeklyValue);
+    accumulate(areas, weeklyStockGroupKey(cell, "areas"), cell.areaName, cell.regionName, cell, avgWeeklyValue);
+    accumulate(regions, weeklyStockGroupKey(cell, "regions"), cell.regionName, "", cell, avgWeeklyValue);
+    accumulate(distributors, weeklyStockGroupKey(cell, "distributors"), cell.distributorName, "", cell, avgWeeklyValue);
     distributorSnapshot.set(up(cell.distributorCode), cell.asOfWeekStart);
   }
 

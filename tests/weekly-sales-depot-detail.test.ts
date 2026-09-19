@@ -648,7 +648,7 @@ export async function runWeeklySalesDepotDetailTests() {
       { generatedAtCairo: "16 Sep 2026, 21:30" },
     );
     for (const [name, rowCount] of [
-      ["Sales by Depot", noRegion.cells.length],
+      ["Sales by Branch", noRegion.cells.length],
       ["By Area", noRegion.areas.length],
       ["By Region", noRegion.regions.length],
     ] as const) {
@@ -1010,7 +1010,7 @@ export async function runWeeklySalesDepotDetailTests() {
   };
   {
     const dmBook = buildWeeklySalesDepotDetailWorkbook(dmPayload, { generatedAtCairo: "17 Sep 2026, 10:00" });
-    const sheet = sheetOf(dmBook, "Sales by Depot");
+    const sheet = sheetOf(dmBook, "Sales by Branch");
     const labels = headers(sheet);
     assert.ok(
       labels.includes("Region") && labels.includes("How It Reached You") && labels.includes("Of Which Allocated (EGP)"),
@@ -1022,7 +1022,7 @@ export async function runWeeklySalesDepotDetailTests() {
       "and totals the allocated part",
     );
     const bookText = workbookText(dmBook);
-    assert.ok(bookText.includes("Allocated share") && bookText.includes("Part allocated") && bookText.includes("Whole depot"));
+    assert.ok(bookText.includes("Allocated share") && bookText.includes("Part allocated") && bookText.includes("Whole branch"));
     const notes = weeklySalesDepotDetailNotes(dmPayload, "17 Sep 2026, 10:00");
     assert.deepEqual(
       notes.map((note) => note.topic).filter((topic) => ["How it reached you", "Area not mapped", "Allocation missing"].includes(topic)),
@@ -1052,11 +1052,11 @@ export async function runWeeklySalesDepotDetailTests() {
   const managerBook = buildWeeklySalesDepotDetailWorkbook(managerPayload, { generatedAtCairo });
   assert.deepEqual(
     managerBook.worksheets.map((sheet) => sheet.name),
-    ["Sales by Depot", "By Product", "By Depot", "By Area", "By Region", "By Distributor", "Notes"],
+    ["Sales by Branch", "By Product", "By Branch", "By Area", "By Region", "By Distributor", "Notes"],
     "the managers' book mirrors the screen's tabs",
   );
   {
-    const sheet = sheetOf(managerBook, "Sales by Depot");
+    const sheet = sheetOf(managerBook, "Sales by Branch");
     const labels = headers(sheet);
     assert.ok(labels.includes("Region"), "a manager's grain row names its region");
     assert.equal(labels.includes("How It Reached You"), false, "a manager's rows are whole depots, so there is no basis column");
@@ -1085,12 +1085,12 @@ export async function runWeeklySalesDepotDetailTests() {
   {
     const sheet = sheetOf(managerBook, "By Product");
     const totalRow = 4 + view.products.length;
-    for (const label of ["Net Units", "Avg Weekly Units", "Depots"]) {
+    for (const label of ["Net Units", "Avg Weekly Units", "Branches"]) {
       assert.equal(formulaOf(sheet, totalRow, columnOf(sheet, label)), null, `By Product never sums "${label}"`);
     }
     assert.notEqual(formulaOf(sheet, totalRow, columnOf(sheet, "Sales Value (EGP)")), null);
   }
-  for (const name of ["By Depot", "By Area", "By Region", "By Distributor"]) {
+  for (const name of ["By Branch", "By Area", "By Region", "By Distributor"]) {
     const labels = headers(sheetOf(managerBook, name));
     assert.equal(
       labels.some((label) => /unit/i.test(label)),
@@ -1106,11 +1106,11 @@ export async function runWeeklySalesDepotDetailTests() {
   const repBook = buildWeeklySalesDepotDetailWorkbook(repPayload, { generatedAtCairo });
   assert.deepEqual(
     repBook.worksheets.map((sheet) => sheet.name),
-    ["Sales by Depot", "By Product", "By Depot", "By Distributor", "Notes"],
+    ["Sales by Branch", "By Product", "By Branch", "By Distributor", "Notes"],
     "a rep's book is his screen: no region tab, and no area tab while he holds one area",
   );
   {
-    const labels = headers(sheetOf(repBook, "Sales by Depot"));
+    const labels = headers(sheetOf(repBook, "Sales by Branch"));
     assert.equal(labels.includes("Region"), false);
     assert.ok(labels.includes("How It Reached You") && labels.includes("Of Which Allocated (EGP)"), "his book states what was allocated");
   }
@@ -1131,16 +1131,16 @@ export async function runWeeklySalesDepotDetailTests() {
       { view: twoAreaRep, scope: repPayload.scope, status: "ok", allocationUnavailable: false },
       { generatedAtCairo },
     ).worksheets.map((sheet) => sheet.name),
-    ["Sales by Depot", "By Product", "By Depot", "By Area", "By Distributor", "Notes"],
+    ["Sales by Branch", "By Product", "By Branch", "By Area", "By Distributor", "Notes"],
     "a rep who holds two areas gets the area tab his screen shows him",
   );
   for (const book of [managerBook, repBook]) {
     const buffer = await book.xlsx.writeBuffer();
     assert.ok(buffer.byteLength > 1000, "the workbook serialises");
   }
-  assert.equal(buildWeeklySalesDepotDetailFilename("manager", [SEPTEMBER]), "phoenix-weekly-sales-depot-detail-2026-09.xlsx");
-  assert.equal(buildWeeklySalesDepotDetailFilename("rep", [SEPTEMBER]), "phoenix-weekly-sales-my-depots-2026-09.xlsx");
-  assert.equal(buildWeeklySalesDepotDetailFilename("manager", []), "phoenix-weekly-sales-depot-detail-all-months.xlsx");
+  assert.equal(buildWeeklySalesDepotDetailFilename("manager", [SEPTEMBER]), "phoenix-weekly-sales-branch-detail-2026-09.xlsx");
+  assert.equal(buildWeeklySalesDepotDetailFilename("rep", [SEPTEMBER]), "phoenix-weekly-sales-my-branches-2026-09.xlsx");
+  assert.equal(buildWeeklySalesDepotDetailFilename("manager", []), "phoenix-weekly-sales-branch-detail-all-months.xlsx");
 
   // ── 11. the server gates ─────────────────────────────────────────────────────────────────────
   const managerRoutes = [

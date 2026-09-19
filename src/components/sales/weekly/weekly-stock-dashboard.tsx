@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
+import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import {
   WEEKLY_STOCK_COVER_LOW_WEEKS,
   WEEKLY_STOCK_COVER_OVER_WEEKS,
@@ -25,16 +26,21 @@ import {
   WEEKLY_STOCK_STATUS_LABELS,
   type WeeklyStockCell,
   type WeeklyStockDistributorRow,
+  type WeeklyStockGroupCut,
   type WeeklyStockGroupRow,
   type WeeklyStockProductRow,
+  type WeeklyStockProductUnits,
   type WeeklyStockStatus,
+  weeklyStockProductUnitsByGroup,
+  weeklyStockUnitProduct,
 } from "@/lib/sales/weekly/stock-dashboard";
 import type { WeeklyStockPayload } from "@/lib/sales/weekly/stock-dashboard-service";
 
 // Weekly Stock — one screen for the admin shell and the employee portal. The server decides the
 // viewer's scope; this component only carries the viewer's own filter choices to the feed and renders
 // what comes back. Units appear ONLY against a single product; every figure spanning products is a
-// value (owner rule), so the depot/area/region/distributor tables have no unit column at all.
+// value (owner rule). The branch, area, region and distributor tables total value only, and beside it show
+// ONE product's own units — the one picked in their "Units for" bar (owner, 2026-09-19).
 
 type Props = {
   initial: WeeklyStockPayload;
@@ -80,9 +86,9 @@ const STATUS_RAIL: Record<WeeklyStockStatus, string> = {
 };
 
 const TABS: { key: StockTab; label: string }[] = [
-  { key: "cells", label: "Depot × Product" },
+  { key: "cells", label: "Branch × Product" },
   { key: "products", label: "Products" },
-  { key: "depots", label: "Depots" },
+  { key: "depots", label: "Branches" },
   { key: "areas", label: "Areas" },
   { key: "regions", label: "Regions" },
   { key: "distributors", label: "Distributors" },
@@ -133,6 +139,8 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
   const [resolved, setResolved] = useState(blankResolved);
   const [tab, setTab] = useState<StockTab>("cells");
   const [pager, setPager] = useState({ key: "", limit: PAGE_SIZE });
+  // The "Units for" pick. null until one is picked: the product with the most stock value is shown.
+  const [unitProduct, setUnitProduct] = useState<string | null>(null);
 
   const firstRun = useRef(true);
   const cacheRef = useRef(new Map<string, WeeklyStockPayload>());
@@ -282,6 +290,19 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
 
   const hasAnyStock = view.availableAsOfWeeks.length > 0;
 
+  // A group row adds several products, so beside its value it shows ONE product's own units there
+  // (weeklyStockProductUnitsByGroup), worked out from the same cells the row is.
+  const groupCut: WeeklyStockGroupCut | null =
+    tab === "depots" || tab === "areas" || tab === "regions" || tab === "distributors" ? tab : null;
+  const unitsProduct = weeklyStockUnitProduct(view.products, unitProduct);
+  const groupUnits = useMemo<GroupUnits>(
+    () => ({
+      productName: unitsProduct?.productName ?? "",
+      byCode: groupCut && unitsProduct ? weeklyStockProductUnitsByGroup(view.cells, unitsProduct.productCode, groupCut) : {},
+    }),
+    [groupCut, unitsProduct, view.cells],
+  );
+
   const filterField = (key: FilterKey, label: string, icon: ReactNode, fieldOptions: MultiSelectFilterOption[]) => (
     <MultiSelectFilter
       label={label}
@@ -384,7 +405,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
           {filterField("distributors", "Distributor", <Truck className="h-3 w-3" />, distributorOptions)}
           {vis.region ? filterField("regions", "Region", <MapPin className="h-3 w-3" />, regionOptions) : null}
           {filterField("areas", "Area", <MapPin className="h-3 w-3" />, areaOptions)}
-          {filterField("depots", "Depot", <Building2 className="h-3 w-3" />, depotOptions)}
+          {filterField("depots", "Branch", <Building2 className="h-3 w-3" />, depotOptions)}
           {vis.line ? filterField("lines", "Line", <Layers className="h-3 w-3" />, lineOptions) : null}
           {filterField("products", "Product", <Package className="h-3 w-3" />, productOptions)}
           {filterField("statuses", "Stock status", <Boxes className="h-3 w-3" />, STATUS_OPTIONS)}
@@ -419,7 +440,7 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               value={formatCover(totalCover)}
               sub={totalCover == null ? "No sales in window" : "Stock value ÷ weekly sales"}
             />
-            <Kpi accent="#0F172A" icon={Building2} label="Depots" value={formatUnits(kpis.depotCount)} sub={`${formatUnits(kpis.productCount)} products`} />
+            <Kpi accent="#0F172A" icon={Building2} label="Branches" value={formatUnits(kpis.depotCount)} sub={`${formatUnits(kpis.productCount)} products`} />
             <Kpi
               accent="#E11D48"
               icon={TriangleAlert}
@@ -495,6 +516,15 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
               </span>
               <span className="tabular-nums text-slate-900">Total stock value {formatEgpFull(kpis.stockValue)}</span>
             </div>
+            {groupCut && unitsProduct && view.products.length > 1 && rowCount > 0 ? (
+              <WeeklyUnitProductPicker
+                tone="inset"
+                products={view.products.map((product) => ({ code: product.productCode, name: product.productName }))}
+                value={unitsProduct.productCode}
+                onChange={setUnitProduct}
+                note="Each row holds several products, so its totals are values. Units of different products are never added, so the Stock units column shows the product picked here at each row."
+              />
+            ) : null}
             {rowCount === 0 ? (
               <div className="p-8 text-center text-sm font-semibold text-slate-400">No stock rows for this selection.</div>
             ) : tab === "cells" ? (
@@ -506,16 +536,18 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
                 nameLabel="Distributor"
                 rows={view.distributors.slice(0, limit)}
                 onDrill={(code) => drill("distributors", code)}
+                units={groupUnits}
               />
             ) : (
               <GroupTable
-                nameLabel={tab === "depots" ? "Depot" : tab === "areas" ? "Area" : "Region"}
+                nameLabel={tab === "depots" ? "Branch" : tab === "areas" ? "Area" : "Region"}
                 rows={(tab === "depots" ? view.depots : tab === "areas" ? view.areas : view.regions).slice(0, limit)}
                 onDrill={
                   tab === "regions" && !vis.region
                     ? undefined
                     : (code) => drill(tab === "depots" ? "depots" : tab === "areas" ? "areas" : "regions", code)
                 }
+                units={groupUnits}
               />
             )}
             {rowCount > limit ? (
@@ -538,8 +570,9 @@ export function WeeklyStockDashboard({ initial, feedPath, exportPath }: Props) {
             Stock is each distributor&apos;s latest stock file on or before the date chosen, never added across weeks. Weeks of cover is
             stock divided by average weekly net sales over the last {WEEKLY_STOCK_SALES_WINDOW_WEEKS} weeks: low stock under{" "}
             {WEEKLY_STOCK_COVER_LOW_WEEKS} weeks, healthy {WEEKLY_STOCK_COVER_LOW_WEEKS} to {WEEKLY_STOCK_COVER_OVER_WEEKS}, overstock over{" "}
-            {WEEKLY_STOCK_COVER_OVER_WEEKS}. Units are shown per product only; every total across products is a value. Head Office products
-            are not tracked weekly.
+            {WEEKLY_STOCK_COVER_OVER_WEEKS}. Units are one product&apos;s only: every total across products is a value, and beside a branch, area,
+            region or distributor&apos;s value the Stock units column is the one product picked in Units for. Head Office products are not
+            tracked weekly.
           </p>
         </>
       )}
@@ -624,8 +657,8 @@ function StatusBadge({ status }: { status: WeeklyStockStatus }) {
 
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+    <div className="min-w-0 rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
+      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
@@ -652,7 +685,7 @@ function CellsTable({ rows }: { rows: WeeklyStockCell[] }) {
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
-              <th className={TH}>Depot</th>
+              <th className={TH}>Branch</th>
               <th className={TH}>Product</th>
               <th className={TH_NUM}>Stock units</th>
               <th className={TH_NUM}>Stock value</th>
@@ -743,7 +776,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
               <th className={TH_NUM}>Stock units</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg / week</th>
-              <th className={TH}>Depots</th>
+              <th className={TH}>Branches</th>
             </tr>
           </thead>
           <tbody>
@@ -782,7 +815,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklyStockProductRow[]; onDri
                 <div className="min-w-0">
                   <DrillName name={row.productName} onClick={() => onDrill(row.productCode)} />
                   <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                    {row.line} · {row.depotCount} depots · {row.lowDepots} low · {row.overDepots} over
+                    {row.line} · {row.depotCount} branches · {row.lowDepots} low · {row.overDepots} over
                   </p>
                 </div>
                 <StatusBadge status={row.status} />
@@ -806,30 +839,43 @@ function groupSubline(row: WeeklyStockGroupRow | WeeklyStockDistributorRow): str
   return row.parentName;
 }
 
+/** One product's own units at each group row, by the row's code (weeklyStockProductUnitsByGroup). */
+type GroupUnits = { productName: string; byCode: Record<string, WeeklyStockProductUnits> };
+
 function GroupTable({
   nameLabel,
   rows,
   onDrill,
+  units,
 }: {
   nameLabel: string;
   rows: (WeeklyStockGroupRow | WeeklyStockDistributorRow)[];
   onDrill?: (code: string) => void;
+  /** the "Units for" product's own stock at each row */
+  units: GroupUnits;
 }) {
+  const unitsOf = (code: string): WeeklyStockProductUnits => units.byCode[code] ?? { stockUnits: 0, avgWeeklyUnits: 0 };
   return (
     <>
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
+          {/* The unit column is fitted by narrowing the name and the product count, never by shrinking type. */}
           <colgroup>
-            <col className="w-[34%]" />
-            <col className="w-[20%]" />
-            <col className="w-[20%]" />
             <col className="w-[26%]" />
+            <col className="w-[19%]" />
+            <col className="w-[19%]" />
+            <col className="w-[16%]" />
+            <col className="w-[20%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>{nameLabel}</th>
               <th className={TH_NUM}>Stock value</th>
               <th className={TH_NUM}>Avg weekly sales</th>
+              <th className={TH_NUM}>
+                <span className="block">Stock units</span>
+                <span className="block break-words font-bold normal-case tracking-normal text-slate-400">{units.productName}</span>
+              </th>
               <th className={TH}>Products</th>
             </tr>
           </thead>
@@ -852,6 +898,10 @@ function GroupTable({
                 <td className={TD_NUM}>
                   <p>{formatEgpFull(row.avgWeeklyValue)}</p>
                   <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{formatCoverLine(row.coverWeeks)}</p>
+                </td>
+                <td className={TD_NUM}>
+                  <p className="font-black text-slate-900">{formatUnits(unitsOf(row.code).stockUnits)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{`${formatAvgUnits(unitsOf(row.code).avgWeeklyUnits)} / wk`}</p>
                 </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatUnits(row.productCount)}</p>
@@ -885,10 +935,11 @@ function GroupTable({
                 </div>
                 <StatusBadge status={row.status} />
               </div>
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <CardStat label="Stock value" value={formatEgp(row.stockValue)} />
                 <CardStat label="Avg / week" value={formatEgp(row.avgWeeklyValue)} />
                 <CardStat label="Cover" value={formatCover(row.coverWeeks)} />
+                <CardStat label={`Stock units · ${units.productName}`} value={formatUnits(unitsOf(row.code).stockUnits)} />
               </div>
             </div>
           </div>

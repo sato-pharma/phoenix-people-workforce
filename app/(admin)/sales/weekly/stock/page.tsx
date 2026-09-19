@@ -56,7 +56,7 @@ export default async function AdminWeeklyStockPage() {
           <p className={pageHeaderKickerClassName}>Weekly Sales · Stock</p>
           <h1 className={pageHeaderTitleClassName}>Weekly Stock</h1>
           <p className={pageHeaderDescriptionClassName}>
-            Stock on hand for every product at every depot, from each distributor&apos;s latest stock file, with weeks of cover from
+            Stock on hand for every product at every branch, from each distributor&apos;s latest stock file, with weeks of cover from
             recent sales. Totals across products are values.
           </p>
         </div>

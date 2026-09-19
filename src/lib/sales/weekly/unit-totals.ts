@@ -11,8 +11,24 @@
 // The admin shell's Weekly Sales Dashboard and its Export Excel (the Weekly BI workbook) follow the same
 // rule (owner, 2026-09-17): every unit figure that adds rows appears only while those rows are one
 // product's, and the workbook, whose design is locked, keeps its cells and holds a dash in them instead.
+//
+// ONE PRODUCT AT A TIME (owner, 2026-09-19): a screen no longer hides or dashes a unit figure its rows
+// would add across products. It shows that figure for ONE product — the one picked in its "Units for" bar,
+// else the top product by value — and names the product beside it. Units are still never added across
+// products; only what the screen shows in their place changed. The exports keep the rule above.
 
-import type { WeeklyBranchRow, WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
+import type {
+  WeeklyBranchRow,
+  WeeklyBranchSummary,
+  WeeklyDashboard,
+  WeeklyDashboardUnitView,
+  WeeklyDelta,
+  WeeklyFactExportRow,
+  WeeklyRegionSummary,
+  WeeklySalesValidationResult,
+  WeeklyTotals,
+  WeeklyUnitFigures,
+} from "@/lib/sales/weekly/types";
 
 /**
  * `kpis.salesUnits` and `kpis.stockUnits` add every row of the selected week(s). `kpis.productCount`
@@ -91,6 +107,191 @@ export function weeklyProductKeysAreOne(keys: Iterable<string | null | undefined
     if (seen.size > 1) return false;
   }
   return seen.size === 1;
+}
+
+/** What the Upload screen's unit tiles, By branch and By region print. */
+export type WeeklyUploadUnitScope = {
+  /** the picked product's key; null when the whole sheet is one product, so nothing needs picking */
+  productKey: string | null;
+  productName: string | null;
+  totals: Pick<WeeklyTotals, "salesQty" | "returnQty" | "netQty" | "stockQty">;
+  byBranch: WeeklyBranchSummary[];
+  byRegion: WeeklyRegionSummary[];
+};
+
+/**
+ * The Upload screen's unit figures (owner, 2026-09-19). A sheet of ONE product prints its own totals, By
+ * branch and By region as they stand. A sheet of several products never adds their units, so it prints
+ * them for the ONE product picked on the screen — the Upload screen's counterpart of the dashboard's
+ * Product filter. A pick this result does not hold (another file was validated since) falls back to its
+ * first product, the largest by value. null only when there is no product to show, and the screen then
+ * keeps its dashes.
+ */
+export function weeklyUploadUnitScope(
+  result: Pick<WeeklySalesValidationResult, "totals" | "byProduct" | "byBranch" | "byRegion" | "byProductGeography">,
+  pickedProductKey: string | null,
+): WeeklyUploadUnitScope | null {
+  if (weeklyProductKeysAreOne(result.byProduct.map((product) => product.productCode || product.productName))) {
+    return { productKey: null, productName: null, totals: result.totals, byBranch: result.byBranch, byRegion: result.byRegion };
+  }
+  const product = result.byProduct.find((entry) => entry.productCode === pickedProductKey) ?? result.byProduct[0];
+  const geography = product && result.byProductGeography.find((entry) => entry.productCode === product.productCode);
+  if (!product || !geography) return null;
+  return {
+    productKey: product.productCode,
+    productName: product.productName || product.productCode,
+    totals: product,
+    byBranch: geography.byBranch,
+    byRegion: geography.byRegion,
+  };
+}
+
+/** The key of one week of `weekComparison`, and of WeeklyDashboardUnitView.weeks. */
+export function weeklyWeekKey(cycleMonth: string, weekNumber: number): string {
+  return `${cycleMonth}||${weekNumber}`;
+}
+
+/**
+ * Which product a "Units for" figure shows (owner, 2026-09-19): the one picked on the screen while the
+ * list still holds it, else the list's first. Every list this is asked of is sorted by value, so the
+ * default is the top product by value, and a pick another filter has since removed falls back to it
+ * rather than showing a product the screen no longer lists. null only for an empty list.
+ */
+export function weeklyUnitViewProduct<T extends { code: string }>(
+  products: readonly T[],
+  pickedCode: string | null | undefined,
+): T | null {
+  const picked = (pickedCode ?? "").trim().toUpperCase();
+  return (picked && products.find((product) => product.code.trim().toUpperCase() === picked)) || products[0] || null;
+}
+
+/** How a unit figure names the product it counts: " · <product>" for the "Units for" product, "" for its own. */
+export function weeklyUnitsOfLabel(unitView: Pick<WeeklyDashboardUnitView, "productName"> | null): string {
+  return unitView ? ` · ${unitView.productName}` : "";
+}
+
+/** The two unit tiles, and the change each shows against the previous week (null: no change shown). */
+export type WeeklyUnitTiles = {
+  /** appended to each tile's label: "" for the selection's own units, " · <product>" for the picked one's */
+  of: string;
+  salesUnits: number;
+  stockUnits: number;
+  compare: { salesUnits: WeeklyDelta; stockUnits: WeeklyDelta } | null;
+};
+
+/**
+ * The Sales Units and Stock Units tiles (owner, 2026-09-19). A selection of ONE product shows its own
+ * totals. A selection of several shows the "Units for" product's own (unitView), named on the tile, where
+ * it used to show nothing. null only when there is neither — no product at all.
+ *
+ * The change against the previous week is one product's only when the prior figure is too: the
+ * selection's own change while a product filter pins every week to one product
+ * (weeklyKpiUnitDeltaIsOneProduct), else the picked product's own change, which the server works out
+ * over that product's rows alone.
+ */
+export function weeklyUnitTiles(
+  data: Pick<WeeklyDashboard, "kpis" | "compare" | "appliedFilters" | "unitView">,
+): WeeklyUnitTiles | null {
+  const unitView = data.unitView ?? null;
+  if (weeklyKpiUnitsAreOneProduct(data)) {
+    return {
+      of: "",
+      salesUnits: data.kpis.salesUnits,
+      stockUnits: data.kpis.stockUnits,
+      compare: weeklyKpiUnitDeltaIsOneProduct(data)
+        ? { salesUnits: data.compare.salesUnits, stockUnits: data.compare.stockUnits }
+        : (unitView?.compare ?? null),
+    };
+  }
+  if (!unitView) return null;
+  return {
+    of: weeklyUnitsOfLabel(unitView),
+    salesUnits: unitView.kpis.salesUnits,
+    stockUnits: unitView.kpis.stockUnits,
+    compare: unitView.compare,
+  };
+}
+
+/** A table's unit column: its rows' own units, or the "Units for" product's at each row's key. */
+export type WeeklyCutUnits = {
+  /** appended to the column's label */
+  of: string;
+  /** the picked product's units by row key; null while the rows' own units are one product's */
+  byKey: Readonly<Record<string, WeeklyUnitFigures>> | null;
+};
+
+/**
+ * The unit column of a table cut by product, region, distributor or branch (owner, 2026-09-19). A
+ * product row's units, and any row of a one-product selection, are the row's own. Otherwise the column
+ * shows the "Units for" product's units at each row — every other figure on the row stays the row's
+ * own. null only when there is neither.
+ */
+export function weeklyCutUnits(data: Pick<WeeklyDashboard, "kpis" | "unitView">, cut: WeeklyTotalsCut): WeeklyCutUnits | null {
+  if (weeklyBreakdownUnitsAreOneProduct(data, cut)) return { of: "", byKey: null };
+  const unitView = data.unitView ?? null;
+  if (!unitView) return null;
+  const byKey = cut === "region" ? unitView.regions : cut === "distributor" ? unitView.distributors : unitView.branches;
+  return { of: weeklyUnitsOfLabel(unitView), byKey };
+}
+
+/** One row's figures under a table's unit column: its own, or the picked product's at its key (zero where it never reached). */
+export function weeklyCutUnitsOf(cut: WeeklyCutUnits, key: string, own: WeeklyUnitFigures): WeeklyUnitFigures {
+  if (!cut.byKey) return own;
+  const picked = cut.byKey[key];
+  return { salesUnits: picked?.salesUnits ?? 0, stockUnits: picked?.stockUnits ?? 0 };
+}
+
+/**
+ * A table's rows as its unit column shows them: unchanged while their own units are one product's, else
+ * with the "Units for" product's units at each row's own key. Every other field of a row — its value, its
+ * share — stays its own.
+ */
+export function weeklyRowsWithCutUnits<T extends WeeklyUnitFigures>(
+  rows: readonly T[],
+  cut: WeeklyCutUnits | null,
+  keyOf: (row: T) => string,
+): readonly T[] {
+  if (!cut?.byKey) return rows;
+  return rows.map((row) => ({ ...row, ...weeklyCutUnitsOf(cut, keyOf(row), row) }));
+}
+
+/** The week-by-week comparison's unit columns. */
+export type WeeklyWeekUnits = {
+  of: string;
+  /** the picked product's units by weeklyWeekKey; null while a product filter makes every week's own units one product's */
+  byWeek: Readonly<Record<string, { salesUnits: number | null; stockUnits: number }>> | null;
+};
+
+/**
+ * The week-by-week comparison adds units over every week in scope, so its own units are one product's
+ * only under a product filter (weeklyWeekComparisonUnitsAreOneProduct). Otherwise it shows the "Units
+ * for" product's units in each week, gap-nulled exactly as the week's own figures are. null only when
+ * there is neither.
+ */
+export function weeklyWeekUnits(data: Pick<WeeklyDashboard, "appliedFilters" | "unitView">): WeeklyWeekUnits | null {
+  if (weeklyWeekComparisonUnitsAreOneProduct(data)) return { of: "", byWeek: null };
+  const unitView = data.unitView ?? null;
+  return unitView ? { of: weeklyUnitsOfLabel(unitView), byWeek: unitView.weeks } : null;
+}
+
+/**
+ * The week-by-week comparison's rows as its unit columns show them: unchanged under a product filter,
+ * else with the "Units for" product's units in each week. A week that product never reached reads zero,
+ * and a week whose own figure is gap-nulled stays null.
+ */
+export function weeklyWeekRowsWithUnits<
+  T extends { cycleMonth: string; weekNumber: number; salesUnits: number | null; stockUnits: number },
+>(rows: readonly T[], units: WeeklyWeekUnits | null): readonly T[] {
+  const byWeek = units?.byWeek;
+  if (!byWeek) return rows;
+  return rows.map((row) => {
+    const picked = byWeek[weeklyWeekKey(row.cycleMonth, row.weekNumber)];
+    return {
+      ...row,
+      salesUnits: picked ? picked.salesUnits : row.salesUnits == null ? null : 0,
+      stockUnits: picked?.stockUnits ?? 0,
+    };
+  });
 }
 
 /**

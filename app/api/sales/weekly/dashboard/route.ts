@@ -51,6 +51,8 @@ export async function GET(request: Request) {
       weekNumberMode: mode("weekNumMode"),
       // Individual uploads by weekly_sales_batches.id — see the Upload picker on the dashboard.
       batchIds: parseList("batch"),
+      // The "Units for" pick: whose units stand in for the figures that would add products (unitView).
+      unitProductCode: str("unitProduct"),
       accessScope,
     });
     return NextResponse.json({ success: true, data });

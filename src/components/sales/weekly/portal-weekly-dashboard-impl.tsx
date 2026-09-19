@@ -38,6 +38,7 @@ import {
 import { MultiSelectFilter, type MultiSelectFilterMode } from "@/components/ui/multi-select-filter";
 import { PortalWeeklyFieldForceView } from "@/components/sales/weekly/portal-weekly-field-force-view";
 import { WeeklySalesDepotDetail } from "@/components/sales/weekly/weekly-sales-depot-detail";
+import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import { breakdownColumns, completenessColumns } from "@/components/sales/weekly/weekly-table-widths";
 import type {
   PortalWeeklyComparison,
@@ -46,8 +47,10 @@ import type {
 import type { PortalWeeklyFieldForce } from "@/lib/sales/weekly/portal-weekly-field-force";
 import type { WeeklyDashboard, WeeklyRanked } from "@/lib/sales/weekly/types";
 import {
-  weeklyBreakdownUnitsAreOneProduct,
+  weeklyCutUnits,
+  weeklyCutUnitsOf,
   weeklyKpiUnitsAreOneProduct,
+  weeklyUnitTiles,
   type WeeklyBreakdownCut,
 } from "@/lib/sales/weekly/unit-totals";
 
@@ -145,6 +148,10 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
   });
 
   const [view, setView] = useState<DetailView>(scope.isSingleRegion ? "product" : "product");
+  // The "Units for" pick (WeeklyDashboardUnitView). null until the viewer picks: the server then shows the
+  // top product by value. It rides on the feed request only, never on the filters, the export or the
+  // Depot Detail tab, so picking a product moves unit figures and nothing else.
+  const [unitProduct, setUnitProduct] = useState<string | null>(null);
 
   const firstRun = useRef(true);
   const cacheRef = useRef<Map<string, CachedPayload>>(new Map());
@@ -170,8 +177,14 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
     return params.toString();
   }, [selection, modes, vis]);
 
+  const feedQuery = useCallback((): string => {
+    const params = new URLSearchParams(buildQuery());
+    if (unitProduct) params.set("unitProduct", unitProduct);
+    return params.toString();
+  }, [buildQuery, unitProduct]);
+
   useEffect(() => {
-    const query = buildQuery();
+    const query = feedQuery();
     if (firstRun.current) {
       firstRun.current = false;
       cacheRef.current.set(query, {
@@ -221,7 +234,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
       clearTimeout(timer);
       controller.abort();
     };
-  }, [buildQuery, initialData, initialComparison, initialFieldForce, refreshTick]);
+  }, [feedQuery, initialData, initialComparison, initialFieldForce, refreshTick]);
 
   const refresh = () => {
     cacheRef.current.clear();
@@ -291,9 +304,13 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
 
   const isEmpty = data.kpis.salesValue === 0 && data.kpis.salesUnits === 0;
   const isProductScoped = scope.role === "Product Manager" || scope.role === "Group Product Manager";
-  // Units of different products are never added (owner rule): the unit tiles appear only while the
-  // selection is one product, and the Export follows the same test (unit-totals.ts).
+  // Units of different products are never added (owner rule): the unit tiles are the selection's own while
+  // it is one product, and otherwise the "Units for" product's own (data.unitView), named on each tile, as
+  // are the Breakdown's region and distributor units (unit-totals.ts). The Export still prints a unit total
+  // only for one product.
   const showUnitTiles = weeklyKpiUnitsAreOneProduct(data);
+  const unitTiles = weeklyUnitTiles(data);
+  const unitView = showUnitTiles ? null : (data.unitView ?? null);
 
   // Upload status chip — derived from sources vs distributors list
   const uploadedCount = new Set(data.sources.map((s) => s.distributorCode)).size;
@@ -449,10 +466,19 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
         </>
       ) : activeTab === "distribution" ? (
         <>
-          {/* KPI strip. The two unit tiles are one product's units or nothing (see showUnitTiles), so the
-              grid is laid out for whichever count of tiles is actually there. */}
+          {unitView && data.products.length > 1 ? (
+            <WeeklyUnitProductPicker
+              products={data.products.map((product) => ({ code: product.code, name: product.name }))}
+              value={unitView.productCode}
+              onChange={setUnitProduct}
+              note={`This selection holds ${formatNumber(data.products.length)} products, and units of different products are never added — so the unit tiles and the Breakdown's region and distributor units show one product at a time. Values cover every product.`}
+            />
+          ) : null}
+
+          {/* KPI strip. The two unit tiles are one product's units (see unitTiles), so the grid is laid out
+              for whichever count of tiles is actually there. */}
           <div
-            className={`grid grid-cols-2 gap-3 ${showUnitTiles ? "lg:grid-cols-3 xl:grid-cols-6" : "lg:grid-cols-4"}`}
+            className={`grid grid-cols-2 gap-3 ${unitTiles ? "lg:grid-cols-3 xl:grid-cols-6" : "lg:grid-cols-4"}`}
           >
             <StatTile
               accent="#F97316"
@@ -468,10 +494,10 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison, i
                   : null
               }
             />
-            {showUnitTiles ? (
+            {unitTiles ? (
               <>
-                <StatTile accent="#0EA5E9" icon={Boxes} label="Sales Units" value={formatNumber(data.kpis.salesUnits)} sub="net of returns" />
-                <StatTile accent="#8B5CF6" icon={Package} label="Stock Units" value={formatNumber(data.kpis.stockUnits)} />
+                <StatTile accent="#0EA5E9" icon={Boxes} label={`Sales Units${unitTiles.of}`} value={formatNumber(unitTiles.salesUnits)} sub="net of returns" />
+                <StatTile accent="#8B5CF6" icon={Package} label={`Stock Units${unitTiles.of}`} value={formatNumber(unitTiles.stockUnits)} />
               </>
             ) : null}
             <StatTile accent="#22C55E" icon={Truck} label="Distributors" value={formatNumber(data.kpis.distributorCount)} />
@@ -624,7 +650,7 @@ function WeeklyTabBar({
   const tabs: { key: WeeklyTab; label: string; hint: string; icon: typeof Users }[] = [
     { key: "field", label: "Field Force", hint: "Reps week by week, per product", icon: Users },
     { key: "distribution", label: "Distribution", hint: "Distributors, regions and products", icon: Truck },
-    { key: "detail", label: "Depot Detail", hint: "Every product at every depot", icon: Building2 },
+    { key: "detail", label: "Branch Detail", hint: "Every product at every branch", icon: Building2 },
   ];
   return (
     <div className="overflow-hidden border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)] ring-1 ring-slate-200/60">
@@ -886,10 +912,10 @@ function WeekGapNote({ weekComparison }: { weekComparison: WeeklyDashboard["week
   return (
     <div className="mt-3 space-y-1 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
       {high.length > 0 ? (
-        <p>{`${high.join(", ")} ${high.length === 1 ? "carries" : "carry"} sales from a depot that sent no sheet for the week before, so the figure also holds the week it skipped and reads high.`}</p>
+        <p>{`${high.join(", ")} ${high.length === 1 ? "carries" : "carry"} sales from a branch that sent no sheet for the week before, so the figure also holds the week it skipped and reads high.`}</p>
       ) : null}
       {hidden.length > 0 ? (
-        <p>{`${hidden.join(", ")} ${hidden.length === 1 ? "is" : "are"} shown as zero: no depot sent the week before, so a figure would hold more than one week.`}</p>
+        <p>{`${hidden.join(", ")} ${hidden.length === 1 ? "is" : "are"} shown as zero: no branch sent the week before, so a figure would hold more than one week.`}</p>
       ) : null}
     </div>
   );
@@ -1048,6 +1074,11 @@ function WeeklyDetailSection({
   exportQuery: string;
   singleRegion: boolean;
 }) {
+  // A product row's units are that product's; a region or distributor row's own units add products together,
+  // so while the selection holds several, its Units column is the picked product's there (unitView), and
+  // says so. A place that product never reached reads zero (unit-totals.ts).
+  const unitColumn = useMemo(() => weeklyCutUnits(data, view), [data, view]);
+
   const rows: DetailRow[] = useMemo(() => {
     const prevByCode = comparison?.prevValueByCode[view] ?? {};
     const deltaOf = (code: string, value: number): number | null => {
@@ -1059,7 +1090,7 @@ function WeeklyDetailSection({
         code: row.code,
         label: row.name,
         value: row.salesValue,
-        units: row.salesUnits,
+        units: unitColumn ? weeklyCutUnitsOf(unitColumn, row.code, row).salesUnits : 0,
         share: row.share,
         deltaPct: deltaOf(row.code, row.salesValue),
       }));
@@ -1072,13 +1103,12 @@ function WeeklyDetailSection({
       default:
         return map(data.products);
     }
-  }, [data, view, comparison]);
+  }, [data, view, comparison, unitColumn]);
 
   const maxValue = rows.reduce((max, row) => Math.max(max, row.value), 0) || 1;
   const showDelta = comparison != null;
-  // A product row's units are that product's; a region or distributor row's units add products together,
-  // so its Units column is there only while the whole selection is one product (unit-totals.ts).
-  const showUnits = weeklyBreakdownUnitsAreOneProduct(data, view);
+  const showUnits = unitColumn != null;
+  const unitsOf = unitColumn?.of ?? "";
   const columns = breakdownColumns(showUnits, showDelta);
 
   const tabs: { key: DetailView; label: string }[] = [
@@ -1143,7 +1173,7 @@ function WeeklyDetailSection({
                 <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-2.5 font-black">{viewLabel(view)}</th>
                   <th className="px-4 py-2.5 text-right font-black">Value</th>
-                  {showUnits ? <th className="px-2 py-2.5 text-right font-black">Units</th> : null}
+                  {showUnits ? <th className="break-words px-2 py-2.5 text-right font-black">{`Units${unitsOf}`}</th> : null}
                   <th className="px-2 py-2.5 text-right font-black">Share</th>
                   {showDelta ? <th className="px-2 py-2.5 text-right font-black">Δ vs last</th> : null}
                 </tr>
@@ -1191,7 +1221,7 @@ function WeeklyDetailSection({
                   </div>
                   <div className={`mt-2 grid gap-2 ${showUnits ? "grid-cols-3" : "grid-cols-2"}`}>
                     <CardStat label="Value" value={formatEgp(row.value)} />
-                    {showUnits ? <CardStat label="Units" value={formatNumber(row.units)} /> : null}
+                    {showUnits ? <CardStat label={`Units${unitsOf}`} value={formatNumber(row.units)} /> : null}
                     <CardStat label="Share" value={formatPct(row.share)} />
                   </div>
                 </div>

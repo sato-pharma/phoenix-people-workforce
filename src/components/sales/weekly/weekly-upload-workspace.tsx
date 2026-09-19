@@ -15,7 +15,7 @@ import type {
   WeeklyVerifyResult,
 } from "@/lib/sales/weekly/types";
 import { WEEKLY_DISTRIBUTORS } from "@/lib/sales/weekly/distributors";
-import { weeklyProductKeysAreOne } from "@/lib/sales/weekly/unit-totals";
+import { weeklyProductKeysAreOne, weeklyUploadUnitScope } from "@/lib/sales/weekly/unit-totals";
 import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-import";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -1364,7 +1364,7 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
         ))}
       </div>
       <p className="mt-2 text-xs font-medium text-phx-ink-faint">
-        These depots are ticked &quot;excluded&quot; in the Weekly Mapping branch list, so none of their volume reaches the dashboard. Untick a branch there if its sales should count.
+        These branches are ticked &quot;excluded&quot; in the Weekly Mapping branch list, so none of their volume reaches the dashboard. Untick a branch there if its sales should count.
       </p>
     </div>
   );
@@ -1546,6 +1546,12 @@ function ValidationResultPanel({
   // upload holds ONE product (owner, 2026-09-17); otherwise a dash holds its place.
   const unitsAreOneProduct = weeklyProductKeysAreOne(result.byProduct.map((p) => p.productCode || p.productName));
   const units = (value: number) => (unitsAreOneProduct ? num(value) : "—");
+  // The tiles, By branch and By region are one product's: the whole sheet's when it holds one, else the
+  // product picked below (owner, 2026-09-19). Every figure they print comes from this scope.
+  const [pickedProduct, setPickedProduct] = useState<string | null>(null);
+  const unitScope = weeklyUploadUnitScope(result, pickedProduct);
+  const scopeUnits = (value: number | undefined) => (unitScope && value !== undefined ? num(value) : "—");
+  const ofProduct = unitScope?.productName ? ` · ${unitScope.productName}` : "";
   const columns = rowIssueColumns();
   const weekMismatch =
     result.suggestedWeekNumber != null && selectedWeek != null && selectedWeek !== result.suggestedWeekNumber;
@@ -1650,6 +1656,34 @@ function ValidationResultPanel({
         </p>
       )}
 
+      {/* One product at a time — shown only when the sheet holds several, since units of different
+          products are never added. The Upload screen's counterpart of the dashboard's Product filter. */}
+      {unitScope?.productKey != null && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-phx-line bg-phx-paper px-4 py-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Units for</span>
+            {/* A fixed width that yields to the screen, and a value that wraps rather than clips. */}
+            <div className="w-72 max-w-full">
+              <SearchableSelect
+                aria-label="Product whose units are shown"
+                className="h-8 border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                onChange={(event) => setPickedProduct(event.target.value)}
+                value={unitScope.productKey}
+                wrapValue
+              >
+                {result.byProduct.map((p) => (
+                  <option key={p.productCode} value={p.productCode}>{p.productName || p.productCode}</option>
+                ))}
+              </SearchableSelect>
+            </div>
+          </div>
+          <p className="min-w-0 flex-1 basis-64 break-words text-xs font-medium text-phx-ink-soft">
+            This sheet holds {num(result.byProduct.length)} products, and units of different products are never
+            added — so the tiles, By branch and By region show one product at a time. By product lists them all.
+          </p>
+        </div>
+      )}
+
       {/* KPI strip */}
       {/* Validation is a UNITS check — the operator is confirming quantities parsed correctly, not
           money. Value is derived downstream from Product Master factory price, so showing EGP here
@@ -1657,10 +1691,10 @@ function ValidationResultPanel({
       <div className="grid grid-cols-2 gap-px bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
-        <Metric label="Sales units" value={units(t.salesQty)} />
-        <Metric label="Return units" value={units(t.returnQty)} />
-        <Metric label="Net units" value={units(t.netQty)} accent />
-        <Metric label="Stock units" value={units(t.stockQty)} />
+        <Metric label={`Sales units${ofProduct}`} value={scopeUnits(unitScope?.totals.salesQty)} />
+        <Metric label={`Return units${ofProduct}`} value={scopeUnits(unitScope?.totals.returnQty)} />
+        <Metric label={`Net units${ofProduct}`} value={scopeUnits(unitScope?.totals.netQty)} accent />
+        <Metric label={`Stock units${ofProduct}`} value={scopeUnits(unitScope?.totals.stockQty)} />
       </div>
 
       {/* Summary tables. Two abreast only from 2xl: at 1024px with the sidebar open, two side by side left each
@@ -1675,19 +1709,19 @@ function ValidationResultPanel({
           }))}
         />
         <SummaryTable
-          title="By branch"
+          title={`By branch${ofProduct}`}
           nameLabel="Branch"
-          rows={result.byBranch.map((b) => ({
+          rows={(unitScope?.byBranch ?? result.byBranch).map((b) => ({
             name: b.branchName || b.branchCode,
-            sales: units(b.salesQty), returns: units(b.returnQty), net: units(b.netQty), stock: units(b.stockQty),
+            sales: scopeUnits(b.salesQty), returns: scopeUnits(b.returnQty), net: scopeUnits(b.netQty), stock: scopeUnits(b.stockQty),
           }))}
         />
         <SummaryTable
-          title="By region"
+          title={`By region${ofProduct}`}
           nameLabel="Region"
-          rows={result.byRegion.map((r) => ({
+          rows={(unitScope?.byRegion ?? result.byRegion).map((r) => ({
             name: r.regionName || r.regionCode,
-            sales: units(r.salesQty), returns: units(r.returnQty), net: units(r.netQty), stock: units(r.stockQty),
+            sales: scopeUnits(r.salesQty), returns: scopeUnits(r.returnQty), net: scopeUnits(r.netQty), stock: scopeUnits(r.stockQty),
           }))}
         />
       </div>

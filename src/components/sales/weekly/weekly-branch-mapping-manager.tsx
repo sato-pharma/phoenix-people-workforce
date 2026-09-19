@@ -199,7 +199,7 @@ export function WeeklyBranchMappingManager({
         </p>
         <p className="mt-2 text-sm font-medium text-phx-ink-soft">
           Under every branch is <span className="font-black text-[#9A3412]">how its name is read</span> and the exact split
-          that follows: a depot serving several territories pays each of them an equal share, then divides that share evenly
+          that follows: a branch serving several territories pays each of them an equal share, then divides that share evenly
           again inside each one. Set <span className="font-black text-phx-ink">Area</span> to overrule the reading — a
           branch pinned to an area sends the whole of its value there and its name is no longer read.
         </p>

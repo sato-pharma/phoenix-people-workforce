@@ -1,4 +1,5 @@
-// Weekly Sales — Depot Detail XLSX. Ships BESIDE the password-locked weekly designs
+// Weekly Sales — Branch Detail XLSX (the code says depot; every label the reader sees says branch,
+// owner 2026-09-19). Ships BESIDE the password-locked weekly designs
 // (export-design.pins.json) and wears the HOUSE identity (SATO-DIS-2026-01 v1.0) on every tab, like the
 // Weekly Stock workbook it mirrors tab for tab.
 //
@@ -137,14 +138,14 @@ export function buildWeeklySalesDepotDetailWorkbook(
     movement: WEEKLY_SALES_DETAIL_MOVEMENT_LABELS[cell.movement],
   }));
   addSheet(workbook, {
-    title: isRep ? "My Weekly Sales by Depot and Product" : "Weekly Sales by Depot and Product",
+    title: isRep ? "My Weekly Sales by Branch and Product" : "Weekly Sales by Branch and Product",
     subtitle,
-    sheetName: "Sales by Depot",
+    sheetName: "Sales by Branch",
     columns: [
       ...(isRep ? [] : [{ key: "region", label: "Region", width: 16 }]),
       { key: "area", label: "Area", width: 20 },
       { key: "distributor", label: "Distributor", width: 18 },
-      { key: "depot", label: "Depot", width: 26 },
+      { key: "depot", label: "Branch", width: 26 },
       { key: "line", label: "Line", width: 14 },
       { key: "product", label: "Product", width: 26 },
       ...(showBasis ? [{ key: "basis", label: "How It Reached You", width: 18 }] : []),
@@ -175,9 +176,9 @@ export function buildWeeklySalesDepotDetailWorkbook(
       { key: "avgWeeklyValue", label: "Avg Weekly Value (EGP)", numeric: true, width: 20 },
       { key: "share", label: "Share of Value", numeric: true, percent: true, width: 12 },
       { key: "movement", label: "Movement", width: 12 },
-      { key: "depotCount", label: "Depots", plainNumber: true, width: 10 },
-      { key: "soldDepots", label: "Depots Sold", plainNumber: true, width: 11 },
-      { key: "returnsDepots", label: "Depots Returns", plainNumber: true, width: 13 },
+      { key: "depotCount", label: "Branches", plainNumber: true, width: 10 },
+      { key: "soldDepots", label: "Branches Sold", plainNumber: true, width: 11 },
+      { key: "returnsDepots", label: "Branches Returns", plainNumber: true, width: 13 },
     ],
     rows: view.products.map((product) => ({
       line: product.line,
@@ -195,10 +196,10 @@ export function buildWeeklySalesDepotDetailWorkbook(
   });
 
   addSheet(workbook, {
-    title: isRep ? "My Weekly Sales by Depot (value)" : "Weekly Sales by Depot (value)",
+    title: isRep ? "My Weekly Sales by Branch (value)" : "Weekly Sales by Branch (value)",
     subtitle,
-    sheetName: "By Depot",
-    columns: groupColumns("Depot", isRep ? "Distributor" : "Region · Distributor"),
+    sheetName: "By Branch",
+    columns: groupColumns("Branch", isRep ? "Distributor" : "Region · Distributor"),
     rows: groupRows(view.depots, true),
   });
   // A rep's screen shows the Areas tab only when his view spans more than one area; the book follows it.
@@ -268,13 +269,13 @@ export function weeklySalesDepotDetailNotes(
       topic: "Average per week",
       rule: "A figure divided by the weeks its distributor's uploads cover in the period. A sheet that follows a missed upload covers the missed week too, and a twice-monthly distributor's sheets cover two weeks each, so a missed upload never reads as a week with no sales.",
     },
-    { topic: "Weeks sold", rule: "Of the weeks covered, the weeks in which the product sold at that depot." },
+    { topic: "Weeks sold", rule: "Of the weeks covered, the weeks in which the product sold at that branch." },
     { topic: "Movement", rule: "Sold when more went out than came back over the period; Net returns when more came back." },
     ...(isRep
       ? [
           {
             topic: "How it reached you",
-            rule: "Mapped by hand: the depot is mapped to your area, so its whole sale is yours. Allocated share: the depot's name places it across several areas, and this is your area's even share of it. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
+            rule: "Mapped by hand: the branch is mapped to your area, so its whole sale is yours. Allocated share: the branch's name places it across several areas, and this is your area's even share of it. Part allocated: both, because the branch's mapping changed inside the period. An allocation spreads branch shipments; it is not a record of sales observed in your territory.",
           },
         ]
       : [
@@ -282,15 +283,15 @@ export function weeklySalesDepotDetailNotes(
             ? [
                 {
                   topic: "How it reached you",
-                  rule: "Whole depot: the depot is mapped to one of your areas by hand, or no rule places it in an area, so its whole sale is shown. Allocated share: the depot's name places it across several areas, and this is the part that falls in your own areas; the parts in other managers' areas are not counted. Part allocated: both, because the depot's mapping changed inside the period. An allocation spreads depot shipments; it is not a record of sales observed in your territory.",
+                  rule: "Whole branch: the branch is mapped to one of your areas by hand, or no rule places it in an area, so its whole sale is shown. Allocated share: the branch's name places it across several areas, and this is the part that falls in your own areas; the parts in other managers' areas are not counted. Part allocated: both, because the branch's mapping changed inside the period. An allocation spreads branch shipments; it is not a record of sales observed in your territory.",
                 },
               ]
             : []),
           {
             topic: "Area not mapped",
             rule: showBasis
-              ? "Depots no rule places in an area (warehouses, tenders) carry no area and are listed under this label, one line per region."
-              : "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
+              ? "Branches no rule places in an area (warehouses, tenders) carry no area and are listed under this label, one line per region."
+              : "Branches that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label, one line per region.",
           },
         ]),
     ...(payload.allocationUnavailable
@@ -298,8 +299,8 @@ export function weeklySalesDepotDetailNotes(
           {
             topic: "Allocation missing",
             rule: isRep
-              ? "The depot-to-area map did not load when this file was made, so only depots mapped to your area by hand are counted and the figures read low."
-              : "The depot-to-area map did not load when this file was made, so depots serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted.",
+              ? "The branch-to-area map did not load when this file was made, so only branches mapped to your area by hand are counted and the figures read low."
+              : "The branch-to-area map did not load when this file was made, so branches serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted.",
           },
         ]
       : []),
@@ -312,9 +313,9 @@ export function weeklySalesDepotDetailNotes(
   ];
 }
 
-/** `phoenix-weekly-sales-depot-detail-2026-09.xlsx`; a rep's reads `phoenix-weekly-sales-my-depots-2026-09.xlsx`. */
+/** `phoenix-weekly-sales-branch-detail-2026-09.xlsx`; a rep's reads `phoenix-weekly-sales-my-branches-2026-09.xlsx`. */
 export function buildWeeklySalesDepotDetailFilename(audience: WeeklySalesDetailAudience, months: readonly string[]): string {
   const tag = [...new Set(months.map((month) => /^(\d{4}-\d{2})/.exec(month.trim())?.[1]).filter(Boolean))].sort().join("_");
-  const base = audience === "rep" ? "phoenix-weekly-sales-my-depots" : "phoenix-weekly-sales-depot-detail";
+  const base = audience === "rep" ? "phoenix-weekly-sales-my-branches" : "phoenix-weekly-sales-branch-detail";
   return `${base}-${tag || "all-months"}.xlsx`;
 }

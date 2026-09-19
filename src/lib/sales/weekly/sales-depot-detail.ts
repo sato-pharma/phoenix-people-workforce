@@ -11,7 +11,9 @@
 // Owner rules this module encodes:
 //   • The grain people read is ONE product code at ONE depot (in one area).
 //   • Units are NEVER added across different product codes. A unit figure exists only on a cell and on
-//     a product row; a depot, an area, a region, a distributor and the whole view are VALUE only.
+//     a product row; a depot, an area, a region, a distributor and the whole view are VALUE only. Beside
+//     those values the screen shows ONE picked product's own units (weeklySalesDetailProductUnitsByGroup;
+//     owner, 2026-09-19).
 //   • A depot with no area mapping is reported under "Area not mapped", never dropped.
 //   • A Medical Rep sees his own area's share of each depot and nothing wider. The caller hands in only
 //     his parts, each labelled by how it reached him: mapped to his area by hand, or allocated to it by
@@ -63,7 +65,7 @@ export const WEEKLY_SALES_DETAIL_MOVEMENT_LABELS: Record<WeeklySalesDetailMoveme
 export type WeeklySalesDetailBasis = "whole" | "mapped" | "allocated" | "mixed";
 
 export const WEEKLY_SALES_DETAIL_BASIS_LABELS: Record<WeeklySalesDetailBasis, string> = {
-  whole: "Whole depot",
+  whole: "Whole branch",
   mapped: "Mapped by hand",
   allocated: "Allocated share",
   mixed: "Part allocated",
@@ -452,6 +454,66 @@ function accumulate(
   map.set(code, current);
 }
 
+/** The tables that group several products — a branch, an area, a region, a distributor. */
+export type WeeklySalesDetailGroupCut = "depots" | "areas" | "regions" | "distributors";
+
+/** A cell's key in one grouping: exactly the `code` its group row carries. */
+export function weeklySalesDetailGroupKey(
+  cell: Pick<WeeklySalesDetailCell, "branchKey" | "areaCode" | "regionCode" | "regionName" | "distributorCode">,
+  cut: WeeklySalesDetailGroupCut,
+): string {
+  if (cut === "depots") return cell.branchKey;
+  // An unmapped branch is filed per region, so "Area not mapped" never reads as one place spanning the country.
+  if (cut === "areas") return cell.areaCode ?? `${WEEKLY_SALES_DETAIL_UNMAPPED_AREA}|${up(cell.regionCode) || up(cell.regionName)}`;
+  // "Region not mapped" keeps an empty code: the page has no region to filter to, so the row is not a drill.
+  if (cut === "regions") {
+    return cell.regionCode || (cell.regionName === WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL ? "" : up(cell.regionName));
+  }
+  return cell.distributorCode;
+}
+
+/** One product's own net units at one group. */
+export type WeeklySalesDetailProductUnits = { units: number; avgWeeklyUnits: number };
+
+/**
+ * "Units for" (owner, 2026-09-19): a group row adds several products, so its value is the only total it
+ * carries — but ONE product's units at each group are valid, and this is that product's net units and
+ * average per week at every group, keyed as weeklySalesDetailGroupKey keys it. Built from the view's own
+ * cells, so it follows every filter the rows do. A group the product never reached is absent (zero).
+ */
+export function weeklySalesDetailProductUnitsByGroup(
+  cells: readonly WeeklySalesDetailCell[],
+  productCode: string,
+  cut: WeeklySalesDetailGroupCut,
+): Record<string, WeeklySalesDetailProductUnits> {
+  const code = up(productCode);
+  const groups: Record<string, WeeklySalesDetailProductUnits> = {};
+  for (const cell of cells) {
+    if (up(cell.productCode) !== code) continue;
+    const key = weeklySalesDetailGroupKey(cell, cut);
+    const group = groups[key] ?? { units: 0, avgWeeklyUnits: 0 };
+    group.units += cell.units;
+    group.avgWeeklyUnits += cell.avgWeeklyUnits ?? 0;
+    groups[key] = group;
+  }
+  for (const group of Object.values(groups)) {
+    group.units = round2(group.units);
+    group.avgWeeklyUnits = round2(group.avgWeeklyUnits);
+  }
+  return groups;
+}
+
+/** The "Units for" product: the one picked while the view still holds it, else the one with the most value. */
+export function weeklySalesDetailUnitProduct(
+  products: readonly WeeklySalesDetailProductRow[],
+  pickedCode: string | null | undefined,
+): WeeklySalesDetailProductRow | null {
+  const picked = up(pickedCode);
+  const found = picked ? products.find((product) => up(product.productCode) === picked) : undefined;
+  if (found) return found;
+  return [...products].sort((a, b) => b.value - a.value || a.productName.localeCompare(b.productName))[0] ?? null;
+}
+
 const shareOf = (value: number, total: number): number | null => (total > EPSILON ? value / total : null);
 
 function finishGroups(map: Map<string, GroupAccumulator>, total: number): WeeklySalesDetailGroupRow[] {
@@ -712,15 +774,11 @@ export function buildWeeklySalesDepotDetail(input: {
 
     const depotParent =
       audience === "rep" ? cell.distributorName : [cell.regionName, cell.distributorName].filter(Boolean).join(" · ");
-    accumulate(depots, `${cell.branchKey}`, cell.branchName, depotParent, cell, exact);
-    // An unmapped depot is filed per region, so "Area not mapped" never reads as one place spanning the country.
-    const areaKey = cell.areaCode ?? `${WEEKLY_SALES_DETAIL_UNMAPPED_AREA}|${up(cell.regionCode) || up(cell.regionName)}`;
-    accumulate(areas, areaKey, cell.areaName, cell.regionName, cell, exact);
-    // "Region not mapped" keeps an empty code: the page has no region to filter to, so the row is not a drill.
-    const regionKey =
-      cell.regionCode || (cell.regionName === WEEKLY_SALES_DETAIL_UNMAPPED_REGION_LABEL ? "" : up(cell.regionName));
-    if (audience === "manager") accumulate(regions, regionKey, cell.regionName, "", cell, exact);
-    accumulate(distributors, cell.distributorCode, cell.distributorName, "", cell, exact);
+    // One key per grouping (weeklySalesDetailGroupKey), shared with the "Units for" column beside each row.
+    accumulate(depots, weeklySalesDetailGroupKey(cell, "depots"), cell.branchName, depotParent, cell, exact);
+    accumulate(areas, weeklySalesDetailGroupKey(cell, "areas"), cell.areaName, cell.regionName, cell, exact);
+    if (audience === "manager") accumulate(regions, weeklySalesDetailGroupKey(cell, "regions"), cell.regionName, "", cell, exact);
+    accumulate(distributors, weeklySalesDetailGroupKey(cell, "distributors"), cell.distributorName, "", cell, exact);
   }
 
   const productRows = [...products.values()]

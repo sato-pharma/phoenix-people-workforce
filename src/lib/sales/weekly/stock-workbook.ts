@@ -125,14 +125,14 @@ export function buildWeeklyStockWorkbook(
     status: WEEKLY_STOCK_STATUS_LABELS[cell.status],
   }));
   addSheet(workbook, {
-    title: "Weekly Stock by Depot and Product",
+    title: "Weekly Stock by Branch and Product",
     subtitle,
-    sheetName: "Stock by Depot",
+    sheetName: "Stock by Branch",
     columns: [
       { key: "region", label: "Region", width: 16 },
       { key: "area", label: "Area", width: 20 },
       { key: "distributor", label: "Distributor", width: 18 },
-      { key: "depot", label: "Depot", width: 26 },
+      { key: "depot", label: "Branch", width: 26 },
       { key: "line", label: "Line", width: 14 },
       { key: "product", label: "Product", width: 26 },
       { key: "asOf", label: "Stock As Of", width: 14 },
@@ -171,7 +171,7 @@ export function buildWeeklyStockWorkbook(
       { key: "avgWeeklyUnits", label: "Avg Weekly Units", plainNumber: true, width: 14 },
       { key: "coverWeeks", label: "Weeks of Cover", plainNumber: true, width: 14 },
       { key: "status", label: "Status", width: 12 },
-      { key: "depotCount", label: "Depots", plainNumber: true, width: 10 },
+      { key: "depotCount", label: "Branches", plainNumber: true, width: 10 },
       { key: "lowDepots", label: "Low Stock", numeric: true, width: 10 },
       { key: "overDepots", label: "Overstock", numeric: true, width: 10 },
       { key: "noSalesDepots", label: "No Sales", numeric: true, width: 10 },
@@ -180,10 +180,10 @@ export function buildWeeklyStockWorkbook(
   });
 
   addSheet(workbook, {
-    title: "Weekly Stock by Depot (value)",
+    title: "Weekly Stock by Branch (value)",
     subtitle,
-    sheetName: "By Depot",
-    columns: groupColumns("Depot", "Region"),
+    sheetName: "By Branch",
+    columns: groupColumns("Branch", "Region"),
     rows: view.depots.map((group) => groupRow(group, true)),
   });
   addSheet(workbook, {
@@ -237,7 +237,7 @@ export function buildWeeklyStockWorkbook(
         topic: "Weeks of cover",
         rule: `Stock divided by the average weekly net sales of the last ${WEEKLY_STOCK_SALES_WINDOW_WEEKS} weeks. Low stock under ${WEEKLY_STOCK_COVER_LOW_WEEKS} weeks, Healthy ${WEEKLY_STOCK_COVER_LOW_WEEKS} to ${WEEKLY_STOCK_COVER_OVER_WEEKS}, Overstock over ${WEEKLY_STOCK_COVER_OVER_WEEKS}. No sales means stock on hand with nothing sold in that window.`,
       },
-      { topic: "Area not mapped", rule: "Depots that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label." },
+      { topic: "Area not mapped", rule: "Branches that serve several areas (key accounts, wholesale, warehouses) carry no single area and are listed under this label." },
       { topic: "Lines", rule: "CNS, Anti Infective and Pedia only. Head Office products are not tracked in weekly figures." },
       ...(view.kpis.priceMissingCount > 0
         ? [{ topic: "Missing prices", rule: `${view.kpis.priceMissingCount} rows have no factory price in the Product Master and are valued at zero.` }]

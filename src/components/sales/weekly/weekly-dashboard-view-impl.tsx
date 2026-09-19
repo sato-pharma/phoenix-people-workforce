@@ -46,11 +46,13 @@ import {
   weekComparisonColumns,
   zeroStockColumns,
 } from "@/components/sales/weekly/weekly-table-widths";
+import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import {
-  weeklyBreakdownUnitsAreOneProduct,
-  weeklyKpiUnitDeltaIsOneProduct,
-  weeklyKpiUnitsAreOneProduct,
-  weeklyWeekComparisonUnitsAreOneProduct,
+  weeklyCutUnits,
+  weeklyRowsWithCutUnits,
+  weeklyUnitTiles,
+  weeklyWeekRowsWithUnits,
+  weeklyWeekUnits,
 } from "@/lib/sales/weekly/unit-totals";
 
 // THE FITS-THE-SCREEN AND SQUARE-EDGE GOLDEN RULES (AGENTS.md §4). Every table here is `w-full
@@ -60,10 +62,12 @@ import {
 // tests/weekly-sales-fits-the-screen.test.ts, the same test that holds the managers' portal version.
 //
 // UNITS OF DIFFERENT PRODUCTS ARE NEVER ADDED (owner rule, 2026-08-27; this page, 2026-09-17). Every unit
-// or stock figure here adds rows, so each appears only while the rows it adds are one product's — the
-// tiles and their changes, the Units and Stock columns and cards, the two unit charts and the watchlist's
-// stock. Each asks unit-totals.ts, and the Export Excel follows the same rule. A product row is always one
-// product's, so By product keeps its units. Pinned by tests/weekly-admin-units-one-product.test.ts.
+// or stock figure here adds rows — the tiles and their changes, the Units and Stock columns and cards, the
+// two unit charts and the watchlist's stock — so each is its rows' own only while they are one product's,
+// and otherwise the "Units for" product's own (owner, 2026-09-19), named on the tile or table it sits in.
+// Each asks unit-totals.ts. A product row is always one product's, so By product keeps its own units. The
+// Export Excel still dashes a unit total that would add products. Pinned by
+// tests/weekly-admin-units-one-product.test.ts.
 
 const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -126,6 +130,9 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     weekNumberMode: initial?.appliedFilters.weekNumberMode ?? "include",
     uploadIds: [],
   });
+  // The "Units for" pick (WeeklyDashboardUnitView): null until one is picked, when the server shows the top
+  // product by value. It rides on the feed request only, never on the filters or the exports.
+  const [unitProduct, setUnitProduct] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams();
@@ -144,6 +151,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     for (const code of filters.weekNumberCodes) params.append("weekNum", code);
     if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
     for (const id of filters.uploadIds) params.append("batch", id);
+    if (unitProduct) params.set("unitProduct", unitProduct);
     (async () => {
       // Defer the loading flag off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
@@ -182,6 +190,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     filters.weekNumberCodes,
     filters.weekNumberMode,
     filters.uploadIds,
+    unitProduct,
   ]);
 
   const distributorOptions = useMemo(
@@ -307,15 +316,20 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const noData = data.availableWeeks.length === 0;
   const branchRows = data.branchBreakdown ?? [];
   const zeroStockRows = data.zeroSalesBranches ?? [];
-  // Which unit figures are one product's (unit-totals.ts). A table whose unit columns come or go is keyed
-  // on it, so it starts again from its own sort rather than staying ordered by a column no longer shown.
-  const showUnitTiles = weeklyKpiUnitsAreOneProduct(data);
-  const showUnitDeltas = weeklyKpiUnitDeltaIsOneProduct(data);
-  const regionUnits = weeklyBreakdownUnitsAreOneProduct(data, "region");
-  const productUnits = weeklyBreakdownUnitsAreOneProduct(data, "product");
-  const distributorUnits = weeklyBreakdownUnitsAreOneProduct(data, "distributor");
-  const branchUnits = weeklyBreakdownUnitsAreOneProduct(data, "branch");
-  const weekUnits = weeklyWeekComparisonUnitsAreOneProduct(data);
+  // Which units each figure shows (unit-totals.ts): its rows' own while they are one product's, else the
+  // "Units for" product's, named on the tile or table. null only where there is neither. A table whose unit
+  // columns come or go is keyed on it, so it starts again from its own sort rather than staying ordered by
+  // a column no longer shown.
+  const unitTiles = weeklyUnitTiles(data);
+  const regionUnits = weeklyCutUnits(data, "region");
+  const productUnits = weeklyCutUnits(data, "product");
+  const distributorUnits = weeklyCutUnits(data, "distributor");
+  const branchUnits = weeklyCutUnits(data, "branch");
+  const weekUnits = weeklyWeekUnits(data);
+  const unitsFor = (shown: { of: string } | null): string =>
+    shown?.of && data.unitView ? ` · units for ${data.unitView.productName}` : "";
+  const branchUnitRows = weeklyRowsWithCutUnits(branchRows, branchUnits, (row) => row.code);
+  const zeroStockUnitRows = weeklyRowsWithCutUnits(zeroStockRows, branchUnits, (row) => row.branchCode);
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -490,14 +504,16 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         <p className="text-xs font-semibold text-phx-ink-soft">{data.trackedScope.note}</p>
       )}
 
-      {/* Said on the screen, so a missing Units column never reads as a fault: the strictest test on the
-          page is the week-by-week comparison's, and only a product filter passes it. */}
-      {!noData && !weekUnits && (
-        <p className="text-xs font-semibold text-phx-ink-soft">
-          Units and stock appear only where every figure is one product&apos;s, because units of different
-          products are never added together. Choose one product in the Product filter to see them throughout.
-        </p>
-      )}
+      {/* Several products: every unit figure that would add them shows the product picked here instead. */}
+      {!noData && data.unitView && data.products.length > 1 ? (
+        <WeeklyUnitProductPicker
+          tone="admin"
+          products={data.products.map((product) => ({ code: product.code, name: product.name }))}
+          value={data.unitView.productCode}
+          onChange={setUnitProduct}
+          note={`This selection holds ${num(data.products.length)} products, and units of different products are never added — so the unit tiles, the unit charts and every Units and Stock column show the product picked here. Values cover every product, and By product lists each product's own units.`}
+        />
+      ) : null}
 
       {error && (
         <div className="flex items-start gap-2 border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 shadow-sm">
@@ -515,54 +531,78 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         // below carry the same about-to-be-replaced numbers, and leaving them crisp is what made a
         // pending filter look like an applied one.
         <div className={cn("space-y-4 transition-opacity", loading && "opacity-40")} aria-busy={loading}>
-          {/* Four tiles, or two while the unit tiles are hidden — laid out for the count actually there. */}
-          <div className={`grid grid-cols-2 gap-3 ${showUnitTiles ? "lg:grid-cols-4" : ""}`}>
+          {/* Four tiles, or two when there are no unit tiles at all — laid out for the count actually there. */}
+          <div className={`grid grid-cols-2 gap-3 ${unitTiles ? "lg:grid-cols-4" : ""}`}>
             <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Sales value" value={money(data.kpis.salesValue)} delta={data.compare.salesValue} format={money} />
-            {showUnitTiles ? (
+            {unitTiles ? (
               <Kpi
                 icon={<Package className="h-4 w-4" />}
-                label="Sales units"
-                value={num(data.kpis.salesUnits)}
-                delta={showUnitDeltas ? data.compare.salesUnits : undefined}
+                label={`Sales units${unitTiles.of}`}
+                value={num(unitTiles.salesUnits)}
+                delta={unitTiles.compare?.salesUnits}
                 format={num}
               />
             ) : null}
-            {showUnitTiles ? (
+            {unitTiles ? (
               <Kpi
                 icon={<Store className="h-4 w-4" />}
-                label="Stock units"
-                value={num(data.kpis.stockUnits)}
-                delta={showUnitDeltas ? data.compare.stockUnits : undefined}
+                label={`Stock units${unitTiles.of}`}
+                value={num(unitTiles.stockUnits)}
+                delta={unitTiles.compare?.stockUnits}
                 format={num}
               />
             ) : null}
             <Kpi icon={<Store className="h-4 w-4" />} label="Branches" value={num(data.kpis.branchCount)} sub={`${data.kpis.regionCount} regions - ${data.kpis.productCount} products`} />
           </div>
 
-          <DashboardCharts data={data} showBranchUnits={branchUnits} />
+          <DashboardCharts
+            data={data}
+            branchUnitRows={branchUnits ? branchUnitRows : null}
+            zeroStockUnitRows={branchUnits ? zeroStockUnitRows : null}
+            unitsFor={unitsFor(branchUnits)}
+          />
 
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-            <RankTable key={`region-${regionUnits}`} title="By region (all distributors)" rows={data.regions} showUnits={regionUnits} />
-            <RankTable key={`product-${productUnits}`} title="By product" rows={data.products} showUnits={productUnits} />
+            <RankTable
+              key={`region-${regionUnits != null}`}
+              title={`By region (all distributors)${unitsFor(regionUnits)}`}
+              rows={weeklyRowsWithCutUnits(data.regions, regionUnits, (row) => row.code)}
+              showUnits={regionUnits != null}
+            />
+            <RankTable key={`product-${productUnits != null}`} title="By product" rows={data.products} showUnits={productUnits != null} />
           </div>
 
-          <BranchComparisonTable key={`branch-${branchUnits}`} rows={branchRows} showUnits={branchUnits} />
+          <BranchComparisonTable
+            key={`branch-${branchUnits != null}`}
+            rows={branchUnitRows}
+            showUnits={branchUnits != null}
+            unitsFor={unitsFor(branchUnits)}
+          />
 
           {data.distributors.length > 1 && (
             <RankTable
-              key={`distributor-${distributorUnits}`}
+              key={`distributor-${distributorUnits != null}`}
               maxHeight="max-h-64"
-              title="By distributor"
-              rows={data.distributorBreakdown}
-              showUnits={distributorUnits}
+              title={`By distributor${unitsFor(distributorUnits)}`}
+              rows={weeklyRowsWithCutUnits(data.distributorBreakdown, distributorUnits, (row) => row.code)}
+              showUnits={distributorUnits != null}
             />
           )}
 
-          <WeekComparisonTable rows={data.weekComparison} showUnits={weekUnits} />
+          <WeekComparisonTable
+            rows={weeklyWeekRowsWithUnits(data.weekComparison, weekUnits)}
+            showUnits={weekUnits != null}
+            unitsFor={unitsFor(weekUnits)}
+          />
 
           <TrendStrip trend={data.trend} selected={[]} />
 
-          <ZeroStockTable key={`stock-${branchUnits}`} rows={zeroStockRows} showStock={branchUnits} />
+          <ZeroStockTable
+            key={`stock-${branchUnits != null}`}
+            rows={zeroStockUnitRows}
+            showStock={branchUnits != null}
+            unitsFor={unitsFor(branchUnits)}
+          />
         </div>
       )}
     </div>
@@ -581,14 +621,23 @@ function DeltaPct({ value }: { value: number }) {
 
 // Week-by-week comparison of REAL (de-cumulated) sales: each week minus the previous week of its
 // month. Stock is the week's snapshot (not a difference). The % delta is vs the previous week. Its units
-// and stock add every week in scope, so they are there only while a product filter pins one product.
-function WeekComparisonTable({ rows, showUnits }: { rows: WeeklyDashboard["weekComparison"]; showUnits: boolean }) {
+// and stock add every week in scope, so they are the rows' own only while a product filter pins one
+// product, and otherwise the "Units for" product's, which `unitsFor` names.
+function WeekComparisonTable({
+  rows,
+  showUnits,
+  unitsFor,
+}: {
+  rows: readonly WeeklyDashboard["weekComparison"][number][];
+  showUnits: boolean;
+  unitsFor: string;
+}) {
   if (!rows || rows.length === 0) return null;
   const columns = weekComparisonColumns(showUnits);
   return (
     <section className="overflow-hidden border border-phx-line bg-white shadow-sm">
       <div className="border-b border-phx-line px-4 py-3">
-        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Week-by-week comparison</h2>
+        <h2 className="break-words text-sm font-black uppercase tracking-[0.12em] text-phx-ink">{`Week-by-week comparison${unitsFor}`}</h2>
         <p className="mt-0.5 text-xs font-medium text-phx-ink-soft">
           Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …).
           {showUnits ? " Stock is the week's snapshot, never subtracted." : null}
@@ -689,9 +738,9 @@ function WeekMarks({ row }: { row: WeeklyDashboard["weekComparison"][number] }) 
       {row.depotSpansGap && !row.spansGap ? (
         <span
           className="inline-flex items-center bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
-          title="A depot whose sales are in this week sent no sheet for the week before, so this figure also holds the week it skipped and reads high."
+          title="A branch whose sales are in this week sent no sheet for the week before, so this figure also holds the week it skipped and reads high."
         >
-          Depot gap
+          Branch gap
         </span>
       ) : null}
     </span>
@@ -802,17 +851,42 @@ function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: nu
   );
 }
 
-/** The two unit charts draw a branch's units and stock, which add its products, so they are there only
- * while the selection is one product. The value charts always are. */
-function DashboardCharts({ data, showBranchUnits }: { data: WeeklyDashboard; showBranchUnits: boolean }) {
-  const branchRows = data.branchBreakdown.slice(0, 10);
-  const stockRiskRows = data.zeroSalesBranches.slice(0, 8);
+/**
+ * The two unit charts draw a branch's units and stock. Those add its products, so they are the branch's
+ * own only while the selection is one product, and otherwise the "Units for" product's (`unitsFor` names
+ * it): its top branches by its own units, and the zero-sales branches holding it. The value charts always
+ * cover every product. A null row list is a chart with no units to draw.
+ */
+function DashboardCharts({
+  data,
+  branchUnitRows,
+  zeroStockUnitRows,
+  unitsFor,
+}: {
+  data: WeeklyDashboard;
+  branchUnitRows: readonly WeeklyBranchComparisonRow[] | null;
+  zeroStockUnitRows: readonly WeeklyBranchRow[] | null;
+  unitsFor: string;
+}) {
+  const picked = unitsFor !== "";
+  const branchRows = branchUnitRows
+    ? (picked
+        ? [...branchUnitRows].sort((a, b) => b.salesUnits - a.salesUnits || b.stockUnits - a.stockUnits)
+        : branchUnitRows
+      ).slice(0, 10)
+    : null;
+  const stockRiskRows = zeroStockUnitRows
+    ? (picked
+        ? zeroStockUnitRows.filter((row) => row.stockUnits > 0).sort((a, b) => b.stockUnits - a.stockUnits)
+        : zeroStockUnitRows
+      ).slice(0, 8)
+    : null;
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <HorizontalValueChart rows={data.regions.slice(0, 8)} title="Regional sales value" />
       <ProductMixChart rows={data.products} />
-      {showBranchUnits ? <BranchSalesStockChart rows={branchRows} /> : null}
-      {showBranchUnits ? <ZeroSalesStockChart rows={stockRiskRows} /> : null}
+      {branchRows ? <BranchSalesStockChart rows={branchRows} unitsFor={unitsFor} /> : null}
+      {stockRiskRows ? <ZeroSalesStockChart rows={stockRiskRows} unitsFor={unitsFor} /> : null}
     </section>
   );
 }
@@ -911,13 +985,13 @@ function ProductMixChart({ rows }: { rows: WeeklyRanked[] }) {
   );
 }
 
-function BranchSalesStockChart({ rows }: { rows: WeeklyBranchComparisonRow[] }) {
+function BranchSalesStockChart({ rows, unitsFor }: { rows: readonly WeeklyBranchComparisonRow[]; unitsFor: string }) {
   const chartRows = rows.map((row) => ({
     ...row,
     label: row.name || row.code,
   }));
   return (
-    <ChartPanel meta={`${chartRows.length} branches`} title="Branch sales vs stock">
+    <ChartPanel meta={`${chartRows.length} branches`} title={`Branch sales vs stock${unitsFor}`}>
       {chartRows.length === 0 ? (
         <EmptyChart label="No branch rows for this filter." />
       ) : (
@@ -975,13 +1049,13 @@ function SlotWrappedTick({
   );
 }
 
-function ZeroSalesStockChart({ rows }: { rows: WeeklyBranchRow[] }) {
+function ZeroSalesStockChart({ rows, unitsFor }: { rows: readonly WeeklyBranchRow[]; unitsFor: string }) {
   const chartRows = rows.map((row) => ({
     ...row,
     label: row.branchName || row.branchCode,
   }));
   return (
-    <ChartPanel meta={`${chartRows.length} branches`} title="Stock with zero sales">
+    <ChartPanel meta={`${chartRows.length} branches`} title={`Stock with zero sales${unitsFor}`}>
       {chartRows.length === 0 ? (
         <EmptyChart label="No stock-on-hand zero-sales branches for this filter." />
       ) : (
@@ -1010,7 +1084,7 @@ function RankTable({
   maxHeight = "max-h-80",
 }: {
   title: string;
-  rows: WeeklyRanked[];
+  rows: readonly WeeklyRanked[];
   showUnits: boolean;
   className?: string;
   maxHeight?: string;
@@ -1124,8 +1198,19 @@ function RankTable({
   );
 }
 
-/** The Branches comparison. A branch row adds its products, so units and stock follow the rule for it. */
-function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparisonRow[]; showUnits: boolean }) {
+/**
+ * The Branches comparison. A branch row adds its products, so its units and stock are its own only while
+ * the selection is one product, and otherwise the "Units for" product's, which `unitsFor` names.
+ */
+function BranchComparisonTable({
+  rows,
+  showUnits,
+  unitsFor,
+}: {
+  rows: readonly WeeklyBranchComparisonRow[];
+  showUnits: boolean;
+  unitsFor: string;
+}) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "name", accessor: (row) => row.name, type: "string" },
@@ -1151,7 +1236,7 @@ function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparis
         count={table.visible}
         total={table.total}
         filtered={table.isFiltered}
-        title="Branches comparison"
+        title={`Branches comparison${unitsFor}`}
         actions={
           <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
         }
@@ -1247,7 +1332,15 @@ function BranchComparisonTable({ rows, showUnits }: { rows: WeeklyBranchComparis
  * header total are there only while the selection is one product; without them the branches keep the
  * order they arrive in, biggest stock VALUE first (weeklyZeroSalesBranches).
  */
-function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStock: boolean }) {
+function ZeroStockTable({
+  rows,
+  showStock,
+  unitsFor,
+}: {
+  rows: readonly WeeklyBranchRow[];
+  showStock: boolean;
+  unitsFor: string;
+}) {
   const table = useSortableTable(rows, {
     columns: [
       { key: "branchName", accessor: (row) => row.branchName, type: "string" },
@@ -1269,7 +1362,7 @@ function ZeroStockTable({ rows, showStock }: { rows: WeeklyBranchRow[]; showStoc
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <div>
           <div className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Stock on hand watchlist</div>
-          <div className="text-phx-xs font-bold text-phx-ink-faint">Zero sales branches</div>
+          <div className="break-words text-phx-xs font-bold text-phx-ink-faint">{`Zero sales branches${unitsFor}`}</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-40 sm:w-48">

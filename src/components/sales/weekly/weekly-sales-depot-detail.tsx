@@ -17,26 +17,32 @@ import {
 } from "lucide-react";
 
 import { MultiSelectFilter, type MultiSelectFilterMode, type MultiSelectFilterOption } from "@/components/ui/multi-select-filter";
+import { WeeklyUnitProductPicker } from "@/components/sales/weekly/weekly-unit-product-picker";
 import {
   WEEKLY_SALES_DETAIL_BASIS_LABELS,
   WEEKLY_SALES_DETAIL_MOVEMENT_LABELS,
   WEEKLY_SALES_DETAIL_NOTHING,
   WEEKLY_SALES_DETAIL_UNMAPPED_AREA,
+  weeklySalesDetailProductUnitsByGroup,
   weeklySalesDetailShowsBasis,
+  weeklySalesDetailUnitProduct,
   weeklySalesMovement,
   type WeeklySalesDepotDetailPayload,
   type WeeklySalesDetailAudience,
   type WeeklySalesDetailBasis,
   type WeeklySalesDetailCell,
+  type WeeklySalesDetailGroupCut,
   type WeeklySalesDetailGroupRow,
   type WeeklySalesDetailMovement,
   type WeeklySalesDetailProductRow,
+  type WeeklySalesDetailProductUnits,
   type WeeklySalesDetailStatus,
 } from "@/lib/sales/weekly/sales-depot-detail";
 
-// Weekly Sales — Depot Detail. The owner asked for Weekly Sales "detailed exactly as Weekly Stock"
-// (2026-09-16), so this is Weekly Stock's screen, table for table and class for class, over net sales:
-// every product at every depot, then products, depots, areas, regions and distributors.
+// Weekly Sales — Branch Detail (the code still says depot; the screen says branch, owner 2026-09-19). The
+// owner asked for Weekly Sales "detailed exactly as Weekly Stock" (2026-09-16), so this is Weekly Stock's
+// screen, table for table and class for class, over net sales: every product at every branch, then
+// products, branches, areas, regions and distributors.
 //
 // It is a tab on both portal Weekly Sales pages:
 //   • the managers' page (and its admin twin for CEO and Super Admin). The page's own filter fields are
@@ -45,8 +51,10 @@ import {
 //     server hands this component only his parts (portal-weekly-rep-depot-detail.ts), so there is no
 //     other area, rep or region total here to hide.
 //
-// Units appear ONLY against a single product; every figure spanning products is a value (owner rule).
-// The export link carries the feed's exact query, so the download is the screen.
+// Units appear ONLY against a single product; every figure spanning products is a value (owner rule). A
+// branch, area, region or distributor row shows, beside its value, ONE product's own units — the one
+// picked in its "Units for" bar (owner, 2026-09-19). The export link carries the feed's exact query, so
+// the download is the screen.
 
 type HostDrillKey = "products" | "regions" | "distributors";
 
@@ -108,7 +116,7 @@ const BASIS_TONE: Record<WeeklySalesDetailBasis, string> = {
 const STATUS_COPY: Record<Exclude<WeeklySalesDetailStatus, "ok">, string> = {
   no_access: "Your account has no sales line on record, so no weekly figures can be shown.",
   seat_index_unavailable: "Your area comes from the organogram, which did not answer just now. Try again in a moment.",
-  no_seat: "No filled rep seat lists you on your line yet, so no depot can be credited to your area.",
+  no_seat: "No filled rep seat lists you on your line yet, so no branch can be credited to your area.",
   no_data: "No distributor sheet has been validated yet.",
 };
 
@@ -172,6 +180,8 @@ export function WeeklySalesDepotDetail({
   const [resolved, setResolved] = useState(blankResolved);
   const [tab, setTab] = useState<DetailTab>("cells");
   const [pager, setPager] = useState({ key: "", limit: PAGE_SIZE });
+  // The "Units for" pick. null until one is picked: the product with the most value is shown.
+  const [unitProduct, setUnitProduct] = useState<string | null>(null);
 
   const cacheRef = useRef(new Map<string, WeeklySalesDepotDetailPayload>());
   const refreshRef = useRef(refreshKey);
@@ -292,11 +302,11 @@ export function WeeklySalesDepotDetail({
           setPayload(next);
           setError(null);
         } else {
-          setError(typeof json?.error === "string" ? json.error : "The depot detail could not be loaded.");
+          setError(typeof json?.error === "string" ? json.error : "The branch detail could not be loaded.");
         }
       } catch (caught) {
         if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-          setError("The depot detail could not be loaded. Check your connection and try again.");
+          setError("The branch detail could not be loaded. Check your connection and try again.");
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -351,7 +361,7 @@ export function WeeklySalesDepotDetail({
         {!isRep || areaOptions.length > 1 || selection.areas.length > 0
           ? filterField("areas", "Area", <MapPin className="h-3 w-3" />)
           : null}
-        {filterField("depots", "Depot", <Building2 className="h-3 w-3" />)}
+        {filterField("depots", "Branch", <Building2 className="h-3 w-3" />)}
         {isRep ? filterField("products", "Product", <Package className="h-3 w-3" />) : null}
         {filterField("movements", "Movement", <TrendingUp className="h-3 w-3" />)}
       </div>
@@ -359,9 +369,9 @@ export function WeeklySalesDepotDetail({
   );
 
   const tabs: { key: DetailTab; label: string }[] = [
-    { key: "cells", label: "Depot × Product" },
+    { key: "cells", label: "Branch × Product" },
     { key: "products", label: "Products" },
-    { key: "depots", label: "Depots" },
+    { key: "depots", label: "Branches" },
     // A rep sees his areas only when he holds more than one, and never a region total.
     ...(!isRep || areaOptions.length > 1 ? [{ key: "areas" as const, label: "Areas" }] : []),
     ...(!isRep ? [{ key: "regions" as const, label: "Regions" }] : []),
@@ -374,6 +384,19 @@ export function WeeklySalesDepotDetail({
   const showMore = () => setPager({ key: pageKey, limit: limit + PAGE_SIZE });
   const exportHref = `${exportPath}${query ? `?${query}` : ""}`;
 
+  // A group row adds several products, so beside its value it shows ONE product's own units there
+  // (weeklySalesDetailProductUnitsByGroup), worked out from the same cells the row is.
+  const groupCut: WeeklySalesDetailGroupCut | null = activeTab === "cells" || activeTab === "products" ? null : activeTab;
+  const unitsProduct = view ? weeklySalesDetailUnitProduct(view.products, unitProduct) : null;
+  // Built inline, not memoised: this sits below the `active` early return, where a hook may not be called.
+  const groupUnits: GroupUnits = {
+    productName: unitsProduct?.productName ?? "",
+    byCode:
+      view && groupCut && unitsProduct
+        ? weeklySalesDetailProductUnitsByGroup(view.cells, unitsProduct.productCode, groupCut)
+        : {},
+  };
+
   if (!payload || !view) {
     return (
       <div className="space-y-5">
@@ -384,7 +407,7 @@ export function WeeklySalesDepotDetail({
             <Building2 className={`h-5 w-5 ${loading ? "animate-pulse" : ""}`} />
           </span>
           <p className="max-w-md text-sm font-semibold text-slate-600">
-            {loading ? "Loading every product at every depot…" : "The depot detail could not be loaded."}
+            {loading ? "Loading every product at every branch…" : "The branch detail could not be loaded."}
           </p>
         </div>
       </div>
@@ -431,8 +454,8 @@ export function WeeklySalesDepotDetail({
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-phx-md font-semibold text-amber-900">
             {isRep
-              ? "The depot-to-area map did not load just now, so only depots mapped to your area by hand are counted and your figures read low."
-              : "The depot-to-area map did not load just now, so depots serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted."}{" "}
+              ? "The branch-to-area map did not load just now, so only branches mapped to your area by hand are counted and your figures read low."
+              : "The branch-to-area map did not load just now, so branches serving several areas are not split: one filed under your own region counts whole, and one filed under another region is not counted."}{" "}
             Press Sync now in a moment.
           </p>
         </div>
@@ -473,7 +496,7 @@ export function WeeklySalesDepotDetail({
             <Kpi
               accent="#0F172A"
               icon={Building2}
-              label="Depots"
+              label="Branches"
               value={formatCount(kpis.depotCount)}
               sub={`${formatCount(kpis.productCount)} products`}
             />
@@ -499,7 +522,7 @@ export function WeeklySalesDepotDetail({
               icon={TrendingUp}
               label="Sold"
               value={formatCount(soldCount)}
-              sub="Product-depot rows"
+              sub="Product-branch rows"
               onClick={() => drill("movements", "sold")}
             />
             <Kpi
@@ -534,7 +557,7 @@ export function WeeklySalesDepotDetail({
                   icon={TriangleAlert}
                   label="Area not mapped"
                   value={formatEgp(kpis.unmappedValue)}
-                  sub={managerHasShares ? "Depots no rule places" : "Depots serving several areas"}
+                  sub={managerHasShares ? "Branches no rule places" : "Branches serving several areas"}
                   onClick={hasUnmappedArea ? () => drill("areas", WEEKLY_SALES_DETAIL_UNMAPPED_AREA) : undefined}
                 />
                 <Kpi
@@ -590,6 +613,15 @@ export function WeeklySalesDepotDetail({
               </span>
               <span className="tabular-nums text-slate-900">Total sales value {formatEgpFull(kpis.value)}</span>
             </div>
+            {groupCut && unitsProduct && view.products.length > 1 && rowCount > 0 ? (
+              <WeeklyUnitProductPicker
+                tone="inset"
+                products={view.products.map((product) => ({ code: product.productCode, name: product.productName }))}
+                value={unitsProduct.productCode}
+                onChange={setUnitProduct}
+                note="Each row holds several products, so its totals are values. Units of different products are never added, so the Units column shows the product picked here at each row."
+              />
+            ) : null}
             {rowCount === 0 ? (
               <div className="p-8 text-center text-sm font-semibold text-slate-400">No sales rows for this selection.</div>
             ) : activeTab === "cells" ? (
@@ -604,13 +636,19 @@ export function WeeklySalesDepotDetail({
                 nameLabel="Distributor"
                 rows={view.distributors.slice(0, limit)}
                 onDrill={isRep ? (code) => drill("distributors", code) : drillHost("distributors")}
+                units={groupUnits}
               />
             ) : activeTab === "depots" ? (
-              <GroupTable nameLabel="Depot" rows={view.depots.slice(0, limit)} onDrill={(code) => drill("depots", code)} />
+              <GroupTable
+                nameLabel="Branch"
+                rows={view.depots.slice(0, limit)}
+                onDrill={(code) => drill("depots", code)}
+                units={groupUnits}
+              />
             ) : activeTab === "areas" ? (
-              <GroupTable nameLabel="Area" rows={view.areas.slice(0, limit)} onDrill={drillArea} />
+              <GroupTable nameLabel="Area" rows={view.areas.slice(0, limit)} onDrill={drillArea} units={groupUnits} />
             ) : (
-              <GroupTable nameLabel="Region" rows={view.regions.slice(0, limit)} onDrill={drillHost("regions")} />
+              <GroupTable nameLabel="Region" rows={view.regions.slice(0, limit)} onDrill={drillHost("regions")} units={groupUnits} />
             )}
             {rowCount > limit ? (
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
@@ -631,15 +669,16 @@ export function WeeklySalesDepotDetail({
           <p className="text-phx-xs font-semibold leading-relaxed text-slate-500">
             Sales are net of returns. Most distributors restate the month to date, so each sheet is reduced by the sheet
             before it. Avg / week divides by the weeks each distributor&apos;s uploads cover, so a missed upload never reads
-            as a week with no sales, and Weeks shows the weeks a product sold at a depot out of those covered. Units are
-            shown per product only; every total across products is a value.{" "}
+            as a week with no sales, and Weeks shows the weeks a product sold at a branch out of those covered. Units are
+            one product&apos;s only: every total across products is a value, and beside a branch, area, region or
+            distributor&apos;s value the Units column is the one product picked in Units for.{" "}
             {isRep
-              ? "A depot mapped to your area by hand credits you exactly. Any other depot has its money spread evenly across the governorates its name states, then evenly again across that governorate's areas on your line, so an allocated share is an allocation of depot shipments, not a record of sales observed in your territory. "
+              ? "A branch mapped to your area by hand credits you exactly. Any other branch has its money spread evenly across the governorates its name states, then evenly again across that governorate's areas on your line, so an allocated share is an allocation of branch shipments, not a record of sales observed in your territory. "
               : managerHasShares
-                ? "Depots no rule places in an area, such as warehouses and tenders, are listed under Area not mapped. "
-                : "Depots that serve several areas are listed under Area not mapped. "}
+                ? "Branches no rule places in an area, such as warehouses and tenders, are listed under Area not mapped. "
+                : "Branches that serve several areas are listed under Area not mapped. "}
             {managerHasShares
-              ? "A depot serving several areas has its money spread evenly across the governorates its name states, then across their areas on your line, and reaches you only as the share in your own areas, marked Allocated share (Part allocated where the depot's mapping changed inside the period); the shares in other managers' areas are not counted. That is an allocation of depot shipments, not a record of sales observed in your territory. Every other figure is the depot's whole sale. "
+              ? "A branch serving several areas has its money spread evenly across the governorates its name states, then across their areas on your line, and reaches you only as the share in your own areas, marked Allocated share (Part allocated where the branch's mapping changed inside the period); the shares in other managers' areas are not counted. That is an allocation of branch shipments, not a record of sales observed in your territory. Every other figure is the branch's whole sale. "
               : null}
             Products with no Product Master mapping are left out, and Head Office products are not tracked weekly. The
             Monthly Closing remains the official number.
@@ -746,8 +785,8 @@ function BasisNote({ basis }: { basis: WeeklySalesDetailBasis }) {
 
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+    <div className="min-w-0 border border-slate-100 bg-slate-50 px-2 py-1.5">
+      <p className="break-words text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
@@ -782,7 +821,7 @@ function CellsTable({ rows, isRep }: { rows: WeeklySalesDetailCell[]; isRep: boo
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
-              <th className={TH}>Depot</th>
+              <th className={TH}>Branch</th>
               <th className={TH}>Product</th>
               <th className={TH_NUM}>Units</th>
               <th className={TH_NUM}>Value</th>
@@ -873,7 +912,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
               <th className={TH_NUM}>Value</th>
               <th className={TH_NUM}>Avg / week</th>
               <th className={TH_NUM}>Share</th>
-              <th className={TH}>Depots</th>
+              <th className={TH}>Branches</th>
             </tr>
           </thead>
           <tbody>
@@ -912,7 +951,7 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
                   <div className="min-w-0">
                     <DrillName name={row.productName} onClick={onDrill ? () => onDrill(row.productCode) : undefined} />
                     <p className="break-words text-phx-2xs font-semibold text-slate-500">
-                      {row.line} · {row.depotCount} depots · {row.soldDepots} sold · {row.returnsDepots} returns
+                      {row.line} · {row.depotCount} branches · {row.soldDepots} sold · {row.returnsDepots} returns
                     </p>
                   </div>
                   <MovementBadge movement={movement} />
@@ -932,33 +971,44 @@ function ProductsTable({ rows, onDrill }: { rows: WeeklySalesDetailProductRow[];
   );
 }
 
+/** One product's own units at each group row, by the row's code (weeklySalesDetailProductUnitsByGroup). */
+type GroupUnits = { productName: string; byCode: Record<string, WeeklySalesDetailProductUnits> };
+
 /** A row with no code of its own ("Region not mapped") has nothing to filter the page by, so its name is not a link. */
 function GroupTable({
   nameLabel,
   rows,
   onDrill,
+  units,
 }: {
   nameLabel: string;
   rows: WeeklySalesDetailGroupRow[];
   onDrill?: (code: string) => void;
+  /** the "Units for" product's own net units at each row */
+  units: GroupUnits;
 }) {
+  const unitsOf = (code: string): WeeklySalesDetailProductUnits => units.byCode[code] ?? { units: 0, avgWeeklyUnits: 0 };
   return (
     <>
       <div className="hidden lg:block">
         <table className="w-full table-fixed text-left text-sm">
+          {/* The unit column is fitted by merging Share under the value, never by shrinking type. */}
           <colgroup>
-            <col className="w-[36%]" />
-            <col className="w-[19%]" />
-            <col className="w-[17%]" />
-            <col className="w-[12%]" />
+            <col className="w-[28%]" />
+            <col className="w-[20%]" />
+            <col className="w-[18%]" />
             <col className="w-[16%]" />
+            <col className="w-[18%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
               <th className={TH}>{nameLabel}</th>
               <th className={TH_NUM}>Sales value</th>
               <th className={TH_NUM}>Avg weekly sales</th>
-              <th className={TH_NUM}>Share</th>
+              <th className={TH_NUM}>
+                <span className="block">Units</span>
+                <span className="block break-words font-bold normal-case tracking-normal text-slate-400">{units.productName}</span>
+              </th>
               <th className={TH}>Products</th>
             </tr>
           </thead>
@@ -972,9 +1022,15 @@ function GroupTable({
                     <MovementBadge movement={weeklySalesMovement(0, row.value)} />
                   </div>
                 </td>
-                <td className={`${TD_NUM} font-black text-slate-900`}>{formatEgpFull(row.value)}</td>
+                <td className={`${TD_NUM} font-black text-slate-900`}>
+                  <p>{formatEgpFull(row.value)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{`${formatShare(row.share)} share`}</p>
+                </td>
                 <td className={TD_NUM}>{formatEgpFull(row.avgWeeklyValue)}</td>
-                <td className={TD_NUM}>{formatShare(row.share)}</td>
+                <td className={TD_NUM}>
+                  <p className="font-black text-slate-900">{formatUnits(unitsOf(row.code).units)}</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-500">{`${formatAvgUnits(unitsOf(row.code).avgWeeklyUnits)} / wk`}</p>
+                </td>
                 <td className="px-3 py-2.5 text-phx-xs font-semibold text-slate-600">
                   <p className="font-black text-slate-900">{formatCount(row.productCount)}</p>
                   <p className="break-words">
@@ -1004,10 +1060,11 @@ function GroupTable({
                   </div>
                   <MovementBadge movement={movement} />
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   <CardStat label="Value" value={formatEgp(row.value)} />
                   <CardStat label="Avg / week" value={formatEgp(row.avgWeeklyValue)} />
                   <CardStat label="Share" value={formatShare(row.share)} />
+                  <CardStat label={`Units · ${units.productName}`} value={formatUnits(unitsOf(row.code).units)} />
                 </div>
               </div>
             </div>
