@@ -302,6 +302,18 @@ export const DOCUMENT_TEMPLATE_VERSIONS: readonly DocumentTemplateVersion[] = [
     note: "The salary letter an employee takes to a bank, an embassy or a landlord. It states the BASIC monthly salary and nothing else about pay — the owner, 2026-09-13: \"salary we put basic not net\". The figure is the payroll policy's own `calculateBasicSalary` off the base salary on record, imported rather than restated, so the letter cannot quote a basic salary payroll does not pay; it prints in figures and in words, and one sentence says it excludes allowances, incentives and variable pay. A missing base salary prints a rule for a pen, never EGP 0.00. A leaver's letter states the period of service and the LAST basic salary, never that he is employed. It borrows the English certificate of experience's shape — prose, one page, real text for a Canva import — and its honorific and service-period rules.",
   },
   {
+    id: "salary-letter-ar-v1",
+    document: "salaryLetterAr",
+    version: 1,
+    status: "current",
+    labelEn: "HR letter — basic salary (Arabic)",
+    labelAr: "شهادة راتب — باللغة العربية",
+    effectiveFrom: "2026-09-20",
+    supersededOn: null,
+    supersededBy: null,
+    note: "The Arabic counterpart of `salary-letter-en-v1`, drawn through the shared `render-hr-paper.ts` pipeline the Arabic certificate of experience already uses rather than a bespoke renderer, because it is an `HrPaperTemplate` and the certificate's is too. It states the SAME basic monthly salary as the English letter — both read `calculateBasicSalary` off the base salary on record, so the two can never disagree about one employee's figure — in figures and in words (`spellEgyptianAmount`), and one sentence says it excludes allowances, incentives and variable pay. A missing base salary prints a dotted rule, never a spelled zero. Not a `certificate`: it carries its own `HrPaperKind` so the certificate's print-banner warning about blank dates and its archived-version pool never reach a letter about pay. It wears the Arabic certificate's own layout — masthead, purpose band, company block, employee grid, one-column signature table with the seal in the Company stamp box — the owner's own preference for the English letter, extended to its Arabic twin for the same reason.",
+  },
+  {
     id: "contract-renewal-v1",
     document: "contractRenewal",
     version: 1,

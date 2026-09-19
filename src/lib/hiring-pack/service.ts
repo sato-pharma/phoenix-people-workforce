@@ -141,8 +141,12 @@ const DOCUMENT_BINDINGS: Record<
   // so that giving either language a real register later cannot silently move the other.
   experienceCertificateEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   // The HR letter, for the certificate's reason: nobody signs it back, and it is issued as often as
-  // a bank asks for one, so one date on the employee row could hold only the newest.
+  // a bank asks for one, so one date on the employee row could hold only the newest. Its Arabic
+  // counterpart is the same paper in the other language and carries the same null for the same
+  // reason, written out separately so giving either language a real register cannot silently move
+  // the other.
   salaryLetterEn: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
+  salaryLetterAr: { table: null, signedColumn: null, printedColumn: null, checklistName: null },
   // The letters pack of 2026-09-13. None records a date against the person: a warning, a penalty or
   // a transfer can be issued many times in a career, the insurance letters are issued whenever an
   // office asks, and the government forms are registers or one-off applications — one date on the

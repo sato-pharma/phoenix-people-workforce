@@ -66,8 +66,8 @@ function testEveryBuiltInDocumentResolvesAllThree() {
   // perfectly happily.
   assert.equal(
     HIRING_PACK_DOCUMENTS.length,
-    38,
-    "the built-in document list should still be thirty-eight — update this only alongside the four " +
+    39,
+    "the built-in document list should still be thirty-nine (the Arabic HR letter is the 39th) — update this only alongside the four " +
       "tables in document-registry.ts, the surfaces, the renderers and the template registry",
   );
 
@@ -272,6 +272,7 @@ function testEveryDocumentIsInExactlyOnePackage() {
       "custodyMobile",
       "deemedResignation",
       "salaryLetterEn",
+      "salaryLetterAr",
       // The letters pack: decisions and insurance letters are issued to people still employed, and
       // the government forms are registers or applications of a working life.
       "disciplinaryWarning",

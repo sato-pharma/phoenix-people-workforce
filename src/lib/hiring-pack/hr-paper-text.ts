@@ -708,6 +708,77 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE ARABIC HR LETTER — 2026-09-20. The Arabic counterpart of `salary-letter-en.ts`, the way this
+ * certificate is the Arabic counterpart of `experience-certificate-en.ts`. It wears the SAME layout
+ * as the certificate immediately above — masthead, purpose band, company block, employee grid, a
+ * one-column signature table — for the reason the owner already gave the English letter: "this is
+ * better" than a plain prose letter under a letterhead.
+ *
+ * NOT A `certificate`: see the note on `HrPaperKind.salaryLetter`. Sharing the certificate's `kind`
+ * would pull in its print-banner warning about blank dates and pool its archived versions with a
+ * paper that ends somebody's service, neither of which is true of a letter stating a salary.
+ *
+ * STATES THE BASIC SALARY, AND ONLY THE BASIC SALARY — the same owner rule as the English letter
+ * ("salary we put basic not net", 2026-09-13). `render-hr-paper.ts` computes `BASIC_SALARY` off
+ * `calculateBasicSalary`, the payroll policy's own formula, never restated here; a missing base
+ * salary prints as a dotted rule, never as a zero.
+ */
+export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
+  id: "salary-letter-ar-v1",
+  kind: "salaryLetter",
+  version: 1,
+  titleAr: "شهادة راتب",
+  subtitleAr: LAW_SUBTITLE,
+  purposeAr:
+    "تُحرَّر من نسختين — نسخة تُسلَّم لصاحب الشأن بناءً على طلبه، ونسخة تُحفظ بملف الخدمة.",
+  bindingLineAr: null,
+
+  firstPartyHeadingAr: "الصادرة عن — الشركة",
+  firstPartyLinesAr: FIRST_PARTY_LINES_AR,
+
+  secondPartyHeadingAr: "بيانات صاحب الشأن",
+  secondPartyFields: [
+    { labelAr: "الاسم رباعيًا", token: "EMPLOYEE_NAME", wide: true },
+    { labelAr: "الرقم القومي", token: "NATIONAL_ID", ltr: true },
+    { labelAr: "كود الموظف", token: "HR_ID", ltr: true },
+    { labelAr: "الوظيفة", token: "JOB_TITLE" },
+    { labelAr: "الإدارة / القطاع", token: "DEPARTMENT" },
+    { labelAr: "تاريخ الالتحاق بالعمل", token: "HIRE_DATE", ltr: true },
+    { labelAr: "تاريخ الإصدار", token: "ISSUE_DATE", ltr: true },
+  ],
+  sections: [],
+
+  bodyParagraphsAr: [
+    "إلى من يهمه الأمر،",
+    "تشهد {{COMPANY_NAME}} بأن السيد / السيدة المبيّنة بياناته عاليه قد التحق بالعمل لديها اعتبارًا من {{HIRE_DATE}} وحتى {{SERVICE_END}}، وشغل خلال هذه المدة وظيفة {{JOB_TITLE}} بـ{{DEPARTMENT}}.",
+    "{{SERVICE_STATUS}}",
+    "{{BASIC_SALARY_LEAD}} ( {{BASIC_SALARY}} ) جنيه (( {{BASIC_SALARY_WORDS}} ) فقط لا غير)، وهذا المبلغ هو الأجر الأساسي فقط دون سواه، ولا يشمل أي بدلات أو حوافز أو عمولات أو أية مزايا أخرى متغيرة.",
+    "وقد أُعطيت له هذه الشهادة بناءً على طلبه للتقدم بها إلى من يهمه الأمر، دون أدنى مسؤولية على الشركة قِبَل الغير.",
+  ],
+  operativeHeadingAr: null,
+  operativeParagraphsAr: [],
+  checklist: null,
+  openTable: null,
+  declarationAr: null,
+
+  signaturesHeadingAr: "التوقيع والاعتماد",
+  // ONE COLUMN, AND NO EMPLOYEE SIGNATURE — the certificate's own reasoning applies unchanged: he is
+  // the subject of this letter, not a party to it.
+  signatureColumns: [
+    {
+      headingAr: "عن الشركة — إدارة الموارد البشرية",
+      fieldsAr: ["الاسم والصفة:", "التوقيع:", "خاتم الشركة:"],
+    },
+  ],
+  signatoryNoteLinesAr: [],
+  receiptAcknowledgmentAr: null,
+  serviceNoteAr: null,
+  serviceFields: [],
+  footerAr: "شهادة راتب · صادرة عن إدارة الموارد البشرية",
+};
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
  * THE LETTERS PACK — 2026-09-13.
  *
  * Nine of the owner's own papers, moved onto the house template: "Move them onto the Sato Pharma
@@ -1232,6 +1303,7 @@ export const HR_PAPERS: readonly HrPaperTemplate[] = [
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_DOCUMENTS_RETURN_V1,
   HR_PAPER_EXPERIENCE_CERTIFICATE_V1,
+  HR_PAPER_SALARY_LETTER_AR_V1,
   HR_PAPER_HANDOVER_RECORD_V1,
   HR_PAPER_EXIT_INTERVIEW_V1,
 ];

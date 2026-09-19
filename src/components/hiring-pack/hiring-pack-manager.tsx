@@ -609,6 +609,7 @@ function signDatesShape(value: (document: HiringPackDocument) => string): Record
     experienceCertificate: value("experienceCertificate"),
     experienceCertificateEn: value("experienceCertificateEn"),
     salaryLetterEn: value("salaryLetterEn"),
+    salaryLetterAr: value("salaryLetterAr"),
     disciplinaryWarning: value("disciplinaryWarning"),
     disciplinaryPenalty: value("disciplinaryPenalty"),
     transferDecision: value("transferDecision"),
@@ -667,8 +668,10 @@ function signedDatesFromPack(pack: HiringPackData | null): Record<HiringPackDocu
     // and it is reissued whenever it is asked for, so one date here could hold only the newest.
     experienceCertificate: "",
     experienceCertificateEn: "",
-    // The HR letter likewise: the company certifies it, nobody signs it back.
+    // The HR letter likewise: the company certifies it, nobody signs it back. Same for its Arabic
+    // counterpart.
     salaryLetterEn: "",
+    salaryLetterAr: "",
     // The letters pack of 2026-09-13: none records a date against the person — see DOCUMENT_BINDINGS.
     disciplinaryWarning: "",
     disciplinaryPenalty: "",
@@ -1920,8 +1923,9 @@ export function HiringPackManager({
                 </div>
 
                 {/*
-                  THE HR LETTER. Asked for by somebody still employed — a bank, an embassy — so it
-                  sits with the papers of a working life. It states the BASIC salary only.
+                  THE HR LETTER, in both languages. Asked for by somebody still employed — a bank, an
+                  embassy — so it sits with the papers of a working life. Both state the BASIC salary
+                  only, off the same `calculateBasicSalary` figure, so the two never disagree.
                 */}
                 <div className="grid gap-3 lg:grid-cols-2">
                   <DocumentCard
@@ -1942,6 +1946,25 @@ export function HiringPackManager({
                     signable={false}
                     subtitle="شهادة راتب — باللغة الإنجليزية"
                     title="HR letter — basic salary"
+                  />
+                  <DocumentCard
+                    busy={false}
+                    canManage={canManage}
+                    copies={copies.salaryLetterAr}
+                    gaps={gapsFor(pack.gaps, "salaryLetterAr")}
+                    onCopiesChange={(value) => setCopiesFor("salaryLetterAr", value)}
+                    footnote="لبنك أو سفارة أو مالك عقار. تُبيّن الأجر الأساسي الشهري المشتق من الأجر الأصلي المسجَّل، رقمًا وكتابةً — دون الصافي أو الإجمالي."
+                    onPreview={() => openPreview("salaryLetterAr")}
+                    onPrint={() => openPrint("salaryLetterAr")}
+                    onSign={() => undefined}
+                    onSignDateChange={() => undefined}
+                    printedAt={null}
+                    printingNote="نسختان. تُسلَّم إحداهما وتُحفظ الأخرى بملف الخدمة كسجل للراتب الذي اعتمدته الشركة."
+                    signDate=""
+                    signedDate={null}
+                    signable={false}
+                    subtitle="شهادة راتب — باللغة العربية"
+                    title="HR letter — basic salary (Arabic)"
                   />
                 </div>
 

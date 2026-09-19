@@ -118,6 +118,9 @@ const DOCUMENT_KEYS: Readonly<Partial<Record<string, readonly string[]>>> = {
     "employee.jobTitle",
     "employee.baseSalary",
   ],
+  // The Arabic letter uses BASELINE_KEYS like every other Arabic HR paper; the one thing baseline
+  // does not already cover is the base salary the basic figure is derived from.
+  salaryLetterAr: ["employee.baseSalary"],
 };
 
 export type ManualPaperValues = Readonly<Record<string, string>>;

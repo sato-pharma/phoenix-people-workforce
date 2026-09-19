@@ -33,6 +33,7 @@ export type HiringPackDocument =
   | "experienceCertificate"
   | "experienceCertificateEn"
   | "salaryLetterEn"
+  | "salaryLetterAr"
   | "disciplinaryWarning"
   | "disciplinaryPenalty"
   | "transferDecision"
@@ -210,15 +211,18 @@ export function isOfficialPackFormDocument(document: string): document is Offici
 }
 
 /**
- * The HR letters an employee asks for while he works here — today the salary letter, which states
- * the BASIC salary (the owner, 2026-09-13). Neither arriving nor leaving, so it is filed under
- * "other" with a folder of its own on the drive.
+ * The HR letters an employee asks for while he works here — the salary letter, which states the
+ * BASIC salary (the owner, 2026-09-13), in English and now in Arabic. Neither arriving nor leaving,
+ * so both are filed under "other" with a folder of their own on the drive.
  *
- * NOT IN `HOUSE_PAPER_DOCUMENTS`: that list is the Arabic house-paper family, each one an
- * `HrPaperTemplate`, and this letter has its own English renderer the way the English certificate
- * of experience does.
+ * NEITHER IS IN `HOUSE_PAPER_DOCUMENTS`, though for opposite reasons. `salaryLetterEn` has its own
+ * English renderer, the way the English certificate of experience does. `salaryLetterAr` IS an
+ * `HrPaperTemplate`, drawn through the shared `render-hr-paper.ts` pipeline the Arabic certificate of
+ * experience already uses — but it is listed here rather than spread into `HOUSE_PAPER_DOCUMENTS`,
+ * because that list is already spread into `HIRING_PACK_DOCUMENTS` separately from this one, and
+ * adding it to both would enter it twice. See `HR_PAPER_SALARY_LETTER_AR_V1` in `hr-paper-text.ts`.
  */
-export const HOUSE_LETTER_DOCUMENTS = ["salaryLetterEn"] as const;
+export const HOUSE_LETTER_DOCUMENTS = ["salaryLetterEn", "salaryLetterAr"] as const;
 
 /**
  * The two clearance papers — إخلاء طرف — which are Sato's own instruments rather than a government
