@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import { RetryableEmailError } from "../src/lib/email/email-errors.ts";
 import {
+  brevoProvider,
+  resendProvider,
   resolveEmailProviders,
   sendPreparedEmailWithFailover,
   type EmailProvider,
@@ -127,5 +129,57 @@ export async function runEmailProviderFailoverTests() {
       if (saved.toggle === undefined) delete process.env.EMAIL_FAILOVER_ENABLED;
       else process.env.EMAIL_FAILOVER_ENABLED = saved.toggle;
     }
+  }
+
+  // 8) The wire format each provider actually receives. Reply-To is the one field whose NAME differs
+  //    between them — Resend's REST API takes `reply_to`, Brevo a `replyTo` object — and a wrong name
+  //    is not an error on either: the provider drops it, answers 200 and sends the mail with no
+  //    Reply-To at all, so every reply goes to the From address and bounces. Production shipped
+  //    exactly that (Resend recorded `reply_to: null` on every job offer), so assert on the request
+  //    body itself, not on the PreparedEmail that produced it.
+  {
+    const realFetch = globalThis.fetch;
+    const saved = {
+      brevo: process.env.BREVO_API_KEY,
+      brevoFrom: process.env.BREVO_EMAIL_FROM,
+      resend: process.env.RESEND_API_KEY,
+    };
+    const bodies: Record<string, Record<string, unknown>> = {};
+    let resendResult: ProviderSendResult | undefined;
+    let brevoResult: ProviderSendResult | undefined;
+    try {
+      process.env.RESEND_API_KEY = "re_test";
+      process.env.BREVO_API_KEY = "brevo_test";
+      delete process.env.BREVO_EMAIL_FROM;
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        const provider = String(input).includes("resend") ? "resend" : "brevo";
+        bodies[provider] = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify(provider === "resend" ? { id: "R1" } : { messageId: "<B1>" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }) as typeof fetch;
+
+      resendResult = await resendProvider.send(sampleEmail);
+      brevoResult = await brevoProvider.send(sampleEmail);
+    } finally {
+      globalThis.fetch = realFetch;
+      if (saved.brevo === undefined) delete process.env.BREVO_API_KEY;
+      else process.env.BREVO_API_KEY = saved.brevo;
+      if (saved.brevoFrom === undefined) delete process.env.BREVO_EMAIL_FROM;
+      else process.env.BREVO_EMAIL_FROM = saved.brevoFrom;
+      if (saved.resend === undefined) delete process.env.RESEND_API_KEY;
+      else process.env.RESEND_API_KEY = saved.resend;
+    }
+
+    assert.deepEqual(resendResult, { outcome: "sent", id: "R1" }, "the stubbed Resend call must have been reached");
+    assert.deepEqual(brevoResult, { outcome: "sent", id: "<B1>" }, "the stubbed Brevo call must have been reached");
+    assert.equal(
+      bodies.resend?.reply_to,
+      "reply@phoenix.example",
+      "Resend's REST field is reply_to — the camelCase name is silently dropped and the mail loses its Reply-To",
+    );
+    assert.equal("replyTo" in (bodies.resend ?? {}), false, "never send replyTo to Resend's REST API");
+    assert.deepEqual(bodies.brevo?.replyTo, { email: "reply@phoenix.example" }, "Brevo takes a replyTo object");
   }
 }
