@@ -60,7 +60,14 @@ export type ClosingAreaMergeRule = {
 
 /**
  * The ONLY lines whose area rows are folded into one. Pedia folds Fayoum (GZ6) + Beni Suef (UE9)
- * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards.
+ * UP TO AND INCLUDING 2026-08; CNS folds the same pair from 2026-08 onwards; Anti Infective folds
+ * Suez (OT2) + Ismailia (OT9) into "Ismailia and Suez" from 2026-09 onwards.
+ *
+ * 🔒 ANTI INFECTIVE'S ISMAILIA + SUEZ — owner, 2026-09-19: "Ismailia and Suez, one area ... not
+ * separate areas ... in line Anti Infective, Delta (3) region", answered "one area from 1 Sept" when
+ * asked. One rep covers both governorates; Ismailia is the bigger of the two by sales. It is the
+ * ONLY Anti Infective rule — the GZ6 / UE9 pair stays separate on that line — and it starts at
+ * 2026-09 so July and August still render Suez and Ismailia as the two Others areas they were sent as.
  *
  * 🔒 PEDIA SEPARATES FROM SEPTEMBER — owner, 2026-09-09: "fayoum separate area and banisuef
  * separate area but august closing not affected starting from september". It arrived in the same
@@ -76,6 +83,9 @@ export type ClosingAreaMergeRule = {
  * `untilPeriod`, or it silently rewrites months that have already been sent out.
  */
 const CLOSING_AREA_MERGES: Record<string, ClosingAreaMergeRule[]> = {
+  anti_infective: [
+    { keepAreaCode: "OT2", mergeAreaCode: "OT9", mergedAreaName: "Ismailia and Suez", fromPeriod: "2026-09" },
+  ],
   pedia: [
     { keepAreaCode: "GZ6", mergeAreaCode: "UE9", mergedAreaName: "Fayoum - Beni Suef", untilPeriod: "2026-08" },
   ],

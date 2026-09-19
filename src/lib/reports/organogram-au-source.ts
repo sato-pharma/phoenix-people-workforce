@@ -282,9 +282,10 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       areaId: null,
       // Pedia folds Fayoum (GZ6) + Beni Suef (UE9) into ONE area "Fayoum - Beni Suef", and CNS does
       // the same from 2026-08 (owner, 2026-09-07). Pedia has a single GZ6 seat and no UE9 seat, so
-      // this only renames that node. Anti Infective keeps both areas separate — getMergedAreaName
-      // returns null for it. No period is passed here on purpose: the organogram shows the org as
-      // it stands NOW, not as of any month.
+      // this only renames that node. Anti Infective folds Ismailia (OT9) + Suez (OT2) into ONE area
+      // "Ismailia and Suez" from 2026-09 (owner, 2026-09-19): the Delta (3) rep seat sits on OT2, so
+      // it reads "Ismailia and Suez" here. On that line Fayoum / Beni Suef stay separate. No period
+      // is passed here on purpose: the organogram shows the org as it stands NOW, not as of any month.
       areaName: getMergedAreaName(s.line_code, s.area_code ?? "") ?? s.area_name,
       departmentId: null,
       // Stays null, as it always has. The employee master's department reaches the

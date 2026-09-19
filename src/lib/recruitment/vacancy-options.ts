@@ -16,6 +16,7 @@
 // loads the manager list.
 
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { logError } from "@/lib/observability/log";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
@@ -64,8 +65,8 @@ type VacancyRow = {
   manager_hr_id?: string | null;
   manager_name?: string | null;
   seat_id?: string | null;
-  areas?: { name?: string | null } | Array<{ name?: string | null }> | null;
-  lines?: { name?: string | null } | Array<{ name?: string | null }> | null;
+  areas?: { name?: string | null; code?: string | null } | Array<{ name?: string | null; code?: string | null }> | null;
+  lines?: { name?: string | null; code?: string | null } | Array<{ name?: string | null; code?: string | null }> | null;
 };
 
 /** PostgREST returns an embedded row as an object or, on some relationships, a one-element array. */
@@ -73,6 +74,24 @@ function embeddedName(value: VacancyRow["areas"] | VacancyRow["lines"]): string 
   const row = Array.isArray(value) ? value[0] : value;
   const name = String(row?.name ?? "").trim();
   return name.length > 0 ? name : null;
+}
+
+function embeddedCode(value: VacancyRow["areas"] | VacancyRow["lines"]): string | null {
+  const row = Array.isArray(value) ? value[0] : value;
+  const code = String(row?.code ?? "").trim();
+  return code.length > 0 ? code : null;
+}
+
+/**
+ * The area name a recruiter reads for one vacancy. `public.areas.name` says "Suez" for the Anti
+ * Infective Delta (3) seat, but from September 2026 Ismailia and Suez are ONE area on that line
+ * (owner, 2026-09-19), so the picker uses the line's merge rule where one applies and the plain area
+ * name everywhere else. Line-scoped on purpose: a CNS or Pedia seat in Suez keeps saying "Suez".
+ */
+export function vacancyAreaName(row: Pick<VacancyRow, "areas" | "lines">): string | null {
+  const areaCode = embeddedCode(row.areas);
+  const merged = areaCode ? getMergedAreaName(embeddedCode(row.lines), areaCode) : null;
+  return merged ?? embeddedName(row.areas);
 }
 
 /**
@@ -205,7 +224,7 @@ async function withEscalatedManagers(
 export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("position_vacancies")
-    .select("id,job_title,region_name,manager_hr_id,manager_name,seat_id,areas(name),lines(name)")
+    .select("id,job_title,region_name,manager_hr_id,manager_name,seat_id,areas(name,code),lines(name,code)")
     .eq("status", "open");
   if (error) {
     // 42P01 = the table is absent. Not possible in production, but a preview database built from a
@@ -225,7 +244,7 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
 
   const options = rows
     .map((row) => ({
-      areaName: embeddedName(row.areas),
+      areaName: vacancyAreaName(row),
       id: Number(row.id),
       jobTitle: String(row.job_title ?? "").trim(),
       lineName: embeddedName(row.lines),
