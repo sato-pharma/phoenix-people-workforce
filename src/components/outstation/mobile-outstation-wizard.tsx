@@ -9,6 +9,7 @@ import { OfflineSyncBanner } from "@/components/outstation/offline-sync-banner";
 import { OutstationCostBreakdown } from "@/components/outstation/outstation-cost-breakdown";
 import { RouteMapPreview } from "@/components/outstation/route-map-preview";
 import { TicketUploadCard } from "@/components/outstation/ticket-upload-card";
+import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import {
   Field,
   FieldValue,
@@ -425,7 +426,13 @@ export function MobileOutstationWizard({
   }
   // transportIcon was removed when WizardStep migrated from icon containers
   // to numbered indices (visual polish — no logic change).
-  const isTicketBased = transportationType === "train" || transportationType === "bus";
+  // Meeting and Other are not trips (owner request 2026-09-19, src/lib/outstation/non-travel-expense.ts):
+  // no destination capture, distance, fuel, ticket, allowance or arrival photo — the claim is
+  // priced on the two typed amounts and carries an uploaded invoice or picture. The server applies
+  // the same predicate, so this is the screen agreeing with it, not a second copy of the rule.
+  const isNonTravel = isNonTravelExpenseType(expenseType);
+  const isTicketBased =
+    !isNonTravel && (transportationType === "train" || transportationType === "bus");
   // Owner request 2026-08-19: Product Manager, Group Product Manager and National Sales Manager
   // submit with no evidence photo at all, and their train/bus ticket is optional. The rule lives
   // in src/lib/outstation/evidence-waiver.ts and the SERVER applies the same predicate to the
@@ -435,6 +442,7 @@ export function MobileOutstationWizard({
   // manager never sees the photo step. Hiding a step the server still demanded (or the reverse)
   // is exactly the dead-end this page had to be fixed for on 2026-08-04.
   const isEvidencePhotoWaived = isOutstationEvidenceWaivedRole(employeeRole);
+  const arrivalPhotoOwed = !isNonTravel && !isEvidencePhotoWaived;
   const isTicketRequired = isTicketBased && !isOutstationTicketWaivedRole(employeeRole);
   // The arrival photo is required for EVERY transportation type — validateLiveArrivalEvidence()
   // was widened past `car` on 2026-08-04. The capture card below must therefore render for every
@@ -804,16 +812,18 @@ export function MobileOutstationWizard({
       amWorkload: Number(amWorkload || 0),
       attachmentCount: ticketFiles.length,
       // Never `?? 0`: 0 would reach the server as a perfect 0 m fix and pass the accuracy limit.
-      capturedAccuracyMeters: captured?.capturedAccuracyMeters ?? null,
-      capturedAt: captured?.capturedAt,
-      capturedLatitude: captured?.capturedLatitude ?? 0,
-      capturedLongitude: captured?.capturedLongitude ?? 0,
-      carEvidenceMetadata,
+      // A Meeting or Other expense posts no position, photo, kilometre or ticket amount: whatever
+      // is left in those boxes from an earlier Traveling entry must never reach the request.
+      capturedAccuracyMeters: isNonTravel ? null : (captured?.capturedAccuracyMeters ?? null),
+      capturedAt: isNonTravel ? undefined : captured?.capturedAt,
+      capturedLatitude: isNonTravel ? 0 : (captured?.capturedLatitude ?? 0),
+      capturedLongitude: isNonTravel ? 0 : (captured?.capturedLongitude ?? 0),
+      carEvidenceMetadata: isNonTravel ? undefined : carEvidenceMetadata,
       claimedTotalAmount: 0,
       expenseType,
-      goTicketAmount: Number(goTicketAmount || 0),
+      goTicketAmount: isNonTravel ? 0 : Number(goTicketAmount || 0),
       hasTicketAttachments,
-      kilometerReading: Number(kilometerReading || 0),
+      kilometerReading: isNonTravel ? 0 : Number(kilometerReading || 0),
       meetingAmount: Number(meetingAmount || 0),
       medicalTripHrId,
       medicalTripName: selectedMedicalTripName,
@@ -821,8 +831,8 @@ export function MobileOutstationWizard({
       offlineCaptured: isOffline,
       otherAmount: Number(otherAmount || 0),
       pmWorkload: Number(pmWorkload || 0),
-      returnTicketAmount: Number(returnTicketAmount || 0),
-      transportationType,
+      returnTicketAmount: isNonTravel ? 0 : Number(returnTicketAmount || 0),
+      transportationType: isNonTravel ? ("other" as const) : transportationType,
       tripType: durationSummary,
       tripEndDate,
       tripStartDate,
@@ -834,6 +844,7 @@ export function MobileOutstationWizard({
       expenseType,
       goTicketAmount,
       hasTicketAttachments,
+      isNonTravel,
       isOffline,
       kilometerReading,
       meetingAmount,
@@ -851,9 +862,23 @@ export function MobileOutstationWizard({
     ],
   );
 
-  const canAutoCalculate = Boolean(captured && tripStartDate && tripEndDate);
+  const canAutoCalculate = Boolean((captured || isNonTravel) && tripStartDate && tripEndDate);
   const calculationKey = useMemo(() => {
-    if (!captured || !tripStartDate || !tripEndDate) return "";
+    if ((!captured && !isNonTravel) || !tripStartDate || !tripEndDate) return "";
+
+    if (isNonTravel) {
+      // Priced on the two amounts and the dates alone, so nothing else may re-trigger a price.
+      return JSON.stringify({
+        attachmentCount: ticketFiles.length,
+        expenseType,
+        meetingAmount: Number(meetingAmount || 0),
+        otherAmount: Number(otherAmount || 0),
+        tripEndDate,
+        tripStartDate,
+      });
+    }
+
+    if (!captured) return "";
 
     return JSON.stringify({
       attachmentCount: ticketFiles.length,
@@ -879,6 +904,7 @@ export function MobileOutstationWizard({
     expenseType,
     goTicketAmount,
     hasTicketAttachments,
+    isNonTravel,
     isTicketBased,
     meetingAmount,
     otherAmount,
@@ -891,7 +917,7 @@ export function MobileOutstationWizard({
   ]);
 
   const performCalculation = useEffectEvent(async (submittedCalculationKey?: string) => {
-    if (!captured) {
+    if (!captured && !isNonTravel) {
       return;
     }
 
@@ -1269,12 +1295,19 @@ export function MobileOutstationWizard({
   }
 
   async function submit() {
-    if (!captured) {
+    if (isNonTravel && isOffline) {
+      setMessage(
+        "A Meeting or Other expense needs an internet connection so its invoice can be uploaded. Reconnect and submit again.",
+      );
+      return;
+    }
+
+    if (!captured && !isNonTravel) {
       setMessage("Tap the To field to capture your current destination first.");
       return;
     }
 
-    if (!hasCarEvidence && !isEvidencePhotoWaived) {
+    if (!hasCarEvidence && arrivalPhotoOwed) {
       setMessage(arrivalPhotoMissingMessage);
       return;
     }
@@ -1299,7 +1332,7 @@ export function MobileOutstationWizard({
       const endpoint = isOffline ? "/api/outstation/sync-offline" : "/api/outstation/submit";
       // Ticket files are uploaded on the online path only; the offline path cannot carry them.
       let ticketAttachments: Array<{ dataUrl: string; name: string }> | undefined;
-      if (!isOffline && isTicketBased && ticketFiles.length > 0) {
+      if (!isOffline && (isTicketBased || isNonTravel) && ticketFiles.length > 0) {
         try {
           ticketAttachments = await Promise.all(ticketFiles.map(prepareTicketAttachment));
         } catch (error) {
@@ -1310,7 +1343,7 @@ export function MobileOutstationWizard({
         }
         const bodyCheck = checkSubmitBodySize(
           ticketAttachments.reduce((sum, attachment) => sum + attachment.dataUrl.length, 0) +
-            (carEvidence?.imageDataUrl?.length ?? 0),
+            (isNonTravel ? 0 : (carEvidence?.imageDataUrl?.length ?? 0)),
         );
         if (!bodyCheck.ok) {
           setMessage(bodyCheck.message);
@@ -1328,7 +1361,7 @@ export function MobileOutstationWizard({
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
-          carEvidenceImageDataUrl: carEvidence?.imageDataUrl,
+          carEvidenceImageDataUrl: isNonTravel ? undefined : carEvidence?.imageDataUrl,
           ticketAttachments,
         }),
         headers: { "Content-Type": "application/json" },
@@ -1495,6 +1528,7 @@ export function MobileOutstationWizard({
             ) : null}
           </Field>
 
+          {isNonTravel ? null : (
           <Field label="From">
             <PremiumTooltip
               className="w-80"
@@ -1512,7 +1546,9 @@ export function MobileOutstationWizard({
               </div>
             </PremiumTooltip>
           </Field>
+          )}
 
+          {isNonTravel ? null : (
           <Field label="To">
             <PremiumTooltip
               className="w-80"
@@ -1543,8 +1579,9 @@ export function MobileOutstationWizard({
               </button>
             </PremiumTooltip>
           </Field>
+          )}
 
-          {captured ? (
+          {captured && !isNonTravel ? (
             <>
               <Field label="Area / Brick">
                 <LocationReadout value={destinationLocation.area} />
@@ -1569,6 +1606,7 @@ export function MobileOutstationWizard({
             </>
           ) : null}
 
+          {isNonTravel ? null : (
           <Field label="Transportation Type">
             <SearchableSelect
               className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
@@ -1583,6 +1621,7 @@ export function MobileOutstationWizard({
               <option value="other">Other</option>
             </SearchableSelect>
           </Field>
+          )}
 
           {useAreaRepPicker ? (
             <Field label="Area">
@@ -1629,7 +1668,7 @@ export function MobileOutstationWizard({
             </Field>
           )}
 
-          {transportationType === "car" ? (
+          {isNonTravel ? null : transportationType === "car" ? (
             <Field label="Kilometer Reading">
               <Input
                 onChange={(event) => setKilometerReading(event.target.value)}
@@ -1707,8 +1746,9 @@ export function MobileOutstationWizard({
           </Field>
 
           <p className="text-xs font-semibold text-slate-500 sm:col-span-2 xl:col-span-4">
-            Both are paid on top of the travel cost and the allowance, whatever the expense type
-            is. Leave a box empty if that cost was not incurred.
+            {isNonTravel
+              ? "A Meeting or Other expense is paid on these amounts alone. No distance, travel cost or allowance is calculated."
+              : "Both are paid on top of the travel cost and the allowance, whatever the expense type is. Leave a box empty if that cost was not incurred."}
           </p>
 
           {/*
@@ -1764,20 +1804,24 @@ export function MobileOutstationWizard({
             Auto calculated summary
           </span>
           <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
-            <SummaryValue
-              label="Allowance"
-              value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
-            />
-            <SummaryValue
-              label={transportationType === "car" ? "Travel Cost" : "Ticket Cost"}
-              value={
-                calculation
-                  ? transportationType === "car"
-                    ? egp(calculation.fuelAmount)
-                    : egp(calculation.ticketAmount)
-                  : "Will appear automatically"
-              }
-            />
+            {isNonTravel ? null : (
+              <>
+                <SummaryValue
+                  label="Allowance"
+                  value={calculation ? egp(calculation.allowanceAmount) : "Will appear automatically"}
+                />
+                <SummaryValue
+                  label={transportationType === "car" ? "Travel Cost" : "Ticket Cost"}
+                  value={
+                    calculation
+                      ? transportationType === "car"
+                        ? egp(calculation.fuelAmount)
+                        : egp(calculation.ticketAmount)
+                      : "Will appear automatically"
+                  }
+                />
+              </>
+            )}
             <SummaryValue
               label="Total Cost"
               value={calculation ? egp(calculation.expectedTotalAmount) : "Will appear automatically"}
@@ -1790,22 +1834,26 @@ export function MobileOutstationWizard({
               label="Other"
               value={calculation ? egp(calculation.reportOtherAmount) : "Will appear automatically"}
             />
-            <SummaryValue
-              label="Kilometer"
-              value={
-                calculation?.distanceFromResidenceKm != null
-                  ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
-                  : "Will appear automatically"
-              }
-            />
-            <SummaryValue
-              label="Estimated Duration"
-              value={
-                calculation?.durationMinutes != null
-                  ? `${calculation.durationMinutes.toFixed(0)} mins`
-                  : "Will appear automatically"
-              }
-            />
+            {isNonTravel ? null : (
+              <>
+                <SummaryValue
+                  label="Kilometer"
+                  value={
+                    calculation?.distanceFromResidenceKm != null
+                      ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
+                      : "Will appear automatically"
+                  }
+                />
+                <SummaryValue
+                  label="Estimated Duration"
+                  value={
+                    calculation?.durationMinutes != null
+                      ? `${calculation.durationMinutes.toFixed(0)} mins`
+                      : "Will appear automatically"
+                  }
+                />
+              </>
+            )}
             <SummaryValue
               label="Eligibility"
               value={
@@ -1821,7 +1869,17 @@ export function MobileOutstationWizard({
           {isCalculating ? (
             <span className="inline-flex items-center gap-2 font-medium text-slate-800">
               <LoadingSpinner />
-              Phoenix is calculating kilometer, allowance, amount, and validation automatically...
+              {isNonTravel
+                ? "Phoenix is totalling your amounts..."
+                : "Phoenix is calculating kilometer, allowance, amount, and validation automatically..."}
+            </span>
+          ) : isNonTravel ? (
+            <span>
+              {isOffline
+                ? "A Meeting or Other expense needs an internet connection so its invoice can be uploaded."
+                : canAutoCalculate
+                  ? "No distance or travel is calculated for a Meeting or Other expense. It is paid on the amounts you entered."
+                  : "Select the dates and enter the Meeting or Other amount. No location is needed."}
             </span>
           ) : canAutoCalculate ? (
             <span>
@@ -1838,38 +1896,44 @@ export function MobileOutstationWizard({
 
         {calculation ? (
           <div className="mt-5 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
-            <FieldValue
-              label="Kilometer"
-              value={
-                calculation?.distanceFromResidenceKm != null
-                  ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
-                  : "N/A"
-              }
-            />
-            <FieldValue
-              label="Estimated Duration"
-              value={
-                calculation?.durationMinutes != null
-                  ? `${calculation.durationMinutes.toFixed(0)} mins`
-                  : "N/A"
-              }
-            />
-            <FieldValue
-              label={transportationType === "car" ? "Fuel Amount" : "Ticket Amount"}
-              value={
-                calculation
-                  ? transportationType === "car"
-                    ? egp(calculation.fuelAmount)
-                    : egp(calculation.ticketAmount)
-                  : "N/A"
-              }
-            />
+            {isNonTravel ? null : (
+              <>
+                <FieldValue
+                  label="Kilometer"
+                  value={
+                    calculation?.distanceFromResidenceKm != null
+                      ? `${calculation.distanceFromResidenceKm.toFixed(2)} KM`
+                      : "N/A"
+                  }
+                />
+                <FieldValue
+                  label="Estimated Duration"
+                  value={
+                    calculation?.durationMinutes != null
+                      ? `${calculation.durationMinutes.toFixed(0)} mins`
+                      : "N/A"
+                  }
+                />
+                <FieldValue
+                  label={transportationType === "car" ? "Fuel Amount" : "Ticket Amount"}
+                  value={
+                    calculation
+                      ? transportationType === "car"
+                        ? egp(calculation.fuelAmount)
+                        : egp(calculation.ticketAmount)
+                      : "N/A"
+                  }
+                />
+              </>
+            )}
             <FieldValue label="Amount" value={egp(calculation.expectedTotalAmount)} />
             <FieldValue
               label="Eligibility"
               value={calculation.eligibilityStatus.replace(/_/g, " ")}
             />
-            <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
+            {isNonTravel ? null : (
+              <FieldValue label="Allowance" value={egp(calculation.allowanceAmount)} />
+            )}
             {/* Meeting and other are inside Amount (reportExpectedTotal sums travel + meeting +
                 allowance + other), so a review card that lists fuel and allowance beside the
                 Amount has to list these two as well or the figures below it do not add up. */}
@@ -1887,7 +1951,7 @@ export function MobileOutstationWizard({
           "optional": these managers are not being asked to weigh a choice, the step is simply no
           longer part of their submission. A card that stays on screen saying "you may skip this"
           is the same requirement, only asked more quietly. */}
-      {isEvidencePhotoWaived ? null : (
+      {!arrivalPhotoOwed ? null : (
       <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
             {arrivalPhotoBadge}
@@ -2045,12 +2109,19 @@ export function MobileOutstationWizard({
         }}
         required={isTicketRequired}
         transportationType={transportationType}
-        visible={isTicketBased}
+        visible={isTicketBased || isNonTravel}
+        {...(isNonTravel
+          ? {
+              badge: "Upload invoice or picture",
+              description:
+                "Attach the invoice or a picture of this expense — JPG, PNG or PDF, up to 3 files. You can submit without one, but the claim is then held for review before it moves to payroll.",
+            }
+          : {})}
       />
 
       <EligibilityResultCard result={calculation} />
-      <OutstationCostBreakdown result={calculation} />
-      <RouteMapPreview request={calculation} />
+      {isNonTravel ? null : <OutstationCostBreakdown result={calculation} />}
+      {isNonTravel ? null : <RouteMapPreview request={calculation} />}
 
       {calculation ? (
         <>
@@ -2073,7 +2144,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  (!hasCarEvidence && !isEvidencePhotoWaived)
+                  (!hasCarEvidence && arrivalPhotoOwed)
                 }
                 onClick={submit}
                 type="button"
@@ -2088,7 +2159,7 @@ export function MobileOutstationWizard({
             </div>
             {/* A disabled button that says nothing is what made this look broken: the
                 employee pressed it and the page did not react. Always name the reason. */}
-            {!hasCarEvidence && !isEvidencePhotoWaived ? (
+            {!hasCarEvidence && arrivalPhotoOwed ? (
               <p className="mt-2 text-phx-sm font-semibold text-amber-700">
                 {arrivalPhotoMissingMessage}
               </p>
@@ -2105,7 +2176,7 @@ export function MobileOutstationWizard({
             role="region"
             aria-label="Submit expense action bar"
           >
-            {!hasCarEvidence && !isEvidencePhotoWaived ? (
+            {!hasCarEvidence && arrivalPhotoOwed ? (
               <p className="mb-1.5 whitespace-nowrap text-phx-xs font-semibold text-amber-700">
                 {arrivalPhotoMissingShort}
               </p>
@@ -2117,7 +2188,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  (!hasCarEvidence && !isEvidencePhotoWaived)
+                  (!hasCarEvidence && arrivalPhotoOwed)
                 }
                 onClick={submit}
                 type="button"

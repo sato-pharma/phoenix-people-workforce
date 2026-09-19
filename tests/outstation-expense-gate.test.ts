@@ -173,6 +173,11 @@ export function runOutstationExpenseGateTests() {
     "pending_arrival_photo",
     "a departure photo alone must not satisfy the arrival checkpoint",
   );
+  assert.equal(
+    nextEvidenceGateStatus({ grandfathered: true, hasArrivalPhoto: false, hasDeparturePhoto: false }),
+    "grandfathered",
+    "an exempt request must still go through the shared resolver, never a separate hardcoded branch",
+  );
 
   // ── The gate must actually be WIRED to the money ────────────────────────────────
   // The assertions above prove the rule is right; these prove it is applied. A correct gate that

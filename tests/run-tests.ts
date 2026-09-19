@@ -1416,6 +1416,7 @@ import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arr
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
+import { runOutstationNonTravelExpenseTests } from "./outstation-non-travel-expense.test.ts";
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimedTotalTests } from "./outstation-claimed-total.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
@@ -4629,6 +4630,11 @@ await runTest(
 await runTest(
   "one employee earns at most one allowance per calendar day, across every write path",
   runOutstationAllowanceDuplicateDayGuardTests,
+);
+
+await runTest(
+  "a Meeting or Other expense takes an invoice upload and calculates no distance, travel or allowance",
+  runOutstationNonTravelExpenseTests,
 );
 
 await runTest(

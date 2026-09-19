@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
+import { isNonTravelExpenseType } from "@/lib/outstation/non-travel-expense";
 import { submitOutstationRequest } from "@/lib/outstation/service";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -66,7 +67,12 @@ export async function POST(request: Request) {
 
     // The arrival position is required. Never `Number(body.capturedLatitude)`: `Number(null)` is
     // 0, so a body with no GPS fix was priced and stored as an arrival at 0°N 0°E.
-    const position = readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
+    // A Meeting or Other expense takes no position at all (non-travel-expense.ts): it is priced on
+    // its amounts alone, so a body without a fix is the normal shape and the service ignores the
+    // 0,0 placeholder. Every other type still refuses one.
+    const position = isNonTravelExpenseType(outstationTypes.expenseType)
+      ? { latitude: 0, longitude: 0 }
+      : readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
     if (!position) {
       return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
     }

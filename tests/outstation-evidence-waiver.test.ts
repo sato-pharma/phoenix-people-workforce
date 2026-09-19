@@ -276,11 +276,17 @@ export function runOutstationEvidenceWaiverTests() {
   ).replace(/\s+/g, " ");
 
   assert.ok(
-    service.includes("if (!input.carEvidenceImageDataUrl && !evidencePhotoWaived) {"),
+    // A Meeting or Other expense (owner, 2026-09-19) is not a trip and owes no arrival photo, so the
+    // refusal may ALSO be skipped for it — but never without the waiver clause, which is the point.
+    service.includes("if (!nonTravel && !input.carEvidenceImageDataUrl && !evidencePhotoWaived) {") ||
+      service.includes("if (!input.carEvidenceImageDataUrl && !evidencePhotoWaived) {"),
     "the submit path's missing-image refusal must be conditional on the waiver, or a waived role passes the validator and is then refused two lines later by a second, unwaived check",
   );
   assert.ok(
-    service.includes("if (input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {"),
+    // The Meeting/Other clause (owner, 2026-09-19) only ADDS a reason to skip the upload; the upload
+    // must still be conditional on a photo existing.
+    service.includes("if (input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {") ||
+      service.includes("if (!nonTravel && input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {"),
     "and the storage upload must be conditional on a photo EXISTING — an unconditional upload throws on the very submissions this change exists to allow",
   );
   assert.ok(
@@ -315,7 +321,10 @@ export function runOutstationEvidenceWaiverTests() {
     "the wizard must derive the waiver from the SAME predicate the server uses, never from its own list of role names",
   );
   assert.ok(
-    wizard.includes("{isEvidencePhotoWaived ? null : ("),
+    // `arrivalPhotoOwed` (owner, 2026-09-19) is "not a Meeting/Other expense AND not waived" — the waiver
+    // stays in it (pinned in outstation-arrival-photo-capture-reachable), so the card is still hidden
+    // for a waived role, and now for a non-travel expense as well.
+    wizard.includes("{isEvidencePhotoWaived ? null : (") || wizard.includes("{!arrivalPhotoOwed ? null : ("),
     "the arrival-photo card must be hidden for a waived role — leaving it on screen as 'optional' is the same requirement asked more quietly",
   );
   assert.ok(

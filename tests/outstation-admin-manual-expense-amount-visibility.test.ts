@@ -147,14 +147,17 @@ export function runOutstationAdminManualExpenseAmountVisibilityTests() {
   // the same direction it does in the modal.
   const wizardMeetingSubmits = (wizard.match(/meetingAmount: Number\(meetingAmount \|\| 0\)/g) ?? []).length;
   const wizardOtherSubmits = (wizard.match(/otherAmount: Number\(otherAmount \|\| 0\)/g) ?? []).length;
+  // THREE sites since 2026-09-19: the request payload, plus the pricing key of a Traveling expense
+  // and the (amounts-and-dates-only) pricing key of a Meeting or Other expense. All three read the
+  // boxes unconditionally; a fourth, or one fewer, is a change somebody has to look at.
   assert.equal(
     wizardMeetingSubmits,
-    2,
-    `both wizard write paths must carry meetingAmount unconditionally — found ${wizardMeetingSubmits} of 2`,
+    3,
+    `every wizard payload/pricing site must carry meetingAmount unconditionally — found ${wizardMeetingSubmits} of 3`,
   );
   assert.equal(
     wizardOtherSubmits,
-    2,
-    `both wizard write paths must carry otherAmount unconditionally — found ${wizardOtherSubmits} of 2`,
+    3,
+    `every wizard payload/pricing site must carry otherAmount unconditionally — found ${wizardOtherSubmits} of 3`,
   );
 }

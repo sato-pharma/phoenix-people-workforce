@@ -93,10 +93,17 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
   // now "missing AND not waived" rather than a bare "missing". The COUNT is what this pins — both
   // buttons, never one — because a single-button regression is exactly how the mobile action bar
   // once stayed live while the desktop card was fixed.
+  // Owner request 2026-09-19: a Meeting or Other expense owes no arrival photo either, so the guard is
+  // now `arrivalPhotoOwed` (= not a non-travel expense AND not a waived role). The waiver half is
+  // asserted separately below so this guard can never silently drop it.
   assert.equal(
-    wizard.split("|| (!hasCarEvidence && !isEvidencePhotoWaived) }").length - 1,
+    wizard.split("|| (!hasCarEvidence && arrivalPhotoOwed) }").length - 1,
     2,
     "both submit buttons (desktop card and mobile action bar) disable on a missing arrival photo, for every transport type and every role that still owes one",
+  );
+  assert.ok(
+    wizard.includes("const arrivalPhotoOwed = !isNonTravel && !isEvidencePhotoWaived;"),
+    "arrivalPhotoOwed must keep the evidence waiver in it — the two buttons guard on it, so dropping the waiver here disables a waived manager's button with no photo card on screen",
   );
   assert.ok(
     !wizard.includes("|| !hasCarEvidence }"),
@@ -113,7 +120,10 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
     "the captured image must be sent for every transport type — stripping it for train/bus guaranteed the server refusal even once the camera was reachable",
   );
   assert.ok(
-    wizard.includes("carEvidenceImageDataUrl: carEvidence?.imageDataUrl,"),
+    // A Meeting or Other expense (owner, 2026-09-19) takes no photo at all; every TRIP type still sends
+    // whatever was captured, whatever its transport type (the assertion above pins that half).
+    wizard.includes("carEvidenceImageDataUrl: carEvidence?.imageDataUrl,") ||
+      wizard.includes("carEvidenceImageDataUrl: isNonTravel ? undefined : carEvidence?.imageDataUrl,"),
     "the wizard sends whatever was captured, and lets the server judge it",
   );
 

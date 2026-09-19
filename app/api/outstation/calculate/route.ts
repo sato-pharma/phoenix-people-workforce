@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { readCapturedPosition } from "@/lib/outstation/captured-coordinates";
+import {
+  isNonTravelExpenseType,
+  NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE,
+} from "@/lib/outstation/non-travel-expense";
 import { calculateOutstationExpense } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import {
@@ -45,7 +49,12 @@ export async function POST(request: Request) {
 
     // The arrival position is required. Never `Number(body.capturedLatitude)`: `Number(null)` is
     // 0, so a body with no GPS fix was priced as a trip to 0°N 0°E.
-    const position = readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
+    // A Meeting or Other expense takes no position at all (non-travel-expense.ts): it is priced on
+    // its amounts alone, so a body without a fix is the normal shape and the service ignores the
+    // 0,0 placeholder. Every other type still refuses one.
+    const position = isNonTravelExpenseType(outstationTypes.expenseType)
+      ? { latitude: 0, longitude: 0 }
+      : readCapturedPosition(body.capturedLatitude, body.capturedLongitude);
     if (!position) {
       return NextResponse.json(MISSING_CAPTURED_COORDINATES, { status: 400 });
     }
@@ -87,7 +96,13 @@ export async function POST(request: Request) {
     const message = clientSafeErrorMessage(error, "Unable to calculate outstation expense.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_calculation_failed", message },
-      { status: isForbiddenError(error) ? 403 : 500 },
+      {
+        status: isForbiddenError(error)
+          ? 403
+          : message === NON_TRAVEL_AMOUNT_REQUIRED_MESSAGE
+            ? 400
+            : 500,
+      },
     );
   }
 }

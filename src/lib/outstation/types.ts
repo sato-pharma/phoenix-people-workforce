@@ -182,7 +182,8 @@ export type OutstationCaptureResult = {
   capturedAccuracyMeters: number | null;
   capturedAt: string;
   capturedLatitude: number;
-  capturedLocationSource: "browser_gps";
+  /** `no_travel_expense`: a Meeting/Other claim took no position — see non-travel-expense.ts. */
+  capturedLocationSource: "browser_gps" | "no_travel_expense";
   capturedLongitude: number;
   distanceFromResidenceKm: number | null;
   durationMinutes: number | null;
