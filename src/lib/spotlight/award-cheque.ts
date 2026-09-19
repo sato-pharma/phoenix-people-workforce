@@ -229,32 +229,6 @@ const CORNER = `<svg viewBox="0 0 100 100" aria-hidden="true">
   <path d="M14 5 23 14 14 23 5 14Z" fill="${GOLD.mid}"/>
 </svg>`;
 
-/** The award medallion: a scalloped gold rosette, a navy face and no ribbons. */
-function sealSvg(): string {
-  const points: string[] = [];
-  const teeth = 36;
-  for (let i = 0; i < teeth * 2; i += 1) {
-    const radius = i % 2 === 0 ? 47 : 43;
-    const angle = (Math.PI * i) / teeth - Math.PI / 2;
-    points.push(`${num(50 + radius * Math.cos(angle))},${num(50 + radius * Math.sin(angle))}`);
-  }
-  return `<svg class="seal" viewBox="0 0 100 100" aria-hidden="true">
-    <defs>
-      <linearGradient id="sealGold" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="${GOLD.light}"/><stop offset="0.5" stop-color="${GOLD.mid}"/><stop offset="1" stop-color="${GOLD.deep}"/></linearGradient>
-      <linearGradient id="sealNavy" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#0A6BA6"/><stop offset="1" stop-color="#073A58"/></linearGradient>
-    </defs>
-    <polygon points="${points.join(" ")}" fill="url(#sealGold)"/>
-    <circle cx="50" cy="50" r="38.5" fill="none" stroke="#FFFBEF" stroke-width="1.3"/>
-    <circle cx="50" cy="50" r="35" fill="url(#sealNavy)" stroke="${GOLD.light}" stroke-width="0.9"/>
-    <circle cx="50" cy="50" r="30" fill="none" stroke="${GOLD.light}" stroke-width="0.4" stroke-dasharray="1.2 1.6"/>
-    <path d="M50 22 51.6 28.4 58 30 51.6 31.6 50 38 48.4 31.6 42 30 48.4 28.4Z" fill="${GOLD.light}"/>
-    <text x="50" y="60" text-anchor="middle" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="24" fill="#FFFFFF">S1</text>
-    <text x="50" y="72" text-anchor="middle" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="8.5" letter-spacing="2.2" fill="${GOLD.light}">2026</text>
-  </svg>`;
-}
-
 function chequeBody(row: AwardChequeRow): string {
   const date = dateParts(row.transferDate);
   const words = chequeAmountInArabic(row.amountEgp);
@@ -268,7 +242,6 @@ function chequeBody(row: AwardChequeRow): string {
     <header class="head">
       <h1>Award Cheque${SPARK}${SPARK}</h1>
       <p class="head__prog">${escapeHtml(row.programName)}</p>
-      ${sealSvg()}
     </header>
 
     <section class="numdate">
@@ -433,7 +406,6 @@ const CSS = `
   .head h1 { font-size: 54pt; font-weight: 700; line-height: 1.1; color: var(--deep); }
   .spk { display: inline-block; width: 15mm; height: 15mm; margin-left: 6mm; vertical-align: 5mm; fill: var(--gold); }
   .head h1 .spk + .spk { width: 8mm; height: 8mm; margin-left: 2mm; vertical-align: 15mm; fill: var(--gold-light); }
-  .seal { position: absolute; right: 40mm; top: 50%; transform: translateY(-50%); height: 44mm; width: auto; display: block; }
   .head__ar { text-align: left; margin-top: 1mm; font-family: var(--arabic); font-size: 36pt; font-weight: 600; line-height: 1.3; color: var(--blue); }
   .head__prog { margin-top: 3mm; font-size: 20pt; font-weight: 700; letter-spacing: .04em; color: var(--gold-deep); }
 
