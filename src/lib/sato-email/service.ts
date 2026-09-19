@@ -523,11 +523,12 @@ export async function sendSatoEmail(draft: SatoEmailDraft, access: AccessContext
   // bounces — so every composer mail showed a suppressed To and its replies bounced (owner's test
   // send, 2026-09-13). Never key this on the sender, and never point it at an untested inbox.
   const replyTo = systemEmail.satoComposerReplyToEmail;
-  // What a recipient READS in the To line of a fan-out stays the HR Business Partner's mailbox — the
-  // same address the mail is From — so the Reply-To above changes where a reply goes and nothing
-  // else. Without this, the fan-out would put the owner's own address in the visible To of every
-  // multi-recipient send.
-  const fanoutVisibleTo = systemEmail.satoComposerFromEmail;
+  // What a recipient READS in the To line of a fan-out is the apex HR Business Partner mailbox — a
+  // REAL inbox, deliberately NOT the same address the mail is From (see satoComposerFanoutVisibleTo):
+  // this is a genuine envelope recipient Resend actually delivers to, and the From subdomain has no
+  // live mailbox behind it. Without this, the fan-out would put the owner's own Reply-To address in
+  // the visible To of every multi-recipient send.
+  const fanoutVisibleTo = systemEmail.satoComposerFanoutVisibleTo;
   const senderId = access.loginId ?? access.hrId ?? "unknown";
 
   const outcomes: SatoEmailSendOutcome[] = [];

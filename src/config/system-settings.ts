@@ -63,20 +63,44 @@ export const systemEmail = {
   /**
    * The From address of every mail the Sato Email Composer sends, whoever is sending it.
    *
-   * Owner 2026-09-12: composer mail goes out as the HR Business Partner's mailbox. This is the ONE
-   * apex-domain From in the system, and it only delivers because satopharma.com is verified in
-   * Resend alongside send.satopharma.com (DKIM at resend._domainkey.satopharma.com). The domain's
-   * DMARC is p=reject, so if that verification is ever removed every composer send is refused —
-   * do not copy this address into any other sender on the strength of this line.
+   * Owner 2026-09-12: composer mail goes out as the HR Business Partner's mailbox. It was first set
+   * to the apex `hrbp@satopharma.com` — Resend reported it "verified" and every send came back
+   * `sent`/`delivered` — but `email_delivery_events` showed a 0% open rate across all 36 sends over
+   * the following week (2026-09-12 → 2026-09-19), while every `send.satopharma.com` identity in the
+   * same system, to the same Yahoo/Turbify-hosted recipients, opened normally. The apex domain is
+   * where the recipients' own mailboxes live (`satopharma.com` MX → Yahoo Business Mail); mail
+   * claiming that exact identity but arriving via a different relay (Resend/Amazon SES) matches the
+   * shape of a spoofed sender, and Yahoo's anti-phishing filtering silently files it as spam/bulk —
+   * SPF/DKIM/DMARC passing does not prevent this. Moved onto the dedicated `send.` subdomain, which
+   * carries no live mailbox of its own and has the proven delivery record. The display name stays
+   * "Sato Pharma" (see satoEmailFrom) and Reply-To stays the owner's, so nothing a recipient reads
+   * changes except the domain after the @.
    */
-  satoComposerFromEmail: "hrbp@satopharma.com",
+  satoComposerFromEmail: "hrbp@send.satopharma.com",
+  /**
+   * The visible To of a multi-recipient composer fan-out (`fanoutVisibleTo` in sendSatoEmail) —
+   * real recipients ride in Bcc, and this is the neutral address every one of them reads in the To
+   * line instead.
+   *
+   * 🔴 DELIBERATELY NOT `satoComposerFromEmail`. This address is a genuine SMTP envelope recipient —
+   * Resend actually attempts delivery to it, unlike a Bcc'd name a client only renders — so it must
+   * be a real, accepting mailbox. `send.satopharma.com` carries none (its only MX is Amazon SES's
+   * bounce-feedback address, `feedback-smtp.eu-west-1.amazonses.com`, built to reject or process
+   * bounces, not hold real mail), so pointing this at it would hard-bounce ONE recipient on every
+   * multi-recipient batch and erode the very subdomain's reputation the From-address fix above
+   * depends on. `hrbp@satopharma.com` (the apex mailbox) has no such problem: it is a live inbox —
+   * confirmed 2026-09-19 by reading it directly, where a composer send landed as a real message
+   * (some copies Inbox, one Bulk/Junk, never bounced). A From/To domain mismatch on one message
+   * carries no authentication penalty — DMARC keys off the From header, not the To.
+   */
+  satoComposerFanoutVisibleTo: "hrbp@satopharma.com",
   /**
    * Where a reply to composer mail lands — the owner's own mailbox, for every sender.
    *
    * Owner 2026-09-17: "i want reply to reach omar.anwar@satopharma.com". Reply-To, not From: the
    * mail still goes out as the HR Business Partner's mailbox above, and the fan-out's visible To
-   * stays that same hrbp@ box (`fanoutVisibleTo` in sendSatoEmail), so nothing a recipient reads
-   * changes — only where their Reply button points.
+   * stays the apex hrbp@ box above (`fanoutVisibleTo` in sendSatoEmail), so nothing a recipient
+   * reads changes — only where their Reply button points.
    *
    * 🔴 This address must never be one Resend has suppressed: a suppressed Reply-To is what broke
    * the 2026-09-13 send. omar.anwar@satopharma.com is the standing admin BCC on every system mail,
