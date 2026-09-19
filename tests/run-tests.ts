@@ -1768,6 +1768,7 @@ import { runPdfjsLegacyBrowserAssetsTests } from "./pdfjs-legacy-browser-assets.
 import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test.ts";
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
+import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
@@ -6057,6 +6058,11 @@ await runTest(
 await runTest(
   "the interview calendar books Sunday to Thursday, 9 to 5 in Cairo across daylight saving; only its owner shares it, only editors book; Phoenix makes the Zoom meeting and sends the candidate nothing; the PDF and Excel week make every name a link to its CV; and Schedule interview sits on every CV screen",
   runInterviewCalendarTests,
+);
+
+await runTest(
+  "the interview calendar's CV screen gets Download application and Print application beside the CV's own Download: the button opens the WhatsApp conversation the list would show for that person (finished first, then newest as an instant); it is offered only to someone who could open the same file from WhatsApp Applicants (HR authority with recruitment:read and candidates:read — never a guest, an outside interviewee or a person the calendar was merely shared with); the lookup goes through the calendar's own gate, answers an id and builds nothing; and the four gates on an application say the same three things",
+  runInterviewCalendarApplicationTests,
 );
 
 await runTest(

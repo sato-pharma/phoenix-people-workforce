@@ -376,6 +376,112 @@ export async function loadWhatsAppApplication(sessionId: string): Promise<WhatsA
 }
 
 /**
+ * The conversations that COULD be this candidate's, read by the three links `joinToCandidates` follows
+ * and no other: the answers the bot wrote onto them, the CV that opened the chat, and the number that
+ * sent their CV. It is a superset on purpose. The join itself decides which of them really are theirs,
+ * so a forwarder's other conversations come back here and are dropped there, exactly as the list drops
+ * them.
+ */
+async function sessionsThatMayBelongTo(candidateId: string): Promise<SessionDbRow[]> {
+  const supabase = recruitmentDb();
+  const found = new Map<string, SessionDbRow>();
+  const keep = (rows: readonly SessionDbRow[]) => {
+    for (const row of rows) found.set(row.id, row);
+  };
+
+  const linked = await supabase
+    .from(SESSIONS_TABLE)
+    .select(SESSION_COLUMNS)
+    .not("job_title_family", "is", null)
+    .eq("applied_candidate_id", candidateId);
+  if (linked.error) throw linked.error;
+  keep((linked.data ?? []) as unknown as SessionDbRow[]);
+
+  const intake = await supabase
+    .from(INTAKE_TABLE)
+    .select("provider_message_id,sender_identifier")
+    .eq("channel", "whatsapp")
+    .eq("candidate_id", candidateId);
+  if (intake.error) throw intake.error;
+  const messageIds = new Set<string>();
+  const senders = new Set<string>();
+  for (const row of (intake.data ?? []) as { provider_message_id: string | null; sender_identifier: string | null }[]) {
+    const messageId = textOrNull(row.provider_message_id);
+    if (messageId) messageIds.add(messageId);
+    // A conversation's `wa_id` is the number without the plus that the intake row carries.
+    const sender = textOrNull(row.sender_identifier);
+    if (sender && /^\+\d+$/.test(sender)) senders.add(sender.slice(1));
+  }
+
+  const links: Array<["cv_wamid" | "wa_id", string[]]> = [
+    ["cv_wamid", [...messageIds]],
+    ["wa_id", [...senders]],
+  ];
+  for (const [column, values] of links) {
+    for (const batch of chunkIds(values, MESSAGE_ID_BATCH)) {
+      keep(
+        await readEveryPage<SessionDbRow>("WhatsApp conversation", (from, to) =>
+          supabase
+            .from(SESSIONS_TABLE)
+            .select(SESSION_COLUMNS)
+            .not("job_title_family", "is", null)
+            .in(column, batch)
+            .order("started_at", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+      );
+    }
+  }
+  return [...found.values()];
+}
+
+/**
+ * Which of one person's applications a press opens: a finished one first, then the newest. That is the
+ * list's own rule for two conversations under one title, applied across titles, so the button never
+ * opens an application the list would have hidden behind a fuller one.
+ */
+export function chooseApplicationRow<TRow extends { appliedAt: string; finished: boolean }>(rows: readonly TRow[]): TRow | null {
+  let chosen: TRow | null = null;
+  for (const row of rows) {
+    if (!chosen) {
+      chosen = row;
+    } else if (row.finished !== chosen.finished) {
+      if (row.finished) chosen = row;
+    } else if (Date.parse(row.appliedAt) > Date.parse(chosen.appliedAt)) {
+      chosen = row;
+    }
+  }
+  return chosen;
+}
+
+/**
+ * The WhatsApp conversation whose application belongs to this candidate, or null when they never applied
+ * on WhatsApp. It answers "is this person on WhatsApp Applicants, and under which conversation?" the way
+ * the list does: the same join, the same choice of conversation, run over only the conversations that
+ * could reach them. A candidate the owner has since filed into a folder still answers, as
+ * `loadWhatsAppApplication` does, because someone is looking at their interview.
+ */
+export async function findWhatsAppApplicationSessionId(candidateId: string): Promise<string | null> {
+  const sessions = await sessionsThatMayBelongTo(candidateId);
+  if (sessions.length === 0) return null;
+
+  const candidates = new Map<string, WhatsAppApplicantCandidate>();
+  const joined = await joinToCandidates(sessions, candidates);
+  const mine = sessions.filter((session) => joined.get(session.id) === candidateId);
+  if (mine.length === 0) return null;
+
+  const [questions, audiences] = await Promise.all([loadAllQuestions(), loadSavedAudiences()]);
+  const view = buildWhatsAppApplicantsView({
+    audiences,
+    candidates,
+    questions,
+    sessions: mine.map((session) => ({ ...session, candidate_id: candidateId })),
+  });
+  return chooseApplicationRow(view.rows)?.sessionId ?? null;
+}
+
+/**
  * The candidate's whole record, mapped the way every other recruitment screen maps it. The phone and email
  * on it may be blank, and so may the rest: the sheet prints what there is and leaves the rest to a pen.
  */
