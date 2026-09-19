@@ -14,6 +14,7 @@ import {
   isInvitationRecipient,
   type InvitationFacts,
 } from "../src/lib/recruitment/interview-invitation.ts";
+import { renderInvitationEmail } from "../src/lib/recruitment/interview-invitation-email.ts";
 import { whatsAppSendUrl } from "../src/lib/recruitment/whatsapp-templates/send-link.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -39,6 +40,7 @@ export async function runInterviewInvitationTests() {
   runWordingTests();
   runChannelTests();
   runWiringTests();
+  runSatoTemplateTests();
 }
 
 const OFFICE: InvitationFacts = {
@@ -208,4 +210,53 @@ function runWiringTests() {
   assert.doesNotMatch(migration, /grant [^;]* to (anon|authenticated)/i);
   assert.match(migration, /status in \('sent', 'opened', 'failed'\)/);
   assert.match(migration, /add column if not exists interviewer_hr_id text/);
+}
+
+// ── 4 · The e-mail wears the SATO template ────────────────────────────────────────────────────
+// Owner, 2026-09-19: "I want the emails that are fired in this module to be fired in the SATO template."
+function runSatoTemplateTests() {
+  const invitation = buildInvitationMessage({ facts: OFFICE, kind: "invitation", name: "Nevin", recipient: "candidate" });
+  const { html: mail, text } = renderInvitationEmail("Nevin", invitation, "invitation");
+
+  // The house letter: the Sato mark, the standard, the masthead's own label — and nothing Phoenix.
+  assert.match(mail, /sato-pharma-logo-on-light\.png/, "the Sato mark, the on-light file");
+  assert.match(mail, /SATO-DIS-2026-01 v1\.0/, "the house standard");
+  assert.match(mail, />Interview invitation</, "the masthead names what this is");
+  assert.doesNotMatch(mail, /Company announcement/, "not the composer's distribution-list label");
+  assert.doesNotMatch(mail, /distribution list/, "and not its distribution-list footnote");
+  assert.match(mail, /sent to you personally by Sato Pharma Human Resources/, "a one-to-one notice says so");
+  assert.ok(!/phoenix/i.test(mail.replace(/<[^>]+>/g, " ")), "nothing a reader sees says Phoenix");
+  assert.ok(!/phoenix/i.test(text), "nor the plain-text part");
+  assert.doesNotMatch(mail, /border-radius/, "square edges");
+
+  // The details are the house's zebra table, and the owner's facts are in it.
+  assert.match(mail, /<strong>Date<\/strong>/);
+  assert.match(mail, /21-9-2026/);
+  assert.match(mail, /04:00 PM/);
+  assert.match(mail, /عقار رقم ٨/, "the Arabic address survives");
+  assert.match(mail, /href="https:\/\/maps\.app\.goo\.gl\/35pPjSAQt3HsG3eE7"/, "the map is a link");
+  assert.match(mail, /href="https:\/\/www\.satopharma\.com"/, "a bare www address becomes a link");
+  assert.match(mail, /Open the location on the map/, "the one action is a plain link");
+  assert.match(text, /^Interview invitation — Sato Pharma/, "the plain-text part opens on the subject");
+  assert.match(text, /Regards,\nHuman Resources/);
+
+  // Company details on their own carry their own label and no "look forward" closing.
+  const company = renderInvitationEmail("Nevin", buildInvitationMessage({ facts: OFFICE, kind: "company_details", name: "Nevin", recipient: "candidate" }), "company_details");
+  assert.match(company.html, />Company details</);
+  assert.doesNotMatch(company.html, /We look forward to meeting you/);
+
+  // A name is text, never markup.
+  const hostile = renderInvitationEmail("<script>x</script>", invitation, "invitation");
+  assert.doesNotMatch(hostile.html, /<script>x/, "the greeting is escaped");
+
+  // Wiring: the sender goes through the house renderer and the composer's From and Reply-To, and no
+  // longer through the Phoenix shell.
+  const invitations = stripComments(read("src/lib/recruitment/interview-invitations.ts"));
+  assert.match(invitations, /renderInvitationEmail\(/, "the send renders the SATO template");
+  assert.doesNotMatch(invitations, /renderPhoenixEmail|phoenix-email-layout/, "and never the Phoenix shell");
+  assert.match(invitations, /satoEmailFrom\(systemEmail\.satoComposerFromEmail\)/, "sent as Sato Pharma, from the composer's mailbox");
+  assert.match(invitations, /replyTo: systemEmail\.satoComposerReplyToEmail/, "replies reach the composer's reply-to, not a seat address that can be suppressed");
+  const shell = stripComments(read("src/lib/sato-email/render.ts"));
+  assert.match(shell, /kicker\?: string;/, "the template takes its own masthead label");
+  assert.match(shell, /footnote\?: string;/, "and its own footnote");
 }

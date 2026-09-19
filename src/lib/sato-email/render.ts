@@ -55,6 +55,9 @@ const DOCUMENT_STANDARD = "SATO-DIS-2026-01 v1.0";
 /** The kicker above the title. What this channel is: one notice, issued to a company list. */
 const DOCUMENT_KICKER = "Company announcement";
 
+/** The line under the colophon on a company announcement. A one-to-one notice supplies its own. */
+const DEFAULT_FOOTNOTE = "This message was sent to a company distribution list. Recipients cannot see each other's addresses.";
+
 /**
  * Aptos first, because it is the house face and ships with Microsoft 365 — which is what the office
  * reads mail on. Everything after it is a stack that exists on a phone, since a mail client that
@@ -358,11 +361,20 @@ export type SatoEmailContent = {
   subject: string;
   bodyHtml: string;
   signOff: string;
+  /**
+   * What this notice is, in the masthead's label line. Defaults to "Company announcement" — the
+   * composer's own. A one-to-one notice (an interview invitation) names itself instead.
+   */
+  kicker?: string;
+  /** The line under the colophon. Defaults to the distribution-list note, which is wrong for a one-to-one mail. */
+  footnote?: string;
 };
 
 export function renderSatoEmail(content: SatoEmailContent): { html: string; text: string } {
   const subject = content.subject.trim();
   const signOff = content.signOff.trim();
+  const kicker = content.kicker?.trim() || DOCUMENT_KICKER;
+  const footnote = content.footnote?.trim() || DEFAULT_FOOTNOTE;
   const body = prepareSatoEmailBody(content.bodyHtml);
   const bodyText = satoEmailHtmlToText(body);
   const logo = satoLogoUrl(logoBaseUrl());
@@ -389,7 +401,7 @@ export function renderSatoEmail(content: SatoEmailContent): { html: string; text
     `style="display:block;width:${LOGO_WIDTH}px;height:auto;border:0"></td>` +
     '<td align="right" valign="bottom" style="padding:0 0 2px 0">' +
     `<div dir="ltr" class="sato-kicker" style="${MICRO};letter-spacing:2.2px;` +
-    `color:${HOUSE_COLORS.light}">${escapeHtml(DOCUMENT_KICKER)}</div>` +
+    `color:${HOUSE_COLORS.light}">${escapeHtml(kicker)}</div>` +
     // Set in the mono face, because a file reference is a number and reads as one: it is the only
     // line in the document that is not the house text face, and that is what marks it as a stamp.
     '<div dir="ltr" class="sato-std" style="padding-top:5px;' +
@@ -456,8 +468,7 @@ export function renderSatoEmail(content: SatoEmailContent): { html: string; text
     "</table></td></tr>" +
     '<tr><td align="center" style="padding:12px 0 0 0">' +
     `<div dir="ltr" style="font-size:10px;line-height:17px;letter-spacing:0.4px;color:${HOUSE_COLORS.muted}">` +
-    "This message was sent to a company distribution list. " +
-    "Recipients cannot see each other&#39;s addresses.</div></td></tr>";
+    `${escapeHtml(footnote)}</div></td></tr>`;
 
   // Everything inside the frame, in the paper's order.
   const documentBlock =
