@@ -1148,6 +1148,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/zoom", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files/*", permission: null, guard: "domain-helper" }),
+  // Whether an interviewee has a WhatsApp application to print — a lookup that builds nothing, answering
+  // null unless the caller could open the application from WhatsApp Applicants (HR authority with
+  // recruitment:read and candidates:read; getInterviewCalendarCandidateApplication).
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/application", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/shares", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["DELETE"], pattern: "/api/recruitment/interview-calendar/shares/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/people", permission: null, guard: "domain-helper" }),
