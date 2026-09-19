@@ -26,6 +26,7 @@ import type {
   WeeklyFactExportRow,
   WeeklyRegionSummary,
   WeeklySalesValidationResult,
+  WeeklyThisWeekOnly,
   WeeklyTotals,
   WeeklyUnitFigures,
 } from "@/lib/sales/weekly/types";
@@ -144,6 +145,23 @@ export function weeklyUploadUnitScope(
     byBranch: geography.byBranch,
     byRegion: geography.byRegion,
   };
+}
+
+/**
+ * The Upload screen's "This week only" net units (owner, 2026-09-19): one product's own de-cumulated
+ * figure, never the sum across products that `thisWeekOnly.netQty` holds. It takes the same scope as the
+ * tiles, so a single pick drives both. A sheet of one product prints the sheet-level figure, which is that
+ * product's; a sheet of several prints the picked product's own line. It is null — a dash — when there
+ * is no product to show, or when the previous sheet's rows by product could not be read, because a figure
+ * that cannot be one product's is never printed in its place.
+ */
+export function weeklyUploadThisWeekUnits(
+  thisWeekOnly: Pick<WeeklyThisWeekOnly, "netQty" | "productNetQty">,
+  scope: Pick<WeeklyUploadUnitScope, "productKey"> | null,
+): number | null {
+  if (!scope) return null;
+  if (scope.productKey === null) return thisWeekOnly.netQty;
+  return thisWeekOnly.productNetQty?.find((entry) => entry.productCode === scope.productKey)?.netQty ?? null;
 }
 
 /** The key of one week of `weekComparison`, and of WeeklyDashboardUnitView.weeks. */

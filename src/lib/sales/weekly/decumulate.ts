@@ -17,6 +17,7 @@
 // (see tests/weekly-decumulation.test.ts).
 
 import { weeklyDistributorIsCumulative } from "@/lib/sales/weekly/distributors";
+import type { WeeklyThisWeekProductNet } from "@/lib/sales/weekly/types";
 
 export type DecumulableRow = {
   weekStart: string;
@@ -93,6 +94,37 @@ export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
     }
   }
   return out;
+}
+
+const roundUnits = (value: number) => Number(value.toFixed(2));
+
+/**
+ * The upload preview's "this week only" net units, ONE PRODUCT AT A TIME: each product's cumulative on
+ * this sheet minus its own cumulative on the previous sheet of the month. It is the per-product form of
+ * the sheet-level subtraction computeThisWeekOnly does with the batch header, and exists because that
+ * header adds every product, so its result is a real figure only for a one-product sheet — units of
+ * different products are never added (owner rule, 2026-08-27).
+ *
+ * `prior` is the previous sheet's rows, one per product and branch, so a product can appear more than
+ * once and is added up here. null means there is nothing to subtract — the cycle's first sheet, or a
+ * distributor whose sheets are not cumulative — and each product's own cumulative IS its week. A product
+ * the previous sheet never carried has nothing to subtract either. A product only the previous sheet
+ * carried has no figure to print and is left out. Products are matched trimmed and upper-cased, as the
+ * cells of decumulateRows are, and each result keeps the code its sheet gave it. Pure.
+ */
+export function decumulateProductNet(
+  current: readonly WeeklyThisWeekProductNet[],
+  prior: readonly WeeklyThisWeekProductNet[] | null,
+): WeeklyThisWeekProductNet[] {
+  const priorByProduct = new Map<string, number>();
+  for (const entry of prior ?? []) {
+    const key = up(entry.productCode);
+    priorByProduct.set(key, (priorByProduct.get(key) ?? 0) + entry.netQty);
+  }
+  return current.map((entry) => ({
+    productCode: entry.productCode,
+    netQty: roundUnits(entry.netQty - (priorByProduct.get(up(entry.productCode)) ?? 0)),
+  }));
 }
 
 // M6: within a (distributor, cycle_month), de-cumulation subtracts each week against the PREVIOUS

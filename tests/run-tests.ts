@@ -1630,6 +1630,7 @@ import { runWeeklyAdminUnitsOneProductTests } from "./weekly-admin-units-one-pro
 import { runWeeklyUnitsForPickerTests } from "./weekly-units-for-picker.test.ts";
 import { runWeeklyUnitsAcrossProductsFollowupsTests } from "./weekly-units-across-products-followups.test.ts";
 import { runWeeklyUploadOneProductAtATimeTests } from "./weekly-upload-one-product-at-a-time.test.ts";
+import { runWeeklyThisWeekPerProductTests } from "./weekly-this-week-per-product.test.ts";
 import { runWeeklySalesFitsTheScreenTests } from "./weekly-sales-fits-the-screen.test.ts";
 
 import { runEarlyBirdsFortnightCardWrapsTests } from "./early-birds-fortnight-card-wraps.test.ts";
@@ -5458,6 +5459,10 @@ await runTest(
 await runTest(
   "weekly Upload screen shows units one product at a time (a sheet of several products gets a product picker; the tiles, By branch and By region hold the picked product's own units, never a sum of products)",
   runWeeklyUploadOneProductAtATimeTests,
+);
+await runTest(
+  "weekly Upload screen This week only is one product's figure (each product de-cumulated against its own line on the previous sheet, read from that sheet's stored rows and paged; it follows the tiles' pick, and a sheet whose previous rows cannot be read keeps the dash)",
+  runWeeklyThisWeekPerProductTests,
 );
 await runTest(
   "weekly sales fits the screen with square corners (Distribution and Field Force tabs: no round corner, scroll box, width floor or ellipsis; every table fixed, its columns, head row, body row and colSpans one shape totalling 100%)",

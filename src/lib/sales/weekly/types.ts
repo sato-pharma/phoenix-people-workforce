@@ -113,6 +113,19 @@ export type WeeklyThisWeekOnly = {
   netQty: number;
   /** stock-on-hand snapshot for this sheet (shown as-is, never subtracted) */
   stockQty: number;
+  /**
+   * The same net-units de-cumulation, ONE PRODUCT AT A TIME, keyed exactly as `byProduct` is. `netQty`
+   * above adds every product, so it is only a real figure for a one-product sheet; this is what the
+   * screen prints once the sheet holds several (owner, 2026-09-19). Null when the previous sheet's rows
+   * could not be read: the screen then shows a dash rather than a figure it cannot stand behind.
+   */
+  productNetQty: WeeklyThisWeekProductNet[] | null;
+};
+
+/** One product's de-cumulated net units for the week. `productCode` is the key `byProduct` carries. */
+export type WeeklyThisWeekProductNet = {
+  productCode: string;
+  netQty: number;
 };
 
 /**

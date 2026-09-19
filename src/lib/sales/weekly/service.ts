@@ -23,6 +23,7 @@ import {
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
 import {
+  decumulateProductNet,
   decumulateRows,
   depotWeekGapKeys,
   depotWeekGaps,
@@ -56,10 +57,12 @@ import type {
   WeeklyRanked,
   WeeklySalesValidationResult,
   WeeklyThisWeekOnly,
+  WeeklyThisWeekProductNet,
   WeeklyTotals,
   WeeklyUnitFigures,
 } from "@/lib/sales/weekly/types";
 import { weeklyUnitViewProduct, weeklyWeekKey, weeklyZeroSalesBranches } from "@/lib/sales/weekly/unit-totals";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── distributor dropdown (only distributors with a registered weekly template) ─────────────────
@@ -105,9 +108,36 @@ function cycleMonthFromDate(dateStr: string | null): string | null {
 }
 
 /**
+ * The previous sheet's net units, added up per product from its stored rows, keyed the way the sheet's own
+ * By product table is (the product code, else its name). Null when the rows cannot be read: the caller then
+ * has no per-product figure to print and says so, rather than reading a failure as "nothing to subtract".
+ * A sheet runs to a few thousand rows, past the 1,000 a single read returns, so it is paged.
+ */
+async function loadPriorSheetProductNet(batchId: string): Promise<WeeklyThisWeekProductNet[] | null> {
+  type PriorRow = { id: number; product_code: string | null; product_name: string | null; net_qty: number | string | null };
+  try {
+    const rows = await fetchAllRowsKeyset<PriorRow>(
+      () => getSupabaseAdmin().from("weekly_sales_rows").select("id, product_code, product_name, net_qty").eq("batch_id", batchId),
+      { cursorColumn: "id", cursorOf: (row) => row.id },
+    );
+    return rows.map((row) => ({ productCode: row.product_code || row.product_name || "—", netQty: Number(row.net_qty ?? 0) }));
+  } catch (error) {
+    logError("weekly_this_week_prior_rows_unreadable", {
+      error,
+      labels: { event: "weekly_this_week_prior_rows_unreadable" },
+      context: { batchId },
+    });
+    return null;
+  }
+}
+
+/**
  * De-cumulate this sheet's totals against the previous cumulative sheet of the same month-cycle.
  * Returns the real "this week only" sales (value + net units); stock is a snapshot, returned as-is.
  * When no earlier sheet exists in the cycle, this IS the first week → real = the full current totals.
+ *
+ * The net units are also returned ONE PRODUCT AT A TIME (`productNetQty`), because the sheet-level figure
+ * adds every product and units of different products are never added (owner rule, 2026-08-27).
  *
  * A distributor whose sheets are NOT cumulative (Direct) is exempt: its sheet already holds only this
  * week's orders, so there is nothing to subtract and the prior-batch lookup is skipped entirely.
@@ -117,21 +147,25 @@ async function computeThisWeekOnly(
   cycleMonth: string | null,
   weekStart: string | null,
   totals: WeeklyTotals,
+  byProduct: readonly WeeklyThisWeekProductNet[],
 ): Promise<WeeklyThisWeekOnly | null> {
   if (!cycleMonth || !weekStart) return null;
+  // Nothing to subtract: each product's own cumulative figure is its week.
+  const firstSheet = (): WeeklyThisWeekOnly => ({
+    priorWeekStart: null,
+    priorWeekNumber: null,
+    salesValue: round2(totals.salesValue),
+    netQty: round2(totals.netQty),
+    stockQty: round2(totals.stockQty),
+    productNetQty: decumulateProductNet(byProduct, null),
+  });
   if (!weeklyDistributorIsCumulative(distributorCode)) {
-    return {
-      priorWeekStart: null,
-      priorWeekNumber: null,
-      salesValue: round2(totals.salesValue),
-      netQty: round2(totals.netQty),
-      stockQty: round2(totals.stockQty),
-    };
+    return firstSheet();
   }
   const supabase = getSupabaseAdmin();
   const prior = await supabase
     .from("weekly_sales_batches")
-    .select("week_start, week_number, total_sales_value, total_net_qty")
+    .select("id, week_start, week_number, total_sales_value, total_net_qty")
     .eq("distributor_code", distributorCode)
     .eq("cycle_month", cycleMonth)
     .eq("status", "validated")
@@ -139,21 +173,23 @@ async function computeThisWeekOnly(
     .order("week_start", { ascending: false })
     .limit(1);
   if (prior.error || !prior.data || prior.data.length === 0) {
-    return {
-      priorWeekStart: null,
-      priorWeekNumber: null,
-      salesValue: round2(totals.salesValue),
-      netQty: round2(totals.netQty),
-      stockQty: round2(totals.stockQty),
-    };
+    return firstSheet();
   }
-  const p = prior.data[0] as { week_start: string | null; week_number: number | null; total_sales_value: number | null; total_net_qty: number | null };
+  const p = prior.data[0] as {
+    id: string;
+    week_start: string | null;
+    week_number: number | null;
+    total_sales_value: number | null;
+    total_net_qty: number | null;
+  };
+  const priorProducts = await loadPriorSheetProductNet(String(p.id));
   return {
     priorWeekStart: p.week_start ? String(p.week_start) : null,
     priorWeekNumber: p.week_number != null ? Number(p.week_number) : null,
     salesValue: round2(totals.salesValue - Number(p.total_sales_value ?? 0)),
     netQty: round2(totals.netQty - Number(p.total_net_qty ?? 0)),
     stockQty: round2(totals.stockQty),
+    productNetQty: priorProducts ? decumulateProductNet(byProduct, priorProducts) : null,
   };
 }
 
@@ -256,6 +292,7 @@ export async function importWeeklySalesFile(input: {
     cycleMonth,
     parsed.result.weekStart,
     parsed.result.totals,
+    parsed.result.byProduct.map((product) => ({ productCode: product.productCode, netQty: product.netQty })),
   );
 
   // Only persist a clean (validated) batch; blocked files are returned for the user to fix.
