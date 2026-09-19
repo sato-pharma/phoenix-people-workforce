@@ -26,6 +26,7 @@ import {
   type InvitationRecipient,
   type InvitationRecipientPlan,
 } from "@/lib/recruitment/interview-invitation";
+import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { cn } from "@/lib/utils";
 
 import { reasonText, type CalendarApi } from "./calendar-api";
@@ -33,7 +34,7 @@ import { ErrorLine } from "./calendar-dialog";
 
 const RECIPIENT_LABEL: Record<InvitationRecipient, string> = { candidate: "Candidate", interviewer: "Interviewer" };
 
-const CAIRO_STAMP = new Intl.DateTimeFormat("en-GB", { day: "numeric", hour: "numeric", hour12: true, minute: "2-digit", month: "short", timeZone: "Africa/Cairo" });
+const CAIRO_STAMP = stableEnGbFormatter({ day: "numeric", hour: "numeric", hour12: true, minute: "2-digit", month: "short", timeZone: "Africa/Cairo" });
 
 /** The chat opens through a real link click, which a browser always treats as the person's own action. */
 function openChat(url: string) {
