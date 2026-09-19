@@ -180,4 +180,19 @@ export function runCvLinkedInAndSelectableTextTests() {
     /\.cv-text-layer :is\(span, br\)::selection \{\s*color: transparent;\s*\}/,
     "and stays invisible when selected, beating the app's ink-coloured ::selection",
   );
+
+  // pdf.js's measuring canvas. TextLayer appends an opaque (`alpha: false`) canvas to <body> per
+  // language and leaves hiding it to its own stylesheet. Unhidden, preflight stacks them as 300x150
+  // black blocks under the app shell on every page the tab visits after a CV — the black band in
+  // the bottom-left of Direct Orders, 2026-09-19. The class is pdf.js's, so it is checked in the
+  // copy the viewer actually loads: an upgrade that renames it fails here, not on a page.
+  assert.ok(
+    read("public/pdfjs/pdf.min.mjs").includes('"hiddenCanvasElement"'),
+    "the pdf.js build the viewer loads still names its measuring canvas hiddenCanvasElement",
+  );
+  assert.match(
+    css,
+    /(?:^|\n)\.hiddenCanvasElement \{[^}]*display: none;[^}]*\}/,
+    "and that canvas is hidden, never painted as a black block under the page",
+  );
 }
