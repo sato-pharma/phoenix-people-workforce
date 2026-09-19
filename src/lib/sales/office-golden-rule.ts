@@ -15,7 +15,8 @@
  *      (the per-line partition and the value-is-derived-last step) must be present verbatim.
  *
  * `tests/office-golden-rule-lock.test.ts` asserts all three. It runs inside `pnpm run test`, which
- * is the required CI `validate` check, so a PR that changes the rule cannot merge.
+ * is the required CI `test` check (split out of `validate` on 2026-09-17, #3950), so a PR that
+ * changes the rule cannot merge.
  *
  * TO CHANGE THE RULE: `pnpm run office-rule:unlock`. It asks for the owner's password, checks it
  * against the scrypt verifier in `office-golden-rule.lock.json`, and only then re-pins the

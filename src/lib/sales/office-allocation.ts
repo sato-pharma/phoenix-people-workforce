@@ -49,8 +49,9 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 //
 // ⛔ THIS FORMULA IS LOCKED (owner, 2026-08-11). The block between the GOLDEN RULE · LOCKED markers
 // below is pinned by two fingerprints in `office-golden-rule.ts` and asserted by
-// `tests/office-golden-rule-lock.test.ts`, which runs in the required CI `validate` job. Editing the
-// math — or the comments describing it — turns CI red and the change cannot merge. Unlocking needs
+// `tests/office-golden-rule-lock.test.ts`, which runs in the required CI `test` job (split out of
+// `validate` on 2026-09-17, #3950). Editing the math turns CI red and the change cannot merge; the
+// comments are stripped before fingerprinting, so documentation can improve freely. Unlocking needs
 // the owner's password, which exists only as a scrypt verifier (`office-golden-rule.lock.json`);
 // nobody can recover it from this repository. To change the rule, run `pnpm run office-rule:unlock`
 // and enter it. Do NOT re-pin the fingerprints by hand.
