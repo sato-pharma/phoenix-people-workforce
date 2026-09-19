@@ -45,7 +45,9 @@ const STAT_ROW_WIDTH_MM = 118 + 6 + 120;
 /** Width the name, the dash and the position share on the payee line (the grid's first column, less a margin). */
 const PAYEE_ROW_MM = 590;
 const AMOUNT_WIDTH_MM = 226;
-const WEAVE_WIDTH_MM = 340;
+/** The ribbon runs from just past the title to the edge of the date column. */
+const WEAVE_LEFT_MM = 196;
+const WEAVE_WIDTH_MM = 412;
 const WEAVE_HEIGHT_MM = 42;
 const FOOT_GAP_MM = 16;
 const BOXES_WIDTH_MM = STAT_ROW_WIDTH_MM + FOOT_GAP_MM + AMOUNT_WIDTH_MM;
@@ -254,14 +256,15 @@ const CORNER = `<svg viewBox="0 0 100 100" aria-hidden="true">
  */
 function weaveSvg(widthMm: number, heightMm: number): string {
   const strands = 14;
-  const wavelength = 64;
+  const wavelength = 34;
+  const lenses = 4;
   const half = heightMm / 2;
   let paths = "";
   for (let k = 0; k < strands; k += 1) {
     const phase = (Math.PI * 2 * k) / strands;
     let d = "";
     for (let x = 0; x <= widthMm; x += 2) {
-      const envelope = Math.pow(Math.sin((Math.PI * x) / widthMm), 0.7);
+      const envelope = Math.pow(Math.abs(Math.sin((Math.PI * lenses * x) / widthMm)), 0.75);
       const y = half + (half - 1) * envelope * Math.sin((Math.PI * 2 * x) / wavelength + phase);
       d += `${x === 0 ? "M" : "L"}${num(x)} ${num(y)}`;
     }
@@ -496,7 +499,7 @@ const CSS = `
   .head h1 .ttl { display: inline-block; height: 20mm; width: auto; vertical-align: -4.6mm; }
   .spk { display: inline-block; width: 15mm; height: 15mm; margin-left: 6mm; vertical-align: 5mm; fill: var(--gold); }
   .head h1 .spk + .spk { width: 8mm; height: 8mm; margin-left: 2mm; vertical-align: 15mm; fill: var(--gold-light); }
-  .weave { position: absolute; right: 26mm; top: 50%; transform: translateY(-50%); width: ${WEAVE_WIDTH_MM}mm; height: ${WEAVE_HEIGHT_MM}mm; display: block; }
+  .weave { position: absolute; left: ${WEAVE_LEFT_MM}mm; top: 50%; transform: translateY(-50%); width: ${WEAVE_WIDTH_MM}mm; height: ${WEAVE_HEIGHT_MM}mm; display: block; }
   .head__ar { text-align: left; margin-top: 1mm; font-family: var(--arabic); font-size: 36pt; font-weight: 600; line-height: 1.3; color: var(--blue); }
   .head__prog { margin-top: 3mm; font-size: 20pt; font-weight: 700; letter-spacing: .04em; color: var(--gold-deep); }
 
