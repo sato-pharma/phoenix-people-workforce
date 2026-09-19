@@ -575,6 +575,7 @@ import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.
 import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
 import { runWeeklyBatchAuditTests } from "./weekly-batch-audit.test.ts";
+import { runWeeklyDirectOrdersInjectionTests } from "./weekly-direct-orders-injection.test.ts";
 import { runWeeklyBranchAreaSplitTests } from "./weekly-branch-area-split.test.ts";
 import { runWeeklyBranchAttributionTests } from "./weekly-branch-attribution.test.ts";
 import { runWeeklyOwnAreaLiftTests } from "./weekly-own-area-lift.test.ts";
@@ -2989,6 +2990,10 @@ await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatch
 await runTest(
   "weekly upload delete and re-tag each write an audit row: who did it, which upload, and the week before and after",
   runWeeklyBatchAuditTests,
+);
+await runTest(
+  "direct orders reach weekly sales from the database: an uploaded Direct sheet is refused from August 2026, the system batch cannot be deleted or re-tagged by hand, and the SQL and TypeScript agree on the floor",
+  runWeeklyDirectOrdersInjectionTests,
 );
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
 await runTest(
