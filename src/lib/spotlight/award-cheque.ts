@@ -45,6 +45,8 @@ const STAT_ROW_WIDTH_MM = 118 + 6 + 120;
 /** Width the name, the dash and the position share on the payee line (the grid's first column, less a margin). */
 const PAYEE_ROW_MM = 590;
 const AMOUNT_WIDTH_MM = 226;
+const WEAVE_WIDTH_MM = 340;
+const WEAVE_HEIGHT_MM = 42;
 const FOOT_GAP_MM = 16;
 const BOXES_WIDTH_MM = STAT_ROW_WIDTH_MM + FOOT_GAP_MM + AMOUNT_WIDTH_MM;
 // The two labels ("The sum of" left, "مبلغ وقدره" right) sit on the words line, so the words keep the middle.
@@ -200,6 +202,16 @@ function rosette(cx: number, cy: number, radius: number, color: string, opacity:
   return `<g fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="0.3">${g}</g>`;
 }
 
+/** A sheaf of fine curves sweeping across the ground, the way the wordmark's own waves do. */
+function swoosh(): string {
+  let d = "";
+  for (let i = 0; i < 16; i += 1) {
+    const dy = i * 2.6;
+    d += `<path d="M-20 ${num(292 + dy)}C200 ${num(392 + dy)} 430 ${num(112 + dy)} 940 ${num(196 + dy)}" stroke="${i % 2 === 0 ? GOLD.mid : C.blue}"/>`;
+  }
+  return `<g fill="none" stroke-opacity="0.22" stroke-width="0.32">${d}</g>`;
+}
+
 /** The engraved ground: a field of phase-shifted waves in blue, and two gold rosettes, all faint. */
 function groundSvg(): string {
   const width = 914;
@@ -216,8 +228,11 @@ function groundSvg(): string {
   }
   return `<svg class="ground" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
     <g fill="none" stroke="${C.deep}" stroke-opacity="0.05" stroke-width="0.3">${waves}</g>
-    ${rosette(150, 200, 150, GOLD.mid, 0.16)}
-    ${rosette(770, 330, 105, GOLD.mid, 0.16)}
+    ${rosette(150, 200, 150, GOLD.mid, 0.2)}
+    ${rosette(150, 200, 96, C.blue, 0.1)}
+    ${rosette(770, 330, 105, GOLD.mid, 0.2)}
+    ${rosette(770, 330, 66, C.blue, 0.1)}
+    ${swoosh()}
   </svg>`;
 }
 
@@ -227,7 +242,73 @@ const CORNER = `<svg viewBox="0 0 100 100" aria-hidden="true">
   <path d="M14 98V14H98" fill="none" stroke="${C.light}" stroke-width="1.4"/>
   <path d="M26 98V26H98" fill="none" stroke="${GOLD.light}" stroke-width="0.9"/>
   <path d="M14 5 23 14 14 23 5 14Z" fill="${GOLD.mid}"/>
+  <path d="M2 52A50 50 0 0 1 52 2M2 66A64 64 0 0 1 66 2" fill="none" stroke="${GOLD.light}" stroke-width="0.8"/>
+  <path d="M2 80A78 78 0 0 1 80 2" fill="none" stroke="${C.light}" stroke-width="0.6"/>
+  <circle cx="14" cy="14" r="2.2" fill="#FFFBEF"/>
 </svg>`;
+
+/**
+ * The engraved ribbon: strands of a woven guilloche that swell from a point, cross, and narrow to a
+ * point again — gold and blue in turn. Drawn as plain strokes (no gradient, no transparency stop) so
+ * every PDF viewer paints it the same.
+ */
+function weaveSvg(widthMm: number, heightMm: number): string {
+  const strands = 14;
+  const wavelength = 64;
+  const half = heightMm / 2;
+  let paths = "";
+  for (let k = 0; k < strands; k += 1) {
+    const phase = (Math.PI * 2 * k) / strands;
+    let d = "";
+    for (let x = 0; x <= widthMm; x += 2) {
+      const envelope = Math.pow(Math.sin((Math.PI * x) / widthMm), 0.7);
+      const y = half + (half - 1) * envelope * Math.sin((Math.PI * 2 * x) / wavelength + phase);
+      d += `${x === 0 ? "M" : "L"}${num(x)} ${num(y)}`;
+    }
+    const color = k % 2 === 0 ? GOLD.mid : C.blue;
+    paths += `<path d="${d}" stroke="${color}" stroke-opacity="${k % 2 === 0 ? 0.95 : 0.7}"/>`;
+  }
+  return `<svg class="weave" viewBox="0 0 ${widthMm} ${heightMm}" preserveAspectRatio="none" aria-hidden="true">
+    <g fill="none" stroke-width="0.35" stroke-linejoin="round">${paths}</g>
+    <path d="M${widthMm - 3} ${half}l-3.4-3.4-3.4 3.4 3.4 3.4Z M3 ${half}l3.4-3.4 3.4 3.4-3.4 3.4Z" fill="${GOLD.mid}"/>
+  </svg>`;
+}
+
+/** Sunburst rays fanning from the middle of a box — the rank's halo. */
+function raysSvg(widthMm: number, heightMm: number): string {
+  let g = "";
+  const cx = widthMm / 2;
+  const cy = heightMm / 2;
+  for (let a = 0; a < 360; a += 7.5) {
+    const rad = (a * Math.PI) / 180;
+    g += `M${num(cx + 30 * Math.cos(rad))} ${num(cy + 30 * Math.sin(rad))}L${num(cx + 90 * Math.cos(rad))} ${num(cy + 90 * Math.sin(rad))}`;
+  }
+  return `<svg class="rays" viewBox="0 0 ${widthMm} ${heightMm}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${g}" fill="none" stroke="${GOLD.mid}" stroke-opacity="0.45" stroke-width="0.4"/></svg>`;
+}
+
+/** Four small L-brackets tucked into the corners of a box, inside its keyline. */
+function bracketsSvg(widthMm: number, heightMm: number, color: string): string {
+  const inset = 5.4;
+  const len = 6;
+  const c = (x: number, y: number, sx: number, sy: number) => `M${x} ${y + sy * len}V${y}H${x + sx * len}`;
+  const d = [
+    c(inset, inset, 1, 1),
+    c(widthMm - inset, inset, -1, 1),
+    c(inset, heightMm - inset, 1, -1),
+    c(widthMm - inset, heightMm - inset, -1, -1),
+  ].join("");
+  return `<svg class="brk" viewBox="0 0 ${widthMm} ${heightMm}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${d}" fill="none" stroke="${color}" stroke-width="0.5"/></svg>`;
+}
+
+/** The title as vector text with a gradient fill — background-clip:text prints as a solid block in a PDF. */
+const TITLE_SVG = `<svg class="ttl" viewBox="0 0 142 20" aria-label="Award Cheque">
+  <defs><linearGradient id="ttlFill" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="${C.deep}"/><stop offset="0.4" stop-color="${C.blue}"/><stop offset="0.43" stop-color="${GOLD.deep}"/><stop offset="0.72" stop-color="${GOLD.mid}"/><stop offset="1" stop-color="${GOLD.light}"/></linearGradient></defs>
+  <text x="0" y="15" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="19.05" fill="url(#ttlFill)">Award Cheque</text></svg>`;
+
+const MICROTEXT = Array.from({ length: 30 }, () => "SATO PHARMA \u00b7 SEMESTER ACHIEVERS AWARD \u00b7 S1 2026 \u00b7 ").join("");
 
 function chequeBody(row: AwardChequeRow): string {
   const date = dateParts(row.transferDate);
@@ -240,8 +321,9 @@ function chequeBody(row: AwardChequeRow): string {
 
   return `
     <header class="head">
-      <h1>Award Cheque${SPARK}${SPARK}</h1>
+      <h1>${TITLE_SVG}${SPARK}${SPARK}</h1>
       <p class="head__prog">${escapeHtml(row.programName)}</p>
+      ${weaveSvg(WEAVE_WIDTH_MM, WEAVE_HEIGHT_MM)}
     </header>
 
     <section class="numdate">
@@ -281,10 +363,10 @@ function chequeBody(row: AwardChequeRow): string {
         ${
           stats
             ? `<div class="stats">
-          <div class="stat stat--rank"><i>${SPARK}Rank${SPARK}</i><b>${
+          <div class="stat stat--rank">${raysSvg(118, 48)}${bracketsSvg(118, 48, GOLD.deep)}<i>${SPARK}Rank${SPARK}</i><b>${
             row.rank == null ? "&ndash;" : `${row.rank}<small>${ordinalSuffix(row.rank)}</small>`
           }</b></div>
-          <div class="stat stat--wide"><i>Achievement</i><b>${
+          <div class="stat stat--wide">${bracketsSvg(120, 48, C.deep)}<i>Achievement</i><b>${
             row.achievementPct == null ? "&ndash;" : `${row.achievementPct.toFixed(1)}<small>%</small>`
           }</b></div>
         </div>`
@@ -295,6 +377,7 @@ function chequeBody(row: AwardChequeRow): string {
         <div class="cap"><span>Amount</span><span class="ar" dir="rtl" lang="ar">المبلغ</span></div>
         <div class="amount__box">
           <svg class="amount__pat" viewBox="0 0 226 48" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${rosette(113, 24, 70, "#FFFFFF", 0.13)}</svg>
+          ${bracketsSvg(226, 48, GOLD.light)}
           <p class="amount__cur">EGP <span class="ar" dir="rtl" lang="ar">ج.م</span></p>
           <p class="amount__fig">${egpFigures(row.amountEgp)}<small>.${row.amountEgp === null ? "XX" : "00"}</small></p>
         </div>
@@ -317,6 +400,8 @@ function pageShell(row: AwardChequeRow): string {
   return `<div class="sheet">
     ${groundSvg()}
     <div class="watermark">${arabicMark()}</div>
+    <div class="micro micro--top" aria-hidden="true">${MICROTEXT}</div>
+    <div class="micro micro--foot" aria-hidden="true">${MICROTEXT}</div>
     <div class="frame">
       <i class="corner corner--tl">${CORNER}</i><i class="corner corner--tr">${CORNER}</i>
       <i class="corner corner--bl">${CORNER}</i><i class="corner corner--br">${CORNER}</i>
@@ -357,7 +442,7 @@ const CSS = `
     -webkit-print-color-adjust: exact; print-color-adjust: exact; font-kerning: normal; }
 
   .sheet { position: relative; width: 914mm; height: 406mm; overflow: hidden;
-    background: linear-gradient(135deg, #FFFFFF 0%, #F5F9FD 48%, #E8F1F9 100%); }
+    background: linear-gradient(135deg, #FFFFFF 0%, #F3F8FD 42%, #E4EEF8 74%, #F6EFDC 100%); }
   .ground { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 
   /* The Arabic wordmark as the certificate carries it: large, one ink, faint, on the right, its
@@ -365,7 +450,7 @@ const CSS = `
   .watermark { position: absolute; right: 0; top: 46mm; height: 262mm; z-index: 0; pointer-events: none; }
   .watermark img { display: block; height: 100%; width: auto; opacity: .13; filter: brightness(0); }
 
-  .frame { position: absolute; inset: 12mm; border: ${0.5 * SCALE}pt solid var(--gold); z-index: 1; }
+  .frame { position: absolute; inset: 12mm; border: ${0.5 * SCALE}pt solid var(--gold); border-image: linear-gradient(135deg, ${GOLD.deep} 0%, ${GOLD.light} 25%, ${GOLD.mid} 50%, ${GOLD.light} 75%, ${GOLD.deep} 100%) 1; z-index: 1; }
   .corner { position: absolute; width: 21mm; height: 21mm; display: block; }
   .corner svg { display: block; width: 100%; height: 100%; }
   .corner--tl { left: -1.2mm; top: -1.2mm; }
@@ -373,6 +458,10 @@ const CSS = `
   .corner--bl { left: -1.2mm; bottom: -1.2mm; transform: scaleY(-1); }
   .corner--br { right: -1.2mm; bottom: -1.2mm; transform: scale(-1, -1); }
   .frame::after { content: ""; position: absolute; inset: 3.4mm; border: ${0.25 * SCALE}pt solid var(--light); }
+  .micro { position: absolute; left: 30mm; right: 30mm; height: 4.6mm; overflow: hidden; white-space: nowrap; z-index: 1;
+    font-size: 8pt; font-weight: 700; letter-spacing: .5em; line-height: 4.6mm; color: var(--gold-deep); opacity: .8; text-align: center; }
+  .micro--top { top: 17.6mm; }
+  .micro--foot { bottom: 17mm; }
   .page { position: absolute; inset: 12mm; z-index: 2; padding: 15mm 22mm 12mm; display: flex; flex-direction: column; }
 
   /* ---------- the letterhead, as house-identity.ts draws it, scaled ---------- */
@@ -404,8 +493,10 @@ const CSS = `
 
   .head { position: relative; grid-column: 1; grid-row: 1; display: flex; flex-direction: column; justify-content: center; }
   .head h1 { font-size: 54pt; font-weight: 700; line-height: 1.1; color: var(--deep); }
+  .head h1 .ttl { display: inline-block; height: 20mm; width: auto; vertical-align: -4.6mm; }
   .spk { display: inline-block; width: 15mm; height: 15mm; margin-left: 6mm; vertical-align: 5mm; fill: var(--gold); }
   .head h1 .spk + .spk { width: 8mm; height: 8mm; margin-left: 2mm; vertical-align: 15mm; fill: var(--gold-light); }
+  .weave { position: absolute; right: 26mm; top: 50%; transform: translateY(-50%); width: ${WEAVE_WIDTH_MM}mm; height: ${WEAVE_HEIGHT_MM}mm; display: block; }
   .head__ar { text-align: left; margin-top: 1mm; font-family: var(--arabic); font-size: 36pt; font-weight: 600; line-height: 1.3; color: var(--blue); }
   .head__prog { margin-top: 3mm; font-size: 20pt; font-weight: 700; letter-spacing: .04em; color: var(--gold-deep); }
 
@@ -428,8 +519,8 @@ const CSS = `
   .payee__line { position: relative; margin-top: 3mm; padding-bottom: 2mm;
     background: linear-gradient(90deg, var(--deep) 0, var(--deep) 30%, var(--blue) 68%, var(--light) 100%) left bottom / 100% var(--rule-w) no-repeat; }
   /* A finer gold rule under the strong one, and a diamond closing its end — the engraved double rule. */
-  .payee__line::after { content: ""; position: absolute; left: 26mm; right: 9mm; top: calc(100% + 1.6mm); height: ${0.35 * SCALE}pt;
-    background: linear-gradient(90deg, rgba(184, 137, 59, 0) 0, var(--gold) 14%, var(--gold-light) 60%, var(--gold) 100%); }
+  .payee__line::after { content: ""; position: absolute; left: 0; right: 9mm; top: calc(100% + 1.6mm); height: ${0.35 * SCALE}pt;
+    background: linear-gradient(90deg, var(--gold-deep) 0, var(--gold) 30%, var(--gold-light) 100%); }
   .payee__line::before { content: ""; position: absolute; right: 1.6mm; bottom: -1.8mm; width: 5.2mm; height: 5.2mm;
     background: var(--gold); transform: rotate(45deg); z-index: 1; }
   .payee__row { display: flex; align-items: baseline; white-space: nowrap; }
@@ -444,6 +535,10 @@ const CSS = `
   .words__ruled { position: relative; margin-top: 2mm; height: 42mm; }
   .words__rule { position: absolute; left: 0; right: 0; top: 34mm; height: var(--rule-w);
     background: linear-gradient(90deg, var(--gold) 0, var(--deep) 18%, var(--deep) 82%, var(--gold) 100%); }
+  .words__rule::before, .words__rule::after { content: ""; position: absolute; top: -1.2mm; width: 3.2mm; height: 3.2mm;
+    background: var(--gold); transform: rotate(45deg); }
+  .words__rule::before { left: -1.6mm; }
+  .words__rule::after { right: -1.6mm; }
   /* The two captions sit ON the words line, one at each end, the Arabic words between them. */
   .words__lab { position: absolute; top: 34mm; transform: translateY(-100%); padding-bottom: 9mm; white-space: nowrap;
     font-size: 16pt; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--gold-deep); }
@@ -481,6 +576,10 @@ const CSS = `
     background: linear-gradient(180deg, ${GOLD.tint} 0%, ${GOLD.tint2} 100%); border-color: var(--gold); }
   .stat--rank::after { content: ""; position: absolute; inset: 2mm; border: ${0.25 * SCALE}pt solid var(--gold-deep); pointer-events: none; }
   .stat--rank i { color: var(--gold-deep); }
+  .stat--rank { overflow: hidden; }
+  .rays, .brk { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .stat--rank i, .stat.stat--rank b { position: relative; }
+  .amount__box .brk { z-index: 0; }
   .stat--rank .spk { width: 6mm; height: 6mm; margin: 0 4mm; vertical-align: -.6mm; fill: var(--gold); }
   .stat.stat--rank b { font-size: 84pt; color: var(--gold-deep); }
   .stat.stat--rank b small { font-size: 40pt; margin-left: 1.5mm; }
@@ -492,7 +591,7 @@ const CSS = `
   .stat b small { font-size: 30pt; }
   .sig { justify-self: end; width: 260mm; padding-bottom: 8mm; }
   .sig__rule { position: relative; height: 36mm; margin-bottom: 4mm;
-    background: linear-gradient(90deg, rgba(184, 137, 59, 0) 0, var(--gold) 12%, var(--gold) 88%, rgba(184, 137, 59, 0) 100%) left bottom / 100% var(--rule-w) no-repeat; }
+    background: linear-gradient(90deg, var(--gold-light) 0, var(--gold) 20%, var(--gold-deep) 50%, var(--gold) 80%, var(--gold-light) 100%) left bottom / 100% var(--rule-w) no-repeat; }
   .sig__rule::before, .sig__rule::after { content: ""; position: absolute; bottom: -1.6mm; width: 3.2mm; height: 3.2mm;
     background: var(--gold); transform: rotate(45deg); }
   .sig__rule::before { left: 2mm; }
