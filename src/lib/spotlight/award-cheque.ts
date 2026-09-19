@@ -227,6 +227,36 @@ const CORNER = `<svg viewBox="0 0 100 100" aria-hidden="true">
   <path d="M14 5 23 14 14 23 5 14Z" fill="${GOLD.mid}"/>
 </svg>`;
 
+/** The award medallion: a scalloped gold rosette, a navy face and two hanging ribbons. */
+function sealSvg(): string {
+  const points: string[] = [];
+  const teeth = 36;
+  for (let i = 0; i < teeth * 2; i += 1) {
+    const radius = i % 2 === 0 ? 47 : 43;
+    const angle = (Math.PI * i) / teeth - Math.PI / 2;
+    points.push(`${num(50 + radius * Math.cos(angle))},${num(50 + radius * Math.sin(angle))}`);
+  }
+  return `<svg class="seal" viewBox="0 0 100 124" aria-hidden="true">
+    <defs>
+      <linearGradient id="sealGold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${GOLD.light}"/><stop offset="0.5" stop-color="${GOLD.mid}"/><stop offset="1" stop-color="${GOLD.deep}"/></linearGradient>
+      <linearGradient id="sealNavy" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#0A6BA6"/><stop offset="1" stop-color="#073A58"/></linearGradient>
+      <linearGradient id="sealRibbon" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0A6BA6"/><stop offset="1" stop-color="#073A58"/></linearGradient>
+    </defs>
+    <path d="M31 80 19 120 33 112 42 121 52 82Z" fill="url(#sealRibbon)" stroke="${GOLD.mid}" stroke-width="1"/>
+    <path d="M69 80 81 120 67 112 58 121 48 82Z" fill="url(#sealRibbon)" stroke="${GOLD.mid}" stroke-width="1"/>
+    <polygon points="${points.join(" ")}" fill="url(#sealGold)"/>
+    <circle cx="50" cy="50" r="38.5" fill="none" stroke="#FFFBEF" stroke-width="1.3"/>
+    <circle cx="50" cy="50" r="35" fill="url(#sealNavy)" stroke="${GOLD.light}" stroke-width="0.9"/>
+    <circle cx="50" cy="50" r="30" fill="none" stroke="${GOLD.light}" stroke-width="0.4" stroke-dasharray="1.2 1.6"/>
+    <path d="M50 22 51.6 28.4 58 30 51.6 31.6 50 38 48.4 31.6 42 30 48.4 28.4Z" fill="${GOLD.light}"/>
+    <text x="50" y="60" text-anchor="middle" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="24" fill="#FFFFFF">S1</text>
+    <text x="50" y="72" text-anchor="middle" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="8.5" letter-spacing="2.2" fill="${GOLD.light}">2026</text>
+  </svg>`;
+}
+
 function chequeBody(row: AwardChequeRow): string {
   const date = dateParts(row.transferDate);
   const words = chequeAmountInArabic(row.amountEgp);
@@ -240,6 +270,7 @@ function chequeBody(row: AwardChequeRow): string {
     <header class="head">
       <h1>Award Cheque${SPARK}${SPARK}</h1>
       <p class="head__prog">${escapeHtml(row.programName)}</p>
+      ${sealSvg()}
     </header>
 
     <section class="numdate">
@@ -399,10 +430,11 @@ const CSS = `
   .ar { font-family: var(--arabic); font-size: 21pt; font-weight: 700; letter-spacing: 0;
     text-transform: none; color: var(--deep); }
 
-  .head { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; justify-content: center; }
+  .head { position: relative; grid-column: 1; grid-row: 1; display: flex; flex-direction: column; justify-content: center; }
   .head h1 { font-size: 54pt; font-weight: 700; line-height: 1.1; color: var(--deep); }
   .spk { display: inline-block; width: 15mm; height: 15mm; margin-left: 6mm; vertical-align: 5mm; fill: var(--gold); }
   .head h1 .spk + .spk { width: 8mm; height: 8mm; margin-left: 2mm; vertical-align: 15mm; fill: var(--gold-light); }
+  .seal { position: absolute; right: 40mm; top: 50%; transform: translateY(-50%); height: 54mm; width: auto; display: block; }
   .head__ar { text-align: left; margin-top: 1mm; font-family: var(--arabic); font-size: 36pt; font-weight: 600; line-height: 1.3; color: var(--blue); }
   .head__prog { margin-top: 3mm; font-size: 20pt; font-weight: 700; letter-spacing: .04em; color: var(--gold-deep); }
 
@@ -413,14 +445,23 @@ const CSS = `
   .date { margin-top: 2.5mm; display: flex; gap: 3mm; }
   .date__cell { flex: 1 1 0; background: linear-gradient(180deg, #FFFFFF 0%, #E6F0F8 100%); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2.2mm 0 1.4mm; }
   .date__cell--y { flex: 1.9 1 0; }
+  .date__cell { position: relative; }
+  .date__cell::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1.3mm;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold-light) 50%, var(--gold-deep)); }
   .date__cell b { display: block; font-size: 32pt; font-weight: 700; color: var(--body);
     font-variant-numeric: lining-nums tabular-nums; }
   .date__cell i { display: block; margin-top: .5mm; font-style: normal; font-size: 10pt; font-weight: 700;
     letter-spacing: .3em; color: var(--blue); }
 
   .payee { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; justify-content: center; }
-  .payee__line { margin-top: 3mm; padding-bottom: 2mm;
-    background: linear-gradient(90deg, var(--deep) 0, var(--deep) 45%, var(--light) 80%, rgba(20, 130, 194, 0) 100%) left bottom / 100% var(--rule-w) no-repeat; }
+  .payee__line { position: relative; margin-top: 3mm; padding-bottom: 2mm;
+    background: linear-gradient(90deg, var(--deep) 0, var(--deep) 30%, var(--blue) 68%, var(--light) 100%) left bottom / 100% var(--rule-w) no-repeat; }
+  /* A finer gold rule under the strong one, and a diamond closing its end — the engraved double rule. */
+  .payee__line::after, .sumrule::after { content: ""; position: absolute; left: 26mm; right: 9mm; top: calc(100% + 1.6mm); height: ${0.35 * SCALE}pt;
+    background: linear-gradient(90deg, rgba(184, 137, 59, 0) 0, var(--gold) 14%, var(--gold-light) 60%, var(--gold) 100%); }
+  .payee__line::before, .sumrule::before { content: ""; position: absolute; right: 1.6mm; bottom: -1.8mm; width: 5.2mm; height: 5.2mm;
+    background: var(--gold); transform: rotate(45deg); z-index: 1; }
+  .payee__line::before { bottom: -2.2mm; }
   .payee__name { font-weight: 500; line-height: 1.15; color: var(--ink); white-space: nowrap; letter-spacing: -.005em; }
   .payee__pos { margin-top: 4mm; font-size: 24pt; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
     color: var(--gold-deep); white-space: nowrap; }
@@ -429,18 +470,18 @@ const CSS = `
 
   /* The words and the figures sit between two rules — a deep one above and a hairline below. No
      fill anywhere: the house ink rule allows only the 6% zebra row. */
-  .sumrule { grid-column: 1; grid-row: 3; align-self: start; height: var(--rule-w);
-    background: linear-gradient(90deg, var(--deep) 0, var(--deep) 45%, var(--light) 80%, rgba(20, 130, 194, 0) 100%); }
+  .sumrule { position: relative; grid-column: 1; grid-row: 3; align-self: start; height: var(--rule-w);
+    background: linear-gradient(90deg, var(--deep) 0, var(--deep) 30%, var(--blue) 68%, var(--light) 100%); }
   .words { grid-column: 1 / -1; grid-row: 3; width: ${BOXES_WIDTH_MM}mm; padding-top: 5mm; display: flex; flex-direction: column; justify-content: center; }
   .words__ruled { position: relative; margin-top: 2mm; height: 42mm; }
   .words__rule { position: absolute; left: 0; right: 0; top: 34mm; height: var(--rule-w);
     background: linear-gradient(90deg, var(--gold) 0, var(--deep) 18%, var(--deep) 82%, var(--gold) 100%); }
   /* The two captions sit ON the words line, one at each end, the Arabic words between them. */
-  .words__lab { position: absolute; top: 34mm; transform: translateY(-100%); padding-bottom: 2.6mm; white-space: nowrap;
+  .words__lab { position: absolute; top: 34mm; transform: translateY(-100%); padding-bottom: 9mm; white-space: nowrap;
     font-size: 16pt; font-weight: 700; letter-spacing: .24em; text-transform: uppercase; color: var(--gold-deep); }
   .words__lab--en { left: 0; }
   .words__lab--ar { right: 0; font-family: var(--arabic); font-size: 25pt; letter-spacing: 0; text-transform: none; color: var(--deep); }
-  .words__ar { position: relative; top: 2.2mm; font-family: var(--quran); font-weight: 400; font-size: 70pt;
+  .words__ar { position: relative; top: 5.8mm; font-family: var(--quran); font-weight: 400; font-size: 70pt;
     line-height: 34mm; word-spacing: .12em; color: var(--ink); text-align: right; white-space: nowrap;
     margin-left: ${WORDS_LABEL_EN_MM}mm; margin-right: ${WORDS_LABEL_AR_MM}mm; }
 
@@ -463,7 +504,8 @@ const CSS = `
     font-size: 25pt; line-height: 1.5; color: var(--body); white-space: nowrap; }
   .stats { margin-top: 3mm; margin-bottom: 8mm; display: flex; gap: 6mm; }
   .stat { flex: 0 0 auto; min-width: 64mm; background: linear-gradient(180deg, #F7FBFE 0%, #D9E9F6 100%); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2mm 8mm 2.5mm; }
-  .stat--wide { width: 120mm; min-width: 120mm; }
+  .stat--wide { position: relative; width: 120mm; min-width: 120mm; }
+  .stat--wide::after { content: ""; position: absolute; inset: 2mm; border: ${0.25 * SCALE}pt solid var(--light); pointer-events: none; }
   .stat { display: flex; flex-direction: column; justify-content: center; height: 48mm; box-sizing: border-box; }
   /* The rank is the headline: a larger box, a double keyline (Deep outside, Light inside) and the
      ordinal set beside the figure. Still no fill. */
@@ -483,6 +525,10 @@ const CSS = `
   .sig { justify-self: end; width: 260mm; padding-bottom: 8mm; }
   .sig__rule { position: relative; height: 36mm; margin-bottom: 4mm;
     background: linear-gradient(90deg, rgba(184, 137, 59, 0) 0, var(--gold) 12%, var(--gold) 88%, rgba(184, 137, 59, 0) 100%) left bottom / 100% var(--rule-w) no-repeat; }
+  .sig__rule::before, .sig__rule::after { content: ""; position: absolute; bottom: -1.6mm; width: 3.2mm; height: 3.2mm;
+    background: var(--gold); transform: rotate(45deg); }
+  .sig__rule::before { left: 2mm; }
+  .sig__rule::after { right: 2mm; }
   .sig__img { position: absolute; left: 50%; bottom: -9mm; height: 76mm; transform: translateX(-50%); }
   .sig .cap { font-size: 13pt; letter-spacing: .16em; }
   .sig .ar { font-size: 19pt; }
