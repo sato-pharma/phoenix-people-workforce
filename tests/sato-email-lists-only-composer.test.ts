@@ -144,8 +144,10 @@ export function runSatoEmailListsOnlyComposerTests() {
   const settings = readFileSync(path.join(REPO_ROOT, "src/config/system-settings.ts"), "utf8");
   assert.match(
     settings,
-    /satoComposerFromEmail:\s*"hrbp@satopharma\.com"/,
-    "the composer's From must be the HR Business Partner's mailbox",
+    /satoComposerFromEmail:\s*"hrbp@send\.satopharma\.com"/,
+    "the composer's From must be the HR Business Partner's mailbox, on the send. subdomain — the " +
+      "apex address silently zero-opened for a week (2026-09-19) because it collides with the " +
+      "recipients' own Yahoo-hosted mailbox identity",
   );
   assert.match(
     satoService,
@@ -176,13 +178,23 @@ export function runSatoEmailListsOnlyComposerTests() {
     "the composer must not key Reply-To on the sender's seat — a seat without an entry falls through to a suppressed inbox",
   );
 
-  // The Reply-To is the owner's, so it must NOT be what the fan-out shows: the visible To stays the
-  // From mailbox. Without fanoutVisibleTo, send-phoenix-email.ts falls back to the resolved Reply-To
-  // and puts the owner's own address in the To line every recipient of a list send reads.
+  // The Reply-To is the owner's, so it must NOT be what the fan-out shows: the visible To stays a
+  // real apex mailbox. Without fanoutVisibleTo, send-phoenix-email.ts falls back to the resolved
+  // Reply-To and puts the owner's own address in the To line every recipient of a list send reads.
+  //
+  // 🔴 Deliberately NOT satoComposerFromEmail (2026-09-19): that address is a genuine envelope
+  // recipient Resend actually delivers to, and the From subdomain (send.satopharma.com) carries no
+  // live mailbox — pointing the fan-out's visible To at it would hard-bounce one recipient on every
+  // multi-recipient batch. Pin the real, confirmed-deliverable apex mailbox instead.
   assert.match(
     satoService,
-    /const fanoutVisibleTo = systemEmail\.satoComposerFromEmail;/,
-    "the fan-out's visible To must stay the HR Business Partner's mailbox, not the owner's Reply-To",
+    /const fanoutVisibleTo = systemEmail\.satoComposerFanoutVisibleTo;/,
+    "the fan-out's visible To must stay a real, deliverable mailbox — never the From subdomain, which has no live inbox",
+  );
+  assert.match(
+    settings,
+    /satoComposerFanoutVisibleTo:\s*"hrbp@satopharma\.com"/,
+    "the fan-out's visible To must be the real apex mailbox, not the From subdomain",
   );
   assert.ok(
     /fanoutVisibleTo,/.test(satoSendArgs),
