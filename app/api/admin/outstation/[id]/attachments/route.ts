@@ -8,6 +8,7 @@ import { getOutstationRequestById } from "@/lib/outstation/service";
 import { approverTripPhotos } from "@/lib/outstation/trip-evidence-photos";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json({ error: "invalid_outstation_id", message: "Request id is invalid." }, { status: 400 });
     }
 

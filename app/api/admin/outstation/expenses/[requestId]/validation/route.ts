@@ -5,6 +5,7 @@ import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response"
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getOutstationClaimValidation } from "@/lib/outstation/expense-claim-validation";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +29,8 @@ export async function GET(
     assertOutstationExpenseApprovalReviewAccess(access, "outstation claim validation");
 
     const { requestId: rawId } = await params;
-    const requestId = Number(rawId);
-    if (!Number.isFinite(requestId)) {
+    const requestId = parseOutstationRequestId(rawId);
+    if (requestId === null) {
       return NextResponse.json(
         { error: "invalid_outstation_id", message: "Request id is invalid." },
         { status: 400 },

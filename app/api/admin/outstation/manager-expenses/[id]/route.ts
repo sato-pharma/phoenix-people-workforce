@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { buildManagerExpenseAdminPatch } from "@/lib/outstation/manager-expense-input";
+import { parseOutstationRequestId } from "@/lib/outstation/request-id";
 import {
   deleteOutstationRequestAsAdmin,
   updateManagerExpenseAsAdmin,
@@ -46,8 +47,8 @@ export async function PATCH(
     await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_id", message: "Request id is invalid." },
         { status: 400 },
@@ -95,8 +96,8 @@ export async function DELETE(
     await assertOutstationAdminAccess(access, "delete");
 
     const { id: rawId } = await params;
-    const id = Number(rawId);
-    if (!Number.isFinite(id)) {
+    const id = parseOutstationRequestId(rawId);
+    if (id === null) {
       return NextResponse.json(
         { error: "invalid_id", message: "Request id is invalid." },
         { status: 400 },
