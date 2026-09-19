@@ -34,6 +34,18 @@ export type ConversationNotificationInput = {
   /** The message as typed. Never pre-truncate it — see the note on `message` below. */
   body: string;
   eventType: string;
+  /**
+   * People who are told IN-APP ONLY — never on the email, never on Telegram or push. For an audience
+   * that should SEE the message without being added to the conversation: the owner, 2026-09-19,
+   * wanted a manager's comment on a CV to reach the Super Admin's bell. Adding them to
+   * `participantHrIds` instead would have put them on the email's cc line, which is a different
+   * decision about who is mailed. Anyone already addressed above, and the author, is left out.
+   */
+  inAppOnly?: {
+    /** Where they land. Defaults to `actionUrl`; set it when they live in another shell. */
+    actionUrl?: string;
+    hrIds: Array<string | null | undefined>;
+  };
   /** Extra context carried on the notification row, for later auditing. */
   metadata?: Record<string, unknown>;
   /** Notification module key, e.g. "recruitment" / "marketing_requests". */
@@ -209,6 +221,34 @@ export function resolveConversationAudience(input: {
 }
 
 /**
+ * Who is told in-app only, split out for the same reason `resolveConversationAudience` is.
+ *
+ * `addressed` is everyone the message already reaches by the main route — `notifyKeys` and `ccKeys`
+ * together, which is also the author, who is copied on the email. Ids come back in the form they
+ * were given, deduplicated by canonical key, first spelling wins.
+ */
+export function resolveInAppOnlyAudience(input: {
+  addressed: readonly string[];
+  authorHrId: string | null | undefined;
+  hrIds: Array<string | null | undefined>;
+}): string[] {
+  const skip = new Set<string>();
+  for (const raw of [input.authorHrId, ...input.addressed]) {
+    const key = canonicalHrIdKey(raw);
+    if (key) skip.add(key);
+  }
+  const out = new Map<string, string>();
+  for (const raw of input.hrIds) {
+    const key = canonicalHrIdKey(raw);
+    if (key && !skip.has(key) && !out.has(key)) out.set(key, String(raw).trim());
+  }
+  return Array.from(out.values());
+}
+
+/** The only channel an in-app-only recipient is given. Pinned so nobody widens it by accident. */
+export const IN_APP_ONLY_CHANNELS = ["in_app"] as const;
+
+/**
  * The event key for ONE message to ONE recipient, or null when the caller supplied no `messageKey`.
  *
  * Split out so it can be asserted directly in a test, the same reason `resolveConversationAudience`
@@ -247,7 +287,12 @@ export async function notifyConversationMessage(input: ConversationNotificationI
       participantHrIds: input.participantHrIds,
       submitterHrId: input.submitterHrId,
     });
-    if (notifyKeys.length === 0 && ccKeys.length === 0) return;
+    const inAppOnlyKeys = resolveInAppOnlyAudience({
+      addressed: [...notifyKeys, ...ccKeys],
+      authorHrId: input.authorHrId,
+      hrIds: input.inAppOnly?.hrIds ?? [],
+    });
+    if (notifyKeys.length === 0 && ccKeys.length === 0 && inAppOnlyKeys.length === 0) return;
 
     const emails = await loadWorkEmails([...notifyKeys, ...ccKeys]);
     const emailFor = (hrId: string) => {
@@ -267,7 +312,32 @@ export async function notifyConversationMessage(input: ConversationNotificationI
     const message = `${author} commented on the ${input.threadLabel} ${input.subjectLabel}: "${input.body}"`;
     const title = `New comment on ${input.threadLabel} ${input.subjectLabel}`;
 
-    await Promise.all(notifyKeys.map((hrId, index) => createSystemNotification({
+    // The in-app-only audience is sent alongside the thread, never through it: one channel, no email
+    // envelope, no cc. `IN_APP_ONLY_CHANNELS` is the whole of what they are given.
+    const inAppOnlySends = inAppOnlyKeys.map((hrId) => createSystemNotification({
+      actionUrl: input.inAppOnly?.actionUrl ?? input.actionUrl,
+      category: "general",
+      channels: [...IN_APP_ONLY_CHANNELS],
+      eventType: input.eventType,
+      message,
+      metadata: {
+        authorHrId: input.authorHrId,
+        threadLabel: input.threadLabel,
+        ...(() => {
+          const idempotencyKey = conversationMessageIdempotencyKey(input, hrId);
+          return idempotencyKey ? { idempotencyKey } : {};
+        })(),
+        ...(input.metadata ?? {}),
+      },
+      module: input.module,
+      priority: "normal",
+      recipientHrId: hrIdForStorage(hrId),
+      recordId: input.recordId,
+      subjectHrId: hrIdForStorage(input.submitterHrId),
+      title,
+    }));
+
+    await Promise.all([...inAppOnlySends, ...notifyKeys.map((hrId, index) => createSystemNotification({
       actionUrl: input.actionUrl,
       category: "general",
       channels: index === 0
@@ -305,7 +375,7 @@ export async function notifyConversationMessage(input: ConversationNotificationI
       recordId: input.recordId,
       subjectHrId: hrIdForStorage(input.submitterHrId),
       title,
-    })));
+    }))]);
   } catch (error) {
     logError("Conversation message failed to notify participants", {
       labels: { event: "conversation_notify_failed", module: input.module, recordId: input.recordId },

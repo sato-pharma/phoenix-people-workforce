@@ -1811,6 +1811,7 @@ import { runNormalizerUnmappedListCustomersTests } from "./normalizer-unmapped-l
 import { runWeeklyUnmappedListFailedRowsTests } from "./weekly-unmapped-list-failed-rows.test.ts";
 import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-gate.test.ts";
 import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
+import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6317,6 +6318,11 @@ await runTest(
 await runTest(
   "the candidate page's Print record prints every section the page draws, in its order, except Where they stand (the owner's removal); nothing unpopulated prints; the salary and the questions HR itself added come before the five the bot always asks; the name is plain body ink; a stranger's name and notes are escaped; the sheet has no fill and no rounded corner; and the print page repeats the shell's gate read-only",
   runCandidateRecordPrintTests,
+);
+
+await runTest(
+  "a comment on a candidate: its link names the candidate (?candidate=), the portal My Candidates page forwards an admin-shell viewer to the candidate's admin page instead of /overview, and the Super Admin is told IN THE APP only (never added to the email's To or CC, and HR Advisory is not on the copy), except for a comment they wrote themselves",
+  runCandidateCommentLinksAndInAppTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

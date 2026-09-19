@@ -13,11 +13,14 @@
 // decides scope; it is the storage layer and it trusts its caller, exactly like every other service
 // in this module.
 
+import { systemAdministratorRoles } from "@/lib/auth/permissions";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
+import { activeAdministratorHrIds } from "@/lib/recruitment/candidate-comment-administrators";
+import { adminCandidateHref, portalCandidatesHref } from "@/lib/recruitment/candidate-page-link";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { CANDIDATE_COMMENT_MAX_LENGTH, type CandidateComment } from "@/lib/recruitment/types";
-import { notifyConversationMessage } from "@/lib/conversations/notify";
+import { notifyConversationMessage, resolveInAppOnlyAudience } from "@/lib/conversations/notify";
 import { logError } from "@/lib/observability/log";
 
 export { CANDIDATE_COMMENT_MAX_LENGTH } from "@/lib/recruitment/types";
@@ -181,7 +184,33 @@ export async function addCandidateComment(input: {
 }
 
 /**
- * Email the candidate's thread out, To the hiring manager who owns it and CC the sender.
+ * The system administrators — the accounts a comment on a CV is copied to in the app.
+ *
+ * The owner's answer, 2026-09-19: the Super Admin, and not HR Advisory. `systemAdministratorRoles`
+ * is the role list the rest of the app already names that account by.
+ *
+ * Fail-soft to an empty list, with its own log line: this copy is an addition to the thread's notice,
+ * and a lookup that fails must not take the thread's own notice down with it.
+ */
+async function administratorHrIds(): Promise<string[]> {
+  try {
+    const { data, error } = await recruitmentDb()
+      .from("app_auth_users")
+      .select("hr_id,is_active")
+      .in("role", [...systemAdministratorRoles]);
+    if (error) throw error;
+    return activeAdministratorHrIds((data ?? []) as Array<{ hr_id?: unknown; is_active?: unknown }>);
+  } catch (error) {
+    logError("Candidate comment could not resolve the administrator recipients", {
+      labels: { event: "candidate_comment_administrators_failed" },
+      error,
+    });
+    return [];
+  }
+}
+
+/**
+ * Tell the candidate's thread about a comment, and the Super Admin in the app.
  *
  * Until 2026-09-03 this table was written and NOBODY was told - eight comments in production, not
  * one notification, so a manager's opinion of an applicant sat unread unless somebody happened to
@@ -189,6 +218,12 @@ export async function addCandidateComment(input: {
  * the CV was actually pushed to; it is emphatically NOT the candidate (see the standing note that
  * every `manager_notified_*` column describes the manager, never the applicant's own answer), so
  * no applicant is ever mailed from here.
+ *
+ * The thread is emailed To the manager who owns it and CC the sender. The Super Admin is NOT on that
+ * email — who receives an email is the owner's decision — but gets the same comment in the app
+ * (owner, 2026-09-19: "I want the comments to come in in-app notifications"), unless they wrote the
+ * comment themselves. That copy carries the candidate's admin page, because the thread's link is the
+ * manager's own portal list.
  *
  * Best-effort: the comment row is already committed, and a delivery problem must not fail the write
  * that succeeded.
@@ -221,18 +256,29 @@ async function notifyCandidateComment(input: {
     const participantHrIds = ((priorRows ?? []) as Array<{ author_hr_id?: string | null }>)
       .map((row) => row.author_hr_id ?? null);
 
-    // With no manager on the record there is no thread owner to address, and mailing the author
-    // their own comment back is noise rather than a notification.
-    if (!ownerHrId && participantHrIds.filter(Boolean).length <= 1) return;
+    // The administrators' in-app copy. A comment the administrator wrote themselves is not told back
+    // to them: the author is taken out here, so the check below sees the audience that is really left.
+    const administrators = resolveInAppOnlyAudience({
+      addressed: [],
+      authorHrId: input.authorHrId,
+      hrIds: await administratorHrIds(),
+    });
 
+    // With no manager on the record there is no thread owner to address, and mailing the author
+    // their own comment back is noise rather than a notification. The administrators' copy still
+    // goes: a comment on a candidate nobody owns yet is the one they most need to see.
+    if (!ownerHrId && participantHrIds.filter(Boolean).length <= 1 && administrators.length === 0) return;
+
+    // The thread's link is the manager's own list, and it now names the candidate so that anybody
+    // who opens it from the admin shell is sent on to that candidate (the portal page does that
+    // hop). The administrators' copy skips the hop and points at the candidate's admin page directly.
     await notifyConversationMessage({
-      // The bare list, matching hiring-manager-notify.ts. The page reads no search params, so a
-      // `?candidate=` deep link would promise a jump it cannot make.
-      actionUrl: "/employee-portals/recruitment-candidates",
+      actionUrl: portalCandidatesHref(input.candidateId),
       authorHrId: input.authorHrId,
       authorName: input.authorName,
       body: input.body,
       eventType: "candidate_comment",
+      inAppOnly: { actionUrl: adminCandidateHref(input.candidateId), hrIds: administrators },
       messageKey: input.messageKey,
       metadata: { candidateId: input.candidateId },
       module: "recruitment",

@@ -5,9 +5,15 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recruitment-candidates-portal";
-import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
+import {
+  canAccess,
+  canOpenPersonalCandidateInbox,
+  isHrAuthorityRole,
+  resolveNavigationMode,
+} from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { adminTwinOfPortalCandidatesHref, CANDIDATE_LINK_PARAM } from "@/lib/recruitment/candidate-page-link";
 import {
   redactCandidateContact,
   redactCandidateListContact,
@@ -27,10 +33,25 @@ import { listManagerFolderFilings } from "@/lib/recruitment/manager-folders";
 
 export const dynamic = "force-dynamic";
 
-export default async function EmployeePortalRecruitmentCandidatesPage() {
+export default async function EmployeePortalRecruitmentCandidatesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const access = await resolveAccessContextFromPage();
 
   if (resolveNavigationMode(access) !== "employee-portal") {
+    // This list is the portal's own, and every notice about a CV points here — including the ones
+    // the Super Admin receives as a copy. He used to be sent to /overview, the command center, which
+    // is not where a comment on a candidate lives (owner, 2026-09-19). Send an admin-shell viewer to
+    // the admin page for the same thing instead: the candidate's own page when the link names one.
+    const params = await searchParams;
+    const adminTwin = adminTwinOfPortalCandidatesHref({
+      canOpenPersonalInbox: canOpenPersonalCandidateInbox(access),
+      canOpenRecruitment: isHrAuthorityRole(access.role) && (await canAccess(access, "recruitment", "read")),
+      candidateId: params[CANDIDATE_LINK_PARAM],
+    });
+    if (adminTwin) redirect(adminTwin);
     redirect("/overview");
   }
 

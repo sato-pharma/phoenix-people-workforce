@@ -45,6 +45,66 @@ export function candidatePageHref(root: string, candidateId: string): string {
   return `${root.replace(/\/+$/, "")}${CANDIDATE_PAGE_SEGMENT}/${encodeURIComponent(candidateId)}`;
 }
 
+/** The manager's own list — "My Candidates" — in the portal shell. Where every CV notice points. */
+export const PORTAL_CANDIDATES_PATH = "/employee-portals/recruitment-candidates";
+
+/** The query parameter that names the candidate a link to that list is about. */
+export const CANDIDATE_LINK_PARAM = "candidate";
+
+/**
+ * The link a notification carries to "My Candidates", naming the candidate it is about.
+ *
+ * The owner, 2026-09-19, on a comment notice: pressing the link from Telegram opened the employee
+ * portal and then dropped him in the command center. The list itself is the portal's and reads
+ * nothing from the address, so a manager lands on the same list either way — the name is for
+ * whoever opens the link from the ADMIN shell, who is sent on to that candidate's own page (see
+ * `adminTwinOfPortalCandidatesHref`) instead of to a list that was never theirs.
+ *
+ * An id that is not a uuid is left off rather than sent: the receiving page would refuse it, and a
+ * bare link is still a link that opens.
+ */
+export function portalCandidatesHref(candidateId?: string | null): string {
+  const id = parseCandidatePageId(candidateId);
+  return id ? `${PORTAL_CANDIDATES_PATH}?${CANDIDATE_LINK_PARAM}=${encodeURIComponent(id)}` : PORTAL_CANDIDATES_PATH;
+}
+
+/**
+ * One candidate's page in the ADMIN shell, or the recruitment hub when the id cannot be one.
+ *
+ * For a link that is only ever opened by someone who lives in the admin shell — the in-app copy of a
+ * comment that goes to the Super Admin — so it lands on the candidate without the hop through the
+ * portal address.
+ */
+export function adminCandidateHref(candidateId: string | string[] | null | undefined): string {
+  const id = parseCandidatePageId(candidateId);
+  return id ? candidatePageHref("/recruitment", id) : "/recruitment";
+}
+
+/**
+ * Where a viewer who lives in the ADMIN shell is sent when they open a portal "My Candidates" link,
+ * or null when the admin shell has nothing better for them than its own landing page.
+ *
+ * Until 2026-09-19 the page answered every such viewer with `/overview`, so the Super Admin who
+ * received a comment notice — by email, by the Telegram copy of it, or from the bell — pressed the
+ * link and arrived at the command center. The answers, in order:
+ *
+ *   · can open the recruitment pages  → that candidate's own page when the link names one (it
+ *     carries the notes and the history), the recruitment hub when it does not;
+ *   · can open the personal inbox     → the admin twin of this very list, the one the CEO uses;
+ *   · anybody else                    → null, and the caller keeps its old `/overview`.
+ *
+ * `canOpenRecruitment` is the admin candidate page's own gate, passed in rather than re-derived, so
+ * nobody is forwarded to a page that would bounce them a second time.
+ */
+export function adminTwinOfPortalCandidatesHref(input: {
+  canOpenPersonalInbox: boolean;
+  canOpenRecruitment: boolean;
+  candidateId: string | string[] | null | undefined;
+}): string | null {
+  if (input.canOpenRecruitment) return adminCandidateHref(input.candidateId);
+  return input.canOpenPersonalInbox ? "/recruitment/candidates" : null;
+}
+
 /**
  * The candidate id from the page's own address, or null when it cannot be one.
  *
