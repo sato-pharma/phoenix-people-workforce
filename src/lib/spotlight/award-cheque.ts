@@ -62,6 +62,9 @@ export type AwardChequeRow = {
   awardTitle: string;
   /** The recipient's position in full, written under the name ("Senior Medical Representative"). */
   positionTitle?: string | null;
+  /** The CEO's signature as a transparent-PNG data URI, printed on the CEO line. Supplied per run and
+   *  never stored in the repository or under public/ — a signature image served statically is a forgery kit. */
+  ceoSignatureUri?: string | null;
   /** Semester rank and achievement (percent, one decimal) — highlighted in the memo. */
   rank?: number | null;
   achievementPct?: number | null;
@@ -159,7 +162,6 @@ function chequeBody(row: AwardChequeRow): string {
   return `
     <header class="head">
       <h1>Award Cheque</h1>
-      <p class="head__ar" dir="rtl" lang="ar">شيك جائزة</p>
       <p class="head__prog">${escapeHtml(row.programName)}</p>
     </header>
 
@@ -206,10 +208,10 @@ function chequeBody(row: AwardChequeRow): string {
         ${
           stats
             ? `<div class="stats">
-          <div class="stat stat--rank"><i>Rank <span class="ar" dir="rtl" lang="ar">الترتيب</span></i><b>${
+          <div class="stat stat--rank"><i>Rank</i><b>${
             row.rank == null ? "&ndash;" : `${row.rank}<small>${ordinalSuffix(row.rank)}</small>`
           }</b></div>
-          <div class="stat stat--wide"><i>Achievement <span class="ar" dir="rtl" lang="ar">نسبة التحقيق</span></i><b>${
+          <div class="stat stat--wide"><i>Achievement</i><b>${
             row.achievementPct == null ? "&ndash;" : `${row.achievementPct.toFixed(1)}<small>%</small>`
           }</b></div>
         </div>`
@@ -217,11 +219,9 @@ function chequeBody(row: AwardChequeRow): string {
         }
       </div>
       <div class="sig">
-        <div class="sig__rule"></div>
-        <div class="cap"><span>Authorized signatory</span><span class="ar" dir="rtl" lang="ar">المفوض بالتوقيع</span></div>
-      </div>
-      <div class="sig">
-        <div class="sig__rule"></div>
+        <div class="sig__rule">${
+          row.ceoSignatureUri ? `<img class="sig__img" alt="" src="${row.ceoSignatureUri}">` : ""
+        }</div>
         <div class="cap"><span>Chief Executive Officer</span><span class="ar" dir="rtl" lang="ar">الرئيس التنفيذي</span></div>
       </div>
     </section>
@@ -349,7 +349,7 @@ const CSS = `
     font-variant-numeric: lining-nums tabular-nums; }
   .amount__fig small { font-size: 36pt; }
 
-  .foot { grid-column: 1 / -1; grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) 210mm 226mm;
+  .foot { grid-column: 1 / -1; grid-row: 4; display: grid; grid-template-columns: minmax(0, 1fr) 226mm;
     column-gap: 24mm; align-items: end; }
   .memo__line { margin-top: 3mm; border-bottom: var(--hair-w) solid var(--hair); padding-bottom: 2mm;
     font-size: 25pt; line-height: 1.5; color: var(--body); white-space: nowrap; }
@@ -369,7 +369,8 @@ const CSS = `
   .stat b { display: block; margin-top: 1mm; font-size: 50pt; font-weight: 700; line-height: 1.05; color: var(--deep);
     font-variant-numeric: lining-nums tabular-nums; }
   .stat b small { font-size: 30pt; }
-  .sig__rule { height: 24mm; border-bottom: var(--hair-w) solid var(--deep); margin-bottom: 4mm; }
+  .sig__rule { position: relative; height: 24mm; border-bottom: var(--hair-w) solid var(--deep); margin-bottom: 4mm; }
+  .sig__img { position: absolute; left: 50%; bottom: -1.5mm; height: 42mm; transform: translateX(-50%); }
   .sig .cap { font-size: 13pt; letter-spacing: .16em; }
   .sig .ar { font-size: 19pt; }
 
