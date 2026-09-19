@@ -3,6 +3,7 @@ import { isRecipientPreferenceSuppression, isTransactionalEmailType } from "@/li
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage, isNonDeliverableEmail } from "@/lib/email/email-safety";
+import { resolveReplyToAddress } from "@/lib/email/receivable-address";
 import {
   resolveEmailProviders,
   sendPreparedEmailWithFailover,
@@ -299,7 +300,8 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   let cc = testingRecipients ? undefined : input.cc && input.cc.length > 0 ? removeSuppressed(removeNonDeliverable(input.cc), suppressed) : undefined;
   let bcc = testingRecipients ? undefined : input.bcc && input.bcc.length > 0 ? removeSuppressed(removeNonDeliverable(input.bcc), suppressed) : undefined;
 
-  const resolvedReplyTo = input.replyTo || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
+  // Never the sending subdomain: it has no mailboxes, so a reply to it bounces (receivable-address.ts).
+  const resolvedReplyTo = resolveReplyToAddress(input.replyTo);
 
   let finalTo = to;
 
