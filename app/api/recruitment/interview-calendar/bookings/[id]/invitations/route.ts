@@ -43,7 +43,7 @@ export async function POST(request: Request, { params }: Context) {
     const body = await readJsonObject(request);
     const input = { kind: body.kind, recipient: body.recipient };
     if (body.channel === "email") {
-      const result = await emailInterviewInvitation(caller, id, input, request.url);
+      const result = await emailInterviewInvitation(caller, id, input);
       return NextResponse.json({ success: result.status === "sent", ...result });
     }
     if (body.channel === "whatsapp") {
