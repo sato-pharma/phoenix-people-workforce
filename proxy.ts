@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
 import { phoenixSessionCookieName } from "@/lib/auth/session-token";
+import { CANDIDATE_LINK_PARAM, PORTAL_CANDIDATES_PATH } from "@/lib/recruitment/candidate-page-link";
+import { resolvePortalCandidatesRedirectPath } from "@/lib/recruitment/portal-candidates-redirect";
 import {
   isNativeClientMutationRequest,
   isSameOriginMutationRequest,
@@ -108,6 +110,44 @@ function rootRedirectResponse(request: NextRequest) {
     const response = NextResponse.redirect(url, 307);
     // The destination depends on the session cookie, so this response is per-user. Never let an
     // edge or intermediary hold it: a cached "/" -> /admin would be handed to signed-out visitors.
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    return response;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Answer the portal's "My Candidates" link with a real HTTP redirect when its viewer is the Super
+ * Admin, who lives in the admin shell.
+ *
+ * The page does the same thing, but `app/employee-portals/loading.tsx` makes the page's
+ * `redirect()` arrive after the portal's loading shell has been painted (owner, 2026-09-19: "it
+ * bounces me to the employee portal"). Only this file runs ahead of that shell — see
+ * src/lib/recruitment/portal-candidates-redirect.ts. It is called from `proxy()` directly and NOT
+ * added to `isSecurityProxyPath`, which would widen the CSRF rule to a page.
+ *
+ * Fails OPEN like `rootRedirectResponse`: anything unexpected falls through to the page, which
+ * still redirects, only slower.
+ */
+function portalCandidatesRedirectResponse(request: NextRequest) {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return null;
+  if (request.nextUrl.pathname !== PORTAL_CANDIDATES_PATH) return null;
+
+  try {
+    const destination = resolvePortalCandidatesRedirectPath(
+      request.cookies.get(phoenixSessionCookieName)?.value,
+      request.nextUrl.searchParams.getAll(CANDIDATE_LINK_PARAM),
+    );
+    if (!destination) return null;
+
+    const url = request.nextUrl.clone();
+    url.pathname = destination;
+    url.search = "";
+
+    const response = NextResponse.redirect(url, 307);
+    // Per-user, like the root redirect: a cached answer would be handed to somebody else.
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
     return response;
   } catch {
@@ -246,6 +286,9 @@ export function proxy(request: NextRequest) {
 
   const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;
   if (intervention) return intervention;
+
+  const portalRedirect = portalCandidatesRedirectResponse(request);
+  if (portalRedirect) return portalRedirect;
 
   if (isHrRewritablePath(pathname)) {
     const url = request.nextUrl.clone();

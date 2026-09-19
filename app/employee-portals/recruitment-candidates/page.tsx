@@ -45,6 +45,10 @@ export default async function EmployeePortalRecruitmentCandidatesPage({
     // the Super Admin receives as a copy. He used to be sent to /overview, the command center, which
     // is not where a comment on a candidate lives (owner, 2026-09-19). Send an admin-shell viewer to
     // the admin page for the same thing instead: the candidate's own page when the link names one.
+    //
+    // The Super Admin never reaches this line: proxy.ts answers him with a real 307 first, because a
+    // redirect from here arrives after app/employee-portals/loading.tsx has painted the portal and
+    // he watched it bounce. This stays the fallback for every other admin-shell role.
     const params = await searchParams;
     const adminTwin = adminTwinOfPortalCandidatesHref({
       canOpenPersonalInbox: canOpenPersonalCandidateInbox(access),
