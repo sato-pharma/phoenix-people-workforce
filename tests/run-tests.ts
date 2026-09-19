@@ -1629,6 +1629,7 @@ import { runWeeklyTerritoryGateTests } from "./weekly-territory-gate.test.ts";
 import { runWeeklyUnitsOneProductTests } from "./weekly-units-one-product.test.ts";
 import { runWeeklyAdminUnitsOneProductTests } from "./weekly-admin-units-one-product.test.ts";
 import { runWeeklyUnitsForPickerTests } from "./weekly-units-for-picker.test.ts";
+import { runWeeklyUnitsUnderOneTests } from "./weekly-units-under-one.test.ts";
 import { runWeeklyUnitsAcrossProductsFollowupsTests } from "./weekly-units-across-products-followups.test.ts";
 import { runWeeklyUploadOneProductAtATimeTests } from "./weekly-upload-one-product-at-a-time.test.ts";
 import { runWeeklyThisWeekPerProductTests } from "./weekly-this-week-per-product.test.ts";
@@ -5456,6 +5457,10 @@ await runTest(
 await runTest(
   "weekly Units for picker (a sheet of several products shows ONE picked product's units everywhere: the helpers never add two products or read a sum for a place the product never reached, the per-group units are keyed exactly like the group rows on Weekly Stock and Branch Detail, the default is the top product by value and a stale pick falls back, and the request, the server and every group table carry the same product)",
   runWeeklyUnitsForPickerTests,
+);
+await runTest(
+  "weekly rep and field-force units (a share of a product under one unit reads \"<1\" instead of a dash or a 0 beside its money: the rule lives in unit-totals.ts, each screen's own week-cell and total wrappers print it, and every unit figure either table draws goes through them)",
+  runWeeklyUnitsUnderOneTests,
 );
 await runTest(
   "weekly units of different products are never added, follow-ups (Summarized Report: Month vs Target, the MTD/YTD and Low Sales totals dashed for several products, trends and rankings by value; stock with no sales judged product by product on the dashboard and the NSM/DSM export; the Upload screen)",

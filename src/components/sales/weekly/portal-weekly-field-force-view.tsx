@@ -49,6 +49,7 @@ import type {
   FieldForceRep,
   PortalWeeklyFieldForce,
 } from "@/lib/sales/weekly/portal-weekly-field-force";
+import { WEEKLY_UNITS_UNDER_ONE, weeklyUnitsUnderOne } from "@/lib/sales/weekly/unit-totals";
 
 // ── formatting (kept identical to the sibling tab so one screen speaks one language) ──────────
 function formatEgp(value: number): string {
@@ -65,6 +66,16 @@ function formatNumber(value: number): string {
 }
 function formatPct(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+/** A unit figure in a week cell: a share under one unit reads "<1", never the dash of an empty week. */
+function unitsCell(units: number): string {
+  if (weeklyUnitsUnderOne(units)) return WEEKLY_UNITS_UNDER_ONE;
+  return units > 0 ? formatNumber(units) : "—";
+}
+/** A product's unit total: a share under one unit reads "<1", never a "0" beside the money it earned. */
+function unitsTotal(units: number): string {
+  return weeklyUnitsUnderOne(units) ? WEEKLY_UNITS_UNDER_ONE : formatNumber(units);
 }
 
 type SortKey = "value" | "name" | "area";
@@ -644,7 +655,7 @@ function ProductGrid({
                   return (
                     <td key={week} className="px-1.5 py-1.5 text-right text-xs">
                       <WeekFigure
-                        text={units > 0 ? formatNumber(units) : "—"}
+                        text={unitsCell(units)}
                         rank={rankWeek(units, peakOf(weeks, product.unitsByWeek))}
                         gap={gapWeeks.has(week)}
                         direction={weekDirection(units, previous, gapWeeks.has(week))}
@@ -653,7 +664,7 @@ function ProductGrid({
                   );
                 })}
                 <td className="px-2 py-1.5 text-right text-xs font-black tabular-nums text-slate-900">
-                  {formatNumber(product.units)}
+                  {unitsTotal(product.units)}
                 </td>
                 <td className="px-2 py-1.5 text-right text-xs font-bold tabular-nums text-slate-500">
                   {formatEgp(product.value)}
@@ -675,7 +686,7 @@ function ProductGrid({
                   </div>
                   <div className="text-right">
                     <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">
-                      {`${formatNumber(product.units)} units`}
+                      {`${unitsTotal(product.units)} units`}
                     </p>
                     <p className="whitespace-nowrap text-phx-2xs font-bold tabular-nums text-slate-400">
                       {formatEgp(product.value)}
@@ -690,7 +701,7 @@ function ProductGrid({
                       <WeekChip
                         key={week}
                         week={week}
-                        text={units > 0 ? formatNumber(units) : "—"}
+                        text={unitsCell(units)}
                         rank={rankWeek(units, peak)}
                         gap={gapWeeks.has(week)}
                         direction={weekDirection(units, previous, gapWeeks.has(week))}
