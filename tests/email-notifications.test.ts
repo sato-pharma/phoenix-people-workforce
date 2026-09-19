@@ -95,6 +95,11 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
+    // An interview invitation goes to a candidate (no Phoenix account, no notification preference) or
+    // to the interviewer the person picked by hand, and is sent only on that person's own press of
+    // "Send" in the Interview Calendar — a manual human send, audited through
+    // recordManualEmailSendAudit, not a notification for the dispatcher to hold or template.
+    "src/lib/recruitment/interview-invitations.ts",
     // The Sato Email Composer, added 2026-09-12. There is no fixed wording to move into the
     // admin email-template catalogue: the body is written by the sender at send time, either
     // free-typed or from a Sato template the two seats edit inside the module itself and which

@@ -1146,6 +1146,8 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET", "PATCH", "DELETE"], pattern: "/api/recruitment/interview-calendar/bookings/*", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/comments", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/zoom", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: ["GET", "POST"], pattern: "/api/recruitment/interview-calendar/bookings/*/invitations", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/zoom-due", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: readOnly, pattern: "/api/recruitment/interview-calendar/candidates/*/files/*", permission: null, guard: "domain-helper" }),
   // Whether an interviewee has a WhatsApp application to print — a lookup that builds nothing, answering

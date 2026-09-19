@@ -38,6 +38,7 @@ import {
   RefreshCw,
   Share2,
   Trash2,
+  UserRound,
   Users,
   Video,
 } from "lucide-react";
@@ -90,6 +91,8 @@ import { MonthPicker, cursorFor, type MonthCursor } from "./month-picker";
 import { InterviewShareDialog } from "./interview-share-dialog";
 import { ScheduleInterviewDialog } from "./schedule-interview-dialog";
 import { SessionDialog } from "./session-dialog";
+import { InvitationPanel } from "./invitation-panel";
+import { ZoomAutoOpen } from "./zoom-auto-open";
 import { ZoomMeetingPanels, type MeetingTarget } from "./zoom-panels";
 
 type CalendarFile = { id: string; kind: string; fileName: string; mimeType: string | null; createdAt: string };
@@ -454,6 +457,7 @@ export function InterviewCalendarView({
   return (
     <div className="flex flex-col gap-4">
       {link ? <LinkBanner link={link} role={role} /> : null}
+      {link ? null : <ZoomAutoOpen api={api} />}
 
       {/* ── The week bar ───────────────────────────────────────────────────────────────────── */}
       <section className="border border-slate-200 bg-white">
@@ -1206,6 +1210,16 @@ function InterviewPanel({
             <span className="mt-0.5 block text-[12px] text-slate-500">The meeting belongs to the session; make it again from there.</span>
           ) : null}
         </dd>
+        {booking.interviewerName ? (
+          <>
+            <dt className="pt-0.5 text-slate-400">
+              <UserRound aria-label="Interviewer" className="h-4 w-4" />
+            </dt>
+            <dd>
+              Interviewer <span className="font-semibold">{booking.interviewerName}</span>
+            </dd>
+          </>
+        ) : null}
         {booking.externalPhone ? (
           <>
             <dt className="pt-0.5 text-slate-400">
@@ -1274,6 +1288,12 @@ function InterviewPanel({
       {booking.platform === "zoom" ? (
         <section aria-label="Zoom" className="border-t border-slate-200 pt-3">
           <ZoomMeetingPanels api={api} canBook={canBook} hasMeeting={booking.hasMeeting} pollTarget={pollTarget} target={target} zoomConnected={zoomConnected} />
+        </section>
+      ) : null}
+
+      {canBook ? (
+        <section aria-label="Invitation" className="border-t border-slate-200 pt-3">
+          <InvitationPanel api={api} bookingId={booking.id} key={`${booking.id}:${booking.updatedAt}`} />
         </section>
       ) : null}
 

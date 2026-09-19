@@ -237,6 +237,9 @@ export type InterviewBooking = {
   ended: boolean;
   /** The job the CV applied for, when it names one. */
   candidateJobTitle: string | null;
+  /** The employee conducting it (HR id and name), when one was chosen. */
+  interviewerHrId: string | null;
+  interviewerName: string | null;
   /** The instant, as stored. */
   startsAt: string;
   /** Cairo calendar day, YYYY-MM-DD. */
@@ -267,6 +270,14 @@ export type InterviewCalendarPerson = {
   hrId: string;
   name: string;
   jobTitle: string | null;
+};
+
+export type DueZoomInterview = {
+  bookingId: string;
+  candidateName: string;
+  dateKey: string;
+  startMinutes: number;
+  joinUrl: string;
 };
 
 export type InterviewCalendarMe = {
