@@ -46,6 +46,16 @@ export type HrPaperKind =
    * a bank, so it carries the company's signature and stamp alone.
    */
   | "certificate"
+  /**
+   * The Arabic counterpart of `salary-letter-en.ts` — the letter a bank or an embassy reads, stating
+   * the BASIC salary and nothing else.
+   *
+   * NOT a `certificate`: `renderHrPaperHtml`'s banner for that kind warns about the certificate's own
+   * "no salary, no reason for leaving" omissions, which would be actively wrong printed above a
+   * document whose entire purpose is stating a salary. It also keeps this paper's archived versions
+   * in a pool of its own rather than the certificate's.
+   */
+  | "salaryLetter"
   /** A data sheet for the service file: labelled grids and a repeating table. */
   | "dataSheet";
 
@@ -105,6 +115,15 @@ export type HrPaperToken =
   | "SERVICE_END"
   | "SERVICE_STATUS"
   | "SERVICE_DURATION"
+  // The basic salary, on the HR letter — the payroll policy's own figure, never the base or net.
+  //
+  // Three tokens for the same reason SERVICE_END/STATUS/DURATION are three: `BASIC_SALARY_LEAD` is
+  // the sentence's own verb, present tense for somebody still on the payroll and past tense for a
+  // leaver, chosen once per render alongside `SERVICE_STATUS`; `BASIC_SALARY` and `BASIC_SALARY_WORDS`
+  // are the figure and its تفقيط, each independently blankable when there is no salary to state.
+  | "BASIC_SALARY_LEAD"
+  | "BASIC_SALARY"
+  | "BASIC_SALARY_WORDS"
   // The absence being warned about
   | "ABSENCE_FROM"
   | "ABSENCE_TO"

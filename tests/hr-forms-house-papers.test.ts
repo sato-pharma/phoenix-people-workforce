@@ -410,11 +410,12 @@ function testEveryPaperIsRegisteredAndCurrent(): void {
   // rather than an omission.
   // SIXTEEN since 2026-09-13: the letters pack added nine of the owner's own papers.
   // EIGHTEEN since 2026-09-17: both absence papers gained a version 2, and version 1 of each stays.
+  // NINETEEN since 2026-09-20: the Arabic HR letter (salaryLetterAr) joined beside the English one.
   assert.equal(
     HR_PAPERS.length,
-    18,
-    "six papers were supplied, the certificate makes seven, the letters pack adds nine, and the two " +
-      "absence papers each keep their archived version 1 beside version 2",
+    19,
+    "six papers were supplied, the certificate makes seven, the letters pack adds nine, the two " +
+      "absence papers each keep their archived version 1 beside version 2, and the Arabic HR letter is the nineteenth",
   );
 
   for (const document of HOUSE_PAPER_DOCUMENTS) {
@@ -516,6 +517,9 @@ function testEveryPaperHasUniqueIdAndKnownTokens(): void {
     "SERVICE_END",
     "SERVICE_STATUS",
     "SERVICE_DURATION",
+    "BASIC_SALARY_LEAD",
+    "BASIC_SALARY",
+    "BASIC_SALARY_WORDS",
   ]);
   for (const paper of HR_PAPERS) {
     for (const token of hrPaperTemplateTokens(paper)) {
