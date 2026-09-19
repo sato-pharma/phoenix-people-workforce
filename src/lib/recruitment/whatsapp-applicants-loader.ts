@@ -491,3 +491,35 @@ async function loadRecord(candidateId: string): Promise<Candidate | null> {
   // `select("*")` types as an untyped row, the shape `mapCandidate` takes; this file's own CandidateDbRow is the narrower list read.
   return data ? mapCandidate(data as Record<string, unknown>) : null;
 }
+
+/**
+ * The number this candidate applied on over WhatsApp — the chat they themselves answered the bot's
+ * questions in — or null when they did not apply that way or the number cannot be trusted as theirs.
+ *
+ * Only the conversation the bot wrote its answers onto (rule 1 above) is read: it is the surest link
+ * to the person. And a number that has sent CVs for SEVERAL different people is a forwarder's, not an
+ * applicant's (two forwarders carry most WhatsApp CVs), so it is refused rather than guessed — the
+ * interview invitation would otherwise open a chat with the forwarder. The caller then falls back to
+ * the candidate's own stored numbers. Digits only, no plus, as a conversation's `wa_id` is kept.
+ */
+export async function findWhatsAppApplicantNumber(candidateId: string): Promise<string | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from(SESSIONS_TABLE)
+    .select("wa_id,started_at")
+    .eq("applied_candidate_id", candidateId)
+    .not("job_title_family", "is", null)
+    .order("started_at", { ascending: false })
+    .limit(5);
+  if (error) throw error;
+  for (const row of (data ?? []) as { wa_id: string | null }[]) {
+    const waId = textOrNull(row.wa_id);
+    if (!waId || !/^\d{8,15}$/.test(waId)) continue;
+    const senders = await supabase.from(INTAKE_TABLE).select("candidate_id").eq("sender_identifier", `+${waId}`).not("candidate_id", "is", null).limit(50);
+    if (senders.error) throw senders.error;
+    const people = new Set((senders.data ?? []).map((sender) => String((sender as { candidate_id: string }).candidate_id)));
+    people.delete(candidateId);
+    if (people.size === 0) return waId;
+  }
+  return null;
+}

@@ -52,6 +52,7 @@ import {
   resolveCalendarRole,
   roleMeets,
   sessionSlotStarts,
+  type DueZoomInterview,
   type InterviewBooking,
   type InterviewBookingComment,
   type InterviewCalendarAccessLevel,
@@ -322,6 +323,7 @@ type BookingRow = {
   external_cv_file_id: string | null;
   external_cv_file_name: string | null;
   external_cv_mime_type: string | null;
+  interviewer_hr_id: string | null;
   created_by_hr_id: string | null;
   updated_by_hr_id: string | null;
   created_at: string;
@@ -350,7 +352,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -438,7 +440,7 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
     loadComments(rows.map((row) => row.id)),
     loadSessionsById(rows.map((row) => row.session_id ?? "")),
   ]);
-  const people = await loadPeople([...rows.map((row) => row.created_by_hr_id), ...comments.map((comment) => comment.author_hr_id)]);
+  const people = await loadPeople([...rows.map((row) => row.created_by_hr_id), ...rows.map((row) => row.interviewer_hr_id), ...comments.map((comment) => comment.author_hr_id)]);
   const viewerKey = canonicalHrIdKey(caller.access.hrId);
 
   const commentsByBooking = new Map<string, InterviewBookingComment[]>();
@@ -483,6 +485,8 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       externalPhone: reveal ? row.external_phone : null,
       hasMeeting: platform === "zoom" && Boolean(meeting.zoom_meeting_id),
       id: row.id,
+      interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? null,
+      interviewerName: personName(people, row.interviewer_hr_id),
       notes: row.notes,
       platform,
       sessionId: session ? session.id : null,
@@ -599,6 +603,32 @@ async function sessionBookingRows(sessionId: string): Promise<BookingRow[]> {
     .order("starts_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as BookingRow[];
+}
+
+/**
+ * The Zoom interviews whose time has come for THIS person: they start within the next half minute or
+ * began in the last 20 and have not ended. "Theirs" means they are the chosen interviewer, or the
+ * calendar's owner with no interviewer chosen — so someone the calendar is merely shared with is
+ * never sent to a meeting that is not theirs. One entry per meeting link (a session's slots share one).
+ * The screen polls this and opens the link itself.
+ */
+export async function listDueZoomInterviews(caller: InterviewCalendarCaller, now: Date = new Date()): Promise<DueZoomInterview[]> {
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  if (!viewer || !isSignedInCaller(caller.access) || !calendarRoleFor(caller, "any")) return [];
+  const rows = await bookingsBetween(new Date(now.getTime() - 20 * 60_000), new Date(now.getTime() + 30_000));
+  const mine = rows.filter((row) => {
+    const chosen = canonicalHrIdKey(row.interviewer_hr_id);
+    return chosen ? chosen === viewer : caller.own === "owner";
+  });
+  if (mine.length === 0) return [];
+  const due: DueZoomInterview[] = [];
+  const seen = new Set<string>();
+  for (const booking of await hydrate(mine, caller, now)) {
+    if (booking.platform !== "zoom" || !booking.zoomJoinUrl || booking.ended || seen.has(booking.zoomJoinUrl)) continue;
+    seen.add(booking.zoomJoinUrl);
+    due.push({ bookingId: booking.id, candidateName: booking.candidateName, dateKey: booking.dateKey, joinUrl: booking.zoomJoinUrl, startMinutes: booking.startMinutes });
+  }
+  return due;
 }
 
 export async function getInterviewBooking(caller: InterviewCalendarCaller, bookingId: string): Promise<InterviewBooking> {
@@ -870,6 +900,8 @@ export type InterviewBookingRequest = Parameters<typeof validateInterviewBooking
   sessionId?: unknown;
   /** For someone from outside: also make them a Recruitment candidate (the default), or not. */
   addToRecruitment?: unknown;
+  /** The employee who conducts the interview — optional. */
+  interviewerHrId?: unknown;
 };
 
 export type InterviewBookingResult = { booking: InterviewBooking; notice: string | null };
@@ -886,6 +918,20 @@ function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly B
   if (taken.some((row) => row.id !== ignoreBookingId && new Date(row.starts_at).getTime() === instant)) {
     throw new Error("That slot is already taken — choose another.");
   }
+}
+
+/**
+ * The interviewer a request names, checked against Employee Master: undefined when the request says
+ * nothing (leave it as it is), null when it clears the interviewer, otherwise the employee's HR id.
+ */
+async function resolveInterviewer(value: unknown): Promise<string | null | undefined> {
+  if (value === undefined) return undefined;
+  if (value === null || (typeof value === "string" && value.trim() === "")) return null;
+  if (typeof value !== "string") throw new Error("Choose the interviewer from the list.");
+  const people = await loadPeople([value.trim()]);
+  const person = people.get(canonicalHrIdKey(value) ?? "");
+  if (!person) throw new Error("That interviewer is not in Employee Master.");
+  return person.hrId;
 }
 
 export async function createInterviewBooking(
@@ -920,6 +966,7 @@ export async function createInterviewBooking(
     input = validateInterviewBookingInput(raw);
     requireCalendarAccess(caller, "book", weekStartFor(input.dateKey));
   }
+  const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
   const addToRecruitment = raw.addToRecruitment !== false && raw.addToRecruitment !== "false";
   if (input.external && addToRecruitment) await assertPermission(caller.access, "candidates", "create");
@@ -980,6 +1027,7 @@ export async function createInterviewBooking(
       candidate_id: candidateId,
       created_by_hr_id: actor,
       duration_minutes: input.durationMinutes,
+      interviewer_hr_id: interviewerHrId ?? null,
       notes: input.notes,
       platform: input.platform,
       session_id: session?.id ?? null,
@@ -1003,7 +1051,7 @@ export async function createInterviewBooking(
 export async function updateInterviewBooking(
   caller: InterviewCalendarCaller,
   bookingId: string,
-  patch: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown; platform?: unknown; notes?: unknown; sessionId?: unknown },
+  patch: { dateKey?: unknown; startMinutes?: unknown; durationMinutes?: unknown; platform?: unknown; notes?: unknown; sessionId?: unknown; interviewerHrId?: unknown },
   zoomConfig: ZoomConfig | null = readZoomConfig(),
 ): Promise<InterviewBooking> {
   const row = await loadBookingRow(bookingId);
@@ -1011,8 +1059,10 @@ export async function updateInterviewBooking(
   const at = new Date(row.starts_at);
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
+  const interviewerHrId = await resolveInterviewer(patch.interviewerHrId);
   const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
+  const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
   let update: Record<string, unknown>;
 
   const targetSessionId = typeof patch.sessionId === "string" && patch.sessionId.trim() ? patch.sessionId.trim() : null;
@@ -1092,14 +1142,14 @@ export async function updateInterviewBooking(
       ...zoom,
     };
     if (fresh) {
-      const saved = await saveBooking(row.id, { ...update, updated_by_hr_id: actor });
+      const saved = await saveBooking(row.id, { ...update, ...interviewerColumn, updated_by_hr_id: actor });
       await pushWaitingPolls(zoomConfig, { bookingId: row.id }, zoom.zoom_meeting_id);
       const [booking] = await hydrate([saved], caller);
       return booking;
     }
   }
 
-  const [booking] = await hydrate([await saveBooking(row.id, { ...update, updated_by_hr_id: actor })], caller);
+  const [booking] = await hydrate([await saveBooking(row.id, { ...update, ...interviewerColumn, updated_by_hr_id: actor })], caller);
   return booking;
 }
 
@@ -1419,9 +1469,17 @@ function filterText(query: unknown): string {
   return (typeof query === "string" ? query : "").replace(/[,()*%"\\:]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-/** People the owner can share with: current employees, by name. */
-export async function searchInterviewCalendarPeople(caller: InterviewCalendarCaller, query: unknown): Promise<InterviewCalendarPerson[]> {
-  requireCalendarAccess(caller, "share", null);
+/**
+ * Current employees, by name or job title. For sharing the calendar (the owner only), or — with
+ * `purpose: "interviewer"` — for choosing who conducts an interview (anyone who can book).
+ */
+export async function searchInterviewCalendarPeople(
+  caller: InterviewCalendarCaller,
+  query: unknown,
+  purpose: "share" | "interviewer" = "share",
+): Promise<InterviewCalendarPerson[]> {
+  if (purpose === "interviewer") requireCalendarAccess(caller, "book", "any");
+  else requireCalendarAccess(caller, "share", null);
   const text = filterText(query);
   if (text.length < 2) return [];
   const { data, error } = await recruitmentDb()

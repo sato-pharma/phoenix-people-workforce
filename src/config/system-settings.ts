@@ -186,6 +186,19 @@ export const systemDocuments = {
  * wrong digits, which is the failure that matters when the reader is an insurance office clerk.
  * Fill them once and every future Form 1 carries them.
  */
+/**
+ * Where a candidate is invited, and where to read about the company — the words of an interview
+ * invitation. Owner, 2026-09-19: the map pin, the address, the LinkedIn page and the website go in
+ * every in-office invitation, and the candidate can be sent them on their own.
+ */
+export const systemInterviewVenue = {
+  addressAr: "عقار رقم ٨ نموذج ن مربع ١٢٥٨ الدور التانى - ش عبدالحميد بدوى بجوار حزب مستقبل وطن - شيراتون",
+  linkedinUrl: "https://linkedin.com/company/sato-pharma-careers",
+  mapUrl: "https://maps.app.goo.gl/35pPjSAQt3HsG3eE7",
+  websiteDisplay: "www.satopharma.com",
+  websiteUrl: "https://www.satopharma.com",
+} as const;
+
 export const systemLegalEntity = {
   legalNameAr: "شركة ساتو فارما",
   legalNameEn: COMPANY_LEGAL_NAME_EN,
