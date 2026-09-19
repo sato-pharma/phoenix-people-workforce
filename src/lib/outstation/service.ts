@@ -52,6 +52,17 @@ import {
   type OutstationCampaignRuleOutcome,
 } from "@/lib/outstation/decision";
 import { overnightStayEvidenceHoldReason } from "@/lib/outstation/overnight-evidence";
+import {
+  isNonTravelExpenseType,
+  NON_TRAVEL_APPROVAL_REASON,
+  NON_TRAVEL_ELIGIBILITY_REASON,
+  NON_TRAVEL_LOCATION_SOURCE,
+  NON_TRAVEL_NO_INVOICE_HOLD_REASON,
+  nonTravelAmountRefusal,
+  nonTravelDestinationLabel,
+  nonTravelTripLabel,
+  priceNonTravelExpense,
+} from "@/lib/outstation/non-travel-expense";
 import { readAccuracyInput } from "@/lib/geo/coordinate-input";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -1222,10 +1233,123 @@ export async function captureOutstationLocation(
   return validated.result;
 }
 
+/**
+ * A Meeting or Other expense, priced on its two typed amounts alone — see non-travel-expense.ts.
+ *
+ * No position is read and no route is asked for: `input.captured*` and `input.transportationType`
+ * are ignored on purpose, so a client that still posts a stale destination, kilometre reading or
+ * ticket amount cannot put a distance, fuel, ticket or allowance line on the claim. The employee's
+ * residence does not have to exist either, which the trip flow refuses to run without.
+ *
+ * The `captured_latitude` / `captured_longitude` columns are NOT NULL, so they carry the registered
+ * residence when there is one (0 only when there is none) under the `no_travel_expense` source —
+ * the same device the medical-rep manual path uses. Nothing computes from them.
+ */
+async function calculateNonTravelExpense(
+  access: AccessContext,
+  input: OutstationCalculationInput,
+): Promise<OutstationCalculationResult> {
+  const expenseType = input.expenseType;
+  if (!isNonTravelExpenseType(expenseType)) {
+    throw new Error("A non-travel calculation needs a Meeting or Other expense type.");
+  }
+
+  const amountRefusal = nonTravelAmountRefusal({
+    meetingAmount: input.meetingAmount,
+    otherAmount: input.otherAmount,
+  });
+  if (amountRefusal) throw new Error(amountRefusal);
+
+  const tripStartDate = isoString(input.tripStartDate);
+  const tripEndDate = isoString(input.tripEndDate);
+  if (!input.tripStartDate || !input.tripEndDate) {
+    throw new Error("Trip start and end dates are required.");
+  }
+  if (!tripStartDate || !tripEndDate) {
+    throw new Error("Trip dates are invalid.");
+  }
+
+  const identity = await getEmployeeIdentity(access);
+  const policy = await getActivePolicyForRole(identity.employeeRole);
+  const priced = priceNonTravelExpense({
+    meetingAmount: input.meetingAmount,
+    otherAmount: input.otherAmount,
+  });
+  const allowance = zeroAllowanceBreakdown();
+  const now = new Date().toISOString();
+  const inputClaimedTotalAmount = numberValue(input.claimedTotalAmount);
+
+  return {
+    allowanceAmount: allowance.allowanceAmount,
+    allowanceBreakdown: allowance.breakdown,
+    approvalReason: NON_TRAVEL_APPROVAL_REASON,
+    approvalRecommendation: "manager_review",
+    attachmentCount: Math.max(0, Math.trunc(numberValue(input.attachmentCount))),
+    calculationStatus: "calculated",
+    capturedAccuracyMeters: null,
+    capturedAt: now,
+    capturedLatitude: identity.employee.residenceLatitude ?? 0,
+    capturedLocationSource: NON_TRAVEL_LOCATION_SOURCE,
+    capturedLongitude: identity.employee.residenceLongitude ?? 0,
+    carEvidenceImagePath: null,
+    claimedTotalAmount: inputClaimedTotalAmount > 0 ? inputClaimedTotalAmount : priced.totalAmount,
+    distanceFromResidenceKm: null,
+    durationMinutes: null,
+    eligibilityReason: NON_TRAVEL_ELIGIBILITY_REASON,
+    eligibilityStatus: "eligible",
+    employeeArea: identity.employeeArea,
+    employeeHrId: identity.employeeHrId,
+    employeeLine: identity.employeeLine,
+    employeeName: identity.employeeName,
+    employeeRole: identity.employeeRole,
+    expectedTotalAmount: priced.totalAmount,
+    expenseType,
+    fuelAmount: priced.fuelAmount,
+    governorateReviewRequired: false,
+    kilometerReading: null,
+    medicalTripHrId: cleanText(input.medicalTripHrId) ?? null,
+    medicalTripName: cleanText(input.medicalTripName) ?? null,
+    minimumRequiredDistanceKm: policy.minimumDistanceKm,
+    notes: cleanText(input.notes) ?? null,
+    offlineCaptured: false,
+    overnightDays: allowance.overnightDays,
+    reportAmWorkload: positiveMoney(input.amWorkload),
+    reportMeetingAmount: priced.meetingAmount,
+    reportOtherAmount: priced.otherAmount,
+    reportPmWorkload: positiveMoney(input.pmWorkload),
+    reportTravelCost: priced.travelCost,
+    reportTripType: nonTravelTripLabel(expenseType),
+    residenceLatitude: identity.employee.residenceLatitude,
+    residenceLongitude: identity.employee.residenceLongitude,
+    routeAlternatives: [],
+    routeError: null,
+    routePolyline: null,
+    routeProvider: "google_maps",
+    sameDayTrip: allowance.sameDayTrip,
+    selectedRouteIndex: null,
+    selectedRouteReason: null,
+    submittedAt: now,
+    territoryValidationReason: "Meeting or Other expense; territory check not applicable.",
+    territoryValidationStatus: "not_available",
+    ticketAmount: priced.ticketAmount,
+    toArea: null,
+    toCity: null,
+    toLabel: nonTravelDestinationLabel(expenseType),
+    // The column is NOT NULL with a car/train/bus/other check; "other" is the mode-less value.
+    transportationType: "other",
+    tripEndDate,
+    tripStartDate,
+  };
+}
+
 export async function calculateOutstationExpense(
   access: AccessContext,
   input: OutstationCalculationInput,
 ) {
+  if (isNonTravelExpenseType(input.expenseType)) {
+    return calculateNonTravelExpense(access, input);
+  }
+
   const validated = await validateCapturedLocation({
     access,
     capturedAccuracyMeters: input.capturedAccuracyMeters,
@@ -1698,11 +1822,17 @@ export async function submitOutstationRequest(
   options: { ticketAttachments?: OutstationTicketAttachmentUploadInput[] } = {},
 ) {
   const calculation = await calculateOutstationExpense(access, input);
-  const evidenceValidation = validateLiveArrivalEvidence({
-    carEvidenceMetadata: input.carEvidenceMetadata,
-    employeeRole: calculation.employeeRole,
-    transportationType: input.transportationType,
-  });
+  // Meeting and Other are not trips (non-travel-expense.ts): no arrival photo, no GPS fix, no
+  // overnight evidence, no ticket rule. Their evidence is an uploaded invoice or picture, held
+  // for review when missing — never refused.
+  const nonTravel = isNonTravelExpenseType(calculation.expenseType);
+  const evidenceValidation = nonTravel
+    ? { isValid: true as const, message: "" }
+    : validateLiveArrivalEvidence({
+        carEvidenceMetadata: input.carEvidenceMetadata,
+        employeeRole: calculation.employeeRole,
+        transportationType: input.transportationType,
+      });
   // Whether this submitter owes a photo at all. Read from the CALCULATION's role, which is the
   // same value written to `employee_role` below and therefore the same value every later read of
   // this request resolves the waiver from.
@@ -1730,7 +1860,7 @@ export async function submitOutstationRequest(
   // already refuses a train or bus request that carries no arrival photo, so gating the
   // persistence on `car` meant the only photo that could ever satisfy the gate was silently
   // dropped for the very types the gate had just been widened to cover.
-  const storedCarEvidenceMetadata = input.carEvidenceMetadata
+  const storedCarEvidenceMetadata = !nonTravel && input.carEvidenceMetadata
     ? {
         ...input.carEvidenceMetadata,
         employeeHrId: calculation.employeeHrId,
@@ -1742,7 +1872,10 @@ export async function submitOutstationRequest(
   // A blocked draft is recoverable; an approved 0.00 EGP fuel line is not. Condition and message
   // live in fuel-policy.ts so they can be asserted -- see the notes there on why a measured 0
   // must still submit and why train/bus must not be blocked.
-  if (carTripFuelIsUnpriceable(calculation.transportationType, calculation.distanceFromResidenceKm)) {
+  if (
+    !nonTravel &&
+    carTripFuelIsUnpriceable(calculation.transportationType, calculation.distanceFromResidenceKm)
+  ) {
     throw new Error(UNPRICEABLE_CAR_TRIP_MESSAGE);
   }
 
@@ -1753,21 +1886,21 @@ export async function submitOutstationRequest(
   // stored and checked exactly as anyone else's. The pair is deliberately all-or-nothing: an
   // image with no metadata still fails, because a photo with no HR ID, timestamp or GPS on it is
   // not lighter evidence, it is evidence an approver cannot read.
-  if (!input.carEvidenceImageDataUrl && !evidencePhotoWaived) {
+  if (!nonTravel && !input.carEvidenceImageDataUrl && !evidencePhotoWaived) {
     throw new Error(
       calculation.transportationType === "car"
         ? "Car transport requires the live camera evidence image before submitting the request."
         : `A ${calculation.transportationType} trip requires the live arrival photo before submitting the request.`,
     );
   }
-  if (!storedCarEvidenceMetadata && !evidencePhotoWaived) {
+  if (!nonTravel && !storedCarEvidenceMetadata && !evidencePhotoWaived) {
     throw new Error("The live arrival photo metadata is missing.");
   }
-  if (input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
+  if (!nonTravel && input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
     throw new Error("The live arrival photo metadata is missing.");
   }
 
-  if (input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
+  if (!nonTravel && input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
     carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
       imageDataUrl: input.carEvidenceImageDataUrl,
       metadata: storedCarEvidenceMetadata,
@@ -1799,7 +1932,7 @@ export async function submitOutstationRequest(
   const submitPolicy = await getActivePolicyForRole(calculation.employeeRole);
   const ticketEvidenceRejection = outstationTicketEvidenceRejection({
     hasTicketAttachments: ticketAttachmentInputs.length > 0,
-    requiresTicketAttachment: submitPolicy.requiresTicketAttachment,
+    requiresTicketAttachment: nonTravel ? false : submitPolicy.requiresTicketAttachment,
     role: calculation.employeeRole,
     transportationType: calculation.transportationType,
   });
@@ -1818,10 +1951,12 @@ export async function submitOutstationRequest(
   // offline capture synced days later auto-paid exactly like a clean one. Neither
   // rejects — a fuzzy or stale capture is a review signal, not proof of abuse. An accuracy the
   // device never reported is null here, never 0 m, and holds too (owner, 2026-09-18).
-  const gpsAccuracyHoldReason = outstationGpsAccuracyHoldReason({
-    capturedAccuracyMeters: calculation.capturedAccuracyMeters,
-    gpsAccuracyLimitMeters: numberValue(submitPolicy.gpsAccuracyThresholdMeters),
-  });
+  const gpsAccuracyHoldReason = nonTravel
+    ? null
+    : outstationGpsAccuracyHoldReason({
+        capturedAccuracyMeters: calculation.capturedAccuracyMeters,
+        gpsAccuracyLimitMeters: numberValue(submitPolicy.gpsAccuracyThresholdMeters),
+      });
 
   const offlineSyncLimitHours = numberValue(submitPolicy.maxOfflineSyncDelayHours);
   const capturedAtMs = calculation.capturedAt ? Date.parse(calculation.capturedAt) : Number.NaN;
@@ -1837,11 +1972,15 @@ export async function submitOutstationRequest(
       : null;
 
   // Only an overnight stay joins two days (owner, 2026-09-18) — see overnight-evidence.ts.
-  const overnightEvidenceHoldReason = overnightStayEvidenceHoldReason({
-    arrivalCapturedAt: storedCarEvidenceMetadata?.capturedAt ?? null,
-    tripEndDate: calculation.tripEndDate,
-    tripStartDate: calculation.tripStartDate,
-  });
+  const overnightEvidenceHoldReason = nonTravel
+    ? null
+    : overnightStayEvidenceHoldReason({
+        arrivalCapturedAt: storedCarEvidenceMetadata?.capturedAt ?? null,
+        tripEndDate: calculation.tripEndDate,
+        tripStartDate: calculation.tripStartDate,
+      });
+  const noInvoiceHoldReason =
+    nonTravel && ticketAttachmentInputs.length === 0 ? NON_TRAVEL_NO_INVOICE_HOLD_REASON : null;
 
   /**
    * The system FLAGS, it never REJECTS. (Owner rule, 2026-08-09.)
@@ -1877,6 +2016,7 @@ export async function submitOutstationRequest(
     ticketEvidenceRejection ? offlineTicketHoldReason : null,
     gpsAccuracyHoldReason,
     offlineSyncHoldReason,
+    noInvoiceHoldReason,
   ].filter((reason): reason is string => Boolean(reason));
   /**
    * Owner rule (2026-08-28): a National Sales Manager is never held, for any reason.
@@ -1954,10 +2094,14 @@ export async function submitOutstationRequest(
     // but a submitted request already HAS its arrival photo, so inheriting the default records a
     // state the row's own evidence contradicts. The column default exists to make a row that
     // skips this path fail CLOSED; it is not the value a real submission should carry.
-    evidence_gate_status: nextEvidenceGateStatus({
-      hasArrivalPhoto: Boolean(carEvidenceImagePath),
-      hasDeparturePhoto: false,
-    }),
+    // A Meeting or Other claim has no arrival photo to wait for; `grandfathered` is the value
+    // that clears the payroll gate for a row that never carried one.
+    evidence_gate_status: nonTravel
+      ? "grandfathered"
+      : nextEvidenceGateStatus({
+          hasArrivalPhoto: Boolean(carEvidenceImagePath),
+          hasDeparturePhoto: false,
+        }),
     // The RESOLVED figure, never the raw posted one. This is also the OFFLINE entry point —
     // syncOfflineOutstationRequest delegates here — and the offline draft replay posts a
     // hardcoded `claimedTotalAmount: 0`, because a phone with no signal was never able to price
@@ -2011,10 +2155,10 @@ export async function submitOutstationRequest(
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
     ...workloadPayload,
-    meeting_amount: input.meetingAmount ?? 0,
-    other_amount: input.otherAmount ?? 0,
-    go_ticket_amount: input.goTicketAmount ?? 0,
-    return_ticket_amount: input.returnTicketAmount ?? 0,
+    meeting_amount: nonTravel ? calculation.reportMeetingAmount : (input.meetingAmount ?? 0),
+    other_amount: nonTravel ? calculation.reportOtherAmount : (input.otherAmount ?? 0),
+    go_ticket_amount: nonTravel ? 0 : (input.goTicketAmount ?? 0),
+    return_ticket_amount: nonTravel ? 0 : (input.returnTicketAmount ?? 0),
     ticket_amount: calculation.ticketAmount,
     ticket_attachment_metadata: uploadedTicketAttachments,
     ticket_attachment_paths: uploadedTicketAttachments.map((attachment) => attachment.path),
@@ -2137,7 +2281,10 @@ export async function submitOutstationRequest(
   // fails must never fail the submission the employee just made. The shared idempotency key means
   // the daily job will not repeat whatever this raises.
   try {
-    await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
+    // A Meeting or Other claim is not a trip, so there is no departure photo to remind anyone of.
+    if (!nonTravel) {
+      await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
+    }
   } catch (reminderError) {
     logError("Outstation departure-photo reminder on submit failed", {
       error: reminderError,
