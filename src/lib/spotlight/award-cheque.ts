@@ -296,7 +296,7 @@ const CSS = `
   /* The cheque's grid: title | cheque no. and date, payee and position, the words and the figures
      box between two rules, memo and signatures, machine line. */
   .inner { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 226mm;
-    column-gap: 24mm; grid-template-rows: 54mm 64mm 76mm 64mm 1fr; row-gap: 3mm; padding-top: 10mm; }
+    column-gap: 24mm; grid-template-rows: 54mm 64mm 68mm 72mm 1fr; row-gap: 3mm; padding-top: 10mm; }
 
   /* Bilingual caption row: English left, Arabic right, the way a bilingual cheque prints it. The
      house micro label: small, bold, upper case, tracked; the Arabic keeps no letter-spacing. */
@@ -353,7 +353,7 @@ const CSS = `
     column-gap: 24mm; align-items: end; }
   .memo__line { margin-top: 3mm; border-bottom: var(--hair-w) solid var(--hair); padding-bottom: 2mm;
     font-size: 25pt; line-height: 1.5; color: var(--body); white-space: nowrap; }
-  .stats { margin-top: 3mm; display: flex; gap: 6mm; }
+  .stats { margin-top: 3mm; margin-bottom: 8mm; display: flex; gap: 6mm; }
   .stat { flex: 0 0 auto; min-width: 64mm; background: rgba(255, 255, 255, .8); border: var(--rule-w) solid var(--deep); text-align: center; padding: 2mm 8mm 2.5mm; }
   .stat--wide { min-width: 120mm; }
   .stat { display: flex; flex-direction: column; justify-content: center; }
