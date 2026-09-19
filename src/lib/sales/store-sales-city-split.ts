@@ -258,11 +258,14 @@ export const WAREHOUSE_NATIONAL_SPLIT_HOME_FRACTION = 0.5;
  * country, against a privileged home half. Step three drops the word باقي: every area takes the
  * same share and the origin is simply one of them. Asked directly on 2026-09-09 whether the
  * warehouse's own governorate still takes an equal share, he answered that it does. So a 5,600-pack
- * Benha product leaves Qalubeya with the same amount as Aswan, not with half the book.
+ * Benha product leaves Qalubeya with the same amount as every other area in play, not with half the
+ * book. (Not the same as Aswan: Pedia parks Aswan in Others, and step three says "وليس Others", so
+ * Aswan takes nothing at all.)
  *
  * Reading step three as "half stays, half spreads, but wider" is the mistake this note exists to
  * stop: it looks like the natural continuation of step two and it silently keeps ~2,800 packs in a
- * governorate the owner has just said should hold one thirty-seventh of them.
+ * governorate the owner has just said should hold one thirty-seventh of them (one thirty-ninth from
+ * September, when Qena 2 and Luxor join Upper Egypt 2).
  */
 export const WAREHOUSE_NATIONAL_SPLIT_FLAT_QTY = 700;
 
@@ -404,7 +407,8 @@ export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
  * line has no district of its own for it. Those areas now receive NO share of a split.
  *
  * 🔴 OTHERS IS PER LINE AND IS NOT A GEOGRAPHY. On Pedia it holds Down town (CA5), Kafr El-Sheikh 2
- * (D17), Qena 2 (UE8) and the nine OT areas — 13 of 50. On Anti Infective it holds Qalubeya. So the
+ * (D17), Qena 2 (UE8) and the nine OT areas — 13 of 50 in August; Qena 2 and Luxor (OT6) leave it for
+ * Upper Egypt 2 on 2026-09-01 (see UPPER_EGYPT_AREAS). On Anti Infective it holds Qalubeya. So the
  * set can only come from the organogram, per line, per month; it can never be derived from an area
  * code. It is passed IN rather than read here, because this module is pure geography and the
  * organogram is live data that flips the moment a seat is created or filled.
@@ -414,10 +418,14 @@ export const ALL_SPLIT_AREAS: readonly string[] = [...AREA_CITY.keys()].sort();
  * not reps; on 09-08, shown that the Pedia organogram files Down town under Others, he confirmed it
  * comes out with the rest. The divisor is still areas — there are simply fewer of them.
  *
- * SCOPE: the El Qema rule only. Every other distributor's wholesaler keeps splitting across its
- * whole governorate exactly as before, including into Others. Widening this to every Pedia
- * wholesaler would move other distributors' money in a month about to be published, and he asked
- * about El Qema's distribution, so the narrow reading is the reversible one.
+ * SCOPE: THE WHOLE LINE, EVERY DISTRIBUTOR — owner, 2026-09-09 (#3575). This exclusion first shipped
+ * on 09-08 scoped to El Qema alone, on the reading that he was asking about El Qema's distribution.
+ * He was not: measured on August Pedia, other distributors' wholesalers were still sending shares
+ * into Down town and Kafr El-Sheikh 2, and he answered "NOT APPLIED EL QEMA RULE". So on Pedia no
+ * Others area receives a share of ANY wholesaler's split, whoever sold it — see
+ * OTHERS_EXCLUDED_LINES, and `splitTargetsFor`, which applies it before the El Qema gate. What stays
+ * El Qema's alone is the 200-pack national split, the Qalubeya + Cairo block, the صعيد pass and the
+ * lead guarantee.
  *
  * An EMPTY set is the safe direction and means 'split as before' — a caller that could not read the
  * organogram must never silently strip areas out of a distribution.
@@ -608,8 +616,8 @@ export function splitTargetsFor(
       homeAreas,
       homeFraction,
       // Band 3 pays every area the same by his own words, so the home weighting stops there.
-      // Carrying it in would make Qalubeya larger than Aswan in the one band that exists to make
-      // them equal. Nothing sets a home weighting today — see LOCAL_BLOCK_OVERRIDES.
+      // Carrying it in would make Qalubeya larger than every other area in the one band that exists
+      // to make them all equal. Nothing sets a home weighting today — see LOCAL_BLOCK_OVERRIDES.
       homeWeights: flat ? undefined : weightsFor(homeAreas),
     };
 

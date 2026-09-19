@@ -4,7 +4,7 @@
  *
  *   pnpm run check:office-rule
  *
- * Used by `tests/office-golden-rule-lock.test.ts` (which runs in the required CI `validate` job) and
+ * Used by `tests/office-golden-rule-lock.test.ts` (which runs in the required CI `test` job) and
  * by `scripts/office-rule-unlock.ts` (which is the only sanctioned way to re-pin). The rule itself,
  * and why it is locked, is documented in `src/lib/sales/office-golden-rule.ts`.
  */
