@@ -456,6 +456,7 @@ const HOUSE_NUMBERED_DOCUMENTS: ReadonlySet<string> = new Set([
   "experienceCertificate",
   "experienceCertificateEn",
   "salaryLetterEn",
+  "salaryLetterAr",
   "disciplinaryWarning",
   "disciplinaryPenalty",
   "transferDecision",

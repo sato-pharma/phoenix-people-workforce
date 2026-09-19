@@ -57,6 +57,7 @@ import {
   HR_PAPER_INSURANCE_PRINT_LETTER_V1,
   HR_PAPER_NDA_V1,
   HR_PAPER_SALARY_ADJUSTMENT_V1,
+  HR_PAPER_SALARY_LETTER_AR_V1,
   HR_PAPER_SOCIAL_INSURANCE_AUTHORIZATION_V1,
   HR_PAPER_SOCIAL_STATUS_V1,
   HR_PAPER_TRANSFER_DECISION_V1,
@@ -171,6 +172,12 @@ const RENDERERS: Record<
   // The HR letter — English, its own renderer, and it states the BASIC salary only.
   salaryLetterEn: {
     render: renderSalaryLetterEnHtml,
+    copies: systemContractDefaults.salaryLetterCopies,
+  },
+  // Its Arabic counterpart IS an `HrPaperTemplate`, drawn through `housePaper` the way the Arabic
+  // certificate of experience is — see the note on `HrPaperKind.salaryLetter`.
+  salaryLetterAr: {
+    render: housePaper(HR_PAPER_SALARY_LETTER_AR_V1),
     copies: systemContractDefaults.salaryLetterCopies,
   },
   // THE LETTERS PACK OF 2026-09-13. The company's own papers are house papers; the government

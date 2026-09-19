@@ -1,3 +1,4 @@
+import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
@@ -26,6 +27,7 @@ import {
   describeServiceDuration,
   escapeHtml,
   formatDayMonthYear,
+  formatMoney,
   pinLtr,
   PRINT_BANNER_CSS,
   printBanner,
@@ -33,6 +35,7 @@ import {
   todayInCairo,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
+import { BASIC_SALARY_RATE, calculateBasicSalary } from "@/lib/payroll/policy";
 
 // Sato's own HR papers — the confidentiality undertaking, the two appointment-documents forms, the
 // two absence notices, the service-file sheet and the certificate of experience.
@@ -133,6 +136,23 @@ export function buildHrPaperValues(
     // means no last-working date was ever recorded. A span the company cannot count is one a human
     // writes in, not one this file guesses.
     SERVICE_DURATION: describeServiceDuration(service.startsOn, service.endsOn),
+
+    // THE HR LETTER'S BASIC SALARY (the owner, 2026-09-13: "salary we put basic not net") — the SAME
+    // null-handling as the English letter's `buildSalaryLetterEnValues`: no base salary on record
+    // means a blank, never a zero, because `calculateBasicSalary` would otherwise answer 0 and "٠
+    // جنيه" on a letter to a bank states that the employee is unpaid.
+    ...(() => {
+      const base = employee.baseSalary;
+      const baseSalary = typeof base === "number" && Number.isFinite(base) && base > 0 ? base : null;
+      const basicSalary = baseSalary === null ? null : calculateBasicSalary({ baseSalary });
+      return {
+        BASIC_SALARY_LEAD: service.departed
+          ? "وكان آخر أجر أساسي شهري يتقاضاه مقداره"
+          : "ويتقاضى أجرًا أساسيًا شهريًا مقداره",
+        BASIC_SALARY: basicSalary === null ? "" : pinLtr(formatMoney(basicSalary)),
+        BASIC_SALARY_WORDS: basicSalary === null ? "" : spellEgyptianAmount(basicSalary),
+      };
+    })(),
 
     // ABSENCE_FROM / ABSENCE_TO / FIRST_WARNING_* are absent on purpose — see the header note.
     // COMPLETION_DEADLINE likewise: it is a date the desk sets when it hands the checklist over.
@@ -582,6 +602,20 @@ export function renderHrPaperHtml(
       "No salary, no reason for leaving, and no statement of conduct — each left out on purpose, not pending. A recommendation is written and signed by a person, never printed from a button.",
     );
   }
+  if (template.kind === "salaryLetter") {
+    const base = data.employee.baseSalary;
+    const baseSalary = typeof base === "number" && Number.isFinite(base) && base > 0 ? base : null;
+    banner.push(
+      baseSalary !== null
+        ? `It states the BASIC monthly salary — ${Math.round(BASIC_SALARY_RATE * 100)}% of the base salary on record (${formatMoney(baseSalary)} EGP). Not the net salary and not the gross.`
+        : "No base salary is on record, so the salary prints as a dotted rule. Correct the record, or write it in by hand, before it leaves the desk.",
+    );
+    banner.push(
+      data.employee.departed
+        ? "This employee has LEFT: the letter states the period of service and the LAST basic salary."
+        : "It states that this employee is currently employed, read from the employee record.",
+    );
+  }
 
   return `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -771,9 +805,11 @@ export function renderHrPaperHtml(
   .doc-sig tbody tr:nth-child(even) th,
   .doc-sig tbody tr:nth-child(even) td { background: ${HOUSE_COLORS.tint}; }
   .doc-sig__cell { height: 12mm; text-align: center; vertical-align: top; }
-  /* The certificate's stamp column holds the whole impression. At 12mm the 34mm seal spilled over
-     its own heading and below the table; the page has the room, and one signature row. */
-  .copy--certificate .doc-sig__cell { height: 36mm; }
+  /* The certificate's (and the salary letter's — the same one-row, one-seal layout) stamp column
+     holds the whole impression. At 12mm the 34mm seal spilled over its own heading and below the
+     table; the page has the room, and one signature row. */
+  .copy--certificate .doc-sig__cell,
+  .copy--salaryLetter .doc-sig__cell { height: 36mm; }
 
   .doc-signnote {
     display: flex;
