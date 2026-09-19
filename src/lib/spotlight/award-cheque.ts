@@ -42,6 +42,8 @@ const num = (v: number) => Number(v.toFixed(2));
 // The three boxes (Rank, Achievement, Amount) and the Arabic words share one width — the words line
 // runs exactly the span of the boxes and never past it (owner, 2026-09-20).
 const STAT_ROW_WIDTH_MM = 118 + 6 + 120;
+/** Width the name, the dash and the position share on the payee line (the grid's first column, less a margin). */
+const PAYEE_ROW_MM = 590;
 const AMOUNT_WIDTH_MM = 226;
 const FOOT_GAP_MM = 16;
 const BOXES_WIDTH_MM = STAT_ROW_WIDTH_MM + FOOT_GAP_MM + AMOUNT_WIDTH_MM;
@@ -227,7 +229,7 @@ const CORNER = `<svg viewBox="0 0 100 100" aria-hidden="true">
   <path d="M14 5 23 14 14 23 5 14Z" fill="${GOLD.mid}"/>
 </svg>`;
 
-/** The award medallion: a scalloped gold rosette, a navy face and two hanging ribbons. */
+/** The award medallion: a scalloped gold rosette, a navy face and no ribbons. */
 function sealSvg(): string {
   const points: string[] = [];
   const teeth = 36;
@@ -236,17 +238,13 @@ function sealSvg(): string {
     const angle = (Math.PI * i) / teeth - Math.PI / 2;
     points.push(`${num(50 + radius * Math.cos(angle))},${num(50 + radius * Math.sin(angle))}`);
   }
-  return `<svg class="seal" viewBox="0 0 100 124" aria-hidden="true">
+  return `<svg class="seal" viewBox="0 0 100 100" aria-hidden="true">
     <defs>
       <linearGradient id="sealGold" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="${GOLD.light}"/><stop offset="0.5" stop-color="${GOLD.mid}"/><stop offset="1" stop-color="${GOLD.deep}"/></linearGradient>
       <linearGradient id="sealNavy" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#0A6BA6"/><stop offset="1" stop-color="#073A58"/></linearGradient>
-      <linearGradient id="sealRibbon" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#0A6BA6"/><stop offset="1" stop-color="#073A58"/></linearGradient>
     </defs>
-    <path d="M31 80 19 120 33 112 42 121 52 82Z" fill="url(#sealRibbon)" stroke="${GOLD.mid}" stroke-width="1"/>
-    <path d="M69 80 81 120 67 112 58 121 48 82Z" fill="url(#sealRibbon)" stroke="${GOLD.mid}" stroke-width="1"/>
     <polygon points="${points.join(" ")}" fill="url(#sealGold)"/>
     <circle cx="50" cy="50" r="38.5" fill="none" stroke="#FFFBEF" stroke-width="1.3"/>
     <circle cx="50" cy="50" r="35" fill="url(#sealNavy)" stroke="${GOLD.light}" stroke-width="0.9"/>
@@ -274,9 +272,9 @@ function chequeBody(row: AwardChequeRow): string {
     </header>
 
     <section class="numdate">
-      <div class="cap"><span>Cheque No.</span><span class="ar" dir="rtl" lang="ar">رقم الشيك</span></div>
+      <div class="cap"><span>Cheque No.</span></div>
       <p class="no">${escapeHtml(row.serial)}</p>
-      <div class="cap cap--date"><span>Transfer date</span><span class="ar" dir="rtl" lang="ar">تاريخ التحويل</span></div>
+      <div class="cap cap--date"><span>Transfer date</span></div>
       <div class="date">
         <div class="date__cell"><b>${date.d}</b><i>DD</i></div>
         <div class="date__cell"><b>${date.m}</b><i>MM</i></div>
@@ -287,12 +285,13 @@ function chequeBody(row: AwardChequeRow): string {
     <section class="payee">
       <div class="cap"><span>Pay to the order of</span><span class="ar" dir="rtl" lang="ar">ادفعوا لأمر</span></div>
       <div class="payee__line">
-        <p class="payee__name" style="font-size:${namePt(row.recipientName, 570, 84, 44)}pt">${escapeHtml(row.recipientName)}</p>
+        <p class="payee__row">
+          <span class="payee__name" style="font-size:${namePt(row.recipientName, PAYEE_ROW_MM - (position === "" ? 0 : position.length * 6.6 + 26), 84, 44)}pt">${escapeHtml(row.recipientName)}</span>${
+            position === "" ? "" : `<span class="payee__dash">&ndash;</span><span class="payee__pos">${escapeHtml(position)}</span>`
+          }
+        </p>
       </div>
-      ${position === "" ? "" : `<p class="payee__pos">${escapeHtml(position)}</p>`}
     </section>
-
-    <div class="sumrule"></div>
 
     <section class="words">
       <div class="words__ruled">
@@ -434,7 +433,7 @@ const CSS = `
   .head h1 { font-size: 54pt; font-weight: 700; line-height: 1.1; color: var(--deep); }
   .spk { display: inline-block; width: 15mm; height: 15mm; margin-left: 6mm; vertical-align: 5mm; fill: var(--gold); }
   .head h1 .spk + .spk { width: 8mm; height: 8mm; margin-left: 2mm; vertical-align: 15mm; fill: var(--gold-light); }
-  .seal { position: absolute; right: 40mm; top: 50%; transform: translateY(-50%); height: 54mm; width: auto; display: block; }
+  .seal { position: absolute; right: 40mm; top: 50%; transform: translateY(-50%); height: 44mm; width: auto; display: block; }
   .head__ar { text-align: left; margin-top: 1mm; font-family: var(--arabic); font-size: 36pt; font-weight: 600; line-height: 1.3; color: var(--blue); }
   .head__prog { margin-top: 3mm; font-size: 20pt; font-weight: 700; letter-spacing: .04em; color: var(--gold-deep); }
 
@@ -457,21 +456,18 @@ const CSS = `
   .payee__line { position: relative; margin-top: 3mm; padding-bottom: 2mm;
     background: linear-gradient(90deg, var(--deep) 0, var(--deep) 30%, var(--blue) 68%, var(--light) 100%) left bottom / 100% var(--rule-w) no-repeat; }
   /* A finer gold rule under the strong one, and a diamond closing its end — the engraved double rule. */
-  .payee__line::after, .sumrule::after { content: ""; position: absolute; left: 26mm; right: 9mm; top: calc(100% + 1.6mm); height: ${0.35 * SCALE}pt;
+  .payee__line::after { content: ""; position: absolute; left: 26mm; right: 9mm; top: calc(100% + 1.6mm); height: ${0.35 * SCALE}pt;
     background: linear-gradient(90deg, rgba(184, 137, 59, 0) 0, var(--gold) 14%, var(--gold-light) 60%, var(--gold) 100%); }
-  .payee__line::before, .sumrule::before { content: ""; position: absolute; right: 1.6mm; bottom: -1.8mm; width: 5.2mm; height: 5.2mm;
+  .payee__line::before { content: ""; position: absolute; right: 1.6mm; bottom: -1.8mm; width: 5.2mm; height: 5.2mm;
     background: var(--gold); transform: rotate(45deg); z-index: 1; }
-  .payee__line::before { bottom: -2.2mm; }
+  .payee__row { display: flex; align-items: baseline; white-space: nowrap; }
+  .payee__dash { margin: 0 6mm; font-size: 44pt; font-weight: 500; color: var(--gold); }
   .payee__name { font-weight: 500; line-height: 1.15; color: var(--ink); white-space: nowrap; letter-spacing: -.005em; }
-  .payee__pos { margin-top: 4mm; font-size: 24pt; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  .payee__pos { font-size: 24pt; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
     color: var(--gold-deep); white-space: nowrap; }
-  .payee__pos::before { content: ""; display: inline-block; width: 3.6mm; height: 3.6mm; margin-right: 5mm; vertical-align: .6mm;
-    background: var(--gold); transform: rotate(45deg); }
 
   /* The words and the figures sit between two rules — a deep one above and a hairline below. No
      fill anywhere: the house ink rule allows only the 6% zebra row. */
-  .sumrule { position: relative; grid-column: 1; grid-row: 3; align-self: start; height: var(--rule-w);
-    background: linear-gradient(90deg, var(--deep) 0, var(--deep) 30%, var(--blue) 68%, var(--light) 100%); }
   .words { grid-column: 1 / -1; grid-row: 3; width: ${BOXES_WIDTH_MM}mm; padding-top: 5mm; display: flex; flex-direction: column; justify-content: center; }
   .words__ruled { position: relative; margin-top: 2mm; height: 42mm; }
   .words__rule { position: absolute; left: 0; right: 0; top: 34mm; height: var(--rule-w);
