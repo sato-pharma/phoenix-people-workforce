@@ -65,6 +65,9 @@ export function splitTitleAndEmployer(raw: string): { readonly jobTitle: string 
   const text = raw.replace(/\s{2,}/g, " ").trim();
   if (!text) return { employer: null, jobTitle: null };
 
+  const glued = splitGluedAt(text);
+  if (glued) return glued;
+
   for (const separator of TITLE_EMPLOYER_SEPARATORS) {
     const parts = text.split(separator).map((part) => part.trim()).filter(Boolean);
     if (parts.length < 2) continue;
@@ -85,6 +88,25 @@ export function splitTitleAndEmployer(raw: string): { readonly jobTitle: string 
 
 export function looksLikeJobTitle(value: string): boolean {
   return JOB_TITLE_KEYWORDS.some((keyword) => containsPhrase(value, keyword));
+}
+
+// A PDF text layer sometimes drops the space in front of "at": "Marketing Research Internshipat Alahram
+// Advertising Agency" is a title and an employer, not one long employer.
+const GLUED_AT = /^(.*?\S)at\s+([A-Z0-9؀-ۿ].*)$/;
+const TITLE_STYLE_WORD = /^(?:internship|apprenticeship|traineeship|fellowship)$/i;
+
+/**
+ * Reads "<title>at <Employer>" where the "at" is glued to the last word of the title. Only trusted when
+ * that last word is itself a job-title word, so "Format Solutions" or "Combat Zone" are never cut in two.
+ */
+function splitGluedAt(text: string): { readonly jobTitle: string; readonly employer: string } | null {
+  const match = GLUED_AT.exec(text);
+  if (!match) return null;
+  const title = match[1]!.trim();
+  const employer = match[2]!.trim();
+  const lastWord = title.split(" ").pop() ?? "";
+  if (!lastWord || !(looksLikeJobTitle(lastWord) || TITLE_STYLE_WORD.test(lastWord))) return null;
+  return { employer, jobTitle: title };
 }
 
 function looksLikeResponsibility(line: string): boolean {

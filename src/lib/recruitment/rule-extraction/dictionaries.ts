@@ -229,10 +229,16 @@ export const FACULTY_KEYWORDS_WEAK: readonly string[] = [
 /** Degree levels, most specific first so "Bachelor of Commerce" is not read as a bare "Bachelor". */
 export const DEGREE_KEYWORDS: ReadonlyArray<{ readonly canonical: string; readonly aliases: readonly string[] }> = [
   { aliases: ["phd", "ph.d", "doctorate", "doctor of philosophy", "دكتوراه"], canonical: "PhD" },
-  { aliases: ["master's degree", "masters degree", "master of", "msc", "m.sc", "mba", "master", "ماجستير"], canonical: "Master" },
+  {
+    aliases: ["master's degree", "masters degree", "master of", "masters of", "msc", "m.sc", "mba", "m.b.a", "master", "masters", "ماجستير"],
+    canonical: "Master",
+  },
   { aliases: ["postgraduate diploma", "post graduate diploma", "professional diploma", "diploma", "دبلوم"], canonical: "Diploma" },
   {
-    aliases: ["bachelor's degree", "bachelors degree", "bachelor of", "bsc", "b.sc", "bachelor", "licence", "ليسانس", "بكالوريوس"],
+    aliases: [
+      "bachelor's degree", "bachelors degree", "bachelor of", "bachelors of", "bsc", "b.sc", "b.s.c", "b.a",
+      "bachelor", "bachelors", "licence", "ليسانس", "بكالوريوس",
+    ],
     canonical: "Bachelor",
   },
 ];

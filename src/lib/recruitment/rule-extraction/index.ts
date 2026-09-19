@@ -191,7 +191,15 @@ export function runRuleCvExtraction(rawText: string, context: CvRuleContext = {}
   if (education.length > 0) {
     collector.set(
       "educationHistory",
-      low(education.map((entry) => ({ degree: entry.degree, institution: entry.institution, year: entry.year }))),
+      low(
+        education.map((entry) => ({
+          degree: entry.degree,
+          fieldOfStudy: entry.fieldOfStudy,
+          grade: entry.grade,
+          institution: entry.institution,
+          year: entry.year,
+        })),
+      ),
     );
   }
 
