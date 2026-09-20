@@ -49,6 +49,7 @@ import {
   interviewCalendarHref,
   isInterviewCalendarAccessLevel,
   isInterviewCalendarOwner,
+  isDistrictManagerOrAbove,
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
   isInterviewPlatform,
@@ -141,14 +142,63 @@ export function isSignedInCaller(access: AccessContext): boolean {
   return access.source !== "guest" && Boolean(access.loginId || access.hrId);
 }
 
-/** Their OWN level: the owner, or a share he made. A copy link is not this — see the caller below. */
+/**
+ * Whether the calendar's owner chose this person to conduct at least one interview — and they are a
+ * District Manager or above. That, and only that, gives the `interviewer` role: a Medical Rep chosen
+ * before the rule existed holds nothing, and neither does anyone chosen for no interview.
+ */
+async function isChosenInterviewer(access: AccessContext): Promise<boolean> {
+  if (!access.hrId) return false;
+  const { data, error } = await recruitmentDb()
+    .from(BOOKINGS)
+    .select("id")
+    .in("interviewer_hr_id", hrIdLookupKeys(access.hrId))
+    .limit(1);
+  if (error) throw error;
+  if (!data || data.length === 0) return false;
+  const person = (await loadPeople([access.hrId])).get(canonicalHrIdKey(access.hrId) ?? "");
+  return isDistrictManagerOrAbove({ jobTitle: person?.jobTitle ?? null, role: access.role });
+}
+
+/**
+ * Their OWN level: the owner, a share he made, or — for a District Manager or above he chose to
+ * conduct an interview — `interviewer`. A share outranks it (a Viewer sees the whole calendar). A
+ * copy link is not this — see the caller below.
+ */
 export async function resolveInterviewCalendarRole(access: AccessContext): Promise<InterviewCalendarRole | null> {
   if (access.source === "guest") return null;
   const isOwner = isInterviewCalendarOwner(access);
   if (isOwner) return "owner";
   if (!access.hrId) return null;
-  return resolveCalendarRole({ isOwner, shareLevel: shareLevelFor(await loadShareRows(), access.hrId) });
+  const shared = resolveCalendarRole({ isOwner, shareLevel: shareLevelFor(await loadShareRows(), access.hrId) });
+  if (shared) return shared;
+  return (await isChosenInterviewer(access)) ? "interviewer" : null;
 }
+
+/**
+ * May this caller read THIS booking? Everyone whose level on the booking's week is above `interviewer`
+ * reads all of them; an interviewer reads only the ones they were chosen for. Every place that serves a
+ * booking to a `view` caller asks this — the gate alone would hand an interviewer the whole calendar.
+ */
+export function mayReadBooking(
+  caller: InterviewCalendarCaller,
+  row: { starts_at: string; interviewer_hr_id: string | null },
+): boolean {
+  const role = calendarRoleFor(caller, weekOfInstant(row.starts_at));
+  if (!role) return false;
+  if (role !== "interviewer") return true;
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  const chosen = canonicalHrIdKey(row.interviewer_hr_id);
+  return Boolean(viewer && chosen && viewer === chosen);
+}
+
+/** Sessions (group interviews) belong to the calendar's people, never to an interviewer-only caller. */
+function mayReadSessions(caller: InterviewCalendarCaller, weekStart: string): boolean {
+  const role = calendarRoleFor(caller, weekStart);
+  return role !== null && role !== "interviewer";
+}
+
+const NOT_YOURS = "Forbidden: this interview is not one you were chosen to conduct.";
 
 /** Whether this person should be offered the calendar at all — the portal sidebar asks this. */
 export async function hasInterviewCalendarAccess(access: AccessContext): Promise<boolean> {
@@ -560,7 +610,11 @@ export async function listInterviewCalendarWeek(caller: InterviewCalendarCaller,
   requireCalendarAccess(caller, "view", weekStart);
   const { from, to } = weekInstantRange(weekStart);
   const [bookings, sessions] = await Promise.all([bookingsBetween(from, to), sessionsBetween(from, to)]);
-  return { bookings: await hydrate(bookings, caller), sessions: await hydrateSessions(sessions), weekStart };
+  return {
+    bookings: await hydrate(bookings.filter((row) => mayReadBooking(caller, row)), caller),
+    sessions: mayReadSessions(caller, weekStart) ? await hydrateSessions(sessions) : [],
+    weekStart,
+  };
 }
 
 /** Every interview and session on one day, for the dialog's time chips: a taken slot is marked, not hidden. */
@@ -573,7 +627,10 @@ export async function listInterviewCalendarDay(
   const from = cairoLocalToUtc(dateKey, 0);
   const to = cairoLocalToUtc(dateKey, 24 * 60);
   const [bookings, sessions] = await Promise.all([bookingsBetween(from, to), sessionsBetween(from, to)]);
-  return { bookings: await hydrate(bookings, caller), sessions: await hydrateSessions(sessions) };
+  return {
+    bookings: await hydrate(bookings.filter((row) => mayReadBooking(caller, row)), caller),
+    sessions: mayReadSessions(caller, weekStartFor(dateKey)) ? await hydrateSessions(sessions) : [],
+  };
 }
 
 /** A candidate's interviews from today on — the schedule dialog shows them before booking another. */
@@ -594,7 +651,7 @@ export async function listUpcomingInterviewsForCandidate(
     .limit(20);
   if (error) throw error;
   // Only the weeks this person can see — a one-week link does not reveal the rest of the calendar.
-  const visible = ((data ?? []) as BookingRow[]).filter((row) => roleMeets(calendarRoleFor(caller, weekOfInstant(row.starts_at)), "view"));
+  const visible = ((data ?? []) as BookingRow[]).filter((row) => mayReadBooking(caller, row));
   return hydrate(visible, caller, now);
 }
 
@@ -686,9 +743,48 @@ export async function listDueZoomInterviews(
   return due;
 }
 
+/** What a reminder needs to say about one interview, and to whom. */
+export type ReminderInterview = {
+  id: string;
+  interviewerHrId: string;
+  interviewerJobTitle: string | null;
+  startsAt: string;
+  durationMinutes: number;
+  candidateName: string;
+  platform: InterviewPlatform;
+};
+
+/**
+ * The interviews between two instants that still have someone to remind: a chosen interviewer and no
+ * outcome recorded yet. A cancelled interview is a deleted row, so it is simply not here. This is the
+ * reminder job's ONLY read of the calendar — a system read, not a caller's, so it never goes through
+ * the gate; what it returns leaves the building only as a notice to the interviewer named on the row.
+ */
+export async function listInterviewsToRemindAbout(from: Date, to: Date): Promise<ReminderInterview[]> {
+  const rows = (await bookingsBetween(from, to)).filter((row) => row.interviewer_hr_id && !row.outcome);
+  if (rows.length === 0) return [];
+  const candidates = await loadCandidates(rows.map((row) => row.candidate_id ?? ""));
+  const people = await loadPeople(rows.map((row) => row.interviewer_hr_id));
+  const sessions = await loadSessionsById(rows.map((row) => row.session_id ?? ""));
+  return rows.map((row) => {
+    const candidate = row.candidate_id ? candidates.get(String(row.candidate_id)) : undefined;
+    const session = row.session_id ? sessions.get(String(row.session_id)) : undefined;
+    return {
+      candidateName: (candidate?.full_name || row.external_name || "A candidate").trim(),
+      durationMinutes: Number(row.duration_minutes),
+      id: row.id,
+      interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? String(row.interviewer_hr_id),
+      interviewerJobTitle: people.get(canonicalHrIdKey(row.interviewer_hr_id) ?? "")?.jobTitle ?? null,
+      platform: session ? asPlatform(session.platform) : asPlatform(row.platform),
+      startsAt: row.starts_at,
+    };
+  });
+}
+
 export async function getInterviewBooking(caller: InterviewCalendarCaller, bookingId: string): Promise<InterviewBooking> {
   const row = await loadBookingRow(bookingId);
   requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!mayReadBooking(caller, row)) throw new Error(NOT_YOURS);
   const [booking] = await hydrate([row], caller);
   return booking;
 }
@@ -699,6 +795,7 @@ export async function getInterviewSession(
 ): Promise<{ session: InterviewSession; bookings: InterviewBooking[] }> {
   const row = await loadSessionRow(sessionId);
   requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!mayReadSessions(caller, weekOfInstant(row.starts_at))) throw new Error(NOT_YOURS);
   const [session] = await hydrateSessions([row]);
   return { bookings: await hydrate(await sessionBookingRows(row.id), caller), session };
 }
@@ -979,13 +1076,19 @@ function slotIsFree(session: SessionRow, startMinutes: number, taken: readonly B
  * The interviewer a request names, checked against Employee Master: undefined when the request says
  * nothing (leave it as it is), null when it clears the interviewer, otherwise the employee's HR id.
  */
-async function resolveInterviewer(value: unknown): Promise<string | null | undefined> {
+async function resolveInterviewer(value: unknown, current: string | null = null): Promise<string | null | undefined> {
   if (value === undefined) return undefined;
   if (value === null || (typeof value === "string" && value.trim() === "")) return null;
   if (typeof value !== "string") throw new Error("Choose the interviewer from the list.");
   const people = await loadPeople([value.trim()]);
   const person = people.get(canonicalHrIdKey(value) ?? "");
   if (!person) throw new Error("That interviewer is not in Employee Master.");
+  // District Managers and above only (owner, 2026-09-20). Someone already chosen before the rule stays
+  // on their interview — saving the booking again does not fail on it — but nobody new below that is.
+  const unchanged = Boolean(current) && canonicalHrIdKey(current) === canonicalHrIdKey(person.hrId);
+  if (!unchanged && !isDistrictManagerOrAbove({ jobTitle: person.jobTitle })) {
+    throw new Error("Interviewers are District Managers and above — choose someone at that level.");
+  }
   return person.hrId;
 }
 
@@ -1114,7 +1217,7 @@ export async function updateInterviewBooking(
   const at = new Date(row.starts_at);
   const notes = patch.notes === undefined ? row.notes : cleanNotes(patch.notes);
   const actor = hrIdForStorage(caller.access.hrId);
-  const interviewerHrId = await resolveInterviewer(patch.interviewerHrId);
+  const interviewerHrId = await resolveInterviewer(patch.interviewerHrId, row.interviewer_hr_id);
   const nameFor = async () => (row.candidate_id ? candidateNameFor(row.candidate_id) : row.external_name?.trim() || "Unnamed candidate");
   const timeChanged = [patch.dateKey, patch.startMinutes, patch.durationMinutes].some((value) => value !== undefined);
   const interviewerColumn = interviewerHrId === undefined ? {} : { interviewer_hr_id: interviewerHrId };
@@ -1328,6 +1431,7 @@ export async function setInterviewOutcome(
   }
   const row = await loadBookingRow(bookingId);
   requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!mayReadBooking(caller, row)) throw new Error(NOT_YOURS);
   if (!canSetInterviewOutcome(caller, row.interviewer_hr_id)) {
     throw new Error("Only the interviewer, or the owner of this calendar, can record how an interview went.");
   }
@@ -1533,6 +1637,7 @@ export async function resolveInterviewMeeting(caller: InterviewCalendarCaller, t
     const session = await loadSessionRow(target.id);
     const weekStart = weekOfInstant(session.starts_at);
     requireCalendarAccess(caller, "view", weekStart);
+    if (!mayReadSessions(caller, weekStart)) throw new Error(NOT_YOURS);
     const platform = asPlatform(session.platform);
     return {
       endsAt: new Date(endsAt(session.starts_at, session.duration_minutes)).toISOString(),
@@ -1549,6 +1654,7 @@ export async function resolveInterviewMeeting(caller: InterviewCalendarCaller, t
   const row = await loadBookingRow(target.id);
   const weekStart = weekOfInstant(row.starts_at);
   requireCalendarAccess(caller, "view", weekStart);
+  if (!mayReadBooking(caller, row)) throw new Error(NOT_YOURS);
   const canBook = roleMeets(calendarRoleFor(caller, weekStart), "book");
   const externalPhone = !row.candidate_id && canBook ? row.external_phone : null;
   if (row.session_id) {
@@ -1640,15 +1746,19 @@ export async function searchInterviewCalendarPeople(
     .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
     .or(`full_name.ilike.*${text}*,nickname.ilike.*${text}*,job_title.ilike.*${text}*`)
     .order("full_name", { ascending: true })
-    .limit(15);
+    // The interviewer picker drops everyone below District Manager after the read, so it reads wider
+    // first — otherwise fifteen reps sharing a name would crowd out the manager being searched for.
+    .limit(purpose === "interviewer" ? 80 : 15);
   if (error) throw error;
   return ((data ?? []) as EmployeeRow[])
     .filter((row) => row.hr_id && (row.nickname || row.full_name))
+    .filter((row) => purpose !== "interviewer" || isDistrictManagerOrAbove({ jobTitle: row.job_title }))
     .map((row) => ({
       hrId: hrIdForStorage(row.hr_id) ?? String(row.hr_id),
       jobTitle: row.job_title ?? null,
       name: String(row.nickname || row.full_name).trim(),
-    }));
+    }))
+    .slice(0, 15);
 }
 
 export async function shareInterviewCalendar(
@@ -1776,11 +1886,11 @@ function assertCvsOpenTo(caller: InterviewCalendarCaller) {
  */
 async function assertCandidateOnCalendar(caller: InterviewCalendarCaller, candidateId: string) {
   if (!isUuid(candidateId)) throw new Error("Candidate not found.");
-  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at").eq("candidate_id", candidateId).limit(200);
+  const { data, error } = await recruitmentDb().from(BOOKINGS).select("starts_at,interviewer_hr_id").eq("candidate_id", candidateId).limit(200);
   if (error) throw error;
-  const rows = (data ?? []) as Array<{ starts_at: string }>;
+  const rows = (data ?? []) as Array<{ starts_at: string; interviewer_hr_id: string | null }>;
   if (rows.length === 0) throw new Error("Forbidden: this candidate is not on the interview calendar.");
-  if (!rows.some((row) => roleMeets(calendarRoleFor(caller, weekOfInstant(row.starts_at)), "view"))) {
+  if (!rows.some((row) => mayReadBooking(caller, row))) {
     throw new Error("Forbidden: this candidate is not on the part of the calendar open to you.");
   }
   assertCvsOpenTo(caller);
@@ -1843,6 +1953,7 @@ export async function getInterviewExternalCv(
 ): Promise<{ bytes: Buffer; mimeType: string; fileName: string }> {
   const row = await loadBookingRow(bookingId);
   requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!mayReadBooking(caller, row)) throw new Error(NOT_YOURS);
   assertCvsOpenTo(caller);
   if (row.candidate_id || !row.external_cv_file_id) throw new Error("This interview has no CV kept on it.");
   const downloaded = await getRecruitmentFileStorage().downloadFile(row.external_cv_file_id);

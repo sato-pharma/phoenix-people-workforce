@@ -18,6 +18,7 @@ import {
   checkCvUpload,
   grantFromLinkRow,
   linkTokenFrom,
+  mayReadBooking,
   requireCalendarAccess,
   validateExternalPerson,
   validateInterviewBookingInput,
@@ -35,6 +36,7 @@ import {
   interviewOutcomeCandidateEffect,
   interviewOutcomeLabels,
   interviewOutcomes,
+  isDistrictManagerOrAbove,
   isInterviewCalendarOwner,
   normalizeEgyptianMobile,
   readInterviewOutcome,
@@ -104,6 +106,7 @@ export async function runInterviewCalendarTests() {
   runSessionAndOutsideTests();
   runPollAndWhatsAppTests();
   runOutcomeTests();
+  runInterviewerAccessTests();
   await runZoomTests();
   await runExportTests();
   runWiringTests();
@@ -149,6 +152,69 @@ function runOutcomeTests() {
   assert.ok(view.includes(tile("item.booking")), "and so does the phone-width day card");
   const route = read("app/api/recruitment/interview-calendar/bookings/[id]/outcome/route.ts");
   assert.ok(route.includes("assertSameOriginMutation") && route.includes("export async function PATCH"), "the route is a same-origin PATCH");
+}
+
+// ── The chosen interviewer's own window (owner, 2026-09-20) ────────────────────────────────────
+// "I want to be able to choose the interviewer ... and the interviewer that I choose have the same
+// window, and his interviews appear to him" — only their own, from District Managers and up, never a
+// Medical Rep.
+function runInterviewerAccessTests() {
+  // WHO: District Managers and above, by app role first (authority follows it) then job title.
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "CEO", "Super Admin", "Product Manager", "HR Operations Manager"]) {
+    assert.equal(isDistrictManagerOrAbove({ role }), true, `${role} may be chosen`);
+  }
+  for (const title of ["District Sales Manager", "Regional Sales Manager", "National Sales Manager", "Group Product Manager", "Head of Recruitment", "Chief Executive Officer"]) {
+    assert.equal(isDistrictManagerOrAbove({ jobTitle: title }), true, `${title} may be chosen`);
+  }
+  for (const role of ["Medical Rep", "Medical Representative"]) {
+    assert.equal(isDistrictManagerOrAbove({ role }), false, `${role} is below District Manager — never`);
+    assert.equal(isDistrictManagerOrAbove({ jobTitle: role }), false, `${role} as a title is below District Manager — never`);
+  }
+  assert.equal(isDistrictManagerOrAbove({ jobTitle: "Senior Medical Representative" }), false, "seniority does not lift a rep");
+  assert.equal(isDistrictManagerOrAbove({ role: "Employee", jobTitle: "Medical Representative" }), false, "a plain Employee role falls back to the title");
+  assert.equal(isDistrictManagerOrAbove({ role: "District Manager", jobTitle: "Medical Representative" }), true, "an acting DM's authority is the app role, not the title");
+  assert.equal(isDistrictManagerOrAbove({ jobTitle: "Accountant" }), false, "an unrecognised title fails closed");
+  assert.equal(isDistrictManagerOrAbove({}), false, "no role and no title is nobody");
+
+  // WHAT: only their own interviews, and nothing beyond "view".
+  const me = createAccessContext({ hrId: "D-07", role: "District Manager" });
+  const asInterviewer: InterviewCalendarCaller = { access: me, link: null, own: "interviewer" };
+  const at = "2026-09-22T09:00:00.000Z";
+  assert.equal(mayReadBooking(asInterviewer, { interviewer_hr_id: "d-07", starts_at: at }), true, "their own interview — id case does not matter");
+  assert.equal(mayReadBooking(asInterviewer, { interviewer_hr_id: "D-08", starts_at: at }), false, "a colleague's interview is not theirs to read");
+  assert.equal(mayReadBooking(asInterviewer, { interviewer_hr_id: null, starts_at: at }), false, "an interview with nobody chosen is not theirs");
+  const asViewer: InterviewCalendarCaller = { access: me, link: null, own: "viewer" };
+  assert.equal(mayReadBooking(asViewer, { interviewer_hr_id: "D-08", starts_at: at }), true, "a Viewer still reads the whole calendar");
+  assert.equal(mayReadBooking({ access: me, link: null, own: null }, { interviewer_hr_id: "D-07", starts_at: at }), false, "no role, no read — even of one's own");
+  for (const need of ["comment", "book", "share"] as const) {
+    assert.throws(() => requireCalendarAccess(asInterviewer, need, null), /Forbidden/, `an interviewer can never ${need}`);
+  }
+  assert.equal(requireCalendarAccess(asInterviewer, "view", "2026-09-20"), "interviewer", "but the window opens");
+  assert.equal(canSetInterviewOutcome(asInterviewer, "D-07"), true, "and they record how their own interview went");
+  assert.equal(canSetInterviewOutcome(asInterviewer, "D-08"), false, "never somebody else's");
+
+  // WIRING: every place that serves a booking to a "view" caller asks mayReadBooking / mayReadSessions —
+  // the gate alone would hand an interviewer the whole calendar and every candidate's CV. A NEW "view"
+  // site fails the count until somebody decides how it guards the rows.
+  const domain = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  assert.equal(domain.split('requireCalendarAccess(caller, "view"').length - 1, 12, "twelve view sites, each guarded below");
+  const guarded: Array<[string, RegExp]> = [
+    ["listInterviewCalendarWeek", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
+    ["listInterviewCalendarDay", /mayReadBooking\(caller, row\)[\s\S]*mayReadSessions\(/],
+    ["listUpcomingInterviewsForCandidate", /mayReadBooking\(caller, row\)/],
+    ["getInterviewBooking", /mayReadBooking\(caller, row\)/],
+    ["getInterviewSession", /mayReadSessions\(/],
+    ["setInterviewOutcome", /mayReadBooking\(caller, row\)/],
+    ["resolveInterviewMeeting", /mayReadSessions\([\s\S]*mayReadBooking\(caller, row\)/],
+    ["getInterviewExternalCv", /mayReadBooking\(caller, row\)/],
+  ];
+  for (const [name, pattern] of guarded) assert.match(functionBody(domain, name), pattern, `${name} guards the rows an interviewer may read`);
+  const onCalendar = domain.slice(domain.indexOf("async function assertCandidateOnCalendar"));
+  assert.match(onCalendar.slice(0, 900), /interviewer_hr_id[\s\S]*mayReadBooking\(caller, row\)/, "a CV opens only for a candidate the interviewer conducts");
+  // The interviewer is chosen from District Managers and up, and a new one below that is refused.
+  assert.match(domain, /Interviewers are District Managers and above/, "choosing someone below District Manager is refused");
+  assert.match(domain, /purpose !== "interviewer" \|\| isDistrictManagerOrAbove\(/, "and the picker never offers them");
+  assert.match(domain, /async function isChosenInterviewer[\s\S]*isDistrictManagerOrAbove\(/, "a Medical Rep chosen before the rule holds no calendar");
 }
 
 // ── 1 · The week: Sunday to Thursday, 9 to 5, in Cairo ─────────────────────────────────────────
@@ -252,6 +318,7 @@ function runRoleTests() {
     ["editor", true, true, true, false],
     ["commenter", true, true, false, false],
     ["viewer", true, false, false, false],
+    ["interviewer", true, false, false, false],
     [null, false, false, false, false],
   ];
   for (const [role, view, comment, book, share] of table) {

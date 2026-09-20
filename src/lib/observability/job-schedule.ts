@@ -69,6 +69,10 @@ export const JOB_SCHEDULES: readonly JobScheduleDeclaration[] = [
   // declaration in scripts/cronjob-sync.mjs exactly, or the heartbeat assessment judges a job that
   // is firing perfectly well to be late.
   { slug: "phoenix-mapping-guard-notify", kind: "cron", schedule: "5,20,35,50 * * * *", graceSeconds: 1 * HOUR },
+  // Every ten minutes, on :03 — the one-hour reminder before an interview has a ten-minute window to
+  // land in, so a slower clock would skip interviews. Off every other job's minutes so a red execution
+  // names one job. Must match scripts/cronjob-sync.mjs exactly.
+  { slug: "phoenix-interview-reminders", kind: "cron", schedule: "3,13,23,33,43,53 * * * *", graceSeconds: 1 * HOUR },
   { slug: "phoenix-retention-risk-sweep", kind: "cron", schedule: "40 7 * * *", graceSeconds: 1 * HOUR },
   // Day 25 only. The pre-payroll half of the same feature: Part 1 pays at the start of the month,
   // so the 25th leaves several working days to check on someone before any money moves. The other

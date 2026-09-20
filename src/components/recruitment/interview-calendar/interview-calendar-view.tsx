@@ -552,7 +552,12 @@ export function InterviewCalendarView({
             <Users aria-hidden className="h-3 w-3 text-slate-500" />
             Sessions {counts.sessions}
           </span>
-          {role !== "owner" ? <span className="text-slate-500">Your access: {ACCESS_LEVEL_LABEL[role]}</span> : null}
+          {role !== "owner" ? (
+            <span className="text-slate-500">
+              Your access: {ACCESS_LEVEL_LABEL[role]}
+              {role === "interviewer" ? " — the interviews you were chosen to conduct." : ""}
+            </span>
+          ) : null}
           <span className="text-slate-500">
             {cvsNeedSignIn ? "Sign in to open the CVs." : "Click a name to open the CV."}
             {canBook ? " Press a free time to book someone or set up a Zoom session." : ""}
