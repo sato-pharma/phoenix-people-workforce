@@ -88,7 +88,7 @@ function withoutDates(text: string): string {
 }
 
 const GRADE_WORD =
-  "excellent\\s+with\\s+honou?rs?|very\\s+good|excellent|good|pass|acceptable|جيد\\s+جداً?|امتياز|جيد|مقبول";
+  "(?:excellent|very\\s+good|good)\\s+with\\s+honou?rs?|very\\s+good|excellent|good|pass|acceptable|جيد\\s+جداً?|امتياز|جيد|مقبول";
 const GRADE_NUMBER = "\\d{1,3}(?:[.,]\\d{1,3})?\\s*(?:/\\s*\\d{1,3}(?:[.,]\\d{1,3})?|%)?";
 const GRADE_VALUE = `(?:${GRADE_WORD}|${GRADE_NUMBER})(?:\\s*\\(\\s*\\d{1,3}(?:[.,]\\d{1,2})?\\s*%?\\s*\\))?`;
 const GRADE_PATTERN = new RegExp(
@@ -464,7 +464,7 @@ function wordCount(value: string): number {
 
 const DANGLING = /(?:^|\s)(?:of|for|in|at|from|and|&|with|by)$|^(?:of|for|in|at|from|and|&|with|by)(?:\s|$)/i;
 
-const DISCIPLINE_WORD = /\b(?:department|dept|section|major|minor|specializ\w*|specialis\w*|programme?|track|division|studies|science|sciences|engineering|pharmacy|medicine|commerce|law|arts|education|management|administration|accounting|marketing|nursing|dentistry|agriculture|economics|business)\b/i;
+const DISCIPLINE_WORD = /\b(?:department|dept|section|major|minor|specializ\w*|specialis\w*|programme?|track|division|studies|science|sciences|engineering|pharmacy|medicine|commerce|law|arts|education|management|administration|accounting|marketing|nursing|dentistry|agriculture|economics|business|chemistry|physics|biology|zoology|botany|geology|microbiology|biochemistry|biotechnology|mathematics|statistics|linguistics|literature|translation|psychology|sociology|journalism|mass communication|computer\w*|veterinary)\b/i;
 
 /**
  * Whether a piece straight after the university is part of ITS name or place rather than a subject:
@@ -519,14 +519,16 @@ export function splitEducationLine(raw: string): EducationParts {
   let nextIsField = false;
   for (const segment of segments(undated)) {
     const label = bare(segment.text);
+    // "Class of 2018 - Good": the dash that followed the cut-out date is left on the front of the grade.
+    const gradeLabel = bare(segment.text.replace(/^[\s\-|,;:·•]+/u, ""));
     if (LABEL_ONLY.test(label)) continue;
     if (FIELD_LABEL.test(label)) {
       nextIsField = true;
       continue;
     }
     // "… | 2010 | Very Good": a segment that is only a grade word is the grade, where none was labelled.
-    if (grade === null && GRADE_ONLY.test(label)) {
-      grade = segment.text;
+    if (grade === null && GRADE_ONLY.test(gradeLabel)) {
+      grade = segment.text.replace(/^[\s\-|,;:·•]+/u, "");
       continue;
     }
     // "Honors", "Ranked 6th": how the degree ended, so it rides with the grade.
