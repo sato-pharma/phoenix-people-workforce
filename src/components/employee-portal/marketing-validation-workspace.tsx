@@ -2578,7 +2578,7 @@ export function MarketingValidationWorkspace() {
     }
     if (!customerShort && seeded.length === 0) {
       setMessage(
-        `"${group.customerName}" is waiting on a venue that is not in your My Venues list, so it cannot be captured from here. Ask a Super Admin or the CEO to release it from Customer Pharmacy Mapping.`,
+        `"${group.customerName}" is waiting on a venue that is not in your My Venues list, so it cannot be captured from here. Ask a Super Admin to release it from Customer Pharmacy Mapping.`,
       );
       return;
     }
@@ -3178,7 +3178,9 @@ export function MarketingValidationWorkspace() {
                                 <p className="text-phx-xs font-bold text-amber-800">
                                   This shop has no complete field proof on file. If you are standing in front of it,
                                   capture its GPS and live sign photo now and the record is completed for everyone.
-                                  Optional — you can attach it without this.
+                                  {customer.customerComplete
+                                    ? " Required here — this customer is only waiting on this shop."
+                                    : " Optional — you can attach it without this."}
                                 </p>
                                 <CapturePanel
                                   capture={pharmacy.capture}
@@ -3497,10 +3499,8 @@ export function MarketingValidationWorkspace() {
           <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
-              These customers were saved, but they do not appear in the customer list when you create a marketing
-              request. A customer only becomes usable once the live photo and location are complete on both the
-              customer and the pharmacy. Tap Capture Evidence to supply the missing photo and location for the customer or
-              its venue, or ask a Super Admin or the CEO to release it from Customer Pharmacy Mapping.
+              Saved, but not yet usable in marketing requests. Tap Capture Evidence to add the missing photo and
+              location, or ask a Super Admin to release it.
             </p>
           </div>
 
