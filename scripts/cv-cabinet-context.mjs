@@ -1,11 +1,13 @@
 // Recruitment / ATS — the per-file facts the CV cabinet rule reads, loaded in bulk for the Drive scripts.
 //
 // `cabinetPathFor` files a CV by the line it ARRIVED on, by the applicant's own answers, and parks
-// anything misleading under `Red flags`. Beyond the candidate it therefore needs two facts about each
-// FILE: its intake record (`ats_cv_intake_events`) and the extractor's verdict
-// (`ats_candidate_cv_extractions`). The live mirror reads both per file; `backfill-cvs-to-drive.mjs`
-// and `build-cv-cabinet.mjs` read them here, in bulk, and hand them to the same pure pickers the
-// mirror uses — so a re-file can never choose a different record than the running site does.
+// anything misleading under `Red flags`. Beyond the candidate it therefore needs three facts about
+// each FILE: its intake record (`ats_cv_intake_events`), the extractor's verdict
+// (`ats_candidate_cv_extractions`), and — for a CV a recruiter saved out of the WhatsApp inbox, which
+// has no intake record at all — the line it came off (`whatsapp_inbox_messages`). The live mirror
+// reads them per file; `backfill-cvs-to-drive.mjs` and `build-cv-cabinet.mjs` read them here, in
+// bulk, and hand them to the same pure pickers the mirror uses — so a re-file can never choose a
+// different record than the running site does.
 
 import process from "node:process";
 
@@ -45,7 +47,7 @@ function groupByFile(rows) {
   return byFile;
 }
 
-/** Every intake record and every extraction verdict for these files, keyed by file id. */
+/** Every intake record, extraction verdict and inbox save for these files, keyed by file id. */
 export async function loadCabinetFacts(rest, fileIds) {
   const events = await pagedByFile(
     rest,
@@ -61,7 +63,22 @@ export async function loadCabinetFacts(rest, fileIds) {
       `ats_candidate_cv_extractions?select=file_id,is_cv,created_at`
       + `&file_id=in.(${idList})&order=created_at.asc&offset=${offset}&limit=${limit}`,
   );
-  return { intakeByFile: groupByFile(events), verdictsByFile: groupByFile(verdicts) };
+  // THE WHATSAPP LINE for a CV a recruiter saved out of the inbox. That file has no intake record —
+  // a person moved it, nothing imported it — so the line lives on the inbox MESSAGE, joined back by
+  // `saved_file_id`. Aliased to `file_id` so it groups like the other two, and asked for every file
+  // rather than only the `whatsapp_inbox` ones: a file that is not one simply has no message.
+  const inboxMessages = await pagedByFile(
+    rest,
+    fileIds,
+    (idList, offset, limit) =>
+      `whatsapp_inbox_messages?select=file_id:saved_file_id,line_display_number,saved_at`
+      + `&saved_file_id=in.(${idList})&order=saved_at.asc&offset=${offset}&limit=${limit}`,
+  );
+  return {
+    inboxLineByFile: groupByFile(inboxMessages),
+    intakeByFile: groupByFile(events),
+    verdictsByFile: groupByFile(verdicts),
+  };
 }
 
 /** The input `cabinetPathFor` takes, for one file. */
@@ -79,6 +96,9 @@ export function cabinetInputFor({ candidate, facts, file, importSenders, sibling
     // script-versus-site disagreement this shared loader exists to stop, which is why the registered
     // test asserts each script's own SELECT fetches it.
     uploadOrigin: file.upload_origin ?? null,
+    // Read only when the origin is `whatsapp_inbox`; the earliest save wins, the way the earliest
+    // intake event does, so a file saved twice cannot change folder between two runs.
+    whatsappInboxLine: (facts.inboxLineByFile?.get(file.id) ?? [])[0]?.line_display_number ?? null,
   };
 }
 
