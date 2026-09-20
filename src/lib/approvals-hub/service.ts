@@ -25,8 +25,15 @@ import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
-import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
+import { resolveApproverPlanStage, resolveSubmitterIsDistrictManager } from "@/lib/weekly-planning/service";
 import { authRoleForHrId, loadDistrictManagerAppRoleMatcher } from "@/lib/weekly-planning/service";
+import {
+  isSecondApproverForManager,
+  managerHrIdsForSecondApprover,
+  planHasSecondApprover,
+  secondApproverHrIdForManager,
+  secondApproverTitleForManager,
+} from "@/lib/weekly-planning/second-approver";
 import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
@@ -1343,7 +1350,19 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       submittedAt: String(raw.submitted_at ?? ""),
     };
 
-    const stage = resolveApproverPlanStage(status, managerHrId, access, String(raw.employee_job_title ?? ""));
+    const employeeJobTitle = String(raw.employee_job_title ?? "");
+    const stage = resolveApproverPlanStage(
+      status,
+      managerHrId,
+      access,
+      employeeJobTitle,
+      await resolveSubmitterIsDistrictManager({
+        employee_hr_id: employeeHrId,
+        employee_job_title: employeeJobTitle,
+        manager_hr_id: managerHrId,
+        status,
+      }),
+    );
     if (stage) {
       awaiting.push({ ...base, stage });
       continue;
@@ -1367,6 +1386,12 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     // The CEO is the stage-2 approver for every plan today, so a plan still at the manager stage
     // is genuinely "coming to" them. (Super Admin can already act on every stage, so no upcoming.)
     if (isCeo && status === "submitted") {
+      upcoming.push({ ...base, stage: "manager" });
+      continue;
+    }
+    // The second approver of the DMs reporting to Hany Saad sees each plan still with that manager
+    // as "coming to you" — the CEO has no turn on these plans, so this is the one place it is theirs.
+    if (status === "submitted" && isSecondApproverForManager(hrId, managerHrId) && isDistrictManagerPlanTitle(String(raw.employee_job_title ?? ""))) {
       upcoming.push({ ...base, stage: "manager" });
       continue;
     }
@@ -1765,6 +1790,9 @@ function buildPlanTrackerSteps(
   row: Record<string, unknown>,
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
   isDistrictManagerPlan = false,
+  // A District Manager plan whose manager has a second approver keeps a real stage after the
+  // manager (second-approver.ts) — shown under the approver's own name, never labelled "CEO".
+  hasSecondApprover = false,
 ): ApprovalTimelineStep[] {
   const status = String(row.status ?? "") as EmployeePlanStatus;
   const submittedAt = row.submitted_at ? String(row.submitted_at) : null;
@@ -1822,14 +1850,17 @@ function buildPlanTrackerSteps(
       decisionComment: row.manager_decision_comment ? String(row.manager_decision_comment) : null,
     },
   ];
-  if (!isDistrictManagerPlan) {
+  if (!isDistrictManagerPlan || hasSecondApprover) {
     steps.push({
       order: 3,
       stepKey: "ceo",
       genericStep: "ceo",
       status: ceoStatus,
-      approverName: deciderDisplayName(employees, String(row.ceo_decision_by_hr_id ?? "")),
-      approverTitle: "CEO",
+      approverName: deciderDisplayName(
+        employees,
+        String(row.ceo_decision_by_hr_id ?? (hasSecondApprover ? secondApproverHrIdForManager(String(row.manager_hr_id ?? "")) : "") ?? ""),
+      ),
+      approverTitle: hasSecondApprover ? (secondApproverTitleForManager(String(row.manager_hr_id ?? "")) ?? "Second approver") : "CEO",
       decidedAt: ceoAt,
       decisionComment: row.ceo_decision_comment ? String(row.ceo_decision_comment) : null,
     });
@@ -1869,7 +1900,10 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
   const isCeo = access.role === "CEO";
   const isAssignedManager = isViewer(managerHrId, hrId);
-  if (!isSuperAdmin && !own && !isAssignedManager && !isCeo) return emptyPlanDetail(id);
+  // The second approver of the DMs reporting to Hany Saad opens every plan of theirs, at any
+  // status and period — the history he was asked to be able to read (owner 2026-09-20).
+  const isSecondApprover = isSecondApproverForManager(hrId, managerHrId);
+  if (!isSuperAdmin && !own && !isAssignedManager && !isCeo && !isSecondApprover) return emptyPlanDetail(id);
 
   const directory = await getEmployeeDirectory();
   const planKind = (String(row.plan_kind ?? "weekly") === "monthly" ? "monthly" : "weekly") as EmployeePlanKind;
@@ -1883,17 +1917,24 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   // manager_approved -> final_approved directly; "ceo_approved" is never produced in practice —
   // confirmed live during e2e testing, 0 production rows ever hold that status). Own plans are
   // never actionable by the owner.
-  const approverStage = resolveApproverPlanStage(status, managerHrId, access, String(row.employee_job_title ?? ""));
+  const submitterIsDm = await resolveSubmitterIsDistrictManager({
+    employee_hr_id: employeeHrId,
+    employee_job_title: row.employee_job_title ? String(row.employee_job_title) : null,
+    manager_hr_id: managerHrId,
+    status,
+  });
+  const approverStage = resolveApproverPlanStage(status, managerHrId, access, String(row.employee_job_title ?? ""), submitterIsDm);
   // A District Manager plan by title, or by the submitter's app role (an acting District Manager
   // keeps a Medical Representative title). The app-role half is skipped for a plan that really did
   // go through a CEO stage — resting at manager_approved, or carrying a CEO decision, from before
   // the app-role check existed (2026-09-13) — so its tracker keeps the CEO step it actually has.
   const keptCeoStage =
     status === "manager_approved" ||
-    resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id) !== null;
+    resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id, managerHrId) !== null;
   const isDistrictManagerPlan =
     isDistrictManagerPlanTitle(String(row.employee_job_title ?? "")) ||
     (!keptCeoStage && isDistrictManagerPlanSubmitter(null, await authRoleForHrId(employeeHrId)));
+  const hasSecondApprover = planHasSecondApprover(managerHrId, isDistrictManagerPlan);
   const canAcknowledge = status === "final_approved" && isSuperAdmin && !own;
   const decisionStage = !own && approverStage ? approverStage : null;
   // The employee's edit-request (reopen a submitted plan) is decided ONLY by the actual direct
@@ -1949,7 +1990,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
     statusLabel: humanizeStatus(status),
     calendar,
     composition: computePlanComposition(rawItems, planKind, periodStartDate, periodEndDate),
-    steps: buildPlanTrackerSteps(row, directory.employees, isDistrictManagerPlan),
+    steps: buildPlanTrackerSteps(row, directory.employees, isDistrictManagerPlan, hasSecondApprover),
     actions,
     decisionStage,
     canAcknowledge,
@@ -1958,7 +1999,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
     returnableActivities: buildReturnableActivities(rawItems),
     isOwner: own,
     plannerHref,
-    stageLabel: planStageLabel(status),
+    stageLabel: hasSecondApprover && status === "manager_approved" ? "Second approver review" : planStageLabel(status),
     slaAgeDays: row.submitted_at ? daysSinceCalendar(String(row.submitted_at)) : 0,
     readOnly: !actionable || own,
     readOnlyReason: own
@@ -1979,7 +2020,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   const [{ data: plans }, directory] = await Promise.all([
     db
       .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+      .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
       .or("manager_decision_at.not.is.null,ceo_decision_at.not.is.null")
       .order("manager_decision_at", { ascending: false })
       .limit(500),
@@ -1991,7 +2032,7 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
     const status = String(row.status ?? "").toLowerCase();
     // A District Manager plan has no CEO stage, so its header CEO stamp is never a decision to
     // attribute — resolvePlanCeoDecision, not row.ceo_decision_at, decides whose decision this is.
-    const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id);
+    const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id, row.manager_hr_id);
     const deciderHrId = ceo ? ceo.byHrId : String(row.manager_decision_by_hr_id ?? "");
     const decidedAt = ceo ? ceo.decidedAt : String(row.manager_decision_at ?? "");
     let decision: "approved" | "rejected" | "returned" | null = null;
@@ -2037,18 +2078,24 @@ function planStatusTone(status: string): CompanyRequestStatusTone {
  */
 async function fetchCompanyPlanRequestItems(
   access: AccessContext,
-  options?: { districtManagersOnly?: boolean },
+  options?: { districtManagersOnly?: boolean; managerHrIds?: string[] },
 ): Promise<CompanyRequestItem[]> {
-  if (!canSeeCeoApprovalTabs(access)) {
+  if (options?.managerHrIds) {
+    // The second approver's own feed (second-approver.ts): only the managers he decides the second
+    // stage for, and only for him — never widened to the CEO/Super Admin gate below.
+    if (options.managerHrIds.length === 0 || !options.managerHrIds.every((managerHrId) => isSecondApproverForManager(access.hrId, managerHrId))) {
+      throw new Error("Forbidden: only the second approver can view this plan feed.");
+    }
+  } else if (!canSeeCeoApprovalTabs(access)) {
     throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
   }
+  let query = getSupabaseAdmin()
+    .from("employee_plan_headers")
+    .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
+    .neq("status", "draft");
+  if (options?.managerHrIds) query = query.in("manager_hr_id", options.managerHrIds);
   const [{ data, error }, directory] = await Promise.all([
-    getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
-      .neq("status", "draft")
-      .order("submitted_at", { ascending: false })
-      .limit(1000),
+    query.order("submitted_at", { ascending: false }).limit(1000),
     getEmployeeDirectory(),
   ]);
   if (error) {
@@ -2103,6 +2150,16 @@ export async function getCompanyDistrictManagerPlanRequests(access: AccessContex
   return fetchCompanyPlanRequestItems(access, { districtManagersOnly: true });
 }
 
+// Every plan (pending AND decided, every period) of the District Managers reporting to the
+// managers this viewer decides the second stage for — the read-only history feed that gives the
+// second approver (second-approver.ts) the plans he approves and the ones that came before his stage
+// existed. Null for everyone who is nobody's second approver, which is nearly everyone.
+export async function getSecondApproverPlanRequests(access: AccessContext): Promise<CompanyRequestItem[] | null> {
+  const managerHrIds = managerHrIdsForSecondApprover(access.hrId);
+  if (managerHrIds.length === 0) return null;
+  return fetchCompanyPlanRequestItems(access, { managerHrIds });
+}
+
 // ── Plan workspace (page-ready data for the 4-tab body) ───────────────────────
 
 export type PlanWorkspaceData = {
@@ -2129,9 +2186,10 @@ export type PlanWorkspaceData = {
   planDetailBaseHref: string;
 };
 
-function planStageStatusLabel(stage: PlanApprovalStage): string {
+function planStageStatusLabel(stage: PlanApprovalStage, viewerIsCeo = true): string {
   if (stage === "manager") return "Needs manager review";
-  if (stage === "ceo") return "Needs CEO approval";
+  // The second approver of the DMs reporting to Hany Saad holds this stage, not the CEO.
+  if (stage === "ceo") return viewerIsCeo ? "Needs CEO approval" : "Needs your approval";
   if (stage === "edit_request") return "Edit request — decide";
   return "Needs HR acknowledgement";
 }
@@ -2146,7 +2204,9 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
       getResponderPlanHistory(access),
       showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
       showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
-      showCeoTabs ? getCompanyDistrictManagerPlanRequests(access).catch(() => []) : Promise.resolve(null),
+      showCeoTabs
+        ? getCompanyDistrictManagerPlanRequests(access).catch(() => [])
+        : getSecondApproverPlanRequests(access).catch(() => null),
       // Never throws — the score is an overlay, and a CRM read that fails must cost a tab, not the page.
       loadPlanAdherenceHistory(access.hrId).catch(() => null),
     ]);
@@ -2155,7 +2215,7 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     href: planApprovalHref(access, item.id),
     employeeName: item.employeeName,
     title: `${item.planKind === "monthly" ? "Monthly" : "Weekly"} plan · ${item.periodKey}`,
-    statusLabel: planStageStatusLabel(item.stage),
+    statusLabel: planStageStatusLabel(item.stage, access.role === "CEO" || access.role === "Super Admin"),
     ageDays: item.ageDays,
   });
   return {

@@ -12,6 +12,8 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
+import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
+import { planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
@@ -254,12 +256,18 @@ async function getCeoRecentHiresCount(): Promise<number> {
 }
 
 async function getCeoPendingPlansCount(): Promise<number> {
-  const { count, error } = await getSupabaseAdmin()
+  // Not a head-only count: a District Manager plan resting at manager_approved under a manager with
+  // a second approver (second-approver.ts) is waiting on THAT approver, never on the CEO, so it
+  // must not be counted here — and only the rows themselves say which plans those are.
+  const { data, error } = await getSupabaseAdmin()
     .from("employee_plan_headers")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "manager_approved");
+    .select("id,manager_hr_id,employee_job_title")
+    .eq("status", "manager_approved")
+    .limit(1000);
   if (error) throw error;
-  return count ?? 0;
+  return ((data ?? []) as Array<{ manager_hr_id: string | null; employee_job_title: string | null }>).filter(
+    (row) => !planHasSecondApprover(row.manager_hr_id, isDistrictManagerPlanTitle(row.employee_job_title)),
+  ).length;
 }
 
 function buildCeoHealth(

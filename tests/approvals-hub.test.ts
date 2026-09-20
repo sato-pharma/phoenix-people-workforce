@@ -312,7 +312,7 @@ export function runApprovalsHubTests() {
   // Plans reuse the same cross-module My Requests / history sources as vacation/excuse.
   assert.match(svc, /\.filter\(\(item\) => item\.module === "weekly_plan"\)/, "plan My Requests/history filter the shared getMyRequestItems/getMyApprovalHistory output, not a reimplementation");
   // Consolidation only: the plan responder reuses the existing plan authority rule; no new workflow.
-  assert.match(svc, /import \{ resolveApproverPlanStage \} from "@\/lib\/weekly-planning\/service";/, "plan buckets reuse the existing server-side approver authority rule (no workflow change)");
+  assert.match(svc, /import \{ resolveApproverPlanStage[^}]*\} from "@\/lib\/weekly-planning\/service";/, "plan buckets reuse the existing server-side approver authority rule (no workflow change)");
   // HR acknowledge authority for plans is Super Admin / system only (mirrors weekly-planning).
   assert.match(svc, /function isPlanHrActor\(access[^)]*\): boolean \{\s*return access\.role === "Super Admin" \|\| access\.scope === "system";/, "plan HR-acknowledge authority is Super Admin / system only");
 

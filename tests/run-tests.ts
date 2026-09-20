@@ -1705,6 +1705,7 @@ import { runReact418HydrationSafeTextTests } from "./react-418-hydration-safe-te
 import { runPayrollHoldReviewTests } from "./payroll-hold-review.test.ts";
 import { runPmCallRateBandTests } from "./pm-call-rate-band.test.ts";
 import { runDmPlanHasNoCeoStageTests } from "./dm-plan-has-no-ceo-stage.test.ts";
+import { runDmPlanSecondApproverTests } from "./dm-plan-second-approver.test.ts";
 import { runEmailIdentityGuardCallersTests } from "./email-identity-guard-callers.test.ts";
 import { runMarketingRequestVenueRequiredTests } from "./marketing-request-venue-required.test.ts";
 import { runMarketingCustomerMergeTombstoneTests } from "./marketing-customer-merge-tombstone.test.ts";
@@ -5720,6 +5721,10 @@ await runTest(
 await runTest(
   "a DM plan has no CEO stage — a stamped header is never attributed to the CEO, and non-DM plans keep theirs",
   runDmPlanHasNoCeoStageTests,
+);
+await runTest(
+  "a Hany Saad DM plan takes a second stage decided by Ali Mohamed Ali — the CEO has no turn, every other DM plan is unchanged",
+  runDmPlanSecondApproverTests,
 );
 await runTest(
   "every official workflow email supplies exactly one subject HR ID (never zero, never two; digests exempt by event type)",

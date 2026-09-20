@@ -1264,19 +1264,29 @@ export function PlansWorkspace({
   // District Manager plans never reach a CEO decision — their manager's approval cascades
   // straight to final_approved (service.ts decideEmployeePlan), so they must never populate
   // this decide queue even during the brief/legacy window a plan sits at manager_approved.
+  //
+  // The one exception is the DMs reporting to Hany Saad: their second stage is decided by the
+  // named second approver (second-approver.ts), so a plan resting at manager_approved under that
+  // manager IS in that viewer's — and only that viewer's — review queue. The server enforces the
+  // same identity in decideEmployeePlan (assertSecondApprover); this only decides what is listed.
+  const isSecondStagePlanForViewer = (item: { managerHrId: string | null }) =>
+    workspace.secondApproverManagerHrIds.some((managerHrId) => hrIdsMatch(managerHrId, item.managerHrId));
   const ceoQueue = plans.filter(
     (item) =>
       item.status === "manager_approved" &&
-      access.role === "CEO" &&
-      !isDistrictManagerPlanTitle(item.employeeJobTitle),
+      ((access.role === "CEO" && !isDistrictManagerPlanTitle(item.employeeJobTitle)) ||
+        isSecondStagePlanForViewer(item)),
   );
   // Read-only oversight: the CEO can still see every District Manager plan past the draft
-  // stage, just never with a decide action — HR is the real approver-of-record for these.
+  // stage, just never with a decide action — HR is the real approver-of-record for these. The
+  // second approver reads every plan of the DMs he decides for, at every status and period (the
+  // ones awaiting his decision sit in the review queue above instead).
   const districtManagerReadOnlyQueue = plans.filter(
     (item) =>
-      access.role === "CEO" &&
       item.status !== "draft" &&
-      isDistrictManagerPlanTitle(item.employeeJobTitle),
+      isDistrictManagerPlanTitle(item.employeeJobTitle) &&
+      (access.role === "CEO" ||
+        (isSecondStagePlanForViewer(item) && item.status !== "manager_approved")),
   );
   const hrQueue = plans.filter(
     (item) =>
@@ -2237,7 +2247,7 @@ export function PlansWorkspace({
             onReturnNote={updateReturnNote}
             plans={ceoQueue}
             returnNotes={returnNotes}
-            title="CEO Review"
+            title={access.role === "CEO" ? "CEO Review" : "Final Review"}
             type="ceo"
           />
           <QueueCard
@@ -2996,7 +3006,7 @@ export function PlansWorkspace({
               onReturnNote={updateReturnNote}
               plans={ceoQueue}
               returnNotes={returnNotes}
-              title="CEO Review"
+              title={access.role === "CEO" ? "CEO Review" : "Final Review"}
               type="ceo"
             />
             <QueueCard

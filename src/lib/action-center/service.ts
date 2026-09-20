@@ -606,7 +606,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .limit(200),
       db
         .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,employee_job_title,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+        .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
         .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
         .not("manager_decision_at", "is", null)
         .order("manager_decision_at", { ascending: false })
@@ -739,8 +739,10 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
   if (plans.status === "fulfilled" && !plans.value.error) {
     for (const row of plans.value.data ?? []) {
       // A District Manager plan has no CEO stage, so a header CEO stamp on one is never this
-      // viewer's decision — it must not put the row in his history, nor date it.
-      const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id);
+      // viewer's decision — it must not put the row in his history, nor date it. The one exception
+      // is the second approver of the DMs reporting to Hany Saad (second-approver.ts): his own
+      // stamp on those plans is a real decision and belongs in his history.
+      const ceo = resolvePlanCeoDecision(row.employee_job_title, row.ceo_decision_at, row.ceo_decision_by_hr_id, row.manager_hr_id);
       const isMgrDecider = decidedByMe(row.manager_decision_by_hr_id);
       const isCeoDecider = Boolean(ceo) && decidedByMe(row.ceo_decision_by_hr_id);
       if (!isMgrDecider && !isCeoDecider) continue;
