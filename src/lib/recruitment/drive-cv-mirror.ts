@@ -36,6 +36,7 @@ import {
   cabinetPathFor,
   earliestIntakeEvent,
   latestCvVerdict,
+  WHATSAPP_INBOX_UPLOAD_ORIGIN,
   type CabinetIntakeEvent,
 } from "@/lib/recruitment/drive-cabinet-folders";
 import {
@@ -314,6 +315,23 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
       .limit(1);
     if (verdictError) throw verdictError;
 
+    // WHICH WHATSAPP LINE, for a CV a recruiter saved out of the inbox. That file has no intake
+    // record — nothing imported it, a person moved it — so the only thing that knows the line is the
+    // inbox MESSAGE it came off, joined back by `saved_file_id`. Asked only for that origin, because
+    // for every other file the question is already answered and the round trip would be wasted.
+    let whatsappInboxLine: string | null = null;
+    if (String(row.upload_origin ?? "").trim().toLowerCase() === WHATSAPP_INBOX_UPLOAD_ORIGIN) {
+      const { data: inboxRows, error: inboxError } = await supabase
+        .from("whatsapp_inbox_messages")
+        .select("line_display_number, saved_at")
+        .eq("saved_file_id", fileId)
+        .order("saved_at", { ascending: true })
+        .limit(1);
+      if (inboxError) throw inboxError;
+      const saves = (inboxRows ?? []) as Array<{ line_display_number: string | null }>;
+      whatsappInboxLine = saves[0]?.line_display_number ?? null;
+    }
+
     const areaRegions = await loadAreaRegionMap();
     const { fileName: baseFileName } = placementFor(candidateRow as MirrorCandidateRow, areaRegions, row.mime_type);
     // A candidate who sent TWO DIFFERENT CVs gets both, and until now both wore the same name in the
@@ -333,6 +351,7 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
         isCv: latestCvVerdict((verdictRows ?? []) as Array<{ created_at: string | null; is_cv: boolean | null }>),
         siblings,
         uploadOrigin: row.upload_origin,
+        whatsappInboxLine,
       },
       areaRegions,
     );
