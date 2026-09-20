@@ -111,7 +111,7 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   // call is made and no ceo_approve row is written under the manager's identity.
   assert.match(
     serviceSource,
-    /const isDistrictManagerPlan = isDistrictManagerPlanSubmitter\(plan\.employee_job_title, await authRoleForHrId\(plan\.employee_hr_id\)\);\s*\n\s*const bypassCeo = input\.action === "manager_approve" && isDistrictManagerPlan;/,
+    /const isDistrictManagerPlan = isDistrictManagerPlanSubmitter\(plan\.employee_job_title, await authRoleForHrId\(plan\.employee_hr_id\)\);[\s\S]*?const bypassCeo = input\.action === "manager_approve" && isDistrictManagerPlan && !hasSecondApprover;/,
     "decideEmployeePlan must derive bypassCeo from a District Manager manager_approve, reading the submitter's app role as well as the title",
   );
   // The ceo_* guard (section 2) stays TITLE-only on purpose: a plan by an acting District Manager
@@ -184,7 +184,7 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   // District Manager's manager_approved plan.
   assert.match(
     serviceSource,
-    /if \(status === "manager_approved"\) \{\s*\n\s*if \(isCeo\) \{\s*\n\s*return isDistrictManagerPlanTitle\(jobTitle \?\? null\) \? null : "ceo";/,
+    /if \(status === "manager_approved"\) \{[\s\S]*?if \(isCeo\) \{\s*\n\s*return isDistrictManagerPlan \? null : "ceo";/,
     "resolveApproverPlanStage must return null (not \"ceo\") for the CEO on a District Manager's manager_approved plan",
   );
 
@@ -193,7 +193,7 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   // Reject buttons for the CEO.
   assert.match(
     workspaceSource,
-    /const ceoQueue = plans\.filter\(\s*\n\s*\(item\) =>\s*\n\s*item\.status === "manager_approved" &&\s*\n\s*access\.role === "CEO" &&\s*\n\s*!isDistrictManagerPlanTitle\(item\.employeeJobTitle\),/,
+    /const ceoQueue = plans\.filter\(\s*\n\s*\(item\) =>\s*\n\s*item\.status === "manager_approved" &&\s*\n\s*\(\(access\.role === "CEO" && !isDistrictManagerPlanTitle\(item\.employeeJobTitle\)\) \|\|\s*\n\s*isSecondStagePlanForViewer\(item\)\),/,
     "the workspace CEO decide queue must exclude District Manager plans",
   );
 
@@ -285,8 +285,8 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   );
   assert.match(
     approvalsHubSource,
-    /showCeoTabs \? getCompanyDistrictManagerPlanRequests\(access\)\.catch\(\(\) => \[\]\) : Promise\.resolve\(null\)/,
-    "getPlanWorkspaceData must fetch the District Manager feed under the same CEO/Super-Admin gate as Company Plans",
+    /showCeoTabs\s*\n?\s*\? getCompanyDistrictManagerPlanRequests\(access\)\.catch\(\(\) => \[\]\)\s*\n?\s*: getSecondApproverPlanRequests\(access\)\.catch\(\(\) => null\)/,
+    "getPlanWorkspaceData must fetch the District Manager feed under the same CEO/Super-Admin gate as Company Plans (the second approver gets only his own DMs' feed otherwise)",
   );
 
   // 11. The tab must actually be wired up end to end: plan-approvals-body passes the feed into
@@ -337,12 +337,12 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   );
   assert.match(
     trackerMatch[0],
-    /if \(!isDistrictManagerPlan\) \{\s*\n\s*steps\.push\(\{\s*\n\s*order: 3,\s*\n\s*stepKey: "ceo",/,
-    "the ceo step must only be pushed onto the tracker when the plan is not a District Manager's",
+    /if \(!isDistrictManagerPlan \|\| hasSecondApprover\) \{\s*\n\s*steps\.push\(\{\s*\n\s*order: 3,\s*\n\s*stepKey: "ceo",/,
+    "the ceo step must only be pushed onto the tracker when the plan is not a District Manager's (or that DM's manager has a second approver)",
   );
   assert.match(
     approvalsHubSource,
-    /steps: buildPlanTrackerSteps\(row, directory\.employees, isDistrictManagerPlan\),/,
+    /steps: buildPlanTrackerSteps\(row, directory\.employees, isDistrictManagerPlan, hasSecondApprover\),/,
     "getPlanApprovalDetail must thread isDistrictManagerPlan into the tracker",
   );
 
@@ -362,7 +362,7 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
   );
   assert.match(
     approvalsHubSource,
-    /stageLabel: planStageLabel\(status\),/,
+    /stageLabel: hasSecondApprover && status === "manager_approved" \? "Second approver review" : planStageLabel\(status\),/,
     "getPlanApprovalDetail must call planStageLabel with status only -- the isDistrictManagerPlan arg is gone",
   );
 

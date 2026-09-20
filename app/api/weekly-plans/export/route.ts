@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildEmployeePlansPdf, buildEmployeePlansWorkbook } from "@/lib/weekly-planning/export";
+import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import { getEmployeePlansWorkspace, type EmployeePlan } from "@/lib/weekly-planning/service";
+import { isSecondApproverForManager, planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { hrIdsMatch } from "@/lib/hr-id";
@@ -32,7 +34,14 @@ function fileDate() {
 function plansForScope(workspacePlans: EmployeePlan[], scope: string, accessHrId: string | null | undefined, canAcknowledgeHr: boolean) {
   if (scope === "own") return workspacePlans.filter((plan) => hrIdsMatch(plan.employeeHrId, accessHrId));
   if (scope === "manager") return workspacePlans.filter((plan) => plan.status === "submitted" && hrIdsMatch(plan.managerHrId, accessHrId));
-  if (scope === "ceo") return workspacePlans.filter((plan) => plan.status === "manager_approved");
+  if (scope === "ceo") {
+    // A District Manager plan under a manager with a second approver waits on THAT approver, not the CEO.
+    return workspacePlans.filter((plan) => {
+      if (plan.status !== "manager_approved") return false;
+      if (!planHasSecondApprover(plan.managerHrId, isDistrictManagerPlanTitle(plan.employeeJobTitle))) return true;
+      return isSecondApproverForManager(accessHrId, plan.managerHrId);
+    });
+  }
   if (scope === "hr") return canAcknowledgeHr ? workspacePlans.filter((plan) => ["final_approved", "hr_acknowledged"].includes(plan.status)) : [];
   return workspacePlans;
 }

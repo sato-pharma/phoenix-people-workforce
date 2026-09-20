@@ -1,5 +1,7 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { hrIdsMatch } from "@/lib/hr-id";
+import { secondApproverHrIdForManager } from "@/lib/weekly-planning/second-approver";
 
 export type EmployeePlanKind = "weekly" | "monthly";
 
@@ -186,14 +188,25 @@ export function isDistrictManagerPlanSubmitter(
  * were cleared in production on 2026-09-06 — but no read path may DEPEND on that having been
  * done, which is the whole point of routing through here.
  *
+ * One exception, from 2026-09-20: a District Manager plan whose manager has a configured second
+ * approver (second-approver.ts — the DMs reporting to Hany Saad, decided by Ali Mohamed Ali) DOES
+ * carry a real second-stage decision in those columns. It is shown only when the stamp was written
+ * BY that approver, so a stale stamp from before the rule can never be attributed to him.
+ *
  * Ask this helper; never read `row.ceo_decision_at` directly to attribute a decision.
  */
 export function resolvePlanCeoDecision(
   employeeJobTitle: unknown,
   ceoDecisionAt: unknown,
   ceoDecisionByHrId: unknown,
+  managerHrId?: unknown,
 ): { decidedAt: string; byHrId: string } | null {
-  if (isDistrictManagerPlanTitle(String(employeeJobTitle ?? ""))) return null;
+  if (isDistrictManagerPlanTitle(String(employeeJobTitle ?? ""))) {
+    const approverHrId = secondApproverHrIdForManager(managerHrId ? String(managerHrId) : null);
+    if (!approverHrId || !hrIdsMatch(approverHrId, ceoDecisionByHrId ? String(ceoDecisionByHrId) : null)) {
+      return null;
+    }
+  }
   const decidedAt = ceoDecisionAt ? String(ceoDecisionAt) : "";
   if (!decidedAt) return null;
   return { decidedAt, byHrId: ceoDecisionByHrId ? String(ceoDecisionByHrId) : "" };

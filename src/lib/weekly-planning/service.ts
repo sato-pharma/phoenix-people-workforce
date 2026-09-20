@@ -106,6 +106,13 @@ import {
 } from "@/lib/weekly-planning/plan-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  isSecondApproverForManager,
+  managerHrIdsForSecondApprover,
+  planHasSecondApprover,
+  secondApproverHrIdForManager,
+  secondApproverLabelForManager,
+} from "@/lib/weekly-planning/second-approver";
+import {
   buildEmployeePlanPeriod,
   canEditEmployeePlanStatus,
   employeePlanActivityTypes,
@@ -395,6 +402,11 @@ export type EmployeePlansWorkspace = {
   hasMorePlans: boolean;
   /** Who a Marketing Double Visit can be with: active PMs, GPMs and the Marketing Manager, never the owner. */
   marketingDoubleVisitPartners: MarketingDoubleVisitPartner[];
+  /**
+   * Managers whose District Manager plans this viewer decides the SECOND stage for (second-approver.ts).
+   * Empty for nearly everyone — it is what puts a plan resting at manager_approved in his review queue.
+   */
+  secondApproverManagerHrIds: string[];
   loadedPlanCount: number;
   planLimit: number;
   currentEmployee: {
@@ -761,6 +773,8 @@ function canViewPlan(
   // (resolvePlanViewerScope), built ONCE per request by the caller. Callers that never
   // compute it (none today) simply pass nothing and this branch stays inert.
   if (scope && isPlanOwnerWithinViewerManagementChain(plan.employee_hr_id, scope)) return true;
+  // Second approver (second-approver.ts) reads all his DMs' plans, every status and period.
+  if (isSecondApproverForManager(access.hrId, plan.manager_hr_id)) return true;
   return false;
 }
 
@@ -802,6 +816,22 @@ async function assertManagerReviewer(access: AccessContext, plan: PlanHeaderRow)
 function assertCeoReviewer(access: AccessContext) {
   if (access.role !== "CEO") {
     throw new Error("Forbidden: only the CEO can decide this stage.");
+  }
+}
+
+// Only the named second approver decides that stage of a District Manager plan whose manager has
+// one — the same identity rule as assertManagerReviewer (no CEO, no Super Admin stand-in), and an
+// inactive approver decides nothing.
+async function assertSecondApprover(access: AccessContext, plan: PlanHeaderRow) {
+  if (!isSecondApproverForManager(access.hrId, plan.manager_hr_id)) {
+    throw new Error(
+      `Forbidden: only ${secondApproverLabelForManager(plan.manager_hr_id) ?? "the assigned second approver"} can decide this stage of a plan reporting to ${plan.manager_name ?? "this manager"}.`,
+    );
+  }
+  const directory = await getEmployeeDirectory();
+  const approver = directory.employees.find((emp) => hrIdsMatch(emp.hrId, access.hrId));
+  if (approver && !isActiveEmployee(approver)) {
+    throw new Error("Forbidden: only an active second approver can decide this plan.");
   }
 }
 
@@ -2079,6 +2109,29 @@ async function notifyCeo(plan: PlanHeaderRow) {
   }
 }
 
+// The manager's approval of a plan that takes the second stage goes to the named second approver,
+// never the CEO. Same eventType as the CEO's copy so the in-app bell treats it as actionable and
+// archives it once the plan leaves manager_approved.
+async function notifySecondApprover(plan: PlanHeaderRow) {
+  try {
+    const approverHrId = secondApproverHrIdForManager(plan.manager_hr_id);
+    if (!approverHrId) return;
+    await notifyRecipients({
+      actionUrl: await planReviewActionUrl(approverHrId, plan.id),
+      eventType: "plan_manager_approved",
+      message: `${plan.manager_name ?? "The direct manager"} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It now needs your approval.`,
+      plan,
+      recipients: [{ hrId: approverHrId }],
+      title: `${plan.employee_name}'s ${plan.plan_kind} plan needs your approval`,
+    });
+  } catch (error) {
+    logError("Weekly plan failed to notify the second approver", {
+      labels: { event: "weekly_plan_notify_second_approver_failed", planId: plan.id },
+      error,
+    });
+  }
+}
+
 // Called AFTER autoAcknowledgeFinalApprovedPlan, so `plan` is normally already hr_acknowledged
 // and HR has nothing left to do — the copy says so instead of asking for a click that no longer
 // exists. It still falls back to the original action-needed wording for the one case that can
@@ -2088,16 +2141,19 @@ async function notifyCeo(plan: PlanHeaderRow) {
 // The awareness copy carries audience: "hr_awareness" so the in-app bell does not auto-archive it
 // the moment the plan leaves HR's awaiting bucket — same split notifyHrOnSubmit uses (see
 // classifyActionableApprovalCandidates in notifications/in-app.ts).
-async function notifyHr(plan: PlanHeaderRow) {
+async function notifyHr(plan: PlanHeaderRow, deciderLabel: string | null = null) {
   const autoAcknowledged = plan.status === "hr_acknowledged";
+  // "CEO" unless the last approval was the second approver's (second-approver.ts) — HR reads who
+  // actually approved.
+  const approver = deciderLabel ?? "CEO";
   try {
     await notifyRecipients({
       actionUrl: `/admin/approvals/plan/${plan.id}`,
       ...(autoAcknowledged ? { additionalMetadata: { audience: "hr_awareness" } } : {}),
       eventType: "plan_ceo_approved",
       message: autoAcknowledged
-        ? `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It was acknowledged automatically — no action needed.`
-        : `CEO approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
+        ? `${approver} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. It was acknowledged automatically — no action needed.`
+        : `${approver} approved ${plan.employee_name}'s ${plan.plan_kind} plan for ${plan.period_key}. Please review and acknowledge.`,
       plan,
       recipients: await hrAcknowledgementRecipients(),
       title: autoAcknowledged
@@ -2444,6 +2500,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canAcknowledgeHr,
       canMovePlanPeriod,
       canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
+      secondApproverManagerHrIds: managerHrIdsForSecondApprover(access.hrId),
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -2478,6 +2535,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canAcknowledgeHr,
       canMovePlanPeriod,
       canPlanMarketingDoubleVisit: marketingDoubleVisit.allowed,
+      secondApproverManagerHrIds: managerHrIdsForSecondApprover(access.hrId),
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -2518,7 +2576,9 @@ export type ApproverPlanStage = "manager" | "ceo";
  *   • submitted        → manager stage, only for the actual assigned manager (or, when the
  *     plan has no manager_hr_id at all, the CEO — see assertManagerReviewer's null-manager
  *     fallback).
- *   • manager_approved → CEO stage, only for the actual CEO.
+ *   • manager_approved → CEO stage, only for the actual CEO — EXCEPT a District Manager plan whose
+ *     manager has a configured second approver (second-approver.ts: the DMs reporting to Hany
+ *     Saad), where that stage is Ali Mohamed Ali's and the CEO has no turn at all.
  * Super Admin has NO standing bypass here (owner-confirmed: he cannot act on someone else's
  * turn — only where he's personally the assigned manager, which hrIdsMatch already covers, or
  * at the final HR-acknowledge stage, handled separately by acknowledgeEmployeePlan/isHrReviewer).
@@ -2529,6 +2589,10 @@ export function resolveApproverPlanStage(
   managerHrId: string | null,
   access: Pick<AccessContext, "hrId" | "role" | "scope">,
   jobTitle?: string | null,
+  // The submitter's District-Manager-ness by title OR app role, when the caller resolved it (an
+  // acting DM keeps a Medical Representative title). Left undefined it falls back to the title,
+  // which is what every caller did before the second stage existed.
+  submitterIsDistrictManager?: boolean,
 ): ApproverPlanStage | null {
   const isCeo = access.role === "CEO";
   if (status === "submitted") {
@@ -2537,12 +2601,32 @@ export function resolveApproverPlanStage(
     return null;
   }
   if (status === "manager_approved") {
+    const isDistrictManagerPlan = submitterIsDistrictManager ?? isDistrictManagerPlanTitle(jobTitle ?? null);
+    if (planHasSecondApprover(managerHrId, isDistrictManagerPlan)) {
+      return isSecondApproverForManager(access.hrId, managerHrId) ? "ceo" : null;
+    }
     if (isCeo) {
-      return isDistrictManagerPlanTitle(jobTitle ?? null) ? null : "ceo";
+      return isDistrictManagerPlan ? null : "ceo";
     }
     return null;
   }
   return null;
+}
+
+/**
+ * The submitter's District-Manager-ness for resolveApproverPlanStage — resolved (one login-row read)
+ * ONLY for the single case where it changes the answer: a plan resting at manager_approved under a
+ * manager who has a second approver. Everywhere else it returns undefined and the pure rule falls
+ * back to the title, so no other row pays a lookup.
+ */
+export async function resolveSubmitterIsDistrictManager(row: {
+  employee_hr_id: string;
+  employee_job_title: string | null;
+  manager_hr_id: string | null;
+  status: EmployeePlanStatus;
+}): Promise<boolean | undefined> {
+  if (row.status !== "manager_approved" || !secondApproverLabelForManager(row.manager_hr_id)) return undefined;
+  return isDistrictManagerPlanSubmitter(row.employee_job_title, await authRoleForHrId(row.employee_hr_id));
 }
 
 // One planned activity, flattened for read-only calendar rendering in the approver
@@ -2709,7 +2793,13 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
 
     const items: ApproverPendingPlan[] = [];
     for (const row of rows) {
-      const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access, row.employee_job_title);
+      const stage = resolveApproverPlanStage(
+        row.status,
+        row.manager_hr_id,
+        access,
+        row.employee_job_title,
+        await resolveSubmitterIsDistrictManager(row),
+      );
       if (!stage) continue;
       const planItems = (row.employee_plan_items ?? [])
         .slice()
@@ -3561,6 +3651,14 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   returnNotes?: EmployeePlanReturnNoteInput[];
 }) {
   const plan = await loadPlanRow(planId);
+  // The submitter's District-Manager-ness by title OR app role — an acting DM keeps a Medical
+  // Representative title (isDistrictManagerPlanSubmitter). Resolved once: the guards below and the
+  // cascade both turn on it.
+  const isDistrictManagerPlan = isDistrictManagerPlanSubmitter(plan.employee_job_title, await authRoleForHrId(plan.employee_hr_id));
+  // The DMs reporting to Hany Saad take a second stage: Hany's approval rests at manager_approved
+  // and Ali Mohamed Ali decides it (second-approver.ts, owner 2026-09-20) instead of it landing on
+  // final_approved in one decision.
+  const hasSecondApprover = planHasSecondApprover(plan.manager_hr_id, isDistrictManagerPlan);
   if (input.action.startsWith("manager_")) {
     // The assigned direct manager decides the manager stage by virtue of the org assignment,
     // independent of the global weekly_plans:approve grant. (No Super Admin bypass —
@@ -3569,6 +3667,11 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     // submitters' managers (e.g. Marketing/Group Product/National Sales Manager) approve, return,
     // or reject their reports' plans even though their role lacks a company-wide approve grant.
     await assertManagerReviewer(access, plan);
+  } else if (input.action.startsWith("ceo_") && hasSecondApprover) {
+    // Identity-gated exactly like the manager stage: the named second approver decides it by virtue
+    // of the org assignment, independent of the global weekly_plans:approve grant, and nobody else
+    // can — not the CEO, not Super Admin.
+    await assertSecondApprover(access, plan);
   } else if (input.action.startsWith("ceo_")) {
     await assertPermission(access, "weekly_plans", "approve");
     assertCeoReviewer(access);
@@ -3596,8 +3699,10 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   // The submitter's APP ROLE counts as well as the title: an acting District Manager is titled a
   // Medical Representative (isDistrictManagerPlanSubmitter). The title alone put her plans at
   // manager_approved, waiting on a CEO stage a DM plan does not have.
-  const isDistrictManagerPlan = isDistrictManagerPlanSubmitter(plan.employee_job_title, await authRoleForHrId(plan.employee_hr_id));
-  const bypassCeo = input.action === "manager_approve" && isDistrictManagerPlan;
+  //
+  // The one exception is a DM whose manager has a second approver (hasSecondApprover above): that
+  // plan is NOT bypassed — Hany's approval rests at manager_approved for Ali's decision.
+  const bypassCeo = input.action === "manager_approve" && isDistrictManagerPlan && !hasSecondApprover;
 
   // The next status is computed client-side for the audit-log entry and the
   // notification branch below, but the SQL function recomputes the same rule
@@ -3661,11 +3766,13 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     });
     updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
     await notifyHr(updated);
+  } else if (input.action === "manager_approve" && hasSecondApprover) {
+    await notifySecondApprover(updated);
   } else if (input.action === "manager_approve") {
     await notifyCeo(updated);
   } else if (input.action === "ceo_approve") {
     updated = await autoAcknowledgeFinalApprovedPlan(access, updated);
-    await notifyHr(updated);
+    await notifyHr(updated, hasSecondApprover ? secondApproverLabelForManager(plan.manager_hr_id) : null);
   }
   if (input.action === "manager_approve") {
     await notifyEmployeeManagerApproved(updated);
