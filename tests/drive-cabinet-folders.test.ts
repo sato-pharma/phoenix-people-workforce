@@ -6,6 +6,7 @@ import { chooseCvCopies, copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "
 import {
   ATS_UPLOAD_CHANNEL_FOLDER,
   CABINET_ROOT_NAME,
+  CABINET_UPLOAD_ORIGIN_FOLDERS,
   cabinetChannelFolder,
   cabinetImportSendersFromEnv,
   cabinetPathFor,
@@ -298,12 +299,37 @@ export function runDriveCabinetFolderTests() {
     "the two in-app channels must be two folders, or the refile cannot tell them apart",
   );
 
-  // `whatsapp_inbox` is the ONE origin still without a folder — its CV really did arrive on a
-  // WhatsApp line, so which line's folder it belongs in is the owner's question, not ours.
+  // ── A CV SAVED OUT OF THE INBOX FILES UNDER ITS OWN LINE ──────────────────────────────────────
+  // The owner's 2026-09-12 rule already answers this one: "any CV received on this WhatsApp, folder
+  // it in this WhatsApp folder". A recruiter tapping Save in the inbox moved a CV that reached that
+  // line — it did not arrive "in Phoenix" — so it must land in the SAME folder the chatbot files
+  // that line's CVs into, never in a third folder that splits one line's CVs by which screen touched
+  // them last. The line comes off `whatsapp_inbox_messages.line_display_number`.
+  const savedFromInbox = cv({ intake: null, uploadOrigin: "whatsapp_inbox", whatsappInboxLine: "201159888247" });
+  assert.equal(cabinetRedFlagFor(savedFromInbox), null, "a CV saved out of the inbox is not a red flag");
+  assert.deepEqual(
+    cabinetPathFor(savedFromInbox, AREA_REGIONS),
+    [CHATBOT_FOLDER, "Medical Representative", "Delta (1)", "Gharbia 1 (Tanta)"],
+    "it lands in its own line's folder, beside every CV the chatbot filed from that line",
+  );
+  assert.equal(cabinetChannelFolder(null, "whatsapp_inbox", "201159888247"), CHATBOT_FOLDER);
   assert.equal(
-    cabinetRedFlagFor(cv({ intake: null, uploadOrigin: "whatsapp_inbox" })),
+    cabinetChannelFolder(null, "whatsapp_inbox", "201098500699"),
+    whatsappLineFolderName("201098500699"),
+    "and a second line opens its own folder with nothing to configure",
+  );
+  assert.equal(
+    CABINET_UPLOAD_ORIGIN_FOLDERS.whatsapp_inbox,
+    undefined,
+    "whatsapp_inbox must never get a fixed folder — that is what would split a line in two",
+  );
+
+  // AN INBOX MESSAGE THAT NEVER SAID WHICH LINE is exactly what `source_unknown` was written for.
+  // Inventing a folder from a blank would put a CV under a line nobody can check it against.
+  assert.equal(
+    cabinetRedFlagFor(cv({ intake: null, uploadOrigin: "whatsapp_inbox", whatsappInboxLine: null })),
     "source_unknown",
-    "whatsapp_inbox keeps today's behaviour until the owner says which line's folder it belongs in",
+    "a WhatsApp record that never said which line stays Source unknown",
   );
   assert.equal(cabinetChannelFolder(null, "whatsapp_inbox"), null);
 
@@ -884,4 +910,31 @@ export function runCvUploadPathsMirrorTests() {
       );
     }
   }
+
+  // AND THE LINE, for a CV saved out of the inbox. The origin alone cannot place that file: it says
+  // the inbox, and the folder is the LINE the message arrived on. Both readers have to fetch it from
+  // `whatsapp_inbox_messages`, or the CV files itself "Source unknown" with nothing logged — the same
+  // silent shape this whole suite exists to catch. Asserted on the source for the reason above: both
+  // paths need Supabase, and what would go wrong is a query nobody wrote.
+  assert.match(
+    read("scripts", "cv-cabinet-context.mjs"),
+    /whatsapp_inbox_messages\?select=file_id:saved_file_id,line_display_number/,
+    "the shared cabinet loader must fetch the line a saved inbox attachment arrived on",
+  );
+  assert.match(
+    read("scripts", "cv-cabinet-context.mjs"),
+    /whatsappInboxLine:/,
+    "and pass it through, or the scripts file an inbox save differently from the running site",
+  );
+  const mirror = read("src", "lib", "recruitment", "drive-cv-mirror.ts");
+  assert.match(
+    mirror,
+    /from\("whatsapp_inbox_messages"\)[\s\S]{0,200}?\.eq\("saved_file_id", fileId\)/,
+    "the live mirror must join the inbox message back by saved_file_id to learn the line",
+  );
+  assert.match(
+    mirror,
+    /whatsappInboxLine,/,
+    "and hand that line to cabinetPathFor, or it files the save under Red flags",
+  );
 }

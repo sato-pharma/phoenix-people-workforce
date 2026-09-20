@@ -24,8 +24,9 @@
 // landed on, read from `ats_cv_intake_events`. A CV a person attached inside Phoenix arrives on the
 // path they used, and `ats_files.upload_origin` is what says so — added 2026-09-21, after all 5
 // hand-uploaded CVs on production were found parked under `Red flags/Source unknown`. The interview
-// calendar and a plain upload onto a candidate each open their own folder; the WhatsApp inbox does
-// not yet. See `CABINET_UPLOAD_ORIGIN_FOLDERS`.
+// calendar and a plain upload onto a candidate each open their own folder. A CV a recruiter saved
+// out of the WhatsApp inbox opens NO new folder: it reached us on a WhatsApp line like any other,
+// so it files in that line's folder. See `CABINET_UPLOAD_ORIGIN_FOLDERS`.
 //
 // THE CHANNEL IS THE LINE THE CV ARRIVED ON, NOT THE PERSON. One applicant who wrote to the chatbot
 // line and also emailed careers@ has one CV in each channel folder, because that is where each one
@@ -97,17 +98,22 @@ export const INTERVIEW_CALENDAR_CHANNEL_FOLDER = "Interview calendar";
 export const ATS_UPLOAD_CHANNEL_FOLDER = "Uploaded in Phoenix";
 
 /**
- * The upload origins `ats_files.upload_origin` can hold, and the channel folder each opens.
+ * The upload origins that open a FIXED folder, and which folder each opens.
  *
- * `whatsapp_inbox` is the one origin still without a folder. An attachment lifted out of the inbox
- * onto a candidate genuinely arrived on a WhatsApp line, so the open question is WHICH line's folder
- * it belongs in — not whether it deserves one — and that is the owner's to answer. Until he does it
- * keeps today's behaviour and reads as "Source unknown". Giving it a folder is one line here.
+ * `whatsapp_inbox` is deliberately absent, and it is the one origin that must never be given a fixed
+ * folder of its own. A CV lifted out of the inbox onto a candidate did not arrive "in Phoenix" — it
+ * arrived on a WhatsApp line, and the owner's rule is the line: "any CV received on this WhatsApp,
+ * folder it in this WhatsApp folder". A third folder here would split one line's CVs across two
+ * places depending on whether a recruiter tapped Save in the inbox or the chatbot filed it. So that
+ * origin resolves through `whatsappLineFolderName` instead — see `cabinetChannelFolder`.
  */
 export const CABINET_UPLOAD_ORIGIN_FOLDERS: Readonly<Record<string, string>> = {
   ats_upload: ATS_UPLOAD_CHANNEL_FOLDER,
   interview_calendar: INTERVIEW_CALENDAR_CHANNEL_FOLDER,
 };
+
+/** `ats_files.upload_origin` for a CV a recruiter saved out of the WhatsApp inbox onto a candidate. */
+export const WHATSAPP_INBOX_UPLOAD_ORIGIN = "whatsapp_inbox";
 
 /** Under a channel, for a sender who never answered the questions. Nothing is guessed for them. */
 export const DID_NOT_ANSWER_FOLDER = "Did not answer";
@@ -188,6 +194,14 @@ export type CabinetFileInput = {
    * leaving it out reads exactly as the cabinet read before the column existed.
    */
   uploadOrigin?: string | null;
+  /**
+   * `whatsapp_inbox_messages.line_display_number` of the message this file was saved from — the line
+   * the CV actually reached us on. Only read when `uploadOrigin` is `whatsapp_inbox`, and null when
+   * the inbox row does not say: an inbox message with no line is exactly the "WhatsApp record that
+   * never said which line" the `source_unknown` flag was written for, so it keeps that flag rather
+   * than inventing a folder.
+   */
+  whatsappInboxLine?: string | null;
 };
 
 function clean(value: unknown): string | null {
@@ -233,16 +247,24 @@ export function whatsappLineFolderName(displayNumber: unknown): string | null {
  * the CV actually landed from outside the company, while an origin only ever says which screen inside
  * Phoenix wrote the row. A file cannot honestly carry both; if one ever did, the outside arrival is
  * the channel the owner asked us to file by.
+ *
+ * THE WHATSAPP INBOX IS NOT A CHANNEL OF ITS OWN — it is a screen onto channels we already have. A
+ * recruiter who opens a conversation on 01098500699 and taps Save on the attachment has moved a CV
+ * that reached that line, so it lands in `WhatsApp 01098500699` beside every CV the chatbot filed
+ * from the same line. The line comes off the inbox MESSAGE (`line_display_number`), which is the
+ * same fact the intake path reads as `deliveredToDisplayNumber`, so both routes name one folder.
  */
 export function cabinetChannelFolder(
   intake: CabinetIntakeEvent | null,
   uploadOrigin?: string | null,
+  whatsappInboxLine?: string | null,
 ): string | null {
   const channel = lower(intake?.channel);
   if (intake) {
     if (channel === "email") return EMAIL_CHANNEL_FOLDER;
     if (channel === "whatsapp") return whatsappLineFolderName(intake.raw_metadata?.deliveredToDisplayNumber);
   }
+  if (lower(uploadOrigin) === WHATSAPP_INBOX_UPLOAD_ORIGIN) return whatsappLineFolderName(whatsappInboxLine);
   return CABINET_UPLOAD_ORIGIN_FOLDERS[lower(uploadOrigin)] ?? null;
 }
 
@@ -286,7 +308,7 @@ export function cabinetRedFlagFor(input: CabinetFileInput): CabinetRedFlag | nul
   }
   if (isAutoForwardedCv(input.intake, input.importSenders)) return "auto_forward";
   if (isColleagueEmail(input.intake)) return "colleague";
-  if (!cabinetChannelFolder(input.intake, input.uploadOrigin)) return "source_unknown";
+  if (!cabinetChannelFolder(input.intake, input.uploadOrigin, input.whatsappInboxLine)) return "source_unknown";
   return null;
 }
 
@@ -355,7 +377,7 @@ export function cabinetPathFor(input: CabinetFileInput, areaRegions: AreaRegionM
     segments = [RED_FLAGS_FOLDER, cabinetRedFlagLabels[flag]];
   } else {
     // Not null: a CV with no channel is flagged "Source unknown" above.
-    const channel = cabinetChannelFolder(input.intake, input.uploadOrigin) as string;
+    const channel = cabinetChannelFolder(input.intake, input.uploadOrigin, input.whatsappInboxLine) as string;
     if (!clean(input.candidate.preferences_declared_at)) {
       segments = [channel, DID_NOT_ANSWER_FOLDER];
     } else {
