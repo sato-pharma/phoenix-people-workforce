@@ -706,6 +706,25 @@ function campaignRuleOutcome(input: {
   });
 }
 
+/**
+ * The employee name written onto an outstation request row.
+ *
+ * The employee RECORD's `full_name`, never `displayName` — see the note in getEmployeeIdentity.
+ * Falls back to `displayName` and then the HR id only so a record with a blank full name still
+ * writes something a human can read; it never writes an empty string.
+ *
+ * Every path that inserts into `outstation_expense_requests` goes through this, so the three of
+ * them cannot drift apart again: the wizard, the medical-rep manual form and the admin manual
+ * entry all stamp the same name for the same person.
+ */
+export function outstationRecordName(employee: {
+  displayName?: string | null;
+  fullName?: string | null;
+  hrId: string;
+}) {
+  return text(employee.fullName) || text(employee.displayName) || employee.hrId;
+}
+
 async function getEmployeeIdentity(access: AccessContext) {
   const identityHrId = resolveEmployeeIdentityId(access);
   if (!identityHrId) {
@@ -728,6 +747,19 @@ async function getEmployeeIdentity(access: AccessContext) {
     employeeHrId: employee.hrId,
     employeeLine: employee?.lineName ?? null,
     employeeName: employee?.displayName ?? employee.hrId,
+    // The name PERSISTED onto the request row — deliberately NOT `employeeName`.
+    //
+    // `displayName` is nickname-first by design (employee-directory.ts says so in its own type:
+    // "use this for live UI/report rendering; use fullName for legal/payroll documents,
+    // persisted workflow audit snapshots, and identity-matching logic"). An outstation request
+    // is exactly that third thing — a persisted workflow row that feeds the approvals queue,
+    // the expense-claims mirror and payroll — so it takes the employee RECORD's full name.
+    //
+    // Writing `displayName` here is what put login handles and short forms on 432 rows of live
+    // claims (29 people, repaired 2026-09-21). 18 of the 25 wrong names were simply whatever the
+    // nickname column held at the time; the other 7 were short forms frozen from a nickname that
+    // has since been edited, which no reader could ever have corrected.
+    employeeRecordName: outstationRecordName(employee),
     employeeRole: resolveJobFunctionRole(employee?.jobTitle ?? access.role),
   };
 }
@@ -2120,7 +2152,10 @@ export async function submitOutstationRequest(
     eligibility_reason: calculation.eligibilityReason,
     eligibility_status: calculation.eligibilityStatus,
     employee_hr_id: calculation.employeeHrId,
-    employee_name: calculation.employeeName,
+    // The employee RECORD name, not `calculation.employeeName` — that one is the nickname-first
+    // display name the capture screen showed the employee, which is right on screen and wrong in
+    // a persisted row. See outstationRecordName().
+    employee_name: identity.employeeRecordName,
     employee_role: calculation.employeeRole,
     expected_total_amount: calculation.expectedTotalAmount,
     fuel_amount: calculation.fuelAmount,
@@ -2877,7 +2912,9 @@ export async function submitMedicalRepSimpleExpenseRequest(
           "Medical rep manual expense submission; no manager outstation rule was applied.",
         eligibility_status: "needs_review",
         employee_hr_id: identity.employeeHrId,
-        employee_name: identity.employeeName,
+        // The employee RECORD name — see outstationRecordName(). `identity.employeeName` is the
+        // nickname-first display name and must not be frozen onto a payroll-bound row.
+        employee_name: identity.employeeRecordName,
         employee_role: "Medical Rep",
         // Set EXPLICITLY, for the same reason createManagerExpenseAsAdmin does: this flow has no
         // photo step anywhere in it — a medical rep files a ticket amount and attachments, never a
@@ -3602,7 +3639,9 @@ export async function createManagerExpenseAsAdmin(
       eligibility_reason: eligibilityReason,
       eligibility_status: eligibilityStatus,
       employee_hr_id: employee.hrId,
-      employee_name: employee.fullName ?? employee.hrId,
+      // Already the record name; routed through the shared resolver so a blank full name falls
+      // back the same way the other two insert paths do. See outstationRecordName().
+      employee_name: outstationRecordName(employee),
       employee_role: employeeRole,
       // Set EXPLICITLY, and to 'grandfathered' rather than a pending state. This path has no
       // photo step at all — an admin types the trip in on behalf of an employee who never opened
