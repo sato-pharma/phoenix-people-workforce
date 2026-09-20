@@ -104,6 +104,14 @@ export function runDirectOrderVenueCrmContactLinkTests() {
       "the subtree half must still be resolved through getManagerScope — the org walk is shared with " +
         "the security-sensitive boards and must not be reimplemented here",
     );
+    // 2026-09-20: the National Sales Manager is a `line` seat on Reps List, and this picker had been
+    // pinned to company reach for him while that change shipped. The owner then ruled he is scoped
+    // here too, so nothing in the body may name him: he resolves like every other non-company seat.
+    assert.doesNotMatch(
+      body,
+      /National Sales Manager/,
+      "an NSM must not be special-cased back to company reach — the picker is never wider than the Reps List",
+    );
     assert.match(
       body,
       /subtree\.kind === "agents"/,
