@@ -85,6 +85,29 @@ type WeeklyAccessTier =
 /** Tier + the confidential Head Office line flag (CEO/Super Admin only). */
 export type WeeklyAccessScope = WeeklyAccessTier & { canViewHeadOffice: boolean };
 
+const WEEKLY_ACCESS_TIERS: ReadonlySet<string> = new Set(["full", "product", "territory", "none"]);
+
+/**
+ * The scope a weekly read runs under — or an error. There is no default.
+ *
+ * Weekly rows are read with the service-role client, which bypasses RLS, so the viewer's scope is the
+ * only thing keeping the confidential products and the Head Office line from anyone below the CEO.
+ * loadWeeklyDashboard used to fall back to "full access, restricted products revealed" when a caller
+ * left the scope out, so a forgotten argument leaked instead of failing. The type now requires it, and
+ * this covers what a type cannot: a caller that is not TypeScript, a cast, or a scope that never
+ * resolved. It throws rather than answering with an empty dashboard, so the mistake is loud.
+ */
+export function requireWeeklyAccessScope(scope: WeeklyAccessScope | null | undefined): WeeklyAccessScope {
+  const tier = (scope as { tier?: unknown } | null | undefined)?.tier;
+  if (!scope || typeof tier !== "string" || !WEEKLY_ACCESS_TIERS.has(tier)) {
+    throw new Error(
+      "The weekly dashboard cannot load without the viewer's access scope (resolveWeeklyAccessScope). " +
+        "There is deliberately no default: an unscoped read would show every product, including the restricted ones.",
+    );
+  }
+  return scope;
+}
+
 /** Canonical HR_ID key for the caller (employee identity first, then login). */
 function viewerHrKey(ctx: AccessContext): string | null {
   return canonicalHrIdKey(resolveEmployeeIdentityId(ctx) ?? ctx.hrId ?? ctx.loginId ?? null);

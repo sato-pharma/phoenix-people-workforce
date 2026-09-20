@@ -532,6 +532,7 @@ import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-pag
 import { runWeeklyCombinedReportLivePriceTests } from "./weekly-combined-report-live-price.test.ts";
 import { runWeeklyCombinedReportScopeTests } from "./weekly-combined-report-scope.test.ts";
 import { runWeeklyBatchListScopeTests } from "./weekly-batch-list-scope.test.ts";
+import { runWeeklyDashboardScopeRequiredTests } from "./weekly-dashboard-scope-required.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -6352,6 +6353,11 @@ await runTest(
 await runTest(
   "the weekly Upload list applies the viewer's weekly access scope: below the CEO and the Super Admin an upload's stored units, stock and sales value, which add the restricted products and the Head Office line, reach neither the GET route's response nor the Upload page's own props (null, never zero), the row count stays, both doors go through the scope, and no third caller can send the uncut list; before the fix the SFE Manager, who holds the upload permission, received every upload's stored totals",
   runWeeklyBatchListScopeTests,
+);
+
+await runTest(
+  "the weekly dashboard loader requires the viewer's access scope and has no default: a missing or unrecognised scope throws before anything is read, the loader builds no 'full access, restricted revealed' scope of its own, and every caller passes one; before the fix a caller that left the scope out was answered with the restricted products (Lacto Basic 1 and 2, Satoslim) in every row, total, option list and export",
+  runWeeklyDashboardScopeRequiredTests,
 );
 
 await runTest(

@@ -109,7 +109,7 @@ export async function runWeeklySalesAccessTests() {
     "the returned `distributors` dropdown list must be gated by scopeVisibleDistributorCodes",
   );
   assert.ok(
-    service.includes('const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];'),
+    service.includes('const distributorsForEmpty = accessScope.tier === "full" ? distributors : [];'),
     "the empty-dashboard shortcut must not leak the full distributor catalog to a restricted tier",
   );
 
