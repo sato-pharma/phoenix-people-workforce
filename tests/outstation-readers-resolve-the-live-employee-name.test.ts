@@ -20,6 +20,10 @@ import {
 
 const SERVICE = join(process.cwd(), "src/lib/outstation/service.ts");
 const EXPENSES = join(process.cwd(), "src/lib/outstation/expenses.ts");
+const PORTAL = join(process.cwd(), "src/lib/employee-portal/service.ts");
+
+/** Every expense read in the portal service, named by the reader it calls. */
+const PORTAL_EXPENSE_READS = ["listPayrollExpenses(", "listOutstationRequestExpenses("];
 
 /** The directory map the resolver takes, keyed the way canonicalHrIdKey keys it. */
 function names(entries: Record<string, string>) {
@@ -138,6 +142,39 @@ export function runOutstationReadersResolveTheLiveEmployeeNameTests() {
     expenses.includes("options.readLegacyTables ? unified :"),
     "the Expense Approvals editor path must stay on the stored labels — its Save writes back the " +
       "rows it read, so resolving there would rewrite stored history on the next save",
+  );
+
+  // ── The employee portal ───────────────────────────────────────────────────
+  //
+  // Not a self-only screen, which is why it is here at all: Team Comparison reads a manager's
+  // whole DSM line, and the personal reads run under the caller's expense ACCESS SCOPE, so a
+  // manager's list carries other people's names. They surface on the recent-trips table
+  // (`employee`) and on the workload dashboard (`ownerName`).
+  const portal = readFileSync(PORTAL, "utf8");
+  const portalLines = portal.split("\n").map((line) => line.trimEnd());
+
+  assert.ok(
+    portal.includes("async function withLivePortalExpenseNames<"),
+    "the portal must resolve expense names live through its own helper",
+  );
+
+  const unwrapped = portalLines
+    .map((line, index) => ({ index, line, next: portalLines[index - 1] ?? "" }))
+    .filter(({ line }) => PORTAL_EXPENSE_READS.some((reader) => line.includes(reader)))
+    // The wrapper sits on the call's own line, or on the line above it when the call is awaited
+    // inside it. Either spelling counts; nothing else does.
+    .filter(
+      ({ line, next }) =>
+        !line.includes("withLivePortalExpenseNames") && !next.includes("withLivePortalExpenseNames"),
+    );
+
+  assert.deepEqual(
+    unwrapped.map(({ index }) => index + 1),
+    [],
+    "every expense read in the employee portal must resolve the live employee name — an unwrapped " +
+      "read shows whatever name the row was written with, on a screen a manager reads other " +
+      "people's rows from. Unwrapped at line(s): " +
+      unwrapped.map(({ index }) => index + 1).join(", "),
   );
 
   // ── The write side is unchanged by all of this ────────────────────────────
