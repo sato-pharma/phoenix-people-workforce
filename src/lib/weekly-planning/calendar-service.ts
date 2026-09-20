@@ -141,6 +141,7 @@ function itemReportsToViewer(item: PlanningCalendarPlanItem, viewer: CalendarVie
 
 const PEDIA_LINE = "Pedia";
 const ANTI_INFECTIVE_LINE = "Anti Infective";
+const CNS_LINE = "CNS";
 
 // B-155 (Ahmed Sharaf Eldeen) is the Product Manager for 2 named cross-line products
 // spanning Pedia + Anti Infective, not a generic "two-line PM" — see
@@ -171,6 +172,9 @@ export type CalendarViewerContext = {
 //   - Group Product Manager on the Pedia line: Training Manager's plans + all Pedia plans.
 //   - National Sales Manager on the Pedia line: the Group Product Manager's plans + all Pedia plans.
 //   - National Sales Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
+//   - National Sales Manager on the CNS line: Training Manager's plans + all CNS plans (owner,
+//     2026-09-20: the CNS NSM was the one NSM left on the unrestricted default, so he saw every
+//     line's managers while the other two saw only their own).
 //   - Product Manager on the Anti Infective line: Training Manager's plans + all Anti Infective plans.
 //   - District Manager: Training Manager's plans + their OWN line's Product Manager's plans
 //     only — never other lines, never their own line's NSM, never other District Managers
@@ -210,6 +214,9 @@ export function isPlanItemVisibleToViewer(item: PlanningCalendarPlanItem, viewer
   }
   if (role === "national sales manager" && sameLine(viewer.lineName, ANTI_INFECTIVE_LINE)) {
     return itemHasJobTitle(item, "training manager") || itemHasLine(item, ANTI_INFECTIVE_LINE);
+  }
+  if (role === "national sales manager" && sameLine(viewer.lineName, CNS_LINE)) {
+    return itemHasJobTitle(item, "training manager") || itemHasLine(item, CNS_LINE);
   }
   if (role === "product manager" && sameLine(viewer.lineName, ANTI_INFECTIVE_LINE)) {
     return itemHasJobTitle(item, "training manager") || itemHasLine(item, ANTI_INFECTIVE_LINE);

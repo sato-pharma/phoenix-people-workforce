@@ -19,6 +19,7 @@ import { normalizeHrIdForAccess } from "../src/lib/auth/permissions.ts";
  *   - Group Product Manager (Pedia line): Training Manager + all Pedia.
  *   - National Sales Manager (Pedia line): the Group Product Manager + all Pedia.
  *   - National Sales Manager (Anti Infective line): Training Manager + all Anti Infective.
+ *   - National Sales Manager (CNS line): Training Manager + all CNS (owner, 2026-09-20).
  *   - Product Manager (Anti Infective line): Training Manager + all Anti Infective.
  *   - District Manager: Training Manager + their own line's Product Manager ONLY —
  *     never Group Product Manager, never their own line's NSM, never other lines,
@@ -152,11 +153,17 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
 
   const cnsNsmViewer = viewer({ hrId: "B-122", role: "National Sales Manager", lineName: "CNS" });
   const dermaItem = planItem({ employeeHrId: "PM-1", employeeJobTitle: "Product Manager", lineName: "Derma" });
-  assert.equal(
-    isPlanItemVisibleToViewer(dermaItem, cnsNsmViewer),
-    true,
-    "a CNS-line NSM (not named in the 2026-07-20 matrix) keeps the unrestricted default and sees a Derma-line plan",
-  );
+  // 2026-09-20: the CNS NSM was the one NSM left on the unrestricted default. He is scoped to CNS now,
+  // like the Pedia and Anti Infective NSMs.
+  const cnsFieldItemForNsm = planItem({ employeeHrId: "DSM-CNS-1", employeeJobTitle: "District Manager", lineName: "CNS" });
+  const cnsTrainingItem = planItem({ employeeHrId: "A-7", employeeJobTitle: "Training Manager", lineName: "Head Office" });
+  const pediaFieldItemForNsm = planItem({ employeeHrId: "DSM-P-1", employeeJobTitle: "District Manager", lineName: "Pedia" });
+  const aiFieldItemForNsm = planItem({ employeeHrId: "DSM-AI-1", employeeJobTitle: "District Manager", lineName: "Anti Infective" });
+  assert.equal(isPlanItemVisibleToViewer(cnsFieldItemForNsm, cnsNsmViewer), true, "CNS NSM sees a CNS-line plan");
+  assert.equal(isPlanItemVisibleToViewer(cnsTrainingItem, cnsNsmViewer), true, "CNS NSM sees the Training Manager's plan");
+  assert.equal(isPlanItemVisibleToViewer(pediaFieldItemForNsm, cnsNsmViewer), false, "CNS NSM does NOT see a Pedia-line plan");
+  assert.equal(isPlanItemVisibleToViewer(aiFieldItemForNsm, cnsNsmViewer), false, "CNS NSM does NOT see an Anti Infective-line plan");
+  assert.equal(isPlanItemVisibleToViewer(dermaItem, cnsNsmViewer), false, "CNS NSM does NOT see another line's Product Manager");
 
   // --- CEO / Super Admin: explicit unrestricted (owner-confirmed 2026-07-20) ---
 

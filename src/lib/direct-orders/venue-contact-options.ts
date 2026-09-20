@@ -108,7 +108,9 @@ export type VenueContactOptions = {
 export async function resolveVenueContactScope(access: AccessContext): Promise<CrmManagerScope> {
   const viewerKey = normalizeHrIdForAccess(access.hrId);
   const basis = doctorListBasisForRole(access.role);
-  if (access.scope === "system" || basis === "company") {
+  // The National Sales Manager moved from `company` to `line` on the Reps List on 2026-09-20, and that
+  // change was asked for on the Reps List alone. The venue picker keeps the reach it had.
+  if (access.scope === "system" || basis === "company" || access.role === "National Sales Manager") {
     return { kind: "company", label: `${access.role} · all reps` };
   }
   if (!viewerKey) {
