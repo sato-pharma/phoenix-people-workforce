@@ -1824,6 +1824,7 @@ import { runWhatsAppTemplateManageGateTests } from "./whatsapp-template-manage-g
 import { runScreeningDecideGateTests } from "./screening-decide-gate.test.ts";
 import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links-and-in-app.test.ts";
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
+import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6373,6 +6374,11 @@ await runTest(
 await runTest(
   "the portal My Candidates link: the Super Admin is answered by the PROXY with a real 307 (never the page redirect, which paints the portal first because of app/employee-portals/loading.tsx) to the candidate's admin page or the hub, from a verified session cookie alone, with no-store; every other role, a forged or expired cookie, a mutation and every other address are left to the page, and the CSRF path list is not widened",
   runPortalCandidatesProxyRedirectTests,
+);
+
+await runTest(
+  "an open vacancy's manager follows the organogram seat: the occupant of the parent seat, on every write and whenever au.seats or au.occupancy_history moves; a vacant parent, a filled or cancelled vacancy and the manager-replacement marker are left alone",
+  runOpenVacancyManagerFollowsSeatTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
