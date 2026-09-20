@@ -34,6 +34,8 @@ import {
   interviewCalendarHref,
   interviewCalendarLinkPath,
   interviewOutcomeCandidateEffect,
+  interviewOutcomeGroup,
+  interviewOutcomeGroups,
   interviewOutcomeLabels,
   interviewOutcomes,
   isDistrictManagerOrAbove,
@@ -114,8 +116,33 @@ export async function runInterviewCalendarTests() {
 
 // ── The outcome of an interview: six words, one list (owner, 2026-09-20) ─────────────────────────
 function runOutcomeTests() {
-  assert.deepEqual([...interviewOutcomes].sort(), ["attended", "backup", "did_not_come", "prioritized", "rejected", "shortlisted"], "one list of six, no more");
+  assert.deepEqual(
+    [...interviewOutcomes].sort(),
+    ["attended", "backup", "did_not_come", "no_answer", "prioritized", "rejected", "shortlisted", "will_reschedule", "withdrew"],
+    "Attended and its four decisions, Didn't come and its three reasons — nine words, no more",
+  );
   assert.deepEqual(Object.keys(interviewOutcomeLabels).sort(), [...interviewOutcomes].sort(), "every word has a label");
+
+  // THE PICKER IS TWO STEPS (owner, 2026-09-20): every word sits under exactly one of Attended / Didn't come.
+  assert.deepEqual([...interviewOutcomeGroups.attended.followUps], ["shortlisted", "backup", "rejected", "prioritized"]);
+  assert.deepEqual([...interviewOutcomeGroups.did_not_come.followUps], ["will_reschedule", "no_answer", "withdrew"]);
+  for (const word of interviewOutcomes) assert.ok(interviewOutcomeGroup(word), `${word} sits under Attended or Didn't come`);
+  assert.equal(interviewOutcomeGroup("rejected"), "attended", "a decision is under Attended");
+  assert.equal(interviewOutcomeGroup("attended"), "attended", "and the parent alone is under itself");
+  assert.equal(interviewOutcomeGroup("no_answer"), "did_not_come", "a reason is under Didn't come");
+  assert.equal(interviewOutcomeGroup(null), null, "no outcome, no group");
+  for (const word of ["will_reschedule", "no_answer", "withdrew"] as const) {
+    assert.deepEqual(interviewOutcomeCandidateEffect(word), { rating: null, status: null }, `${word} marks the interview only`);
+  }
+  assert.match(
+    readFileSync(join(process.cwd(), "supabase/migrations/20260920195928_ats_interview_outcome_didnt_come_reasons.sql"), "utf8"),
+    /'did_not_come', 'will_reschedule', 'no_answer', 'withdrew'/,
+    "the database's closed list carries the three new words",
+  );
+  const pickerSource = readFileSync(join(process.cwd(), "src/components/recruitment/interview-calendar/interview-calendar-view.tsx"), "utf8");
+  assert.match(pickerSource, /interviewOutcomeGroup\(booking\.outcome\)/, "the screen finds which step-one choice is open");
+  assert.match(pickerSource, /interviewOutcomeGroups\[activeGroup\]\.followUps\.map/, "and shows only that choice's follow-ups");
+  assert.doesNotMatch(pickerSource, /interviewOutcomes\.map/, "the screen no longer lists all the words in one row");
   assert.equal(readInterviewOutcome("backup"), "backup");
   assert.equal(readInterviewOutcome("Backup"), null, "an unknown spelling is no outcome, never a guess");
   assert.equal(readInterviewOutcome(null), null);
