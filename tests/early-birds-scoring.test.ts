@@ -12,9 +12,11 @@ import {
   EARLY_BIRDS_VISITS_PER_DAY_TARGET,
   EARLY_BIRDS_WEIGHTS,
   buildEarlyBirdsRanking,
+  compareEarlyBirdsScores,
   earlyBirdsBaseScore,
   earlyBirdsFirstPlaceScore,
   earlyBirdsQualityWeight,
+  earlyBirdsRegularScore,
   earlyBirdsStartScore,
   isEarlyBirdsEligible,
   isPlausibleEarlyBirdsStart,
@@ -543,6 +545,73 @@ export function runEarlyBirdsScoringTests() {
       noMap.scores.every((score) => score.medianStartMinutes === null),
       true,
       "with no GPS data at all NOBODY has a verified start — the board shows an unranked field rather than ranking paperwork",
+    );
+  }
+
+  // ── Rule 10 (owner, 2026-09-20): a no-check-in Regular visit stays off Campaign, but earns no
+  // Regular credit, and is identified on its own — never blended into the checked-in count ──────
+  {
+    const facts = [
+      ...visitsAcrossDays(6, { hrIdKey: "split", visitType: 0, timeSource: "gps_checkin" }),
+      ...Array.from({ length: 4 }, (_unused, index) =>
+        visit({
+          hrIdKey: "split",
+          dateIso: `2026-08-${String(index + 7).padStart(2, "0")}`,
+          visitType: 0,
+          timeSource: "save_time",
+        }),
+      ),
+    ];
+    const ranking = rank({
+      period: PERIOD,
+      reps: [rep({ hrIdKey: "split", hrId: "B-1", name: "Split Rep", expectedWorkingDays: 10 })],
+      facts,
+      dailyWinnerHrIdKeys: new Map(),
+    });
+    const score = ranking.scores[0];
+    assert.equal(score.regularVisits, 10, "all ten are Regular visits, checked-in or not");
+    assert.equal(score.regularVisitsWithCheckin, 6, "only the GPS-matched six earn Regular credit");
+    assert.equal(score.regularVisitsNoCheckin, 4, "the other four are identified on their own line");
+    assert.equal(score.campaignVisits, 0, "a no-check-in Regular visit is never relabelled Campaign");
+    assert.equal(
+      score.components.regular,
+      earlyBirdsRegularScore(6, 10),
+      "the Regular component is scored off the checked-in count only, never all ten",
+    );
+    assert.equal(score.totalVisits, 10, "every visit still counts toward volume, checked-in or not");
+  }
+
+  // ── The tie-break credits check-in before raw count ─────────────────────────────────────────
+  {
+    const base = {
+      hrIdKey: "x",
+      hrId: "B-1",
+      name: "X",
+      totalScore: 0.5,
+      baseScore: 0.5,
+      qualityWeight: 1,
+      components: { start: 0.5, consistency: 0.5, regular: 0.5, volume: 0.5, firstPlace: 0.5 },
+      medianStartMinutes: 500,
+      daysWithSubmission: 8,
+      expectedWorkingDays: 10,
+      expectedWorkingDayWeight: 10,
+      totalVisits: 20,
+      regularVisits: 10,
+      campaignVisits: 0,
+      gpsEligibleVisits: 10,
+      gpsVerifiedVisits: 8,
+      gpsVerifiedDays: 8,
+      gpsShare: 0.8,
+      dailyWins: 1,
+      eligible: true,
+      ineligibleReasons: [],
+      timeline: [],
+    };
+    const moreCheckedIn = { ...base, hrIdKey: "hi", regularVisitsWithCheckin: 8, regularVisitsNoCheckin: 2 };
+    const fewerCheckedIn = { ...base, hrIdKey: "lo", regularVisitsWithCheckin: 5, regularVisitsNoCheckin: 5 };
+    assert.ok(
+      compareEarlyBirdsScores(moreCheckedIn, fewerCheckedIn) < 0,
+      "with everything else tied, more checked-in Regular visits ranks first — ahead of raw regularVisits",
     );
   }
 }

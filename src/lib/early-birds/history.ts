@@ -52,6 +52,9 @@ export type EarlyBirdsRepHistoryEntry = {
   expectedWorkingDays: number;
   totalVisits: number;
   regularVisits: number;
+  /** Of `regularVisits`, the ones with NO matching GPS check-in (rule 10, owner 2026-09-20) — real
+   * work, kept off Campaign, but never blended into the credited count. Identified on its own. */
+  regularVisitsNoCheckin: number;
   campaignVisits: number;
   gpsShare: number | null;
   dailyWins: number;
@@ -102,6 +105,7 @@ type CandidateRow = {
   expected_working_days: number | null;
   total_visits: number | null;
   regular_visits: number | null;
+  regular_visits_no_checkin: number | null;
   campaign_visits: number | null;
   gps_share: number | string | null;
   daily_wins: number | null;
@@ -148,7 +152,7 @@ export async function getEarlyBirdsRepHistory(input: {
           .select(
             "snapshot_id, period_key, rank, candidate_rank, eligible, ineligible_reasons, " +
               "total_score, median_start_minutes, days_with_submission, expected_working_days, " +
-              "total_visits, regular_visits, campaign_visits, gps_share, daily_wins",
+              "total_visits, regular_visits, regular_visits_no_checkin, campaign_visits, gps_share, daily_wins",
           )
           .eq("employee_hr_id_compact", hrIdKey)
           .order("period_key", { ascending: false })
@@ -219,6 +223,7 @@ export async function getEarlyBirdsRepHistory(input: {
         expectedWorkingDays: num(row.expected_working_days),
         totalVisits: num(row.total_visits),
         regularVisits: num(row.regular_visits),
+        regularVisitsNoCheckin: num(row.regular_visits_no_checkin),
         campaignVisits: num(row.campaign_visits),
         gpsShare: row.gps_share === null ? null : num(row.gps_share),
         dailyWins: num(row.daily_wins),

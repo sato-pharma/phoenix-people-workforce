@@ -121,7 +121,12 @@ export function EarlyBirdsRepTable({
                     {[
                       ["Median start", formatStartClock(score.medianStartMinutes)],
                       ["Days", `${score.daysWithSubmission}/${score.expectedWorkingDays}`],
-                      ["Regular visits", String(score.regularVisits)],
+                      [
+                        "Regular visits",
+                        score.regularVisitsNoCheckin > 0
+                          ? `${score.regularVisits} (${score.regularVisitsNoCheckin} no check-in)`
+                          : String(score.regularVisits),
+                      ],
                       ["Campaign visits", String(score.campaignVisits)],
                       ["GPS days", `${score.gpsVerifiedDays}/${score.daysWithSubmission}`],
                       ["First places", String(score.dailyWins)],
@@ -220,6 +225,9 @@ export function EarlyBirdsRepTable({
                         <p className="break-words font-bold tabular-nums text-slate-900">{score.totalVisits}</p>
                         <p className="break-words text-phx-3xs font-semibold text-slate-400">
                           Regular {score.regularVisits} · Campaign {score.campaignVisits}
+                          {score.regularVisitsNoCheckin > 0
+                            ? ` · ${score.regularVisitsNoCheckin} no check-in`
+                            : ""}
                         </p>
                       </td>
                       {/* DAYS, not visits - a day is what the ranking scores, and a day with no
