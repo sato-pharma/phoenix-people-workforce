@@ -89,11 +89,15 @@ export type AwardChequeRow = {
   achievementPct?: number | null;
   /** The programme naming the award — the masthead's subtitle and the foot. */
   programName: string;
-  /** Null prints a placeholder box rather than "0", so an unfilled cheque never reads as EGP 0. */
+  /** Null prints a placeholder box rather than "0", so an unfilled cheque never reads as EGP 0. Piastres
+   *  are kept (2 decimals); the figures box, the Arabic words and the machine line all read the same cents. */
   amountEgp: number | null;
   /** ISO date `YYYY-MM-DD` of the transfer; null prints an empty DD MM YYYY. */
   transferDate: string | null;
   serial: string;
+  /** The line under the signature, "Chief Executive Officer" / "الرئيس التنفيذي" unless another signatory is named. */
+  signerTitle?: string | null;
+  signerTitleAr?: string | null;
 };
 
 /** What prints before real names, awards and amounts are supplied. */
@@ -109,9 +113,14 @@ export const AWARD_CHEQUE_PLACEHOLDER: AwardChequeRow = {
   serial: "[ 000001 ]",
 };
 
-function egpFigures(n: number | null): string {
-  if (n === null) return "X,XXX";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n));
+/** The figures box: whole pounds with thousands separators, and the piastres printed small beside them. */
+function egpFigures(n: number | null): { whole: string; cents: string } {
+  if (n === null) return { whole: "X,XXX", cents: "XX" };
+  const piastres = Math.round(n * 100);
+  return {
+    whole: new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.floor(piastres / 100)),
+    cents: String(piastres % 100).padStart(2, "0"),
+  };
 }
 
 /** "فقط … لا غير" — the words a cheque writes so the figure cannot be raised. Empty when unknown. */
@@ -279,11 +288,16 @@ const TITLE_SVG = `<svg class="ttl" viewBox="0 0 142 20" aria-label="Award Chequ
     <stop offset="0" stop-color="${C.deep}"/><stop offset="0.4" stop-color="${C.blue}"/><stop offset="0.43" stop-color="${GOLD.deep}"/><stop offset="0.72" stop-color="${GOLD.mid}"/><stop offset="1" stop-color="${GOLD.light}"/></linearGradient></defs>
   <text x="0" y="15" font-family="Noto Sans, Segoe UI, Arial, sans-serif" font-weight="700" font-size="19.05" fill="url(#ttlFill)">Award Cheque</text></svg>`;
 
-const MICROTEXT = Array.from({ length: 30 }, () => "SATO PHARMA \u00b7 SEMESTER ACHIEVERS AWARD \u00b7 S1 2026 \u00b7 ").join("");
+/** The security strip printed along the top and foot edges: the programme's name, repeated to the width of the sheet. */
+function microText(programName: string): string {
+  const unit = `SATO PHARMA \u00b7 ${programName.toUpperCase().replace(/\s+[\u2014\u2013-]\s+/g, " \u00b7 ")} \u00b7 `;
+  return unit.repeat(Math.max(4, Math.ceil(1500 / unit.length)));
+}
 
 function chequeBody(row: AwardChequeRow): string {
   const date = dateParts(row.transferDate);
   const words = chequeAmountInArabic(row.amountEgp);
+  const figures = egpFigures(row.amountEgp);
   const position = row.positionTitle?.trim() ?? "";
   const stats = row.rank != null || row.achievementPct != null;
   const machine = `| ${bare(row.serial)} | ${date.digits} : ${
@@ -333,12 +347,16 @@ function chequeBody(row: AwardChequeRow): string {
         ${
           stats
             ? `<div class="stats">
-          <div class="stat stat--rank">${raysSvg(118, 48)}${bracketsSvg(118, 48, GOLD.deep)}<i>${SPARK}Rank${SPARK}</i><b>${
-            row.rank == null ? "&ndash;" : `${row.rank}<small>${ordinalSuffix(row.rank)}</small>`
-          }</b></div>
-          <div class="stat stat--wide">${bracketsSvg(120, 48, C.deep)}<i>Achievement</i><b>${
-            row.achievementPct == null ? "&ndash;" : `${row.achievementPct.toFixed(1)}<small>%</small>`
-          }</b></div>
+          ${
+            row.rank == null
+              ? ""
+              : `<div class="stat stat--rank">${raysSvg(118, 48)}${bracketsSvg(118, 48, GOLD.deep)}<i>${SPARK}Rank${SPARK}</i><b>${row.rank}<small>${ordinalSuffix(row.rank)}</small></b></div>`
+          }
+          ${
+            row.achievementPct == null
+              ? ""
+              : `<div class="stat stat--wide">${bracketsSvg(120, 48, C.deep)}<i>Achievement</i><b>${row.achievementPct.toFixed(1)}<small>%</small></b></div>`
+          }
         </div>`
             : `<p class="memo__line">${escapeHtml(row.awardTitle)}</p>`
         }
@@ -349,14 +367,14 @@ function chequeBody(row: AwardChequeRow): string {
           <svg class="amount__pat" viewBox="0 0 226 48" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${rosette(113, 24, 70, "#FFFFFF", 0.13)}</svg>
           ${bracketsSvg(226, 48, GOLD.light)}
           <p class="amount__cur">EGP <span class="ar" dir="rtl" lang="ar">ج.م</span></p>
-          <p class="amount__fig">${egpFigures(row.amountEgp)}<small>.${row.amountEgp === null ? "XX" : "00"}</small></p>
+          <p class="amount__fig">${figures.whole}<small>.${figures.cents}</small></p>
         </div>
       </div>
       <div class="sig">
         <div class="sig__rule">${
           row.ceoSignatureUri ? `<img class="sig__img" alt="" src="${row.ceoSignatureUri}">` : ""
         }</div>
-        <div class="cap"><span>Chief Executive Officer</span><span class="ar" dir="rtl" lang="ar">الرئيس التنفيذي</span></div>
+        <div class="cap"><span>${escapeHtml(row.signerTitle?.trim() || "Chief Executive Officer")}</span><span class="ar" dir="rtl" lang="ar">${escapeHtml(row.signerTitleAr?.trim() || "الرئيس التنفيذي")}</span></div>
       </div>
     </section>
 
@@ -367,11 +385,12 @@ function chequeBody(row: AwardChequeRow): string {
 }
 
 function pageShell(row: AwardChequeRow): string {
+  const micro = escapeHtml(microText(row.programName));
   return `<div class="sheet">
     ${groundSvg()}
     <div class="watermark">${arabicMark()}</div>
-    <div class="micro micro--top" aria-hidden="true">${MICROTEXT}</div>
-    <div class="micro micro--foot" aria-hidden="true">${MICROTEXT}</div>
+    <div class="micro micro--top" aria-hidden="true">${micro}</div>
+    <div class="micro micro--foot" aria-hidden="true">${micro}</div>
     <div class="frame">
       <i class="corner corner--tl">${CORNER}</i><i class="corner corner--tr">${CORNER}</i>
       <i class="corner corner--bl">${CORNER}</i><i class="corner corner--br">${CORNER}</i>

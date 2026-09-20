@@ -1780,6 +1780,7 @@ import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.t
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
 import { runWhatsAppPendingBackfillCompletedOnlyTests } from "./whatsapp-pending-backfill-completed-only.test.ts";
 import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowrap-lock.test.ts";
+import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
@@ -6130,6 +6131,11 @@ await runTest(
 await runTest(
   "spotlight sheet: the ranking paginates instead of clipping, sheets are numbered and balanced, nothing rasterises",
   runSpotlightSheetDesignTests,
+);
+
+await runTest(
+  "award cheque generator: the form is read strictly (piastres, Arabic digits, no coerced amount), every typed field reaches the sheet, and the routes gate on spotlight:export with the signature kept server-side",
+  runSpotlightChequeGeneratorTests,
 );
 
 await runTest(

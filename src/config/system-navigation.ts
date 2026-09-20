@@ -1,6 +1,7 @@
 import {
   Activity,
   Archive,
+  Banknote,
   BellRing,
   BookUser,
   Briefcase,
@@ -1332,6 +1333,7 @@ export const adminNavigationSectionSeeds = [
     id: "sales-spotlight-module",
     items: [
       { href: "/spotlight", icon: Trophy, label: "Spotlight", permissions: [{ action: "read", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
+      { href: "/spotlight/cheques", icon: Banknote, label: "Award cheques", permissions: [{ action: "export", resource: "spotlight" }], roles: ["Super Admin", "CEO"] },
     ],
     label: "Spotlight",
   },
