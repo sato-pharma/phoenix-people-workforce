@@ -87,8 +87,10 @@ import {
   createZoomMeeting,
   createZoomPoll,
   deleteZoomMeeting,
+  getZoomHostStartUrl,
   readZoomConfig,
   updateZoomMeeting,
+  zoomMeetingIdFromJoinUrl,
   type ZoomConfig,
 } from "@/lib/zoom/meetings";
 
@@ -605,14 +607,42 @@ async function sessionBookingRows(sessionId: string): Promise<BookingRow[]> {
   return (data ?? []) as BookingRow[];
 }
 
+// The host link, asked of Zoom and kept in this server's memory for 10 minutes (the screen polls every
+// 15 seconds) — never written to the database. When Zoom will not give it the answer is null and the
+// guest link is used instead.
+const hostLinkCache = new Map<string, { url: string; until: number }>();
+
+async function hostLinkFor(joinUrl: string, config: ZoomConfig | null, now: Date): Promise<string | null> {
+  const meetingId = zoomMeetingIdFromJoinUrl(joinUrl);
+  if (!config || !meetingId) return null;
+  const cached = hostLinkCache.get(meetingId);
+  if (cached && cached.until > now.getTime()) return cached.url;
+  try {
+    const url = await getZoomHostStartUrl(config, meetingId);
+    hostLinkCache.set(meetingId, { until: now.getTime() + 10 * 60_000, url });
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The Zoom interviews whose time has come for THIS person: they start within the next half minute or
  * began in the last 20 and have not ended. "Theirs" means they are the chosen interviewer, or the
  * calendar's owner with no interviewer chosen — so someone the calendar is merely shared with is
  * never sent to a meeting that is not theirs. One entry per meeting link (a session's slots share one).
  * The screen polls this and opens the link itself.
+ *
+ * WHAT IT OPENS is the HOST link when Zoom gives one, so the meeting starts by itself — the guest link
+ * leaves the interviewer waiting as a guest until they start it from the Zoom app (owner, 2026-09-20).
+ * When Zoom will not give the host link the guest link is sent instead and `asHost` says so, so the
+ * interview is still opened and the screen words it right.
  */
-export async function listDueZoomInterviews(caller: InterviewCalendarCaller, now: Date = new Date()): Promise<DueZoomInterview[]> {
+export async function listDueZoomInterviews(
+  caller: InterviewCalendarCaller,
+  now: Date = new Date(),
+  zoomConfig: ZoomConfig | null = readZoomConfig(),
+): Promise<DueZoomInterview[]> {
   const viewer = canonicalHrIdKey(caller.access.hrId);
   if (!viewer || !isSignedInCaller(caller.access) || !calendarRoleFor(caller, "any")) return [];
   const rows = await bookingsBetween(new Date(now.getTime() - 20 * 60_000), new Date(now.getTime() + 30_000));
@@ -626,7 +656,15 @@ export async function listDueZoomInterviews(caller: InterviewCalendarCaller, now
   for (const booking of await hydrate(mine, caller, now)) {
     if (booking.platform !== "zoom" || !booking.zoomJoinUrl || booking.ended || seen.has(booking.zoomJoinUrl)) continue;
     seen.add(booking.zoomJoinUrl);
-    due.push({ bookingId: booking.id, candidateName: booking.candidateName, dateKey: booking.dateKey, joinUrl: booking.zoomJoinUrl, startMinutes: booking.startMinutes });
+    const hostUrl = await hostLinkFor(booking.zoomJoinUrl, zoomConfig, now);
+    due.push({
+      asHost: hostUrl !== null,
+      bookingId: booking.id,
+      candidateName: booking.candidateName,
+      dateKey: booking.dateKey,
+      openUrl: hostUrl ?? booking.zoomJoinUrl,
+      startMinutes: booking.startMinutes,
+    });
   }
   return due;
 }
