@@ -52,6 +52,10 @@ export type EarlyBirdsRepHistoryEntry = {
   expectedWorkingDays: number;
   totalVisits: number;
   regularVisits: number;
+  /** Of `regularVisits`, the ones WITH a matching GPS check-in — the figure that actually earned
+   * Regular credit that fortnight (rule 10, owner 2026-09-20). Show this, never `regularVisits`,
+   * as "Regular visits" anywhere the number is read as a justification for the rank shown. */
+  regularVisitsWithCheckin: number;
   /** Of `regularVisits`, the ones with NO matching GPS check-in (rule 10, owner 2026-09-20) — real
    * work, kept off Campaign, but never blended into the credited count. Identified on its own. */
   regularVisitsNoCheckin: number;
@@ -105,6 +109,7 @@ type CandidateRow = {
   expected_working_days: number | null;
   total_visits: number | null;
   regular_visits: number | null;
+  regular_visits_with_checkin: number | null;
   regular_visits_no_checkin: number | null;
   campaign_visits: number | null;
   gps_share: number | string | null;
@@ -152,7 +157,7 @@ export async function getEarlyBirdsRepHistory(input: {
           .select(
             "snapshot_id, period_key, rank, candidate_rank, eligible, ineligible_reasons, " +
               "total_score, median_start_minutes, days_with_submission, expected_working_days, " +
-              "total_visits, regular_visits, regular_visits_no_checkin, campaign_visits, gps_share, daily_wins",
+              "total_visits, regular_visits, regular_visits_with_checkin, regular_visits_no_checkin, campaign_visits, gps_share, daily_wins",
           )
           .eq("employee_hr_id_compact", hrIdKey)
           .order("period_key", { ascending: false })
@@ -223,6 +228,7 @@ export async function getEarlyBirdsRepHistory(input: {
         expectedWorkingDays: num(row.expected_working_days),
         totalVisits: num(row.total_visits),
         regularVisits: num(row.regular_visits),
+        regularVisitsWithCheckin: num(row.regular_visits_with_checkin),
         regularVisitsNoCheckin: num(row.regular_visits_no_checkin),
         campaignVisits: num(row.campaign_visits),
         gpsShare: row.gps_share === null ? null : num(row.gps_share),
