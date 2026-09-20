@@ -12,6 +12,7 @@ import {
   mergeScreeningExtraAnswers,
   splitRowsByExistingKey,
 } from "../src/lib/recruitment/candidate-merge.ts";
+import { copyLabelsFor, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
 
 /**
  * The same person arriving twice is the normal state of this pool — 337 CVs on WhatsApp, 211 by
@@ -451,4 +452,105 @@ export function runRecruitmentCandidateMergeTests() {
   // Disjoint keys: the whole point of "union", not "the bigger bag wins".
   const disjoint = mergeScreeningExtraAnswers({ a: "1", b: "2" }, { c: "3", d: "4" });
   assert.deepEqual(disjoint, { changed: true, merged: { a: "1", b: "2", c: "3", d: "4" } });
+}
+
+/**
+ * A MERGE MUST RE-FILE THE CABINET.
+ *
+ * The one event that changes a CV's NAME in Drive without ever touching the CV. Both records held
+ * one CV each a moment before, so `copyLabelsFor` gave each the empty label and each file sits in
+ * Drive under the plain `<person> - <number>.<ext>`. The instant they become siblings on one record
+ * the right answer changes for BOTH — and nothing re-asks, because a file row is never written to
+ * again and no later intake or classification event revisits it.
+ *
+ * Measured on production 2026-09-21, after 19 merges: NINE folders were left holding two different
+ * documents under one file name, with nothing to tell a recruiter which was which. Re-running the
+ * mirror renamed every one.
+ */
+export function runCandidateMergeRefilesTheCabinetTests() {
+  const service = readFileSync(new URL("../src/lib/recruitment/candidate-merge-service.ts", import.meta.url), "utf8");
+
+  // ── THE BEHAVIOUR, not the wiring ────────────────────────────────────────────────────────────
+  // Why the re-file is needed at all, proved on the function that decides the name. Before the
+  // merge each record holds one CV, so each file keeps the plain name; after it, one record holds
+  // both and each needs a label. This is the assertion that goes red if the cabinet ever stops
+  // disambiguating, which would make step 8 pointless rather than merely absent.
+  const survivorCv = { content_md5: "aaa", created_at: "2026-09-14T05:52:12.663Z", id: "cv-survivor" };
+  const duplicateCv = { content_md5: "bbb", created_at: "2026-09-19T18:03:57.287Z", id: "cv-duplicate" };
+  const plainName = "Reham Raafat Sayed - 201128799086.pdf";
+
+  assert.equal(
+    copyLabelsFor([survivorCv]).get("cv-survivor"),
+    "",
+    "a record holding one CV keeps the plain name — that is why both files are identically named the moment they meet",
+  );
+  assert.equal(copyLabelsFor([duplicateCv]).get("cv-duplicate"), "");
+  assert.equal(withCopyLabel(plainName, ""), plainName);
+
+  const afterMerge = copyLabelsFor([survivorCv, duplicateCv]);
+  const names = [
+    withCopyLabel(plainName, afterMerge.get("cv-survivor") ?? ""),
+    withCopyLabel(plainName, afterMerge.get("cv-duplicate") ?? ""),
+  ];
+  assert.equal(
+    new Set(names).size,
+    2,
+    "once merged, the two CVs must no longer wear the same name in the same folder — this is the defect step 8 exists to clear",
+  );
+  for (const name of names) {
+    assert.notEqual(name, plainName, "each merged sibling must gain a label, not just one of the pair");
+    assert.ok(name.endsWith(".pdf"), "the label goes in the stem — a name ending in '(date)' is not a PDF to Drive");
+  }
+
+  // Both CVs arrived on DIFFERENT days here, so the date alone separates them. The awkward case —
+  // two CVs on one day — is what the counter exists for, and it must still produce two names.
+  const sameDay = copyLabelsFor([
+    { content_md5: "ccc", created_at: "2026-09-19T00:35:11.000Z", id: "cv-a" },
+    { content_md5: "ddd", created_at: "2026-09-19T00:36:22.000Z", id: "cv-b" },
+  ]);
+  assert.equal(
+    new Set([
+      withCopyLabel(plainName, sameDay.get("cv-a") ?? ""),
+      withCopyLabel(plainName, sameDay.get("cv-b") ?? ""),
+    ]).size,
+    2,
+    "two CVs merged in on ONE day still need two distinct names — a date alone would collide",
+  );
+
+  // ── THE WIRING ───────────────────────────────────────────────────────────────────────────────
+  // Read from the service source, which is weaker than calling it: `mergeCandidates` reaches
+  // `recruitmentDb()` and `getSupabaseAdmin()` directly, with no seam to hand a fake Drive to. What
+  // the source CAN prove is the two things that were actually wrong — the call was absent, and
+  // where it sits decides whether it reads the merged state or the stale one.
+  assert.ok(
+    service.includes("await mirrorCandidateCvsToDrive(survivorId)"),
+    "a merge must re-file the surviving record's CVs in the cabinet — without this the two files keep one name",
+  );
+  assert.ok(
+    service.includes('import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror"'),
+    "the mirror must be imported, not reached for through a dynamic require",
+  );
+
+  // AFTER the duplicate is gone, or it mirrors the state it was called to fix. `cabinetPathFor`
+  // reads the SURVIVING record's answers and `copyLabelsFor` reads its CV siblings — run this while
+  // the duplicate still owns half of them and it re-files against the pre-merge shape, writing names
+  // that are wrong in a new way instead of the old one.
+  const deleteAt = service.indexOf('.delete().eq("id", duplicateId)');
+  const mirrorAt = service.indexOf("await mirrorCandidateCvsToDrive(survivorId)");
+  assert.ok(deleteAt > 0 && mirrorAt > 0);
+  assert.ok(
+    mirrorAt > deleteAt,
+    "the re-file must run AFTER the duplicate row is deleted and its CVs have moved — earlier and it files the pre-merge shape",
+  );
+
+  // It must not be the last thing that can THROW. The database work is committed by then, and a
+  // Drive outage turning a finished merge into an exception is how a caller learns "nothing
+  // happened" about a merge that entirely happened. `mirrorCandidateCvsToDrive` swallows its own
+  // errors — this pins that it is still the swallowing entry point and not `mirrorCvToDrive`.
+  const mirrorSource = readFileSync(new URL("../src/lib/recruitment/drive-cv-mirror.ts", import.meta.url), "utf8");
+  const entry = mirrorSource.slice(mirrorSource.indexOf("export async function mirrorCandidateCvsToDrive"));
+  assert.ok(
+    entry.slice(0, entry.indexOf("\n}\n")).includes("catch (error)"),
+    "the merge relies on the candidate-level mirror swallowing its own errors — if that stops being true the merge needs its own catch",
+  );
 }

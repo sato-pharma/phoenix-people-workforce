@@ -198,7 +198,10 @@ import { runRecruitmentCvRereadStalenessTests } from "./recruitment-cv-reread-st
 import { runRecruitmentContactReviewTests } from "./recruitment-contact-review.test.ts";
 import { runRecruitmentOffersTests } from "./recruitment-offers.test.ts";
 import { runRecruitmentHireDraftTests } from "./recruitment-hire-draft.test.ts";
-import { runRecruitmentCandidateMergeTests } from "./recruitment-candidate-merge.test.ts";
+import {
+  runCandidateMergeRefilesTheCabinetTests,
+  runRecruitmentCandidateMergeTests,
+} from "./recruitment-candidate-merge.test.ts";
 import { runWhatsAppScreeningQuestionsMenuTests } from "./whatsapp-screening-questions-menu.test.ts";
 import { runWhatsAppScreeningQuestionsSessionTests } from "./whatsapp-screening-questions-session.test.ts";
 import { runWhatsAppScreeningQuestionsAdminTests } from "./whatsapp-screening-questions-admin.test.ts";
@@ -2247,6 +2250,10 @@ await runTest("recruitment contact review (the attended path for the email auto-
 await runTest("recruitment offers (an unapproved offer can never be sent — the guard reads the approval trail, not the stage, so a re-widened registry cannot reopen offer_initiated -> offer_sent)", runRecruitmentOffersTests);
 await runTest("recruitment hire draft (the CV and the offer carried into HR's Add Employee form; no salary is ever derived here — that belongs to payroll/policy.ts)", runRecruitmentHireDraftTests);
 await runTest("recruitment candidate merge (a merge fills blanks and never overwrites; it is refused outright when the database would reject it half-way)", runRecruitmentCandidateMergeTests);
+await runTest(
+  "recruitment candidate merge re-files the cabinet (two records holding one CV each become one record holding two identically named files — the merge must rename them)",
+  runCandidateMergeRefilesTheCabinetTests,
+);
 await runTest(
   "WhatsApp screening questions - menus (row ids for the admin-defined extras never collide with the fixed six's; screeningQuestionViolations reuses the real menuViolations, not a second copy)",
   runWhatsAppScreeningQuestionsMenuTests,
