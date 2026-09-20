@@ -1777,6 +1777,7 @@ import { runCvPreviewFailureReportTests } from "./cv-preview-failure-report.test
 import { runCvLinkedInAndSelectableTextTests } from "./cv-linkedin-and-selectable-text.test.ts";
 import { runInterviewCalendarTests } from "./interview-calendar.test.ts";
 import { runInterviewCalendarApplicationTests } from "./interview-calendar-application.test.ts";
+import { runInterviewReminderTests } from "./interview-reminders.test.ts";
 import { runInterviewInvitationTests } from "./interview-invitation.test.ts";
 import { runWhatsAppApplicationPrintTests } from "./whatsapp-application-print.test.ts";
 import { runCandidateRecordPrintTests } from "./candidate-record-print.test.ts";
@@ -6094,6 +6095,11 @@ await runTest(
 await runTest(
   "the interview calendar's CV screen gets Download application and Print application beside the CV's own Download: the button opens the WhatsApp conversation the list would show for that person (finished first, then newest as an instant); it is offered only to someone who could open the same file from WhatsApp Applicants (HR authority with recruitment:read and candidates:read — never a guest, an outside interviewee or a person the calendar was merely shared with); the lookup goes through the calendar's own gate, answers an id and builds nothing; and the four gates on an application say the same three things",
   runInterviewCalendarApplicationTests,
+);
+
+await runTest(
+  "interview reminders go to the chosen interviewer only, District Manager and above, by in-app, email and Telegram: the evening before from 5:00 PM Cairo with the day's list and one hour before each interview, each sent once by its key",
+  runInterviewReminderTests,
 );
 
 await runTest(

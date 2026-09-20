@@ -118,6 +118,20 @@ const JOBS = {
     // matches the rest of the account; the platform still cuts at 30 regardless (see header).
     requestTimeout: 300,
   },
+  "interview-reminders": {
+    title: "Phoenix — interview reminders",
+    path: "/api/cron/interview-reminders",
+    // Every ten minutes on :03, around the clock — matching docs/observability.md and JOB_SCHEDULES.
+    // Ten because the one-hour-before reminder lands in the ten-minute window before the hour
+    // (50 to 60 minutes ahead); the evening list needs only the first tick after 5:00 PM Cairo. Off the
+    // :00/:15/:30/:45 quarters the heartbeat sweep holds and the :05/:20/:35/:50 ones of the mapping
+    // guard, so a red execution names one job. Silent on almost every fire: an idempotency key means a
+    // repeat tells nobody twice.
+    schedule: { hours: [-1], minutes: [3, 13, 23, 33, 43, 53], mdays: [-1], months: [-1], wdays: [-1] },
+    // One indexed read of the next few days' interviews, then at most a handful of notifications.
+    // Nowhere near the 30s platform cut. 300 matches the rest of the account.
+    requestTimeout: 300,
+  },
   "job-heartbeat-sweep": {
     title: "Phoenix — job heartbeat sweep",
     path: "/api/cron/job-heartbeat-sweep",

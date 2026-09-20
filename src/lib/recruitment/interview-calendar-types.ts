@@ -12,13 +12,21 @@
 // Everyone who can see it can export it. Nobody but the owner can share it.
 
 export type InterviewCalendarAccessLevel = "viewer" | "commenter" | "editor";
-export type InterviewCalendarRole = "owner" | InterviewCalendarAccessLevel;
+/**
+ * `interviewer` is NOT a level the owner grants: it is what a District Manager or above holds for
+ * the interviews he chose them to conduct (owner, 2026-09-20). It sees the calendar's window with
+ * ONLY their own interviews in it — opens the CV, starts Zoom, records how it went — and meets no
+ * need above "view", so it can never book, move, cancel, comment or share. Every place that serves
+ * a booking to a `view` caller must also ask `mayReadBooking` (interview-calendar.ts).
+ */
+export type InterviewCalendarRole = "owner" | InterviewCalendarAccessLevel | "interviewer";
 
 export const INTERVIEW_CALENDAR_ACCESS_LEVELS: readonly InterviewCalendarAccessLevel[] = ["viewer", "commenter", "editor"];
 
 export const ACCESS_LEVEL_LABEL: Record<InterviewCalendarRole, string> = {
   commenter: "Commenter",
   editor: "Editor",
+  interviewer: "Interviewer",
   owner: "Owner",
   viewer: "Viewer",
 };
@@ -43,6 +51,30 @@ export function canCommentOnInterviews(role: InterviewCalendarRole | null): bool
 
 export function canShareInterviewCalendar(role: InterviewCalendarRole | null): boolean {
   return role === "owner";
+}
+
+/**
+ * Who may be chosen to conduct an interview, and so be shown the calendar: District Managers and
+ * above — never a Medical Rep (owner, 2026-09-20: "no medical reps ... it's from district managers
+ * and up").
+ *
+ * The app ROLE is read first because authority follows it, not the job title (an acting DM keeps her
+ * Medical Representative title). A role on the ladder decides; otherwise the JOB TITLE does. Both
+ * spellings of each seat are matched, as elsewhere. Anything unrecognised is refused: this gates who
+ * sees candidates' CVs, so an unknown title fails closed.
+ */
+const BELOW_DISTRICT_MANAGER = /\b(medical rep|representative)/i;
+const DISTRICT_MANAGER_AND_ABOVE = /\b(super admin|ceo|chief|president|director|head|vice|manager)\b/i;
+
+export function isDistrictManagerOrAbove(input: { role?: string | null; jobTitle?: string | null }): boolean {
+  const role = (input.role ?? "").trim();
+  if (role) {
+    if (BELOW_DISTRICT_MANAGER.test(role)) return false;
+    if (DISTRICT_MANAGER_AND_ABOVE.test(role)) return true;
+  }
+  const title = (input.jobTitle ?? "").trim();
+  if (!title || BELOW_DISTRICT_MANAGER.test(title)) return false;
+  return DISTRICT_MANAGER_AND_ABOVE.test(title);
 }
 
 /** What a request needs, in the order the levels grant it. */
@@ -86,7 +118,7 @@ export function resolveCalendarRole(input: {
   return input.shareLevel;
 }
 
-const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, owner: 4, viewer: 1 };
+const RANK: Record<InterviewCalendarRole, number> = { commenter: 2, editor: 3, interviewer: 0, owner: 4, viewer: 1 };
 
 /** The higher of two levels; null is no access. */
 export function higherCalendarRole(

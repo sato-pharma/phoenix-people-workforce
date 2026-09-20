@@ -22,7 +22,7 @@ let cached: InterviewCalendarMe | null = null;
 let inflight: Promise<InterviewCalendarMe> | null = null;
 
 function asRole(value: unknown): InterviewCalendarRole | null {
-  if (value === "owner") return "owner";
+  if (value === "owner" || value === "interviewer") return value;
   return (INTERVIEW_CALENDAR_ACCESS_LEVELS as readonly unknown[]).includes(value) ? (value as InterviewCalendarRole) : null;
 }
 
