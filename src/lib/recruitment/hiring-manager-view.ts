@@ -162,12 +162,17 @@ export async function downloadHiringManagerCandidateFile(
   // reporting that it trapped them, and his own checks agreed. A manager moves freely between any CVs
   // in his scope, and the scope check above is the only gate. Do not put the lock back.
 
-  // SILENT OPEN SIGNAL. This is the one chokepoint every CV open passes through — the in-app preview
+  // OPEN SIGNAL. This is the one chokepoint every CV open passes through — the in-app preview
   // and the download link both fetch through this route — so recording here, after the scope check
   // has proved this caller may see this CV, is what lets the manager-engagement report ever say a
-  // manager "opened" a CV. It writes to ats_candidate_views under the OPENER's own HR_ID and changes
-  // nothing on the manager's own screen (his portal reads that table nowhere), which is the whole
-  // point: the tracking must be invisible to the person being tracked.
+  // manager "opened" a CV. It writes to ats_candidate_views under the OPENER's own HR_ID and shows
+  // the opener nothing at the moment he opens it.
+  //
+  // IT IS NO LONGER INVISIBLE TO HIS COLLEAGUES. Until 2026-09-20 no portal screen read that table
+  // back. The owner then ruled that every candidate card names who else has opened the CV, with
+  // their title and the time (candidate-openers.ts, the "already opened by" banner), because one
+  // applicant is filed under the same area on CNS, Anti-infective and Pedia and lands in three
+  // district managers' folders. The write below is unchanged; only who may read it back moved.
   //
   // Best-effort and deliberately not awaited into the response path's success: markCandidateSeen
   // already no-ops on a missing table or an HR_ID-less session, and this try/catch is the belt to
