@@ -100,8 +100,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
       );
     }
 
+    // WHICH COMPANY ADDRESS THE PAPER PRINTS, chosen at the desk before printing (`address=registered`
+    // or `office`). Absent — every link that predates the prompt — is the registered head office.
+    const address = url.searchParams.get("address");
+
     const paper = await renderHiringPaper({
       access,
+      address,
       copies: url.searchParams.get("copies"),
       // Which DEVICE a custody receipt is for. Only the two custody forms read it; every other
       // document ignores it, and absent is the normal case — see renderHiringPaper. Not validated
@@ -231,9 +236,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ hrId
         // is the same output for one Chromium run instead of four.
         const one = await renderHiringPaper({
           access,
+          address,
           copies: "1",
           document: requested,
           hrId,
+          // The letter that says how many copies it was drawn up in must say the count being
+          // printed, not the one copy drawn here.
+          statedCopies: url.searchParams.get("copies"),
           version: url.searchParams.get("version"),
         });
         if (!one.ok) {

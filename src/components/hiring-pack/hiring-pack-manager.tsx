@@ -49,6 +49,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { FormsDrive } from "@/components/hiring-pack/forms-drive";
 import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
+import { PrintOptionsDialog, type PrintAnswer } from "@/components/hiring-pack/print-options-dialog";
 import { HiringPackPaperEditor } from "@/components/hiring-pack/paper-editor";
 import { candidateOptionLabel, type FormsDriveEntry } from "@/lib/hiring-pack/forms-drive";
 import { TemplateStudio } from "@/components/hiring-pack/template-studio";
@@ -65,6 +66,7 @@ import {
   type PrintableDocument,
 } from "@/lib/hiring-pack/document-registry";
 import { describePrintInstruction } from "@/lib/hiring-pack/custom-templates";
+import { documentTakesAddressChoice, type PrintAddressChoice } from "@/lib/hiring-pack/print-address";
 import {
   INSURANCE_WAGE_CEILING,
   INSURANCE_WAGE_DIVISOR,
@@ -1000,7 +1002,12 @@ export function HiringPackManager({
    * happening at all. Confirming a signature reports it as its own outcome.
    */
   const openPrint = useCallback(
-    (document: PrintableDocument, versionId?: string, copiesOverride?: number): boolean => {
+    (
+      document: PrintableDocument,
+      versionId?: string,
+      copiesOverride?: number,
+      address?: PrintAddressChoice | null,
+    ): boolean => {
       if (!pack) return false;
       // AN EXPLICIT COUNT WINS, and it has to, because this function ALWAYS sends `copies` in the
       // URL. The server has a default of its own — a company template's is on its row — but a
@@ -1012,12 +1019,34 @@ export function HiringPackManager({
       // the route resolves the version this employee signed. The parameter is only for deliberately
       // asking for a superseded template from the Archive.
       const version = versionId ? `&version=${encodeURIComponent(versionId)}` : "";
-      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${version}`;
+      // The company address chosen at the desk travels the same way. Absent — the automatic print after
+      // a signature, an old link — is the registered head office, as it always was.
+      const addressPart = address ? `&address=${address}` : "";
+      const url = `/api/hiring-pack/${encodeURIComponent(pack.employee.hrId)}/print?document=${document}&copies=${count}${addressPart}${version}`;
       return window.open(url, "_blank", "noopener,noreferrer") !== null;
     },
     [copies, pack],
   );
 
+  /**
+   * EVERY PRINT BUTTON ASKS FIRST — how many copies, and which company address (owner, 2026-09-20).
+   * The click only records what is being printed; `PrintOptionsDialog` below puts the two questions
+   * to the desk, and only its Print button reaches `openPrint`. The count is written back into the
+   * row's Copies box so the preview, the box and the paper agree about how many were asked for.
+   */
+  const [printRequest, setPrintRequest] = useState<{
+    copiesOverride?: number;
+    document: PrintableDocument;
+    versionId?: string;
+  } | null>(null);
+  // Kept across prints in this session as the dialog's starting point — never as an answer: Print
+  // stays disabled until the desk has picked an address at least once.
+  const [lastAddress, setLastAddress] = useState<PrintAddressChoice | null>(null);
+  const requestPrint = useCallback(
+    (document: PrintableDocument, versionId?: string, copiesOverride?: number) =>
+      setPrintRequest({ copiesOverride, document, versionId }),
+    [setPrintRequest],
+  );
   const recordSignature = useCallback(
     async (document: HiringPackDocument) => {
       if (!pack) return;
@@ -1132,10 +1161,10 @@ export function HiringPackManager({
         );
         return;
       }
-      if (how === "print") openPrint(document, template.id, template.defaultCopies);
+      if (how === "print") requestPrint(document, template.id, template.defaultCopies);
       else openPreview(document, template.id);
     },
-    [openPreview, openPrint],
+    [openPreview, requestPrint],
   );
 
   /**
@@ -1158,6 +1187,20 @@ export function HiringPackManager({
   const setCopiesFor = useCallback((document: PrintableDocument, value: string) => {
     setCopies((current) => ({ ...current, [document]: value }));
   }, []);
+
+  const confirmPrint = useCallback(
+    (answer: PrintAnswer) => {
+      if (!printRequest) return;
+      const { document, versionId } = printRequest;
+      setPrintRequest(null);
+      if (answer.address) setLastAddress(answer.address);
+      setCopiesFor(document, String(answer.copies));
+      if (!openPrint(document, versionId, answer.copies, answer.address)) {
+        setError("The print tab was blocked by your browser — allow pop-ups for this site and print again.");
+      }
+    },
+    [openPrint, printRequest, setCopiesFor, setPrintRequest],
+  );
 
   const setSignDateFor = useCallback((document: HiringPackDocument, value: string) => {
     setSignDates((current) => ({ ...current, [document]: value }));
@@ -1650,7 +1693,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("contract", value)}
                     footnote={contractVersionNote(pack.profile.contractTemplateVersion)}
                     onPreview={() => openPreview("contract")}
-                    onPrint={() => openPrint("contract")}
+                    onPrint={() => requestPrint("contract")}
                     onSign={() => void recordSignature("contract")}
                     onSignDateChange={(value) => setSignDateFor("contract", value)}
                     printedAt={pack.profile.contractPrintedAt}
@@ -1667,7 +1710,7 @@ export function HiringPackManager({
                     gaps={gapsFor(pack.gaps, "form1")}
                     onCopiesChange={(value) => setCopiesFor("form1", value)}
                     onPreview={() => openPreview("form1")}
-                    onPrint={() => openPrint("form1")}
+                    onPrint={() => requestPrint("form1")}
                     onSign={() => void recordSignature("form1")}
                     onSignDateChange={(value) => setSignDateFor("form1", value)}
                     printedAt={pack.profile.form1PrintedAt}
@@ -1694,7 +1737,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("workerDataForm", value)}
                     footnote="A service-file sheet, not a government form. Everything Phoenix already knows — name, national ID, job, insurance number — is filled; the fields it holds no record of (marital status, military-service position, bank and IBAN, next of kin) print blank for a pen."
                     onPreview={() => openPreview("workerDataForm")}
-                    onPrint={() => openPrint("workerDataForm")}
+                    onPrint={() => requestPrint("workerDataForm")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1726,7 +1769,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("custodyLaptop", value)}
                     footnote="The device details, values and handover date print blank — Phoenix holds no asset register, and a serial number is read off the machine rather than recalled. The name, ID, job title and address are filled."
                     onPreview={() => openPreview("custodyLaptop")}
-                    onPrint={() => openPrint("custodyLaptop")}
+                    onPrint={() => requestPrint("custodyLaptop")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1745,7 +1788,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("custodyMobile", value)}
                     footnote="Same paper as the laptop receipt, with the phone's own item list and an IMEI and SIM block in place of the Windows fields."
                     onPreview={() => openPreview("custodyMobile")}
-                    onPrint={() => openPrint("custodyMobile")}
+                    onPrint={() => requestPrint("custodyMobile")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1776,7 +1819,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("contractRenewal", value)}
                     footnote="The new term is taken from the approved renewal request where one exists, and derived from the expiring contract where it does not. The annex number and the objective reason for keeping the term fixed print blank — the number comes from the company's own register, and the reason is a legal judgement about the post."
                     onPreview={() => openPreview("contractRenewal")}
-                    onPrint={() => openPrint("contractRenewal")}
+                    onPrint={() => requestPrint("contractRenewal")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1795,7 +1838,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("contractNonRenewal", value)}
                     footnote="The alternative to the annex, never a companion to it. The last working day is the contract's own end date and nothing else — this notice exists to say the contract expired rather than that anybody resigned or was dismissed."
                     onPreview={() => openPreview("contractNonRenewal")}
-                    onPrint={() => openPrint("contractNonRenewal")}
+                    onPrint={() => requestPrint("contractNonRenewal")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1821,7 +1864,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("nda", value)}
                     footnote="Supplements مادة (7) of the contract and now names it. Everything about the person is filled; the paper is signed by both sides."
                     onPreview={() => openPreview("nda")}
-                    onPrint={() => openPrint("nda")}
+                    onPrint={() => requestPrint("nda")}
                     onSign={() => void recordSignature("nda")}
                     onSignDateChange={(value) => setSignDateFor("nda", value)}
                     printedAt={pack.profile.ndaPrintedAt}
@@ -1840,7 +1883,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("appointmentDocsReceipt", value)}
                     footnote="Every verdict box prints blank by design: Phoenix holds no register of which certificates were handed over, and a ticked box on a signed form asserts that a document was seen."
                     onPreview={() => openPreview("appointmentDocsReceipt")}
-                    onPrint={() => openPrint("appointmentDocsReceipt")}
+                    onPrint={() => requestPrint("appointmentDocsReceipt")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1862,7 +1905,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("socialStatusSheet", value)}
                     footnote="The service-file sheet the law requires the employer to keep. Name, ID, job, dates and insurance number are filled; religion, military status and marital status print blank because this system holds none of them."
                     onPreview={() => openPreview("socialStatusSheet")}
-                    onPrint={() => openPrint("socialStatusSheet")}
+                    onPrint={() => requestPrint("socialStatusSheet")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1890,7 +1933,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("absenceWarning", value)}
                     footnote="Issued after five consecutive days, as مادة (8) of the contract provides. The absence dates print blank: attendance is not resolved here, and a wrong date on this page cannot be walked back."
                     onPreview={() => openPreview("absenceWarning")}
-                    onPrint={() => openPrint("absenceWarning")}
+                    onPrint={() => requestPrint("absenceWarning")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1909,7 +1952,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("deemedResignation", value)}
                     footnote="Only after MORE THAN ten consecutive days, and only once the first warning has been served — Article 166 requires both. It declares a deemed resignation; it does not accept one, because the employee wrote none."
                     onPreview={() => openPreview("deemedResignation")}
-                    onPrint={() => openPrint("deemedResignation")}
+                    onPrint={() => requestPrint("deemedResignation")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1924,8 +1967,9 @@ export function HiringPackManager({
 
                 {/*
                   THE HR LETTER, in both languages. Asked for by somebody still employed — a bank, an
-                  embassy — so it sits with the papers of a working life. Both state the BASIC salary
-                  only, off the same `calculateBasicSalary` figure, so the two never disagree.
+                  embassy — so it sits with the papers of a working life. The English one states the
+                  BASIC salary; the Arabic one states the BASE salary (owner, 2026-09-20), so the two
+                  are different figures on purpose.
                 */}
                 <div className="grid gap-3 lg:grid-cols-2">
                   <DocumentCard
@@ -1936,7 +1980,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("salaryLetterEn", value)}
                     footnote="For a bank, an embassy or a landlord. It states the BASIC monthly salary derived from the base salary on record, in figures and in words — never the net or the gross."
                     onPreview={() => openPreview("salaryLetterEn")}
-                    onPrint={() => openPrint("salaryLetterEn")}
+                    onPrint={() => requestPrint("salaryLetterEn")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -1955,16 +1999,16 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("salaryLetterAr", value)}
                     footnote="لبنك أو سفارة أو مالك عقار. تُبيّن الأجر الأساسي الشهري المشتق من الأجر الأصلي المسجَّل، رقمًا وكتابةً — دون الصافي أو الإجمالي."
                     onPreview={() => openPreview("salaryLetterAr")}
-                    onPrint={() => openPrint("salaryLetterAr")}
+                    onPrint={() => requestPrint("salaryLetterAr")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
-                    printingNote="نسختان. تُسلَّم إحداهما وتُحفظ الأخرى بملف الخدمة كسجل للراتب الذي اعتمدته الشركة."
+                    printingNote="عدد النسخ يُسأل عنه قبل الطباعة، وتكتبه الشهادة على نفسها. بدون خاتم."
                     signDate=""
                     signedDate={null}
                     signable={false}
                     subtitle="شهادة راتب — باللغة العربية"
-                    title="HR letter — basic salary (Arabic)"
+                    title="HR letter — base salary (Arabic)"
                   />
                 </div>
 
@@ -2107,7 +2151,7 @@ export function HiringPackManager({
                     gaps={gapsFor(pack.gaps, "form6")}
                     onCopiesChange={(value) => setCopiesFor("form6", value)}
                     onPreview={() => openPreview("form6")}
-                    onPrint={() => openPrint("form6")}
+                    onPrint={() => requestPrint("form6")}
                     onSign={() => void recordSignature("form6")}
                     onSignDateChange={(value) => setSignDateFor("form6", value)}
                     printedAt={pack.offboarding.form6PrintedAt}
@@ -2130,7 +2174,7 @@ export function HiringPackManager({
                       gaps={gapsFor(pack.gaps, "resignation")}
                       onCopiesChange={(value) => setCopiesFor("resignation", value)}
                       onPreview={() => openPreview("resignation")}
-                      onPrint={() => openPrint("resignation")}
+                      onPrint={() => requestPrint("resignation")}
                       onSign={() => void recordSignature("resignation")}
                       onSignDateChange={(value) => setSignDateFor("resignation", value)}
                       printedAt={pack.offboarding.resignationPrintedAt}
@@ -2148,7 +2192,7 @@ export function HiringPackManager({
                       gaps={gapsFor(pack.gaps, "mutualTermination")}
                       onCopiesChange={(value) => setCopiesFor("mutualTermination", value)}
                       onPreview={() => openPreview("mutualTermination")}
-                      onPrint={() => openPrint("mutualTermination")}
+                      onPrint={() => requestPrint("mutualTermination")}
                       onSign={() => void recordSignature("mutualTermination")}
                       onSignDateChange={(value) => setSignDateFor("mutualTermination", value)}
                       printedAt={pack.offboarding.mutualTerminationPrintedAt}
@@ -2181,7 +2225,7 @@ export function HiringPackManager({
                     gaps={gapsFor(pack.gaps, "clearanceEmployee")}
                     onCopiesChange={(value) => setCopiesFor("clearanceEmployee", value)}
                     onPreview={() => openPreview("clearanceEmployee")}
-                    onPrint={() => openPrint("clearanceEmployee")}
+                    onPrint={() => requestPrint("clearanceEmployee")}
                     onSign={() => void recordSignature("clearanceEmployee")}
                     onSignDateChange={(value) => setSignDateFor("clearanceEmployee", value)}
                     printedAt={pack.offboarding.clearanceEmployeePrintedAt}
@@ -2198,7 +2242,7 @@ export function HiringPackManager({
                     gaps={gapsFor(pack.gaps, "clearanceCompany")}
                     onCopiesChange={(value) => setCopiesFor("clearanceCompany", value)}
                     onPreview={() => openPreview("clearanceCompany")}
-                    onPrint={() => openPrint("clearanceCompany")}
+                    onPrint={() => requestPrint("clearanceCompany")}
                     onSign={() => void recordSignature("clearanceCompany")}
                     onSignDateChange={(value) => setSignDateFor("clearanceCompany", value)}
                     printedAt={pack.offboarding.clearanceCompanyPrintedAt}
@@ -2225,7 +2269,7 @@ export function HiringPackManager({
                     onCopiesChange={(value) => setCopiesFor("appointmentDocsReturn", value)}
                     footnote="The employee's receipt for his own original certificates coming back. It carries the last working day, and says in terms that it covers the papers only — it is not a release of any statutory or financial entitlement."
                     onPreview={() => openPreview("appointmentDocsReturn")}
-                    onPrint={() => openPrint("appointmentDocsReturn")}
+                    onPrint={() => requestPrint("appointmentDocsReturn")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -2256,7 +2300,7 @@ export function HiringPackManager({
                         : "Issued on request — for a visa, a bank or an application. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date. No salary, no statement of conduct: each is left out on purpose."
                     }
                     onPreview={() => openPreview("experienceCertificate")}
-                    onPrint={() => openPrint("experienceCertificate")}
+                    onPrint={() => requestPrint("experienceCertificate")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -2285,7 +2329,7 @@ export function HiringPackManager({
                         : "For an embassy, a foreign employer or a bank. This employee has not left, so it will state that he is STILL EMPLOYED and close the period at today's date."
                     }
                     onPreview={() => openPreview("experienceCertificateEn")}
-                    onPrint={() => openPrint("experienceCertificateEn")}
+                    onPrint={() => requestPrint("experienceCertificateEn")}
                     onSign={() => undefined}
                     onSignDateChange={() => undefined}
                     printedAt={null}
@@ -2317,15 +2361,30 @@ export function HiringPackManager({
         <TemplateArchive
           employeeSelected={Boolean(pack)}
           onPreview={(document, versionId) => openPreview(document, versionId)}
-          onPrint={(document, versionId) => openPrint(document, versionId)}
+          onPrint={(document, versionId) => requestPrint(document, versionId)}
         />
 
         <TemplateStudio
           companyTemplates={companyTemplates}
           employeeSelected={Boolean(pack)}
           onPreview={(document, versionId) => openPreview(document, versionId)}
-          onPrint={(document, versionId) => openPrint(document, versionId)}
+          onPrint={(document, versionId) => requestPrint(document, versionId)}
         />
+
+        {printRequest ? (
+          <PrintOptionsDialog
+            askAddress={documentTakesAddressChoice(printRequest.document)}
+            defaultCopies={
+              printRequest.copiesOverride ??
+              resolveCopyCount(copies[printRequest.document], printRequest.document)
+            }
+            initialAddress={lastAddress}
+            onCancel={() => setPrintRequest(null)}
+            onConfirm={confirmPrint}
+            registeredAddress={pack?.company.contractRecital.headOfficeAr ?? ""}
+            title={documentLabel(printRequest.document, customTemplateNames)}
+          />
+        ) : null}
       </div>
     </div>
   );

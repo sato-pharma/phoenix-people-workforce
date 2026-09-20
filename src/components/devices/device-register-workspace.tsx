@@ -55,6 +55,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { PrintOptionsDialog } from "@/components/hiring-pack/print-options-dialog";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { CUSTODY_LAPTOP_V1, CUSTODY_MOBILE_V1 } from "@/lib/hiring-pack/custody-text";
 import type {
@@ -1802,6 +1803,8 @@ function DeviceActions({
   setDraft: (draft: Draft) => void;
 }) {
   const open = draft.deviceId === device.id ? draft.kind : null;
+  // The receipt's print prompt — how many copies, which company address — is open.
+  const [askingPrint, setAskingPrint] = useState(false);
   const canIssue = device.status === "in_stock";
   const canReturn = device.assignmentId !== null;
 
@@ -1837,16 +1840,37 @@ function DeviceActions({
           نموذج رقم 2 — the register already knows which, so nobody has to choose.
         */}
         {device.assignmentId && device.holderHrId ? (
-          <a
-            className={buttonClass}
-            href={`/api/hiring-pack/${encodeURIComponent(device.holderHrId)}/print?document=${
-              device.category === "laptop" ? "custodyLaptop" : "custodyMobile"
-            }&deviceId=${encodeURIComponent(device.id)}`}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Print receipt
-          </a>
+          <>
+            {/* ASKS FIRST, like every HR form (owner, 2026-09-20): how many copies, and which company
+                address. The answer is appended to the same link this button used to be. */}
+            <button
+              className={buttonClass}
+              onClick={() => setAskingPrint(true)}
+              type="button"
+            >
+              Print receipt
+            </button>
+            {askingPrint ? (
+              <PrintOptionsDialog
+                askAddress
+                defaultCopies={2}
+                initialAddress={null}
+                onCancel={() => setAskingPrint(false)}
+                onConfirm={(answer) => {
+                  setAskingPrint(false);
+                  const paper = device.category === "laptop" ? "custodyLaptop" : "custodyMobile";
+                  const address = answer.address ? `&address=${answer.address}` : "";
+                  window.open(
+                    `/api/hiring-pack/${encodeURIComponent(device.holderHrId ?? "")}/print?document=${paper}&copies=${answer.copies}${address}&deviceId=${encodeURIComponent(device.id)}`,
+                    "_blank",
+                    "noopener,noreferrer",
+                  );
+                }}
+                registeredAddress={null}
+                title={device.category === "laptop" ? "Laptop custody receipt" : "Mobile custody receipt"}
+              />
+            ) : null}
+          </>
         ) : null}
         </div>
         {/*

@@ -48,7 +48,7 @@ export type HrPaperKind =
   | "certificate"
   /**
    * The Arabic counterpart of `salary-letter-en.ts` — the letter a bank or an embassy reads, stating
-   * the BASIC salary and nothing else.
+   * the BASE salary and nothing else (the English one states the basic).
    *
    * NOT a `certificate`: `renderHrPaperHtml`'s banner for that kind warns about the certificate's own
    * "no salary, no reason for leaving" omissions, which would be actively wrong printed above a
@@ -115,15 +115,21 @@ export type HrPaperToken =
   | "SERVICE_END"
   | "SERVICE_STATUS"
   | "SERVICE_DURATION"
-  // The basic salary, on the HR letter — the payroll policy's own figure, never the base or net.
+  // The BASE salary, on the Arabic HR letter — the figure on the employee's record, stated as it is.
   //
-  // Three tokens for the same reason SERVICE_END/STATUS/DURATION are three: `BASIC_SALARY_LEAD` is
-  // the sentence's own verb, present tense for somebody still on the payroll and past tense for a
-  // leaver, chosen once per render alongside `SERVICE_STATUS`; `BASIC_SALARY` and `BASIC_SALARY_WORDS`
-  // are the figure and its تفقيط, each independently blankable when there is no salary to state.
-  | "BASIC_SALARY_LEAD"
-  | "BASIC_SALARY"
-  | "BASIC_SALARY_WORDS"
+  // (It stated the BASIC salary until 2026-09-20, when the owner said to "put the base": the basic is
+  // still what the English letter states.) Three tokens for the same reason SERVICE_END/STATUS/
+  // DURATION are three: `BASE_SALARY_LEAD` is the sentence's own verb, present tense for somebody
+  // still on the payroll and past tense for a leaver, chosen once per render alongside
+  // `SERVICE_STATUS`; `BASE_SALARY` and `BASE_SALARY_WORDS` are the figure and its تفقيط, each
+  // independently blankable when there is no salary to state.
+  | "BASE_SALARY_LEAD"
+  | "BASE_SALARY"
+  | "BASE_SALARY_WORDS"
+  // How the paper was drawn up — «من نسختين، نسخة تُسلَّم …». Worked out from the number of copies
+  // the desk chose at print time (`copies-clause.ts`), never stored: it is not a fact about the
+  // employee, it is a fact about this print run.
+  | "COPIES_CLAUSE"
   // The absence being warned about
   | "ABSENCE_FROM"
   | "ABSENCE_TO"
@@ -262,6 +268,14 @@ export type HrPaperTemplate = {
   serviceNoteAr: string | null;
   serviceFields: readonly HrPaperField[];
   footerAr: string;
+  /**
+   * TRUE ON A PAPER THAT CARRIES NO COMPANY SEAL. The signature table stamps the seal into its
+   * `التوقيع والختم` cell — or, failing a `خاتم` column, into column one — and a paper with neither
+   * must say so, because dropping the `خاتم الشركة` label alone would move the seal onto the line
+   * somebody signs. The Arabic HR letter is the one such paper (owner, 2026-09-20: "remove the
+   * stamp").
+   */
+  unsealed?: boolean;
 };
 
 /** The dotted rule an absent value prints as. The same one every other house paper uses. */

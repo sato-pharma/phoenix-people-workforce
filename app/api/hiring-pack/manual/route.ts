@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     await assertPermission(access, "employee_documents", "read");
 
     const payload = (await request.json()) as {
+      address?: unknown;
       copies?: unknown;
       document?: unknown;
       group?: unknown;
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
 
     const paper = await renderHiringPaper({
       access,
+      address: typeof payload.address === "string" ? payload.address : null,
       copies: payload.copies === undefined ? null : String(payload.copies),
       data,
       document,

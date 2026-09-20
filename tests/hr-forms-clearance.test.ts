@@ -297,7 +297,7 @@ function testTheClearancePairAreComplementsNotAlternatives(): void {
   const manager = readFileSync("src/components/hiring-pack/hiring-pack-manager.tsx", "utf8");
   for (const document of CLEARANCE_DOCUMENTS) {
     assert.ok(
-      manager.includes(`onPrint={() => openPrint("${document}")}`),
+      manager.includes(`onPrint={() => requestPrint("${document}")}`),
       `the manager screen must offer ${document}`,
     );
   }
@@ -306,7 +306,7 @@ function testTheClearancePairAreComplementsNotAlternatives(): void {
   const insideTheChoice = manager.slice(ternaryStart, ternaryEnd);
   for (const document of CLEARANCE_DOCUMENTS) {
     assert.ok(
-      !insideTheChoice.includes(`openPrint("${document}")`),
+      !insideTheChoice.includes(`requestPrint("${document}")`),
       `${document} must render outside the exit-route choice — it is not an alternative to anything`,
     );
   }

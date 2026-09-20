@@ -517,9 +517,10 @@ function testEveryPaperHasUniqueIdAndKnownTokens(): void {
     "SERVICE_END",
     "SERVICE_STATUS",
     "SERVICE_DURATION",
-    "BASIC_SALARY_LEAD",
-    "BASIC_SALARY",
-    "BASIC_SALARY_WORDS",
+    "BASE_SALARY_LEAD",
+    "BASE_SALARY",
+    "BASE_SALARY_WORDS",
+    "COPIES_CLAUSE",
   ]);
   for (const paper of HR_PAPERS) {
     for (const token of hrPaperTemplateTokens(paper)) {
@@ -1314,20 +1315,28 @@ function testEveryPaperCarriesExactlyOneSeal(): void {
     ["worker data form", renderWorkerFormHtml(pack, 1)],
     ...HR_PAPERS.map((paper) => [paper.id, renderHrPaperHtml(pack, 1, paper)] as const),
   ];
+  // The one paper that wears NO seal by the owner's order (2026-09-20, "remove the stamp"): the
+  // Arabic HR letter. It says so itself (`unsealed`), and its own suite proves the flag is what
+  // keeps the seal off — so here it is held to zero, not skipped.
+  const unsealed = new Set(HR_PAPERS.filter((paper) => paper.unsealed === true).map((paper) => paper.id));
+  assert.deepEqual([...unsealed], ["salary-letter-ar-v1"], "only the Arabic HR letter is unsealed");
 
   for (const [name, html] of rendered) {
     const seals = (html.match(/class="phx-seal"/g) ?? []).length;
+    const expected = unsealed.has(name) ? 0 : 1;
     assert.equal(
       seals,
-      1,
-      `${name} carries ${seals} seals, not 1. Zero means the company's signature party was not `
-        + "recognised (its heading is not always الشركة); more than one means a second company "
-        + "column or a second signature block was sealed too.",
+      expected,
+      `${name} carries ${seals} seals, not ${expected}. Zero on a sealed paper means the company's `
+        + "signature party was not recognised (its heading is not always الشركة); more than one "
+        + "means a second company column or a second signature block was sealed too.",
     );
-    assert.ok(
-      html.includes(HOUSE_SEAL_SRC),
-      `${name} must reference the shared seal asset, not a second copy of the artwork.`,
-    );
+    if (expected === 1) {
+      assert.ok(
+        html.includes(HOUSE_SEAL_SRC),
+        `${name} must reference the shared seal asset, not a second copy of the artwork.`,
+      );
+    }
   }
 
   // THE PDF PATH MUST BE ABLE TO INLINE IT. `renderHiringPaperPdf` refuses to file a document whose

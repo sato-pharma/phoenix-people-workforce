@@ -718,10 +718,17 @@ export const HR_PAPER_EXPERIENCE_CERTIFICATE_V1: HrPaperTemplate = {
  * would pull in its print-banner warning about blank dates and pool its archived versions with a
  * paper that ends somebody's service, neither of which is true of a letter stating a salary.
  *
- * STATES THE BASIC SALARY, AND ONLY THE BASIC SALARY — the same owner rule as the English letter
- * ("salary we put basic not net", 2026-09-13). `render-hr-paper.ts` computes `BASIC_SALARY` off
- * `calculateBasicSalary`, the payroll policy's own formula, never restated here; a missing base
- * salary prints as a dotted rule, never as a zero.
+ * STATES THE BASE SALARY, AND ONLY THE BASE SALARY — the owner, 2026-09-20: "you will not put the
+ * basic, you will put the base and you will call it ويتقاضى أجرًا شهريًا مقداره". It stated the BASIC
+ * salary from its first day (2026-09-13, "salary we put basic not net"), and the English letter still
+ * does; this one now reads the figure on the record as it is, so `render-hr-paper.ts` no longer runs
+ * it through the payroll policy's basic formula. A missing base salary prints as a dotted rule, never
+ * as a zero.
+ *
+ * NO COMPANY SEAL (`unsealed`) and a copies sentence worked out from the number the desk chose at
+ * print time — same day, same message: "remove the stamp", «تحرر من نسختين نسخة تسلم …», and "ask me
+ * how many copies … and based on what I tell you, you write here". `{{COPIES_CLAUSE}}` is
+ * `copiesClauseAr` (copies-clause.ts).
  */
 export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   id: "salary-letter-ar-v1",
@@ -730,7 +737,7 @@ export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   titleAr: "شهادة راتب",
   subtitleAr: LAW_SUBTITLE,
   purposeAr:
-    "تُحرَّر من نسختين — نسخة تُسلَّم لصاحب الشأن بناءً على طلبه، ونسخة تُحفظ بملف الخدمة.",
+    "تُصدَر هذه الشهادة بناءً على طلب صاحب الشأن، للتقدم بها إلى من يهمه الأمر.",
   bindingLineAr: null,
 
   firstPartyHeadingAr: "الصادرة عن — الشركة",
@@ -752,8 +759,9 @@ export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
     "إلى من يهمه الأمر،",
     "تشهد {{COMPANY_NAME}} بأن السيد / السيدة المبيّنة بياناته عاليه قد التحق بالعمل لديها اعتبارًا من {{HIRE_DATE}} وحتى {{SERVICE_END}}، وشغل خلال هذه المدة وظيفة {{JOB_TITLE}} بـ{{DEPARTMENT}}.",
     "{{SERVICE_STATUS}}",
-    "{{BASIC_SALARY_LEAD}} ( {{BASIC_SALARY}} ) جنيه (( {{BASIC_SALARY_WORDS}} ) فقط لا غير)، وهذا المبلغ هو الأجر الأساسي فقط دون سواه، ولا يشمل أي بدلات أو حوافز أو عمولات أو أية مزايا أخرى متغيرة.",
+    "{{BASE_SALARY_LEAD}} ( {{BASE_SALARY}} ) جنيه (( {{BASE_SALARY_WORDS}} ) فقط لا غير).",
     "وقد أُعطيت له هذه الشهادة بناءً على طلبه للتقدم بها إلى من يهمه الأمر، دون أدنى مسؤولية على الشركة قِبَل الغير.",
+    "{{COPIES_CLAUSE}}",
   ],
   operativeHeadingAr: null,
   operativeParagraphsAr: [],
@@ -767,7 +775,7 @@ export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   signatureColumns: [
     {
       headingAr: "عن الشركة — إدارة الموارد البشرية",
-      fieldsAr: ["الاسم والصفة:", "التوقيع:", "خاتم الشركة:"],
+      fieldsAr: ["الاسم والصفة:", "التوقيع:"],
     },
   ],
   signatoryNoteLinesAr: [],
@@ -775,6 +783,7 @@ export const HR_PAPER_SALARY_LETTER_AR_V1: HrPaperTemplate = {
   serviceNoteAr: null,
   serviceFields: [],
   footerAr: "شهادة راتب · صادرة عن إدارة الموارد البشرية",
+  unsealed: true,
 };
 
 /*

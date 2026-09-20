@@ -1,5 +1,6 @@
 import { spellEgyptianAmount } from "@/lib/hiring-pack/arabic-amount";
 import type { CompanyDetails } from "@/lib/hiring-pack/company-details";
+import { copiesClauseAr } from "@/lib/hiring-pack/copies-clause";
 import { flowFieldLayer, type DocumentFieldRow } from "@/lib/hiring-pack/field-layout";
 import {
   HOUSE_COLORS,
@@ -35,7 +36,6 @@ import {
   todayInCairo,
 } from "@/lib/hiring-pack/render-shared";
 import type { HiringPackData } from "@/lib/hiring-pack/types";
-import { BASIC_SALARY_RATE, calculateBasicSalary } from "@/lib/payroll/policy";
 
 // Sato's own HR papers — the confidentiality undertaking, the two appointment-documents forms, the
 // two absence notices, the service-file sheet and the certificate of experience.
@@ -137,20 +137,20 @@ export function buildHrPaperValues(
     // writes in, not one this file guesses.
     SERVICE_DURATION: describeServiceDuration(service.startsOn, service.endsOn),
 
-    // THE HR LETTER'S BASIC SALARY (the owner, 2026-09-13: "salary we put basic not net") — the SAME
-    // null-handling as the English letter's `buildSalaryLetterEnValues`: no base salary on record
-    // means a blank, never a zero, because `calculateBasicSalary` would otherwise answer 0 and "٠
-    // جنيه" on a letter to a bank states that the employee is unpaid.
+    // THE ARABIC HR LETTER'S BASE SALARY (the owner, 2026-09-20: "you will not put the basic, you will
+    // put the base") — the figure on the record as it stands, no payroll formula between. The
+    // English letter keeps stating the basic. The null-handling is the English letter's own: no base
+    // salary on record means a blank, never a zero, because "٠ جنيه" on a letter to a bank states
+    // that the employee is unpaid.
     ...(() => {
       const base = employee.baseSalary;
       const baseSalary = typeof base === "number" && Number.isFinite(base) && base > 0 ? base : null;
-      const basicSalary = baseSalary === null ? null : calculateBasicSalary({ baseSalary });
       return {
-        BASIC_SALARY_LEAD: service.departed
-          ? "وكان آخر أجر أساسي شهري يتقاضاه مقداره"
-          : "ويتقاضى أجرًا أساسيًا شهريًا مقداره",
-        BASIC_SALARY: basicSalary === null ? "" : pinLtr(formatMoney(basicSalary)),
-        BASIC_SALARY_WORDS: basicSalary === null ? "" : spellEgyptianAmount(basicSalary),
+        BASE_SALARY_LEAD: service.departed
+          ? "وكان آخر أجر شهري يتقاضاه مقداره"
+          : "ويتقاضى أجرًا شهريًا مقداره",
+        BASE_SALARY: baseSalary === null ? "" : pinLtr(formatMoney(baseSalary)),
+        BASE_SALARY_WORDS: baseSalary === null ? "" : spellEgyptianAmount(baseSalary),
       };
     })(),
 
@@ -380,7 +380,13 @@ export function sealFieldIndex(fieldsAr: readonly string[]): number {
 }
 
 /** The signature block: one ruled row per party, one column per signing field. */
-function signatureTable(columns: readonly HrPaperSignatureColumn[]): string {
+function signatureTable(
+  columns: readonly HrPaperSignatureColumn[],
+  // A paper with NO company seal (`HrPaperTemplate.unsealed`). Dropping the خاتم label from its
+  // fields is not enough on its own: with no خاتم column the seal falls back to column one, which
+  // is the line somebody signs.
+  sealed = true,
+): string {
   const first = columns[0];
   if (!first) return "";
   const head = first.fieldsAr
@@ -400,7 +406,7 @@ function signatureTable(columns: readonly HrPaperSignatureColumn[]): string {
         // 2026-09-13: "fix the Arabic stamp").
         column.fieldsAr
           .map((_label, index) =>
-            partyIndex === sealAt && index === sealFieldIndex(column.fieldsAr)
+            sealed && partyIndex === sealAt && index === sealFieldIndex(column.fieldsAr)
               ? `<td class="doc-sig__cell"${HOUSE_SEALED_ATTRS}>${houseSealImg({ sizeMm: 34 })}</td>`
               : `<td class="doc-sig__cell"></td>`,
           )
@@ -526,7 +532,7 @@ function renderCopy(
         ${closing ? `<section class="doc-closing">${closing}</section>` : ""}
         ${declaration}
         ${heading(template.signaturesHeadingAr)}
-        ${signatureTable(template.signatureColumns)}
+        ${signatureTable(template.signatureColumns, template.unsealed !== true)}
         ${signNote}
         ${receipt}
         ${serviceBlock(template)}
@@ -552,11 +558,17 @@ export function renderHrPaperHtml(
   fallback: HrPaperTemplate,
   requestedTemplateId?: string | null,
   fields: readonly DocumentFieldRow[] = [],
+  // What a paper that states its own copy count says. Defaults to the count rendered; differs only
+  // where one copy is drawn and the rest are stamped from it (the PDF route).
+  statedCopies?: number,
 ): string {
   const requested = hrPaperById(requestedTemplateId);
   const template = requested && requested.kind === fallback.kind ? requested : fallback;
-  const values = buildHrPaperValues(data);
   const total = Math.max(1, copies);
+  // The sentence stating how many copies this run was drawn up in follows the count chosen at print
+  // time, so it is added here rather than in `buildHrPaperValues`, which knows the employee and not
+  // the print run.
+  const values = { ...buildHrPaperValues(data), COPIES_CLAUSE: copiesClauseAr(statedCopies ?? total) };
   const body = Array.from({ length: total }, () =>
     renderCopy(template, values, data.company),
   ).join("\n");
@@ -607,12 +619,12 @@ export function renderHrPaperHtml(
     const baseSalary = typeof base === "number" && Number.isFinite(base) && base > 0 ? base : null;
     banner.push(
       baseSalary !== null
-        ? `It states the BASIC monthly salary — ${Math.round(BASIC_SALARY_RATE * 100)}% of the base salary on record (${formatMoney(baseSalary)} EGP). Not the net salary and not the gross.`
+        ? `It states the BASE monthly salary on record (${formatMoney(baseSalary)} EGP) — not the basic, the net or the gross. It carries no company seal.`
         : "No base salary is on record, so the salary prints as a dotted rule. Correct the record, or write it in by hand, before it leaves the desk.",
     );
     banner.push(
       data.employee.departed
-        ? "This employee has LEFT: the letter states the period of service and the LAST basic salary."
+        ? "This employee has LEFT: the letter states the period of service and the LAST base salary."
         : "It states that this employee is currently employed, read from the employee record.",
     );
   }
@@ -808,8 +820,30 @@ export function renderHrPaperHtml(
   /* The certificate's (and the salary letter's — the same one-row, one-seal layout) stamp column
      holds the whole impression. At 12mm the 34mm seal spilled over its own heading and below the
      table; the page has the room, and one signature row. */
-  .copy--certificate .doc-sig__cell,
-  .copy--salaryLetter .doc-sig__cell { height: 36mm; }
+  .copy--certificate .doc-sig__cell { height: 36mm; }
+
+  /* THE ARABIC HR LETTER FILLS ITS PAGE (owner, 2026-09-20: "instead of condensing the page with the
+     lower half empty, re-space it and fit it in the one page"). It is a short letter — a grid, four
+     sentences, one signature — and at the 9pt every dense paper here is set in, it used the top half
+     of an A4 sheet and left the rest blank. So this paper alone is set larger and looser, and its
+     sheet is stretched to the printable height: the body cell absorbs whatever is left, which pins the
+     footer to the foot of the page however many lines the sentences run to.
+     THE HEIGHT IS THE PAGE MINUS EVERYTHING AROUND IT — 297mm, less the two @page margins and the
+     copy's own padding (10.7 + 12.7 each) — and stops short of it by a couple of millimetres, because
+     one millimetre over is a second, empty page in the print dialog. No fill anywhere: spacing only,
+     per the ink rule. */
+  .copy--salaryLetter .doc-sheet { height: 246mm; }
+  .copy--salaryLetter .doc-mast { margin-bottom: 3mm; padding-bottom: 3.5mm; }
+  .copy--salaryLetter .doc-purpose { margin-bottom: 5mm; padding: 2mm 0; font-size: 9pt; }
+  .copy--salaryLetter .doc-head { margin: 5mm 0 2mm; font-size: 10.5pt; }
+  .copy--salaryLetter .doc-body > .doc-head:first-child { margin-top: 0; }
+  .copy--salaryLetter .doc-body { font-size: 10pt; line-height: 1.7; }
+  .copy--salaryLetter .doc-ident th,
+  .copy--salaryLetter .doc-ident td { padding: 1.7mm 3mm; font-size: 9.5pt; }
+  .copy--salaryLetter .doc-para { margin: 0 0 3mm; }
+  .copy--salaryLetter .doc-sig th,
+  .copy--salaryLetter .doc-sig td { padding: 1.6mm 3mm; font-size: 9.5pt; }
+  .copy--salaryLetter .doc-sig__cell { height: 22mm; }
 
   .doc-signnote {
     display: flex;
