@@ -148,4 +148,7 @@ begin
 end;
 $function$;
 
+revoke execute on function public.phx_close_early_birds_period(text, date, date, text, text, smallint, jsonb, integer, text, text, boolean, jsonb) from public, anon, authenticated;
+grant  execute on function public.phx_close_early_birds_period(text, date, date, text, text, smallint, jsonb, integer, text, text, boolean, jsonb) to service_role;
+
 commit;
