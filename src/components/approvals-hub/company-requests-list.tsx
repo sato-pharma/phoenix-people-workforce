@@ -172,7 +172,9 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
               className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">
+                {/* Wraps, never ellipsises — see the note on the same line in approvals-workspace.
+                    This line carries the job title too, so it was the first to overflow. */}
+                <p className="break-words text-sm font-bold text-slate-900">
                   {item.employeeName}
                   {item.submitterTitle ? <span className="font-medium text-slate-500"> · {item.submitterTitle}</span> : null}
                 </p>

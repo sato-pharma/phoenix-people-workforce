@@ -20,6 +20,7 @@ import {
 import { canonicalPersonHrId, isSamePerson } from "@/lib/auth/identity-aliases";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { employeeRecordName, resolveEmployeeRecordName } from "@/lib/employees/record-name";
 import { logStructured } from "@/lib/observability/log";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
@@ -857,10 +858,18 @@ function deciderDisplayName(
 }
 
 /**
- * Resolves a persisted employee_name snapshot to the employee's live nickname-aware
- * display name when they're still in the active directory, else falls back to the raw
- * snapshot (e.g. an employee who has since left). Keeps the persisted column itself raw
- * (audit trail) while every-day list/card views show the current display name.
+ * Resolves a persisted employee_name snapshot to the employee RECORD's current name, falling back
+ * to the raw snapshot when the id cannot be resolved. Keeps the persisted column itself raw (audit
+ * trail) while every-day list/card views show the name the employee master holds today.
+ *
+ * It resolves to the RECORD name, not to `displayName`. displayName is nickname-first by design —
+ * EmployeeDirectoryRow's own type comment reserves `fullName` for "persisted workflow audit
+ * snapshots", and a stored `employee_name` is precisely that. Resolving to displayName is why one
+ * outstation request read as the record name on the outstation queue (PRs #4135, #4136) and as a
+ * nickname here, for the same person on the same day.
+ *
+ * `deciderDisplayName` above deliberately still uses displayName: it is not resolving a snapshot,
+ * it is naming a live person beside their job title, which is the live-UI case displayName is for.
  */
 function liveEmployeeName(
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
@@ -869,7 +878,7 @@ function liveEmployeeName(
 ): string {
   if (!hrId) return rawName;
   const employee = employees.find((e) => hrIdsMatch(e.hrId, hrId));
-  return employee?.displayName ?? rawName;
+  return resolveEmployeeRecordName(employee ? employeeRecordName(employee) : null, hrId, rawName);
 }
 
 /**
