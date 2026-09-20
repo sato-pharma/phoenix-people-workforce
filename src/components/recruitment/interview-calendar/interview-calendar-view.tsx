@@ -1290,7 +1290,7 @@ function InterviewPanel({
                     <button
                       aria-pressed={chosen}
                       className={cn(
-                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 md:min-h-0 md:px-2",
+                        "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 lg:min-h-0 lg:px-2",
                         chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
                       )}
                       disabled={busy !== null}
@@ -1311,7 +1311,7 @@ function InterviewPanel({
                       <button
                         aria-pressed={chosen}
                         className={cn(
-                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 md:min-h-0 md:px-2",
+                          "min-h-[44px] border px-3 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50 lg:min-h-0 lg:px-2",
                           chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
                         )}
                         disabled={busy !== null}

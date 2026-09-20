@@ -143,9 +143,11 @@ function runOutcomeTests() {
   assert.match(pickerSource, /interviewOutcomeGroup\(booking\.outcome\)/, "the screen finds which step-one choice is open");
   assert.match(pickerSource, /interviewOutcomeGroups\[activeGroup\]\.followUps\.map/, "and shows only that choice's follow-ups");
   assert.doesNotMatch(pickerSource, /interviewOutcomes\.map/, "the screen no longer lists all the words in one row");
-  // On a phone both steps are thumb-sized (44px) and the picker sits above the CV, not 60% of a screen below it.
+  // On a phone and a tablet both steps are thumb-sized (44px) and the picker sits above the CV, not 60% of a screen below it.
+  // The size follows the CV modal's own stack: it is one column below lg, so 44px runs to lg, not md (a 768px tablet got 26px).
   assert.equal(pickerSource.split("min-h-[44px] border px-3 py-1.5").length - 1, 2, "both picker rows are 44px tall on a phone");
-  assert.equal(pickerSource.split("md:min-h-0 md:px-2").length - 1, 2, "and return to the compact size from md up");
+  assert.equal(pickerSource.split("lg:min-h-0 lg:px-2").length - 1, 2, "and return to the compact size from lg up, where the modal goes side by side");
+  assert.doesNotMatch(pickerSource, /md:min-h-0 md:px-2/, "a tablet in the stacked layout keeps the 44px size");
   assert.match(pickerSource, /<CvPreviewModal[^>]*sidePanelFirstOnPhone/, "the interview panel asks to sit above the CV on a phone");
   const cvModalSource = readFileSync(join(process.cwd(), "src/components/recruitment/cv-preview-modal.tsx"), "utf8");
   assert.ok(cvModalSource.includes("order-first lg:order-none"), "the modal puts that panel first below lg and restores the columns at lg");
