@@ -22,6 +22,13 @@
  *      campaign"). A regular visit to a contact on no list of the rep's is counted on the campaign
  *      line, outside call rate, coverage and frequency. The owner will give that line's rule later.
  *   9. The vacation-day block lives in native visit entry, not here.
+ *  10. NO-CHECK-IN REGULAR VISITS ARE THEIR OWN LINE (owner, 2026-09-20). Amends rule 2's "GPS is
+ *      evidence, not the gate" for credit only — a Regular visit with no matching GPS check-in is
+ *      real activity, so it stays OFF the Campaign line, but it earns no call-rate, coverage or
+ *      frequency credit either. It must never be blended into either number: it is counted and shown
+ *      on its own (`regularNoCheckin`), never folded into a checked-in Regular visit and never
+ *      relabelled Campaign. `PhoenixVisit.hasCheckin` carries the flag; a checked-in Regular visit is
+ *      unaffected and keeps full credit exactly as rule 2 describes.
  *
  * Pure: no database, no clock. The loader is crm/phoenix-kpi-data.ts.
  */
@@ -166,6 +173,11 @@ export type PhoenixVisit = {
   comment: string | null;
   ampm: string | null;
   speciality: string | null;
+  /** True when a GPS check-in matched this visit (same agent, same real contact, same Cairo day —
+   * see checkin-match.ts). Decides rule 10: only a checked-in Regular visit earns call-rate,
+   * coverage or frequency credit. Required rather than defaulted, so a caller that has not
+   * correlated check-ins yet cannot silently grant credit it never verified. */
+  hasCheckin: boolean;
 };
 
 export type PhoenixRepKpis = {
@@ -177,6 +189,9 @@ export type PhoenixRepKpis = {
   pharmacy: PhoenixSlice;
   /** Campaign visits, including a regular visit to a contact on no list of the rep's (rule 8). */
   campaignVisits: number;
+  /** Regular visits with NO matching GPS check-in (rule 10) — real work, kept off the Campaign line,
+   * but excluded from am/pm call rate, coverage and frequency. Never blended into either number. */
+  regularNoCheckin: number;
   coverage: {
     planned: number;
     visited: number;
@@ -311,7 +326,7 @@ function scorePhoenixRep(input: PhoenixRepInput): {
 
   const workingDays = employedWorkingDays({ ...input, dateFrom: window.dateFrom, dateTo: window.dateTo, holidays });
 
-  const counts = { am: 0, pm: 0, pharmacy: 0, campaign: 0 };
+  const counts = { am: 0, pm: 0, pharmacy: 0, campaign: 0, regularNoCheckin: 0 };
   const monthSoFar = { am: 0, pm: 0 };
   /** Regular visits per contact: in the window (coverage) and in the month so far (frequency). */
   const windowVisitsByContact = new Map<number, number>();
@@ -329,6 +344,14 @@ function scorePhoenixRep(input: PhoenixRepInput): {
 
     if (bucket === "campaign") {
       if (inWindow && countable) counts.campaign += 1;
+      continue;
+    }
+
+    // Rule 10, owner 2026-09-20: a Regular visit with no matching GPS check-in earns no call-rate,
+    // coverage or frequency credit. It is counted on its own line, never blended into a credited
+    // lane and never relabelled Campaign.
+    if (!visit.hasCheckin) {
+      if (inWindow && countable) counts.regularNoCheckin += 1;
       continue;
     }
 
@@ -413,6 +436,7 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     pm: slice(counts.pm, workingDays, pmTarget),
     pharmacy: slice(counts.pharmacy, workingDays, standards.Pharmacy.callRatePerDay),
     campaignVisits: counts.campaign,
+    regularNoCheckin: counts.regularNoCheckin,
     coverage: {
       planned: plannedInWindow.size,
       visited,

@@ -10,6 +10,7 @@
  */
 
 import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
+import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { isAgentInScope } from "@/lib/crm/doctor-coverage-roles";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import {
@@ -22,16 +23,32 @@ import {
   type PhoenixRepKpis,
   type PhoenixVisit,
 } from "@/lib/crm/phoenix-kpi-rules";
-import { queryVisits } from "@/lib/crm/reads";
+import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
 import { loadPanelRows, narrowListType } from "@/lib/crm/rep-kpi-reports-data";
 import type { RepKpiStandards } from "@/lib/crm/rep-kpi-reports";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 
 const VISIT_COLUMNS =
-  "agent_hr_id,agent_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,ampm,speciality";
+  "agent_hr_id,agent_crm_id,contact_crm_id,visit_date,visit_type,visit_type_description,comment,ampm,speciality,crm_save_date";
 
-type VisitRecord = PhoenixVisit & { agent_hr_id: string | null; agent_crm_id: number | null };
+type VisitRecord = Omit<PhoenixVisit, "hasCheckin"> & {
+  agent_hr_id: string | null;
+  agent_crm_id: number | null;
+  crm_save_date: string | null;
+};
+
+type CheckinRecord = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  check_date: string | null;
+};
+
+function isoDay(value: string | null | undefined): string | null {
+  const day = String(value ?? "").slice(0, 10);
+  return day.length === 10 ? day : null;
+}
 
 export type PhoenixEmployeeDates = { hrId: string; hireDate: string | null; lastWorkingDate: string | null };
 
@@ -51,19 +68,48 @@ export async function loadPhoenixRepKpis(input: {
   employees: readonly PhoenixEmployeeDates[];
   standards?: RepKpiStandards;
 }): Promise<PhoenixKpiLoad> {
-  const [panelRows, planRows, visitRows, holidays] = await Promise.all([
+  const hasWindow = input.window.dateTo >= input.month.start;
+  const [panelRows, planRows, visitRows, checkinRows, holidays] = await Promise.all([
     loadPanelRows(),
     scanPlanEntries(input.month.start, input.month.end),
-    input.window.dateTo < input.month.start
-      ? Promise.resolve([] as VisitRecord[])
-      : queryVisits<VisitRecord>({
+    hasWindow
+      ? queryVisits<VisitRecord>({
           dateFrom: input.month.start,
           dateTo: input.window.dateTo,
           columns: VISIT_COLUMNS,
           collapseDoubleVisits: true,
-        }),
+        })
+      : Promise.resolve([] as VisitRecord[]),
+    // Company-wide for the window, exactly as collect.ts reads it: correlation is by
+    // agent+contact+day, so a wider read cannot leak a check-in into the wrong rep's credit.
+    hasWindow
+      ? queryCheckins<CheckinRecord>({
+          dateFrom: input.month.start,
+          dateTo: input.window.dateTo,
+          columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
+        })
+      : Promise.resolve([] as CheckinRecord[]),
     loadCallRateHolidays(input.month.start, input.month.end),
   ]);
+
+  // Rule 10 (owner, 2026-09-20): which Regular visits have a matching GPS check-in. The SAME
+  // agent+contact+Cairo-day matcher every other CRM surface uses (checkin-match.ts) — a visit
+  // resolves to the same check-in here as it does on the Visits Report and the CRM master tab.
+  const checkinIndex = indexCheckinsByAgentContactDay(checkinRows);
+  const visitsWithCheckin = visitRows.map((row) => ({
+    ...row,
+    hasCheckin:
+      pickCheckinForVisit(
+        {
+          agentCrmId: row.agent_crm_id,
+          agentHrId: row.agent_hr_id,
+          contactCrmId: row.contact_crm_id,
+          visitDay: isoDay(row.visit_date),
+          crmSaveDate: row.crm_save_date,
+        },
+        checkinIndex,
+      ) !== null,
+  }));
 
   // The plan view and the visit view leave the hr id blank on many vendor rows; the contact list
   // carries both ids, so it resolves the rest. A row neither can place is left out — the scope gate
@@ -101,7 +147,7 @@ export async function loadPhoenixRepKpis(input: {
   }
 
   const visitsByRep = new Map<string, PhoenixVisit[]>();
-  for (const row of visitRows) {
+  for (const row of visitsWithCheckin) {
     const key = keyOf(row.agent_hr_id, row.agent_crm_id);
     if (!key || !isAgentInScope(input.scope, key)) continue;
     const bucket = visitsByRep.get(key) ?? [];

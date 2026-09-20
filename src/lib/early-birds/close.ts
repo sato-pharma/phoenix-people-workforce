@@ -108,6 +108,10 @@ async function closeDistrictPeriod(input: {
       expected_working_days: score.expectedWorkingDays,
       total_visits: score.totalVisits,
       regular_visits: score.regularVisits,
+      // Rule 10, owner 2026-09-20: identified on their own, never blended into `regular_visits`'
+      // credited count and never relabelled Campaign.
+      regular_visits_with_checkin: score.regularVisitsWithCheckin,
+      regular_visits_no_checkin: score.regularVisitsNoCheckin,
       campaign_visits: score.campaignVisits,
       gps_eligible_visits: score.gpsEligibleVisits,
       gps_verified_visits: score.gpsVerifiedVisits,

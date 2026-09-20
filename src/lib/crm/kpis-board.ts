@@ -523,6 +523,9 @@ export type KpisBoard = {
     campaignVisits: number;
     gradedDoctors: number;
     ungradedDoctors: number;
+    /** Regular visits with no matching GPS check-in — rule 10, owner 2026-09-20. Counted on its own
+     * team line, never folded into campaignVisits or any credited total. */
+    regularNoCheckin: number;
   } | null;
   /**
    * The Coverage tab's two doctor lists for the ONE rep it has open. Null when no rep is open, and
@@ -883,7 +886,10 @@ function attainmentPct(row: KpiRepRow, verified: number, target: number | null):
  *     is always zero, because an extra visit is no longer a deviation.
  */
 export function applyPhoenixKpis(row: KpiRepRow, kpis: PhoenixRepKpis): KpiRepRow {
-  const fieldVisits = kpis.am.visits + kpis.pm.visits + kpis.campaignVisits;
+  // `totalCalls` is every call the rep logged, campaign included — so a no-check-in Regular visit
+  // belongs in it too. It stays OUT of `campaignCalls`/`campaignShare`'s numerator: rule 10 (owner,
+  // 2026-09-20) keeps it off the Campaign line, identified on its own via `row.phoenix.regularNoCheckin`.
+  const fieldVisits = kpis.am.visits + kpis.pm.visits + kpis.campaignVisits + kpis.regularNoCheckin;
   row.phoenix = kpis;
   row.workingDays = kpis.workingDays;
   row.amVerified = kpis.am.visits;
@@ -1160,6 +1166,7 @@ export async function getKpisBoard(input: {
       accumulator.repWorkingDays += row.workingDays;
       accumulator.gradedDoctors += row.phoenix?.frequency.judged ?? 0;
       accumulator.ungradedDoctors += row.phoenix?.frequency.ungraded ?? 0;
+      accumulator.regularNoCheckin += row.phoenix?.regularNoCheckin ?? 0;
       return accumulator;
     },
     {
@@ -1180,6 +1187,7 @@ export async function getKpisBoard(input: {
       repWorkingDays: 0,
       gradedDoctors: 0,
       ungradedDoctors: 0,
+      regularNoCheckin: 0,
     },
   );
 
@@ -1216,6 +1224,7 @@ export async function getKpisBoard(input: {
           campaignVisits: totals.campaignCalls,
           gradedDoctors: totals.gradedDoctors,
           ungradedDoctors: totals.ungradedDoctors,
+          regularNoCheckin: totals.regularNoCheckin,
         }
       : null,
     asOf: docList.asOf,
