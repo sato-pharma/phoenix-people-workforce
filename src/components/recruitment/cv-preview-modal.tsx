@@ -80,6 +80,10 @@ type Props = CvDownloadAllowance & {
   // fields, for comparing them against the source CV). Omitted -> unchanged single-column
   // modal, exactly as every existing caller already renders it.
   sidePanel?: ReactNode;
+  // On a phone the stacked side panel normally sits BELOW the document, which is at least 60% of the
+  // screen tall. A caller whose panel is something to act on (the interview's "How it went") sets this
+  // so it sits above the document below `lg`; side-by-side columns are unchanged.
+  sidePanelFirstOnPhone?: boolean;
   // Controls beside Download in the header — the Schedule interview button, from a caller that knows
   // which candidate the CV belongs to. Omitted -> the header is unchanged.
   headerActions?: ReactNode;
@@ -631,6 +635,7 @@ export function CvPreviewModal({
   onClose,
   redactPhones = false,
   sidePanel,
+  sidePanelFirstOnPhone = false,
 }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
 
@@ -704,7 +709,7 @@ export function CvPreviewModal({
             <div className="min-h-[60vh] shrink-0 bg-slate-50 lg:min-h-0 lg:flex-1 lg:overflow-auto lg:border-r lg:border-phx-line">
               {documentBody}
             </div>
-            <div className="w-full shrink-0 p-5 lg:w-[360px] lg:overflow-auto">{sidePanel}</div>
+            <div className={`w-full shrink-0 p-5 lg:w-[360px] lg:overflow-auto${sidePanelFirstOnPhone ? " order-first lg:order-none" : ""}`}>{sidePanel}</div>
           </div>
         ) : (
           <div className="flex-1 overflow-auto bg-slate-50">{documentBody}</div>

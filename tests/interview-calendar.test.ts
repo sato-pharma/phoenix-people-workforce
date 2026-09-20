@@ -143,6 +143,12 @@ function runOutcomeTests() {
   assert.match(pickerSource, /interviewOutcomeGroup\(booking\.outcome\)/, "the screen finds which step-one choice is open");
   assert.match(pickerSource, /interviewOutcomeGroups\[activeGroup\]\.followUps\.map/, "and shows only that choice's follow-ups");
   assert.doesNotMatch(pickerSource, /interviewOutcomes\.map/, "the screen no longer lists all the words in one row");
+  // On a phone both steps are thumb-sized (44px) and the picker sits above the CV, not 60% of a screen below it.
+  assert.equal(pickerSource.split("min-h-[44px] border px-3 py-1.5").length - 1, 2, "both picker rows are 44px tall on a phone");
+  assert.equal(pickerSource.split("md:min-h-0 md:px-2").length - 1, 2, "and return to the compact size from md up");
+  assert.match(pickerSource, /<CvPreviewModal[^>]*sidePanelFirstOnPhone/, "the interview panel asks to sit above the CV on a phone");
+  const cvModalSource = readFileSync(join(process.cwd(), "src/components/recruitment/cv-preview-modal.tsx"), "utf8");
+  assert.ok(cvModalSource.includes("order-first lg:order-none"), "the modal puts that panel first below lg and restores the columns at lg");
   assert.equal(readInterviewOutcome("backup"), "backup");
   assert.equal(readInterviewOutcome("Backup"), null, "an unknown spelling is no outcome, never a guess");
   assert.equal(readInterviewOutcome(null), null);
