@@ -14,6 +14,7 @@ import {
 import { createAccessContext, systemAccessContext } from "../src/lib/auth/permissions.ts";
 import {
   calendarRoleFor,
+  canSetInterviewOutcome,
   checkCvUpload,
   grantFromLinkRow,
   linkTokenFrom,
@@ -31,8 +32,12 @@ import {
   interviewCalendarBaseFor,
   interviewCalendarHref,
   interviewCalendarLinkPath,
+  interviewOutcomeCandidateEffect,
+  interviewOutcomeLabels,
+  interviewOutcomes,
   isInterviewCalendarOwner,
   normalizeEgyptianMobile,
+  readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
   sessionSlotStarts,
@@ -98,9 +103,47 @@ export async function runInterviewCalendarTests() {
   runValidationTests();
   runSessionAndOutsideTests();
   runPollAndWhatsAppTests();
+  runOutcomeTests();
   await runZoomTests();
   await runExportTests();
   runWiringTests();
+}
+
+// ── The outcome of an interview: six words, one list (owner, 2026-09-20) ─────────────────────────
+function runOutcomeTests() {
+  assert.deepEqual([...interviewOutcomes].sort(), ["attended", "backup", "did_not_come", "prioritized", "rejected", "shortlisted"], "one list of six, no more");
+  assert.deepEqual(Object.keys(interviewOutcomeLabels).sort(), [...interviewOutcomes].sort(), "every word has a label");
+  assert.equal(readInterviewOutcome("backup"), "backup");
+  assert.equal(readInterviewOutcome("Backup"), null, "an unknown spelling is no outcome, never a guess");
+  assert.equal(readInterviewOutcome(null), null);
+
+  // What each word does to the candidate in Recruitment.
+  assert.deepEqual(interviewOutcomeCandidateEffect("shortlisted"), { rating: null, status: "shortlisted" });
+  assert.deepEqual(interviewOutcomeCandidateEffect("backup"), { rating: null, status: "backup" });
+  assert.deepEqual(interviewOutcomeCandidateEffect("rejected"), { rating: null, status: "rejected" });
+  assert.deepEqual(interviewOutcomeCandidateEffect("prioritized"), { rating: 3, status: "shortlisted" }, "prioritized is shortlist + the 3-star Top pick");
+  assert.deepEqual(interviewOutcomeCandidateEffect("attended"), { rating: null, status: null }, "attended and didn't come only mark the interview");
+  assert.deepEqual(interviewOutcomeCandidateEffect("did_not_come"), { rating: null, status: null });
+
+  // Only the interviewer and the calendar's owner may set it.
+  const member = createAccessContext({ hrId: "A-99", role: "Employee" });
+  const guest = { ...createAccessContext({ hrId: null, role: "Employee" }), source: "guest" } as InterviewCalendarCaller["access"];
+  const asOwner: InterviewCalendarCaller = { access: member, link: null, own: "owner" };
+  const asEditor: InterviewCalendarCaller = { access: member, link: null, own: null };
+  assert.equal(canSetInterviewOutcome(asOwner, null), true, "the owner may, with or without a chosen interviewer");
+  assert.equal(canSetInterviewOutcome(asEditor, "a-99"), true, "the interviewer may — id case does not matter");
+  assert.equal(canSetInterviewOutcome(asEditor, "B-10"), false, "somebody else's interview is not theirs to mark");
+  assert.equal(canSetInterviewOutcome(asEditor, null), false, "no chosen interviewer, not the owner: nobody but the owner");
+  assert.equal(canSetInterviewOutcome({ access: guest, link: null, own: "owner" }, "A-99"), false, "a copy link is never a person");
+
+  // Wiring: saved BEFORE the candidate moves, and nothing is ever sent.
+  const service = stripComments(read("src/lib/recruitment/interview-calendar.ts"));
+  const setStart = service.indexOf("export async function setInterviewOutcome");
+  const body = service.slice(setStart, service.indexOf("\n}\n", setStart));
+  assert.ok(body.indexOf(".update(") > -1 && body.indexOf(".update(") < body.indexOf("applyOutcomeToCandidate("), "the outcome is saved first, the candidate moves after");
+  assert.ok(!/notify|sendEmail|sendWhatsApp|sendMail/i.test(body), "recording an outcome never sends anything");
+  const route = read("app/api/recruitment/interview-calendar/bookings/[id]/outcome/route.ts");
+  assert.ok(route.includes("assertSameOriginMutation") && route.includes("export async function PATCH"), "the route is a same-origin PATCH");
 }
 
 // ── 1 · The week: Sunday to Thursday, 9 to 5, in Cairo ─────────────────────────────────────────
@@ -535,6 +578,10 @@ function booking(overrides: Partial<InterviewBooking> & Pick<InterviewBooking, "
     interviewerHrId: null,
     interviewerName: null,
     notes: null,
+    canSetOutcome: false,
+    outcome: null,
+    outcomeSetAt: null,
+    outcomeSetByName: null,
     platform: "in_office",
     sessionId: null,
     sessionTitle: null,
@@ -739,9 +786,10 @@ function runWiringTests() {
     "emailInterviewInvitation(caller",
     "recordInterviewWhatsAppOpened(caller",
     "listDueZoomInterviews(caller",
+    "setInterviewOutcome(caller",
   ];
   const routes = routeFiles("app/api/recruitment/interview-calendar");
-  assert.ok(routes.length >= 27, `the calendar's routes were found (${routes.length})`);
+  assert.ok(routes.length >= 28, `the calendar's routes were found (${routes.length})`);
   for (const file of routes) {
     // A call wrapped over several lines — `createInterviewBooking(\n  caller,` — is still the call.
     const source = stripComments(read(file)).replace(/\(\s+/g, "(");

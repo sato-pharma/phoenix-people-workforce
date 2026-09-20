@@ -593,6 +593,7 @@ function runDecisionTabTests() {
   // The tab counts the page prints: one pile each, "All" the sum.
   assert.deepEqual(countCandidatesByDecisionTab(built.rows), {
     all: 3,
+    backup: 0,
     hired: 0,
     new: 2,
     rejected: 1,

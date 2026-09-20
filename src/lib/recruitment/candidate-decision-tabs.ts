@@ -26,10 +26,10 @@ import {
 } from "@/lib/recruitment/candidate-status";
 
 /** The piles, in the order the owner reads them: the undecided work first, "All" last. */
-export const candidateDecisionTabs = ["new", "shortlisted", "sent_to_manager", "rejected", "hired", "all"] as const;
+export const candidateDecisionTabs = ["new", "shortlisted", "backup", "sent_to_manager", "rejected", "hired", "all"] as const;
 export type CandidateDecisionTab = (typeof candidateDecisionTabs)[number];
 
-/** The five piles a CV can actually sit in — every tab except "All". */
+/** The six piles a CV can actually sit in — every tab except "All". */
 export type CandidateDecisionPile = Exclude<CandidateDecisionTab, "all">;
 
 /** Where every screen opens: the CVs nobody has decided yet. */
@@ -41,6 +41,7 @@ export const DEFAULT_CANDIDATE_DECISION_TAB: CandidateDecisionTab = "new";
  */
 export const candidateDecisionTabLabels: Record<CandidateDecisionTab, string> = {
   all: "All",
+  backup: candidateStatusLabels.backup,
   hired: candidateStatusLabels.hired,
   new: "Not decided yet",
   rejected: candidateStatusLabels.rejected,
@@ -51,8 +52,9 @@ export const candidateDecisionTabLabels: Record<CandidateDecisionTab, string> = 
 /** One line saying what a tab holds, for its tooltip. */
 export const candidateDecisionTabDescriptions: Record<CandidateDecisionTab, string> = {
   all: "Every CV, whatever has been decided about it.",
+  backup: "Held in reserve behind the shortlist.",
   hired: "Joined the company.",
-  new: "Nobody has shortlisted, rejected, sent or hired them yet.",
+  new: "Nobody has shortlisted, held back, rejected, sent or hired them yet.",
   rejected: "Not proceeding.",
   sent_to_manager: "Pushed to a hiring manager.",
   shortlisted: "Worth taking forward.",
@@ -80,7 +82,7 @@ export function candidateMatchesDecisionTab(status: string | null | undefined, t
 }
 
 /**
- * How many CVs each tab holds. "All" is the whole list, so it always equals the sum of the other five
+ * How many CVs each tab holds. "All" is the whole list, so it always equals the sum of the other six
  * — the one strip on the page whose numbers add up, because every CV sits in exactly one pile.
  */
 export function countCandidatesByDecisionTab(
@@ -88,6 +90,7 @@ export function countCandidatesByDecisionTab(
 ): Record<CandidateDecisionTab, number> {
   const counts: Record<CandidateDecisionTab, number> = {
     all: 0,
+    backup: 0,
     hired: 0,
     new: 0,
     rejected: 0,

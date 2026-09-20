@@ -202,6 +202,65 @@ export function zoomStatusSentence(status: InterviewZoomStatus, error: string | 
   return null;
 }
 
+// ── The outcome of an interview ────────────────────────────────────────────────────────────────
+//
+// The owner, 2026-09-20: "an option on every interview — attended, didn't come, shortlisted, back-up,
+// rejected, prioritized". Asked in chat, he chose ONE list of six (not attendance and decision apart),
+// and that setting one of the decisions ALSO moves the candidate in Recruitment. Only the interviewer,
+// or the calendar's owner, may set it.
+//
+// WHAT AN OUTCOME DOES TO THE CANDIDATE — pure, so the server and its test read the same table:
+//
+//   attended · did_not_come   the interview only; the candidate is not touched
+//   shortlisted               status → Shortlisted
+//   backup                    status → Back-up (a sixth candidate status, added the same day)
+//   rejected                  status → Rejected            — NOTHING is ever sent to the candidate
+//   prioritized               status → Shortlisted AND the 3-star "Top pick" rating
+//
+// An outside person (no Recruitment record) has the interview marked and nothing more.
+
+export const interviewOutcomes = ["attended", "did_not_come", "shortlisted", "backup", "rejected", "prioritized"] as const;
+export type InterviewOutcome = (typeof interviewOutcomes)[number];
+
+export const interviewOutcomeLabels: Record<InterviewOutcome, string> = {
+  attended: "Attended",
+  backup: "Back-up",
+  did_not_come: "Didn't come",
+  prioritized: "Prioritized",
+  rejected: "Rejected",
+  shortlisted: "Shortlisted",
+};
+
+export function isInterviewOutcome(value: unknown): value is InterviewOutcome {
+  return typeof value === "string" && (interviewOutcomes as readonly string[]).includes(value);
+}
+
+/** A stored or typed outcome, or null. Anything unrecognised is null — never a guess. */
+export function readInterviewOutcome(value: unknown): InterviewOutcome | null {
+  return isInterviewOutcome(value) ? value : null;
+}
+
+export type InterviewOutcomeCandidateEffect = {
+  status: "shortlisted" | "backup" | "rejected" | null;
+  /** The 3-star "Top pick" rating, or null for none. */
+  rating: 3 | null;
+};
+
+export function interviewOutcomeCandidateEffect(outcome: InterviewOutcome): InterviewOutcomeCandidateEffect {
+  switch (outcome) {
+    case "shortlisted":
+      return { rating: null, status: "shortlisted" };
+    case "backup":
+      return { rating: null, status: "backup" };
+    case "rejected":
+      return { rating: null, status: "rejected" };
+    case "prioritized":
+      return { rating: 3, status: "shortlisted" };
+    default:
+      return { rating: null, status: null };
+  }
+}
+
 // ── Records ─────────────────────────────────────────────────────────────────────────────────────
 
 export type InterviewBookingComment = {
@@ -252,6 +311,12 @@ export type InterviewBooking = {
   zoomJoinUrl: string | null;
   zoomError: string | null;
   notes: string | null;
+  /** What happened at the interview, once the interviewer has said. */
+  outcome: InterviewOutcome | null;
+  outcomeSetByName: string | null;
+  outcomeSetAt: string | null;
+  /** Whether THIS viewer may set the outcome: the interviewer, or the calendar's owner. */
+  canSetOutcome: boolean;
   bookedByName: string | null;
   createdAt: string;
   updatedAt: string;
