@@ -20,6 +20,7 @@ import {
 } from "@/lib/automated-payroll/expense-resync";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-location";
+import { withLiveOutstationEmployeeNames } from "@/lib/outstation/employee-name";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
@@ -778,6 +779,34 @@ export function carryStoredDecisionOntoRequestExpenses<
   });
 }
 
+/**
+ * Show the employee's CURRENT record name on rows that were written with an older one.
+ *
+ * `specialist` is a snapshot: both sources freeze the name at write time, so a correction to the
+ * employee record never travels backwards into rows already stored. One cached directory read
+ * covers the whole list, and a row whose HR id the directory does not know — an imported historical
+ * trip carrying only a name — keeps exactly what it was stored with.
+ *
+ * READ-SIDE ONLY. Nothing here writes: the stored column stays the record of what the row was
+ * created with. This is also deliberately not a money path — the two readers that decide what
+ * payroll actually PAYS (recommend.ts and getApprovedExpenseTotalsForPayroll) read
+ * `outstation_expenses` directly and are untouched, exactly as the phase-2 note below says.
+ *
+ * NOT APPLIED ON THE `readLegacyTables` PATH, and that is the point of the exclusion. The Expense
+ * Approvals screen posts back the rows it read, and the payload writes `specialist` — so resolving
+ * there would quietly rewrite the stored label of every row in the report on the next Save,
+ * imported pre-July history included. An editor reads the table it edits.
+ */
+async function withLiveSpecialistNames<T extends { hrId?: string | null; specialist: string }>(
+  expenses: T[],
+): Promise<T[]> {
+  return withLiveOutstationEmployeeNames(
+    expenses,
+    (expense) => ({ hrId: expense.hrId, storedName: expense.specialist }),
+    (expense, specialist) => ({ ...expense, specialist }),
+  );
+}
+
 export async function listUnifiedOutstationExpenses(
   month: number | undefined,
   year: number | undefined,
@@ -830,7 +859,7 @@ export async function listUnifiedOutstationExpenses(
   if (!options.readLegacyTables) {
     if (!reportId && expenseClaimsReadEnabled()) {
       const { listExpenseClaims } = await import("@/lib/outstation/claims-read");
-      return listExpenseClaims(month, year, accessContext);
+      return withLiveSpecialistNames(await listExpenseClaims(month, year, accessContext));
     }
   }
 
@@ -853,11 +882,15 @@ export async function listUnifiedOutstationExpenses(
     enrichedRequestExpenses,
   );
 
-  return [...enrichedRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {
+  const unified = [...enrichedRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {
     const leftTime = left.date ? new Date(left.date).getTime() : 0;
     const rightTime = right.date ? new Date(right.date).getTime() : 0;
     return rightTime - leftTime;
   });
+
+  // See withLiveSpecialistNames: the editor path keeps the stored labels, because its Save writes
+  // back what it read.
+  return options.readLegacyTables ? unified : withLiveSpecialistNames(unified);
 }
 
 export function buildPayrollExpenseMetrics(input: {

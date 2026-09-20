@@ -124,6 +124,12 @@ import {
   outstationPayrollTripId,
   outstationReportOverride,
 } from "@/lib/outstation/payroll-expense-mapping";
+import {
+  liveOutstationEmployeeName,
+  loadLiveOutstationEmployeeNames,
+  outstationRecordName,
+  withLiveOutstationEmployeeNames,
+} from "@/lib/outstation/employee-name";
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
 import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval-decisions";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
@@ -706,23 +712,31 @@ function campaignRuleOutcome(input: {
   });
 }
 
+// Lives in employee-name.ts, beside the READ-side resolver that undoes the same snapshot from
+// the other end. Re-exported here because every caller — and the test that pins the write
+// paths — reaches it through the service.
+export { outstationRecordName };
+
 /**
- * The employee name written onto an outstation request row.
+ * The READ side of the same rule.
  *
- * The employee RECORD's `full_name`, never `displayName` — see the note in getEmployeeIdentity.
- * Falls back to `displayName` and then the HR id only so a record with a blank full name still
- * writes something a human can read; it never writes an empty string.
+ * `employee_name` on a request row is a snapshot taken at submit time, so a later correction to
+ * the employee record never reaches rows already written — that is why the 2026-09-21 repair had
+ * to be applied to 432 live rows by hand instead of fixing one record each. Every list a human
+ * reads a name from therefore resolves it live, with ONE cached directory read for the whole list.
  *
- * Every path that inserts into `outstation_expense_requests` goes through this, so the three of
- * them cannot drift apart again: the wizard, the medical-rep manual form and the admin manual
- * entry all stamp the same name for the same person.
+ * The stored column itself is left exactly as written: it stays the audit trail of what was true
+ * on the day, and nothing here writes to it. An HR id the directory does not know — an imported
+ * row, a person never in the master — keeps its stored name rather than blanking.
  */
-export function outstationRecordName(employee: {
-  displayName?: string | null;
-  fullName?: string | null;
-  hrId: string;
-}) {
-  return text(employee.fullName) || text(employee.displayName) || employee.hrId;
+async function withLiveRequestNames<T extends { employeeHrId: string; employeeName: string }>(
+  requests: T[],
+): Promise<T[]> {
+  return withLiveOutstationEmployeeNames(
+    requests,
+    (request) => ({ hrId: request.employeeHrId, storedName: request.employeeName }),
+    (request, employeeName) => ({ ...request, employeeName }),
+  );
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -2776,7 +2790,9 @@ export async function listOutstationRequests(options?: { includeCarEvidenceSigne
     throw new Error(error.message);
   }
 
-  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  const mapped = await withLiveRequestNames(
+    ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow),
+  );
   // Brick / area / region per row, so the admin detail can show a place name instead of the
   // raw coordinate pair. One cached centroid load for the whole page — see captured-location.ts.
   const requests = await attachOutstationCapturedLocations(mapped);
@@ -2802,7 +2818,9 @@ export async function getOutstationRequestById(
 
   if (!data) return null;
 
-  const mapped = mapOutstationRequestRow(data as Record<string, unknown>);
+  const [mapped] = await withLiveRequestNames([
+    mapOutstationRequestRow(data as Record<string, unknown>),
+  ]);
   const request = {
     ...mapped,
     capturedLocation: await resolveOutstationCapturedLocation({
@@ -2838,7 +2856,9 @@ export async function listMedicalRepExpenseRequests(access: AccessContext) {
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  return withLiveRequestNames(
+    ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow),
+  );
 }
 
 export async function submitMedicalRepSimpleExpenseRequest(
@@ -4696,16 +4716,25 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
   let processed = 0;
   let errors = 0;
   const now = Date.now();
+  // The name an approver is chased with is resolved live, not read off the row: this message is
+  // the one place the employee is named to somebody who is not them, and a request that has sat
+  // for three days is exactly the kind that predates a correction to the employee record.
+  const liveNames = await loadLiveOutstationEmployeeNames();
   for (const row of data ?? []) {
     const ageDays = Math.max(0, Math.floor((now - new Date(row.created_at as string).getTime()) / 86400000));
     if (ageDays < 3) continue;
+    const employeeName = liveOutstationEmployeeName(
+      liveNames,
+      String(row.employee_hr_id ?? ""),
+      String(row.employee_name ?? ""),
+    );
     try {
       await createSystemNotificationForRecipients(
         {
           // in_app added 2026-09-06 on the owner decision, alongside the departure-photo reminder.
           channels: ["in_app", "email", "push"],
           eventType: "outstation_sla_reminder",
-          message: `${String(row.employee_name)}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
+          message: `${employeeName}'s outstation request (trip: ${String(row.trip_start_date)}) has been pending ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
           metadata: { idempotencyKey: `outstation:${String(row.id)}:sla:${today}` },
           module: "outstation",
           priority: "normal",
