@@ -12,6 +12,22 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { Card } from "@/components/ui/card";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+
+/**
+ * The visit's type, as a human reads it.
+ *
+ * NEVER render `visitTypeDescription` raw here. The vendor stores the literal string "Unknown" for
+ * eight distinct codes — Field Visit (-30), BRM (-21), Admin Work (-20), Meeting (-19), Training
+ * (-16), Ambiguous (-7), Casual Leave (-6) and Public Holiday (-5) — so it is never null and the
+ * `?? "Type N"` fallback this replaced could not fire even once. Measured on production
+ * 2026-09-21: 3,077 rows since January, 0 of them null, across 2,311 rep-days. On the Prophet's
+ * Birthday (2026-08-27) all 156 of the day's rows read "Unknown" on this screen instead of "Public
+ * Holiday". `resolveVisitTypeLabel` reads the comment, which `rep-day.ts` already selects.
+ */
+function visitTypeLabel(visit: Visit): string {
+  return resolveVisitTypeLabel(visit.visitType, visit.visitTypeDescription, visit.comment);
+}
 
 function VisitKindBadge({ kind }: { kind: Visit["kind"] }) {
   return (
@@ -159,10 +175,7 @@ export function FieldWorkforceVisitsView({
               >
                 <PortalRecordFields
                   fields={[
-                    {
-                      label: "Type",
-                      value: visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`),
-                    },
+                    { label: "Type", value: visitTypeLabel(visit) },
                     { label: "AM/PM", value: visit.ampm || "—" },
                     { label: "Comment", value: visit.comment || "—" },
                   ]}
@@ -190,13 +203,11 @@ export function FieldWorkforceVisitsView({
                       <td className="px-4 py-3">
                         <VisitKindBadge kind={visit.kind} />
                         <div className="mt-0.5 text-phx-2xs text-slate-400">
-                          {visit.visitTypeDescription ?? `type:${visit.visitType}`}
+                          {visitTypeLabel(visit)}
                           {visit.callType != null ? ` · ct:${visit.callType}` : ""}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {visit.visitTypeDescription ?? (visit.visitType === 0 ? "Regular Visit" : `Type ${visit.visitType}`)}
-                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">{visitTypeLabel(visit)}</td>
                       <td className="px-4 py-3">{visit.ampm || "—"}</td>
                       <td className="px-4 py-3 text-slate-600">{visit.comment || "—"}</td>
                     </tr>

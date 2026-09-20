@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   CRM_VISIT_TYPE_FILTER_CODES,
@@ -149,4 +150,68 @@ export function runCrmVisitTypeLabelTests() {
     "a real vendor description is shown as sent",
   );
   assert.equal(describeCrmDay([dayRow(0, null, null)]), "Visit", "a regular visit with no description still reads Visit");
+
+  runVisitTypeSurfaceTests();
+}
+
+/**
+ * THE TWO SURFACES THE RESOLVER NEVER REACHED, found by the CRM audit on 2026-09-21.
+ *
+ * The resolver and its dropdown vocabulary were settled long before this: "Unknown" was retired
+ * from CRM_VISIT_TYPE_OPTIONS, the CRM master tab was taught to filter by CODE, and the attendance
+ * day detail, the employee portal and the company activity report all call resolveVisitTypeLabel.
+ * Two readers were simply never converted, so the settled rule was not in force where a manager
+ * actually looks:
+ *
+ *   1. field-workforce-visits-view.tsx — the Field Workforce Compliance drill-down AND the NSM Team
+ *      Calendar drill-down, one component behind both. It rendered `visit.visitTypeDescription`
+ *      raw with a `?? \`type:N\`` fallback that could never fire, because the vendor's column is
+ *      never null. On 2026-08-27, the Prophet's Birthday, all 156 of the day's rows read "Unknown".
+ *   2. reads.ts — the Visits Report. Its filter was `.eq("visit_type_description", …)` with no code
+ *      branch, and its dropdown was built by scanning every stored description in the window, so it
+ *      offered the literal "Unknown" and could not offer the real names behind it. Picking a
+ *      resolved name such as "Public Holiday" matched nothing at all.
+ *
+ * Pinned by SHAPE against the real files, with comments stripped first, so this explanation cannot
+ * satisfy its own assertions (AGENTS.md §2.1).
+ */
+function runVisitTypeSurfaceTests(): void {
+  const strip = (source: string): string =>
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+      .join("\n");
+
+  const view = strip(readFileSync("src/components/field-workforce-compliance/field-workforce-visits-view.tsx", "utf8"));
+  assert.ok(
+    view.includes("resolveVisitTypeLabel"),
+    "the FWC / Team Calendar visit drill-down must resolve the label, not print the vendor's column",
+  );
+  assert.ok(
+    !/\{\s*visit\.visitTypeDescription/.test(view),
+    'the drill-down must never render visit.visitTypeDescription directly — that is what printed "Unknown"',
+  );
+
+  const reads = strip(readFileSync("src/lib/crm/reads.ts", "utf8"));
+  assert.ok(
+    reads.includes("CRM_VISIT_TYPE_FILTER_CODES"),
+    "the Visits Report filter must select the resolved names by CODE, the way the CRM master tab does",
+  );
+  assert.ok(
+    /result\.in\("visit_type"/.test(reads),
+    "the code branch must actually run an .in() on visit_type, not just import the map",
+  );
+  assert.ok(
+    reads.includes("CRM_VISIT_TYPE_OPTIONS"),
+    "the Visits Report dropdown must be the shared resolved vocabulary, not the stored descriptions",
+  );
+  assert.ok(
+    !reads.includes("getDistinctVisitTypes"),
+    "the window-wide scan that built the dropdown from stored text is gone — it could only offer \"Unknown\"",
+  );
+  assert.ok(
+    reads.includes("visitTypeDescription: resolveVisitTypeLabel("),
+    "mapVisitRow is the one choke point feeding both the report table and its export — resolve there",
+  );
 }

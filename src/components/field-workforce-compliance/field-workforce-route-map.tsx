@@ -257,6 +257,10 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
                     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 text-xs font-black text-white">{index + 1}</span>
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-slate-900">{point.contactName ?? point.address ?? "Check-in"}</p>
+                      {/* Wraps, never ellipsises. A GPS check-in address is the one line that says
+                          WHERE the rep stood, and the owner's no-truncation rule outranks the tidy
+                          single line — the parent is already `min-w-0 flex-1`, so wrapping costs no
+                          horizontal scroll at 375px. */}
                       {point.address && point.contactName ? <p className="truncate text-xs text-slate-500">{point.address}</p> : null}
                     </div>
                     <div className="shrink-0 text-right">

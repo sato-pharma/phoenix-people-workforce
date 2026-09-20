@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 
 import {
   computeCrmDelta,
+  CONTACT_LIST_SYNC_EARLIEST_CAIRO_MINUTES,
+  CONTACT_LIST_SYNC_FAILURE_RETRY_GAP_MS,
+  CONTACT_LIST_SYNC_LATEST_CAIRO_MINUTES,
+  CONTACT_LIST_SYNC_MIN_GAP_MS,
   DAY_TICK_SECONDS,
   FAST_TICK_SECONDS,
   NIGHT_TICK_SECONDS,
@@ -23,6 +27,7 @@ import {
   WIDE_PROBE_EVERY_N_TICKS,
   type SnapshotMemo,
 } from "../src/lib/crm/live-poller.ts";
+import { CONTACT_SYNC_SLICE_COUNT } from "../src/lib/crm/contacts-sync.ts";
 import { filterRowsToUpsert } from "../src/lib/crm/sync.ts";
 import type { IReports360Checkin, IReports360Visit } from "../src/lib/crm/client.ts";
 
@@ -184,6 +189,8 @@ export function runCrmLivePollerTests() {
   const HOUR = 60 * 60 * 1000;
   const monday10amCairo = { cairoDayOfWeek: 1, minutesSinceMidnight: 10 * 60, nowMs: 100 * HOUR };
   const noHistory = {
+    lastContactListFailureMs: null,
+    lastContactListSuccessMs: null,
     lastParitySweepFailureMs: null,
     lastParitySweepSuccessMs: null,
     lastPlanSyncFailureMs: null,
@@ -204,11 +211,16 @@ export function runCrmLivePollerTests() {
   // 1000h for the Sunday reconcile ones); "parked" means it ran at that instant.
   const parityParked = { lastParitySweepSuccessMs: 100 * HOUR };
   const parityParkedSunday = { lastParitySweepSuccessMs: 1000 * HOUR };
+  // And the same again for the contact-list sweep, the fifth job. It is due every FIVE MINUTES, so
+  // it claims a freed slot more readily than any other — parking it is what keeps the assertions
+  // below testing their own gap instead of the ranking. Its 06:00-22:00 window means the overnight
+  // and 05:59 cases need no parking at all, which is why only the daytime ones carry it.
+  const contactListsParked = { lastContactListSuccessMs: 100 * HOUR };
   // No history at all → the rolling sync fires on the first working-day tick (post-deploy catch-up).
   assert.equal(resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }), "rolling-sync");
   // A recent rolling run parks it until the 3h gap has passed; the boundary itself fires.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, ...contactListsParked, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
     null,
     "inside the min gap → nothing due (a deploy restart must not immediately re-pull 10 days)",
   );
@@ -223,7 +235,7 @@ export function runCrmLivePollerTests() {
   );
   // A recent FAILURE backs off instead of hammering a sick vendor every 20s tick.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, ...contactListsParked, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
     null,
   );
   assert.equal(
@@ -251,7 +263,7 @@ export function runCrmLivePollerTests() {
     "the weekly reconcile outranks the doctor lists too",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, ...contactListsParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS + 1 }),
     null,
     "inside the hourly gap → nothing due, so a deploy restart cannot re-pull the whole month on boot",
   );
@@ -271,7 +283,7 @@ export function runCrmLivePollerTests() {
     "06:00 Cairo is the first slot of the day",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, ...contactListsParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
     null,
     "a failed plan sync backs off half an hour rather than retrying every tick against a sick vendor",
   );
@@ -317,6 +329,7 @@ export function runCrmLivePollerTests() {
   // "the two modules never disagree": one 30-day window a day means every day of history is
   // re-verified against the CRM roughly every 8 days, forever, instead of never past 120 days.
   const otherJobsParked = {
+    lastContactListSuccessMs: 100 * HOUR,
     lastPlanSyncSuccessMs: 100 * HOUR,
     lastReconcileSuccessMs: 100 * HOUR,
     lastRollingSuccessMs: 100 * HOUR,
@@ -380,6 +393,89 @@ export function runCrmLivePollerTests() {
   assert.equal(
     resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastParitySweepFailureMs: 100 * HOUR - 2 * HOUR }),
     "parity-sweep",
+    "and recovers unattended once the back-off has passed",
+  );
+
+  // ── The hourly contact-list (assigned doctor list) sweep ─────────────────────────────────────
+  //
+  // The FIFTH scheduled job. Until 2026-09-21 `ireports360_contacts` had no in-process schedule at
+  // all: the external cron swept twelve slices five minutes apart across a single hour, ONCE A DAY
+  // at 05:00 Cairo, so a doctor assigned at 09:00 was invisible to Phoenix until the next morning
+  // (measured on production 2026-09-21 — 9,245 rows across 66 agents written in one 05:00 burst,
+  // the previous writes 09-19 05:00 and 09-16 05:00). The owner's instruction was "make it hourly".
+  //
+  // HOURLY IS THE GAP TIMES THE SLICE COUNT, NOT A SETTING OF ITS OWN. Twelve slices at a
+  // five-minute gap is exactly one full roster an hour; changing either alone silently changes how
+  // long a sweep takes, which is the defect the cron route's own banner warns about.
+  const contactOnlyDue = {
+    lastParitySweepSuccessMs: 100 * HOUR,
+    lastPlanSyncSuccessMs: 100 * HOUR,
+    lastReconcileSuccessMs: 100 * HOUR,
+    lastRollingSuccessMs: 100 * HOUR,
+  };
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue }),
+    "contact-lists",
+    "with the other four parked the contact sweep takes the slot — the whole point of the job",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastPlanSyncSuccessMs: null }),
+    "plan-sync",
+    "the plan sync outranks it: the contact sweep is the most frequent job and must never hold a slot",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastParitySweepSuccessMs: null }),
+    "contact-lists",
+    "but it outranks the parity sweep — today's doctor list beats re-proving settled history",
+  );
+  // The CADENCE VALUES are pinned LITERALLY, never derived from the constants they guard — an
+  // assertion written as `CONTACT_LIST_SYNC_MIN_GAP_MS - 1` moves with the value it is supposed to
+  // be pinning and would pass against a deliberately broken constant.
+  assert.equal(CONTACT_LIST_SYNC_MIN_GAP_MS, 5 * 60 * 1000, "five minutes per slice");
+  assert.equal(CONTACT_LIST_SYNC_EARLIEST_CAIRO_MINUTES, 6 * 60, "06:00 Cairo — the working day opens");
+  assert.equal(CONTACT_LIST_SYNC_LATEST_CAIRO_MINUTES, 22 * 60, "22:00 Cairo — nobody edits a doctor list overnight");
+  assert.equal(CONTACT_LIST_SYNC_FAILURE_RETRY_GAP_MS, 15 * 60 * 1000, "a sick vendor gets 15 minutes, not a retry every tick");
+  // THE HOURLY GUARANTEE ITSELF. 12 slices x a 5-minute gap = one full roster per hour; this is the
+  // assertion that goes red if either half is changed without the other.
+  assert.equal(
+    (CONTACT_LIST_SYNC_MIN_GAP_MS * CONTACT_SYNC_SLICE_COUNT) / HOUR,
+    1,
+    "the gap and the slice count together must sweep the WHOLE roster in exactly one hour",
+  );
+  // Once every five minutes, not once every tick.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastContactListSuccessMs: 100 * HOUR - 5 * 60 * 1000 + 1 }),
+    null,
+    "inside the five-minute gap → nothing due; a 20s tick must not re-sweep the same twelfth",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastContactListSuccessMs: 100 * HOUR - 5 * 60 * 1000 }),
+    "contact-lists",
+    "the five-minute boundary itself fires",
+  );
+  // The window is CLOSED at both ends — the one job whose cadence went up sixteenfold, so every
+  // hour outside working hours would be a full roster of vendor requests bought for nothing.
+  const atContactMinute = (minutesSinceMidnight: number) => ({
+    ...noHistory,
+    ...contactOnlyDue,
+    lastParitySweepSuccessMs: 100 * HOUR,
+    cairoDayOfWeek: 1,
+    minutesSinceMidnight,
+    nowMs: 100 * HOUR,
+  });
+  assert.equal(resolveDueScheduledWork(atContactMinute(6 * 60 - 1)), null, "05:59 Cairo is before the window opens");
+  assert.equal(resolveDueScheduledWork(atContactMinute(6 * 60)), "contact-lists", "06:00 Cairo is the first slice of the day");
+  assert.equal(resolveDueScheduledWork(atContactMinute(22 * 60 - 1)), "contact-lists", "21:59 Cairo is the last slice of the day");
+  assert.equal(resolveDueScheduledWork(atContactMinute(22 * 60)), null, "22:00 Cairo closes it — the external 05:00 cron covers the night");
+  // A failure backs off rather than re-serving the same twelfth against a vendor that cannot answer.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastContactListFailureMs: 100 * HOUR - 15 * 60 * 1000 + 1 }),
+    null,
+    "a failed slice waits out its back-off",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...contactOnlyDue, lastContactListFailureMs: 100 * HOUR - 15 * 60 * 1000 }),
+    "contact-lists",
     "and recovers unattended once the back-off has passed",
   );
 
