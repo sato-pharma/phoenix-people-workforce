@@ -1422,6 +1422,7 @@ import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
+import { runOutstationRequestNameIsTheEmployeeRecordTests } from "./outstation-request-name-is-the-employee-record.test.ts";
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
 import { runOutstationNonTravelExpenseTests } from "./outstation-non-travel-expense.test.ts";
@@ -4643,6 +4644,11 @@ await runTest(
 await runTest(
   "every photo-less write path declares its evidence gate instead of inheriting the fail-closed default",
   runOutstationAdminManualExpenseGateTests,
+);
+
+await runTest(
+  "every outstation request write path stamps the employee RECORD name, never the nickname-first display name",
+  runOutstationRequestNameIsTheEmployeeRecordTests,
 );
 
 await runTest(
