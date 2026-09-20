@@ -175,6 +175,9 @@ export function compareEarlyBirdsScores(a: EarlyBirdsRepScore, b: EarlyBirdsRepS
   if (aStart !== bStart) return aStart - bStart;
   if (a.daysWithSubmission !== b.daysWithSubmission) return b.daysWithSubmission - a.daysWithSubmission;
   if (a.gpsVerifiedVisits !== b.gpsVerifiedVisits) return b.gpsVerifiedVisits - a.gpsVerifiedVisits;
+  if (a.regularVisitsWithCheckin !== b.regularVisitsWithCheckin) {
+    return b.regularVisitsWithCheckin - a.regularVisitsWithCheckin;
+  }
   if (a.regularVisits !== b.regularVisits) return b.regularVisits - a.regularVisits;
   if (a.dailyWins !== b.dailyWins) return b.dailyWins - a.dailyWins;
   const byName = a.name.localeCompare(b.name);
@@ -275,6 +278,13 @@ export function buildEarlyBirdsRanking(input: {
     const daysWithSubmission = Array.from(byDay.keys()).filter((day) => periodDays.includes(day)).length;
     const totalVisits = repFacts.length;
     const regularVisits = repFacts.filter((fact) => fact.visitType === 0).length;
+    // Owner ruling 2026-09-20: only a Regular visit with a matching GPS check-in earns Regular
+    // credit. A no-check-in Regular visit is real work — it stays off the Campaign line — but it is
+    // identified and counted on its own, never blended into the credited total.
+    const regularVisitsWithCheckin = repFacts.filter(
+      (fact) => fact.visitType === 0 && fact.timeSource === "gps_checkin",
+    ).length;
+    const regularVisitsNoCheckin = regularVisits - regularVisitsWithCheckin;
     const campaignVisits = repFacts.filter((fact) => fact.visitType === -8).length;
     const gpsEligibleVisits = repFacts.filter((fact) => fact.gpsEligible).length;
     const gpsVerifiedVisits = repFacts.filter((fact) => fact.timeSource === "gps_checkin").length;
@@ -285,7 +295,7 @@ export function buildEarlyBirdsRanking(input: {
     const components: EarlyBirdsComponentScores = {
       start: earlyBirdsStartScore(medianStartMinutes),
       consistency: earlyBirdsConsistencyScore(daysWithSubmission, rep.expectedWorkingDayWeight),
-      regular: earlyBirdsRegularScore(regularVisits, rep.expectedWorkingDays),
+      regular: earlyBirdsRegularScore(regularVisitsWithCheckin, rep.expectedWorkingDays),
       volume: earlyBirdsVolumeScore(totalVisits, rep.expectedWorkingDays),
       firstPlace: earlyBirdsFirstPlaceScore(dailyWins, contestedDays),
     };
@@ -313,6 +323,8 @@ export function buildEarlyBirdsRanking(input: {
       expectedWorkingDayWeight: rep.expectedWorkingDayWeight,
       totalVisits,
       regularVisits,
+      regularVisitsWithCheckin,
+      regularVisitsNoCheckin,
       campaignVisits,
       gpsEligibleVisits,
       gpsVerifiedVisits,

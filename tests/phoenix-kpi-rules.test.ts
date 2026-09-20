@@ -32,6 +32,9 @@ function visit(contact: number | null, day: string, extra: Partial<PhoenixVisit>
     comment: null,
     ampm: null,
     speciality: null,
+    // Checked-in by default, so every existing fixture keeps testing full-credit visits. Rule 10's
+    // own test overrides this to false on the specific visits it means to exclude.
+    hasCheckin: true,
     ...extra,
   };
 }
@@ -143,8 +146,9 @@ function oneRep() {
   });
 
   assert.equal(kpis.workingDays, 7);
-  // No GPS check-in was supplied for any visit: every submitted regular visit counts.
-  assert.equal(kpis.pm.visits, 6, "PM counts every regular visit to a PM-list doctor, GPS or not");
+  // Every visit in this fixture is checked-in (the `visit()` default): rule 2 credits it regardless
+  // of GPS being merely evidence, not the gate. `regularNoCheckinBucket` below covers the no-checkin case.
+  assert.equal(kpis.pm.visits, 6, "PM counts every checked-in regular visit to a PM-list doctor");
   assert.equal(kpis.am.visits, 2, "AM counts the AM-list account flagged PM, and the both-lists doctor flagged AM");
   assert.equal(kpis.pharmacy.visits, 1);
   assert.equal(
@@ -153,6 +157,7 @@ function oneRep() {
     "campaign is its own line, and a regular visit to a contact on no list of the rep's counts on it (owner: unplanned is now called campaign)",
   );
   assert.ok(!("unplannedVisits" in kpis), "there is no separate unplanned line any more");
+  assert.equal(kpis.regularNoCheckin, 0, "every visit in this fixture is checked-in, so the no-checkin line is empty");
   assert.equal(kpis.pm.meets, false);
   assert.equal(kpis.pm.target, 10);
   assert.equal(kpis.am.target, 2);
@@ -192,6 +197,49 @@ function oneRep() {
     visits,
   });
   assert.equal(closed.followUp, null, "a finished month has no follow-up");
+}
+
+/**
+ * Rule 10 (owner, 2026-09-20): a Regular visit with no matching GPS check-in earns no call-rate,
+ * coverage or frequency credit, but it is never relabelled Campaign — it is counted on its own line.
+ */
+function regularNoCheckinBucket() {
+  const panel: PhoenixPanelContact[] = [
+    { contactCrmId: 1, listType: "PM", grade: "A" },
+    { contactCrmId: 2, listType: "PM", grade: "A" },
+  ];
+  const planEntries: PhoenixPlanEntry[] = [
+    { contactCrmId: 1, planDate: "2026-09-05", grade: "A", speciality: null },
+    { contactCrmId: 2, planDate: "2026-09-06", grade: "A", speciality: null },
+  ];
+  const visits: PhoenixVisit[] = [
+    // No matching GPS check-in: real activity, but it earns no credit anywhere and is never Campaign.
+    visit(1, "2026-09-05", { ampm: "PM", hasCheckin: false }),
+    // A second, checked-in visit to a different PM doctor — proves the two never blend.
+    visit(2, "2026-09-06", { ampm: "PM", hasCheckin: true }),
+  ];
+  const kpis = computePhoenixRepKpis({
+    window: { dateFrom: MONTH.start, dateTo: "2026-09-10", windowEnd: MONTH.end },
+    month: MONTH,
+    today: "2026-09-10",
+    panel,
+    planEntries,
+    visits,
+  });
+
+  assert.equal(kpis.regularNoCheckin, 1, "the no-checkin visit is counted on its own line");
+  assert.equal(kpis.pm.visits, 1, "only the checked-in visit earns PM call-rate credit");
+  assert.equal(kpis.campaignVisits, 0, "a no-checkin regular visit is never relabelled Campaign");
+  assert.deepEqual(
+    kpis.coverage,
+    { planned: 2, visited: 1, missed: 1, pct: 50, plannedOffList: 0 },
+    "the no-checkin doctor is planned but not credited as visited",
+  );
+  assert.deepEqual(
+    kpis.frequency,
+    { judged: 2, met: 0, below: 2, ungraded: 0, pct: 0 },
+    "neither doctor reaches the grade-A PM norm of 3: the no-checkin visit banks no frequency credit either",
+  );
 }
 
 function read(relativePath: string) {
@@ -255,5 +303,6 @@ export function runPhoenixKpiRulesTests() {
   followUp();
   pmPassesAtTenWithNoBand();
   oneRep();
+  regularNoCheckinBucket();
   callRateBasisAndWording();
 }

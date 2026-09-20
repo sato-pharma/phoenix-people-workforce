@@ -71,9 +71,16 @@ function buildEarlyBirdsEmailMetrics(candidate: EarlyBirdsPendingCandidate) {
       value: `${candidate.gpsVerifiedVisits} of ${candidate.gpsEligibleVisits}`,
     },
     { label: "Regular visits", value: candidate.regularVisits },
+  ];
+  // Rule 10 (owner, 2026-09-20): shown only when it is not zero, so the manager approving from the
+  // email sees the checked-in Regular count above is not the whole of it.
+  if (candidate.regularVisitsNoCheckin > 0) {
+    rows.push({ label: "Of those, with no check-in", value: candidate.regularVisitsNoCheckin });
+  }
+  rows.push(
     { label: "Days finished first", value: candidate.dailyWins },
     { label: "Score", value: `${Math.round(candidate.totalScore * 1000)} / 1000` },
-  ];
+  );
 
   if (candidate.candidateRank > 1) {
     // A second or third recommendation must explain itself, or it reads as the system changing

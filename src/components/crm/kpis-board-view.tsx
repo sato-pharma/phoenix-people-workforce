@@ -1014,6 +1014,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {row.campaignCalls} calls
                 {!phoenix && row.campaignOnlyDays > 0 ? ` · ${row.campaignOnlyDays} day(s) campaign only` : ""}
+                {phoenix && row.phoenix ? ` · ${row.phoenix.regularNoCheckin} no check-in` : ""}
               </span>
             </td>
           </tr>
@@ -1885,7 +1886,9 @@ export function KpisBoardView({
               <p className={`leading-4 ${CAPTION}`}>
                 {board.phoenixTotals.campaignVisits} campaign visits, unplanned visits to a contact not on the
                 rep&apos;s list included, are counted on their own line, outside call rate, coverage and frequency. {board.phoenixTotals.ungradedDoctors} planned doctors have no grade and are left
-                out of frequency.
+                out of frequency. {board.phoenixTotals.regularNoCheckin} regular visits have no matching GPS
+                check-in — real activity, kept off the campaign line, but scored in neither call rate, coverage
+                nor frequency.
               </p>
             </div>
           ) : null}

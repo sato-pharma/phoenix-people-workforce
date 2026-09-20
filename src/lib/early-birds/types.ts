@@ -94,6 +94,16 @@ export type EarlyBirdsRepScore = {
   expectedWorkingDayWeight: number;
   totalVisits: number;
   regularVisits: number;
+  /**
+   * Regular visits with a matching GPS check-in — the only ones the `regular` score component
+   * credits. Owner ruling 2026-09-20: a regular visit with no check-in is real activity, so it stays
+   * OFF the "Campaign" line, but it earns no Regular credit either — it must be visible as its own
+   * thing, never blended into a number that implies verified fieldwork.
+   */
+  regularVisitsWithCheckin: number;
+  /** Regular visits with NO matching GPS check-in. `regularVisits - regularVisitsWithCheckin`. Shown
+   * on its own, separately labelled — never folded into `regularVisits` scoring or into Campaign. */
+  regularVisitsNoCheckin: number;
   campaignVisits: number;
   gpsEligibleVisits: number;
   gpsVerifiedVisits: number;
