@@ -10,6 +10,7 @@ import {
   applyWeeklyAccessScope,
   liftWeeklyGeography,
   listWeeklyProductScopeAssignments,
+  requireWeeklyAccessScope,
   type WeeklyAccessScope,
 } from "@/lib/sales/weekly/access";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
@@ -929,7 +930,7 @@ function computeWeekGroups(weeks: string[], minDays = 5): { canonical: string; m
   return groups;
 }
 
-export async function loadWeeklyDashboard(filters?: {
+export async function loadWeeklyDashboard(filters: {
   weekStart?: string | null;
   weekStarts?: string[] | null;
   allWeeks?: boolean;
@@ -962,8 +963,15 @@ export async function loadWeeklyDashboard(filters?: {
    * fetch instead would report cumulative figures.
    */
   batchIds?: string[] | null;
-  /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
-  accessScope?: WeeklyAccessScope;
+  /**
+   * Per-viewer visibility tier (full / product / territory / none). REQUIRED, and there is no default.
+   *
+   * This read runs on the service-role client, which bypasses RLS, so this argument is the only thing
+   * between a viewer and the restricted products and the Head Office line. It used to default to "full
+   * access, restricted products revealed", which meant a caller that forgot it leaked instead of failing.
+   * A missing or unrecognised scope now throws before anything is read (requireWeeklyAccessScope).
+   */
+  accessScope: WeeklyAccessScope;
   /**
    * Narrow the ROW fetch to these cycle months (first-of-month YYYY-MM-DD), on top of whatever the
    * week window already selected. Empty/omitted = no narrowing (current behaviour).
@@ -1021,6 +1029,8 @@ export async function loadWeeklyDashboard(filters?: {
    */
   unitProductCode?: string | null;
 }): Promise<WeeklyDashboard> {
+  // First statement, before any read: a caller with no scope gets an error, never "everything".
+  const accessScope = requireWeeklyAccessScope(filters?.accessScope);
   const supabase = getSupabaseAdmin();
 
   // Validated batches — ordered newest-first; limit to 200 in the common case (200 ÷ 8 distributors
@@ -1131,7 +1141,7 @@ export async function loadWeeklyDashboard(filters?: {
   // restricted (non-full) tier that hits one of these "nothing to show" shortcuts has no visible
   // rows to derive an in-scope distributor set from, so it must see an empty catalog here rather
   // than the raw company-wide list — otherwise these shortcuts would leak it right back.
-  const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];
+  const distributorsForEmpty = accessScope.tier === "full" ? distributors : [];
 
   // Upload picker options, newest first. Built from the batch list already in hand, so this costs no
   // extra query. Label is human-readable per the owner's standing rule — never a bare uuid.
@@ -1177,8 +1187,7 @@ export async function loadWeeklyDashboard(filters?: {
   // PM/GPM with no product codes assigned in weekly_sales_product_scope: flag it explicitly so
   // the UI can show a clear "contact admin" message rather than a silently empty dashboard.
   // Must come BEFORE the availableWeeks guard so the flag is set even when no batches exist yet.
-  const scope = filters?.accessScope;
-  if (scope?.tier === "product" && scope.productCodes.size === 0) {
+  if (accessScope.tier === "product" && accessScope.productCodes.size === 0) {
     return { ...empty(), scopeEmpty: true };
   }
 
@@ -1194,9 +1203,7 @@ export async function loadWeeklyDashboard(filters?: {
   // the full available history rather than just the selected + prior week. Their product universe is
   // small (2–4 codes, ~hundreds of rows) so loading all history is safe. Full/territory scopes are
   // kept at the 2-week window because their row counts can be orders of magnitude larger.
-  const scopeIsBoundedProduct =
-    filters?.accessScope?.tier === "product" &&
-    (filters.accessScope as Extract<WeeklyAccessScope, { tier: "product" }>).productCodes.size > 0;
+  const scopeIsBoundedProduct = accessScope.tier === "product" && accessScope.productCodes.size > 0;
   // Widen to 8 recent weeks so the trend chart always has enough points for merging.
   const recentWeekSet = new Set(availableWeeks.slice(0, 8).flatMap((can) => weekGroupMap.get(can) ?? [can]));
   // De-cumulation needs every week of a touched month-cycle loaded (to subtract the previous week),
@@ -1224,7 +1231,7 @@ export async function loadWeeklyDashboard(filters?: {
   // fetch whitelist. Restricted tiers are left on the old full fetch so the option universes they
   // derive from rows stay bit-for-bit unchanged.
   const narrowToSelectedMonths =
-    (filters?.accessScope?.tier ?? "full") === "full" &&
+    accessScope.tier === "full" &&
     cycleMonthFilter.has &&
     cycleMonthFilter.mode === "include"
       ? [...cycleMonthFilter.set]
@@ -1376,7 +1383,7 @@ export async function loadWeeklyDashboard(filters?: {
 
   // Per-viewer visibility: full / product-scoped / territory-scoped / none. Restricted Lacto
   // Basic products are stripped for every tier except a full-access viewer allowed to reveal them.
-  const accessScope: WeeklyAccessScope = filters?.accessScope ?? { tier: "full", canViewRestricted: true, canViewHeadOffice: false };
+  // The scope was resolved and checked at the top of this function; there is no fallback to fall open to.
   // A manager's own areas' share, when the caller asked for it: the one place his rows are chosen, so
   // every aggregate and option list below is built from the same rows.
   const ownAreaShare = filters?.ownAreaShare ? await filters.ownAreaShare : null;
