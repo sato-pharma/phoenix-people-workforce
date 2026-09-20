@@ -19,6 +19,7 @@ import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schem
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -1284,7 +1285,19 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     visitTime: resolved.time,
     visitTimeSource: resolved.source,
     visitType: row.visit_type == null ? null : Number(row.visit_type),
-    visitTypeDescription: (row.visit_type_description as string | null) ?? null,
+    // Resolved, never the raw vendor string. The vendor stores the literal "Unknown" for eight
+    // distinct codes (-30, -21, -20, -19, -16, -7, -6, -5), so the raw column cannot tell Public
+    // Holiday from Admin Work — 3,077 rows since January on production, measured 2026-09-21.
+    // Resolving HERE covers getVisitsReportData and getVisitsReportExportRows from one place —
+    // both re-export mapVisitRow through visits-report/service.ts — which is what keeps the screen
+    // and the download reading the same word for the same row. The Visit Type FILTER is separate:
+    // it selects on the numeric column via CRM_VISIT_TYPE_FILTER_CODES, precisely because the
+    // stored text cannot tell these codes apart.
+    visitTypeDescription: resolveVisitTypeLabel(
+      row.visit_type == null ? null : Number(row.visit_type),
+      (row.visit_type_description as string | null) ?? null,
+      (row.comment as string | null) ?? null,
+    ),
   };
 }
 
