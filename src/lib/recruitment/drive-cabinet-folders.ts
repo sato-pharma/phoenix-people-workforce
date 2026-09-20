@@ -21,11 +21,11 @@
 // reads the CV any more. A person who did not answer is filed as exactly that.
 //
 // A CHANNEL IS NOT ALWAYS AN INBOX. Most CVs arrive from outside and their channel is the line they
-// landed on, read from `ats_cv_intake_events`. A CV attached inside Phoenix while booking an
-// interview arrives on the interview calendar, and `ats_files.upload_origin` is what says so — added
-// 2026-09-21, after all 5 hand-uploaded CVs on production were found parked under
-// `Red flags/Source unknown`. Only that one origin opens a folder; see
-// `CABINET_UPLOAD_ORIGIN_FOLDERS`.
+// landed on, read from `ats_cv_intake_events`. A CV a person attached inside Phoenix arrives on the
+// path they used, and `ats_files.upload_origin` is what says so — added 2026-09-21, after all 5
+// hand-uploaded CVs on production were found parked under `Red flags/Source unknown`. The interview
+// calendar and a plain upload onto a candidate each open their own folder; the WhatsApp inbox does
+// not yet. See `CABINET_UPLOAD_ORIGIN_FOLDERS`.
 //
 // THE CHANNEL IS THE LINE THE CV ARRIVED ON, NOT THE PERSON. One applicant who wrote to the chatbot
 // line and also emailed careers@ has one CV in each channel folder, because that is where each one
@@ -87,15 +87,25 @@ export const EMAIL_CHANNEL_FOLDER = "Email";
 export const INTERVIEW_CALENDAR_CHANNEL_FOLDER = "Interview calendar";
 
 /**
+ * The channel folder for a CV dropped straight onto a candidate's record inside Phoenix.
+ *
+ * Also a CHANNEL, not a red flag, and for the same reason: somebody in Phoenix put the file there
+ * deliberately. The owner's decision, 2026-09-21, on being shown that the one CV of this kind on
+ * production — attached by him on 2026-08-18 — was sitting under `Red flags/Source unknown` reading
+ * as suspect. "Source unknown" is now reserved for a CV nothing in the system can place at all.
+ */
+export const ATS_UPLOAD_CHANNEL_FOLDER = "Uploaded in Phoenix";
+
+/**
  * The upload origins `ats_files.upload_origin` can hold, and the channel folder each opens.
  *
- * Only the interview calendar gets a folder of its own — the owner's decision, 2026-09-21. The other
- * two paths record their origin (it costs nothing, and the column is written either way) but keep
- * today's behaviour: a bare file dropped onto a candidate, or an attachment lifted out of the
- * WhatsApp inbox, still has no channel the cabinet can stand behind, and "Source unknown" is the
- * honest answer for it. Giving one a folder later is one line here and nothing else.
+ * `whatsapp_inbox` is the one origin still without a folder. An attachment lifted out of the inbox
+ * onto a candidate genuinely arrived on a WhatsApp line, so the open question is WHICH line's folder
+ * it belongs in — not whether it deserves one — and that is the owner's to answer. Until he does it
+ * keeps today's behaviour and reads as "Source unknown". Giving it a folder is one line here.
  */
 export const CABINET_UPLOAD_ORIGIN_FOLDERS: Readonly<Record<string, string>> = {
+  ats_upload: ATS_UPLOAD_CHANNEL_FOLDER,
   interview_calendar: INTERVIEW_CALENDAR_CHANNEL_FOLDER,
 };
 

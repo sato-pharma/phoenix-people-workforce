@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { chooseCvCopies, copyLabelsFor, shouldMirrorCopy, withCopyLabel } from "../src/lib/recruitment/cv-duplicate-copies.ts";
 import {
+  ATS_UPLOAD_CHANNEL_FOLDER,
   CABINET_ROOT_NAME,
   cabinetChannelFolder,
   cabinetImportSendersFromEnv,
@@ -253,7 +254,7 @@ export function runDriveCabinetFolderTests() {
   // the owner himself while booking an interview — sat under `Red flags/Source unknown`, because the
   // cabinet reads the channel off `ats_cv_intake_events` and an in-app upload writes no such record.
   // `ats_files.upload_origin` is what now says where it came from. Owner's decision the same day:
-  // the interview calendar gets its own folder; the other two in-app paths keep today's behaviour.
+  // the interview calendar gets its own folder, and so does a plain upload onto a candidate.
   const booked = cv({ intake: null, uploadOrigin: "interview_calendar" });
   assert.equal(cabinetRedFlagFor(booked), null, "a CV attached while booking an interview is not a red flag");
   assert.deepEqual(
@@ -271,15 +272,40 @@ export function runDriveCabinetFolderTests() {
   );
   assert.equal(cabinetChannelFolder(null, "interview_calendar"), INTERVIEW_CALENDAR_CHANNEL_FOLDER);
 
-  // The other two origins are RECORDED but open no folder — the owner asked for one folder, and a
-  // file dropped onto a candidate has no channel the cabinet can stand behind.
-  for (const origin of ["ats_upload", "whatsapp_inbox"]) {
-    assert.equal(
-      cabinetRedFlagFor(cv({ intake: null, uploadOrigin: origin })),
-      "source_unknown",
-      `${origin} keeps today's behaviour until the owner asks for a folder of its own`,
-    );
-  }
+  // ── A PLAIN UPLOAD ONTO A CANDIDATE IS A CHANNEL TOO ──────────────────────────────────────────
+  // The owner, 2026-09-21, on being shown that the fifth of those 5 CVs was not an interview booking
+  // at all but a file he dropped onto Yasmeen Elsafory's record on 2026-08-18: "give ATS uploads
+  // their own folder too". Somebody in Phoenix put it there on purpose, so it is not unknown.
+  const dropped = cv({ intake: null, uploadOrigin: "ats_upload" });
+  assert.equal(cabinetRedFlagFor(dropped), null, "a file uploaded onto a candidate is not a red flag");
+  assert.deepEqual(
+    cabinetPathFor(dropped, AREA_REGIONS),
+    [ATS_UPLOAD_CHANNEL_FOLDER, "Medical Representative", "Delta (1)", "Gharbia 1 (Tanta)"],
+    "it files as a channel, so the applicant's own answers still drive the rest of the path",
+  );
+  assert.deepEqual(
+    cabinetPathFor(
+      cv({ candidate: answered({ preferences_declared_at: null }), intake: null, uploadOrigin: "ats_upload" }),
+      AREA_REGIONS,
+    ),
+    [ATS_UPLOAD_CHANNEL_FOLDER, DID_NOT_ANSWER_FOLDER],
+    "and one for somebody who never answered the questions is filed as exactly that",
+  );
+  assert.equal(cabinetChannelFolder(null, "ats_upload"), ATS_UPLOAD_CHANNEL_FOLDER);
+  assert.notEqual(
+    ATS_UPLOAD_CHANNEL_FOLDER,
+    INTERVIEW_CALENDAR_CHANNEL_FOLDER,
+    "the two in-app channels must be two folders, or the refile cannot tell them apart",
+  );
+
+  // `whatsapp_inbox` is the ONE origin still without a folder — its CV really did arrive on a
+  // WhatsApp line, so which line's folder it belongs in is the owner's question, not ours.
+  assert.equal(
+    cabinetRedFlagFor(cv({ intake: null, uploadOrigin: "whatsapp_inbox" })),
+    "source_unknown",
+    "whatsapp_inbox keeps today's behaviour until the owner says which line's folder it belongs in",
+  );
+  assert.equal(cabinetChannelFolder(null, "whatsapp_inbox"), null);
 
   // An ORIGIN NEVER OVERRULES A REAL ARRIVAL. If a row ever carried both, the line the CV came in on
   // is the channel the owner asked us to file by — the origin only names the screen that wrote the row.
