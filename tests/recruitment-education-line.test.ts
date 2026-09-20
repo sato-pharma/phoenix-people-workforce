@@ -143,6 +143,25 @@ function runYearAndGradeTests() {
   );
   // A bare "Good" in a sentence is an ordinary word, never a grade.
   assert.equal(splitEducationLine("Good communication skills, Cairo University").grade, null);
+
+  // "Class of 2018 - Good": the dash left behind by the cut-out date must not hide the grade, which
+  // used to be stored on the end of the university ("Ain Shams University, Good").
+  assert.deepEqual(
+    splitEducationLine("Faculty of Commerce, Ain Shams University, Class of 2018 - Good"),
+    parts({ fieldOfStudy: "Faculty of Commerce", grade: "Good", institution: "Ain Shams University", year: 2018 }),
+  );
+  // "with honor" belongs to the grade word, whatever the grade word is.
+  assert.deepEqual(
+    splitEducationLine("B.A. in Mass Communication - Cairo University - Class of 2021 - Very Good with honor"),
+    parts({ degree: "Bachelor", fieldOfStudy: "Mass Communication", grade: "Very Good with honor", institution: "Cairo University", year: 2021 }),
+  );
+  // A subject written after the faculty is a subject, not a place stuck to the university.
+  assert.deepEqual(
+    splitEducationLine("2015 - 2019 Bachelor of Science, Mansoura University, Faculty of Science, Chemistry"),
+    parts({ degree: "Bachelor", fieldOfStudy: "Faculty of Science, Chemistry", institution: "Mansoura University", year: 2019 }),
+  );
+  // ...while a place still is one.
+  assert.equal(splitEducationLine("Bachelor of Science - South Valley University, Qena").institution, "South Valley University, Qena");
 }
 
 function runFallbackTests() {
