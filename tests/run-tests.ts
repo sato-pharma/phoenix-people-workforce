@@ -247,6 +247,7 @@ import { runCandidateFolderCanonicalAreaTests } from "./candidate-folder-canonic
 import { runCandidateFolderDeclaredJobTitleTests } from "./candidate-folder-declared-job-title.test.ts";
 import { runDriveCvFolderTests } from "./drive-cv-folders.test.ts";
 import {
+  runCvUploadPathsMirrorTests,
   runDriveCabinetFolderTests,
   runDriveScriptAgreesWithAppTests,
   runDriveTrashedFileTests,
@@ -2428,6 +2429,11 @@ await runTest(
   "the backfill script asks the app where a CV belongs (a second copy of the rule called 913 filed "
     + "CVs misfiled, and --refile would have moved them back out of the cabinet)",
   runDriveScriptAgreesWithAppTests,
+);
+await runTest(
+  "every path that uploads a CV also mirrors it (uploadCandidateFile does not — the 5 CVs uploaded by "
+    + "a person reached storage and stopped, with no error and nothing logged)",
+  runCvUploadPathsMirrorTests,
 );
 await runTest(
   "candidate status regression guard (a CV sent to a manager cannot be walked back to shortlisted — "

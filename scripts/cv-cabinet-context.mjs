@@ -73,6 +73,12 @@ export function cabinetInputFor({ candidate, facts, file, importSenders, sibling
     intake: earliestIntakeEvent(facts.intakeByFile.get(file.id) ?? []),
     isCv: latestCvVerdict(facts.verdictsByFile.get(file.id) ?? []),
     siblings,
+    // Off the FILE row, not a per-file lookup: `upload_origin` is a column on `ats_files` itself, so
+    // every caller that selects it gets the interview-calendar channel for free. A caller that forgot
+    // the column would hand in `undefined` and file the CV "Source unknown" — exactly the kind of
+    // script-versus-site disagreement this shared loader exists to stop, which is why the registered
+    // test asserts each script's own SELECT fetches it.
+    uploadOrigin: file.upload_origin ?? null,
   };
 }
 

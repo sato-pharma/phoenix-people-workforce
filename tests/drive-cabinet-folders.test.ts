@@ -12,6 +12,7 @@ import {
   DID_NOT_ANSWER_FOLDER,
   earliestIntakeEvent,
   EMAIL_CHANNEL_FOLDER,
+  INTERVIEW_CALENDAR_CHANNEL_FOLDER,
   latestCvVerdict,
   OTHER_POSITIONS_FOLDER,
   POSITION_NOT_STATED,
@@ -246,6 +247,58 @@ export function runDriveCabinetFolderTests() {
   // 5. Source unknown — no record, or a WhatsApp record that never said which line.
   assert.deepEqual(cabinetPathFor(cv({ intake: null }), AREA_REGIONS), flagged("Source unknown"));
   assert.equal(cabinetRedFlagFor(cv({ intake: whatsappIntake({ raw_metadata: {} }) })), "source_unknown");
+
+  // ── THE INTERVIEW CALENDAR IS A CHANNEL, NOT A RED FLAG ───────────────────────────────────────
+  // Measured on production 2026-09-21: every CV ever uploaded by a person — 5 of them, 4 attached by
+  // the owner himself while booking an interview — sat under `Red flags/Source unknown`, because the
+  // cabinet reads the channel off `ats_cv_intake_events` and an in-app upload writes no such record.
+  // `ats_files.upload_origin` is what now says where it came from. Owner's decision the same day:
+  // the interview calendar gets its own folder; the other two in-app paths keep today's behaviour.
+  const booked = cv({ intake: null, uploadOrigin: "interview_calendar" });
+  assert.equal(cabinetRedFlagFor(booked), null, "a CV attached while booking an interview is not a red flag");
+  assert.deepEqual(
+    cabinetPathFor(booked, AREA_REGIONS),
+    [INTERVIEW_CALENDAR_CHANNEL_FOLDER, "Medical Representative", "Delta (1)", "Gharbia 1 (Tanta)"],
+    "it files as a channel, so the applicant's own answers still drive the rest of the path",
+  );
+  assert.deepEqual(
+    cabinetPathFor(
+      cv({ candidate: answered({ preferences_declared_at: null }), intake: null, uploadOrigin: "interview_calendar" }),
+      AREA_REGIONS,
+    ),
+    [INTERVIEW_CALENDAR_CHANNEL_FOLDER, DID_NOT_ANSWER_FOLDER],
+    "and a booking for somebody who never answered the questions is filed as exactly that",
+  );
+  assert.equal(cabinetChannelFolder(null, "interview_calendar"), INTERVIEW_CALENDAR_CHANNEL_FOLDER);
+
+  // The other two origins are RECORDED but open no folder — the owner asked for one folder, and a
+  // file dropped onto a candidate has no channel the cabinet can stand behind.
+  for (const origin of ["ats_upload", "whatsapp_inbox"]) {
+    assert.equal(
+      cabinetRedFlagFor(cv({ intake: null, uploadOrigin: origin })),
+      "source_unknown",
+      `${origin} keeps today's behaviour until the owner asks for a folder of its own`,
+    );
+  }
+
+  // An ORIGIN NEVER OVERRULES A REAL ARRIVAL. If a row ever carried both, the line the CV came in on
+  // is the channel the owner asked us to file by — the origin only names the screen that wrote the row.
+  assert.equal(cabinetChannelFolder(whatsappIntake(), "interview_calendar"), CHATBOT_FOLDER);
+  assert.equal(cabinetChannelFolder(emailIntake(), "interview_calendar"), EMAIL_CHANNEL_FOLDER);
+
+  // An UNKNOWN or absent origin must read exactly as the cabinet read before the column existed —
+  // every row on production was null the day it was added.
+  assert.equal(cabinetChannelFolder(null, "some_future_screen"), null);
+  assert.equal(cabinetChannelFolder(null, null), null);
+  assert.equal(cabinetChannelFolder(null, undefined), null);
+  assert.equal(cabinetRedFlagFor(cv({ intake: null, uploadOrigin: null })), "source_unknown");
+
+  // A red flag still WINS over the new channel: an interview booking is not a licence to file a
+  // certificate as an applicant, nor to put a duplicate copy back beside its original.
+  assert.equal(
+    cabinetRedFlagFor(cv({ intake: null, isCv: false, uploadOrigin: "interview_calendar" })),
+    "not_a_cv",
+  );
 
   // THE ORDER IS DELIBERATE — one flag per CV, strongest first.
   const everything = cv({
@@ -707,5 +760,102 @@ export function runDriveScriptAgreesWithAppTests() {
       /const key = cabinetStoredPathKey\(/,
       "the value written to drive_mirror_path must come from cabinetStoredPathKey",
     );
+  }
+}
+
+/**
+ * EVERY PATH THAT UPLOADS A CV MUST ALSO MIRROR IT.
+ *
+ * `uploadCandidateFile` stores the bytes and writes the `ats_files` row. It does NOT mirror — the
+ * cabinet is reached through `mirrorCandidateCvsToDrive`, a separate call. For a year only the two
+ * inbound workers made it, so a CV uploaded inside Phoenix reached storage and stopped there.
+ *
+ * Measured on production 2026-09-21: 5 CVs, every one ever uploaded by a person, none mirrored by
+ * the running site. Four were attached by the owner while booking interviews on 19-20 September and
+ * sat unmirrored across two mornings of the health check until a backfill was run by hand; the fifth,
+ * saved from the WhatsApp inbox on 18 August, reached Drive only because a backfill happened to run
+ * weeks later. Nothing errored and nothing was logged — the rows simply had no `drive_mirror_file_id`,
+ * which is indistinguishable from a suppressed duplicate copy.
+ *
+ * Asserted on the SOURCE rather than by running the paths, because each needs Supabase, Drive and an
+ * access context; what actually went wrong was a missing call, and a missing call is visible here.
+ * Structural matches, never byte offsets — a pinning test that slices a fixed window false-fails the
+ * first time somebody adds a line above it.
+ */
+export function runCvUploadPathsMirrorTests() {
+  const read = (...parts: string[]) => fs.readFileSync(path.join(process.cwd(), ...parts), "utf8");
+
+  // The origin the cabinet reads has to actually be WRITTEN, or every in-app upload keeps filing
+  // itself "Source unknown" while this suite's folder assertions still pass on their fixtures.
+  const files = read("src", "lib", "recruitment", "files.ts");
+  assert.match(
+    files,
+    /upload_origin: input\.origin \?\? null/,
+    "uploadCandidateFile must persist the origin — the cabinet has no other way to know the channel",
+  );
+
+  const paths = [
+    {
+      origin: "interview_calendar",
+      what: "a CV attached while booking an interview",
+      where: ["src", "lib", "recruitment", "interview-calendar.ts"],
+    },
+    {
+      origin: "ats_upload",
+      what: "a file uploaded onto a candidate in the ATS",
+      where: ["app", "api", "recruitment", "candidates", "[id]", "files", "route.ts"],
+    },
+    {
+      origin: "whatsapp_inbox",
+      what: "an attachment saved out of the WhatsApp inbox",
+      where: ["src", "lib", "whatsapp-inbox", "store.ts"],
+    },
+  ];
+
+  for (const { origin, what, where } of paths) {
+    const source = read(...where);
+    const name = where.join("/");
+    assert.match(
+      source,
+      /import \{[^}]*mirrorCandidateCvsToDrive[^}]*\} from "@\/lib\/recruitment\/drive-cv-mirror"/,
+      `${name} uploads a CV, so it must import the mirror — ${what} reaches no inbound worker`,
+    );
+    assert.match(
+      source,
+      /await mirrorCandidateCvsToDrive\(/,
+      `${name} must actually CALL the mirror, not merely import it`,
+    );
+    assert.ok(
+      source.includes(`origin: "${origin}"`),
+      `${name} must stamp origin "${origin}", or the cabinet files ${what} under Red flags`,
+    );
+    // Best-effort, both of them: a CV that cannot reach Drive must never fail the booking, the
+    // upload response or the inbox save that already succeeded.
+    assert.match(
+      source,
+      /await mirrorCandidateCvsToDrive\([^)]*\)\.catch\(\(\) => \{\}\)/,
+      `${name} must swallow a mirror failure — the upload has already committed by then`,
+    );
+  }
+
+  // The scripts read the same column, so a re-file can never disagree with the running site about
+  // where an interview-calendar CV belongs. `cabinetInputFor` reads it off the FILE row it is handed,
+  // so a script whose SELECT omits it hands in undefined and quietly files the CV "Source unknown".
+  assert.match(
+    read("scripts", "cv-cabinet-context.mjs"),
+    /uploadOrigin: file\.upload_origin \?\? null/,
+    "the shared cabinet loader must pass the file's upload origin through",
+  );
+  for (const script of ["backfill-cvs-to-drive.mjs", "build-cv-cabinet.mjs"]) {
+    const source = read("scripts", script);
+    for (const select of source.match(/ats_files\?select=[^`&]+/g) ?? []) {
+      // The sibling/dedupe selects carry only the fingerprint columns and never reach the cabinet
+      // rule; the ones that also fetch a Drive column are the ones that do.
+      if (!select.includes("drive_mirror")) continue;
+      assert.ok(
+        select.includes("upload_origin"),
+        `${script}: a SELECT feeding the cabinet rule must fetch upload_origin — ${select}`,
+      );
+    }
   }
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { listCandidateFiles, uploadCandidateFile } from "@/lib/recruitment/files";
 import { validationError } from "@/lib/http/api-errors";
 import {
@@ -42,8 +43,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       fileName: file.name || "upload",
       mimeType: file.type || "application/octet-stream",
       bytes,
+      origin: "ats_upload",
       sizeBytes: file.size,
     });
+    // Mirrored from HERE, because no inbound worker will ever see this file. Best-effort and
+    // swallowed: the upload itself has already succeeded and the response must not fail on Drive.
+    // `mirrorCandidateCvsToDrive` filters to `kind = "cv"` itself, so a non-CV attachment costs one
+    // query and uploads nothing.
+    await mirrorCandidateCvsToDrive(id).catch(() => {});
     return NextResponse.json({ success: true, file: uploaded }, { status: 201 });
   } catch (error) {
     return recruitmentApiError(error, "File upload failed.");

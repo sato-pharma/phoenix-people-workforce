@@ -41,6 +41,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { candidateStatusLabels, normalizeCandidateStatus, statusChangeRefusal } from "@/lib/recruitment/candidate-status";
 import { createCandidate, getCandidate, setCandidateRating, updateCandidateStatus } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
 import { getFileForDownload, listCandidateFiles, uploadCandidateFile, type FileDownload } from "@/lib/recruitment/files";
 import {
@@ -1153,8 +1154,16 @@ export async function createInterviewBooking(
         fileName: cv.fileName,
         kind: "cv",
         mimeType: cv.mimeType,
+        origin: "interview_calendar",
         sizeBytes: cv.sizeBytes,
       });
+      // The CV reaches the owner's Drive cabinet from HERE, because nothing else will bring it.
+      // `mirrorCandidateCvsToDrive` runs on inbound intake and on a classification session, and a CV
+      // attached while booking an interview passes through neither: measured on production
+      // 2026-09-21, four of them sat in storage unmirrored for two days until a backfill was run by
+      // hand. Best-effort and swallowed, exactly as the intake worker treats it — an interview must
+      // still book when Drive is unreachable.
+      await mirrorCandidateCvsToDrive(candidateId).catch(() => {});
     }
   } else if (input.external) {
     name = input.external.name;

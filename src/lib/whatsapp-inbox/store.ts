@@ -11,6 +11,7 @@ import { hrIdForStorage } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { normalizePhone } from "@/lib/recruitment/candidate-matching";
 import { candidateRoleFamilyLabels, candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { getFileForDownload, uploadCandidateFile } from "@/lib/recruitment/files";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { REPLY_WINDOW_MS } from "@/lib/recruitment/inbound/whatsapp-conversation";
@@ -872,6 +873,7 @@ export async function saveInboxAttachmentToCandidate(input: {
     fileName: attachment.fileName,
     kind: input.kind,
     mimeType: attachment.mimeType,
+    origin: "whatsapp_inbox",
     sizeBytes: attachment.bytes.length,
   });
 
@@ -885,6 +887,12 @@ export async function saveInboxAttachmentToCandidate(input: {
     })
     .eq("id", input.messageId);
   if (error) throw error;
+
+  // Mirrored from HERE. Lifting an attachment out of the inbox onto a candidate creates no intake
+  // record, so no inbound worker ever revisits it: the CV saved this way on 2026-08-18 reached the
+  // cabinet only because a backfill happened to run weeks later. Best-effort and swallowed — the file
+  // is already on the candidate and the inbox row already updated.
+  await mirrorCandidateCvsToDrive(input.candidateId).catch(() => {});
 
   return {
     candidateName: (candidate as { full_name: string | null }).full_name?.trim() || "Unnamed candidate",
