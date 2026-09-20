@@ -55,14 +55,16 @@ import {
   canBookInterviews,
   canCommentOnInterviews,
   canShareInterviewCalendar,
+  interviewOutcomeGroup,
+  interviewOutcomeGroups,
   interviewOutcomeLabels,
-  interviewOutcomes,
   sessionSlotStarts,
   zoomStatusSentence,
   type InterviewBooking,
   type InterviewCalendarAccessLevel,
   type InterviewCalendarRole,
   type InterviewOutcome,
+  type InterviewOutcomeGroup,
   type InterviewSession,
 } from "@/lib/recruitment/interview-calendar-types";
 import {
@@ -1117,6 +1119,7 @@ function InterviewPanel({
 
   const zoomLine = zoomStatusSentence(booking.zoomStatus, booking.zoomError);
   const canBook = canBookInterviews(role);
+  const activeGroup = interviewOutcomeGroup(booking.outcome);
   const path = `/bookings/${encodeURIComponent(booking.id)}`;
   const target: MeetingTarget = { id: booking.id, kind: "booking" };
   const pollTarget: MeetingTarget = booking.sessionId ? { id: booking.sessionId, kind: "session" } : target;
@@ -1278,9 +1281,10 @@ function InterviewPanel({
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">How it went</p>
           {booking.canSetOutcome ? (
             <>
-              <div className="mt-1.5 flex flex-wrap gap-1.5" role="group">
-                {interviewOutcomes.map((option) => {
-                  const chosen = booking.outcome === option;
+              <div aria-label="Did they come" className="mt-1.5 flex flex-wrap gap-1.5" role="group">
+                {(Object.keys(interviewOutcomeGroups) as InterviewOutcomeGroup[]).map((group) => {
+                  const parent = interviewOutcomeGroups[group].parent;
+                  const chosen = activeGroup === group;
                   return (
                     <button
                       aria-pressed={chosen}
@@ -1289,20 +1293,42 @@ function InterviewPanel({
                         chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
                       )}
                       disabled={busy !== null}
-                      key={option}
-                      onClick={() => void chooseOutcome(chosen ? null : option)}
+                      key={group}
+                      onClick={() => void chooseOutcome(chosen ? null : parent)}
                       type="button"
                     >
-                      {interviewOutcomeLabels[option]}
+                      {interviewOutcomeLabels[parent]}
                     </button>
                   );
                 })}
               </div>
+              {activeGroup ? (
+                <div aria-label={activeGroup === "attended" ? "What was decided" : "Why they did not come"} className="mt-1.5 flex flex-wrap gap-1.5 border-l-[3px] border-l-slate-300 pl-2" role="group">
+                  {interviewOutcomeGroups[activeGroup].followUps.map((option) => {
+                    const chosen = booking.outcome === option;
+                    return (
+                      <button
+                        aria-pressed={chosen}
+                        className={cn(
+                          "border px-2 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50",
+                          chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
+                        )}
+                        disabled={busy !== null}
+                        key={option}
+                        onClick={() => void chooseOutcome(chosen ? interviewOutcomeGroups[activeGroup].parent : option)}
+                        type="button"
+                      >
+                        {interviewOutcomeLabels[option]}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
               <p className="mt-1.5 text-[11px] text-slate-500">
                 {booking.external
                   ? "Marks this interview only."
                   : "Shortlisted, Back-up, Rejected and Prioritized also move the candidate in Recruitment. Nothing is sent to them."}
-                {" "}Press the chosen one again to clear it.
+                {" "}Press a chosen one again to step back.
               </p>
             </>
           ) : booking.outcome ? (

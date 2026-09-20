@@ -244,6 +244,7 @@ export function zoomStatusSentence(status: InterviewZoomStatus, error: string | 
 // WHAT AN OUTCOME DOES TO THE CANDIDATE — pure, so the server and its test read the same table:
 //
 //   attended · did_not_come   the interview only; the candidate is not touched
+//   will_reschedule · no_answer · withdrew   (Didn't come's reasons) the same — the interview only
 //   shortlisted               status → Shortlisted
 //   backup                    status → Back-up (a sixth candidate status, added the same day)
 //   rejected                  status → Rejected            — NOTHING is ever sent to the candidate
@@ -251,17 +252,51 @@ export function zoomStatusSentence(status: InterviewZoomStatus, error: string | 
 //
 // An outside person (no Recruitment record) has the interview marked and nothing more.
 
-export const interviewOutcomes = ["attended", "did_not_come", "shortlisted", "backup", "rejected", "prioritized"] as const;
+// THE PICKER IS TWO STEPS (owner, 2026-09-20 — "separate attended and didn't come, then if attended
+// cascade its options, and if didn't come cascade its options"). Step one is Attended or Didn't come;
+// each opens its own follow-ups. The parent word stays a valid outcome on its own ("Attended" with no
+// decision yet); a follow-up REPLACES it, so one interview still carries exactly one word. Didn't
+// come's three reasons were his answer to "what should appear under it": they mark the interview only.
+export const interviewOutcomeGroups = {
+  attended: { followUps: ["shortlisted", "backup", "rejected", "prioritized"], parent: "attended" },
+  did_not_come: { followUps: ["will_reschedule", "no_answer", "withdrew"], parent: "did_not_come" },
+} as const;
+export type InterviewOutcomeGroup = keyof typeof interviewOutcomeGroups;
+
+export const interviewOutcomes = [
+  "attended",
+  "shortlisted",
+  "backup",
+  "rejected",
+  "prioritized",
+  "did_not_come",
+  "will_reschedule",
+  "no_answer",
+  "withdrew",
+] as const;
 export type InterviewOutcome = (typeof interviewOutcomes)[number];
 
 export const interviewOutcomeLabels: Record<InterviewOutcome, string> = {
   attended: "Attended",
   backup: "Back-up",
   did_not_come: "Didn't come",
+  no_answer: "No answer",
   prioritized: "Prioritized",
   rejected: "Rejected",
   shortlisted: "Shortlisted",
+  will_reschedule: "Will reschedule",
+  withdrew: "Withdrew",
 };
+
+/** Which step-one choice an outcome sits under, or null for no outcome. */
+export function interviewOutcomeGroup(outcome: InterviewOutcome | null | undefined): InterviewOutcomeGroup | null {
+  if (!outcome) return null;
+  for (const group of Object.keys(interviewOutcomeGroups) as InterviewOutcomeGroup[]) {
+    const { followUps, parent } = interviewOutcomeGroups[group];
+    if (outcome === parent || (followUps as readonly string[]).includes(outcome)) return group;
+  }
+  return null;
+}
 
 export function isInterviewOutcome(value: unknown): value is InterviewOutcome {
   return typeof value === "string" && (interviewOutcomes as readonly string[]).includes(value);
