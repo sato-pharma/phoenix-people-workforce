@@ -191,8 +191,14 @@ import path from "node:path";
  * taller and never pushes the page sideways. The scope card was the exception — a bare grid item,
  * so it was given `min-w-0` in the same change to stop a long name stretching its track. Pinned by
  * tests/approvals-hub-resolves-the-employee-record-name.test.ts.
+ *
+ * 181 -> 180 on 2026-09-21: the GPS check-in address under each stop on the field-workforce route
+ * map (field-workforce-route-map.tsx). That line is the one place that says WHERE the rep actually
+ * stood, and a Cairo street address is exactly the length an ellipsis eats. Its parent is already
+ * `min-w-0 flex-1` beside a `shrink-0` time column, so wrapping costs no horizontal scroll at
+ * 375px. Pinned by tests/crm-route-map-address-never-ellipsises.test.ts.
  */
-const BASELINE = 181;
+const BASELINE = 180;
 
 const ROOTS = ["app", "src"];
 
