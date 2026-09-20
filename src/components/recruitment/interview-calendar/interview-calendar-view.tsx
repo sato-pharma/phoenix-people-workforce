@@ -765,6 +765,7 @@ export function InterviewCalendarView({
                               <span>{formatDuration(item.booking.durationMinutes)}</span>
                               {item.booking.sessionTitle ? <span className="break-words">in {item.booking.sessionTitle}</span> : null}
                               {item.booking.external ? <span>from outside</span> : null}
+                              {item.booking.outcome ? <span className="font-bold text-slate-900">{interviewOutcomeLabels[item.booking.outcome]}</span> : null}
                               {item.booking.candidateJobTitle ? <span className="break-words">{item.booking.candidateJobTitle}</span> : null}
                             </span>
                           </span>

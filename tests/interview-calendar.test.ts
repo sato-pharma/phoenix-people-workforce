@@ -142,6 +142,11 @@ function runOutcomeTests() {
   const body = service.slice(setStart, service.indexOf("\n}\n", setStart));
   assert.ok(body.indexOf(".update(") > -1 && body.indexOf(".update(") < body.indexOf("applyOutcomeToCandidate("), "the outcome is saved first, the candidate moves after");
   assert.ok(!/notify|sendEmail|sendWhatsApp|sendMail/i.test(body), "recording an outcome never sends anything");
+  // The label is drawn on BOTH the desktop tile and the phone-width day card (the card was missed once).
+  const view = stripComments(read("src/components/recruitment/interview-calendar/interview-calendar-view.tsx"));
+  const tile = (owner: string) => `{${owner}.outcome ? <span className="font-bold text-slate-900">{interviewOutcomeLabels[${owner}.outcome]}</span> : null}`;
+  assert.ok(view.includes(tile("booking")), "the desktop tile says how it went");
+  assert.ok(view.includes(tile("item.booking")), "and so does the phone-width day card");
   const route = read("app/api/recruitment/interview-calendar/bookings/[id]/outcome/route.ts");
   assert.ok(route.includes("assertSameOriginMutation") && route.includes("export async function PATCH"), "the route is a same-origin PATCH");
 }
