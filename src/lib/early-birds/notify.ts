@@ -70,10 +70,19 @@ function buildEarlyBirdsEmailMetrics(candidate: EarlyBirdsPendingCandidate) {
       label: "GPS-verified visits",
       value: `${candidate.gpsVerifiedVisits} of ${candidate.gpsEligibleVisits}`,
     },
-    { label: "Regular visits", value: candidate.regularVisits },
+    // The credited figure — regularVisitsWithCheckin, never the regularVisits total — so a
+    // manager approving from the email never reads more Regular credit than the score reflects.
+    { label: "Regular visits", value: candidate.regularVisitsWithCheckin },
+  ];
+  // Rule 10 (owner, 2026-09-20): a SEPARATE line, shown only when it is not zero — never "of
+  // those", since these visits earned no Regular credit at all.
+  if (candidate.regularVisitsNoCheckin > 0) {
+    rows.push({ label: "Also Regular, no check-in", value: candidate.regularVisitsNoCheckin });
+  }
+  rows.push(
     { label: "Days finished first", value: candidate.dailyWins },
     { label: "Score", value: `${Math.round(candidate.totalScore * 1000)} / 1000` },
-  ];
+  );
 
   if (candidate.candidateRank > 1) {
     // A second or third recommendation must explain itself, or it reads as the system changing
