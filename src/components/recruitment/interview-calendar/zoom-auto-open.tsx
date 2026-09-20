@@ -83,7 +83,7 @@ export function ZoomAutoOpen({ api }: { api: CalendarApi }) {
         if (opened.has(key)) continue;
         // No `noopener` feature: with it a window.open answers null even when the tab opened, which would
         // read as a block. The opener is cut by hand instead.
-        const tab = window.open(meeting.joinUrl, "_blank");
+        const tab = window.open(meeting.openUrl, "_blank");
         if (tab) {
           tab.opener = null;
           rememberOpened(key);
@@ -125,7 +125,7 @@ export function ZoomAutoOpen({ api }: { api: CalendarApi }) {
   }
 
   function joinNow(meeting: DueZoomInterview) {
-    const tab = window.open(meeting.joinUrl, "_blank");
+    const tab = window.open(meeting.openUrl, "_blank");
     if (tab) tab.opener = null;
     rememberOpened(keyOf(meeting));
     setBlocked((current) => current.filter((entry) => keyOf(entry) !== keyOf(meeting)));

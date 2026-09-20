@@ -62,10 +62,12 @@ import {
 import {
   createZoomMeeting,
   deleteZoomMeeting,
+  getZoomHostStartUrl,
   readZoomConfig,
   resetZoomTokenCacheForTests,
   zoomMeetingBody,
   type ZoomConfig,
+  zoomMeetingIdFromJoinUrl,
 } from "../src/lib/zoom/meetings.ts";
 import { stripComments } from "./support/comment-strip.ts";
 
@@ -442,12 +444,14 @@ async function runZoomTests() {
   const input = { dateKey: "2026-11-01", durationMinutes: 45, startMinutes: 9 * 60 + 30, topic: "Interview · Mona Ali" };
   assert.deepEqual(zoomMeetingBody(input), {
     duration: 45,
-    settings: { join_before_host: false, waiting_room: true },
+    settings: { join_before_host: false, waiting_room: false },
     start_time: "2026-11-01T09:30:00",
     timezone: "Africa/Cairo",
     topic: "Interview · Mona Ali",
     type: 2,
   }, "a scheduled meeting at the Cairo wall-clock time, with no zone on the time — Zoom does the daylight saving");
+  assert.equal(zoomMeetingBody(input).settings.waiting_room, false, "no waiting room: the owner had to admit every candidate by hand (2026-09-20)");
+  assert.equal(zoomMeetingBody(input).settings.join_before_host, false, "but nobody is in before the interviewer starts it");
 
   resetZoomTokenCacheForTests();
   const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
@@ -493,6 +497,21 @@ async function runZoomTests() {
     /Zoom refused Phoenix's sign-in \(400: Invalid client_id or client_secret\)/,
     "a refusal says what Zoom said, so the calendar can show it",
   );
+
+  // The interviewer's link is the HOST link, so the meeting starts by itself (owner, 2026-09-20).
+  resetZoomTokenCacheForTests();
+  const hosting = async (url: string) => {
+    if (url.startsWith("https://zoom.us/oauth/token")) return new Response(JSON.stringify({ access_token: "tok-2", expires_in: 3599 }), { status: 200 });
+    if (url === "https://api.zoom.us/v2/meetings/96901316749") {
+      return new Response(JSON.stringify({ id: 96901316749, join_url: "https://zoom.us/j/96901316749?pwd=x", start_url: "https://zoom.us/s/96901316749?zak=abc" }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ id: 5, join_url: "https://zoom.us/j/5" }), { status: 200 });
+  };
+  assert.equal(await getZoomHostStartUrl(config, "96901316749", hosting), "https://zoom.us/s/96901316749?zak=abc", "the host link, not the guest link");
+  await assert.rejects(() => getZoomHostStartUrl(config, "5", hosting), /without a host link/, "no host link from Zoom is an error the caller falls back from");
+  assert.equal(zoomMeetingIdFromJoinUrl("https://zoom.us/j/96901316749?pwd=i4LnL9nc3IfU7XX8FItmQah9s3BNaB.1"), "96901316749");
+  assert.equal(zoomMeetingIdFromJoinUrl("https://us06web.zoom.us/j/88012345678"), "88012345678");
+  assert.equal(zoomMeetingIdFromJoinUrl("https://example.com/not-a-meeting"), null);
   resetZoomTokenCacheForTests();
 }
 

@@ -194,12 +194,14 @@ function runWiringTests() {
   assert.match(due, /chosen \? chosen === viewer : caller\.own === "owner"/, "someone the calendar is merely shared with is never sent to a meeting that is not theirs");
   assert.match(due, /booking\.platform !== "zoom" \|\| !booking\.zoomJoinUrl \|\| booking\.ended/, "only a live Zoom meeting");
   assert.match(due, /seen\.has\(booking\.zoomJoinUrl\)/, "a session's slots share one link and open one tab");
+  assert.match(due, /openUrl: hostUrl \?\? booking\.zoomJoinUrl/, "the interviewer is sent the HOST link so the meeting starts itself, the guest link only when Zoom will not give it");
 
   // The screen polls, opens once per interview, and says so when the browser blocks the tab.
   const auto = stripComments(read("src/components/recruitment/interview-calendar/zoom-auto-open.tsx"));
   assert.match(auto, /api\.get\("\/zoom-due"\)/, "it asks the server which are starting");
   assert.match(auto, /rememberOpened\(key\)/, "each interview opens once");
   assert.match(auto, /Join Zoom now/, "a blocked pop-up is said out loud, with a button");
+  assert.doesNotMatch(auto, /joinUrl/, "the screen opens what the server chose (openUrl), never the guest link directly");
   assert.doesNotMatch(auto, /window\.open\([^)]*noopener/, "the open is not made with noopener, which answers null even when the tab opened");
   assert.match(stripComments(read("src/components/recruitment/interview-calendar/interview-calendar-view.tsx")), /link \? null : <ZoomAutoOpen api=\{api\} \/>/, "it runs inside Phoenix, not on a copy link");
 
