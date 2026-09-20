@@ -2811,6 +2811,26 @@ His words, profanity left out: *"logged and published months, we can't touch the
 
 The fix changes how a sheet is READ, so it reaches only uploads made after it ships. Re-importing an August sheet to "pick up" the new reading would restate a published month, which is exactly what he forbade. A published month keeps its rows as they were imported.
 
+## NSM scope — owner rulings, 2026-09-20
+
+An audit of Reps List, Reps Plans, KPIs and their related screens for Medical Rep, District Manager and National Sales Manager found one real inconsistency and three smaller ones. Each was put to the owner as multiple choice; his answers are the rulings below.
+
+### What the audit found (live directory, read-only)
+- **Medical Rep**: 0 of 67 active reps had a scope other than themselves. A rep opening Reps List is redirected to My List.
+- **District Manager**: none of the 19 saw an other-line or senior person.
+- **NSM**: KPIs, Reps Plans, CRM Master and Double Visit showed each NSM only their own line (Pedia 18, CNS 26, Anti Infective 23), but Reps List put the NSM in its company group and showed all 67.
+
+### The rulings
+- **Reps List**: an NSM sees only their own line (`doctor-list-roles.ts`, `LINE_ROLES`; PR #4126).
+- **Planning Calendar**: the CNS NSM was the one NSM left on the unrestricted default; he now sees the Training Manager's plans plus all CNS plans, like the Anti Infective NSM (`calendar-service.ts`; PR #4126).
+- **Declined-offer people**: `manager-scope.ts` counted everyone but resigned and terminated as active, so two District Managers showed one declined-offer person KPIs dropped. It now uses `isActiveLifecycleStatus` (`active`, `on_leave`) (PR #4126).
+- **Direct-order venue picker**: scoped for NSMs too. It had been pinned to company reach so the Reps List change stayed narrow (PR #4128). The write check shares the scope, so a contact outside the NSM's line is refused as well as hidden.
+- **Acting District Manager**: an account holding the District Manager app role with a Medical Representative title (one exists) sees exactly what a District Manager sees. Her own row is not shown to her. She reaches her two reps on KPIs and Reps List, and her NSM and the line's Product Managers reach her.
+
+### What was measured and left alone
+- Three active Anti Infective reps looked orphaned only because the check searched for DM or RM titles; an NSM sits directly above the acting DM, so nothing was invisible.
+- The Product Managers and Group Product Manager on an NSM's Reps List are staff seats, not reps, and are not in the venue picker.
+
 ## Every reply opens with its next step, and always ends in words he can send — owner rules, 2026-09-07, 2026-09-15 and 2026-09-18
 
 The 2026-09-07 amendment moved the next step to the TOP of the reply (the account is in the §4 text
