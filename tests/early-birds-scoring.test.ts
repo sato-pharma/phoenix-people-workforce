@@ -480,7 +480,11 @@ export function runEarlyBirdsScoringTests() {
   {
     assert.deepEqual(EARLY_BIRDS_WEIGHTS, { start: 0.3, consistency: 0.25, regular: 0.2, volume: 0.15, firstPlace: 0.1 });
     assert.equal(EARLY_BIRDS_GPS_QUALITY_FLOOR, 0.85);
-    assert.equal(EARLY_BIRDS_SCORING_VERSION, 1);
+    assert.equal(
+      EARLY_BIRDS_SCORING_VERSION,
+      2,
+      "rule 10 (owner, 2026-09-20) changed the Regular component's formula — bump this whenever a constant or formula above changes",
+    );
     assert.equal(
       EARLY_BIRDS_VISITS_PER_DAY_TARGET,
       13,

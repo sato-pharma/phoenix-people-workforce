@@ -22,8 +22,12 @@ import { earlyBirdsPeriodDays } from "@/lib/early-birds/period";
 /**
  * Bump when any constant below changes. Persisted on every snapshot so an old fortnight can always
  * be read back with the rule that actually produced it, instead of being silently reinterpreted.
+ *
+ * 2 (rule 10, owner 2026-09-20): the Regular component now scores off regularVisitsWithCheckin
+ * (checked-in only), not the raw regularVisits total — identical inputs can now score
+ * differently than a version-1 snapshot did.
  */
-export const EARLY_BIRDS_SCORING_VERSION = 1;
+export const EARLY_BIRDS_SCORING_VERSION = 2;
 
 /** Weights sum to exactly 1.00. Changing one is a business decision, not a tuning knob. */
 export const EARLY_BIRDS_WEIGHTS = {
