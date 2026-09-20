@@ -31,8 +31,13 @@ export type EarlyBirdsPendingCandidate = {
   daysWithSubmission: number;
   expectedWorkingDays: number;
   regularVisits: number;
+  /** Of `regularVisits`, the ones WITH a matching GPS check-in — the figure that actually earned
+   * Regular credit (rule 10, owner 2026-09-20). Show this, never the `regularVisits` total, as
+   * "Regular visits" anywhere the number is read as a justification for the score. */
+  regularVisitsWithCheckin: number;
   /** Regular visits with NO matching GPS check-in (rule 10, owner 2026-09-20) — real work, kept off
-   * Campaign, but never blended into `regularVisits`' credited count. Identified on its own. */
+   * Campaign, but never blended into `regularVisitsWithCheckin`'s credited count. Identified on its
+   * own. */
   regularVisitsNoCheckin: number;
   gpsVerifiedVisits: number;
   gpsEligibleVisits: number;
@@ -55,6 +60,7 @@ type CandidateRow = {
   days_with_submission: number;
   expected_working_days: number;
   regular_visits: number;
+  regular_visits_with_checkin: number;
   regular_visits_no_checkin: number;
   gps_verified_visits: number;
   gps_eligible_visits: number;
@@ -67,10 +73,14 @@ export function earlyBirdsReasonSummary(candidate: EarlyBirdsPendingCandidate): 
     `${candidate.daysWithSubmission}/${candidate.expectedWorkingDays} days`,
     `median ${formatStartClock(candidate.medianStartMinutes)}`,
     `${candidate.gpsVerifiedVisits} GPS-verified`,
-    `${candidate.regularVisits} Regular visits`,
-    // Rule 10 (owner, 2026-09-20): shown whenever it is not zero, so a manager never mistakes the
-    // Regular count above for a fully checked-in one.
-    ...(candidate.regularVisitsNoCheckin > 0 ? [`${candidate.regularVisitsNoCheckin} with no check-in`] : []),
+    // The credited figure — regularVisitsWithCheckin, never the regularVisits total — so this
+    // never reads as more Regular credit than the score actually reflects.
+    `${candidate.regularVisitsWithCheckin} Regular visits`,
+    // Rule 10 (owner, 2026-09-20): a SEPARATE figure, shown whenever it is not zero — never "of
+    // those", since these visits earned no Regular credit at all.
+    ...(candidate.regularVisitsNoCheckin > 0
+      ? [`${candidate.regularVisitsNoCheckin} more Regular, no check-in`]
+      : []),
     `${candidate.dailyWins} first place${candidate.dailyWins === 1 ? "" : "s"}`,
   ].join(" · ");
 }
@@ -132,7 +142,7 @@ export async function listPendingEarlyBirdsForManagers(
         .select(
           "id, snapshot_id, candidate_rank, eligible, employee_hr_id, employee_name, total_score, " +
             "median_start_minutes, days_with_submission, expected_working_days, regular_visits, " +
-            "regular_visits_no_checkin, gps_verified_visits, gps_eligible_visits, daily_wins",
+            "regular_visits_with_checkin, regular_visits_no_checkin, gps_verified_visits, gps_eligible_visits, daily_wins",
         )
         .in("snapshot_id", snapshotIds)
         .order("candidate_rank", { ascending: true }),
@@ -193,6 +203,7 @@ export async function listPendingEarlyBirdsForManagers(
         daysWithSubmission: row.days_with_submission,
         expectedWorkingDays: row.expected_working_days,
         regularVisits: row.regular_visits,
+        regularVisitsWithCheckin: row.regular_visits_with_checkin,
         regularVisitsNoCheckin: row.regular_visits_no_checkin,
         gpsVerifiedVisits: row.gps_verified_visits,
         gpsEligibleVisits: row.gps_eligible_visits,
