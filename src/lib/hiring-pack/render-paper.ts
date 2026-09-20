@@ -74,6 +74,7 @@ import {
   renderMutualTerminationHtml,
   renderResignationHtml,
 } from "@/lib/hiring-pack/render-labour-exit";
+import { parsePrintAddress, withPrintAddress } from "@/lib/hiring-pack/print-address";
 import { getHiringPack } from "@/lib/hiring-pack/service";
 import {
   currentTemplateVersion,
@@ -106,7 +107,8 @@ function housePaper(template: HrPaperTemplate) {
     copies: number,
     templateId?: string | null,
     fields?: readonly DocumentFieldRow[],
-  ) => renderHrPaperHtml(data, copies, template, templateId, fields ?? []);
+    statedCopies?: number,
+  ) => renderHrPaperHtml(data, copies, template, templateId, fields ?? [], statedCopies);
 }
 
 const RENDERERS: Record<
@@ -117,6 +119,10 @@ const RENDERERS: Record<
       copies: number,
       templateId?: string | null,
       fields?: readonly DocumentFieldRow[],
+      // The copy count a paper that STATES it should state, when that is not the count rendered —
+      // the PDF route renders one copy and stamps the rest, and must not write "one copy" on a run of
+      // three. Only the house papers read it.
+      statedCopies?: number,
     ) => string;
     copies: number;
   }
@@ -338,6 +344,12 @@ export function resolveCopies(raw: string | null, fallback: number): number {
  */
 export async function renderHiringPaper(input: {
   access: AccessContext;
+  /**
+   * Which company address the paper prints, chosen at the desk — `registered` or `office`
+   * (`print-address.ts`). Absent is the normal case and prints the registered head office, exactly as
+   * every paper did before the choice existed.
+   */
+  address?: string | null;
   copies?: string | null;
   /**
    * The device a CUSTODY receipt is being printed for, from the device register.
@@ -356,6 +368,8 @@ export async function renderHiringPaper(input: {
   data?: HiringPackData;
   document: PrintableDocument;
   hrId: string;
+  /** The count the paper states about itself, when it differs from `copies` — see `RENDERERS`. */
+  statedCopies?: string | null;
   version?: string | null;
 }): Promise<RenderedPaper | PaperRefusal> {
   const { access, document: requested, hrId } = input;
@@ -383,7 +397,10 @@ export async function renderHiringPaper(input: {
     }
   }
 
-  const data = input.data ?? (await getHiringPack(hrId, input.custodyDeviceId ?? null));
+  const data = withPrintAddress(
+    input.data ?? (await getHiringPack(hrId, input.custodyDeviceId ?? null)),
+    parsePrintAddress(input.address),
+  );
 
   // A COMPANY TEMPLATE IS RESOLVED FROM THE DATABASE, not from a table in this file. Everything
   // after this point is the same for both kinds; the branch is only about WHERE the document and
@@ -436,9 +453,16 @@ export async function renderHiringPaper(input: {
     ? template.id
     : (requestedVersion ?? currentTemplateVersion(requested as HiringPackDocument).id);
   const fields = await loadDocumentFieldLayout(requested, versionId);
+  const statedCopies = input.statedCopies ? resolveCopies(input.statedCopies, copies) : undefined;
   const html = template
     ? renderCustomTemplateHtml(template, data, copies, fields)
-    : RENDERERS[requested as HiringPackDocument].render(data, copies, requestedVersion, fields);
+    : RENDERERS[requested as HiringPackDocument].render(
+        data,
+        copies,
+        requestedVersion,
+        fields,
+        statedCopies,
+      );
 
   return { copies, data, fields, html, ok: true, template, versionId };
 }

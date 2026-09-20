@@ -212,7 +212,7 @@ export function isOfficialPackFormDocument(document: string): document is Offici
 
 /**
  * The HR letters an employee asks for while he works here — the salary letter, which states the
- * BASIC salary (the owner, 2026-09-13), in English and now in Arabic. Neither arriving nor leaving,
+ * salary — the BASIC in English (owner, 2026-09-13), the BASE in Arabic (2026-09-20). Neither arriving nor leaving,
  * so both are filed under "other" with a folder of their own on the drive.
  *
  * NEITHER IS IN `HOUSE_PAPER_DOCUMENTS`, though for opposite reasons. `salaryLetterEn` has its own
