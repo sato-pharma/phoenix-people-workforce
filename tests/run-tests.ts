@@ -530,6 +530,7 @@ import { runWeeklyWeekComparisonStockTotalTests } from "./weekly-week-comparison
 import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report-unit-totals.test.ts";
 import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-paging.test.ts";
 import { runWeeklyCombinedReportLivePriceTests } from "./weekly-combined-report-live-price.test.ts";
+import { runWeeklyCombinedReportScopeTests } from "./weekly-combined-report-scope.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -6340,6 +6341,11 @@ await runTest(
 await runTest(
   "the weekly Combined Report prices every row at today's Product Master price, the same rule as the dashboard: a row imported at 50 a unit reads 60 when the master says 60, on its upload sheet and the Summary total; Direct keeps its sheet value, a product with no price or a retired one keeps the stored value, and a price list that cannot be read fails the export",
   runWeeklyCombinedReportLivePriceTests,
+);
+
+await runTest(
+  "the weekly Combined Report applies the viewer's weekly access scope: below the CEO and the Super Admin no restricted product and no Head Office product reaches the file, an upload the scope cut prints the row count, units and value of what he may see and never the totals stored on it (an upload whose rows were all hidden prints zeros), and the route resolves the scope and rate-limits; before the fix the SFE Manager, who holds the upload permission, could download all of it",
+  runWeeklyCombinedReportScopeTests,
 );
 
 await runTest(

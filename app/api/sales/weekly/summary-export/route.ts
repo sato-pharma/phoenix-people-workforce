@@ -45,9 +45,10 @@ const VS_TARGET_MAX_MONTHS = 12;
 // access scope, so a product- or territory-scoped viewer gets the same redaction they get on screen.
 // Its own rate-limit scope, so downloading this cannot consume the BI workbook's budget.
 //
-// Note the sibling /api/sales/weekly/export-batches route has neither a rate limit nor an access
-// scope — it reads with the service-role client directly. That is not a pattern to copy here; doing
-// so would leak restricted products and out-of-territory branches into a management workbook.
+// Note the sibling /api/sales/weekly/export-batches route read with the service-role client and had
+// neither a rate limit nor an access scope until 2026-09-20, when it was given both. That is not a
+// pattern to copy: a route that skips the scope leaks restricted products and out-of-territory
+// branches into a management workbook.
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);

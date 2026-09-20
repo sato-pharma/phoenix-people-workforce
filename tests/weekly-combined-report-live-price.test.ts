@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
+import type { WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import { buildCombinedReportExport, loadCombinedReportPrices } from "../src/lib/sales/weekly/combined-report.ts";
 import { livePriceMap, liveSalesValue } from "../src/lib/sales/weekly/live-price.ts";
 
@@ -122,6 +123,10 @@ const TABLES: Record<string, Row[]> = {
 
 const SELECTED = ["upload-distributor", "upload-direct"];
 
+// Judged for a viewer who may see every row (the Super Admin's scope); what the scope hides from everyone
+// else is weekly-combined-report-scope.test.ts.
+const SEES_EVERYTHING: WeeklyAccessScope = { tier: "full", canViewRestricted: true, canViewHeadOffice: true };
+
 function tableRows(sheet: ExcelJS.Worksheet, header: string): { header: number; body: ExcelJS.Row[]; total: ExcelJS.Row } {
   let headerRow = 0;
   let totalRow = 0;
@@ -147,7 +152,7 @@ function columnOf(sheet: ExcelJS.Worksheet, headerRow: number, label: string): n
 
 export async function runWeeklyCombinedReportLivePriceTests() {
   const exported = fakePostgrest(TABLES);
-  const buffer = await buildCombinedReportExport(exported.client, SELECTED, new Date("2026-09-18T12:00:00.000Z"));
+  const buffer = await buildCombinedReportExport(exported.client, SELECTED, SEES_EVERYTHING, new Date("2026-09-18T12:00:00.000Z"));
   assert.ok(buffer, "the selected uploads exist, so there is a file");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
@@ -188,7 +193,7 @@ export async function runWeeklyCombinedReportLivePriceTests() {
   // ── A price list that cannot be read fails the export; it never prints the stored values instead ─────
   const blind = fakePostgrest(TABLES, ["source_of_sales_products"]);
   await assert.rejects(
-    buildCombinedReportExport(blind.client, SELECTED),
+    buildCombinedReportExport(blind.client, SELECTED, SEES_EVERYTHING),
     (error: Error & { code?: string }) =>
       /Product Master prices could not be read/.test(error.message) && error.code === "load_failed",
     "with no readable price list the Combined Report refuses, rather than print import-day values as if current",
