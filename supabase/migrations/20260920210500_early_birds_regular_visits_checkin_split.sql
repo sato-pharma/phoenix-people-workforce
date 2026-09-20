@@ -31,6 +31,15 @@ alter table public.early_birds_candidates
   add column regular_visits_with_checkin integer not null default 0,
   add column regular_visits_no_checkin integer not null default 0;
 
+-- Every row that already existed was scored under version 1, which credited the FULL regular_visits
+-- count — the 0 default from the ALTER above would otherwise read as "this rep earned no Regular
+-- credit" on an already-frozen ranking. Backfill it to what actually earned the score.
+update public.early_birds_candidates
+  set regular_visits_with_checkin = regular_visits,
+      regular_visits_no_checkin = 0
+  where regular_visits_with_checkin = 0
+    and regular_visits_no_checkin = 0;
+
 create or replace function public.phx_close_early_birds_period(p_period_key text, p_period_start date, p_period_end date, p_manager_hr_id text, p_manager_hr_id_compact text, p_scoring_version smallint, p_weights jsonb, p_contested_days integer, p_trigger text, p_computed_by text, p_replace boolean, p_candidates jsonb)
  returns jsonb
  language plpgsql

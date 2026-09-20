@@ -284,6 +284,11 @@ export function EarlyBirdsRepHistoryPanel({
                       ["1st places", String(entry.dailyWins)],
                       ["GPS days", entry.gpsShare === null ? "—" : formatPercent(entry.gpsShare)],
                       ["Points", entry.eligible ? formatPoints(entry.totalScore) : "—"],
+                      // Rule 10 (owner, 2026-09-20): identified on its own, only when it isn't zero —
+                      // a closed fortnight must still be able to show these, not just the live board.
+                      ...(entry.regularVisitsNoCheckin > 0
+                        ? [["Regular, no check-in", String(entry.regularVisitsNoCheckin)]]
+                        : []),
                     ].map(([label, value]) => (
                       <div className="min-w-0 border border-slate-200 px-2 py-1.5" key={label}>
                         <p className="break-words text-phx-3xs font-black uppercase tracking-wider text-slate-400">
@@ -389,6 +394,14 @@ export function EarlyBirdsRepHistoryPanel({
                       </td>
                       <td className="break-words px-3 py-2 align-top tabular-nums text-slate-700">
                         {entry.gpsShare === null ? "—" : formatPercent(entry.gpsShare)}
+                        {/* Rule 10 (owner, 2026-09-20): identified on its own, only when it isn't
+                            zero — a closed fortnight must still be able to show it, not just the
+                            live board. */}
+                        {entry.regularVisitsNoCheckin > 0 ? (
+                          <span className="mt-0.5 block text-phx-3xs font-semibold text-slate-400">
+                            {entry.regularVisitsNoCheckin} Regular, no check-in
+                          </span>
+                        ) : null}
                       </td>
                       <td className="break-words px-3 py-2 align-top font-black tabular-nums text-slate-900">
                         {entry.eligible ? formatPoints(entry.totalScore) : "—"}
