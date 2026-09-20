@@ -111,8 +111,14 @@ export type ZoomMeetingInput = {
  * The meeting as Zoom wants it: a scheduled meeting (type 2) at a Cairo wall-clock time.
  *
  * `start_time` is written WITHOUT a zone and `timezone` names Cairo, so Zoom does the daylight-saving
- * arithmetic and the meeting shows the same hour the calendar does. A waiting room, and nobody in
- * before the host: an interview must not start without the interviewer.
+ * arithmetic and the meeting shows the same hour the calendar does. Nobody in before the host: an
+ * interview must not start without the interviewer.
+ *
+ * NO WAITING ROOM — the owner, 2026-09-20, after a live interview: "the meeting was by permission and I
+ * had to accept the employees entering". With `join_before_host: false` a candidate who arrives early
+ * still waits for the interviewer to start it, and once it has started they walk straight in; the
+ * waiting room only added a click per person. (Zoom can still force a waiting room from the account's
+ * own settings, which no API field overrides.)
  */
 export function zoomMeetingBody(input: ZoomMeetingInput) {
   const hours = String(Math.floor(input.startMinutes / 60)).padStart(2, "0");
@@ -121,7 +127,7 @@ export function zoomMeetingBody(input: ZoomMeetingInput) {
     duration: input.durationMinutes,
     settings: {
       join_before_host: false,
-      waiting_room: true,
+      waiting_room: false,
     },
     start_time: `${input.dateKey}T${hours}:${minutes}:00`,
     timezone: "Africa/Cairo",
@@ -151,6 +157,26 @@ export async function createZoomMeeting(
     throw new ZoomRequestError("Zoom created a meeting but did not return its link", 502);
   }
   return { id, joinUrl };
+}
+
+/**
+ * The link that opens a meeting AS ITS HOST, so it starts by itself. The `join_url` is the guest link:
+ * opened by the interviewer it lands them in the meeting as a guest, waiting for a host who never
+ * arrives, until they start it from the Zoom app by hand (owner, 2026-09-20). The `start_url` carries
+ * the host's own token and expires, so it is asked for fresh each time — never stored — and handed
+ * only to the person whose interview it is.
+ */
+export async function getZoomHostStartUrl(config: ZoomConfig, meetingId: string, fetchImpl: ZoomFetch = fetch): Promise<string> {
+  const body = await zoomGetJson(config, `/meetings/${encodeURIComponent(meetingId)}`, "Zoom did not give the host link", fetchImpl);
+  const startUrl = typeof body.start_url === "string" ? body.start_url : "";
+  if (!startUrl.startsWith("https://")) throw new ZoomRequestError("Zoom answered without a host link", 502);
+  return startUrl;
+}
+
+/** The meeting id inside a Zoom join link (`https://zoom.us/j/96901316749?pwd=…`), or null. */
+export function zoomMeetingIdFromJoinUrl(joinUrl: string): string | null {
+  const match = /\/j\/(\d{8,13})(?:[/?#]|$)/.exec(joinUrl);
+  return match ? match[1] : null;
 }
 
 export async function updateZoomMeeting(

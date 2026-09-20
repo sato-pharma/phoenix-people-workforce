@@ -277,7 +277,9 @@ export type DueZoomInterview = {
   candidateName: string;
   dateKey: string;
   startMinutes: number;
-  joinUrl: string;
+  /** What the screen opens: the host link when Zoom gave one (the meeting starts itself), else the guest link. */
+  openUrl: string;
+  asHost: boolean;
 };
 
 export type InterviewCalendarMe = {
