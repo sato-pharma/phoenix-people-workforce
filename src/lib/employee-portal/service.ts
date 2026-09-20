@@ -87,6 +87,7 @@ import { calculateIncentive2026 } from "@/lib/incentives/scheme-2026";
 import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
+import { withLiveOutstationEmployeeNames } from "@/lib/outstation/employee-name";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
 import {
@@ -1750,7 +1751,7 @@ export async function getEmployeePortalData(
       salesScope,
       targetSalesHrIds,
     }),
-    () => prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+    () => prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }).then(withLivePortalExpenseNames),
     () => prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     () => listEmployeeDocuments(currentHrId),
     () => fetchPortalNotifications(currentHrId),
@@ -2514,6 +2515,29 @@ function mapOutstationExpenseToPayrollApproval(row: Record<string, unknown>): Pa
   return mapOutstationRequestRowToPayrollApproval(row);
 }
 
+/**
+ * Show the employee's CURRENT record name on portal expense rows.
+ *
+ * `specialist` is a snapshot frozen at write time, so a correction to an employee record never
+ * reaches rows already stored — see employee-name.ts. The portal is not a self-only screen: the
+ * Team Comparison view reads a manager's whole DSM line, and the personal reads run under the
+ * caller's expense ACCESS SCOPE, so a manager's list carries other people's names. Those names
+ * surface on the recent-trips table (`employee`) and on the workload dashboard (`ownerName`).
+ *
+ * READ-SIDE ONLY, like every other seam: the stored column keeps what the row was written with.
+ * Applied here rather than inside listPayrollExpenses itself, because that reader is also what the
+ * Expense Approvals editor reads through — and that screen writes back the rows it read.
+ */
+async function withLivePortalExpenseNames<T extends { hrId?: string | null; specialist: string }>(
+  expenses: T[],
+): Promise<T[]> {
+  return withLiveOutstationEmployeeNames(
+    expenses,
+    (expense) => ({ hrId: expense.hrId, storedName: expense.specialist }),
+    (expense, specialist) => ({ ...expense, specialist }),
+  );
+}
+
 async function listOutstationExpensesForPortal(hrIds?: Array<string | null | undefined>) {
   const normalizedFilter = new Set(
     (hrIds ?? [])
@@ -2532,13 +2556,15 @@ async function listOutstationExpensesForPortal(hrIds?: Array<string | null | und
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>)
-    .map(mapOutstationExpenseToPayrollApproval)
-    .filter((expense) => {
-      if (normalizedFilter.size === 0) return true;
-      const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
-      return Boolean(canonicalHrId && normalizedFilter.has(canonicalHrId));
-    });
+  return withLivePortalExpenseNames(
+    ((data ?? []) as Array<Record<string, unknown>>)
+      .map(mapOutstationExpenseToPayrollApproval)
+      .filter((expense) => {
+        if (normalizedFilter.size === 0) return true;
+        const canonicalHrId = normalizeHrIdForAccess(expense.hrId);
+        return Boolean(canonicalHrId && normalizedFilter.has(canonicalHrId));
+      }),
+  );
 }
 
 function serviceDurationText(days: number) {
@@ -3394,11 +3420,11 @@ export async function getMedicalRepPortalData(
         targetSalesHrIds,
       }),
       () => currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
-      () => listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+      () => listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }).then(withLivePortalExpenseNames),
       // Live outstation (system-entered) expenses must follow the SAME access scope as
       // the historical rows above — otherwise managers only see their own trips and the
       // team's system-entered expenses vanish (they used to be masked by Excel uploads).
-      () => includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }) : Promise.resolve([]),
+      () => includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }).then(withLivePortalExpenseNames) : Promise.resolve([]),
       () => listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
     const expenses = [
@@ -5031,11 +5057,8 @@ export async function getNsmTeamExpenses(
         ? options.reportId
         : null;
 
-    const reportExpenses = await listPayrollExpenses(
-      undefined,
-      undefined,
-      selectedReportId ?? undefined,
-      access,
+    const reportExpenses = await withLivePortalExpenseNames(
+      await listPayrollExpenses(undefined, undefined, selectedReportId ?? undefined, access),
     );
     const liveOutstationExpenses = await listOutstationExpensesForPortal(
       scopedDsms.map((employee) => employee.hrId),
