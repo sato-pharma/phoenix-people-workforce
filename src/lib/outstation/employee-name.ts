@@ -22,11 +22,8 @@
  */
 
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { employeeRecordName, resolveEmployeeRecordName } from "@/lib/employees/record-name";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-
-function text(value: unknown) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
 
 /**
  * The employee name written onto an outstation request row.
@@ -38,14 +35,12 @@ function text(value: unknown) {
  * Every path that inserts into `outstation_expense_requests` goes through this, so the three of
  * them cannot drift apart again: the wizard, the medical-rep manual form and the admin manual
  * entry all stamp the same name for the same person.
+ *
+ * The rule itself now lives in `@/lib/employees/record-name`: it is an employee-master fact, not
+ * an outstation one, and the approvals hub renders the same kind of snapshot. This stays as the
+ * outstation-facing spelling of it so the write paths read exactly as they did.
  */
-export function outstationRecordName(employee: {
-  displayName?: string | null;
-  fullName?: string | null;
-  hrId: string;
-}) {
-  return text(employee.fullName) || text(employee.displayName) || employee.hrId;
-}
+export const outstationRecordName = employeeRecordName;
 
 /** HR id key -> the employee record's name, resolved exactly as a new row would stamp it. */
 export type LiveOutstationEmployeeNames = ReadonlyMap<string, string>;
@@ -95,13 +90,9 @@ export function liveOutstationEmployeeName(
   storedName: string,
 ): string {
   const key = canonicalHrIdKey(hrId);
-  if (!key) return storedName;
-  const live = names.get(key);
-  if (!live) return storedName;
-  // The HR id resolved but the record has no usable name of its own, so outstationRecordName fell
-  // back to the id itself. The stored name is the better thing to show.
-  if (canonicalHrIdKey(live) === key) return storedName || live;
-  return live;
+  // Every fallback — no id, an id the directory does not hold, a record with no usable name of its
+  // own — lands on the stored name. resolveEmployeeRecordName is where all three live.
+  return resolveEmployeeRecordName(key ? names.get(key) : null, hrId, storedName);
 }
 
 /**

@@ -88,7 +88,10 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
       className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40"
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-slate-900">{card.employeeName}</p>
+        {/* Wraps, never ellipsises. The name is now the employee RECORD name, which runs to four
+            and five parts here, and the owner's rule puts wrapping ahead of a truncation. The row
+            grows taller, never wider: this column is min-w-0 beside a shrink-0 one. */}
+        <p className="break-words text-sm font-bold text-slate-900">{card.employeeName}</p>
         <p className="truncate text-xs text-slate-600">{card.title}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">

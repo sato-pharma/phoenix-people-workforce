@@ -177,8 +177,16 @@ import path from "node:path";
  * 193 -> 192 on 2026-09-18: Database Mapping's Validation tab customer map
  * (database-validation-tab.tsx). The address was cut short with a hover title; it now shows in full
  * and wraps. Pinned by tests/database-mapping-tables-fit.test.ts.
+ *
+ * 192 -> 189 on 2026-09-21: the approvals hub's three lists — the workspace card, the history list
+ * and the company requests list. They now render the employee RECORD name rather than the
+ * nickname-first display name, and it runs to four and five parts here; measured at 375px, the
+ * longest name in the employee master had 349px of itself hidden behind the ellipsis. All three
+ * are a `min-w-0` text column beside a `shrink-0` chip column, so wrapping grows the row taller
+ * and never pushes the page sideways. Pinned by
+ * tests/approvals-hub-resolves-the-employee-record-name.test.ts.
  */
-const BASELINE = 192;
+const BASELINE = 189;
 
 const ROOTS = ["app", "src"];
 

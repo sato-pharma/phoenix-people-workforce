@@ -159,7 +159,8 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
           filtered.map((item) => (
             <div key={item.id} className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-slate-900">{item.employeeName}</p>
+                {/* Wraps, never ellipsises — see the note on the same line in approvals-workspace. */}
+                <p className="break-words text-sm font-bold text-slate-900">{item.employeeName}</p>
                 <p className="truncate text-xs text-slate-600">
                   {item.title}
                   {showDecidedBy && item.decidedByName ? ` · Decided by ${item.decidedByName}` : ""}
