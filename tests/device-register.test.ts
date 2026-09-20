@@ -608,7 +608,13 @@ function testEveryEmployeesColumnThisModuleReadsExists(): void {
 function testThePrintLinkCarriesTheDeviceAndPicksTheRightForm(): void {
   const source = readFileSync("src/components/devices/device-register-workspace.tsx", "utf8");
 
-  const href = source.match(/href=\{`(\/api\/hiring-pack\/[^`]*)`\}/);
+  // Since 2026-09-20 every print asks copies and address first, so the row no longer carries an
+  // `href`: its Print button opens `PrintOptionsDialog`, and the dialog's confirm opens this URL.
+  assert.ok(
+    /<PrintOptionsDialog/.test(source),
+    "the device row must ask copies and address before it prints a custody receipt",
+  );
+  const href = source.match(/`(\/api\/hiring-pack\/[^`]*)`/);
   assert.ok(href, "the device row must offer a link to print this device's custody receipt");
 
   assert.ok(
@@ -621,7 +627,7 @@ function testThePrintLinkCarriesTheDeviceAndPicksTheRightForm(): void {
     "a laptop must take نموذج رقم 1 and anything portable نموذج رقم 2",
   );
   assert.ok(
-    /device\.holderHrId\)/.test(href[1]),
+    /device\.holderHrId/.test(href[1]),
     "the receipt is printed for the HOLDER — a custody receipt naming nobody is not a receipt",
   );
   assert.ok(

@@ -1045,7 +1045,7 @@ export function HiringPackManager({
   const requestPrint = useCallback(
     (document: PrintableDocument, versionId?: string, copiesOverride?: number) =>
       setPrintRequest({ copiesOverride, document, versionId }),
-    [],
+    [setPrintRequest],
   );
   const recordSignature = useCallback(
     async (document: HiringPackDocument) => {
@@ -1199,7 +1199,7 @@ export function HiringPackManager({
         setError("The print tab was blocked by your browser — allow pop-ups for this site and print again.");
       }
     },
-    [openPrint, printRequest, setCopiesFor],
+    [openPrint, printRequest, setCopiesFor, setPrintRequest],
   );
 
   const setSignDateFor = useCallback((document: HiringPackDocument, value: string) => {
