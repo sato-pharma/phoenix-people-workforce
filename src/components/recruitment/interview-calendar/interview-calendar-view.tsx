@@ -55,11 +55,14 @@ import {
   canBookInterviews,
   canCommentOnInterviews,
   canShareInterviewCalendar,
+  interviewOutcomeLabels,
+  interviewOutcomes,
   sessionSlotStarts,
   zoomStatusSentence,
   type InterviewBooking,
   type InterviewCalendarAccessLevel,
   type InterviewCalendarRole,
+  type InterviewOutcome,
   type InterviewSession,
 } from "@/lib/recruitment/interview-calendar-types";
 import {
@@ -934,6 +937,7 @@ function BookingChip({ booking, onOpen }: { booking: InterviewBooking; onOpen: (
           {formatTimeRange(booking.startMinutes, booking.durationMinutes)}
         </span>
         {booking.external ? <span className="font-semibold text-slate-500">outside</span> : null}
+        {booking.outcome ? <span className="font-bold text-slate-900">{interviewOutcomeLabels[booking.outcome]}</span> : null}
         {trouble ? (
           <span className="inline-flex items-center gap-0.5 font-semibold text-amber-700">
             <AlertTriangle className="h-3 w-3" /> No link yet
@@ -1100,7 +1104,8 @@ function InterviewPanel({
 }) {
   const [moving, setMoving] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [busy, setBusy] = useState<"cancel" | "zoom" | "note" | null>(null);
+  const [busy, setBusy] = useState<"cancel" | "zoom" | "note" | "outcome" | null>(null);
+  const [outcomeNote, setOutcomeNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
@@ -1130,6 +1135,21 @@ function InterviewPanel({
       onChanged(data.booking as InterviewBooking);
     } catch (reason) {
       setError(reasonText(reason, "Zoom could not make the meeting."));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function chooseOutcome(next: InterviewOutcome | null) {
+    setBusy("outcome");
+    setError(null);
+    setOutcomeNote(null);
+    try {
+      const data = await api.patch(`${path}/outcome`, { outcome: next });
+      onChanged(data.booking as InterviewBooking);
+      setOutcomeNote(typeof data.candidateNote === "string" ? data.candidateNote : null);
+    } catch (reason) {
+      setError(reasonText(reason, "The outcome could not be saved."));
     } finally {
       setBusy(null);
     }
@@ -1246,6 +1266,46 @@ function InterviewPanel({
         <p className="whitespace-pre-wrap break-words border-l-[3px] border-l-slate-300 bg-slate-50 px-3 py-2 text-[12px] text-slate-700">{booking.notes}</p>
       ) : null}
       {booking.bookedByName ? <p className="text-[11px] text-slate-500">Booked by {booking.bookedByName}</p> : null}
+
+      {booking.canSetOutcome || booking.outcome ? (
+        <section aria-label="How it went" className="border-t border-slate-200 pt-3">
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">How it went</p>
+          {booking.canSetOutcome ? (
+            <>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" role="group">
+                {interviewOutcomes.map((option) => {
+                  const chosen = booking.outcome === option;
+                  return (
+                    <button
+                      aria-pressed={chosen}
+                      className={cn(
+                        "border px-2 py-1.5 text-[12px] font-bold leading-none disabled:opacity-50",
+                        chosen ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
+                      )}
+                      disabled={busy !== null}
+                      key={option}
+                      onClick={() => void chooseOutcome(chosen ? null : option)}
+                      type="button"
+                    >
+                      {interviewOutcomeLabels[option]}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {booking.external
+                  ? "Marks this interview only."
+                  : "Shortlisted, Back-up, Rejected and Prioritized also move the candidate in Recruitment. Nothing is sent to them."}
+                {" "}Press the chosen one again to clear it.
+              </p>
+            </>
+          ) : booking.outcome ? (
+            <p className="mt-1 text-[13px] font-semibold text-slate-900">{interviewOutcomeLabels[booking.outcome]}</p>
+          ) : null}
+          {booking.outcome && booking.outcomeSetByName ? <p className="mt-1 text-[11px] text-slate-500">Recorded by {booking.outcomeSetByName}</p> : null}
+          {outcomeNote ? <p className="mt-1 text-[12px] text-slate-700">{outcomeNote}</p> : null}
+        </section>
+      ) : null}
 
       {canBook ? (
         confirmCancel ? (

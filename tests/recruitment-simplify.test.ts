@@ -91,7 +91,7 @@ export async function runRecruitmentSimplifyTests() {
   // ── 2 · The status is a fixed list, with a free note ────────────────────────
   assert.deepEqual(
     [...candidateStatuses],
-    ["new", "shortlisted", "sent_to_manager", "rejected", "hired"],
+    ["new", "shortlisted", "backup", "sent_to_manager", "rejected", "hired"],
     "the vocabulary is the contract — the route, the counters and the screen all read this one list",
   );
   assert.equal(isCandidateStatus("interviewing"), false, "a status outside the list is not a status");

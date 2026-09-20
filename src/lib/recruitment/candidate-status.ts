@@ -15,7 +15,9 @@
 // Pure on purpose (no database, no React) so the server route, the dashboard counters and the
 // client workspace all import the same list and cannot drift apart.
 
-export const candidateStatuses = ["new", "shortlisted", "sent_to_manager", "rejected", "hired"] as const;
+// `backup` joined on 2026-09-20 (owner: an interview outcome of "Back-up" also moves the candidate) —
+// a person held in reserve behind the shortlist. It sits between Shortlisted and Sent to manager.
+export const candidateStatuses = ["new", "shortlisted", "backup", "sent_to_manager", "rejected", "hired"] as const;
 export type CandidateStatus = (typeof candidateStatuses)[number];
 
 /**
@@ -26,6 +28,7 @@ export type CandidateStatus = (typeof candidateStatuses)[number];
 export const DEFAULT_CANDIDATE_STATUS: CandidateStatus = "new";
 
 export const candidateStatusLabels: Record<CandidateStatus, string> = {
+  backup: "Back-up",
   hired: "Hired",
   new: "New",
   rejected: "Rejected",
@@ -34,6 +37,7 @@ export const candidateStatusLabels: Record<CandidateStatus, string> = {
 };
 
 export const candidateStatusDescriptions: Record<CandidateStatus, string> = {
+  backup: "Held in reserve behind the shortlist.",
   hired: "Joined the company.",
   new: "Arrived. Nobody has looked at them yet.",
   rejected: "Not proceeding.",

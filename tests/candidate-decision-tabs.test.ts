@@ -34,7 +34,7 @@ export function runCandidateDecisionTabsTests() {
   // ── 1 · THE TABS, IN HIS ORDER ────────────────────────────────────────────
   assert.deepEqual(
     [...candidateDecisionTabs],
-    ["new", "shortlisted", "sent_to_manager", "rejected", "hired", "all"],
+    ["new", "shortlisted", "backup", "sent_to_manager", "rejected", "hired", "all"],
     "the undecided work first, the decided piles after, All last",
   );
   assert.equal(DEFAULT_CANDIDATE_DECISION_TAB, "new", "every screen opens on Not decided yet");
@@ -46,7 +46,7 @@ export function runCandidateDecisionTabsTests() {
     [...candidateStatuses].sort(
       (a, b) => candidateDecisionTabs.indexOf(a as never) - candidateDecisionTabs.indexOf(b as never),
     ),
-    "the five piles are the five statuses — a sixth status would need a tab",
+    "the six piles are the six statuses — a seventh status would need a tab",
   );
   assert.ok(isCandidateDecisionTab("rejected") && isCandidateDecisionTab("all"));
   assert.ok(!isCandidateDecisionTab("decided") && !isCandidateDecisionTab(null));
@@ -75,11 +75,11 @@ export function runCandidateDecisionTabsTests() {
     { status: "hired" },
     { status: "sent_to_manager" },
   ]);
-  assert.deepEqual(counts, { all: 7, hired: 1, new: 2, rejected: 2, sent_to_manager: 1, shortlisted: 1 });
+  assert.deepEqual(counts, { all: 7, backup: 0, hired: 1, new: 2, rejected: 2, sent_to_manager: 1, shortlisted: 1 });
   assert.equal(
-    counts.new + counts.shortlisted + counts.sent_to_manager + counts.rejected + counts.hired,
+    counts.new + counts.shortlisted + counts.backup + counts.sent_to_manager + counts.rejected + counts.hired,
     counts.all,
-    "every CV sits in exactly one pile, so the five add up to All",
+    "every CV sits in exactly one pile, so the six add up to All",
   );
 
   // ── 4 · THE SCREENING LINK'S `status` IS THE TAB ──────────────────────────

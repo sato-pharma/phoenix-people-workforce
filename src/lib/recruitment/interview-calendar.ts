@@ -38,7 +38,8 @@ import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { isUuid } from "@/lib/http/uuid";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { createCandidate } from "@/lib/recruitment/candidates";
+import { candidateStatusLabels, normalizeCandidateStatus, statusChangeRefusal } from "@/lib/recruitment/candidate-status";
+import { createCandidate, getCandidate, setCandidateRating, updateCandidateStatus } from "@/lib/recruitment/candidates";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getRecruitmentFileStorage } from "@/lib/recruitment/file-storage";
 import { getFileForDownload, listCandidateFiles, uploadCandidateFile, type FileDownload } from "@/lib/recruitment/files";
@@ -48,7 +49,10 @@ import {
   interviewCalendarHref,
   isInterviewCalendarAccessLevel,
   isInterviewCalendarOwner,
+  interviewOutcomeCandidateEffect,
+  interviewOutcomeLabels,
   isInterviewPlatform,
+  readInterviewOutcome,
   resolveCalendarRole,
   roleMeets,
   sessionSlotStarts,
@@ -61,6 +65,7 @@ import {
   type InterviewCalendarPerson,
   type InterviewCalendarRole,
   type InterviewCalendarShare,
+  type InterviewOutcome,
   type InterviewPlatform,
   type InterviewSession,
   type InterviewZoomStatus,
@@ -326,6 +331,9 @@ type BookingRow = {
   external_cv_file_name: string | null;
   external_cv_mime_type: string | null;
   interviewer_hr_id: string | null;
+  outcome: string | null;
+  outcome_set_by_hr_id: string | null;
+  outcome_set_at: string | null;
   created_by_hr_id: string | null;
   updated_by_hr_id: string | null;
   created_at: string;
@@ -354,7 +362,7 @@ type CommentRow = { id: string; booking_id: string; author_hr_id: string; body: 
 type CandidateRow = { id: string; full_name: string | null; applied_for_job_title: string | null };
 
 const BOOKING_COLUMNS =
-  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
+  "id,candidate_id,session_id,starts_at,duration_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,external_name,external_phone,external_email,external_cv_file_id,external_cv_file_name,external_cv_mime_type,interviewer_hr_id,outcome,outcome_set_by_hr_id,outcome_set_at,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
 
 const SESSION_COLUMNS =
   "id,title,starts_at,duration_minutes,slot_minutes,platform,zoom_status,zoom_meeting_id,zoom_join_url,zoom_error,notes,created_by_hr_id,updated_by_hr_id,created_at,updated_at";
@@ -442,7 +450,12 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
     loadComments(rows.map((row) => row.id)),
     loadSessionsById(rows.map((row) => row.session_id ?? "")),
   ]);
-  const people = await loadPeople([...rows.map((row) => row.created_by_hr_id), ...rows.map((row) => row.interviewer_hr_id), ...comments.map((comment) => comment.author_hr_id)]);
+  const people = await loadPeople([
+    ...rows.map((row) => row.created_by_hr_id),
+    ...rows.map((row) => row.interviewer_hr_id),
+    ...rows.map((row) => row.outcome_set_by_hr_id),
+    ...comments.map((comment) => comment.author_hr_id),
+  ]);
   const viewerKey = canonicalHrIdKey(caller.access.hrId);
 
   const commentsByBooking = new Map<string, InterviewBookingComment[]>();
@@ -490,6 +503,10 @@ async function hydrate(rows: readonly BookingRow[], caller: InterviewCalendarCal
       interviewerHrId: hrIdForStorage(row.interviewer_hr_id) ?? null,
       interviewerName: personName(people, row.interviewer_hr_id),
       notes: row.notes,
+      canSetOutcome: canSetInterviewOutcome(caller, row.interviewer_hr_id),
+      outcome: readInterviewOutcome(row.outcome),
+      outcomeSetAt: row.outcome_set_at,
+      outcomeSetByName: personName(people, row.outcome_set_by_hr_id),
       platform,
       sessionId: session ? session.id : null,
       sessionTitle: session ? session.title?.trim() || "Interview session" : null,
@@ -1230,6 +1247,103 @@ export async function cancelInterviewBooking(
   const { error } = await recruitmentDb().from(BOOKINGS).delete().eq("id", row.id);
   if (error) throw error;
   return { id: row.id };
+}
+
+// ── The outcome of an interview ────────────────────────────────────────────────────────────────
+
+/**
+ * Who may say how an interview went: the calendar's OWNER, and the person who conducted it (the chosen
+ * interviewer). The owner, 2026-09-20 — "the interviewer and the calendar owner only". Someone the
+ * calendar is merely shared with, even at "book" level, may read the outcome and never set it, and a
+ * copy link is never a person.
+ */
+export function canSetInterviewOutcome(caller: InterviewCalendarCaller, interviewerHrId: string | null | undefined): boolean {
+  if (!isSignedInCaller(caller.access)) return false;
+  if (caller.own === "owner") return true;
+  const viewer = canonicalHrIdKey(caller.access.hrId);
+  const chosen = canonicalHrIdKey(interviewerHrId);
+  return Boolean(viewer && chosen && viewer === chosen);
+}
+
+export type InterviewOutcomeResult = {
+  booking: InterviewBooking;
+  /** What happened to the candidate in Recruitment, in a sentence — or null when nothing was to be said. */
+  candidateNote: string | null;
+};
+
+/**
+ * The outcome's effect on the candidate in Recruitment (see interviewOutcomeCandidateEffect). It NEVER
+ * throws: the outcome is already saved on the interview by now, and a candidate record that cannot be
+ * moved is told to the person in words instead of undoing what they just recorded.
+ *
+ * NOTHING IS SENT TO THE CANDIDATE. This writes a status and a star and their audit row — the same
+ * two writes a screener makes by hand — and no notice of any kind, Rejected included.
+ */
+async function applyOutcomeToCandidate(
+  caller: InterviewCalendarCaller,
+  row: BookingRow,
+  outcome: InterviewOutcome,
+): Promise<string | null> {
+  const effect = interviewOutcomeCandidateEffect(outcome);
+  if (!effect.status && effect.rating === null) return null;
+  if (!row.candidate_id) return "Marked on the interview only — this person is not in Recruitment.";
+  try {
+    const candidate = await getCandidate(row.candidate_id);
+    if (!candidate) return "Marked on the interview, but the candidate could not be found in Recruitment.";
+    const notes: string[] = [];
+    const current = normalizeCandidateStatus(candidate.status);
+    if (effect.status) {
+      const refusal = current === "hired" ? "They are already hired, so their status was left as it is." : statusChangeRefusal(candidate.status, effect.status);
+      if (refusal) {
+        notes.push(current === "hired" ? refusal : "They were already sent to a hiring manager, so their status was left as it is.");
+      } else if (current !== effect.status) {
+        const day = cairoDateKey(new Date(row.starts_at));
+        await updateCandidateStatus(caller.access, row.candidate_id, effect.status, `Interview outcome: ${interviewOutcomeLabels[outcome]} (${day})`);
+        notes.push(`Their status is now ${candidateStatusLabels[effect.status]}.`);
+      }
+    }
+    if (effect.rating !== null && candidate.rating !== effect.rating) {
+      await setCandidateRating(caller.access, row.candidate_id, effect.rating);
+      notes.push("Rated 3 stars, Top pick.");
+    }
+    return notes.length > 0 ? notes.join(" ") : null;
+  } catch (error) {
+    return `Marked on the interview, but the candidate could not be updated: ${errorText(error)}`;
+  }
+}
+
+/**
+ * Record — or clear, with null — how an interview went. Clearing removes the label only: the
+ * candidate keeps whatever status they were given, because a status is a decision somebody may have
+ * built on since.
+ */
+export async function setInterviewOutcome(
+  caller: InterviewCalendarCaller,
+  bookingId: string,
+  rawOutcome: unknown,
+): Promise<InterviewOutcomeResult> {
+  const outcome = rawOutcome === null || rawOutcome === undefined || rawOutcome === "" ? null : readInterviewOutcome(rawOutcome);
+  if (outcome === null && rawOutcome !== null && rawOutcome !== undefined && rawOutcome !== "") {
+    throw new Error("That is not an interview outcome.");
+  }
+  const row = await loadBookingRow(bookingId);
+  requireCalendarAccess(caller, "view", weekOfInstant(row.starts_at));
+  if (!canSetInterviewOutcome(caller, row.interviewer_hr_id)) {
+    throw new Error("Only the interviewer, or the owner of this calendar, can record how an interview went.");
+  }
+  const actor = hrIdForStorage(caller.access.hrId);
+  const { error } = await recruitmentDb()
+    .from(BOOKINGS)
+    .update({
+      outcome,
+      outcome_set_at: outcome ? new Date().toISOString() : null,
+      outcome_set_by_hr_id: outcome ? actor : null,
+      updated_by_hr_id: actor,
+    })
+    .eq("id", row.id);
+  if (error) throw error;
+  const candidateNote = outcome ? await applyOutcomeToCandidate(caller, row, outcome) : null;
+  return { booking: await getInterviewBooking(caller, row.id), candidateNote };
 }
 
 // ── Sessions ────────────────────────────────────────────────────────────────────────────────────

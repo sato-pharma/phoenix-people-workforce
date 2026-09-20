@@ -360,6 +360,7 @@ function requisitionStatusTone(status: string): BadgeTone {
 // The same colour language the stage pills use. `new` stays grey deliberately: nearly every row in
 // the pool is new, and a screen where every pill is coloured tells the eye nothing.
 const candidateStatusToneMap: Record<CandidateStatus, BadgeTone> = {
+  backup: "amber",
   hired: "emerald",
   new: "slate",
   rejected: "rose",
