@@ -352,6 +352,12 @@ type CustomerLine = {
    * that this capture completes. Empty on the ordinary path, which mints a new customer.
    */
   existingCustomerId: string;
+  /**
+   * True when the customer on record already has complete evidence and the rep is here only to
+   * capture its venue. The customer's own capture, phone and speciality are then not offered — the
+   * server leaves that row untouched, so a field the save would ignore is worse than no field.
+   */
+  customerComplete: boolean;
   governorate: string;
   key: string;
   mobile: string;
@@ -465,6 +471,7 @@ function newCustomerLine(distributorId = ""): CustomerLine {
     area: "",
     capture: emptyCapture(),
     existingCustomerId: "",
+    customerComplete: false,
     governorate: "",
     key: stableKey("customer"),
     mobile: "",
@@ -553,6 +560,17 @@ function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
   return "Awaiting release";
 }
 
+/**
+ * Whether the rep can do anything about this customer from the field: either half is short of its
+ * live photo and location. The button appears for the customer's own gap AND for its venue's,
+ * because a customer whose own proof is complete can still be parked on a venue nobody photographed
+ * — and that is the case where the rep stood in front of the shop with no way to record it. When
+ * neither half is short the block is a Super Admin / CEO release, which nothing here can fix.
+ */
+function pendingHasCapturableGap(rows: MarketingValidationReportRow[]): boolean {
+  return rows.some((row) => row.customer.evidenceStatus !== "complete" || row.pharmacy.evidenceStatus !== "complete");
+}
+
 /** Distributor codes on these rows that no sale can ever be matched to. */
 function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
   const seen = new Map<string, { code: string; distributorName: string }>();
@@ -587,6 +605,11 @@ function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boole
     if (!customer.name.trim()) return `Enter a name for Customer ${customerIndex + 1}.`;
     if (isDeskMode && !hasPin(customer.capture)) return `Pin ${customerLabel}'s location on the map.`;
     if (customer.pharmacies.length === 0) return `${customerLabel} needs at least one pharmacy.`;
+    // A customer that is already complete has only its venue left to capture, so saving without one
+    // would change nothing and still report success. Must stay in step with `canSave`.
+    if (customerIsVenueOnlyWithoutCapture(customer)) {
+      return `Capture the venue's live photo and location for ${customerLabel} before saving.`;
+    }
 
     for (const [pharmacyIndex, pharmacy] of customer.pharmacies.entries()) {
       const pharmacyLabel = pharmacy.name.trim() ? `"${pharmacy.name.trim()}"` : `Pharmacy ${pharmacyIndex + 1}`;
@@ -635,6 +658,18 @@ function hasCompleteCapture(capture: CaptureState) {
     Boolean(capture.photoName) &&
     Boolean(capture.photoCapturedAt) &&
     Boolean(capture.photoDataUrl)
+  );
+}
+
+/**
+ * A customer that is complete and is being saved only to complete its venue, with no venue capture
+ * in hand yet. Saving that would write nothing — the customer is never touched and the venue's
+ * proof is what was missing — so the form refuses it rather than report a success that did nothing.
+ */
+function customerIsVenueOnlyWithoutCapture(customer: CustomerLine) {
+  return (
+    customer.customerComplete &&
+    !customer.pharmacies.some((pharmacy) => pharmacy.source === "existing" && hasCompleteCapture(pharmacy.capture))
   );
 }
 
@@ -2119,6 +2154,7 @@ export function MarketingValidationWorkspace() {
       customer.name.trim() &&
       (!isDeskMode || hasPin(customer.capture)) &&
       customer.pharmacies.length > 0 &&
+      !customerIsVenueOnlyWithoutCapture(customer) &&
       customer.pharmacies.every((pharmacy) =>
         pharmacy.source === "existing"
           // Everything else about an attached pharmacy is read from its stored record, so the pick
@@ -2521,12 +2557,42 @@ export function MarketingValidationWorkspace() {
    */
   function startCompletingCustomer(group: ValidatedCustomerGroup) {
     const customer = group.rows[0]?.customer;
+    // Either half can be the one that is short, and the rep can only fix the half that is. When the
+    // customer's own evidence is complete the block is the venue, so the form opens on the venue's
+    // capture instead — the customer is locked and never written.
+    const customerShort = !customer || customer.evidenceStatus !== "complete";
+
+    // The venues this customer is waiting on, attached from the shops already on file so the
+    // capture lands on the existing venue record rather than minting a second copy of it. Only
+    // those the rep may reuse are offered — the same list, and the same scope, the server checks.
+    const reusableIds = new Set(workspace.reusablePharmacies.map((option) => option.id));
+    const seeded: PharmacyLine[] = [];
+    const seen = new Set<string>();
+    for (const row of group.rows) {
+      const pharmacyId = row.pharmacy.id;
+      if (seen.has(pharmacyId) || !reusableIds.has(pharmacyId)) continue;
+      // With the customer complete, a venue that already has its proof has nothing to capture.
+      if (!customerShort && row.pharmacy.evidenceStatus === "complete") continue;
+      seen.add(pharmacyId);
+      seeded.push({ ...newPharmacyLine(defaultDistributorId), existingPharmacyId: pharmacyId, source: "existing" });
+    }
+    if (!customerShort && seeded.length === 0) {
+      setMessage(
+        `"${group.customerName}" is waiting on a venue that is not in your My Venues list, so it cannot be captured from here. Ask a Super Admin or the CEO to release it from Customer Pharmacy Mapping.`,
+      );
+      return;
+    }
+
     setCustomers([{
       ...newCustomerLine(defaultDistributorId),
       area: customer?.extractedAreaName ?? "",
+      customerComplete: !customerShort,
       existingCustomerId: group.key,
       governorate: customer?.extractedGovernorateName ?? "",
       name: group.customerName,
+      // Falls back to the ordinary blank venue line when none of the customer's venues can be
+      // reused — the behaviour before this seeded any, and the only way left to save one.
+      pharmacies: seeded.length > 0 ? seeded : [newPharmacyLine(defaultDistributorId)],
       // The customer ROW, not `group.customerType` — the group widens it to `string` for display,
       // and the form field is the narrow union.
       type: customer?.customerType ?? "clinic",
@@ -2892,7 +2958,9 @@ export function MarketingValidationWorkspace() {
                     <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 sm:px-4">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-600" />
                       <p className="min-w-0 text-phx-sm font-bold text-amber-800">
-                        Completing a customer already on record — name and type are locked
+                        {customer.customerComplete
+                          ? "This customer's own photo and location are already complete — capture the venue below. Name and type are locked"
+                          : "Completing a customer already on record — name and type are locked"}
                       </p>
                     </div>
                   ) : null}
@@ -2924,6 +2992,9 @@ export function MarketingValidationWorkspace() {
                         />
                       </Field>
                     </div>
+                    {/* A customer whose own evidence is complete is here for its venue only. The server
+                        never writes that row, so its capture, phone and speciality are not offered. */}
+                    {customer.customerComplete ? null : (<>
                     <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
                       <Field label="Speciality">
                         <SelectField
@@ -2998,6 +3069,7 @@ export function MarketingValidationWorkspace() {
                         />
                       )}
                     </div>
+                    </>)}
 
                     {/* Pharmacy section divider — scoped to THIS customer.
                         `min-w-0` here is the same load-bearing fix as on the pharmacy cards below:
@@ -3427,8 +3499,8 @@ export function MarketingValidationWorkspace() {
             <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
               These customers were saved, but they do not appear in the customer list when you create a marketing
               request. A customer only becomes usable once the live photo and location are complete on both the
-              customer and the pharmacy. Capture the customer again with the missing photo, or ask a Super Admin or
-              the CEO to release it from Customer Pharmacy Mapping.
+              customer and the pharmacy. Tap Capture Evidence to supply the missing photo and location for the customer or
+              its venue, or ask a Super Admin or the CEO to release it from Customer Pharmacy Mapping.
             </p>
           </div>
 
@@ -3471,7 +3543,7 @@ export function MarketingValidationWorkspace() {
                             <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
                           </div>
                         </div>
-                        {customer && customer.evidenceStatus !== "complete" ? (
+                        {pendingHasCapturableGap(group.rows) ? (
                           <button
                             className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                             onClick={() => startCompletingCustomer(group)}
@@ -3530,11 +3602,11 @@ export function MarketingValidationWorkspace() {
                                 {pharmaciesForCustomer.length}
                               </button>
                             </td>
-                            {/* The customer's own evidence is the half a rep can actually fix in the
-                                field. When it is already complete the block is on the pharmacy, and
-                                offering "Capture Evidence" would only earn a server rejection. */}
+                            {/* Offered when EITHER half is short: the customer's own photo and location,
+                                or its venue's. Only when neither is — a Super Admin / CEO release —
+                                is there nothing a rep can capture. */}
                             <td className="px-3 py-2.5 text-center">
-                              {customer && customer.evidenceStatus !== "complete" ? (
+                              {pendingHasCapturableGap(group.rows) ? (
                                 <button
                                   className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                                   onClick={() => startCompletingCustomer(group)}
@@ -3544,7 +3616,7 @@ export function MarketingValidationWorkspace() {
                                   Capture Evidence
                                 </button>
                               ) : (
-                                <span className="whitespace-nowrap text-phx-sm font-medium text-slate-400">Pharmacy side</span>
+                                <span className="whitespace-nowrap text-phx-sm font-medium text-slate-400">Awaiting release</span>
                               )}
                             </td>
                           </tr>
