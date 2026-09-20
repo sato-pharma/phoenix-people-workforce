@@ -6191,6 +6191,9 @@ export async function createMarketingValidationRecord(
   // written, rather than half-way through. The scope check is the boundary here — the Pending tab
   // offered the id, but a payload can name ANY customer id, including one on another rep's patch.
   const completedCustomerRows = new Map<string, MarketingCustomerDbRow>();
+  // Customers already complete whose VENUE is what this submission completes — see the door left
+  // open in the preload below. Their row is never written.
+  const venueOnlyCustomerIds = new Set<string>();
   const existingLinksByCustomerAndCode = new Map<string, MarketingCustomerPharmacyDbRow>();
   const existingCustomerIds = Array.from(
     new Set(
@@ -6217,11 +6220,27 @@ export async function createMarketingValidationRecord(
       // Without this, a second submission could quietly replace the photo and GPS standing behind
       // an already-validated customer — the same class of defect `evidenceStatusFromInput` exists
       // to prevent, arriving through a different door.
+      //
+      // One door stays open: a customer whose OWN evidence is complete but whose venue is not. The
+      // Pending tab offers "Capture Evidence" for it too, because the rep can only fix the half that
+      // is short, and that half is the venue. It is admitted only when the submission brings no
+      // complete customer capture of its own (so nothing on the customer can be replaced) and names
+      // at least one venue already on file (so there is something to complete). The customer row is
+      // then left exactly as it is and only the venue's evidence is written.
       if (row.evidence_status === "complete") {
-        throw validationError(
-          `Customer "${row.display_name ?? existingCustomerId}" already has complete evidence.`,
-          "customer_already_evidenced",
+        const submitted = normalized.customers.find((entry) => entry.existingCustomerId === existingCustomerId);
+        const isVenueOnly = Boolean(
+          submitted
+          && submitted.evidenceStatus !== "complete"
+          && submitted.pharmacies.some((entry) => entry.existingPharmacyId),
         );
+        if (!isVenueOnly) {
+          throw validationError(
+            `Customer "${row.display_name ?? existingCustomerId}" already has complete evidence.`,
+            "customer_already_evidenced",
+          );
+        }
+        venueOnlyCustomerIds.add(existingCustomerId);
       }
       completedCustomerRows.set(existingCustomerId, row);
     }
@@ -6283,6 +6302,13 @@ export async function createMarketingValidationRecord(
     const existingCustomerRow = normalizedCustomer.existingCustomerId
       ? completedCustomerRows.get(normalizedCustomer.existingCustomerId) ?? null
       : null;
+    // A complete customer being here only for its venue. Its row is never written, and every link
+    // verdict below reads the evidence the row ALREADY holds — the submission carries no customer
+    // capture, so reading it would stamp a customer that has a complete photo as still short.
+    const isVenueOnly = Boolean(existingCustomerRow && venueOnlyCustomerIds.has(existingCustomerRow.id));
+    const customerEvidenceStatus: MarketingEvidenceStatus = existingCustomerRow && isVenueOnly
+      ? ((existingCustomerRow.evidence_status ?? "missing") as MarketingEvidenceStatus)
+      : normalizedCustomer.evidenceStatus;
 
     // What the rep captured — identical on both paths, because completing a customer runs through
     // exactly the same normalization and the same evidence rule as creating one. What is absent
@@ -6312,7 +6338,10 @@ export async function createMarketingValidationRecord(
     };
 
     let customer: MarketingCustomer;
-    if (existingCustomerRow) {
+    if (existingCustomerRow && isVenueOnly) {
+      // Nothing on the customer is written — no update, no undo entry, no photo, no contact.
+      customer = mapCustomer(existingCustomerRow);
+    } else if (existingCustomerRow) {
       // The `.neq` repeats the precondition checked at preload time so a concurrent completion
       // loses cleanly rather than overwriting the capture that got there first.
       const customerUpdate = await supabase
@@ -6362,7 +6391,7 @@ export async function createMarketingValidationRecord(
     // points at the customer row that did not exist a moment ago. A failure here throws, which
     // unwinds the whole submission — the record must never survive its own evidence, because
     // `evidence_status` was already set to 'complete' on the promise that this write succeeds.
-    if (normalizedCustomer.evidencePhotoDataUrl) {
+    if (!isVenueOnly && normalizedCustomer.evidencePhotoDataUrl) {
       evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
         imageDataUrl: normalizedCustomer.evidencePhotoDataUrl,
         record: {
@@ -6384,7 +6413,7 @@ export async function createMarketingValidationRecord(
     // Speciality lives on the contact row (marketing_customers has no such column), so the contact
     // is now written whenever EITHER a speciality or a phone was given — previously a customer with
     // a speciality but no phone would have had nowhere to record it.
-    if (normalizedCustomer.mobileNumber || normalizedCustomer.speciality) {
+    if (!isVenueOnly && (normalizedCustomer.mobileNumber || normalizedCustomer.speciality)) {
       const contactInsert = await supabase
         .from("marketing_customer_contacts")
         .insert({
@@ -6525,7 +6554,7 @@ export async function createMarketingValidationRecord(
           const linkValidationStatus = resolveMarketingValidationRecordStatus({
             isOnBehalf,
             systemStatus: resolveMarketingSystemValidationStatus({
-              customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+              customerEvidenceStatus,
               governorateVerdict: governorateCheck.verdict,
               pharmacyEvidenceStatus: pharmacy.evidenceStatus,
             }),
@@ -6534,7 +6563,7 @@ export async function createMarketingValidationRecord(
             isOnBehalf
               ? adminValidationNote
               : buildPendingEvidenceNote({
-                customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+                customerEvidenceStatus,
                 pharmacyEvidenceStatus: pharmacy.evidenceStatus,
               }),
             distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
@@ -6727,7 +6756,7 @@ export async function createMarketingValidationRecord(
         const linkValidationStatus = resolveMarketingValidationRecordStatus({
           isOnBehalf,
           systemStatus: resolveMarketingSystemValidationStatus({
-            customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+            customerEvidenceStatus,
             governorateVerdict: governorateCheck.verdict,
             pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
           }),
@@ -6752,7 +6781,7 @@ export async function createMarketingValidationRecord(
           isOnBehalf
             ? adminValidationNote
             : buildPendingEvidenceNote({
-              customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+              customerEvidenceStatus,
               pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
             }),
           untrackedCodeNote,
@@ -6851,7 +6880,7 @@ export async function createMarketingValidationRecord(
     // stamped from the evidence that existed when it was written, which for these rows was none.
     // Re-deciding them is what turns the capture into a usable customer — without it the rep walks
     // to the shop, photographs it, and the customer stays exactly as stuck as it was.
-    if (existingCustomerRow) {
+    if (existingCustomerRow && !isVenueOnly) {
       await refreshLinksAfterCustomerCompletion({
         actorHrId,
         customerEvidenceStatus: normalizedCustomer.evidenceStatus,
