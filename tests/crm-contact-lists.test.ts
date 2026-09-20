@@ -417,10 +417,10 @@ export function runCrmContactListsTests() {
     [
       "Super Admin",
       "CEO",
-      "National Sales Manager",
       "SFE Manager",
       "Marketing Manager",
       "Training Manager",
+      "National Sales Manager",
       "Product Manager",
       "Group Product Manager",
       "Regional Manager",
@@ -457,6 +457,9 @@ export function runCrmContactListsTests() {
   assert.equal(doctorListBasisForRole("Group Product Manager"), "line");
   assert.equal(doctorListBasisForRole("Marketing Manager"), "company");
   assert.equal(doctorListBasisForRole("Training Manager"), "company");
+  // 2026-09-20: an NSM was `company` here while every other screen scoped him to his own line, so he
+  // saw all 67 reps on Reps List and 18/26/23 everywhere else. `company` is the over-grant.
+  assert.equal(doctorListBasisForRole("National Sales Manager"), "line", "an NSM sees his own line's reps, not the company's");
 
   // ── 11. The web app is a DIFFERENT host from the Reporting API ────────────────────────────────
   // The API has no contacts endpoint; site7 404s on ContactsList.aspx. Deriving the web host from

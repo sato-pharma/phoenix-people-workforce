@@ -33,6 +33,11 @@ export type DoctorListScopeBasis = "company" | "line" | "team";
  * the same reasoning that already put SFE Manager here: neither owns a line or supervises a rep, so
  * there is nothing narrower to resolve them to that would not resolve them to nothing at all.
  *
+ * The National Sales Manager is NOT here. He sat in this group until 2026-09-20, which showed him all
+ * 67 active reps on this board while KPIs, Reps Plans, CRM Master and Double Visit showed each NSM
+ * only their own line (18, 26 and 23). The owner ruled on 2026-09-20 that an NSM sees only their
+ * own line's reps here too — see LINE_ROLES.
+ *
  * None of these four seats supervises a named rep, which is exactly why none of them appears on the
  * Plans tab's list (plan-verification-access.ts) — reading a rep's assigned doctors and signing his
  * plan into the customer's CRM are different authorities, and the two lists live in two files so
@@ -41,7 +46,6 @@ export type DoctorListScopeBasis = "company" | "line" | "team";
 const COMPANY_ROLES = [
   "Super Admin",
   "CEO",
-  "National Sales Manager",
   "SFE Manager",
   "Marketing Manager",
   "Training Manager",
@@ -50,8 +54,9 @@ const COMPANY_ROLES = [
 /**
  * One product line, resolved off the viewer's own employee row.
  *
- * Added 2026-09-03 with the same owner instruction. Deliberately NOT `company`, even though a
- * Product Manager is a staff seat like the four above: `line` is the reach these two already have
+ * Added 2026-09-03 with the same owner instruction, and joined by the National Sales Manager on
+ * 2026-09-20 (owner: "NSM sees only their own line's reps on Reps List"). Deliberately NOT
+ * `company`, even though a Product Manager is a staff seat like the four above: `line` is the reach these two already have
  * on the KPIs board (doctor-coverage-roles.ts) and in the Business Review access map, and a seat
  * whose reach changes depending on which screen he opens is a bug that reports itself as confusing
  * data rather than as a permission fault.
@@ -60,7 +65,7 @@ const COMPANY_ROLES = [
  * basis to `getDoctorCoverageScope`, which already carries the multi-line overrides (Ahmed Sharaf
  * covers Pedia and Anti Infective both) and the empty-result handling.
  */
-const LINE_ROLES = ["Product Manager", "Group Product Manager"] as const;
+const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;
 
 /** Own management subtree. The district manager is the seat the owner asked for on 2026-08-28. */
 const TEAM_ROLES = ["Regional Manager", "District Manager"] as const;

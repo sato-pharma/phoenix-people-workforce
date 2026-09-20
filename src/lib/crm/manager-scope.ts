@@ -28,7 +28,7 @@
  * screen.
  */
 
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 
@@ -49,9 +49,14 @@ export type ManagerScopeEmployee = {
   pendingManagerReplacementForHrId: string | null;
 };
 
+/**
+ * The directory's own definition of active (`active` and `on_leave`), the one KPIs and Reps Plans
+ * already use. This function kept a second one, "anything but resigned or terminated", until
+ * 2026-09-20, which left a `declined_offer` person (someone who never started) on a District Manager's
+ * Reps List while KPIs dropped them. The owner ruled that Reps List drops them too.
+ */
 function isActive(employee: ManagerScopeEmployee): boolean {
-  const status = (employee.employmentStatus ?? "").trim().toLowerCase();
-  return status !== "resigned" && status !== "terminated";
+  return isActiveLifecycleStatus(employee.employmentStatus);
 }
 
 /** See the header: an empty allow-list must never reach a query. */

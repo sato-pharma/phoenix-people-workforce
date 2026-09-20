@@ -22,7 +22,7 @@
  *
  * ## The scope here is the PLAN scope, never the Reps List one
  *
- * `getDoctorListScope` admits National Sales Manager and SFE Manager company-wide;
+ * `getDoctorListScope` admits SFE Manager company-wide and the National Sales Manager for his own line;
  * `getPlanVerificationScope` deliberately admits neither, because reading a rep's list and signing
  * his plan are not the same authority (`plan-verification-access.ts`). This module therefore builds
  * even the rep PICKER from the plan scope: a cascade built from the wider one would offer a rep

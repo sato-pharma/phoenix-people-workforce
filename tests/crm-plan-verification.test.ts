@@ -264,6 +264,11 @@ export function runCrmPlanVerificationTests() {
     employee("REP-0002", "DM-0001"),
     // Resigned: still in the MAP so the tree stays walkable, but never in the RESULT.
     employee("REP-0003", "DM-0001", "Resigned"),
+    // Never started, or not working: the directory does not count them active, and neither does KPIs.
+    employee("REP-0005", "DM-0001", "declined_offer"),
+    employee("REP-0006", "DM-0001", "inactive"),
+    // On leave IS active in the directory, so a rep on leave stays on his manager's board.
+    employee("REP-0007", "DM-0001", "on_leave"),
     // Another district entirely.
     employee("DM-0002", "RM-0001"),
     employee("REP-0004", "DM-0002"),
@@ -274,6 +279,12 @@ export function runCrmPlanVerificationTests() {
   const dmAgents = dmScope.kind === "agents" ? [...dmScope.agentHrIds].sort() : [];
   assert.ok(dmAgents.includes("REP-0001") && dmAgents.includes("REP-0002"), "his own reps resolve");
   assert.ok(!dmAgents.includes("REP-0003"), "a resigned rep is filtered out of the RESULT");
+  assert.ok(
+    !dmAgents.includes("REP-0005"),
+    "a declined-offer person is not on the team — Reps List showed one that KPIs dropped (owner, 2026-09-20)",
+  );
+  assert.ok(!dmAgents.includes("REP-0006"), "an inactive person is not on the team");
+  assert.ok(dmAgents.includes("REP-0007"), "a rep on leave is still active and stays on the team");
   assert.ok(
     !dmAgents.includes("REP-0004"),
     "another district's rep must never resolve — this is the fault the owner caught on Doctor Coverage",
@@ -331,7 +342,11 @@ export function runCrmPlanVerificationTests() {
     null,
     "NSM reaches a product LINE, not a management subtree — a line is not supervision over a named rep",
   );
-  assert.equal(doctorListBasisForRole("National Sales Manager"), "company");
+  assert.equal(
+    doctorListBasisForRole("National Sales Manager"),
+    "line",
+    "an NSM sees his own line's reps on Reps List, as on KPIs and Reps Plans (owner, 2026-09-20)",
+  );
 
   // ── 5. `crm_plans` is real at RUNTIME, not merely in the type union ────────────────────────────
   // The documented fail-open trap: the sidebar's permission lookup SUCCEEDS on a key it has never
