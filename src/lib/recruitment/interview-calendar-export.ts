@@ -30,6 +30,7 @@ import { satoLogoDataUri } from "@/lib/offers/brand";
 import {
   PLATFORM_LABEL,
   interviewCalendarHref,
+  interviewOutcomeLabels,
   type InterviewBooking,
 } from "@/lib/recruitment/interview-calendar-types";
 import {
@@ -139,6 +140,8 @@ function cellLine(booking: InterviewBooking): string {
   const bits = [formatTimeOfDay(booking.startMinutes), formatDuration(booking.durationMinutes), PLATFORM_LABEL[booking.platform]];
   // A slot in a session says so: its candidates share the session's one meeting.
   if (booking.sessionTitle) bits.push(booking.sessionTitle);
+  // How it went, once the interviewer has said (owner, 2026-09-20). Ink only — no fill, per the house identity.
+  if (booking.outcome) bits.push(`Outcome: ${interviewOutcomeLabels[booking.outcome]}`);
   return bits.join(" · ");
 }
 
@@ -229,6 +232,7 @@ export async function buildInterviewCalendarWorkbook(model: InterviewCalendarExp
     { label: "Applied for", width: 26 },
     { label: "Where", width: 11 },
     { label: "Zoom link", width: 34 },
+    { label: "Outcome", width: 16 },
     { label: "Notes", width: 44 },
   ];
   listColumns.forEach((column, index) => {
@@ -258,6 +262,7 @@ export async function buildInterviewCalendarWorkbook(model: InterviewCalendarExp
       booking.candidateJobTitle ?? "",
       PLATFORM_LABEL[booking.platform],
       booking.zoomJoinUrl ? { hyperlink: booking.zoomJoinUrl, text: booking.zoomJoinUrl } : booking.platform === "zoom" ? "No link yet" : "",
+      booking.outcome ? interviewOutcomeLabels[booking.outcome] : "",
       booking.notes ?? "",
     ];
     values.forEach((value, column) => {
@@ -354,6 +359,7 @@ export function buildInterviewCalendarPdfHtml(model: InterviewCalendarExportMode
               ? `<br><span class="muted">No link yet</span>`
               : ""
         }</td>
+        <td>${booking.outcome ? escapeHtml(interviewOutcomeLabels[booking.outcome]) : ""}</td>
         <td>${booking.notes ? escapeHtml(booking.notes) : ""}</td>
       </tr>`,
     )
@@ -383,8 +389,8 @@ ${
   model.bookings.length === 0
     ? `<p class="empty">No interviews are booked this week.</p>`
     : `<table class="list">
-  <colgroup><col style="width:19%"><col style="width:16%"><col style="width:24%"><col style="width:12%"><col style="width:29%"></colgroup>
-  <thead><tr><th>Day</th><th>Time</th><th>Candidate</th><th>Where</th><th>Notes</th></tr></thead>
+  <colgroup><col style="width:16%"><col style="width:14%"><col style="width:22%"><col style="width:12%"><col style="width:14%"><col style="width:22%"></colgroup>
+  <thead><tr><th>Day</th><th>Time</th><th>Candidate</th><th>Where</th><th>Outcome</th><th>Notes</th></tr></thead>
   <tbody>${listRows}</tbody>
 </table>`
 }

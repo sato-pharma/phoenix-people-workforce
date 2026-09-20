@@ -608,6 +608,7 @@ async function runExportTests() {
     dateKey: "2026-09-21",
     durationMinutes: 45,
     id: "00000000-0000-4000-8000-000000000003",
+    outcome: "prioritized",
     platform: "zoom",
     startMinutes: 10 * 60,
     zoomJoinUrl: "https://us06web.zoom.us/j/88012345678",
@@ -654,6 +655,10 @@ async function runExportTests() {
   assert.ok(!html.includes(`<b>"Adel"</b>`), "so nothing a CV calls itself can draw into the document");
   assert.ok(html.includes("Week of: 20 September"), "headed the way the owner's sheet is");
   assert.ok(html.includes(`href="https://us06web.zoom.us/j/88012345678"`), "a Zoom interview carries its link");
+  // HOW IT WENT (owner, 2026-09-20): on the grid tile and in its own list column, only once recorded.
+  assert.ok(html.includes("Outcome: Prioritized"), "the grid tile says how the interview went");
+  assert.ok(html.includes("<th>Outcome</th>") && html.includes("<td>Prioritized</td>"), "and the list has an Outcome column");
+  assert.equal(html.split("Outcome: ").length - 1, 1, "an interview with no outcome recorded prints none");
   assert.ok(html.includes("border-radius: 0 !important"), "square edges, the house rule");
   assert.doesNotMatch(html, /border-radius:\s*[1-9]/, "and no corner is rounded anywhere");
 
@@ -682,6 +687,11 @@ async function runExportTests() {
       `${entry.candidateName} is a link in the week grid`,
     );
   }
+  const listSheet = workbook.getWorksheet("Interviews");
+  const listCells: string[] = [];
+  listSheet?.eachRow((row) => row.eachCell((cell) => listCells.push(String(cell.value ?? ""))));
+  assert.ok(listCells.includes("Outcome") && listCells.includes("Prioritized"), "the workbook's list has an Outcome column carrying the word");
+  assert.ok(gridLinks.some((cell) => cell.text.includes("Outcome: Prioritized")), "and the week grid's tile says it too");
   const listLinks = linksIn("Interviews");
   for (const entry of [early, second, zoom, late]) {
     assert.ok(
