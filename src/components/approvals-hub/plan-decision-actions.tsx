@@ -250,7 +250,7 @@ export function PlanDecisionActions({
                               className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-slate-50"
                             >
                               <span className="min-w-0">
-                                <span className="block truncate text-sm font-bold text-slate-800">{a.label}</span>
+                                <span className="block break-words text-sm font-bold text-slate-800">{a.label}</span>
                                 {a.timeLabel ? <span className="text-phx-xs text-slate-500">{a.timeLabel}</span> : null}
                               </span>
                               <span

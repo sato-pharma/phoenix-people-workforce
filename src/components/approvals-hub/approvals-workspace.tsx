@@ -92,7 +92,7 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
             and five parts here, and the owner's rule puts wrapping ahead of a truncation. The row
             grows taller, never wider: this column is min-w-0 beside a shrink-0 one. */}
         <p className="break-words text-sm font-bold text-slate-900">{card.employeeName}</p>
-        <p className="truncate text-xs text-slate-600">{card.title}</p>
+        <p className="break-words text-xs text-slate-600">{card.title}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {/* Overdue framing only applies to items actually awaiting this viewer's action —

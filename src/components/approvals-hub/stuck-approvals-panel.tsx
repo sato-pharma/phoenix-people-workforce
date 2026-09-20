@@ -59,8 +59,9 @@ function ReassignRow(props: {
     <div className="border border-phx-line bg-white px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-slate-900">{props.primary}</p>
-          <p className="truncate text-xs text-slate-500">{props.secondary}</p>
+          {/* `primary` is "<employee record name> (<HR id>)", so it is the longest line here. */}
+          <p className="break-words text-sm font-bold text-slate-900">{props.primary}</p>
+          <p className="break-words text-xs text-slate-500">{props.secondary}</p>
           <p className="mt-0.5 text-xs text-rose-600">Stuck on: {props.currentApprover}</p>
         </div>
         {done ? (

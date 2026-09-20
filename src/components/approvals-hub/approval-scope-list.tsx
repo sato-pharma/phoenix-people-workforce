@@ -35,9 +35,11 @@ export function ApprovalScopeList({ data, moduleLabel }: Props) {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {group.people.map((person) => (
-              <div key={person.hrId} className="border border-phx-line bg-white px-4 py-2.5">
-                <p className="truncate text-sm font-bold text-slate-900">{person.name}</p>
-                <p className="truncate text-xs text-slate-500">{person.jobTitle ?? "—"}</p>
+              <div key={person.hrId} className="min-w-0 border border-phx-line bg-white px-4 py-2.5">
+                {/* min-w-0 above so a long name cannot stretch this card's grid track; break-words
+                    so it wraps rather than ending in an ellipsis. These are RECORD names. */}
+                <p className="break-words text-sm font-bold text-slate-900">{person.name}</p>
+                <p className="break-words text-xs text-slate-500">{person.jobTitle ?? "—"}</p>
               </div>
             ))}
           </div>

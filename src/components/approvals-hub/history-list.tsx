@@ -161,7 +161,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
               <div className="min-w-0">
                 {/* Wraps, never ellipsises — see the note on the same line in approvals-workspace. */}
                 <p className="break-words text-sm font-bold text-slate-900">{item.employeeName}</p>
-                <p className="truncate text-xs text-slate-600">
+                <p className="break-words text-xs text-slate-600">
                   {item.title}
                   {showDecidedBy && item.decidedByName ? ` · Decided by ${item.decidedByName}` : ""}
                 </p>
