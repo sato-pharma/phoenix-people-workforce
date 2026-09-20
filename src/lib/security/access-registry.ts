@@ -1403,6 +1403,11 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/spotlight/options", permission: { resource: "spotlight", action: "read" } }),
   sessionApi({ methods: ["POST"], pattern: "/api/spotlight/preview", permission: { resource: "spotlight", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/export", permission: { resource: "spotlight", action: "export" } }),
+  // The award cheque generator: a presentation cheque built from typed fields, PDF or preview. Same gate as the
+  // export (spotlight:export, Super Admin and CEO), and the CEO's signature is read server-side from a private
+  // bucket - the signature route holds the one mutation and checks the origin on PUT and DELETE.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/spotlight/cheques", permission: { resource: "spotlight", action: "export" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, csrfRequired: true, methods: ["GET", "PUT", "DELETE"], pattern: "/api/spotlight/cheques/signature", permission: { resource: "spotlight", action: "export" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-closing/performance-review", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-closing/performance-review/export", permission: [{ resource: "sales", action: "import" }, { resource: "sales", action: "export" }], csrfExemptReason: "Read-only export, Super Admin and SFE Manager only: re-reads the closing for the requested line+period and serialises the rep ranking, family, by-product and by-area views to XLSX; performs no mutation." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/customer-directory/export", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: re-runs the directory query under the caller's filters and serialises it to a styled XLSX; performs no mutation." }),
