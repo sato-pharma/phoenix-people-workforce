@@ -19,9 +19,9 @@ import { currentTemplateVersion } from "../src/lib/hiring-pack/template-registry
 import { calculateBasicSalary } from "../src/lib/payroll/policy.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// THE ARABIC HR LETTER — the Arabic counterpart of `hiring-pack-salary-letter.test.ts`. Both must
-// state the SAME basic salary off the SAME `calculateBasicSalary` figure, so the two never disagree
-// about one employee's number.
+// THE ARABIC HR LETTER — the Arabic counterpart of `hiring-pack-salary-letter.test.ts`. Since
+// 2026-09-20 it states the BASE salary (the English letter still states the basic), carries no
+// company seal, and writes how many copies it was drawn up in from the number chosen at print time.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 const SAMPLE: Record<string, string> = {
@@ -34,7 +34,7 @@ const SAMPLE: Record<string, string> = {
   "employee.baseSalary": "18000",
 };
 
-/** The printed page only — the on-screen banner names the base salary on purpose, the page never. */
+/** The printed page only — the on-screen banner says things about the letter the page never does. */
 function pageOf(html: string): string {
   return [...html.matchAll(/<article class="copy[\s\S]*?<\/article>/g)].map((m) => m[0]).join("\n");
 }
@@ -51,38 +51,62 @@ function renderHtml(pack: ReturnType<typeof buildManualHiringPack>, copies = 1):
 }
 
 /**
- * THE ARABIC CERTIFICATE'S OWN LAYOUT — the same one-column, one-seal shape as the certificate of
- * experience and as the English letter: company block, identity grid, and the Company stamp box
- * carrying the seal.
+ * THE ARABIC LETTER'S LAYOUT — the certificate's one-column shape (company block, identity grid,
+ * a signature table), with NO COMPANY SEAL: the owner, 2026-09-20, "remove the stamp".
  */
-function testTheLetterWearsTheCertificatesLayout() {
+function testTheLetterWearsTheCertificatesLayoutWithoutASeal() {
   const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
   const html = renderHtml(pack);
   const page = pageOf(html);
 
   assert.ok(page.includes('class="doc-ident"'), "the employee's details sit in a ruled grid");
   assert.ok(page.includes("copy--salaryLetter"), "the letter carries its own kind, not the certificate's");
-  assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 1, "exactly one seal on the letter");
+  assert.equal((html.match(/class="phx-seal"/g) ?? []).length, 0, "no company seal anywhere on the letter");
   const cells = signatureCells(page);
-  assert.equal(cells.length, 3, "name and title, signature, company stamp");
-  assert.ok(cells[2].includes('class="phx-seal"'), "the seal sits in the Company stamp box");
-  assert.ok(!cells[1].includes('class="phx-seal"'), "never over the line somebody signs");
+  assert.equal(cells.length, 2, "name and title, and the signature — no stamp box");
+  assert.ok(!page.includes("خاتم الشركة"), "the Company stamp label is gone with the stamp");
+  assert.ok(!cells.some((cell) => cell.includes("phx-seal")), "and nothing is stamped over the signature line");
   assert.ok(!page.includes("border-radius"), "every corner square, by absence");
+  assert.equal(HR_PAPER_SALARY_LETTER_AR_V1.unsealed, true, "the paper says it carries no seal");
 }
 
-function testTheLetterStatesTheBasicSalary() {
+/**
+ * THE SEAL FLAG IS WHAT KEEPS THE SEAL OFF — not the missing label. With no خاتم column the signature
+ * table falls back to stamping column one, which is the line somebody signs; break the flag and this
+ * fires on the seal count, not on wording.
+ */
+function testTheSealFlagIsTheGuardNotTheLabel() {
+  const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
+  const sealed = renderHrPaperHtml(pack, 1, { ...HR_PAPER_SALARY_LETTER_AR_V1, unsealed: false });
+  assert.equal(
+    (sealed.match(/class="phx-seal"/g) ?? []).length,
+    1,
+    "with the flag off the fallback puts the seal on column one — the signature line",
+  );
+  assert.ok(
+    signatureCells(pageOf(sealed))[1].includes("phx-seal"),
+    "which is exactly what the flag exists to prevent",
+  );
+}
+
+/**
+ * THE BASE SALARY, NOT THE BASIC — the owner, 2026-09-20: "you will not put the basic, you will put
+ * the base and you will call it ويتقاضى أجرًا شهريًا مقداره".
+ */
+function testTheLetterStatesTheBaseSalary() {
   const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
   const page = pageOf(renderHtml(pack));
 
   assert.equal(calculateBasicSalary({ baseSalary: 18000 }), 12600);
-  assert.ok(page.includes("12,600"), "the letter must print the BASIC salary — 70% of an 18,000 base");
-  assert.ok(!page.includes("18,000"), "the base salary must never reach the page");
+  assert.ok(page.includes("18,000"), "the letter prints the BASE salary — the 18,000 on the record");
+  assert.ok(!page.includes("12,600"), "and never the basic derived from it");
   assert.ok(
-    page.includes("اثنا عشر ألفاً وستمائة جنيه مصري"),
-    "the amount is written out in Arabic words (تفقيط)",
+    page.includes("ثمانية عشر ألف"),
+    "the amount is written out in Arabic words (تفقيط) — of the base",
   );
   assert.ok(page.includes("فقط لا غير"), "the words are fenced the way every other amount in this system is");
-  assert.ok(page.includes("ويتقاضى أجرًا أساسيًا شهريًا"), "a serving employee's salary is in the present tense");
+  assert.ok(page.includes("ويتقاضى أجرًا شهريًا مقداره"), "the owner's own wording, present tense for a serving employee");
+  assert.ok(!page.includes("أساسي") && !page.includes("الأساسي"), "the word basic is nowhere on the page");
   assert.ok(!page.includes("صافي"), "the page never states a net salary");
   assert.ok(!page.includes("إجمالي"), "the page never states a gross salary");
 }
@@ -93,13 +117,12 @@ function testNoBaseSalaryIsABlankNeverZero() {
   const page = pageOf(renderHtml(pack));
 
   assert.ok(
-    page.includes('class="rule-line" data-hp-key="BASIC_SALARY"'),
+    page.includes('class="rule-line" data-hp-key="BASE_SALARY"'),
     "a missing salary prints a rule for a pen",
   );
   assert.ok(!page.includes("٠ جنيه") && !page.includes("0 جنيه"), "a zero on a letter to a bank says the employee is unpaid");
-  assert.ok(!page.includes('data-hp-key="BASIC_SALARY_WORDS"') === false, "sanity: the token key itself still appears somewhere");
   assert.ok(
-    page.includes('class="rule-line" data-hp-key="BASIC_SALARY_WORDS"'),
+    page.includes('class="rule-line" data-hp-key="BASE_SALARY_WORDS"'),
     "no words are spelled out for a figure that is not there — it rules too",
   );
 }
@@ -116,10 +139,55 @@ function testALeaverGetsThePastTense() {
     "a leaver's letter states that his service ended",
   );
   assert.ok(
-    page.includes("وكان آخر أجر أساسي شهري يتقاضاه"),
-    "and states his LAST basic salary, in the past tense",
+    page.includes("وكان آخر أجر شهري يتقاضاه"),
+    "and states his LAST monthly salary, in the past tense",
   );
-  assert.ok(!page.includes("ويتقاضى أجرًا أساسيًا شهريًا"), "it never states a leaver's salary in the present tense");
+  assert.ok(!page.includes("ويتقاضى أجرًا شهريًا"), "it never states a leaver's salary in the present tense");
+}
+
+/**
+ * THE COPIES SENTENCE FOLLOWS THE NUMBER CHOSEN AT PRINT TIME — «تحرر من نسختين نسخة تسلم …», and
+ * "based on what I tell you, you write here". It used to be a fixed "two copies" in the letterhead
+ * band, a claim that was false the first time somebody printed three.
+ */
+function testTheCopiesSentenceFollowsTheCount() {
+  const pack = buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT);
+  const clauseOf = (copies: number) => pageOf(renderHtml(pack, copies));
+
+  assert.ok(clauseOf(1).includes("من نسخة واحدة تُسلَّم لصاحب الشأن"), "one copy: it is handed over");
+  assert.ok(
+    clauseOf(2).includes("من نسختين، نسخة تُسلَّم لصاحب الشأن ونسخة تُحفظ بملف الخدمة"),
+    "two copies: the dual, one handed over and one kept",
+  );
+  assert.ok(clauseOf(3).includes("من ثلاث نسخ، نسخة تُسلَّم لصاحب الشأن وباقي النسخ تُحفظ"), "three: the counted plural");
+  assert.ok(clauseOf(11).includes("من 11 نسخة"), "past ten the count is in digits with the singular");
+  for (const copies of [1, 3, 4]) {
+    assert.ok(!clauseOf(copies).includes("نسختين"), `${copies} copies never print the dual «نسختين»`);
+  }
+  // Every printed copy states the same count.
+  assert.equal((clauseOf(3).match(/من ثلاث نسخ/g) ?? []).length, 3, "each of the three sheets carries it");
+  // The letterhead band no longer makes a copy claim of its own to contradict it.
+  assert.ok(!HR_PAPER_SALARY_LETTER_AR_V1.purposeAr.includes("نسخ"), "the purpose band says nothing about copies");
+  // The PDF path draws one copy and stamps the rest: it must still state the count being printed.
+  const stated = renderHrPaperHtml(pack, 1, HR_PAPER_SALARY_LETTER_AR_V1, null, [], 4);
+  assert.ok(pageOf(stated).includes("من أربع نسخ"), "a stated count overrides the one copy drawn");
+}
+
+/**
+ * ONE FULL PAGE — the owner, 2026-09-20: "instead of condensing the page with the lower half empty,
+ * re-space it and fit it in one page". Measured against the PRINTED page in headless Chrome when this
+ * was written (232.8mm of content in a 246mm sheet); what is pinned here is the mechanism.
+ */
+function testTheLetterIsStretchedToFillItsPage() {
+  const html = renderHtml(buildManualHiringPack(SAMPLE, COMPANY_DETAILS_DEFAULT));
+  const css = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1] ?? "";
+  assert.match(css, /\.copy--salaryLetter \.doc-sheet \{ height: 246mm; \}/, "the sheet is stretched to the printable page");
+  const height = Number(/\.copy--salaryLetter \.doc-sheet \{ height: (\d+)mm/.exec(css)?.[1]);
+  // 297mm less the two @page margins (10.7 + 12.7) and the copy's own padding (10.7 + 12.7).
+  assert.ok(height <= 250, `${height}mm must stay inside the 250.2mm printable height, or a second empty page prints`);
+  assert.ok(height >= 240, "and must actually fill it — the lower half was empty before");
+  assert.match(css, /\.copy--salaryLetter \.doc-body \{ font-size: 10pt;/, "set larger than the 9pt dense papers");
+  assert.ok(!/copy--salaryLetter[^{]*\{[^}]*background/.test(css), "spacing only — no filled area, per the ink rule");
 }
 
 function testItIsWiredIn() {
@@ -143,10 +211,13 @@ function testATypedInLetterAsksForTheBaseSalary() {
 }
 
 export function runHiringPackSalaryLetterArTests() {
-  testTheLetterWearsTheCertificatesLayout();
-  testTheLetterStatesTheBasicSalary();
+  testTheLetterWearsTheCertificatesLayoutWithoutASeal();
+  testTheSealFlagIsTheGuardNotTheLabel();
+  testTheLetterStatesTheBaseSalary();
   testNoBaseSalaryIsABlankNeverZero();
   testALeaverGetsThePastTense();
+  testTheCopiesSentenceFollowsTheCount();
+  testTheLetterIsStretchedToFillItsPage();
   testItIsWiredIn();
   testATypedInLetterAsksForTheBaseSalary();
 }

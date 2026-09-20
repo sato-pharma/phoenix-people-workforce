@@ -20,11 +20,13 @@ import { Building2, Loader2, Printer, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { issuePaperReference } from "@/components/hiring-pack/issue-paper-reference";
+import { PrintOptionsDialog, type PrintAnswer } from "@/components/hiring-pack/print-options-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { documentDefaultCopies } from "@/lib/hiring-pack/document-registry";
 import type { FormsDriveEntry } from "@/lib/hiring-pack/forms-drive";
 import { stampPaperReferenceInDocument } from "@/lib/hiring-pack/paper-reference";
+import { documentTakesAddressChoice, type PrintAddressChoice } from "@/lib/hiring-pack/print-address";
 
 /** One box, as the manual route describes it. Mirrors `ManualPaperInput` without importing a server module. */
 type ManualInput = {
@@ -42,6 +44,7 @@ const labelClassName =
 const DEFAULT_PAPER_WIDTH = 820;
 
 async function drawManualPaper(body: {
+  address: PrintAddressChoice | null;
   copies: string;
   document: string;
   group?: string;
@@ -76,6 +79,10 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
   const [notice, setNotice] = useState<string | null>(null);
   const [drawing, setDrawing] = useState(true);
   const [printing, setPrinting] = useState(false);
+  // WHICH COMPANY ADDRESS THE PAPER CARRIES, chosen in the prompt before printing (owner, 2026-09-20).
+  // Null until asked, which draws the registered head office as it always did.
+  const [address, setAddress] = useState<PrintAddressChoice | null>(null);
+  const [asking, setAsking] = useState(false);
   const [typedOnPaper, setTypedOnPaper] = useState(false);
   const [scale, setScale] = useState(1);
   const [paperSize, setPaperSize] = useState({ height: 1123, width: DEFAULT_PAPER_WIDTH });
@@ -87,12 +94,23 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
   const typedRef = useRef(false);
   const drawnOnceRef = useRef(false);
   const requestRef = useRef(0);
+  // Set when the prompt changed the count or the address: the paper is redrawn at once and printed
+  // when the new page has loaded, and the debounced redraw the state change would also schedule is
+  // skipped so it cannot reload the frame under an open print dialog.
+  const printAfterDrawRef = useRef(false);
+  const skipNextDrawRef = useRef(false);
+  const printRef = useRef<() => void>(() => undefined);
 
   const draw = useCallback(
-    async (nextValues: Record<string, string>, nextCopies: string) => {
+    async (
+      nextValues: Record<string, string>,
+      nextCopies: string,
+      nextAddress: PrintAddressChoice | null,
+    ) => {
       const id = ++requestRef.current;
       setDrawing(true);
       const result = await drawManualPaper({
+        address: nextAddress,
         copies: nextCopies,
         document: entry.document,
         group,
@@ -117,15 +135,19 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
   );
 
   useEffect(() => {
+    if (skipNextDrawRef.current) {
+      skipNextDrawRef.current = false;
+      return;
+    }
     if (typedRef.current) return;
     // The first draw is immediate — it is what lists the boxes. After that, wait for a pause in
     // the typing rather than drawing the paper once per keystroke.
     const timer = window.setTimeout(
-      () => void draw(values, copies),
+      () => void draw(values, copies, address),
       drawnOnceRef.current ? 600 : 0,
     );
     return () => window.clearTimeout(timer);
-  }, [copies, draw, values]);
+  }, [address, copies, draw, values]);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -153,6 +175,11 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
       height: Math.max(400, doc.documentElement.scrollHeight),
       width: Math.max(DEFAULT_PAPER_WIDTH, doc.documentElement.scrollWidth),
     });
+    // The prompt redrew the paper for a new count or address: it is on screen now, so print it.
+    if (printAfterDrawRef.current) {
+      printAfterDrawRef.current = false;
+      printRef.current();
+    }
   }, []);
 
   const print = useCallback(async () => {
@@ -181,8 +208,55 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
     frame.contentWindow.print();
   }, [copies, entry.document, entry.label, entry.numberOnFace, values]);
 
+  useEffect(() => {
+    printRef.current = () => void print();
+  }, [print]);
+
+  /**
+   * The prompt's answer. Nothing has printed yet: the count and the address are applied to the
+   * paper first, because both are WRITTEN ON IT — and printing the page as it stands would hand over
+   * a paper that says something different from what was just chosen.
+   */
+  const confirmPrint = useCallback(
+    async (answer: PrintAnswer) => {
+      setAsking(false);
+      const nextCopies = String(answer.copies);
+      const nextAddress = answer.address ?? address;
+      const changed = nextCopies !== copies || nextAddress !== address;
+      if (!changed) {
+        void print();
+        return;
+      }
+      if (typedRef.current) {
+        // A redraw would wipe what was typed on the paper, and printing it as it stands would carry
+        // the old count and address. So neither happens: say so, and let the desk choose.
+        setError(
+          "You typed on the paper, so a different number of copies or company address cannot be applied without redrawing it. Use “Apply the boxes to the paper” first (that replaces what you typed), then print again.",
+        );
+        return;
+      }
+      skipNextDrawRef.current = true;
+      printAfterDrawRef.current = true;
+      setCopies(nextCopies);
+      setAddress(nextAddress);
+      await draw(values, nextCopies, nextAddress);
+    },
+    [address, copies, draw, print, values],
+  );
+
   return (
     <div className="flex flex-col gap-4">
+      {asking ? (
+        <PrintOptionsDialog
+          askAddress={documentTakesAddressChoice(entry.document)}
+          defaultCopies={Number.parseInt(copies, 10) >= 1 ? Number.parseInt(copies, 10) : 1}
+          initialAddress={address}
+          onCancel={() => setAsking(false)}
+          onConfirm={(answer) => void confirmPrint(answer)}
+          registeredAddress={null}
+          title={entry.label}
+        />
+      ) : null}
       <div className="flex items-start gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-phx-ink-soft">
         <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-press" />
         <p>
@@ -228,7 +302,7 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
         <Button
           className="gap-2 rounded-none"
           disabled={printing || drawing || html === null}
-          onClick={() => void print()}
+          onClick={() => setAsking(true)}
           type="button"
         >
           {printing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
@@ -240,7 +314,7 @@ export function ManualPaperWorkspace({ entry, group }: { entry: FormsDriveEntry;
             disabled={drawing}
             onClick={() => {
               typedRef.current = false;
-              void draw(values, copies);
+              void draw(values, copies, address);
             }}
             type="button"
             variant="outline"
