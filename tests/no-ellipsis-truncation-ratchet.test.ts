@@ -178,15 +178,21 @@ import path from "node:path";
  * (database-validation-tab.tsx). The address was cut short with a hover title; it now shows in full
  * and wraps. Pinned by tests/database-mapping-tables-fit.test.ts.
  *
- * 192 -> 189 on 2026-09-21: the approvals hub's three lists — the workspace card, the history list
- * and the company requests list. They now render the employee RECORD name rather than the
- * nickname-first display name, and it runs to four and five parts here; measured at 375px, the
- * longest name in the employee master had 349px of itself hidden behind the ellipsis. All three
- * are a `min-w-0` text column beside a `shrink-0` chip column, so wrapping grows the row taller
- * and never pushes the page sideways. Pinned by
+ * 192 -> 181 on 2026-09-21: the approvals hub, all eight sites — there is now no `truncate`
+ * anywhere under src/components/approvals-hub. It started with the three name lines (the workspace
+ * card, the history list, the company requests list), which now render the employee RECORD name
+ * rather than the nickname-first display name; that runs to four and five parts here, and measured
+ * at 375px the longest name in the employee master had 349px of itself hidden behind the ellipsis.
+ * The owner then asked for the secondary lines too, which took in the rest: the three subtitle
+ * lines, the approval scope cards (name + job title), the stuck-approvals panel (its `primary` is
+ * "<record name> (<HR id>)") and the plan decision activity label.
+ *
+ * Every one sits in a `min-w-0` column beside a `shrink-0` sibling, so wrapping grows the row
+ * taller and never pushes the page sideways. The scope card was the exception — a bare grid item,
+ * so it was given `min-w-0` in the same change to stop a long name stretching its track. Pinned by
  * tests/approvals-hub-resolves-the-employee-record-name.test.ts.
  */
-const BASELINE = 189;
+const BASELINE = 181;
 
 const ROOTS = ["app", "src"];
 
