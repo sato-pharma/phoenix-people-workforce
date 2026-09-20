@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import ExcelJS from "exceljs";
 
+import type { WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 import {
   buildCombinedReportExport,
   loadCombinedReportProducts,
@@ -156,6 +157,10 @@ const TABLES: Record<string, Row[]> = {
 
 const SELECTED = ["upload-first", "upload-second"];
 
+// The paging is judged for a viewer who may see every row (the Super Admin's scope), so the scope hides
+// nothing here; what it hides from everyone else is weekly-combined-report-scope.test.ts.
+const SEES_EVERYTHING: WeeklyAccessScope = { tier: "full", canViewRestricted: true, canViewHeadOffice: true };
+
 /** The rows under a table's header ("Product"/"Period") down to its TOTAL row, as [label, ...numbers]. */
 function tableRows(sheet: ExcelJS.Worksheet, header: string): { header: number; body: ExcelJS.Row[]; total: ExcelJS.Row } {
   let headerRow = 0;
@@ -189,7 +194,8 @@ export async function runWeeklyCombinedReportPagingTests() {
   // ── The read: every product row, however many requests it takes ─────────────────────────────────
   const read = fakePostgrest(TABLES);
   // No prices here: this test is about the paging, so every row keeps its stored value (live price: weekly-combined-report-live-price.test.ts).
-  const products = await loadCombinedReportProducts(read.client, SELECTED, new Map());
+  const { productsByBatch: products, scopedTotals } = await loadCombinedReportProducts(read.client, SELECTED, new Map(), SEES_EVERYTHING);
+  assert.equal(scopedTotals.size, 0, "a viewer who sees every row has no upload cut down, so every upload keeps its stored figures");
 
   const byCode = (batchId: string) =>
     Object.fromEntries((products.get(batchId) ?? []).map((p) => [p.productCode, [p.netQty, p.salesValue, p.stockQty]]));
@@ -217,7 +223,7 @@ export async function runWeeklyCombinedReportPagingTests() {
   // 22:15 UTC on 16 July is 01:15 on 17 July in Cairo (UTC+3 in summer): a UTC label is wrong by the hour
   // AND the day.
   const exported = fakePostgrest(TABLES);
-  const buffer = await buildCombinedReportExport(exported.client, SELECTED, new Date("2026-07-16T22:15:00.000Z"));
+  const buffer = await buildCombinedReportExport(exported.client, SELECTED, SEES_EVERYTHING, new Date("2026-07-16T22:15:00.000Z"));
   assert.ok(buffer, "the selected uploads exist, so there is a file");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
@@ -260,7 +266,7 @@ export async function runWeeklyCombinedReportPagingTests() {
   assert.doesNotMatch(provenance[0], /UTC/, "the Generated line never says UTC");
 
   const nothing = fakePostgrest(TABLES);
-  assert.equal(await buildCombinedReportExport(nothing.client, ["upload-that-does-not-exist"]), null, "no uploads found, no file");
+  assert.equal(await buildCombinedReportExport(nothing.client, ["upload-that-does-not-exist"], SEES_EVERYTHING), null, "no uploads found, no file");
 
   // ── The route: it hands the work to the paged export and reads nothing itself ─────────────────────
   const route = code(readFileSync(join(process.cwd(), "app/api/sales/weekly/export-batches/route.ts"), "utf8"));
