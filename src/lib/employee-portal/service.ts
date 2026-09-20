@@ -1751,7 +1751,15 @@ export async function getEmployeePortalData(
       salesScope,
       targetSalesHrIds,
     }),
-    () => prefetched?.expenses != null ? Promise.resolve(prefetched.expenses) : listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }).then(withLivePortalExpenseNames),
+    async () => {
+      if (prefetched?.expenses != null) return prefetched.expenses;
+      // Awaited first, deliberately: passing withLivePortalExpenseNames bare to .then() lets
+      // devSafePromiseAll's `() => Promise<unknown>` constraint fix its type parameter to
+      // `unknown`, and the whole tuple element degrades with it.
+      return withLivePortalExpenseNames(
+        await listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+      );
+    },
     () => prefetched?.expenseReports != null ? Promise.resolve(prefetched.expenseReports) : listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     () => listEmployeeDocuments(currentHrId),
     () => fetchPortalNotifications(currentHrId),
@@ -3420,11 +3428,19 @@ export async function getMedicalRepPortalData(
         targetSalesHrIds,
       }),
       () => currentHrId ? getEmployeePortalPayrollDashboard(currentHrId) : Promise.resolve(null),
-      () => listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }).then(withLivePortalExpenseNames),
+      async () =>
+        withLivePortalExpenseNames(
+          await listPayrollExpenses(undefined, undefined, undefined, { ...access, hrId: currentHrId }),
+        ),
       // Live outstation (system-entered) expenses must follow the SAME access scope as
       // the historical rows above — otherwise managers only see their own trips and the
       // team's system-entered expenses vanish (they used to be masked by Excel uploads).
-      () => includeLiveOutstationExpenses ? listOutstationRequestExpenses({ ...access, hrId: currentHrId }).then(withLivePortalExpenseNames) : Promise.resolve([]),
+      async () =>
+        includeLiveOutstationExpenses
+          ? withLivePortalExpenseNames(
+              await listOutstationRequestExpenses({ ...access, hrId: currentHrId }),
+            )
+          : [],
       () => listPayrollExpenseReports({ ...access, hrId: currentHrId }),
     ]);
     const expenses = [
