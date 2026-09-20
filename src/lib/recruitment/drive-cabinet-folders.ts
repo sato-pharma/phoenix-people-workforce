@@ -20,6 +20,13 @@
 // misleading", and it was: a folder called "Cairo" held people who never said Cairo. Nothing here
 // reads the CV any more. A person who did not answer is filed as exactly that.
 //
+// A CHANNEL IS NOT ALWAYS AN INBOX. Most CVs arrive from outside and their channel is the line they
+// landed on, read from `ats_cv_intake_events`. A CV attached inside Phoenix while booking an
+// interview arrives on the interview calendar, and `ats_files.upload_origin` is what says so — added
+// 2026-09-21, after all 5 hand-uploaded CVs on production were found parked under
+// `Red flags/Source unknown`. Only that one origin opens a folder; see
+// `CABINET_UPLOAD_ORIGIN_FOLDERS`.
+//
 // THE CHANNEL IS THE LINE THE CV ARRIVED ON, NOT THE PERSON. One applicant who wrote to the chatbot
 // line and also emailed careers@ has one CV in each channel folder, because that is where each one
 // actually arrived. Each WhatsApp number is its own folder, named by the number, so a third line the
@@ -38,7 +45,8 @@
 //                        in the file never wrote to us, so an "answered" stamp on the record belongs
 //                        to somebody else's conversation. It stays here even if they answer later.
 //   4. Sent by a colleague  an email from a company address. Somebody inside passed it on.
-//   5. Source unknown    no intake record at all, or a WhatsApp record that never said which line.
+//   5. Source unknown    nothing on the file says where it came from — no intake record and no
+//                        upload origin, or a WhatsApp record that never said which line.
 //
 // WHAT IS NOT A FLAG, ON PURPOSE. A rejected candidate's CV stays in its normal folder — rejection is
 // a recruiting decision the app already shows, and hiding the file would lose the history. And an
@@ -65,6 +73,31 @@ export const CABINET_ROOT_NAME = "Phoenix CV Cabinet";
 
 /** careers@ and hr@ together — two inboxes of one channel. */
 export const EMAIL_CHANNEL_FOLDER = "Email";
+
+/**
+ * The channel folder for a CV attached inside Phoenix while booking an interview.
+ *
+ * A CHANNEL, not a red flag. The cabinet files by the line a CV arrived on, and this one arrived on
+ * the interview calendar — a person in Phoenix attached it, and `ats_files.upload_origin` records
+ * which path did. Before that column existed the file had no intake record and nothing else said
+ * where it came from, so `cabinetRedFlagFor` could only call it "Source unknown": measured on
+ * production 2026-09-21, 4 CVs the owner attached himself sat under `Red flags/Source unknown`,
+ * reading as suspect when their provenance was the most certain of any CV in the cabinet.
+ */
+export const INTERVIEW_CALENDAR_CHANNEL_FOLDER = "Interview calendar";
+
+/**
+ * The upload origins `ats_files.upload_origin` can hold, and the channel folder each opens.
+ *
+ * Only the interview calendar gets a folder of its own — the owner's decision, 2026-09-21. The other
+ * two paths record their origin (it costs nothing, and the column is written either way) but keep
+ * today's behaviour: a bare file dropped onto a candidate, or an attachment lifted out of the
+ * WhatsApp inbox, still has no channel the cabinet can stand behind, and "Source unknown" is the
+ * honest answer for it. Giving one a folder later is one line here and nothing else.
+ */
+export const CABINET_UPLOAD_ORIGIN_FOLDERS: Readonly<Record<string, string>> = {
+  interview_calendar: INTERVIEW_CALENDAR_CHANNEL_FOLDER,
+};
 
 /** Under a channel, for a sender who never answered the questions. Nothing is guessed for them. */
 export const DID_NOT_ANSWER_FOLDER = "Did not answer";
@@ -139,6 +172,12 @@ export type CabinetFileInput = {
   isCv: boolean | null;
   /** Every CV row the candidate has, this one included — the duplicate rule needs all of them. */
   siblings: readonly DedupableCvRow[];
+  /**
+   * `ats_files.upload_origin` — which in-app path uploaded this file, or null when it arrived through
+   * inbound intake (where `intake` carries the channel instead). Old rows are all null, which is why
+   * leaving it out reads exactly as the cabinet read before the column existed.
+   */
+  uploadOrigin?: string | null;
 };
 
 function clean(value: unknown): string | null {
@@ -177,13 +216,24 @@ export function whatsappLineFolderName(displayNumber: unknown): string | null {
   return `WhatsApp ${local}`;
 }
 
-/** The channel folder a CV arrived through, or null when its record never said. */
-export function cabinetChannelFolder(intake: CabinetIntakeEvent | null): string | null {
-  if (!intake) return null;
-  const channel = lower(intake.channel);
-  if (channel === "email") return EMAIL_CHANNEL_FOLDER;
-  if (channel === "whatsapp") return whatsappLineFolderName(intake.raw_metadata?.deliveredToDisplayNumber);
-  return null;
+/**
+ * The channel folder a CV arrived through, or null when nothing on it said.
+ *
+ * The INTAKE RECORD is asked first and the upload origin second, because an intake record is where
+ * the CV actually landed from outside the company, while an origin only ever says which screen inside
+ * Phoenix wrote the row. A file cannot honestly carry both; if one ever did, the outside arrival is
+ * the channel the owner asked us to file by.
+ */
+export function cabinetChannelFolder(
+  intake: CabinetIntakeEvent | null,
+  uploadOrigin?: string | null,
+): string | null {
+  const channel = lower(intake?.channel);
+  if (intake) {
+    if (channel === "email") return EMAIL_CHANNEL_FOLDER;
+    if (channel === "whatsapp") return whatsappLineFolderName(intake.raw_metadata?.deliveredToDisplayNumber);
+  }
+  return CABINET_UPLOAD_ORIGIN_FOLDERS[lower(uploadOrigin)] ?? null;
 }
 
 /** Whether the company forwarded this CV to itself. See the header for why it outranks an answer. */
@@ -226,7 +276,7 @@ export function cabinetRedFlagFor(input: CabinetFileInput): CabinetRedFlag | nul
   }
   if (isAutoForwardedCv(input.intake, input.importSenders)) return "auto_forward";
   if (isColleagueEmail(input.intake)) return "colleague";
-  if (!cabinetChannelFolder(input.intake)) return "source_unknown";
+  if (!cabinetChannelFolder(input.intake, input.uploadOrigin)) return "source_unknown";
   return null;
 }
 
@@ -295,7 +345,7 @@ export function cabinetPathFor(input: CabinetFileInput, areaRegions: AreaRegionM
     segments = [RED_FLAGS_FOLDER, cabinetRedFlagLabels[flag]];
   } else {
     // Not null: a CV with no channel is flagged "Source unknown" above.
-    const channel = cabinetChannelFolder(input.intake) as string;
+    const channel = cabinetChannelFolder(input.intake, input.uploadOrigin) as string;
     if (!clean(input.candidate.preferences_declared_at)) {
       segments = [channel, DID_NOT_ANSWER_FOLDER];
     } else {
