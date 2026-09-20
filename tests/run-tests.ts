@@ -1422,6 +1422,7 @@ import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
+import { runOutstationReadersResolveTheLiveEmployeeNameTests } from "./outstation-readers-resolve-the-live-employee-name.test.ts";
 import { runOutstationRequestNameIsTheEmployeeRecordTests } from "./outstation-request-name-is-the-employee-record.test.ts";
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
@@ -4649,6 +4650,11 @@ await runTest(
 await runTest(
   "every outstation request write path stamps the employee RECORD name, never the nickname-first display name",
   runOutstationRequestNameIsTheEmployeeRecordTests,
+);
+
+await runTest(
+  "every outstation reader resolves the employee's live record name instead of the stored snapshot",
+  runOutstationReadersResolveTheLiveEmployeeNameTests,
 );
 
 await runTest(
