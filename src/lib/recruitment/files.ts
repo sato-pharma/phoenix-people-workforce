@@ -94,6 +94,21 @@ export async function listCandidateCardFiles(
   return files;
 }
 
+/**
+ * Which in-app path uploaded a file.
+ *
+ * A CV that arrives through inbound intake carries its channel on `ats_cv_intake_events`, and the
+ * cabinet files it by that. A CV uploaded INSIDE Phoenix has no intake record at all, so before this
+ * existed the cabinet could only call it "Source unknown" — measured on production 2026-09-21, all 5
+ * such CVs sat under `Red flags/Source unknown`, 4 of them attached by the owner himself while
+ * booking an interview. The channel was never unknown; nothing on the file said what it was.
+ *
+ * Deliberately NOT a third `ats_cv_intake_events.channel` value: that column is typed
+ * `"email" | "whatsapp" | null` across intake analytics, the 6h digest and WhatsApp health, and a new
+ * value there would move the intake counts the owner reads.
+ */
+export type CandidateFileUploadOrigin = "interview_calendar" | "ats_upload" | "whatsapp_inbox";
+
 export type UploadCandidateFileInput = {
   candidateId: string;
   applicationId?: string | null;
@@ -102,6 +117,8 @@ export type UploadCandidateFileInput = {
   mimeType: string;
   bytes: ArrayBuffer | Buffer;
   sizeBytes?: number | null;
+  /** Omitted only by inbound intake, whose channel lives on its intake record instead. */
+  origin?: CandidateFileUploadOrigin | null;
 };
 
 /**
@@ -176,6 +193,7 @@ export async function uploadCandidateFile(
       content_md5: cvContentFingerprint(input.bytes),
       drive_file_id: stored.driveFileId,
       external_url: stored.externalUrl,
+      upload_origin: input.origin ?? null,
       uploaded_by_hr_id: hrIdForStorage(access.hrId) ?? access.loginId ?? null,
     })
     .select("*")

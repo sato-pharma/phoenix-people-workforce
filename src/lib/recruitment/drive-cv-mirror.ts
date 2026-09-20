@@ -235,7 +235,7 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
     const supabase = getSupabaseAdmin();
     const { data: fileRow, error: fileError } = await supabase
       .from("ats_files")
-      .select("id, candidate_id, file_name, mime_type, drive_file_id, drive_mirror_file_id, drive_mirror_path")
+      .select("id, candidate_id, file_name, mime_type, drive_file_id, drive_mirror_file_id, drive_mirror_path, upload_origin")
       .eq("id", fileId)
       .maybeSingle();
     if (fileError) throw fileError;
@@ -248,6 +248,7 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
       drive_mirror_path: string | null;
       file_name: string | null;
       mime_type: string | null;
+      upload_origin: string | null;
     };
     // A row with no storage key has no bytes to copy — a CV-as-link candidate, or a record whose
     // upload failed. Nothing to mirror, and not a failure.
@@ -331,6 +332,7 @@ export async function mirrorCvToDrive(fileId: string): Promise<MirrorOutcome> {
         intake: earliestIntakeEvent((intakeRows ?? []) as CabinetIntakeEvent[]),
         isCv: latestCvVerdict((verdictRows ?? []) as Array<{ created_at: string | null; is_cv: boolean | null }>),
         siblings,
+        uploadOrigin: row.upload_origin,
       },
       areaRegions,
     );
