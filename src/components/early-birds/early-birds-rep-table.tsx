@@ -122,10 +122,12 @@ export function EarlyBirdsRepTable({
                       ["Median start", formatStartClock(score.medianStartMinutes)],
                       ["Days", `${score.daysWithSubmission}/${score.expectedWorkingDays}`],
                       [
+                        // The credited figure — regularVisitsWithCheckin, not the raw total — so this
+                        // never reads as more Regular credit than the score actually reflects.
                         "Regular visits",
                         score.regularVisitsNoCheckin > 0
-                          ? `${score.regularVisits} (${score.regularVisitsNoCheckin} no check-in)`
-                          : String(score.regularVisits),
+                          ? `${score.regularVisitsWithCheckin} (+${score.regularVisitsNoCheckin} no check-in)`
+                          : String(score.regularVisitsWithCheckin),
                       ],
                       ["Campaign visits", String(score.campaignVisits)],
                       ["GPS days", `${score.gpsVerifiedDays}/${score.daysWithSubmission}`],
@@ -224,7 +226,10 @@ export function EarlyBirdsRepTable({
                       <td className={TD}>
                         <p className="break-words font-bold tabular-nums text-slate-900">{score.totalVisits}</p>
                         <p className="break-words text-phx-3xs font-semibold text-slate-400">
-                          Regular {score.regularVisits} · Campaign {score.campaignVisits}
+                          {/* Three buckets that sum to totalVisits: the credited Regular figure is
+                              regularVisitsWithCheckin, never the raw total, so this line never
+                              overstates what earned Regular score. */}
+                          Regular {score.regularVisitsWithCheckin} · Campaign {score.campaignVisits}
                           {score.regularVisitsNoCheckin > 0
                             ? ` · ${score.regularVisitsNoCheckin} no check-in`
                             : ""}
