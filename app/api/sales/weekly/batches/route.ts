@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
+import { scopeWeeklyBatchesForViewer } from "@/lib/sales/weekly/batch-list-scope";
 import { deleteWeeklyBatch, listWeeklyBatches, retagWeeklyBatch } from "@/lib/sales/weekly/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -24,7 +26,10 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "weekly_sales", "import");
-    const data = await listWeeklyBatches();
+    // Each upload's stored totals add the restricted products and the Head Office line, so the list
+    // is cut to what this viewer's weekly access scope may read (batch-list-scope.ts).
+    const scope = await resolveWeeklyAccessScope(access);
+    const data = scopeWeeklyBatchesForViewer(await listWeeklyBatches(), scope);
     return NextResponse.json({ success: true, data });
   } catch (error) {
     return fail(error, "Failed to load weekly uploads.");

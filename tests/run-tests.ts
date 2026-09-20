@@ -531,6 +531,7 @@ import { runWeeklyCombinedReportUnitTotalsTests } from "./weekly-combined-report
 import { runWeeklyCombinedReportPagingTests } from "./weekly-combined-report-paging.test.ts";
 import { runWeeklyCombinedReportLivePriceTests } from "./weekly-combined-report-live-price.test.ts";
 import { runWeeklyCombinedReportScopeTests } from "./weekly-combined-report-scope.test.ts";
+import { runWeeklyBatchListScopeTests } from "./weekly-batch-list-scope.test.ts";
 import { runMonthlyClosingRegionScopeTests } from "./monthly-closing-region-scope.test.ts";
 import { runMonthlyClosingDetailsTests } from "./monthly-closing-details.test.ts";
 import { runSalesRestrictedProductsTests } from "./sales-restricted-products.test.ts";
@@ -6346,6 +6347,11 @@ await runTest(
 await runTest(
   "the weekly Combined Report applies the viewer's weekly access scope: below the CEO and the Super Admin no restricted product and no Head Office product reaches the file, an upload the scope cut prints the row count, units and value of what he may see and never the totals stored on it (an upload whose rows were all hidden prints zeros), and the route resolves the scope and rate-limits; before the fix the SFE Manager, who holds the upload permission, could download all of it",
   runWeeklyCombinedReportScopeTests,
+);
+
+await runTest(
+  "the weekly Upload list applies the viewer's weekly access scope: below the CEO and the Super Admin an upload's stored units, stock and sales value, which add the restricted products and the Head Office line, reach neither the GET route's response nor the Upload page's own props (null, never zero), the row count stays, both doors go through the scope, and no third caller can send the uncut list; before the fix the SFE Manager, who holds the upload permission, received every upload's stored totals",
+  runWeeklyBatchListScopeTests,
 );
 
 await runTest(

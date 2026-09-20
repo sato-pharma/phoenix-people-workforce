@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { WeeklyUploadWorkspace } from "@/components/sales/weekly/weekly-upload-workspace";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
+import { scopeWeeklyBatchesForViewer } from "@/lib/sales/weekly/batch-list-scope";
 import { listWeeklyBatches, listWeeklyDistributors } from "@/lib/sales/weekly/service";
 import type { WeeklyBatch, WeeklyDistributorOption } from "@/lib/sales/weekly/types";
 
@@ -19,7 +21,13 @@ export default async function WeeklySalesUploadPage() {
   let initialBatches: WeeklyBatch[] = [];
   let initialError: string | null = null;
   try {
-    [distributors, initialBatches] = await Promise.all([listWeeklyDistributors(), listWeeklyBatches()]);
+    // The batches go into the page's own props, so they are cut to the viewer's weekly access scope
+    // here as well as in the API route (batch-list-scope.ts); a scope that cannot be read leaves the
+    // list empty and shows the error rather than the uncut list.
+    const scope = await resolveWeeklyAccessScope(access);
+    const [loadedDistributors, loadedBatches] = await Promise.all([listWeeklyDistributors(), listWeeklyBatches()]);
+    distributors = loadedDistributors;
+    initialBatches = scopeWeeklyBatchesForViewer(loadedBatches, scope);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load weekly sales.";
   }

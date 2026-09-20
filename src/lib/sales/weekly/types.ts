@@ -337,15 +337,19 @@ export type WeeklyBatch = {
   importableRows: number;
   failedRows: number;
   warningRows: number;
+  // The six figures below are the upload's STORED totals, so they add every row the sheet holds —
+  // the restricted products and the Head Office line included. They are null when the viewer's
+  // weekly access scope hides any of those rows (batch-list-scope.ts): never zero, because a zero
+  // reads as "this upload sold nothing".
   /** gross sales units (audit) */
-  totalSalesQty: number;
+  totalSalesQty: number | null;
   /** returned units */
-  totalReturnQty: number;
+  totalReturnQty: number | null;
   /** net units = gross - returns (the priced quantity) */
-  totalNetQty: number;
-  totalBonusQty: number;
-  totalSalesValue: number;
-  totalStockQty: number;
+  totalNetQty: number | null;
+  totalBonusQty: number | null;
+  totalSalesValue: number | null;
+  totalStockQty: number | null;
   blockingReasons: string[];
   uploadedBy: string | null;
   /** which column contract parsed this batch: 'code' (built-in) or 'override' (in-app edit active) */
