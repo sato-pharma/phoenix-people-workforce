@@ -16,6 +16,7 @@ import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/c
 // to is a fact about the vendor's records, not about visits in general.
 import { CRM_CHECKINS_UNIFIED_VIEW, CRM_VISITS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
+import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
@@ -1284,7 +1285,16 @@ export function mapVisitRow(row: Record<string, unknown>): VisitsReportRow {
     visitTime: resolved.time,
     visitTimeSource: resolved.source,
     visitType: row.visit_type == null ? null : Number(row.visit_type),
-    visitTypeDescription: (row.visit_type_description as string | null) ?? null,
+    // Resolved, never the raw vendor string. The vendor stores the literal "Unknown" for eight
+    // distinct codes (-30, -21, -20, -19, -16, -7, -6, -5), so the raw column cannot tell Public
+    // Holiday from Admin Work — 3,077 rows since January on production, measured 2026-09-21.
+    // Resolving HERE covers the report table and the export from one place, which is what keeps
+    // the two matching, and it is the same string the Visit Type filter now selects on.
+    visitTypeDescription: resolveVisitTypeLabel(
+      row.visit_type == null ? null : Number(row.visit_type),
+      (row.visit_type_description as string | null) ?? null,
+      (row.comment as string | null) ?? null,
+    ),
   };
 }
 
@@ -1327,6 +1337,7 @@ type ReportFilterableQuery = {
   eq: (...args: any[]) => ReportFilterableQuery;
   gte: (...args: any[]) => ReportFilterableQuery;
   ilike: (...args: any[]) => ReportFilterableQuery;
+  in: (...args: any[]) => ReportFilterableQuery;
   is: (...args: any[]) => ReportFilterableQuery;
   lte: (...args: any[]) => ReportFilterableQuery;
   not: (...args: any[]) => ReportFilterableQuery;
@@ -1346,7 +1357,15 @@ function applyVisitsReportFilters(
   if (excludedInList) result = result.not("exclusion_crm_id", "in", excludedInList);
   if (filters.agentName) result = result.eq("agent_name", filters.agentName);
   if (filters.ampm) result = result.eq("ampm", filters.ampm);
-  if (filters.visitType) result = result.eq("visit_type_description", filters.visitType);
+  if (filters.visitType) {
+    // Filter by CODE where the label is one of the resolved names, by stored description otherwise
+    // — the same two-branch rule the CRM master tab has used since it retired "Unknown"
+    // (`master.ts`). The vendor writes the literal "Unknown" for eight different codes, so an
+    // `.eq("visit_type_description", …)` on a resolved name matches nothing: picking "Public
+    // Holiday" here returned an empty report while 156 such rows sat in the window (2026-08-27).
+    const codes = CRM_VISIT_TYPE_FILTER_CODES.get(filters.visitType);
+    result = codes ? result.in("visit_type", [...codes]) : result.eq("visit_type_description", filters.visitType);
+  }
   const term = filters.search?.trim();
   if (term) {
     const orExpr = ilikeAnyFilter(["agent_name", "double_name", "contact_name", "comment"], term);
@@ -1458,36 +1477,17 @@ async function getDistinctAgentNames(dateFrom: string, dateTo: string): Promise<
   return Array.from(names).sort();
 }
 
-async function getDistinctVisitTypes(dateFrom: string, dateTo: string): Promise<string[]> {
-  // Full keyset scan (order by `id`) — every distinct visit-type label in the window, GUARANTEED
-  // complete (no silent cap). Distinct cardinality is tiny (~10), so this is a bounded one-pass scan.
-  const supabase = getSupabaseAdmin();
-  const excludedInList = await getEffectiveExcludedInList();
-  const types = new Set<string>();
-  const pageSize = 2000;
-  let cursor: string | null = null;
-  for (;;) {
-    let query = supabase
-      .from(CRM_VISITS_UNIFIED_VIEW)
-      .select("id, visit_type_description")
-      .not("exclusion_crm_id", "in", excludedInList)
-      .gte("visit_date", dateFrom)
-      .lte("visit_date", dateTo)
-      .order("id", { ascending: true })
-      .limit(pageSize);
-    if (cursor) query = query.gt("id", cursor);
-    const { data, error } = await query;
-    if (error) {
-      if (isCrmSchemaMissingError(error)) return [];
-      throw new Error(error.message);
-    }
-    const page = (data ?? []) as Array<{ id: string; visit_type_description: string | null }>;
-    for (const row of page) if (row.visit_type_description) types.add(row.visit_type_description);
-    if (page.length < pageSize) break;
-    cursor = page[page.length - 1].id;
-  }
-  return Array.from(types).sort();
-}
+/**
+ * The Visit Type dropdown is the STATIC resolved vocabulary, not whatever the window happens to
+ * hold.
+ *
+ * It used to be a full keyset scan of every visit in the range, building the list from the stored
+ * `visit_type_description`. That offered the reader the literal "Unknown" — the vendor's one name
+ * for eight different codes — as if it were a kind of visit, and it could never offer the real
+ * names behind it. `CRM_VISIT_TYPE_OPTIONS` is the same list the CRM master tab shows, so the two
+ * screens now agree, and the scan is gone with it.
+ */
+const VISITS_REPORT_TYPE_OPTIONS: string[] = [...CRM_VISIT_TYPE_OPTIONS];
 
 export async function getVisitsReportData(
   input: VisitsReportFilterInput & { page?: number; pageSize?: number },
@@ -1522,11 +1522,10 @@ export async function getVisitsReportData(
     .order("crm_visit_id", { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
-  const [{ data, error, count }, latestSyncRuns, agents, visitTypes] = await Promise.all([
+  const [{ data, error, count }, latestSyncRuns, agents] = await Promise.all([
     filteredQuery,
     getLatestVisitsSyncRuns(10),
     getDistinctAgentNames(dateFrom, dateTo),
-    getDistinctVisitTypes(dateFrom, dateTo),
   ]);
   if (error) throw new Error(error.message);
 
@@ -1537,7 +1536,7 @@ export async function getVisitsReportData(
     configured,
     dateFrom,
     dateTo,
-    filters: { agents, visitTypes },
+    filters: { agents, visitTypes: VISITS_REPORT_TYPE_OPTIONS },
     latestSyncRuns,
     page,
     pageSize,

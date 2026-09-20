@@ -450,6 +450,7 @@ import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
+import { runCrmRouteMapAddressTests } from "./crm-route-map-address-never-ellipsises.test.ts";
 import {
   runCoverageDueDenominatorTests,
   runCrmRepDoctorListsTests,
@@ -2825,6 +2826,12 @@ await runTest(
   + "\"Unknown\"; the vendor's own description still wins; -7 and -30 route on the rep's comment; a "
   + "resolved label must never be written back to visit_type_description)",
   runCrmVisitTypeLabelTests,
+);
+await runTest(
+  "crm route map address never ellipsises (the GPS check-in trail's address is the only line saying "
+  + "where the rep stood; it wraps, it does not truncate, and the column stays min-w-0 so wrapping "
+  + "never becomes a horizontal scroll)",
+  runCrmRouteMapAddressTests,
 );
 await runTest(
   "crm rep doctor lists (a doctor on a rep's plan who was never visited must show up as missed — "

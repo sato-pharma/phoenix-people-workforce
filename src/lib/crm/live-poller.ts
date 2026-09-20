@@ -25,6 +25,18 @@
  * cannot throw and raises none of the visits pipeline's alarms: that pipeline feeds payroll
  * attendance and keeping it un-entangled is the point of the separation.
  *
+ * That covered only HALF the list, and the other half was found a day behind. `plan-sync` mirrors
+ * the dated PLAN (`ireports360_plan_entries`); the CONTACT LIST itself (`ireports360_contacts` —
+ * the only path by which Phoenix learns of a doctor assigned to a rep but never planned and never
+ * visited) was refreshed solely by the external 05:00 Cairo cron, twelve calls five minutes apart,
+ * ONCE A DAY. Measured on production 2026-09-21: 9,245 rows across 66 agents written in one burst
+ * at 05:00, the previous writes 09-19 05:00 and 09-16 05:00 — so a doctor assigned at 09:00 was
+ * invisible to Phoenix until the next morning. Since 2026-09-21 that sweep runs from this loop too,
+ * one twelfth every five minutes through the Cairo working day, which is a FULL ROSTER EVERY HOUR
+ * (owner's instruction, 2026-09-21: "make it hourly"). The cron entry stays as an idempotent
+ * backstop — each agent is replaced independently and an empty vendor answer is refused rather than
+ * applied, so the two schedules overlapping is safe by construction.
+ *
  * Deliberately NO success notifications (the 15-min morning live-sync set that precedent — at
  * this cadence they would be pure noise); failures notify Super Admins once per sustained outage
  * (see FAILURE_NOTIFY_AT_STREAK) and every tick pings the phoenix-ireports360-live-poll
@@ -57,6 +69,16 @@ import {
   type NewlySeenPlan,
 } from "@/lib/crm/plan-sync";
 import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySweep } from "@/lib/crm/parity";
+import { revalidateTag } from "next/cache";
+import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
+import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@/lib/crm/contact-master";
+import {
+  CONTACT_SYNC_SLICE_COUNT,
+  contactSyncSliceForDate,
+  loadCrmContactSyncTargets,
+  selectContactSyncSlice,
+  syncCrmContactLists,
+} from "@/lib/crm/contacts-sync";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { describeThrown } from "@/lib/error-monitor/describe-thrown";
@@ -91,6 +113,15 @@ export const FAILURE_NOTIFY_AGAIN_EVERY = 60;
 const FAILURE_BACKOFF_SECONDS = 300;
 
 const DEAD_MANS_SWITCH_SLUG = "phoenix-ireports360-live-poll";
+/** The contact job's OWN switch — the same slug the cron route pings, so the check keeps meaning
+ * one thing no matter which schedule fired last. Never the poller's slug above: a stale doctor
+ * list is not a stalled poller, and the two must stay separately diagnosable. */
+const CONTACT_LIST_JOB_SLUG = "phoenix-crm-contact-lists";
+/** How long one slice may spend fetching before it stops starting new agents. Larger than the
+ * cron route's 21s, which is sized to fit inside cron-job.org's 30-second request cap — there is
+ * no HTTP request here to be cut, only this tick's slot, and the 5-minute gap is the real bound.
+ * Measured on production: 8-10s for a full tick, so this is headroom, not a budget. */
+const CONTACT_LIST_SLICE_BUDGET_MS = 90_000;
 const STARTUP_DELAY_MS = 15_000;
 const TICK_JITTER_MS = 5_000;
 // The vendor JWT is valid ~30 days; refresh well before that.
@@ -246,6 +277,25 @@ export const PLAN_SYNC_MIN_GAP_MS = 60 * 60 * 1000;
 export const PLAN_SYNC_EARLIEST_CAIRO_MINUTES = 6 * 60;
 export const PLAN_SYNC_FAILURE_RETRY_GAP_MS = 30 * 60 * 1000;
 
+/** Contact-list sync: one twelfth of the roster every five minutes — a FULL ROSTER EVERY HOUR.
+ *
+ * THE GAP AND THE SLICE COUNT ARE ONE DESIGN, NOT TWO SETTINGS. `CONTACT_SYNC_SLICE_COUNT` is 12,
+ * so a five-minute gap is exactly what makes "hourly" true; changing either alone changes how long
+ * a full sweep takes. A slice is ~5 agents x 3 vendor pages, measured at 8-10s, so it fits inside
+ * one tick's slot the same way a plan sync does.
+ *
+ * Bounded to 06:00-22:00 Cairo rather than run around the clock. The list is edited by a human
+ * administrator during working hours, and every hour outside them is a full roster of vendor
+ * requests bought for nothing — this is the one job whose cadence went up sixteenfold, so its
+ * window is the thing keeping that honest. Overnight the external 05:00 cron still sweeps.
+ *
+ * A failure backs off 15 minutes, not a day: the vendor session is the usual cause, the next slice
+ * re-logs in, and yesterday's rows are kept rather than emptied while it recovers. */
+export const CONTACT_LIST_SYNC_MIN_GAP_MS = 5 * 60 * 1000;
+export const CONTACT_LIST_SYNC_EARLIEST_CAIRO_MINUTES = 6 * 60;
+export const CONTACT_LIST_SYNC_LATEST_CAIRO_MINUTES = 22 * 60;
+export const CONTACT_LIST_SYNC_FAILURE_RETRY_GAP_MS = 15 * 60 * 1000;
+
 /** Full-history parity sweep: one 30-day window of history re-proved against the CRM per day.
  *
  * DAILY, not weekly, and that is the whole point. The wide reconcile covers 120 days as four slices
@@ -261,7 +311,13 @@ export const PARITY_SWEEP_MIN_GAP_MS = 20 * 60 * 60 * 1000;
 export const PARITY_SWEEP_EARLIEST_CAIRO_MINUTES = 2 * 60;
 export const PARITY_SWEEP_FAILURE_RETRY_GAP_MS = 2 * 60 * 60 * 1000;
 
-export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | "plan-sync" | "parity-sweep" | null;
+export type ScheduledCrmWork =
+  | "rolling-sync"
+  | "wide-reconcile"
+  | "plan-sync"
+  | "contact-lists"
+  | "parity-sweep"
+  | null;
 
 /** Which (if any) scheduled deep run is due at this tick — pure, so week/day/hour edges are
  * testable without a clock. Reconcile outranks rolling: it is rarer and includes a 30-day slice
@@ -273,6 +329,8 @@ export function resolveDueScheduledWork(input: {
   cairoDayOfWeek: number;
   minutesSinceMidnight: number;
   nowMs: number;
+  lastContactListFailureMs: number | null;
+  lastContactListSuccessMs: number | null;
   lastParitySweepFailureMs: number | null;
   lastParitySweepSuccessMs: number | null;
   lastPlanSyncFailureMs: number | null;
@@ -301,9 +359,22 @@ export function resolveDueScheduledWork(input: {
     (input.lastPlanSyncFailureMs === null || input.nowMs - input.lastPlanSyncFailureMs >= PLAN_SYNC_FAILURE_RETRY_GAP_MS);
   if (planSyncDue) return "plan-sync";
 
-  // Lowest priority of the four, deliberately. It re-proves SETTLED history, so it is the only one
-  // that costs nothing at all by waiting a tick — the other three feed today's attendance, today's
-  // doctor list, and payroll. Its 02:00 window is also outside the hours the others contend for.
+  // Fourth, below the plan sync and above the parity sweep. It is the most FREQUENT of the five
+  // (every five minutes) and the cheapest, so it must not be able to hold a slot the three jobs
+  // above it want — and it is still today's data, so it outranks the re-proof of settled history.
+  const contactListSyncDue =
+    input.minutesSinceMidnight >= CONTACT_LIST_SYNC_EARLIEST_CAIRO_MINUTES &&
+    input.minutesSinceMidnight < CONTACT_LIST_SYNC_LATEST_CAIRO_MINUTES &&
+    (input.lastContactListSuccessMs === null ||
+      input.nowMs - input.lastContactListSuccessMs >= CONTACT_LIST_SYNC_MIN_GAP_MS) &&
+    (input.lastContactListFailureMs === null ||
+      input.nowMs - input.lastContactListFailureMs >= CONTACT_LIST_SYNC_FAILURE_RETRY_GAP_MS);
+  if (contactListSyncDue) return "contact-lists";
+
+  // Lowest priority of the five, deliberately. It re-proves SETTLED history, so it is the only one
+  // that costs nothing at all by waiting a tick — the other four feed today's attendance, today's
+  // plan, today's doctor list, and payroll. Its 02:00 window is also outside the hours the others
+  // contend for: at 02:00 the three day jobs are closed and the contact sweep has not opened.
   const paritySweepDue =
     input.minutesSinceMidnight >= PARITY_SWEEP_EARLIEST_CAIRO_MINUTES &&
     (input.lastParitySweepSuccessMs === null ||
@@ -317,6 +388,13 @@ export function resolveDueScheduledWork(input: {
 
 type PollerState = {
   consecutiveFailures: number;
+  /** Which twelfth of the roster the next contact-list slice serves. Seeded from the Cairo clock on
+   * the first slice after a restart, then advanced by one, so it is BOTH restart-proof (a deploy
+   * does not send every sweep back to slice 1 and starve the other eleven) and drift-proof (a slow
+   * vendor cannot make the schedule skip a slice the way a clock-derived slot can). */
+  contactListSlice: number | null;
+  lastContactListFailureMs: number | null;
+  lastContactListSuccessMs: number | null;
   lastParitySweepFailureMs: number | null;
   lastParitySweepSuccessMs: number | null;
   lastPlanSyncFailureMs: number | null;
@@ -333,6 +411,9 @@ type PollerState = {
 
 const state: PollerState = {
   consecutiveFailures: 0,
+  contactListSlice: null,
+  lastContactListFailureMs: null,
+  lastContactListSuccessMs: null,
   lastParitySweepFailureMs: null,
   lastParitySweepSuccessMs: null,
   lastPlanSyncFailureMs: null,
@@ -522,6 +603,88 @@ async function runScheduledPlanSync(): Promise<void> {
 }
 
 /**
+ * Refreshes one twelfth of the roster's assigned doctor lists from the CRM web app.
+ *
+ * Firewalled exactly like runScheduledPlanSync, and for the same reason: it never throws, never
+ * pings the visits sync's dead-man's switch, and never sends the visits digest. The contact mirror
+ * is not an input to payroll attendance and must not be able to raise an alarm that reads as
+ * "today's attendance data is broken".
+ *
+ * It DOES ping the contact job's own switch, `phoenix-crm-contact-lists`, on the same two
+ * conditions the cron route uses — no agent refreshed at all, or a failed contact-master rebuild.
+ * Those are the two shapes that mean the mirror is rotting behind a green job; partial degradation
+ * deliberately stays green, because `agentsRefusedEmpty` is the designed safety and a check that
+ * pages on an ordinary vendor hiccup gets muted, and a muted check is worth less than no check.
+ * Continuity with the route matters: whichever schedule fired last, the switch says the same thing.
+ */
+async function runScheduledContactListSync(): Promise<void> {
+  const slice = state.contactListSlice ?? contactSyncSliceForDate(new Date());
+  const startedAt = Date.now();
+  try {
+    const { targets, unresolved } = await loadCrmContactSyncTargets();
+    const result = await syncCrmContactLists({
+      deadlineAt: startedAt + CONTACT_LIST_SLICE_BUDGET_MS,
+      targets: selectContactSyncSlice(targets, slice, CONTACT_SYNC_SLICE_COUNT),
+    });
+    // THE CONTACT MASTER FOLLOWS THE MIRROR — the master's dated assignments are built from these
+    // rows, so it is rebuilt right after the slice that changed them. It never throws.
+    const contactMaster = await refreshCrmContactMaster({
+      includeActivity: contactMasterRefreshIncludesActivity({ slice, sliceOf: CONTACT_SYNC_SLICE_COUNT }),
+    });
+    // Advance only on a completed slice, so a failure re-serves the same twelfth rather than
+    // skipping it — the whole point of carrying a cursor instead of reading the clock.
+    state.contactListSlice = (slice + 1) % CONTACT_SYNC_SLICE_COUNT;
+    state.lastContactListSuccessMs = Date.now();
+    console.log(
+      `[crm:live-poll] in-process contact-lists slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT} — ` +
+        `${result.upserted} rows across ${result.agents} agents (${result.contacts} distinct contacts), ` +
+        `${result.deleted} removed` +
+        (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
+        (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
+        (result.skipped ? `, ${result.skipped} out of time` : "") +
+        (unresolved.length ? `, ${unresolved.length} with no CRM account yet` : "") +
+        ` [master ${contactMaster.status}]`,
+    );
+    if (contactMaster.status === "failed") {
+      logError("CRM in-process contact-lists: contact master refresh failed", {
+        error: contactMaster.error,
+        labels: { event: "contact_master_refresh_failed", job: "crm-contact-lists" },
+      });
+    }
+    // THE LISTS JUST MOVED, SO THE CACHED PICKER COUNTS ARE NOW WRONG — busted AFTER the master
+    // refresh, or a board would re-cache the pre-refresh counts for another five minutes. Wrapped
+    // because this runs on a timer, not in a request: if the call is rejected outside a request
+    // scope the rows are still written and the 300s TTL is the fallback, exactly as in the route.
+    try {
+      revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
+    } catch (error) {
+      logError("CRM in-process contact-lists: cache revalidation failed", {
+        error,
+        labels: { event: "cache_revalidate_failed", job: "crm-contact-lists" },
+      });
+    }
+    await pingDeadMansSwitch(
+      CONTACT_LIST_JOB_SLUG,
+      result.agents === 0 || contactMaster.status === "failed" ? "fail" : "success",
+      `in-process slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT}: ${result.agents} agent(s) refreshed, ` +
+        `${result.upserted} row(s) upserted` +
+        (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
+        (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
+        (result.skipped ? `, ${result.skipped} out of time` : "") +
+        (contactMaster.status === "failed" ? `, contact master refresh FAILED: ${contactMaster.error}` : ""),
+    );
+  } catch (error) {
+    state.lastContactListFailureMs = Date.now();
+    logError(
+      `CRM in-process contact-lists slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT} failed; ` +
+        "that twelfth of the roster keeps the doctor list it already had",
+      { error, labels: { event: "crm_contact_list_sync_failed", job: "crm-contact-lists" } },
+    );
+    await pingDeadMansSwitch(CONTACT_LIST_JOB_SLUG, "fail", describeThrown(error));
+  }
+}
+
+/**
  * Re-proves the stalest 30-day window of history against the CRM, and repairs it if it differs.
  *
  * Firewalled exactly like runScheduledPlanSync, and for the same reason: it never throws, never
@@ -650,6 +813,10 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
     await runScheduledPlanSync();
     return;
   }
+  if (work === "contact-lists") {
+    await runScheduledContactListSync();
+    return;
+  }
   if (work === "parity-sweep") {
     await runScheduledParitySweep();
     return;
@@ -752,6 +919,8 @@ async function tick(): Promise<void> {
   // serialized through this single loop, so the app never runs two engine pulls concurrently.
   const dueWork = resolveDueScheduledWork({
     cairoDayOfWeek: cairoDayOfWeek(),
+    lastContactListFailureMs: state.lastContactListFailureMs,
+    lastContactListSuccessMs: state.lastContactListSuccessMs,
     lastParitySweepFailureMs: state.lastParitySweepFailureMs,
     lastParitySweepSuccessMs: state.lastParitySweepSuccessMs,
     lastPlanSyncFailureMs: state.lastPlanSyncFailureMs,
