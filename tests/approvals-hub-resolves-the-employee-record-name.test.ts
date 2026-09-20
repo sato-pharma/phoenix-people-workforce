@@ -163,10 +163,36 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
     );
   }
 
-  // ── The one deliberate exception ──────────────────────────────────────────
+  // ── "Decided by …" says the same name the card above it says ──────────────
+  // Owner, 2026-09-21: "align the decided-by name to the record name too". Before that this file
+  // pinned deciderDisplayName to `employee.displayName`, on the reasoning that it names a live
+  // person rather than resolving a snapshot — true, and beside the point: one card was reading
+  // "<record name> … Decided by <nickname>", two naming rules on one row.
+  const decider = functionBody(hub, "function deciderDisplayName(");
   assert.ok(
-    functionBody(hub, "function deciderDisplayName(").includes("employee.displayName"),
-    "deciderDisplayName is NOT resolving a snapshot — it names a live person beside their job " +
-      "title, which is the live-UI case displayName exists for. It must stay as it is.",
+    decider.includes("employeeRecordName(employee)"),
+    "deciderDisplayName must build its label from employeeRecordName(employee) — the SAME rule the " +
+      "card's own name uses, so both halves of one row name the person the same way",
+  );
+  assert.ok(
+    !decider.includes("employee.displayName"),
+    "deciderDisplayName must not render displayName — that is the nickname-first field, and the " +
+      "record name is what the rest of this card shows",
+  );
+  assert.ok(
+    decider.includes("employee.jobTitle") && decider.includes("(${employee.jobTitle})"),
+    "the job-title suffix stays — aligning the NAME must not drop the title beside it",
+  );
+  assert.ok(
+    decider.includes("canonicalPersonHrId(hrId)") && decider.includes("if (!employee) return hrId;"),
+    "the two-step lookup and the raw-HR_ID fallback stay — the system-administrator console " +
+      "account is not in the directory, and it must still resolve to the person behind that login",
+  );
+
+  // ── The one displayName left in the hub, and why ──────────────────────────
+  assert.ok(
+    functionBody(hub, "export async function getStuckApprovalsForReassignment(").includes("row.displayName"),
+    "the stuck-approvals manager PICKER still offers displayName — it chooses between live people " +
+      "rather than naming one onto a request, so it is deliberately not part of this alignment",
   );
 }

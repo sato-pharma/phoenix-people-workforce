@@ -854,7 +854,10 @@ function deciderDisplayName(
     employees.find((e) => hrIdsMatch(e.hrId, hrId))
     ?? employees.find((e) => hrIdsMatch(e.hrId, canonicalPersonHrId(hrId)));
   if (!employee) return hrId;
-  return employee.jobTitle ? `${employee.displayName} (${employee.jobTitle})` : employee.displayName;
+  // The RECORD name, not displayName — the same rule the snapshot resolver below uses. Without it
+  // one card reads "<record name> … Decided by <nickname>", two names for two people on one row.
+  const name = employeeRecordName(employee);
+  return employee.jobTitle ? `${name} (${employee.jobTitle})` : name;
 }
 
 /**
@@ -868,8 +871,11 @@ function deciderDisplayName(
  * outstation request read as the record name on the outstation queue (PRs #4135, #4136) and as a
  * nickname here, for the same person on the same day.
  *
- * `deciderDisplayName` above deliberately still uses displayName: it is not resolving a snapshot,
- * it is naming a live person beside their job title, which is the live-UI case displayName is for.
+ * `deciderDisplayName` above resolves the same way (owner, 2026-09-21: "align the decided-by name
+ * to the record name too"). It is not reading a snapshot — it names a live person beside their job
+ * title — but both halves of one card must say the same name for the same person, so it too reads
+ * the record name. The one displayName left in this file is the stuck-approvals manager PICKER,
+ * which is a live chooser of people and not a name rendered onto a request.
  */
 function liveEmployeeName(
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
