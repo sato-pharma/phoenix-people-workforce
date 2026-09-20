@@ -23,6 +23,7 @@ import {
 } from "@/lib/recruitment/candidate-merge";
 import { getCandidate } from "@/lib/recruitment/candidates";
 import { mapCandidate, recruitmentDb, type CandidateDbRow } from "@/lib/recruitment/db";
+import { mirrorCandidateCvsToDrive } from "@/lib/recruitment/drive-cv-mirror";
 import { logError } from "@/lib/observability/log";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -612,6 +613,26 @@ export async function mergeCandidates(
     note: summary,
     status: merged.status,
   });
+
+  // Step 8 — RE-FILE THE CABINET, because a merge is the one event that changes a CV's NAME without
+  // ever touching the CV.
+  //
+  // A mirrored file is called `<person> - <number>.<ext>` and nothing else, and `copyLabelsFor` adds
+  // an arrival-date label ONLY when one candidate holds more than one CV. Both records held one each
+  // a moment ago, so both files sit in Drive under the plain name — and now that they are siblings on
+  // one record, both names are wrong in the same way: identical, in one folder, with nothing to tell
+  // a recruiter which document is which. The FOLDER can move too, since `cabinetPathFor` reads the
+  // surviving record's answers and the duplicate's are gone.
+  //
+  // Measured on production 2026-09-21, after 19 merges: NINE folders were left holding two different
+  // documents under one file name. Re-running the mirror renamed every one. Nothing else in the
+  // system would have done it — the file rows are never written to again, so no later intake or
+  // classification event revisits them, and the wrong name stays until somebody notices by hand.
+  //
+  // IT CANNOT FAIL THE MERGE. `mirrorCandidateCvsToDrive` logs and swallows its own errors, and the
+  // database work above is already committed: a Drive outage must not turn a finished merge into an
+  // exception the caller reads as "nothing happened".
+  await mirrorCandidateCvsToDrive(survivorId);
 
   return {
     borrowedFields: borrowed.map((field) => field.label),
