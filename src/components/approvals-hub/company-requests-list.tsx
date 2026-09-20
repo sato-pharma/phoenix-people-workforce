@@ -178,7 +178,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
                   {item.employeeName}
                   {item.submitterTitle ? <span className="font-medium text-slate-500"> · {item.submitterTitle}</span> : null}
                 </p>
-                <p className="truncate text-xs text-slate-600">
+                <p className="break-words text-xs text-slate-600">
                   {item.typeLabel}
                   {item.requestDate ? ` · ${item.requestDate}` : ""}
                 </p>

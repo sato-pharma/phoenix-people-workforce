@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -125,24 +125,41 @@ export function runApprovalsHubResolvesTheEmployeeRecordNameTests() {
   // with the longest name the employee master actually holds — 55 characters — that clipped 349px
   // of it. The owner's rule is that where an ellipsis and the no-horizontal-scroll rule collide,
   // wrapping wins; at 1440px both spellings fit on one line, so this costs the desktop nothing.
+  // The whole folder, not just the name lines: the owner asked for the secondary lines too, and a
+  // folder-wide assertion is the one a new card cannot be added around.
+  const hubDir = join(process.cwd(), "src/components/approvals-hub");
+  const truncating: string[] = [];
+  for (const entry of readdirSync(hubDir)) {
+    if (!entry.endsWith(".tsx")) continue;
+    readFileSync(join(hubDir, entry), "utf8")
+      .split("\n")
+      .forEach((line, i) => {
+        if (/className="[^"]*\btruncate\b/.test(line)) truncating.push(`${entry}:${i + 1}`);
+      });
+  }
+  assert.deepEqual(
+    truncating,
+    [],
+    "no card in the approvals hub may truncate its text. These render the employee RECORD name, " +
+      "which runs to four and five parts — at 375px the longest one in the employee master had " +
+      "349px of itself hidden behind an ellipsis. Every one of these sits in a min-w-0 column " +
+      "beside a shrink-0 sibling, so wrapping grows the row taller and never pushes the page " +
+      "sideways. Truncating at: " + truncating.join(", "),
+  );
+
   for (const file of [
     "src/components/approvals-hub/approvals-workspace.tsx",
     "src/components/approvals-hub/history-list.tsx",
     "src/components/approvals-hub/company-requests-list.tsx",
   ]) {
-    const source = readFileSync(join(process.cwd(), file), "utf8");
-    const nameLine = source
+    const nameLine = readFileSync(join(process.cwd(), file), "utf8")
       .split("\n")
       .find((line) => line.includes("text-sm font-bold text-slate-900"));
     assert.ok(nameLine, `${file} must still render the employee name in its own bold line`);
     assert.ok(
-      !nameLine.includes("truncate"),
-      `${file} must not truncate the employee name — it renders the RECORD name, which runs to ` +
-        `four and five parts, and an ellipsis there hides most of it on a phone. Wrapping wins.`,
-    );
-    assert.ok(
       nameLine.includes("break-words"),
-      `${file} must wrap the employee name rather than let it overflow its column`,
+      `${file} must WRAP the employee name — dropping the truncate without wrapping would let it ` +
+        `overflow its column instead`,
     );
   }
 
