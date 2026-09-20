@@ -274,8 +274,50 @@ export function runMarketingCompleteExistingCustomerTests() {
   // completion loses cleanly instead of clobbering the capture that got there first.
   assert.match(
     service,
-    /row\.evidence_status === "complete"[\s\S]{0,320}customer_already_evidenced/,
+    /row\.evidence_status === "complete"[\s\S]{0,1400}customer_already_evidenced/,
     "a customer that already has complete evidence must be refused at preload",
+  );
+  // ...except for one door, added when "Capture Evidence" was offered for a venue-only gap: a
+  // COMPLETE customer may be submitted only to complete its venue. Admitted when the submission
+  // brings no complete customer capture of its own and names a venue already on file — anything
+  // else is still refused, so nothing on the customer's own proof can be replaced.
+  assert.match(
+    service,
+    /submitted\.evidenceStatus !== "complete"[\s\S]{0,120}entry\.existingPharmacyId[\s\S]{0,120}if \(!isVenueOnly\) \{\s*throw validationError\(/,
+    "a complete customer is admitted only when the submission is venue-only, and refused otherwise",
+  );
+  // Venue-only means the customer ROW is never written: no update, no undo entry, no photo, no
+  // contact, no link sweep — and every link verdict reads the evidence the row ALREADY holds, or a
+  // customer with a complete photo would be stamped as still short by a submission that carries none.
+  assert.match(
+    service,
+    /if \(existingCustomerRow && isVenueOnly\) \{[\s\S]{0,200}customer = mapCustomer\(existingCustomerRow\);\s*\} else if \(existingCustomerRow\) \{/,
+    "a venue-only customer must be read, never updated",
+  );
+  assert.match(
+    service,
+    /if \(!isVenueOnly && normalizedCustomer\.evidencePhotoDataUrl\)/,
+    "no customer photo is stored for a venue-only save",
+  );
+  assert.match(
+    service,
+    /if \(!isVenueOnly && \(normalizedCustomer\.mobileNumber/,
+    "no contact row is written for a venue-only save",
+  );
+  assert.match(
+    service,
+    /if \(existingCustomerRow && !isVenueOnly\) \{\s*await refreshLinksAfterCustomerCompletion/,
+    "the customer sweep is for a completed customer only",
+  );
+  assert.match(
+    service,
+    /const customerEvidenceStatus: MarketingEvidenceStatus = existingCustomerRow && isVenueOnly\s*\?\s*\(\(existingCustomerRow\.evidence_status/,
+    "a venue-only save must judge each link by the customer's stored evidence",
+  );
+  assert.doesNotMatch(
+    service.slice(service.indexOf("const isVenueOnly = Boolean(existingCustomerRow")),
+    /customerEvidenceStatus: normalizedCustomer\.evidenceStatus,\s*\n\s*governorateVerdict/,
+    "no link verdict may read the submission's (empty) customer capture on a venue-only save",
   );
   assert.match(
     service,
@@ -384,12 +426,36 @@ export function runMarketingCompleteExistingCustomerTests() {
     /disabled=\{Boolean\(customer\.existingCustomerId\)\}/,
     "name and type must be locked while completing a customer already on record",
   );
-  // Offering the button on a customer whose own evidence is already complete would only earn a
-  // server rejection — that block is on the pharmacy side.
+  // The button is offered when EITHER half is short: the customer's own evidence or its venue's.
+  // Hiding it for a customer that is complete left a rep standing in front of the shop with no way
+  // to record it. Only a block that is neither — a release — has nothing to capture.
   assert.match(
     workspace,
-    /customer\.evidenceStatus !== "complete" \?/,
-    "the action must only appear where the customer's own evidence is what is missing",
+    /function pendingHasCapturableGap[\s\S]{0,260}row\.customer\.evidenceStatus !== "complete" \|\| row\.pharmacy\.evidenceStatus !== "complete"/,
+    "the action must appear where the customer's OR the venue's evidence is what is missing",
+  );
+  assert.equal(
+    workspace.split("{pendingHasCapturableGap(group.rows) ? (").length - 1,
+    2,
+    "both the phone card and the desktop row must offer Capture Evidence on either gap",
+  );
+  // A complete customer opens the form on its venue: locked, seeded with the shop already on file,
+  // and refused a save that carries no venue capture (it would change nothing and report success).
+  assert.match(workspace, /customerComplete: !customerShort/, "the form must know the customer is already complete");
+  assert.match(
+    workspace,
+    /existingPharmacyId: pharmacyId, source: "existing" \}\);/,
+    "the blocked venue must be attached from the shop on file, never re-typed as a new one",
+  );
+  assert.match(
+    workspace,
+    /function customerIsVenueOnlyWithoutCapture[\s\S]{0,260}hasCompleteCapture\(pharmacy\.capture\)/,
+    "a venue-only save must carry a complete venue capture",
+  );
+  assert.match(
+    workspace,
+    /!customerIsVenueOnlyWithoutCapture\(customer\) &&/,
+    "canSave must refuse a venue-only save with no capture, in step with describeMissingRequirement",
   );
   // The owner's standing UI rule: never truncate with an ellipsis, never let text wrap.
   assert.match(
