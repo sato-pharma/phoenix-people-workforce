@@ -1014,8 +1014,15 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
                 {row.campaignCalls} calls
                 {!phoenix && row.campaignOnlyDays > 0 ? ` · ${row.campaignOnlyDays} day(s) campaign only` : ""}
-                {phoenix && row.phoenix ? ` · ${row.phoenix.regularNoCheckin} no check-in` : ""}
               </span>
+              {/* Its own line with its own label, never concatenated onto the Campaign caption above —
+                  rule 10 (owner, 2026-09-20) requires this identified on its own, never read as part
+                  of Campaign, even though it shares this merged column. */}
+              {phoenix && row.phoenix && row.phoenix.regularNoCheckin > 0 ? (
+                <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
+                  {row.phoenix.regularNoCheckin} Regular, no check-in
+                </span>
+              ) : null}
             </td>
           </tr>
         ))}
