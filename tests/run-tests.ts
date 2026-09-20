@@ -238,6 +238,7 @@ import { runScreeningRowLinkTests } from "./recruitment-screening-row-link.test.
 import { runCvFolderTreeTests } from "./cv-folder-tree.test.ts";
 import { runCandidateFolderFilerNameTests } from "./candidate-folder-filer-name.test.ts";
 import { runCandidateCallClaimTests } from "./candidate-call-claims.test.ts";
+import { runCandidateOpenerTests } from "./recruitment-candidate-openers.test.ts";
 import { runCvPhoneRedactionTests } from "./cv-phone-redaction.test.ts";
 import { runCvLockRemovedRevealMarksSeenTests } from "./cv-lock-removed-reveal-marks-seen.test.ts";
 import { runCandidatePoolFiledSearchTests } from "./candidate-pool-filed-search.test.ts";
@@ -5951,6 +5952,11 @@ await runTest(
 await runTest(
   "a manager's CV card: the phone is revealed by the \"I will call\" reservation and by nothing else, and the download is blocked in the route",
   runCandidateCallClaimTests,
+);
+
+await runTest(
+  "every candidate card names the colleagues who already opened its CV, by name, title and Cairo time, and never the viewer",
+  runCandidateOpenerTests,
 );
 
 await runTest(

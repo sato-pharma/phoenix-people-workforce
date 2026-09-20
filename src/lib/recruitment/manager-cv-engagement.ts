@@ -16,11 +16,14 @@
 // not the folder alone, is what keeps a CV stranded on a resigned manager or an NSM — who holds no
 // district folder — visible instead of vanishing.
 //
-// SILENT, AND THAT IS A REQUIREMENT, NOT A STYLE CHOICE. The manager being measured must not be able
-// to tell that his opens are watched. Nothing on his own screen changes: the open signal is written
-// to `ats_candidate_views` — the same table the Talent Acquisition screening queue already uses for
-// "have I read this" — keyed by his own HR_ID, and his portal ("My Candidates") reads that table
-// nowhere. The report is reachable only by the five people allowed to see it (see the gate below).
+// SILENT WHEN HE OPENS, VISIBLE TO HIS COLLEAGUES SINCE 2026-09-20. Nothing on his own screen changes
+// when he opens a CV: the open signal is written to `ats_candidate_views` — the same table the
+// Talent Acquisition screening queue already uses for "have I read this" — keyed by his own HR_ID.
+// Until 2026-09-20 his portal ("My Candidates") read that table nowhere, so no colleague could tell
+// either. The owner then ruled that a CV's card names everybody else who has opened it, by name,
+// title and time (candidate-openers.ts), so a manager can now see that a peer has read a CV. This
+// REPORT is unchanged and is still reachable only by the five people allowed to see it (see the
+// gate below); what changed is that the raw fact "X opened this CV at T" is no longer hidden.
 //
 // TWO SIGNALS, TWO HISTORIES, ON PURPOSE.
 //   • ANSWERED is derived from the candidate's own status and therefore has FULL history — a CV a

@@ -9,6 +9,7 @@ import {
   useCandidateCall,
 } from "@/components/employee-portal/candidate-call-control";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
+import { CandidateOpenedNotice } from "@/components/employee-portal/candidate-opened-notice";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { Card } from "@/components/ui/card";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -86,6 +87,11 @@ export function CandidateReadCard({
           part of the feature the reader gets, and it is the part he needs: he can see that a CV
           sitting with one of his managers has been claimed, and by whom. */}
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+
+      {/* Who ELSE has read this CV, by name, title and time. The district folders are where it
+          matters most: one applicant sits in the same area's folder on CNS, Anti-infective and Pedia,
+          so three managers are handed one person and none could tell a colleague had already looked. */}
+      <CandidateOpenedNotice candidateId={candidate.id} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>

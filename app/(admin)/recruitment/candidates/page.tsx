@@ -16,6 +16,7 @@ import {
   revealPhoneToViewer,
 } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadCandidateOpeners } from "@/lib/recruitment/candidate-openers-db";
 import { listCandidateFolderAreaOptions } from "@/lib/recruitment/candidate-folder-options";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 import {
@@ -104,6 +105,10 @@ async function AdminRecruitmentCandidatesContent() {
   // IDENTICAL component. Loading the claims there and not here would leave one copy of this screen
   // where a reserved CV looks free and the number is printed to somebody who never asked for it.
   const callClaims = await loadCallClaims(cardCandidateIds);
+  // Who ELSE has already opened each of these CVs (owner, 2026-09-20). Loaded here beside the claims,
+  // for the same reason: the banner sits at the top of every card, and a card that had to ask for it
+  // would show it late. The viewer's own opens are left out.
+  const openers = await loadCandidateOpeners(cardCandidateIds, access.hrId);
   const visibleSentToMe = redactCandidateListContact(sentToMe, callClaims, access.hrId);
   const visibleDistrictBoards = redactDistrictBoardsContact(districtBoards, callClaims, access.hrId);
   const visibleApplications = myCandidates.map((application) =>
@@ -134,6 +139,7 @@ async function AdminRecruitmentCandidatesContent() {
           initialDistrictBoards={visibleDistrictBoards}
           initialFilings={filings}
           initialFiles={initialFiles}
+          initialOpeners={openers}
           initialSentToMe={visibleSentToMe}
           initialTeam={team}
           viewerHrId={access.hrId}

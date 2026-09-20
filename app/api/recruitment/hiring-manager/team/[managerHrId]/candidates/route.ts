@@ -5,6 +5,7 @@ import {
   redactDistrictBoardsContact,
 } from "@/lib/recruitment/candidate-call-claims";
 import { loadCallClaims } from "@/lib/recruitment/candidate-call-claims-db";
+import { loadCandidateOpeners } from "@/lib/recruitment/candidate-openers-db";
 import { districtBoardCandidateIds } from "@/lib/recruitment/district-manager-folders-db";
 import { listTeamManagerCandidates } from "@/lib/recruitment/hiring-manager-team";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
@@ -50,10 +51,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ mana
     //
     // The claims still travel: he needs to SEE that a CV is taken and by whom. That is the whole
     // point of the reservation on this screen.
-    const callClaims = await loadCallClaims([
+    const cardCandidateIds = [
       ...candidates.map((candidate) => candidate.id),
       ...districtBoardCandidateIds(districtBoards),
-    ]);
+    ];
+    const callClaims = await loadCallClaims(cardCandidateIds);
+    // Who ELSE has opened each of these CVs — name, title, Cairo time — for the "already opened by"
+    // banner (owner, 2026-09-20). The CALLER is left out of it, so an NSM reading his managers' CVs
+    // is told about the managers and colleagues who read them, never about himself.
+    const openers = await loadCandidateOpeners(cardCandidateIds, access.hrId);
 
     return NextResponse.json({
       callClaims,
@@ -61,6 +67,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ mana
       districtBoards: redactDistrictBoardsContact(districtBoards, callClaims, access.hrId),
       files,
       manager,
+      openers,
       success: true,
     });
   } catch (error) {

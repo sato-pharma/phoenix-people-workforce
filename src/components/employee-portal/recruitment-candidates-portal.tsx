@@ -11,6 +11,10 @@ import {
   useCandidateCall,
 } from "@/components/employee-portal/candidate-call-control";
 import { CandidateCommentThread } from "@/components/employee-portal/candidate-comment-thread";
+import {
+  CandidateOpenedNotice,
+  CandidateOpenersProvider,
+} from "@/components/employee-portal/candidate-opened-notice";
 import { CandidateCvActions } from "@/components/employee-portal/candidate-cv-actions";
 import { CandidateFolderControl } from "@/components/employee-portal/candidate-folder-control";
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
@@ -21,6 +25,7 @@ import { dateOnly } from "@/lib/format/date-only";
 import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateCallClaim, CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { CandidateOpeners } from "@/lib/recruitment/candidate-openers";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   candidateStatusLabel,
@@ -95,6 +100,14 @@ type Props = {
    * long way round, taken 7 times in the module's history against 226 candidates.
    */
   initialSentToMe: Candidate[];
+  /**
+   * Who ELSE has already opened each CV on this page — a colleague's name, title, and the Cairo date
+   * and time — keyed by candidate id. The owner, 2026-09-20: the same applicant lands in several
+   * district managers' folders (CNS, Anti-infective, Pedia), and each must see that another has read
+   * it. Loaded on the server with the lists, never per card, for the reason `initialCallClaims` is.
+   * Optional and absent means "nobody", which is the screen as it stood before the banner.
+   */
+  initialOpeners?: CandidateOpeners;
   /**
    * The managers reporting to this caller, for the picker the owner asked for on 2026-08-30. Empty
    * for anybody who manages nobody, which is most people who reach this screen.
@@ -288,6 +301,7 @@ function CandidateCard({
   return (
     <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6" id={`candidate-${candidate.id}`}>
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+      <CandidateOpenedNotice candidateId={candidate.id} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -501,6 +515,9 @@ function SentCandidateCard({
       {/* Who has taken this CV, at the TOP of the card. A manager must know it is somebody else's
           before he reads a word of it, not after he has formed an opinion at the foot of the card. */}
       <CandidateCallNotice claim={call.claim} viewerHrId={viewerHrId} />
+      {/* Who ELSE has read this CV, right under who has taken it. Same reason, same place: a manager
+          must know a colleague has already looked before he reads a word of it. */}
+      <CandidateOpenedNotice candidateId={candidate.id} />
 
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -623,7 +640,19 @@ function SentCandidateCard({
   );
 }
 
-export function RecruitmentCandidatesPortal({
+/**
+ * The screen, wrapped once so every card below it — the sent list, the open positions and every
+ * folder — can read who else has opened its CV without the map being passed through each of them.
+ */
+export function RecruitmentCandidatesPortal(props: Props) {
+  return (
+    <CandidateOpenersProvider openers={props.initialOpeners ?? {}}>
+      <RecruitmentCandidatesPortalBody {...props} />
+    </CandidateOpenersProvider>
+  );
+}
+
+function RecruitmentCandidatesPortalBody({
   areaOptions,
   initialApplications,
   initialCallClaims: callClaims,

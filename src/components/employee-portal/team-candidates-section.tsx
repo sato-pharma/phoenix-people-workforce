@@ -6,9 +6,11 @@ import { useState } from "react";
 // show a manager a CV he can read and comment on but must not answer, and the day they stopped being
 // one component is the day one of them would quietly lose the View CV button.
 import { CandidateReadCard } from "@/components/employee-portal/candidate-read-card";
+import { CandidateOpenersProvider } from "@/components/employee-portal/candidate-opened-notice";
 import { DistrictFoldersSection } from "@/components/employee-portal/district-folders-section";
 import { Card } from "@/components/ui/card";
 import type { CandidateCallClaims } from "@/lib/recruitment/candidate-call-claims";
+import type { CandidateOpeners } from "@/lib/recruitment/candidate-openers";
 import type { DistrictManagerBoard } from "@/lib/recruitment/district-manager-folders";
 import { managerLabel } from "@/lib/recruitment/person-labels";
 import type { Candidate, TeamCandidateFile } from "@/lib/recruitment/types";
@@ -70,6 +72,10 @@ export function TeamCandidatesSection({
   // Sales Manager sees the reservation and cannot take one, which is the 2026-08-30 rule that the
   // answer belongs to the manager the CV was sent to.
   const [callClaims, setCallClaims] = useState<CandidateCallClaims>({});
+  // Who ELSE has opened each of those CVs, with their title and the time. It arrives with the list
+  // for the reason the claims do, and it is what puts the "already opened by" banner on a team card:
+  // this reader is not the person the CV was sent to, so the map is loaded for HIM, not for them.
+  const [openers, setOpeners] = useState<CandidateOpeners>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,6 +90,7 @@ export function TeamCandidatesSection({
       setDistrictBoards([]);
       setFiles({});
       setCallClaims({});
+      setOpeners({});
       return;
     }
     setSelected(manager);
@@ -91,6 +98,7 @@ export function TeamCandidatesSection({
     setDistrictBoards([]);
     setFiles({});
     setCallClaims({});
+    setOpeners({});
     setError(null);
     setBusy(true);
     try {
@@ -119,6 +127,9 @@ export function TeamCandidatesSection({
         data.callClaims && typeof data.callClaims === "object"
           ? (data.callClaims as CandidateCallClaims)
           : {},
+      );
+      setOpeners(
+        data.openers && typeof data.openers === "object" ? (data.openers as CandidateOpeners) : {},
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load those candidates.");
@@ -177,61 +188,63 @@ export function TeamCandidatesSection({
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
       {selected ? (
-        <div className="space-y-3">
-          {busy ? (
-            <p className="text-xs text-slate-400">Loading {teamManagerLabel(selected)}&apos;s candidates…</p>
-          ) : candidates && candidates.length === 0 ? (
-            <Card className="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
-              <p className="text-sm font-semibold text-slate-700">
-                No CVs have been sent to {teamManagerLabel(selected)}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                This is the real answer, not a filter — the recruitment team has not sent them anyone yet.
-              </p>
-            </Card>
-          ) : (
-            (candidates ?? []).map((candidate) => (
-              <CandidateReadCard
-                candidate={candidate}
-                claim={callClaims[candidate.id] ?? null}
-                files={files[candidate.id] ?? []}
-                key={candidate.id}
+        <CandidateOpenersProvider openers={openers}>
+          <div className="space-y-3">
+            {busy ? (
+              <p className="text-xs text-slate-400">Loading {teamManagerLabel(selected)}&apos;s candidates…</p>
+            ) : candidates && candidates.length === 0 ? (
+              <Card className="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
+                <p className="text-sm font-semibold text-slate-700">
+                  No CVs have been sent to {teamManagerLabel(selected)}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  This is the real answer, not a filter — the recruitment team has not sent them anyone yet.
+                </p>
+              </Card>
+            ) : (
+              (candidates ?? []).map((candidate) => (
+                <CandidateReadCard
+                  candidate={candidate}
+                  claim={callClaims[candidate.id] ?? null}
+                  files={files[candidate.id] ?? []}
+                  key={candidate.id}
+                  viewerHrId={viewerHrId}
+                />
+              ))
+            )}
+
+            {/* His folders, under what was sent to him. The owner, 2026-08-31: "when he choose his
+                district manager, he can see their folders and the CV in per folder." Rendered by the
+                same component the manager himself sees, so the two never drift into different screens
+                of the same thing — only the heading changes, because it is now somebody else's. */}
+            {busy ? null : (
+              <DistrictFoldersSection
+                boards={districtBoards.filter((board) => board.intake !== "district_managers")}
+                callClaims={callClaims}
+                files={files}
+                heading={`${teamManagerLabel(selected)}'s areas`}
+                subheading={`Every area ${teamManagerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
                 viewerHrId={viewerHrId}
               />
-            ))
-          )}
+            )}
 
-          {/* His folders, under what was sent to him. The owner, 2026-08-31: "when he choose his
-              district manager, he can see their folders and the CV in per folder." Rendered by the
-              same component the manager himself sees, so the two never drift into different screens
-              of the same thing — only the heading changes, because it is now somebody else's. */}
-          {busy ? null : (
-            <DistrictFoldersSection
-              boards={districtBoards.filter((board) => board.intake !== "district_managers")}
-              callClaims={callClaims}
-              files={files}
-              heading={`${teamManagerLabel(selected)}'s areas`}
-              subheading={`Every area ${teamManagerLabel(selected)} holds in the organogram, and the CVs of applicants who asked to work in it.`}
-              viewerHrId={viewerHrId}
-            />
-          )}
-
-          {/* The selected manager's own district-manager applicants, when he is a REGIONAL manager
-              with districts under him. Split from his areas above rather than merged, for the same
-              reason they are two sections on the viewer's own page: these people applied for a
-              different job, and one heading cannot describe both truthfully. Renders nothing when
-              the manager picked is a district manager, which is the ordinary case. */}
-          {busy ? null : (
-            <DistrictFoldersSection
-              boards={districtBoards.filter((board) => board.intake === "district_managers")}
-              callClaims={callClaims}
-              files={files}
-              heading={`District manager applicants under ${teamManagerLabel(selected)}`}
-              subheading={`People applying to run one of the districts ${teamManagerLabel(selected)} covers, filed by the district they asked for.`}
-              viewerHrId={viewerHrId}
-            />
-          )}
-        </div>
+            {/* The selected manager's own district-manager applicants, when he is a REGIONAL manager
+                with districts under him. Split from his areas above rather than merged, for the same
+                reason they are two sections on the viewer's own page: these people applied for a
+                different job, and one heading cannot describe both truthfully. Renders nothing when
+                the manager picked is a district manager, which is the ordinary case. */}
+            {busy ? null : (
+              <DistrictFoldersSection
+                boards={districtBoards.filter((board) => board.intake === "district_managers")}
+                callClaims={callClaims}
+                files={files}
+                heading={`District manager applicants under ${teamManagerLabel(selected)}`}
+                subheading={`People applying to run one of the districts ${teamManagerLabel(selected)} covers, filed by the district they asked for.`}
+                viewerHrId={viewerHrId}
+              />
+            )}
+          </div>
+        </CandidateOpenersProvider>
       ) : null}
     </section>
   );
