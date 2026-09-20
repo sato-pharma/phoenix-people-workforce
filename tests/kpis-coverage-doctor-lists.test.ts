@@ -336,7 +336,18 @@ export function runKpiCoverageDetailOrderTests() {
 // ── The Phoenix rules (dormant until the CRM cutover) ─────────────────────────────────────────
 
 function phoenixVisit(contact: number, day: string, ampm: string | null, speciality: string | null = null): PhoenixVisit {
-  return { contact_crm_id: contact, visit_date: day, visit_type: 0, visit_type_description: null, comment: null, ampm, speciality };
+  // Checked-in by default: this file's fixtures test coverage/list ordering, not rule 10's
+  // no-check-in split, so every visit here should still earn full credit.
+  return {
+    contact_crm_id: contact,
+    visit_date: day,
+    visit_type: 0,
+    visit_type_description: null,
+    comment: null,
+    ampm,
+    speciality,
+    hasCheckin: true,
+  };
 }
 
 const PHOENIX_INPUT: PhoenixRepInput = {
