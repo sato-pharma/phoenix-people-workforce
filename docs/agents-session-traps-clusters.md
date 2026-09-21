@@ -68,6 +68,7 @@ does not fire, so its silence is not evidence that no trap applies.
 - **`secret-scan` is a required check — there are 6 (`test` and `mobile` joined 2026-09-18) — and it is the one that never runs on a `main` push.** Its absence from a merge commit is CORRECT.
 - **`gh pr checks` LAGS behind the real job state.**
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not started".
+- 🔴 **A gate written as "no pendings" calls an EMPTY check list GREEN.** For seconds after a push `gh pr checks` returns NO rows, so `grep -c pending` is `0` and a watcher testing for zero pendings declares victory on a head whose CI never started — measured 2026-09-21, one step from merging an unchecked head. Count **PASSES against the expected 6**, never the absence of pendings, and require the head SHA unchanged across two polls so the gate cannot fire into a push.
 - **ONE new hub page trips FOUR separate CI gates.**
 - **A red `main` still builds, ships and serves perfectly**, and a green PR is not a green `main` — after merging, check the run on `main`'s NEW head.
 - **A docs-only PR's `validate` runs NO tests — it skips the expensive steps, ~10s.** The fast path is `pull_request`-ONLY, so the suite's FIRST run is the push to `main` — production's branch. Three PRs shipped `main` red this way; a `validate` under ~30s is the tell.
