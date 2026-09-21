@@ -5232,7 +5232,7 @@ await runTest(
 );
 
 await runTest(
-  "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
+  "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns — or, with all of them deleted, its worksheet name 'Expense Approvals' — refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
   runOutstationSheetRefusesApprovalsExportTests,
 );
 

@@ -233,13 +233,18 @@ const expenseTemplateDefinitions: ExpenseTemplateDefinition[] = [
  * (imported-history.ts) had nothing stored left to protect. #4188 refuses the download's app trips
  * (`OUTSTATION-` ids, workflow-trip-id-guard.ts); this refuses the file, historical trips included.
  *
- * Asked in chat, the owner chose to refuse the download outright. It is recognised by headers only it
- * writes, and ANY ONE is enough, so a download with a column or two deleted is still refused. None is
- * an alias of a template column, so a real historical sheet never carries one. The refusal happens at
- * analysis, which both upload routes run before they save — and the replace route before it clears.
+ * Asked in chat, the owner chose to refuse the download outright. It is recognised two ways, and
+ * either alone refuses the file. First, headers only it writes, ANY ONE of which is enough, so a
+ * download with a column or two deleted is still refused; none is an alias of a template column, so a
+ * real historical sheet never carries one. Second, the sheet's own name — the download names its
+ * worksheet "Expense Approvals", which survives even a file with every one of those columns hand-
+ * deleted, and the template's sheet is named "Outstation Expenses", so the two never collide. The
+ * refusal happens at analysis, which both upload routes run before they save — and the replace route
+ * before it clears.
  *
- * tests/outstation-sheet-refuses-approvals-export.test.ts pins every label here to one the download
- * still writes: renaming a download column without updating this list would silently reopen the hole.
+ * tests/outstation-sheet-refuses-approvals-export.test.ts pins every label here, and the sheet name,
+ * to what the download still writes: renaming either without updating this file would silently reopen
+ * the hole.
  */
 export const EXPENSE_APPROVALS_DOWNLOAD_COLUMNS = [
   "Claimed (Before Deduction)",
@@ -249,12 +254,18 @@ export const EXPENSE_APPROVALS_DOWNLOAD_COLUMNS = [
   "Declared Pharmacies",
 ] as const;
 
+/** The worksheet name the Expense Approvals download writes (export/route.ts). Column-independent. */
+export const EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME = "Expense Approvals";
+
 export const EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY = "phoenix-expense-approvals-download";
 
 const UNRECOGNIZED_EXPENSE_TEMPLATE_MESSAGE =
   "Unrecognized expense template. Please upload the Phoenix Outstation Expenses template.";
 
-function isExpenseApprovalsDownload(columns: string[]) {
+function isExpenseApprovalsDownload(columns: string[], sheetName: string) {
+  if (normalizeHeaderName(sheetName) === normalizeHeaderName(EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME)) {
+    return true;
+  }
   const present = new Set(columns.map(normalizeHeaderName));
   return EXPENSE_APPROVALS_DOWNLOAD_COLUMNS.some((label) => present.has(normalizeHeaderName(label)));
 }
@@ -337,8 +348,9 @@ function detectExpenseTemplate(
   }
 
   // Scored like any sheet (so the analysis still reports its column match), then refused: 13 of 16
-  // is a pass, and the download must never be one. See EXPENSE_APPROVALS_DOWNLOAD_COLUMNS.
-  if (isExpenseApprovalsDownload(columns)) {
+  // is a pass, and the download must never be one. By its own columns, or — even with all of them
+  // deleted — by its worksheet name. See EXPENSE_APPROVALS_DOWNLOAD_COLUMNS / _SHEET_NAME.
+  if (isExpenseApprovalsDownload(columns, sheetName)) {
     return {
       key: EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY,
       missingRequiredColumns: bestMatch.missingRequiredColumns,
