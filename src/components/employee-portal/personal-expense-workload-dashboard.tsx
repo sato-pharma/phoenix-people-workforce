@@ -35,6 +35,7 @@ import {
   ExpenseHeatmapLayer,
   type ExpenseBubbleInput,
 } from "@/components/outstation/expense-heatmap-layer";
+import { OutstationDescription } from "@/components/outstation/outstation-description";
 import { Card } from "@/components/ui/card";
 import {
   PortalDesktopTable,
@@ -51,6 +52,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ExtraTicketRowEditor } from "@/components/outstation/extra-ticket-manager";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 import { stableCurrencyFormatter } from "@/lib/format/stable-currency";
+import { formatOutstationDescriptionInline } from "@/lib/outstation/description-format";
 
 
 /** Inline relative-date helper for the pending-approval chip ("yesterday", "5 days ago"). */
@@ -1303,8 +1305,10 @@ export function PersonalExpenseWorkloadDashboard({
         km: trip.km,
         status: mapStatusCategory(trip.status),
         transportationType: trip.transportationType || "",
-        description: trip.description || "",
-        hrNotes: trip.hrNotes || "",
+        // Read through the same formatter as the screen: the stored text carries a machine audit
+        // line (source=… hr_id=… gps=… draft_id=…) that no one should meet in a spreadsheet.
+        description: formatOutstationDescriptionInline(trip.description),
+        hrNotes: formatOutstationDescriptionInline(trip.hrNotes),
       }));
       const buffer = await buildPhoenixTableWorkbook({
         title: "Visible Expense Scope Report",
@@ -2226,7 +2230,7 @@ export function PersonalExpenseWorkloadDashboard({
                                   </div>
                                   <div>
                                     <p className={labelClass}>Description</p>
-                                    <p className="mt-1 leading-relaxed text-slate-700">{trip.description || "—"}</p>
+                                    <OutstationDescription className="mt-1" value={trip.description} />
                                     {trip.hrNotes && trip.hrNotes !== trip.description && (
                                       <>
                                         <p className={`${labelClass} mt-3`}>HR Notes</p>
