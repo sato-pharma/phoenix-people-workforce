@@ -2099,28 +2099,57 @@ export function PersonalExpenseWorkloadDashboard({
         </div>
 
         <Card className={`overflow-hidden border border-slate-200 ${cardShadow}`}>
-          {/* Desktop / wide tablet table */}
-          <PortalDesktopTable minWidth="1160px">
+          {/* Desktop / wide tablet table. Fits the screen with no horizontal scroll (AGENTS.md §4):
+              table-fixed over a colgroup, and twelve columns merged into seven — Type under the trip
+              ID, From over To, KM under Total, Transport and extra tickets under Status. The
+              narrowest box it has to fit is 679px (a 768px viewport). Values wrap; nothing is
+              shrunk or cut. Never bring back a min-width over an overflow-x-auto wrapper. */}
+          <div className="hidden md:block">
+            <table className="w-full table-fixed border-collapse text-left text-sm" data-portal-desktop-table>
+              <colgroup>
+                <col className="w-[14%]" />
+                <col />
+                <col className="w-[11%]" />
+                <col className="w-[20%]" />
+                <col className="w-[14%]" />
+                <col className="w-[17%]" />
+                <col className="w-10" />
+              </colgroup>
               <thead className="bg-slate-900">
                 <tr>
-                  <th className={cellPaddingClass}>{header("tripId", "TripID")}</th>
+                  <th className={cellPaddingClass}>
+                    <div className="flex flex-col items-center gap-1">
+                      {header("tripId", "TripID")}
+                      {header("requestType", "Type")}
+                    </div>
+                  </th>
                   <th className={cellPaddingClass}>{header("ownerName", "Employee")}</th>
                   <th className={cellPaddingClass}>{header("date", "Date")}</th>
-                  <th className={cellPaddingClass}>{header("requestType", "Type")}</th>
-                  <th className={cellPaddingClass}>{header("fromCity", "From")}</th>
-                  <th className={cellPaddingClass}>{header("toCity", "To")}</th>
-                  <th className={`${cellPaddingClass} text-right`}>{header("total", "Total")}</th>
-                  <th className={`${cellPaddingClass} text-right`}>{header("km", "KM")}</th>
-                  <th className={cellPaddingClass}>{header("status", "Status")}</th>
-                  <th className={cellPaddingClass}>{header("transportationType", "Transport")}</th>
-                  <th className={`${cellPaddingClass} text-center`}>Extra Tickets</th>
-                  <th className={`${cellPaddingClass} w-8`}><span className="sr-only">Details</span></th>
+                  <th className={cellPaddingClass}>
+                    <div className="flex flex-col items-center gap-1">
+                      {header("fromCity", "From")}
+                      {header("toCity", "To")}
+                    </div>
+                  </th>
+                  <th className={`${cellPaddingClass} text-right`}>
+                    <div className="flex flex-col items-center gap-1">
+                      {header("total", "Total")}
+                      {header("km", "KM")}
+                    </div>
+                  </th>
+                  <th className={cellPaddingClass}>
+                    <div className="flex flex-col items-center gap-1">
+                      {header("status", "Status")}
+                      {header("transportationType", "Transport")}
+                    </div>
+                  </th>
+                  <th className={cellPaddingClass}><span className="sr-only">Details</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
                 {pagedTrips.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={12}>
+                    <td className="px-3 py-8 text-center text-sm text-slate-400" colSpan={7}>
                       No trips match your filters.
                     </td>
                   </tr>
@@ -2135,45 +2164,50 @@ export function PersonalExpenseWorkloadDashboard({
                           className="cursor-pointer transition hover:bg-orange-50/40"
                           onClick={() => setExpandedTripKey((prev) => prev === tripKey ? null : tripKey)}
                         >
-                          <td className={`whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-600 ${cellPaddingClass}`}>
-                            {trip.tripId || "N/A"}
+                          <td className={`align-top ${cellPaddingClass}`}>
+                            <span className="block break-words font-mono text-phx-xs font-semibold text-slate-600">
+                              {trip.tripId || "N/A"}
+                            </span>
+                            <span className="mt-0.5 block break-words text-phx-sm text-slate-700">
+                              {trip.requestType || "N/A"}
+                            </span>
                           </td>
-                          <td className={`max-w-[180px] whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            <span className="block whitespace-nowrap">{trip.ownerName || "Employee"}</span>
-                            <span className="block whitespace-nowrap font-mono text-phx-2xs font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
+                          <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
+                            <span className="block break-words">{trip.ownerName || "Employee"}</span>
+                            <span className="block break-words font-mono text-phx-2xs font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
                           </td>
-                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`align-top break-words text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
                           </td>
-                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
-                            {trip.requestType || "N/A"}
+                          <td className={`align-top text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
+                            <span className="block break-words">{trip.fromCity || "Unknown"}</span>
+                            <span className="block break-words">
+                              <span className="font-normal text-slate-400">→ </span>
+                              {trip.toCity || "Unknown"}
+                            </span>
                           </td>
-                          <td className={`whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            {trip.fromCity || "Unknown"}
+                          <td className={`align-top text-right ${cellPaddingClass}`}>
+                            <span className="block break-words text-phx-sm font-bold text-slate-900">
+                              {formatMoney(trip.total)}
+                            </span>
+                            <span className="mt-0.5 block break-words text-phx-sm text-slate-700">
+                              {formatKm(trip.km)}
+                            </span>
                           </td>
-                          <td className={`whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
-                            {trip.toCity || "Unknown"}
-                          </td>
-                          <td className={`whitespace-nowrap text-right text-phx-sm font-bold text-slate-900 ${cellPaddingClass}`}>
-                            {formatMoney(trip.total)}
-                          </td>
-                          <td className={`whitespace-nowrap text-right text-phx-sm text-slate-700 ${cellPaddingClass}`}>
-                            {formatKm(trip.km)}
-                          </td>
-                          <td className={cellPaddingClass}>
+                          <td className={`align-top ${cellPaddingClass}`}>
                             <StatusPill category={category} />
+                            <span className="mt-1 block break-words text-phx-sm text-slate-700">
+                              {trip.transportationType || "N/A"}
+                              {(() => {
+                                const requestId = parseOutstationRequestId(trip.tripId);
+                                const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
+                                return count != null
+                                  ? ` · ${count} extra ticket${count === 1 ? "" : "s"}`
+                                  : null;
+                              })()}
+                            </span>
                           </td>
-                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
-                            {trip.transportationType || "N/A"}
-                          </td>
-                          <td className={`text-center text-phx-sm text-slate-700 ${cellPaddingClass}`}>
-                            {(() => {
-                              const requestId = parseOutstationRequestId(trip.tripId);
-                              const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
-                              return count != null ? `${count} ticket${count === 1 ? "" : "s"}` : "—";
-                            })()}
-                          </td>
-                          <td className={`w-8 ${cellPaddingClass}`}>
+                          <td className={`align-top ${cellPaddingClass}`}>
                             <ChevronDown
                               className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isExpanded ? "rotate-180" : ""}`}
                             />
@@ -2181,7 +2215,7 @@ export function PersonalExpenseWorkloadDashboard({
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td className="border-b border-slate-200 p-0" colSpan={12}>
+                            <td className="border-b border-slate-200 p-0" colSpan={7}>
                               <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
                                 <div className="grid gap-4 text-phx-sm sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
@@ -2300,20 +2334,23 @@ export function PersonalExpenseWorkloadDashboard({
                 <tr className="bg-slate-50">
                   <td
                     className={`${cellPaddingClass} text-phx-2xs font-bold uppercase tracking-wider text-slate-500`}
-                    colSpan={6}
+                    colSpan={4}
                   >
                     {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}
                   </td>
-                  <td className={`${cellPaddingClass} text-right text-phx-sm font-bold text-orange-600`}>
-                    {formatMoney(pagedTrips.reduce((s, t) => s + t.total, 0))}
+                  <td className={`${cellPaddingClass} text-right`}>
+                    <span className="block break-words text-phx-sm font-bold text-orange-600">
+                      {formatMoney(pagedTrips.reduce((s, t) => s + t.total, 0))}
+                    </span>
+                    <span className="mt-0.5 block break-words text-phx-sm font-semibold text-slate-700">
+                      {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
+                    </span>
                   </td>
-                  <td className={`${cellPaddingClass} text-right text-phx-sm font-semibold text-slate-700`}>
-                    {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
-                  </td>
-                  <td colSpan={4} />
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
-          </PortalDesktopTable>
+            </table>
+          </div>
 
           {/* Mobile / narrow tablet stacked cards (< md ~ < 768px) */}
           <div className="space-y-2 p-3 md:hidden">
