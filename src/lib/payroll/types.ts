@@ -131,7 +131,8 @@ export type ExpenseTripRecord = {
   pharmacyVisits?: number;
   /** The third workload figure (AM · PM · Pharmacies). NULL/absent = not counted separately: a
    * trip stamped before the 2026-09-21 split (pharmacies still inside AM/PM), a hand-typed
-   * workload, or an Excel-imported row. See outstationPharmacyWorkload. */
+   * workload, or an Excel row whose Pharmacy Workload cell is blank or whose sheet predates that
+   * column. See outstationPharmacyWorkload. */
   pharmacyWorkload?: number | null;
   pmWorkload: number;
   requestType: string;
