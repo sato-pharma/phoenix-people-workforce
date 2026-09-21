@@ -1995,6 +1995,13 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       { href: "/hr/hiring-pack", icon: FileSignature, label: "HR Forms", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       { href: "/hr/business-cards", icon: IdCard, label: "Business Cards", permissions: [{ resource: "employee_documents" }], roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
+      // The Interview Calendar, for HR Operations — the owner made her its admin on 2026-09-21 ("full
+      // access and control to it as admin"), so isInterviewCalendarOwner admits her seat. The
+      // Recruitment copy is gated on the recruitment grant she does not hold, and she must never be
+      // shown a "Recruitment" heading (tests/cv-database-recruiting-boundary.test.ts), so her row
+      // lives here. No permission: the calendar's own ownership is the gate, and every API route
+      // asserts it. `excludedRoles` keeps the Super Admin's row under Recruitment, as above.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Operations"], excludedRoles: ["Super Admin"] },
       // Probation moved OUT of this section on 2026-09-01, down to its own "Probation" section,
       // where it sits beside the outcomes dashboard. It is one module and it was in two minds
       // here: People is who is on the payroll, probation is how a new joiner is performing.
@@ -2057,10 +2064,9 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
       // The HR shell's row for /recruitment/interview-calendar (2026-09-18), for the same reason as
       // WhatsApp Applicants above. Whether the calendar opens is its own sharing, not this clause.
-      // Offered to BOTH seats by ROLE since 2026-09-21, not by the recruitment grant: HR Operations
-      // holds no recruitment grant, and the owner made her the calendar's admin (an owner, in
-      // isInterviewCalendarOwner) — gated on the grant, she could not find the page she runs.
-      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Advisory", "HR Operations"] },
+      // HR Operations reaches it from "People" instead (see the copy there): she is its admin, but she
+      // holds no recruitment grant and is never shown a Recruitment heading.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
       // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
       // `action: "export"` rather than the bare resource used by its neighbours, because that is
       // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers

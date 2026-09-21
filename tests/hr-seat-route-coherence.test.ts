@@ -243,8 +243,9 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
     "owner made her the calendar's admin, 2026-09-21), otherwise the seat holder's row in " +
     "ats_interview_calendar_shares, otherwise null. Verified by CALLING the predicate for each seat " +
     "rather than by reading it: isInterviewCalendarOwner is TRUE for Operations and FALSE for " +
-    "Advisory, so Operations opens it as an owner and Advisory needs a share row. The row carries " +
-    "roles: [HR Advisory, HR Operations] and no permission, so both seats are offered it. A null " +
+    "Advisory, so Operations opens it as an owner and Advisory needs a share row. Advisory is " +
+    "offered the Recruitment row (permissions: [recruitment]); Operations, who holds no recruitment " +
+    "grant and is never shown that heading, is offered a copy under People (roles: [HR Operations]). A null " +
     "role renders a plain 'not been shared with you' notice — never a redirect and never a 403 — " +
     "and every API route asserts the same gate, so the screen is presentation and never the boundary",
   // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
