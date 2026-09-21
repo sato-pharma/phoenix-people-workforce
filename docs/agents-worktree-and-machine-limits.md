@@ -517,6 +517,52 @@ servers" line in the rules below as what the script did between 2026-09-09 and 2
 its floors today it reclaims NODE JOBS — a typecheck, a build, a test run — and what stops a dev
 server is `~/.claude/hooks/dev-server-reaper.mjs` (see the retirement subsection below).
 
+🔴 **Amended 2026-09-21: the owner re-armed TWO of those rules for a dev server** (next subsection).
+Rule 1 stops one at or over 8 GB of commit, and rule 3 stops one that has done no work for 25 minutes.
+Every other rule still skips it.
+
+### 2026-09-21 — rules 1 and 3 re-armed for a dev server (owner's choice)
+
+**What happened.** From 06:40 Cairo a browser-pane tab was stuck in a redirect loop.
+`/employee-portals/expense-dashboard` sends a Medical Rep to `/employee-portals/expenses`, and that page
+sends the viewer back when the expense service refuses anyone whose EMPLOYEE record is not a Medical
+Rep. The tab bounced about once a second, and every hop re-fired the portal's heartbeat, activity and
+notification calls. It drove one `next dev` child to **9.9 GB of commit (5.7 GB resident)** for over an
+hour, and available RAM sat between **500 and 1,800 MB**. Nothing on the machine could stop it:
+
+- every rule in `mem-watchdog.ps1` skipped the server under the 2026-09-12 exemption;
+- `dev-server-reaper.mjs` only acts when the owning session ends.
+
+The session restarted its server at 08:03 and again at 08:12, and the tab's loop started again on each
+new one.
+
+**The decision.** He was asked what the watchdog should do with dev servers from now on, and chose
+**"Over 8 GB or unused 25 min"**:
+
+| Rule | For a dev server, since 2026-09-21 |
+| --- | --- |
+| 1 — per-process ceiling | **stops** one at or over `$KillGB` (8.0 GB of commit). Healthy servers peaked at 6.03–7.23 GB (2026-09-01), so only a runaway gets there |
+| 3 — abandoned server | **stops** one that holds 0.75 GB or more and does less than 1 CPU-second of work across 25 minutes |
+| 0, 2, 4, 5, 6, 7, 9 | unchanged — they still skip it, so a server in use under 8 GB is never touched, however low RAM runs |
+
+The watchdog stops only the `start-server.js` child, and that is enough. `next dev` exits whenever its
+child exits with anything but Next's own restart code (`next/dist/cli/next-dev.js`, `child.on('exit')`),
+and `scripts/dev-server.mjs` exits with it. Nothing respawns in a loop.
+
+**Proof.**
+
+- The loop and the self-test call the same pure function, `Get-DevServerVerdict`, for both verdicts.
+- `PHX_DEV_EXEMPT_SELFTEST=1` passes 24 of 24 cases. They include controls on each side of both
+  thresholds, on the disarm switch and on rules 4 and 7, plus a check that the shipped defaults are
+  armed.
+- Rolled back to the 2026-09-12 behaviour, the self-test failed 4 cases. With the switch shipped off,
+  it failed 1.
+- **Switches:** `PHX_DEV_RUNAWAY_STOP=0` disarms both rules. `PHX_DEV_KILL_EXEMPT=0` still re-arms every
+  rule.
+- The pre-change script is `~/.claude/scripts/mem-watchdog.ps1.bak-20260921-0814-pre-dev-rearm`.
+
+**Not changed:** the redirect loop itself. That is a code fix, handed to its own session.
+
 ### 2026-09-09 — rule 5: concurrent dev servers, all of them BUSY
 
 **Two hard freezes, 17:34 and 20:36 Cairo.** Neither left a minidump; both left a GPU watchdog dump

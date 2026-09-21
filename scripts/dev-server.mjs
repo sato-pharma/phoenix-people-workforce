@@ -59,6 +59,13 @@
  * is ~/.claude/hooks/dev-server-reaper.mjs: the one the ENDING session started, and nobody else's.
  * Account: docs/agents-worktree-and-machine-limits.md.
  *
+ * AMENDED 2026-09-21, the owner's choice ("Over 8 GB or unused 25 min"): the watchdog stops a dev
+ * server again in two cases only. Rule 1 stops one at or over 8 GB of commit, a runaway; every healthy
+ * server above peaked at 6.03-7.23 GB, so the sawtooth cannot return. Rule 3 stops one after 25 minutes
+ * with no work. A server in use under 8 GB is still never touched. If this launcher reports its server
+ * "ended from outside" (exit code 1 or -1), look in ~/.claude/scripts/mem-watchdog.log for
+ * `runaway-dev-server-over-ceiling` or `abandoned-dev-server-idle` first.
+ *
  * ALSO (AGENTS.md 2.1, Worktrees): turbopack rejects the junctioned node_modules that every
  * `_wt-*` worktree uses, because it reads the junction as a symlink out of the project root.
  * --webpack serves a junctioned worktree fine (measured 2026-08-29, "Ready in 1770ms", HMR
