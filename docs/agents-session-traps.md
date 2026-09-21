@@ -1980,6 +1980,72 @@ the paid figure is lower than those trips. The gap is reported only in `differin
 stamped trip means "this publish covered this employee", not "this trip was paid in full". Read
 `differing` before telling anyone a month paid what was approved.
 
+## A mangled `git show` read as "the fix is not there" — 2026-09-21
+
+Measured in this repository on 2026-09-21, while confirming that #4148's docs-only guard had
+actually reached `origin/main`.
+
+**The command every such verification reaches for.** From the Bash tool on this machine:
+
+    git show origin/main:.github/workflows/ci.yml
+
+**What git actually receives.** MSYS path conversion rewrites the whole `<rev>:<path>` argument
+before git ever sees it — the colon becomes a SEMICOLON and every slash a backslash:
+
+    fatal: ambiguous argument 'origin\main;.github\workflows\ci.yml': unknown revision or path not in the working tree.
+    Use '--' to separate paths from revisions, like this:
+    'git <command> [<revision>...] -- [<file>...]'
+
+Run on its own that is an error a session would notice. **The trap is the next step**, which is how
+the command is actually used:
+
+    git show origin/main:.github/workflows/ci.yml | grep -c "docs-only fast path"    # 0
+
+The `fatal:` goes to **stderr**, which a verification pipeline discards or scrolls past. What the
+session reads is `0` — and a zero from a presence check means exactly one thing: *the guard is not
+in the shipped file, so the fix did not ship*. This is a plausible WRONG ANSWER, not an error:
+nothing in the output looks broken, and the file was never read at all.
+
+**The exit code does not rescue it.** That pipeline exits `1`, but the `1` is `grep`'s "no matches"
+— the identical status a genuine, correctly-read absence produces. No status here distinguishes
+*git failed* from *the string is not there*.
+
+**Three near-fixes that do NOT work, each measured:**
+
+| attempt | result |
+| --- | --- |
+| quoting the argument — `git show "origin/main:.github/workflows/ci.yml"` | the same `fatal:` |
+| `git cat-file -p origin/main:.github/workflows/ci.yml` | `fatal: Not a valid object name origin\main;.github\workflows\ci.yml` |
+| redirecting to a file — `git show … > ci.yml` | no visible complaint, **0 bytes written** |
+
+The redirect is still worth doing, but not as the fix: a 0-byte file is *visible*, where a piped
+`0` is not.
+
+**What works.** Turn the conversion off, or leave MSYS entirely:
+
+    MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | wc -l                         # 813
+    MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | grep -c "docs-only fast path"  # 4
+
+The PowerShell tool performs no path conversion and needs no variable: the same two readings there
+are **813** and **4**.
+
+**The real answer was 4 of 4.** #4148 — "fix(ci): a docs-only PR no longer skips the tests that
+police the docs", merged 2026-09-21 00:36 UTC — had shipped exactly as written, and the session
+verifying it was one discarded stderr line away from reporting the opposite.
+
+**The rule this leaves.** Before believing a zero, check that the byte or line count of what you
+read is PLAUSIBLE. A 47,311-byte file measuring 0 bytes is the tell, and it is the same
+positive-control discipline that catches the `rg` and `git grep -E` zeros recorded above.
+
+**Close cousins in this file.** `tz-africa-cairo-silently-returns-utc-in-msys` is the same shape in
+a different MSYS gap — a command that returns a confident wrong value instead of failing; read it
+rather than treating this as a separate lesson. "Two ways a search reported zero and meant *I did
+not look*" (2026-09-05) carries the positive-control rule that generalises the plausibility check
+above. The cue lives in the **Shell and tooling** cluster of
+[docs/agents-session-traps-clusters.md](agents-session-traps-clusters.md), and the memory is
+`git-ref-colon-path-is-mangled-by-msys-returns-empty` — whose wording, "returns EMPTY", this
+measurement corrects. It does not return empty. It fails loudly, on a stream nobody is reading.
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
