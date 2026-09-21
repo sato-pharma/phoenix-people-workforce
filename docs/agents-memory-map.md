@@ -136,6 +136,12 @@ status, give it its own line.
 - **A freeze leaves NO dump** — `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** — `an-interrupted-session-leaves-the-tree-deliberately-broken`
 - **`Agent` with `isolation: "remote"` from a desktop session can run LOCALLY, with no notice of the fallback** — `agent-isolation-remote-ran-locally-in-a-worktree` **(inline — load-bearing)**
+- **`git branch -d` compares a branch to its own STALE tracking ref, so it gates NOTHING.** — `git-branch-d-is-not-a-safety-gate-after-a-squash-merge` **(inline — load-bearing)**
+- **`SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROD_TOKEN` are one token under two names.** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
+- **A new workbook builder takes three checks, and none substitutes for another.** — `verifying-a-new-workbook-builder-takes-three-layers` **(inline — load-bearing)**
+- **`CLAUDE_PROJECT_DIR` is the session's own worktree, and is absent from Bash children.** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
+- **Date a slowness report; read session EFFORT first. The pickers are the owner's click.** — `claude-code-effort-max-got-slow-xhigh-is-the-balance` · `slowness-audits-compare-before-and-after` **(inline — load-bearing)**
+- **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
 
 ## 2.2 The memory index
 
