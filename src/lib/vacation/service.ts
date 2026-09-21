@@ -4921,6 +4921,26 @@ export function buildVacationOverlapWarnings(input: {
   return warnings;
 }
 
+const isPendingVacationStatus = (status: VacationRequestStatus) => status === "pending_manager" || status === "pending_hr";
+
+/**
+ * The two approval counts — waiting per stage, and overdue against the SLA — in ONE place, read by
+ * both the full report's dashboard and `getVacationPendingApprovalCounts`, so the executive
+ * landing tiles and the leave report can never disagree. `slaStatus` must come from
+ * `enrichVacationRows` (the real settings and the request's events), never `mapVacationRow`'s
+ * defaults, or the overdue count drifts.
+ */
+function countVacationPendingApprovals(rows: VacationRequestRecord[]): Pick<VacationDashboardData, "overdueBySla" | "pendingByStage"> {
+  const pendingManager = rows.filter((row) => row.status === "pending_manager");
+  const pendingHr = rows.filter((row) => row.status === "pending_hr");
+  const overdueManager = pendingManager.filter((row) => row.slaStatus.isOverdue).length;
+  const overdueHr = pendingHr.filter((row) => row.slaStatus.isOverdue).length;
+  return {
+    overdueBySla: { hr: overdueHr, manager: overdueManager, total: overdueHr + overdueManager },
+    pendingByStage: { hr: pendingHr.length, manager: pendingManager.length, total: pendingHr.length + pendingManager.length },
+  };
+}
+
 function buildVacationDashboardData(input: {
   latestSlaRun: VacationSlaRunDbRow | null;
   rows: VacationRequestRecord[];
@@ -4928,8 +4948,6 @@ function buildVacationDashboardData(input: {
   const rows = input.rows;
   const pendingManager = rows.filter((row) => row.status === "pending_manager");
   const pendingHr = rows.filter((row) => row.status === "pending_hr");
-  const overdueManager = pendingManager.filter((row) => row.slaStatus.isOverdue);
-  const overdueHr = pendingHr.filter((row) => row.slaStatus.isOverdue);
   const reviews = rows.flatMap((row) => row.evidenceReviews);
 
   const managerBottleneckMap = new Map<string, { managerHrId: string | null; managerName: string | null; overdue: number; pending: number }>();
@@ -4978,16 +4996,7 @@ function buildVacationDashboardData(input: {
       .sort((left, right) => right.overdue - left.overdue || right.pending - left.pending)
       .slice(0, 8),
     overlapWarnings: rows.reduce((sum, row) => sum + row.overlapWarnings.length, 0),
-    overdueBySla: {
-      hr: overdueHr.length,
-      manager: overdueManager.length,
-      total: overdueHr.length + overdueManager.length,
-    },
-    pendingByStage: {
-      hr: pendingHr.length,
-      manager: pendingManager.length,
-      total: pendingHr.length + pendingManager.length,
-    },
+    ...countVacationPendingApprovals(rows),
   };
 }
 
@@ -5809,6 +5818,34 @@ const loadVacationReportDataCached = cache(async (access: AccessContext, filters
 
 export async function getVacationReportData(access: AccessContext, filters: VacationReportFilters = {}): Promise<VacationReportData> {
   return loadVacationReportDataCached(access, JSON.stringify(cleanFilters(filters)));
+}
+
+/**
+ * The Leave approval counts the executive landing pages show — identical to
+ * `getVacationReportData(access, { status: "all" }).dashboard.{pendingByStage,overdueBySla}`.
+ *
+ * The full report enriches EVERY request ever filed (events, evidence reviews, holidays, overlap
+ * warnings) and builds every employee's entitlement balance; measured against production from a
+ * local run on 2026-09-21 it took 11.7 s and was the slowest read behind /admin, all to yield two
+ * counts. Only a PENDING request can be waiting or overdue, so only those rows are enriched here —
+ * with the same `enrichVacationRows`, so the SLA verdict is the report's own.
+ */
+export async function getVacationPendingApprovalCounts(
+  access: AccessContext,
+): Promise<Pick<VacationDashboardData, "overdueBySla" | "pendingByStage">> {
+  await assertPermission(access, "leave", "read");
+  const activeEmployees = await getEmployeeDirectoryRows();
+  const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
+  const data = await fetchVacationReportRowsFromDatabase({
+    access,
+    filters: cleanFilters({ status: "all" }),
+    visibleEmployeeHrIds,
+  });
+  const pendingRows = (data ?? [])
+    .map((row) => mapVacationRow(row as VacationRequestDbRow))
+    .filter((row) => isPendingVacationStatus(row.status) && canSeeVacation(access, row, visibleEmployeeHrIds));
+  return countVacationPendingApprovals(await enrichVacationRows(pendingRows));
 }
 
 /**

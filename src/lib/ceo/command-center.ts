@@ -32,7 +32,7 @@ import {
   parseSalesMarketingDashboardFilters,
 } from "@/lib/sales-marketing-intelligence/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { getVacationReportData } from "@/lib/vacation/service";
+import { getVacationPendingApprovalCounts } from "@/lib/vacation/service";
 
 /**
  * Bespoke executive data layer for the CEO Command Center, split for streaming.
@@ -472,7 +472,9 @@ async function getCeoAdminSignals(
   const [signalResults, resolvedPlatformMetrics] = await Promise.all([
     Promise.allSettled([
       getResignationsDashboardData(access),
-      getVacationReportData(access, { status: "all" }),
+      // The two approval counts only — never the whole leave report, which enriches every request
+      // ever filed and was the slowest read behind /admin (11.7 s measured 2026-09-21).
+      getVacationPendingApprovalCounts(access),
       getContractRenewalDashboardData(access),
       getCeoProbationCounts(access),
       getCoachingReports({}, access).then(buildCoachingReportAnalytics),
@@ -507,14 +509,14 @@ async function getCeoAdminSignals(
       : 0;
   const overdueLeaveSla =
     leavePendingR.status === "fulfilled"
-      ? leavePendingR.value.dashboard.overdueBySla.total || leavePendingR.value.dashboard.pendingByStage.total
+      ? leavePendingR.value.overdueBySla.total || leavePendingR.value.pendingByStage.total
       : 0;
   // Total requests actually awaiting a decision (HR or manager stage), independent of the
   // SLA-prioritized `overdueLeaveSla` figure above — this is what the CEO's "Leave requests"
   // approval tile shows. Null (not 0) on fetch failure so the tile can render "unavailable"
   // rather than a false zero; the rejection is already recorded in dataUnavailable below.
   const leavePendingTotal =
-    leavePendingR.status === "fulfilled" ? leavePendingR.value.dashboard.pendingByStage.total : null;
+    leavePendingR.status === "fulfilled" ? leavePendingR.value.pendingByStage.total : null;
   const expiringContracts =
     contractsActiveR.status === "fulfilled"
       ? contractsActiveR.value.rows.filter((row) => {

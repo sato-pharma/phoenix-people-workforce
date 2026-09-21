@@ -322,8 +322,8 @@ export function runCeoCommandCenterTests() {
   );
   assert.match(
     ceoCommandCenterSource,
-    /const leavePendingTotal =\s*\n\s*leavePendingR\.status === "fulfilled" \? leavePendingR\.value\.dashboard\.pendingByStage\.total : null;/,
-    "leavePendingTotal must read dashboard.pendingByStage.total from the vacation report, and be null (not 0) when that fetch fails",
+    /const leavePendingTotal =\s*\n\s*leavePendingR\.status === "fulfilled" \? leavePendingR\.value\.pendingByStage\.total : null;/,
+    "leavePendingTotal must read pendingByStage.total from getVacationPendingApprovalCounts (the leave report's own count), and be null (not 0) when that fetch fails",
   );
   assert.match(
     ceoCommandCenterSource,
