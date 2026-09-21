@@ -2004,6 +2004,27 @@ changes nothing. When it does fire, the colon becomes a SEMICOLON and every slas
     Use '--' to separate paths from revisions, like this:
     'git <command> [<revision>...] -- [<file>...]'
 
+**Which paths, measured — the dot must START the path.** The same read, byte counts with and
+without the export:
+
+| path | without | with `MSYS_NO_PATHCONV=1` | |
+| --- | --- | --- | --- |
+| `.github/workflows/ci.yml` | 0 | 47,311 | **mangled** |
+| `.claude/settings.json` | 0 | 6,129 | **mangled** |
+| `.gitignore` | 0 | 5,015 | **mangled** |
+| `.env.example` | 0 | 13,841 | **mangled** |
+| `mobile/.gitignore` | 1,137 | 1,137 | fine |
+| `package.json` | 20,391 | 20,391 | fine |
+| `tests/run-tests.ts` | 477,124 | 477,124 | fine |
+| `supabase/config.toml` | 15,317 | 15,317 | fine |
+
+`mobile/.gitignore` is the row that pins the rule, and it is the one worth remembering: a dot-name
+INSIDE the path is harmless, so *"dotfiles are dangerous"* is the wrong generalisation. Only a path
+whose FIRST character is a dot converts — `.github`, `.claude`, `.gitignore`, `.env*` — which is
+where CI config, hooks and settings live, so the fault falls precisely on the files a session
+verifies most. Everything else passes through, which is why a `supabase/migrations/…` extraction is
+safe exactly as written.
+
 Run on its own that is an error a session would notice. **The trap is the next step**, which is how
 the command is actually used:
 
@@ -2017,6 +2038,19 @@ nothing in the output looks broken, and the file was never read at all.
 **The exit code does not rescue it.** That pipeline exits `1`, but the `1` is `grep`'s "no matches"
 — the identical status a genuine, correctly-read absence produces. No status here distinguishes
 *git failed* from *the string is not there*.
+
+**The two `fatal:`s ARE distinguishable, so you never have to guess which you hit.** Measured all
+three ways:
+
+    mangled          fatal: ambiguous argument 'origin\main;.gitignore': unknown revision or path not in the working tree.
+    real absence     fatal: path 'docs/no-such-file-here.md' does not exist in 'origin/main'
+    absent AND dotted, with the export set
+                     fatal: path '.github/workflows/no-such.yml' does not exist in 'origin/main'
+
+The mangled form carries BACKSLASHES and a SEMICOLON and blames the whole argument; the honest one
+leaves the argument intact, keeps the forward slashes, and names the ref. The third probe is what
+makes the tell trustworthy: with the conversion off, a dotted path that genuinely does not exist
+still gives the ABSENCE message, so the two causes never wear each other's words.
 
 **Three near-fixes that do NOT work, each measured:**
 
@@ -2034,8 +2068,12 @@ The redirect is still worth doing, but not as the fix: a 0-byte file is *visible
     MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | wc -l                         # 813
     MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | grep -c "docs-only fast path"  # 4
 
-The PowerShell tool performs no path conversion and needs no variable: the same two readings there
-are **813** and **4**.
+**A `./` in front disarms it, with no variable at all** — the trigger is a dot followed by a NAME:
+
+    git show origin/main:./.github/workflows/ci.yml | wc -l                                       # 813
+
+The PowerShell tool performs no path conversion and needs no variable either: the same two readings
+there are **813** and **4**.
 
 **The real answer was 4 of 4.** #4148 — "fix(ci): a docs-only PR no longer skips the tests that
 police the docs", merged 2026-09-21 00:36 UTC — had shipped exactly as written, and the session
@@ -2053,6 +2091,12 @@ above. The cue lives in the **Shell and tooling** cluster of
 [docs/agents-session-traps-clusters.md](agents-session-traps-clusters.md), and the memory is
 `git-ref-colon-path-is-mangled-by-msys-returns-empty` — whose wording, "returns EMPTY", this
 measurement corrects. It does not return empty. It fails loudly, on a stream nobody is reading.
+
+**Narrowed the same night, 2026-09-21 (#4153, then #4156).** As first written this account said MSYS
+rewrites the argument, full stop. Measuring the boundary made it narrower: only a path whose FIRST
+character is a dot. The over-broad form would have had sessions exporting the variable before every
+`git show` and reading a correct result as a rescued one — a rule wider than the fault it describes,
+which is the same class of error as the zero it documents.
 
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
