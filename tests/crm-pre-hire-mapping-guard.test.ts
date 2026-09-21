@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import {
   findPreHireMappingConflict,
   preHireMappingRefusalMessage,
+  selectStampableVisitRowIds,
   type MappingCandidateRow,
+  type StampCandidateRow,
 } from "../src/lib/crm/admin.ts";
 import { normalizeCrmName } from "../src/lib/crm/identity.ts";
+import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 
 /**
  * PRE-HIRE MAPPING GUARD — the Unmapped Agents screen must refuse to create the miscredit that
@@ -201,4 +204,67 @@ export function runCrmPreHireMappingGuardTests() {
   assert.equal(production.count, 1136, "all 1,136 pre-hire rows are counted, and none of her own 28");
   assert.equal(production.earliest, "2026-01-01", "the earliest real offending date");
   assert.ok(production.latest < "2026-06-20", "the reported range never reaches into her employment");
+
+  // ── (K) The Map button STAMPS only the chosen person's own tenure ───────────────────────────
+  //
+  // Slot 1399 (Tanta / A), production 2026-09-21. Every row carried the current holder's label, but
+  // three people held it in turn. Mapping it to the FIRST holder passes the pre-hire guard above —
+  // nothing predates her hire — and the old stamp then filed the SECOND holder's August calls under
+  // her, seven weeks after she left. Only her own employment may be stamped.
+  const tantaLabel = "Ahmed.Farag ( Tanta / A )";
+  const nada = {
+    crmId: null,
+    crmUsername: null,
+    hireDate: "2025-12-14",
+    hrId: "B-97",
+    lastWorkingDate: "2026-06-28",
+  } as unknown as EmployeeDirectoryRow;
+  const slot1399: StampCandidateRow[] = [
+    { id: "jan", label: tantaLabel, visitDate: "2026-01-01" },
+    { id: "last-day", label: tantaLabel, visitDate: "2026-06-28" },
+    { id: "aug-other-rep", label: tantaLabel, visitDate: "2026-08-03" },
+    { id: "sep-current-holder", label: tantaLabel, visitDate: "2026-09-06" },
+    { id: "someone-else", label: "Tayseer.Khaled ( Cairo East 1 / E )", visitDate: "2026-02-01" },
+  ];
+  assert.deepEqual(
+    selectStampableVisitRowIds(slot1399, { decisionLabel: normalizeCrmName(tantaLabel), employee: nada }),
+    ["jan", "last-day"],
+    "mapping a handed-over account to its first holder stamps ONLY her own tenure — never the rows " +
+      "the next two holders logged after she left, and never another label",
+  );
+
+  // Before the hire date is never stamped either (the save-time guard refuses it; this is the floor).
+  assert.deepEqual(
+    selectStampableVisitRowIds([{ id: "early", label: tantaLabel, visitDate: "2025-12-13" }], {
+      decisionLabel: null,
+      employee: nada,
+    }),
+    [],
+    "a row dated before the hire date is never stamped",
+  );
+
+  // Her OWN trailing work, logged after the last working day under her own label, is still hers —
+  // the same exception the sync's resolver makes.
+  const nadaWithLabel = { ...nada, crmUsername: "Nada.Elsharkawy ( Tanta / A )" } as EmployeeDirectoryRow;
+  assert.deepEqual(
+    selectStampableVisitRowIds(
+      [
+        { id: "own-late", label: "Nada.Elsharkawy  ( Tanta / A )", visitDate: "2026-06-30" },
+        { id: "handed-over", label: tantaLabel, visitDate: "2026-06-30" },
+      ],
+      { decisionLabel: null, employee: nadaWithLabel },
+    ),
+    ["own-late"],
+    "a post-exit row stays hers only while it carries her own label",
+  );
+
+  // Still-employed, no dates recorded: nothing to refuse on.
+  assert.deepEqual(
+    selectStampableVisitRowIds([{ id: "any", label: tantaLabel, visitDate: "2026-09-06" }], {
+      decisionLabel: normalizeCrmName(tantaLabel),
+      employee: { ...nada, hireDate: null, lastWorkingDate: null } as EmployeeDirectoryRow,
+    }),
+    ["any"],
+    "an employee with no recorded dates is stamped as before",
+  );
 }

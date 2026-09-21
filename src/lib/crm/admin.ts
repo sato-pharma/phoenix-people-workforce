@@ -4,8 +4,13 @@
  * Relocated verbatim from visits-report/service.ts; behavior unchanged.
  */
 
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { getCrmIdentityResolutions, normalizeCrmName } from "@/lib/crm/identity";
+import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import {
+  buildCrmIdentityMaps,
+  getCrmIdentityResolutions,
+  isAttributableOn,
+  normalizeCrmName,
+} from "@/lib/crm/identity";
 import { getEffectiveExcludedAgentCrmIds } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -197,6 +202,46 @@ export function findPreHireMappingConflict(
   return { count, earliest, latest };
 }
 
+/** One unmapped visit row as the Map button's stamp reads it. */
+export type StampCandidateRow = { id: string; label: string | null; visitDate: string | null };
+
+/**
+ * Which unmapped rows the Map button may stamp with the chosen person — the pure core of
+ * stampUnmappedVisitRows, split out so it is unit-testable without Supabase.
+ *
+ * TWO FILTERS, BOTH REQUIRED. The label filter (above) keeps a decision off rows carrying a
+ * different person's name. The TENURE filter keeps it off rows dated outside the chosen person's
+ * own employment, using the exact test the sync's resolver applies (isAttributableOn): nothing
+ * before the hire date, and nothing after the last working day unless the row still carries that
+ * person's own CRM label (their trailing work logged late).
+ *
+ * The label filter alone is not enough, because iReports360 rewrites a handed-over account's WHOLE
+ * history to the current holder's name. Slot 1399 (Tanta / A), production 2026-09-21: every row from
+ * January to September read "Ahmed.Farag ( Tanta / A )", but it was held by three people in turn —
+ * Jan 1..Jun 28 by a rep who left on Jun 28, Aug 2..6 by a rep who lasted four days, and from Sep 6
+ * by the current holder. The save-time pre-hire guard refused mapping it to the current holder, but
+ * mapping it to the FIRST holder passed that guard (nothing predated her hire) and would have stamped
+ * the second holder's August calls onto her, seven weeks after she left. The resolver would never
+ * have produced that attribution; only this blanket stamp could.
+ *
+ * Rows the filter skips stay unmapped, which is honest and recoverable — they remain on the
+ * Unmapped Agents list for their own decision.
+ */
+export function selectStampableVisitRowIds(
+  rows: readonly StampCandidateRow[],
+  input: { decisionLabel: string | null; employee: EmployeeDirectoryRow },
+): string[] {
+  const maps = buildCrmIdentityMaps([input.employee]);
+  const hrId = input.employee.hrId;
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (input.decisionLabel && normalizeCrmName(row.label) !== input.decisionLabel) continue;
+    if (!isAttributableOn(hrId, row.visitDate, maps, row.label)) continue;
+    ids.push(row.id);
+  }
+  return ids;
+}
+
 /** The sentence the admin sees. Written as prose naming the person and the dates, because the whole
  *  failure mode is that the screen looked correct — "invalid mapping" would explain nothing. */
 export function preHireMappingRefusalMessage(input: {
@@ -283,6 +328,7 @@ export async function setUnmappedCrmIdentityResolution(input: {
 
   let resolvedHrId: string | null = null;
   let resolvedName: string | null = null;
+  let resolvedEmployee: EmployeeDirectoryRow | null = null;
   if (input.action === "mapped") {
     const typed = input.mappedHrId?.trim();
     if (!typed) throw new Error("An HR ID is required to map this identity.");
@@ -292,6 +338,7 @@ export async function setUnmappedCrmIdentityResolution(input: {
     if (!match) throw new Error(`No employee found with HR ID "${typed}".`);
     resolvedHrId = match.hrId;
     resolvedName = match.fullName;
+    resolvedEmployee = match;
 
     // Refuse before anything is written. The upsert below and the stamp after it are separate
     // statements with no transaction around them, so a check placed later could leave the decision
@@ -329,11 +376,11 @@ export async function setUnmappedCrmIdentityResolution(input: {
   if (upsertError) throw new Error(upsertError.message);
 
   let updatedVisits = 0;
-  if (input.action === "mapped" && resolvedHrId) {
+  if (input.action === "mapped" && resolvedEmployee) {
     updatedVisits += await stampUnmappedVisitRows(supabase, {
       crmId: input.crmId,
       crmName: input.crmName ?? null,
-      hrId: resolvedHrId,
+      employee: resolvedEmployee,
       idColumn: "agent_crm_id",
       nameColumn: "agent_name",
       targetColumn: "agent_hr_id",
@@ -341,7 +388,7 @@ export async function setUnmappedCrmIdentityResolution(input: {
     updatedVisits += await stampUnmappedVisitRows(supabase, {
       crmId: input.crmId,
       crmName: input.crmName ?? null,
-      hrId: resolvedHrId,
+      employee: resolvedEmployee,
       idColumn: "double_crm_id",
       nameColumn: "double_name",
       targetColumn: "double_hr_id",
@@ -358,39 +405,30 @@ export async function setUnmappedCrmIdentityResolution(input: {
  * then the replacement's), so the old blanket "every null row for this crm_id" stamp would file
  * the previous occupant's work under the new hire. Rows whose label doesn't normalize to the
  * decision's label are left unmapped for their own, separate decision. Without a recorded label
- * (legacy callers) the blanket behavior is preserved. Name matching happens in JS via
+ * (legacy callers) every label on the account is eligible. Name matching happens in JS via
  * normalizeCrmName — the vendor emits the same person's label with inconsistent internal
  * whitespace, so a SQL equality filter would silently skip real rows.
+ *
+ * TENURE-SCOPED TOO — see selectStampableVisitRowIds.
  */
 async function stampUnmappedVisitRows(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   input: {
     crmId: number;
     crmName: string | null;
-    hrId: string;
+    employee: EmployeeDirectoryRow;
     idColumn: "agent_crm_id" | "double_crm_id";
     nameColumn: "agent_name" | "double_name";
     targetColumn: "agent_hr_id" | "double_hr_id";
   },
 ): Promise<number> {
-  const decisionLabel = normalizeCrmName(input.crmName);
-  if (!decisionLabel) {
-    const { count, error } = await supabase
-      .from(visitsTable)
-      .update({ [input.targetColumn]: input.hrId, updated_at: new Date().toISOString() }, { count: "exact" })
-      .eq(input.idColumn, input.crmId)
-      .is(input.targetColumn, null);
-    if (error) throw new Error(error.message);
-    return count ?? 0;
-  }
-
-  const matchingIds: string[] = [];
+  const candidates: StampCandidateRow[] = [];
   const pageSize = 1000;
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
       .from(visitsTable)
-      .select(`id, ${input.nameColumn}`)
+      .select(`id, visit_date, ${input.nameColumn}`)
       .eq(input.idColumn, input.crmId)
       .is(input.targetColumn, null)
       .order("id", { ascending: true })
@@ -401,18 +439,24 @@ async function stampUnmappedVisitRows(
     const page = (data ?? []) as unknown as Array<{ id: string } & Record<string, string | null>>;
     if (page.length === 0) break;
     for (const row of page) {
-      if (normalizeCrmName(row[input.nameColumn]) === decisionLabel) matchingIds.push(row.id);
+      candidates.push({ id: row.id, label: row[input.nameColumn] ?? null, visitDate: row.visit_date ?? null });
     }
     if (page.length < pageSize) break;
     cursor = page[page.length - 1].id;
   }
 
+  const matchingIds = selectStampableVisitRowIds(candidates, {
+    decisionLabel: normalizeCrmName(input.crmName),
+    employee: input.employee,
+  });
+
+  const hrId = input.employee.hrId;
   let updated = 0;
   for (let from = 0; from < matchingIds.length; from += 500) {
     const chunk = matchingIds.slice(from, from + 500);
     const { count, error } = await supabase
       .from(visitsTable)
-      .update({ [input.targetColumn]: input.hrId, updated_at: new Date().toISOString() }, { count: "exact" })
+      .update({ [input.targetColumn]: hrId, updated_at: new Date().toISOString() }, { count: "exact" })
       .in("id", chunk);
     if (error) throw new Error(error.message);
     updated += count ?? chunk.length;
