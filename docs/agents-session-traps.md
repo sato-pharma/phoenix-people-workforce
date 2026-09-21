@@ -43,7 +43,7 @@ file holding the full account, under
 - **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
   install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
-- **`git show <ref>:<path>` FAILS under MSYS when the path starts with a DOT — a stderr `fatal:`, not an empty file, which a pipe turns into a confident `0`.** Measured: `.github/…`, `.gitignore`, `.env.example` and `.claude/…` all mangle; `docs/…`, `supabase/migrations/…`, `tests/…` and `package.json` do not. Distinguish the two `fatal:`s — mangled reads `ambiguous argument` over a path with backslashes and a `;`, while a real absence reads `path '<path>' does not exist in '<ref>'` with the argument intact. Also **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`git show <ref>:<path>` FAILS under MSYS when the path starts with a DOT — a stderr `fatal:`, not an empty file, which a pipe turns into a confident `0`.** Measured: `.github/…`, `.gitignore`, `.env.example` and `.claude/…` all mangle; `docs/…`, `supabase/migrations/…`, `tests/…` and `package.json` do not. `ambiguous argument` over a backslashed path means only that the CONVERSION fired — **not** that the file exists: a dotted path that is genuinely absent gives the identical message. Re-run it with `./` in front to learn which — bytes back means the trap was eating a real file, `path '…' does not exist in '<ref>'` means it was never there. Also **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **`grep -c $'\r'` under MSYS reports a match on EVERY line of a pure-LF file, and a working copy can
   carry CRLF that `git status` calls clean.** Two separate faults that present as one argument, and
   between them they cost two sessions two rounds on 2026-08-29. The instrument first: MSYS translates
@@ -2039,18 +2039,32 @@ nothing in the output looks broken, and the file was never read at all.
 — the identical status a genuine, correctly-read absence produces. No status here distinguishes
 *git failed* from *the string is not there*.
 
-**The two `fatal:`s ARE distinguishable, so you never have to guess which you hit.** Measured all
-three ways:
+**`ambiguous argument` does NOT mean the file is there — the tell is a TWO-STEP.** Four probes,
+measured. The first three were the original claim; the fourth is what corrects it:
 
-    mangled          fatal: ambiguous argument 'origin\main;.gitignore': unknown revision or path not in the working tree.
-    real absence     fatal: path 'docs/no-such-file-here.md' does not exist in 'origin/main'
-    absent AND dotted, with the export set
-                     fatal: path '.github/workflows/no-such.yml' does not exist in 'origin/main'
+    1  dotted + PRESENT, untreated    fatal: ambiguous argument 'origin\main;.gitignore': unknown revision or path not in the working tree.
+    2  ordinary + ABSENT, untreated   fatal: path 'docs/no-such-file-here.md' does not exist in 'origin/main'
+    3  dotted + ABSENT, export SET    fatal: path '.github/workflows/no-such.yml' does not exist in 'origin/main'
+    4  dotted + ABSENT, UNTREATED     fatal: ambiguous argument 'origin\main;.github\workflows\no-such.yml': unknown revision or path not in the working tree.
 
-The mangled form carries BACKSLASHES and a SEMICOLON and blames the whole argument; the honest one
-leaves the argument intact, keeps the forward slashes, and names the ref. The third probe is what
-makes the tell trustworthy: with the conversion off, a dotted path that genuinely does not exist
-still gives the ABSENCE message, so the two causes never wear each other's words.
+**Probe 4 is byte-identical to probe 1**, and it is the one that was missing. In the untreated
+state — which is the state every session is in the first time it hits this — a dotted path answers
+`ambiguous argument` whether the file exists or not. The conversion happens before git resolves
+anything, so git never gets far enough to know. Reading that message as *MSYS ate a real file* is
+the same false positive as the zero this whole account exists for, one layer up: a session chasing
+a typo'd `.github/workflows/…` would conclude the file is present and the tooling is lying.
+
+Probe 3 does not show the two causes staying distinct. It shows that **disarming the conversion is
+what makes them distinct.**
+
+**So `ambiguous argument` on a dotted path means "conversion fired", and nothing more.** To learn
+whether the file exists, re-run with `./` in front — nothing to export:
+
+    git show origin/main:./.gitignore                       # 5,015 bytes — real, and the trap was eating it
+    git show origin/main:./.github/workflows/no-such.yml    # fatal: path '…' does not exist in 'origin/main'
+
+The backslashes-and-semicolon shape does identify the mangling reliably. What it never identified
+is the file.
 
 **Three near-fixes that do NOT work, each measured:**
 
