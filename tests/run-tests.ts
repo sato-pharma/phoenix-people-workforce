@@ -1860,6 +1860,7 @@ import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
 import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
 import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
+import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6548,6 +6549,7 @@ await runTest(
   runPortalShellRolesTests,
 );
 
+await runTest("the Office commit reports an Office step it could not confirm, never swallows it: the allocation stays saved and the reply names the reason", runOfficeCommitConfirmStepTests);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

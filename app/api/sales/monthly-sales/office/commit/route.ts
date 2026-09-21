@@ -7,6 +7,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation } from "@/lib/sales/office-upload";
 import { confirmStep } from "@/lib/sales/monthly-sales-run";
+import { officeCommitMessage, settleStepConfirmation, type StepConfirmation } from "@/lib/sales/step-confirmation";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -44,13 +45,23 @@ export async function POST(request: Request) {
     const result = await commitOfficeAllocation({ buffer, fileName: file.name, period, uploadedBy });
     const blocked = result.status === "blocked";
 
-    // On a clean commit, mark the Office step confirmed in the run (if a run exists for the period).
-    if (!blocked && result.batchId) {
-      await confirmStep(period, OFFICE_DISTRIBUTOR_CODE, result.batchId).catch(() => {});
+    // On a clean commit, mark the Office step confirmed in the run. The allocation is already saved,
+    // so a failed confirm does not fail the request — but it is reported, never swallowed.
+    let stepConfirmation: StepConfirmation | null = null;
+    const batchId = result.batchId;
+    if (!blocked && batchId) {
+      stepConfirmation = await settleStepConfirmation(
+        () => confirmStep(period, OFFICE_DISTRIBUTOR_CODE, batchId),
+        (error) => console.error("[office-commit] saved, but the Office step was not confirmed", { period, error }),
+      );
     }
 
     return NextResponse.json(
-      { success: !blocked, data: result, message: blocked ? "Some office product names are not mapped." : "Office allocation saved." },
+      {
+        success: !blocked,
+        data: { ...result, stepConfirmation },
+        message: blocked ? "Some office product names are not mapped." : officeCommitMessage(stepConfirmation),
+      },
       { status: blocked ? 400 : 200 },
     );
   } catch (error) {
