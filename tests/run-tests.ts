@@ -1453,6 +1453,7 @@ import { runOutstationClaimValidationTests } from "./outstation-claim-validation
 import { runOutstationRequestTypeValidationTests } from "./outstation-request-type-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
+import { runOutstationSheetRefusesWorkflowTripIdsTests } from "./outstation-sheet-refuses-workflow-trip-ids.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -5210,6 +5211,11 @@ await runTest(
 await runTest(
   "outstation National Sales Manager no-hold rule (never held by the photo or workload gate, accepted on submission, released into payroll as the system — and nobody else exempted)",
   runOutstationNsmNoHoldTests,
+);
+
+await runTest(
+  "a historical expense sheet never writes an app trip's payroll row: a TripID in the workflow's OUTSTATION- namespace (any case or spacing) is refused at analysis — before either upload route saves or the replace route clears its report — and again inside the save unless the caller is the workflow's own push; the uploader is told whose rows by name and row number, and the admin Expense Approvals export, which re-imports as the Phoenix template, is refused rather than overwriting its app trips",
+  runOutstationSheetRefusesWorkflowTripIdsTests,
 );
 
 await runTest(

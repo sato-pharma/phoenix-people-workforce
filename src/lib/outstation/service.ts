@@ -3067,7 +3067,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
     fileName: `outstation-request-${input.request.id}.workflow`,
     records: [expenseRecord],
     reportId: input.linkedPayroll?.reportId ?? null,
-  }, input.access);
+  }, input.access, { allowWorkflowTripIds: true });
 
   return saved.length;
 }
@@ -3090,7 +3090,7 @@ async function pushAcceptedOutstationExpenseToPayroll(
     fileName: `outstation-request-${request.id}.workflow`,
     records: [expenseRecord],
     reportId: linkedPayroll?.reportId ?? null,
-  }, access);
+  }, access, { allowWorkflowTripIds: true });
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
     entityId: String(request.id),
@@ -4247,6 +4247,7 @@ async function writeOutstationRequestPayableAmount(input: {
       reportId: linked.reportId,
     },
     input.access,
+    { allowWorkflowTripIds: true },
   );
 
   return true;
