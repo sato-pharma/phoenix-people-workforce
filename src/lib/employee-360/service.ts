@@ -20,6 +20,7 @@
 
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { classifyVisit } from "@/lib/crm/visit-types";
+import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
   COMPANY_CHECKIN_HOUR_SHARE,
@@ -201,8 +202,53 @@ export function cairoHour(iso: string): number {
   return parts ? Math.floor(parts.hourDecimal) : -1;
 }
 
-function customerKeyOf(row: VisitRow): string {
-  return row.contact_crm_id != null ? `id:${row.contact_crm_id}` : (row.contact_name ?? row.customer_name ?? "").trim().toLowerCase();
+/**
+ * The customer a visit reached, or null when it reached no real one.
+ *
+ * 🔴 A CONTACT ID OF 0 IS NOBODY. Every campaign (-8) and unlabelled field visit (-30) carries
+ * contact id 0 and no name — measured on production 2026-09-21: 6,623 and 320 rows since July, not
+ * one with a real id. Keyed as `id:0`, all of a rep's campaign work became ONE customer: distinct
+ * customers one too high, a "repeat customer" who does not exist, and visits-per-customer inflated
+ * by every campaign visit. 100000 is the catch-all contact, which is no doctor either
+ * (CATCH_ALL_CONTACT_CRM_ID). Both still count as productive visits — they just reach no customer.
+ */
+export function customerKeyOf(
+  row: Pick<VisitRow, "contact_crm_id" | "contact_name" | "customer_name">,
+): string | null {
+  const id = row.contact_crm_id;
+  if (id != null) {
+    return Number.isInteger(id) && id > 0 && id !== CATCH_ALL_CONTACT_CRM_ID ? `id:${id}` : null;
+  }
+  return (row.contact_name ?? row.customer_name ?? "").trim().toLowerCase() || null;
+}
+/**
+ * Sales efficiency over the visit window.
+ *
+ * Only the months the window touches count. A person's sales series runs from the history floor
+ * (the tile says "through <month>"), so dividing the whole series by the WINDOW's visits put eight
+ * months of sales over one month of visits. A team roll-up gets no ratio at all: those sales are
+ * the whole team's while the visits are the manager's own, so the figure would describe nobody.
+ * `windowSalesValue` is returned for the expense ratio, which is the person's cost against the
+ * same months whatever the roll-up.
+ */
+export function windowSalesEfficiency(input: {
+  monthly: ReadonlyArray<{ month: string; sales: number }>;
+  window: Pick<Employee360Window, "from" | "to">;
+  isTeamRollup: boolean;
+  productiveVisits: number;
+  distinctCustomers: number;
+}): { windowSalesValue: number; salesPerVisit: number | null; salesPerCustomer: number | null } {
+  const fromMonth = input.window.from.slice(0, 7);
+  const toMonth = input.window.to.slice(0, 7);
+  const windowSalesValue = input.monthly
+    .filter((m) => m.month >= fromMonth && m.month <= toMonth)
+    .reduce((s, m) => s + m.sales, 0);
+  const own = !input.isTeamRollup && windowSalesValue > 0 ? windowSalesValue : null;
+  return {
+    windowSalesValue,
+    salesPerVisit: own != null && input.productiveVisits > 0 ? own / input.productiveVisits : null,
+    salesPerCustomer: own != null && input.distinctCustomers > 0 ? own / input.distinctCustomers : null,
+  };
 }
 function customerNameOf(row: VisitRow): string {
   return (row.contact_name ?? row.customer_name ?? "").trim() || "—";
@@ -337,7 +383,10 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
   const distinctCustomers = customers.length;
   const repeatCustomers = customers.filter((c) => c.count > 1).length;
   const oneTimeCustomers = distinctCustomers - repeatCustomers;
-  const avgVisitsPerCustomer = distinctCustomers > 0 ? productiveVisits / distinctCustomers : null;
+  // Over the visits that reached a customer, not all productive visits: a campaign visit reaches
+  // nobody (customerKeyOf), so dividing it in would credit every customer with work never done there.
+  const customerVisits = customers.reduce((sum, c) => sum + c.count, 0);
+  const avgVisitsPerCustomer = distinctCustomers > 0 ? customerVisits / distinctCustomers : null;
   const topCustomers = customers
     .filter((c) => c.name !== "—")
     .sort((a, b) => b.count - a.count)
