@@ -559,6 +559,7 @@ import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.te
 import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test.ts";
 import { runEmployee360BrickCoverageTests } from "./employee-360-brick-coverage.test.ts";
 import { runEmployee360UntargetedMonthsTests } from "./employee-360-untargeted-months.test.ts";
+import { runEmployee360CampaignMixTests } from "./employee-360-campaign-mix.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runSalesReferenceCrosswalkCallersTests } from "./sales-reference-crosswalk-callers.test.ts";
@@ -2996,6 +2997,7 @@ await runTest("employee 360 portal browse-all fallback + detail route", runEmplo
 await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios + figures start at the hire month", runEmployee360CustomerKeyTests);
 await runTest("employee 360 bricks: the area's bricks sold or not, against the rep's CURRENT list; months follow the period from the hire month", runEmployee360BrickCoverageTests);
 await runTest("employee 360: a month with no target shows its sales and stays out of achievement; most-visited customers split into AM doctors, PM doctors and pharmacies", runEmployee360UntargetedMonthsTests);
+await runTest("employee 360: 100% regular is the best case — no healthy band, a campaign majority is the only flag, and campaign falling while regular rises reads as the best direction", runEmployee360CampaignMixTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);
