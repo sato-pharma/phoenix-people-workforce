@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 
 import { logError } from "@/lib/observability/log";
+import { sendWebsiteApplyConfirmation } from "@/lib/recruitment/inbound/website-apply-confirmation-email";
 import { candidateRegionCodes, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import type { CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -712,6 +713,21 @@ export async function submitWebsiteApplication(input: WebsiteApplySubmission): P
       logError("Website application classification write failed", {
         error,
         labels: { candidate_id: candidateId, event: "website_apply_classification_failed", role: input.role.key },
+      });
+    }
+    // The applicant's confirmation letter — the SATO house template, sent to their own address. Best
+    // effort on top of an already-captured application: an e-mail that cannot be sent (provider down,
+    // notifications off, held by the confidence gate) must NEVER fail the submission or lose the CV.
+    try {
+      await sendWebsiteApplyConfirmation({
+        email: input.email,
+        fullName: input.fullName,
+        roleTitle: input.role.title,
+      });
+    } catch (error) {
+      logError("Website application confirmation e-mail failed", {
+        error,
+        labels: { candidate_id: candidateId, event: "website_apply_confirmation_failed", role: input.role.key },
       });
     }
     return { candidateId, ok: true };
