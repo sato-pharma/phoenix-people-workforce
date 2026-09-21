@@ -1825,6 +1825,8 @@ import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid
 import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
+import { runDevServerHeapCapTests } from "./dev-server-heap-cap.test.ts";
+import { runRawNextDevGuardTests } from "./raw-next-dev-guard.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
 import { runTrapInjectorClustersTests } from "./trap-injector-clusters.test.ts";
 import { runDocsShareTokenGuardTests } from "./docs-share-token-guard.test.ts";
@@ -6340,6 +6342,16 @@ await runTest(
 await runTest(
   "dev launcher says why the dev server stopped: the exit code in plain words, the time in Cairo, and the lowest free RAM while it ran — silent only for a clean stop or Ctrl+C",
   runDevServerExitReasonTests,
+);
+
+await runTest(
+  "dev launcher caps the dev server's heap at 4,096 MB where Next alone hands it half of RAM: the cap reaches Next's own process, a cap the caller already set always wins, PHOENIX_DEV_HEAP_MB tunes it or turns it off, the installed Next still honours the cap and restarts at 80%, and every start path goes through the launcher",
+  runDevServerHeapCapTests,
+);
+
+await runTest(
+  "bash-guard C7 refuses a raw `next dev` in every form a session starts one (node, npx, pnpm exec, a quoted path with spaces, cmd /c, Start-Process, WMI) and names the launcher with the same port, while the launcher, next build, and commands, commit messages, heredocs and here-strings that only mention it stay allowed",
+  runRawNextDevGuardTests,
 );
 
 await runTest(

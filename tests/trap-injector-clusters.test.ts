@@ -34,7 +34,8 @@ const SAMPLES: Record<string, string> = {
   "Memory and this index": "wc -c MEMORY.md",
   "Parallel sessions": "gh pr merge 3950",
   Worktrees: "git worktree list",
-  "Next.js runtime": "next dev --webpack",
+  // The launcher, not a raw `next dev`: bash-guard C7 refuses that form since 2026-09-21.
+  "Next.js runtime": "node scripts/dev-server.mjs --port 3000",
   "Browser and dev-auth": 'curl -H "x-phoenix-role: CEO" localhost:3000',
   "Machine ceiling": "Get-NetTCPConnection -LocalPort 3000",
 };

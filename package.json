@@ -8,9 +8,9 @@
   },
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "dev:webpack": "next dev --webpack",
-    "dev:turbopack": "next dev --turbopack",
-    "dev:no-turbopack": "next dev --webpack",
+    "dev:webpack": "node scripts/dev-server.mjs --webpack",
+    "dev:turbopack": "node scripts/dev-server.mjs --turbopack",
+    "dev:no-turbopack": "node scripts/dev-server.mjs --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --cache --cache-strategy content",

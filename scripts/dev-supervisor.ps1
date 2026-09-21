@@ -81,11 +81,14 @@ function Test-DevUp {
 }
 
 function Start-Dev {
-  # --webpack, NEVER --turbopack: three consecutive turbopack servers wedged solid holding
-  # 3.2-5.8 GB each while webpack served in 11s. Turbopack rejects the junctioned node_modules.
+  # Through the launcher, never a raw `next dev`: scripts/dev-server.mjs picks --webpack on Windows
+  # (three consecutive turbopack servers wedged solid holding 3.2-5.8 GB each while webpack served
+  # in 11s, and turbopack rejects the junctioned node_modules), caps the server's heap at 4 GB where
+  # Next alone would allow half of RAM, and refuses to start a second dev server. That refusal lands
+  # in the dev log and this loop simply tries again next round.
   # Invoke node directly - `pnpm run`/`pnpm exec` in a worktree purges the node_modules
   # junction before Next ever starts, and reports success while the port stays dead.
-  $cmd = 'cmd.exe /c node node_modules\next\dist\bin\next dev --webpack --port ' + $Port + ' >> "' + $DevLog + '" 2>&1'
+  $cmd = 'cmd.exe /c node scripts\dev-server.mjs --port ' + $Port + ' >> "' + $DevLog + '" 2>&1'
   return Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
     CommandLine = $cmd; CurrentDirectory = $RepoRoot
   }

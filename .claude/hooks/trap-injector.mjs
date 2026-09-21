@@ -52,7 +52,9 @@ const RULES = [
   [/supabase|psql|pg_dump|pg_class|pg_proc|execute_sql|\brls\b|\bgrant\b|\bpolicy\b/i, 'Database, grants and RLS'],
   [/migration|apply_migration|list_migrations|db\s+push/i, 'Migrations'],
   [/pnpm\s+run\s+(test|typecheck|lint|ci)|tsc\b|node\s+--test|run-tests/i, 'Validation'],
-  [/next\s+dev|pnpm\s+run\s+dev|unstable_cache|turbopack/i, 'Next.js runtime'],
+  // `dev-server.mjs` since 2026-09-21: bash-guard C7 refuses a raw `next dev`, so the launcher is
+  // how a session now starts the dev server — without it this cluster would never be delivered.
+  [/next\s+dev|pnpm\s+run\s+dev|dev-server\.mjs|unstable_cache|turbopack/i, 'Next.js runtime'],
   [/dev-auth|x-phoenix-role|localhost:300|browser|playwright/i, 'Browser and dev-auth'],
   [/healthz|railway|cron-job|app_error_events|\bcurl\b.*https?:/i, 'Probing, attributing and reporting production'],
   // `claude-code-sessions`, `cleanupPeriodDays` and a walk of `~/.claude/projects`
