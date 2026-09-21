@@ -909,8 +909,10 @@ export function ExpenseReport({
         fgColor: { argb: "FF0F172A" },
       };
 
+      // No `header` here: ExcelJS writes a column's header into ROW 1, over the title, and a row 1
+      // reading "Comments" in every cell made the importer take it as the header row and refuse the
+      // file. The headers go on row 2 below.
       sheet.columns = expenseTemplateHeaders.map((header, index) => ({
-        header,
         key: header,
         width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 14, 24, 30][index],
       }));
