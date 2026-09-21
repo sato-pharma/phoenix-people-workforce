@@ -53,7 +53,7 @@ import { notifyTalentAcquisitionOfInboundCv } from "@/lib/recruitment/inbound/re
 import { extractChannelCode } from "@/lib/recruitment/outreach/channel-code";
 import type { Candidate } from "@/lib/recruitment/types";
 
-export type InboundCvChannel = "email" | "whatsapp";
+export type InboundCvChannel = "email" | "whatsapp" | "website";
 
 export type InboundCvAttachment = {
   fileName: string;
