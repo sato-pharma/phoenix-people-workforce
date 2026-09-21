@@ -43,7 +43,7 @@ file holding the full account, under
 - **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
   install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
   `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
-- **`git show <ref>:<path>` returns EMPTY under MSYS**, and **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **`git show <ref>:<path>` FAILS under MSYS when the path starts with a DOT — a stderr `fatal:`, not an empty file, which a pipe turns into a confident `0`.** Measured: `.github/…`, `.gitignore`, `.env.example` and `.claude/…` all mangle; `docs/…`, `supabase/migrations/…`, `tests/…` and `package.json` do not. Distinguish the two `fatal:`s — mangled reads `ambiguous argument` over a path with backslashes and a `;`, while a real absence reads `path '<path>' does not exist in '<ref>'` with the argument intact. Also **`grep -c $'\r'` matches EVERY line of a pure-LF file** — use the PowerShell tool, or count raw bytes in node. A CRLF working copy can read as CLEAN too: git normalises before comparing. **MSYS mangles a SEARCH PATTERN the same way: a `git grep`/`rg` pattern holding a leading-slash path matches NOTHING, silently** — `redirect("/employee-portals/` returned 0 against 41 real hits, and a zero here reads as *the code is clean*. Export `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'` before any such sweep, and never quote a count from one without it. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
 - **`grep -c $'\r'` under MSYS reports a match on EVERY line of a pure-LF file, and a working copy can
   carry CRLF that `git status` calls clean.** Two separate faults that present as one argument, and
   between them they cost two sessions two rounds on 2026-08-29. The instrument first: MSYS translates
@@ -454,9 +454,11 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
       node scripts/check-migrations.mjs      # now sees the real 412-file merge set
       rm supabase/migrations/<their-file>.sql
 
-  Check the extraction is non-empty first. `git show <ref>:<path>` returns EMPTY under MSYS unless
-  `MSYS_NO_PATHCONV=1` is exported, and an empty file makes the check pass for the wrong reason —
-  the same positive-control rule as everywhere else in this file.
+  Check the extraction is non-empty first — an empty file makes the check pass for the wrong
+  reason, the same positive-control rule as everywhere else in this file. This particular
+  command is safe as written: MSYS mangles a `git show <ref>:<path>` only when the path starts
+  with a DOT, and `supabase/migrations/` does not. Measured both ways, 2026-09-21 — the same
+  extraction wrote 1,568 bytes with and without `MSYS_NO_PATHCONV=1`.
 
   The fix is the rename, and **production needed nothing.** Both rows were already distinct in the
   ledger under their apply times — `contract_signatory_can_differ_per_contract` at `20260904145559`,
@@ -1990,7 +1992,13 @@ actually reached `origin/main`.
     git show origin/main:.github/workflows/ci.yml
 
 **What git actually receives.** MSYS path conversion rewrites the whole `<rev>:<path>` argument
-before git ever sees it — the colon becomes a SEMICOLON and every slash a backslash:
+before git ever sees it — **but only when the path begins with a DOT**, as `.github/…` does here.
+`docs/…`, `supabase/migrations/…`, `tests/…` and `package.json` pass through untouched, which is
+why this trap looks intermittent and why testing it on the wrong path "disproves" it. The
+trigger is a dot followed by a NAME, so a `./` in front disarms it and needs nothing exported —
+measured, `origin/main:.github/workflows/ci.yml` reads 0 bytes while
+`origin/main:./.github/workflows/ci.yml` reads 47,311, and `./` on a path that was already fine
+changes nothing. When it does fire, the colon becomes a SEMICOLON and every slash a backslash:
 
     fatal: ambiguous argument 'origin\main;.github\workflows\ci.yml': unknown revision or path not in the working tree.
     Use '--' to separate paths from revisions, like this:
