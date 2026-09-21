@@ -12,6 +12,7 @@ import {
   resolveNavigationMode,
 } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { shouldBounceToExpenseDashboard } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   getMedicalRepExpenseContext,
   listMedicalRepExpenseRequests,
@@ -47,10 +48,9 @@ export default async function EmployeePortalExpensesPage() {
   }
 
   if (!context) {
-    if (
-      loadError instanceof Error &&
-      loadError.message.toLowerCase().includes("only medical rep users can use simple expense submission")
-    ) {
+    // Never for a viewer the dashboard would send straight back here — that pair looped forever.
+    // Such a viewer gets the empty state below, which names the refusal.
+    if (shouldBounceToExpenseDashboard(access, loadError)) {
       redirect("/employee-portals/expense-dashboard");
     }
 
