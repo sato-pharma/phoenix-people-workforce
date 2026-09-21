@@ -119,7 +119,9 @@ export function runOutstationWorkloadRepairTests() {
   const captureWorkloadSlice = functionSlice(service, "async function captureWorkloadAndReleaseIfReady");
   assert.match(
     captureWorkloadSlice,
-    /workload_match_status:\s*\n?\s*capture\.amWorkload \+ capture\.pmWorkload > 0 \? "matched" : "no_activity"/,
+    // Since 2026-09-21 the numbers are AM · PM · Pharmacies, so the verdict comes from all three
+    // (a pharmacy-only trip is worked) — tests/outstation-trip-workload-pharmacies.test.ts pins why.
+    /workload_match_status:\s*\n?\s*capturedWorkloadMatchStatus\(capture\)/,
     "a successful re-grab must restate the match status from the numbers it just wrote, or the row contradicts itself",
   );
   // Both branches, so the pair can never drift into "matched" on a genuine zero.

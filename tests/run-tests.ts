@@ -126,6 +126,7 @@ import { runSalesMoneyRoundingTests } from "./sales-money-rounding.test.ts";
 import { runExpenseTripDedupTests } from "./expense-trip-dedup.test.ts";
 import { runOutstationDecisionTests } from "./outstation-decision.test.ts";
 import { runOutstationWorkloadFreshnessTests } from "./outstation-workload-freshness.test.ts";
+import { runOutstationTripWorkloadPharmaciesTests } from "./outstation-trip-workload-pharmacies.test.ts";
 import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-import-tripid.test.ts";
 import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-atomicity.test.ts";
 import { runSalesBulkImportGatingTests } from "./sales-bulk-import-gating.test.ts";
@@ -5711,6 +5712,10 @@ await runTest("the CRM client's timeout bounds the response BODY, and an empty b
 await runTest("the outstation wizard blocks submit on a stale calculation and never posts its own claimedTotalAmount", runOutstationMobileWizardStaleCalculationTests);
 await runTest("the payroll push mapper and the payroll display mapper agree on one outstation total, even when the claim differs from the expected total", runOutstationPayrollPayableTotalAgreementTests);
 await runTest("a stored outstation workload verdict that the CRM has since contradicted is named as stale (14 of 26 \"no activity\" requests on production have visits the stamp does not reflect)", runOutstationWorkloadFreshnessTests);
+await runTest(
+  "the outstation trip workload is AM · PM · Pharmacies: a pharmacy visit is never counted inside AM or PM (the trip counter buckets with addVisitToSplit, the rollup and the stored evidence carry the third figure apart), a pharmacy-only trip is a worked trip and never 'no activity', a pre-split row's NULL figure is never read as 0, and decision.ts stays pharmacy-blind",
+  runOutstationTripWorkloadPharmaciesTests,
+);
 await runTest(
   "neither outstation submit path lets an employee set his own claim's travel cost, AM/PM "
     + "workload, HR column or trip type, and the offline body stays a subset of the online one",

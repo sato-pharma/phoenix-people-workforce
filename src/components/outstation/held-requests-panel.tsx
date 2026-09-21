@@ -320,6 +320,12 @@ export function HeldRequestsPanel() {
                 <p className="text-xs font-bold text-slate-700">
                   This is recorded as a manual override, never as CRM evidence.
                 </p>
+                {/* A hand-typed workload has no Pharmacies figure: it is stored as "not counted
+                    separately", so its pharmacy visits belong inside AM or PM or they vanish. */}
+                <p className="mt-1 text-xs text-slate-500">
+                  Count pharmacy visits inside AM or PM here — a hand-typed workload has no separate
+                  Pharmacies figure.
+                </p>
                 <div className="mt-2 grid gap-2 sm:grid-cols-3">
                   <input
                     className="min-h-10 rounded-lg border border-slate-300 px-3 text-sm"

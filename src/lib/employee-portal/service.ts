@@ -4063,7 +4063,9 @@ export async function getMedicalRepPortalData(
         ...expense,
         location: expense.location || "",
       })),
-      hasWorkloadFields: expenses.some((expense) => Boolean(expense.amWorkload) || Boolean(expense.pmWorkload)),
+      hasWorkloadFields: expenses.some(
+        (expense) => Boolean(expense.amWorkload) || Boolean(expense.pmWorkload) || Boolean(expense.pharmacyWorkload),
+      ),
       territoryAnalysis: Array.from(new Set(expenses.map((e) => e.location).filter(Boolean))).map((loc) => {
         const locExpenses = expenses.filter((e) => e.location === loc);
         return {

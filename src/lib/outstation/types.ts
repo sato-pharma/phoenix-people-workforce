@@ -404,6 +404,9 @@ export type OutstationExpenseRequest = {
   amWorkload: number;
   meetingAmount: number;
   otherAmount: number;
+  /** AM · PM · Pharmacies — the third figure, never inside amWorkload/pmWorkload. NULL = not
+   * counted separately (stamped before the 2026-09-21 split, or typed by hand as AM and PM). */
+  pharmacyWorkload: number | null;
   pmWorkload: number;
   workloadEvidenceSnapshot: DoubleVisitExpenseWorkloadEvidence | Record<string, unknown>;
   workloadMatchedAt: string | null;

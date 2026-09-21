@@ -204,6 +204,10 @@ export type DoubleVisitExpenseWorkloadEvidence = {
     evidenceRows: number;
     institution?: number;
     pharmacy?: number;
+    /** THE AM · PM · PHARMACIES GOLDEN RULE: the day's pharmacy visits, never inside `am`/`pm`.
+     * Absent on a snapshot written before the 2026-09-21 split, where pharmacies sit inside
+     * am/pm — so absent means "not counted separately", never 0. */
+    pharmacies?: number;
     pm: number;
     total: number;
   }>;
@@ -218,6 +222,9 @@ export type DoubleVisitExpenseWorkloadEvidence = {
   // and the rep genuinely did not work. Nothing branches on this value; it is stored and shown.
   matchStatus: "manual" | "matched" | "no_activity" | "partial" | "stale_import" | "unmapped";
   missingDates: string[];
+  /** The third workload figure (AM · PM · Pharmacies). Optional for the same reason as the
+   * per-day `pharmacies`: every stored pre-split snapshot must still parse. */
+  pharmacyWorkload?: number;
   pmWorkload: number;
   // Visit-kind counts within the trip window (visitType -8 = campaign, 0 = regular),
   // summed by visit_count. Used by the outstation campaign-cap rule for DM/TM.

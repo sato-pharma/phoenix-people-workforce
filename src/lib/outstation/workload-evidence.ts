@@ -29,7 +29,9 @@ export function mergeWorkloadEvidence(
   return {
     ...doubleVisitEvidence,
     // From the corrected CRM read: how much the rep actually worked.
+    // THE AM · PM · PHARMACIES GOLDEN RULE: pharmacies are their own figure, never inside AM/PM.
     amWorkload: repWorkload.amWorkload,
+    pharmacyWorkload: repWorkload.pharmacyWorkload,
     pmWorkload: repWorkload.pmWorkload,
     matchStatus: repWorkload.matchStatus,
     matchedDates: repWorkload.matchedDates,
@@ -45,6 +47,7 @@ export function mergeWorkloadEvidence(
       evidenceRows: day.total,
       institution: day.institution,
       pharmacy: day.pharmacy,
+      pharmacies: day.pharmacies,
       pm: day.pm,
       total: day.total,
     })),

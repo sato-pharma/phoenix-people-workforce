@@ -501,7 +501,8 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              {/* AM · PM · Pharmacies, three figures apart (the golden rule) — a third of the row each. */}
+              <div className="lg:col-span-2">
                 <Field label="AM Visits">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-slate-50"
@@ -513,7 +514,7 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
-              <div className="lg:col-span-3">
+              <div className="lg:col-span-2">
                 <Field label="PM Visits">
                   <Input
                     className="h-12 rounded-none border-slate-200 bg-slate-50"
@@ -525,9 +526,22 @@ export function MedicalRepExpensesWorkspace({
                 </Field>
               </div>
 
+              <div className="lg:col-span-2">
+                <Field label="Pharmacy Visits">
+                  <Input
+                    className="h-12 rounded-none border-slate-200 bg-slate-50"
+                    disabled
+                    placeholder="Auto from Double Visit Analytics"
+                    readOnly
+                    value=""
+                  />
+                </Field>
+              </div>
+
               <div className="lg:col-span-6">
                 <p className="text-xs font-semibold text-slate-500">
-                  Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission.
+                  Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission,
+                  as three figures: AM, PM and Pharmacies.
                 </p>
               </div>
 

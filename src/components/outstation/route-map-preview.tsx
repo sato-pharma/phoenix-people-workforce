@@ -92,6 +92,7 @@ export function RouteMapPreview({
         amWorkload: 0,
         meetingAmount: 0,
         otherAmount: 0,
+        pharmacyWorkload: null,
         pmWorkload: 0,
         workloadEvidenceSnapshot: {},
         workloadMatchedAt: null,

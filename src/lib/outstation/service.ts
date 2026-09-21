@@ -71,6 +71,7 @@ import {
   resolveOutstationCapturedLocation,
 } from "@/lib/outstation/captured-location";
 import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
+import { capturedWorkloadMatchStatus } from "@/lib/outstation/workload-rollup";
 import {
   allowanceRowDates,
   deriveClaimedAllowanceDays,
@@ -121,6 +122,7 @@ import {
 import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
+  outstationPharmacyWorkload,
   outstationReportOverride,
 } from "@/lib/outstation/payroll-expense-mapping";
 import {
@@ -308,11 +310,12 @@ function fallbackWorkloadEvidence(params: {
   const end = params.tripEndDate.slice(0, 10);
   return {
     amWorkload: 0,
-    dateBreakdown: [{ am: 0, date: start, evidenceRows: 0, pm: 0, total: 0 }],
+    dateBreakdown: [{ am: 0, date: start, evidenceRows: 0, pharmacies: 0, pm: 0, total: 0 }],
     importId: null,
     matchedDates: [],
     matchStatus: "stale_import",
     missingDates: start && end ? [start, end].filter((value, index, list) => value && list.indexOf(value) === index) : [],
+    pharmacyWorkload: 0,
     pmWorkload: 0,
     campaignVisits: 0,
     regularVisits: 0,
@@ -361,6 +364,9 @@ async function resolveOutstationWorkloadPayload(params: {
 
   return {
     am_workload: evidence.amWorkload,
+    // The third figure (AM · PM · Pharmacies). Every evidence builder sets it; NULL on a row means
+    // it was stamped before the split, with its pharmacy visits still inside AM/PM.
+    pharmacy_workload: evidence.pharmacyWorkload ?? 0,
     pm_workload: evidence.pmWorkload,
     workload_evidence_snapshot: evidence,
     workload_match_status: evidence.matchStatus,
@@ -2501,6 +2507,7 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     amWorkload: numberValue(row.am_workload),
     meetingAmount: numberValue(row.meeting_amount),
     otherAmount: numberValue(row.other_amount),
+    pharmacyWorkload: outstationPharmacyWorkload(row.pharmacy_workload),
     pmWorkload: numberValue(row.pm_workload),
     workloadEvidenceSnapshot: safeJsonParse<DoubleVisitExpenseWorkloadEvidence | Record<string, unknown>>(
       row.workload_evidence_snapshot,
@@ -5039,6 +5046,8 @@ async function captureWorkloadAndReleaseIfReady(
       .from("outstation_expense_requests")
       .update({
         am_workload: capture.amWorkload,
+        // AM · PM · Pharmacies: pharmacy visits are the third figure, never inside AM or PM.
+        pharmacy_workload: capture.pharmacyWorkload,
         pm_workload: capture.pmWorkload,
         workload_capture_attempts: (request.workloadCaptureAttempts ?? 0) + 1,
         workload_gate_status: "complete",
@@ -5049,9 +5058,9 @@ async function captureWorkloadAndReleaseIfReady(
         // a repaired row contradict itself: three requests re-grabbed on 2026-08-19 stored a
         // real AM 2 / PM 7 from the CRM while the column beside it still read "no_activity",
         // because the submit-time grab had run before that day's visits had synced. It gates
-        // nothing, which is exactly why nobody noticed — it is what a person reads.
-        workload_match_status:
-          capture.amWorkload + capture.pmWorkload > 0 ? "matched" : "no_activity",
+        // nothing, which is exactly why nobody noticed — it is what a person reads. Pharmacy
+        // visits count as work here (owner, 2026-09-21), so a pharmacy-only trip is "matched".
+        workload_match_status: capturedWorkloadMatchStatus(capture),
         workload_source: "ireports360",
         // The per-day breakdown and who was counted, so an approver can see WHY the number is
         // what it is — a rolled-up manager figure is otherwise unexplainable.
@@ -5228,6 +5237,8 @@ export type MyOutstationSubmission = {
   origin: string;
   otherAmount: number;
   overnightDays: number;
+  /** The third workload figure; null = not counted separately (see OutstationExpenseRequest). */
+  pharmacyWorkload: number | null;
   pmWorkload: number;
   sameDayTrip: boolean;
   status: string;
@@ -5302,6 +5313,7 @@ function buildMyOutstationSubmission(
       "—",
     otherAmount: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     overnightDays: request.overnightDays,
+    pharmacyWorkload: request.pharmacyWorkload ?? null,
     pmWorkload: request.pmWorkload ?? 0,
     sameDayTrip: request.sameDayTrip,
     status: request.status,
@@ -5714,6 +5726,9 @@ export async function setOutstationWorkloadManually(
     .from("outstation_expense_requests")
     .update({
       am_workload: amWorkload,
+      // A hand-typed workload is AM and PM only, so no measured pharmacy figure may sit beside it
+      // (the submit-time read wrote one): NULL reads "not counted separately", never a mix.
+      pharmacy_workload: null,
       pm_workload: pmWorkload,
       updated_at: now,
       workload_gate_status: "manual",
@@ -5730,7 +5745,12 @@ export async function setOutstationWorkloadManually(
     entityId: String(requestId),
     entityType: "outstation_request",
     newValues: { amWorkload, pmWorkload, reason, workloadSource: "override" },
-    oldValues: { amWorkload: request.amWorkload, pmWorkload: request.pmWorkload, workloadSource: request.workloadSource },
+    oldValues: {
+      amWorkload: request.amWorkload,
+      pharmacyWorkload: request.pharmacyWorkload,
+      pmWorkload: request.pmWorkload,
+      workloadSource: request.workloadSource,
+    },
     summary: `Outstation request ${requestId} workload entered by hand (AM ${amWorkload} / PM ${pmWorkload}): ${reason}`,
   });
 

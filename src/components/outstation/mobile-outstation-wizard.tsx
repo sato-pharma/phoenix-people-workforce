@@ -1793,8 +1793,19 @@ export function MobileOutstationWizard({
                 value={pmWorkload}
               />
             </Field>
+            {/* THE AM · PM · PHARMACIES GOLDEN RULE: pharmacy visits are their own figure, never
+                inside AM or PM. Filled after submission like the other two. */}
+            <Field label="Pharmacy Visits">
+              <Input
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
+                value=""
+              />
+            </Field>
             <p className="col-span-2 text-xs font-semibold text-slate-500">
-              Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission.
+              Workload is resolved automatically from the official published Double Visit Analytics snapshot after submission,
+              as three figures: AM, PM and Pharmacies.
             </p>
           </div>
         </div>

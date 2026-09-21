@@ -2291,11 +2291,12 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
   if (!employeeKey) {
     return {
       amWorkload: 0,
-      dateBreakdown: dates.map((date) => ({ am: 0, date, evidenceRows: 0, pm: 0, total: 0 })),
+      dateBreakdown: dates.map((date) => ({ am: 0, date, evidenceRows: 0, pharmacies: 0, pm: 0, total: 0 })),
       importId: null,
       matchedDates: [],
       matchStatus: "no_activity",
       missingDates: dates,
+      pharmacyWorkload: 0,
       pmWorkload: 0,
       campaignVisits: 0,
       regularVisits: 0,
@@ -2309,14 +2310,17 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
   const ownRows = rows.filter((row) => normalizeHrIdForAccess(row.double_visitor_hr_id) === employeeKey);
   const dateBreakdown = dates.map((date) => {
     const dayRows = ownRows.filter((row) => row.activity_date === date);
-    const am = dayRows.filter((row) => row.period === "AM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-    const pm = dayRows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    // THE AM · PM · PHARMACIES GOLDEN RULE: a pharmacy leaves AM/PM for its own figure. `total`
+    // still counts every row — a periodless one included, as before — because a pharmacy visit is
+    // field work (owner, 2026-09-21) and `total` decides a matched day.
+    const split = sumDoubleVisitSplit(dayRows, doubleVisitCountBucket, (row) => asNumber(row.visit_count));
     return {
-      am,
+      am: split.am,
       date,
       evidenceRows: dayRows.length,
-      pm,
-      total: am + pm + dayRows.filter((row) => row.period === "UNKNOWN").reduce((sum, row) => sum + asNumber(row.visit_count), 0),
+      pharmacies: split.pharmacies,
+      pm: split.pm,
+      total: dayRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0),
     };
   });
   const matchedDates = dateBreakdown.filter((row) => row.total > 0).map((row) => row.date);
@@ -2339,6 +2343,7 @@ export async function getDoubleVisitExpenseWorkloadEvidence(input: {
     matchedDates,
     matchStatus,
     missingDates,
+    pharmacyWorkload: dateBreakdown.reduce((sum, row) => sum + row.pharmacies, 0),
     pmWorkload: dateBreakdown.reduce((sum, row) => sum + row.pm, 0),
     campaignVisits,
     regularVisits,

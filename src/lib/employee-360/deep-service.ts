@@ -658,6 +658,12 @@ export type ExpenseSummary = {
   rejectedCount: number;
   pendingCount: number;
   amWorkload: number;
+  /** THE AM · PM · PHARMACIES GOLDEN RULE: pharmacy visits logged on trips, never inside AM/PM.
+   * Null when no trip in the window counted them apart (every trip predates the 2026-09-21 split). */
+  pharmacyWorkload: number | null;
+  /** Trips whose pharmacy visits still sit inside AM/PM (stamped before the split, typed by hand,
+   * or imported from Excel) — so a reader knows the three figures do not cover them. */
+  pharmacyUncountedTrips: number;
   pmWorkload: number;
   summaryText: string;
 };
@@ -689,6 +695,7 @@ type PayrollExpenseRow = {
   status: string | null;
   hr_approved: boolean | null;
   am_workload: number | null;
+  pharmacy_workload: number | null;
   pm_workload: number | null;
 };
 type OutstationRow = {
@@ -741,6 +748,8 @@ function emptyEmployeeExpenses(): EmployeeExpenses {
       rejectedCount: 0,
       pendingCount: 0,
       amWorkload: 0,
+      pharmacyWorkload: null,
+      pharmacyUncountedTrips: 0,
       pmWorkload: 0,
       summaryText: "No expense or outstation records for this employee in this period.",
     },
@@ -763,7 +772,7 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   const [payrollRes, outstationRes] = await Promise.all([
     supabase
       .from("outstation_expenses")
-      .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,km,status,hr_approved,am_workload,pm_workload")
+      .select("expense_date,request_type,to_location,location,from_location,description,transportation_type,travel_cost,meeting_amount,allowance,other_amount,total,km,status,hr_approved,am_workload,pharmacy_workload,pm_workload")
       .in("hr_id", keys)
       .gte("expense_date", window.from)
       .lte("expense_date", window.to)
@@ -793,6 +802,8 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
   let rejectedCount = 0;
   let pendingCount = 0;
   let amWorkload = 0;
+  let pharmacyWorkload: number | null = null;
+  let pharmacyUncountedTrips = 0;
   let pmWorkload = 0;
   let noDestinationCount = 0;
   const destMap = new Map<string, { cost: number; trips: number }>();
@@ -811,6 +822,9 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     other += Number(r.other_amount ?? 0);
     totalKm += Number(r.km ?? 0);
     amWorkload += Number(r.am_workload ?? 0);
+    // NULL is "not counted separately", never a zero: that trip's pharmacies sit inside AM/PM.
+    if (r.pharmacy_workload === null || r.pharmacy_workload === undefined) pharmacyUncountedTrips += 1;
+    else pharmacyWorkload = (pharmacyWorkload ?? 0) + Number(r.pharmacy_workload);
     pmWorkload += Number(r.pm_workload ?? 0);
     // Approval state comes from `status` (Approved / Rejected / blank=pending).
     const st = String(r.status ?? "").trim().toLowerCase();
@@ -937,6 +951,8 @@ async function getEmployeeExpenses(hrId: string, window: Employee360Window): Pro
     rejectedCount,
     pendingCount,
     amWorkload,
+    pharmacyWorkload,
+    pharmacyUncountedTrips,
     pmWorkload,
     summaryText,
   };
@@ -1349,7 +1365,8 @@ export async function getEmployee360Profile(
   // expense efficiency (cross-domain): cost per visit + expense as % of period-matched sales
   const ep = expenses.payroll;
   ep.costPerVisit = visitSummary.productiveVisits > 0 ? ep.totalCost / visitSummary.productiveVisits : null;
-  const tripVisits = ep.amWorkload + ep.pmWorkload;
+  // A pharmacy visit is field work (owner, 2026-09-21), so it stays in the per-visit cost.
+  const tripVisits = ep.amWorkload + ep.pmWorkload + (ep.pharmacyWorkload ?? 0);
   ep.costPerTripVisit = tripVisits > 0 ? ep.totalCost / tripVisits : null;
   ep.windowSalesValue = windowSalesValue > 0 ? windowSalesValue : null;
   ep.expenseToSalesPct = windowSalesValue > 0 ? (ep.totalCost / windowSalesValue) * 100 : null;

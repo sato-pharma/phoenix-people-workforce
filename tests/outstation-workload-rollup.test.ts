@@ -25,16 +25,16 @@ export function runOutstationWorkloadRollupTests() {
     },
     rootHrId: "HR-NSM",
     workloadByPerson: {
-      "HR-NSM": [{ am: 1, date: DAY1, pm: 0 }],
+      "HR-NSM": [{ am: 1, date: DAY1, pharmacies: 0, pm: 0 }],
       "HR-DM-A": [
-        { am: 2, date: DAY1, pm: 1 },
-        { am: 5, date: DAY2, pm: 5 },
+        { am: 2, date: DAY1, pharmacies: 0, pm: 1 },
+        { am: 5, date: DAY2, pharmacies: 0, pm: 5 },
       ],
       "HR-REP-1": [
-        { am: 3, date: DAY1, pm: 2 },
-        { am: 9, date: DAY2, pm: 9 },
+        { am: 3, date: DAY1, pharmacies: 0, pm: 2 },
+        { am: 9, date: DAY2, pharmacies: 0, pm: 9 },
       ],
-      "HR-REP-3": [{ am: 7, date: DAY1, pm: 7 }],
+      "HR-REP-3": [{ am: 7, date: DAY1, pharmacies: 0, pm: 7 }],
     },
   };
 
@@ -92,10 +92,10 @@ export function runOutstationWorkloadRollupTests() {
     },
     rootHrId: "HR-NSM",
     workloadByPerson: {
-      "HR-NSM": [{ am: 1, date: DAY1, pm: 0 }],
-      "HR-DM-A": [{ am: 2, date: DAY1, pm: 0 }],
-      "HR-DM-B": [{ am: 4, date: DAY1, pm: 0 }],
-      "HR-REP-1": [{ am: 8, date: DAY1, pm: 0 }],
+      "HR-NSM": [{ am: 1, date: DAY1, pharmacies: 0, pm: 0 }],
+      "HR-DM-A": [{ am: 2, date: DAY1, pharmacies: 0, pm: 0 }],
+      "HR-DM-B": [{ am: 4, date: DAY1, pharmacies: 0, pm: 0 }],
+      "HR-REP-1": [{ am: 8, date: DAY1, pharmacies: 0, pm: 0 }],
     },
   });
   assert.equal(
@@ -114,8 +114,8 @@ export function runOutstationWorkloadRollupTests() {
     },
     rootHrId: "HR-A",
     workloadByPerson: {
-      "HR-A": [{ am: 1, date: DAY1, pm: 1 }],
-      "HR-B": [{ am: 2, date: DAY1, pm: 2 }],
+      "HR-A": [{ am: 1, date: DAY1, pharmacies: 0, pm: 1 }],
+      "HR-B": [{ am: 2, date: DAY1, pharmacies: 0, pm: 2 }],
     },
   });
   assert.equal(cyclic.days[0].am, 3, "A and B each count once despite pointing at each other");
@@ -127,8 +127,8 @@ export function runOutstationWorkloadRollupTests() {
     partnersByPersonDate: { "hr-nsm": { [DAY1]: ["hr-dm-a"] } },
     rootHrId: "HR-NSM",
     workloadByPerson: {
-      "HR-NSM": [{ am: 1, date: DAY1, pm: 0 }],
-      "HR-DM-A": [{ am: 2, date: DAY1, pm: 0 }],
+      "HR-NSM": [{ am: 1, date: DAY1, pharmacies: 0, pm: 0 }],
+      "HR-DM-A": [{ am: 2, date: DAY1, pharmacies: 0, pm: 0 }],
     },
   });
   assert.equal(messyCase.days[0].am, 3, "a lower-case partner id must still resolve to the same person");

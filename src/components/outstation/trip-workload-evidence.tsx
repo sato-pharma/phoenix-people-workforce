@@ -39,6 +39,9 @@ type WorkloadEvidenceDay = {
   checkins: WorkloadCheckinDetail[];
   date: string;
   other: number;
+  /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional only so a payload from
+   * a server built before the split still renders (it reads 0 there). */
+  pharmacies?: number;
   pm: number;
   regular: number;
   total: number;
@@ -53,6 +56,7 @@ export type TripWorkloadEvidence = {
   matchStatus: string;
   matchedDates: string[];
   otherVisits: number;
+  pharmacyWorkload?: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -104,6 +108,7 @@ function TripDayRouteMap({ checkins }: { checkins: WorkloadCheckinDetail[] }) {
  */
 export function TripWorkloadEvidencePanel({
   declaredAm,
+  declaredPharmacies = null,
   declaredPm,
   hrId,
   storedMatchedAt = null,
@@ -112,6 +117,9 @@ export function TripWorkloadEvidencePanel({
   tripStartDate,
 }: {
   declaredAm: number;
+  /** The stored third figure. NULL = not counted separately: a request stamped before the
+   * 2026-09-21 split (its pharmacies sit inside AM/PM), a hand-typed workload, or an import. */
+  declaredPharmacies?: number | null;
   declaredPm: number;
   hrId: string | null;
   /**
@@ -214,8 +222,12 @@ export function TripWorkloadEvidencePanel({
   }
 
   const data = state.data;
-  const declaredTotal = declaredAm + declaredPm;
-  const actualTotal = data.amWorkload + data.pmWorkload;
+  const actualPharmacies = data.pharmacyWorkload ?? 0;
+  // Totals across all three figures: a pharmacy visit is field work (owner, 2026-09-21). A request
+  // stamped before the split has NULL here with its pharmacies inside AM/PM, so its total still
+  // compares like for like with the live AM + PM + Pharmacies.
+  const declaredTotal = declaredAm + declaredPm + (declaredPharmacies ?? 0);
+  const actualTotal = data.amWorkload + data.pmWorkload + actualPharmacies;
   const mismatch = declaredTotal !== actualTotal;
   const tone = statusTone[data.matchStatus] ?? "neutral";
   // Both sides are in hand here — the stamped verdict as a prop, the live read just fetched — so
@@ -223,10 +235,12 @@ export function TripWorkloadEvidencePanel({
   const freshness = resolveWorkloadFreshness({
     liveAmWorkload: data.amWorkload,
     liveMatchStatus: data.matchStatus,
+    livePharmacyWorkload: actualPharmacies,
     livePmWorkload: data.pmWorkload,
     storedAmWorkload: declaredAm,
     storedMatchedAt,
     storedMatchStatus,
+    storedPharmacyWorkload: declaredPharmacies,
     storedPmWorkload: declaredPm,
   });
 
@@ -252,13 +266,14 @@ export function TripWorkloadEvidencePanel({
         <div className="rounded-xl border border-phx-line bg-white p-3">
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
-            AM {fmt(declaredAm)} · PM {fmt(declaredPm)}
+            AM {fmt(declaredAm)} · PM {fmt(declaredPm)} · Pharmacies{" "}
+            {declaredPharmacies === null ? "not counted separately" : fmt(declaredPharmacies)}
           </p>
         </div>
         <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
           <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
-            AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)}
+            AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)} · Pharmacies {fmt(actualPharmacies)}
           </p>
           {mismatch ? (
             <p className="mt-0.5 text-phx-2xs font-bold text-rose-600">
@@ -299,6 +314,7 @@ export function TripWorkloadEvidencePanel({
                 fields={[
                   { label: "AM", value: fmt(day.am) },
                   { label: "PM", value: fmt(day.pm) },
+                  { label: "Pharmacies", value: fmt(day.pharmacies ?? 0) },
                   { label: "Regular", value: fmt(day.regular) },
                   { label: "Campaign", value: fmt(day.campaign) },
                 ]}
@@ -312,9 +328,11 @@ export function TripWorkloadEvidencePanel({
               <th className="px-3 py-2 font-bold">Day</th>
               <th className="px-3 py-2 text-right font-bold">AM</th>
               <th className="px-3 py-2 text-right font-bold">PM</th>
+              {/* Pharmacies takes the old Total column's place: the Status cell already prints the
+                  day's total ("N field visits"), so the table keeps its seven columns. */}
+              <th className="px-3 py-2 text-right font-bold">Pharmacies</th>
               <th className="px-3 py-2 text-right font-bold">Regular</th>
               <th className="px-3 py-2 text-right font-bold">Campaign</th>
-              <th className="px-3 py-2 text-right font-bold">Total</th>
               <th className="px-3 py-2 font-bold">Status</th>
             </tr>
           </thead>
@@ -324,9 +342,9 @@ export function TripWorkloadEvidencePanel({
                 <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">{formatDateValue(day.date)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.am)}</td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pm)}</td>
+                <td className="px-3 py-2 text-right font-mono text-slate-900">{fmt(day.pharmacies ?? 0)}</td>
                 <td className="px-3 py-2 text-right font-mono text-sky-700">{fmt(day.regular)}</td>
                 <td className="px-3 py-2 text-right font-mono text-violet-700">{fmt(day.campaign)}</td>
-                <td className="px-3 py-2 text-right font-mono font-bold text-slate-900">{fmt(day.total)}</td>
                 <td className="whitespace-nowrap px-3 py-2">
                   {day.total === 0 ? (
                     <span className="font-bold text-rose-600">No activity</span>

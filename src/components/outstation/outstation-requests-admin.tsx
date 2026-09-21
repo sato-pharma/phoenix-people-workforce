@@ -419,6 +419,16 @@ function RequestDetailsModal({
             <Fact label="Location match" value={request.capturedLocation?.confidence ?? "Not matched"} />
             <Fact label="AM visits" value={String(request.amWorkload ?? 0)} />
             <Fact label="PM visits" value={String(request.pmWorkload ?? 0)} />
+            {/* AM · PM · Pharmacies. NULL: stamped before the split or typed by hand, so its
+                pharmacy visits sit inside AM/PM — said in words, never shown as 0. */}
+            <Fact
+              label="Pharmacy visits"
+              value={
+                request.pharmacyWorkload === null || request.pharmacyWorkload === undefined
+                  ? "Not counted separately"
+                  : String(request.pharmacyWorkload)
+              }
+            />
             <Fact label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
             {/* Dated on purpose. This verdict is stamped once, when the request is SUBMITTED —
                 the one moment the CRM is guaranteed to be emptiest, because visits are entered
@@ -450,6 +460,7 @@ function RequestDetailsModal({
               the approver actually decides on. */}
           <TripWorkloadEvidencePanel
             declaredAm={request.amWorkload ?? 0}
+            declaredPharmacies={request.pharmacyWorkload ?? null}
             declaredPm={request.pmWorkload ?? 0}
             hrId={request.employeeHrId ?? null}
             storedMatchedAt={request.workloadMatchedAt ?? null}

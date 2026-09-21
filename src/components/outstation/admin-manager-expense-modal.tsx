@@ -184,6 +184,11 @@ export function AdminManagerExpenseModal({
   const [pmWorkload] = useState(
     request?.pmWorkload ? String(request.pmWorkload) : "",
   );
+  // Read-only echo of the stored third figure; blank when the trip never counted pharmacies apart.
+  const pharmacyWorkload =
+    request?.pharmacyWorkload === null || request?.pharmacyWorkload === undefined
+      ? ""
+      : String(request.pharmacyWorkload);
 
   const [destination, setDestination] = useState<ManagerExpenseDestination | null>(
     request
@@ -1086,8 +1091,18 @@ export function AdminManagerExpenseModal({
                 value={pmWorkload}
               />
             </div>
+            <div>
+              <FieldLabel>Pharmacy visits</FieldLabel>
+              <InputField
+                disabled
+                placeholder="Auto from Double Visit Analytics"
+                readOnly
+                value={pharmacyWorkload}
+              />
+            </div>
             <p className="sm:col-span-2 text-xs font-semibold text-phx-ink-soft">
-              AM/PM workload is resolved automatically from the official published Double Visit Analytics snapshot after saving.
+              AM · PM · Pharmacies workload is resolved automatically from the official published Double Visit Analytics
+              snapshot after saving — pharmacy visits are their own figure, never inside AM or PM.
             </p>
           </div>
 

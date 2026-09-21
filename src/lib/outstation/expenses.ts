@@ -21,7 +21,10 @@ import {
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-location";
 import { withLiveOutstationEmployeeNames } from "@/lib/outstation/employee-name";
-import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
+import {
+  mapOutstationRequestRowToPayrollApproval,
+  outstationPharmacyWorkload,
+} from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { fetchAllRows, POSTGREST_PAGE_SIZE } from "@/lib/outstation/page-all-rows";
@@ -499,6 +502,8 @@ function mapExpense(row: Record<string, unknown>): PayrollExpenseApproval {
     other: Number(row.other_amount ?? 0),
     payoutMonth: Number(row.payout_month),
     payoutYear: Number(row.payout_year),
+    // NULL stays NULL — "not counted separately" (a pre-split or imported row), never a zero.
+    pharmacyWorkload: outstationPharmacyWorkload(row.pharmacy_workload),
     pmWorkload: Number(row.pm_workload ?? 0),
     requestType: String(row.request_type ?? ""),
     row: Number(row.source_row ?? 0),
@@ -1292,6 +1297,8 @@ export async function savePayrollExpenseApprovals(input: {
       other_amount: record.other,
       payout_month: period.month,
       payout_year: period.year,
+      // AM · PM · Pharmacies. An Excel-imported row carries no third figure, so it writes NULL.
+      pharmacy_workload: record.pharmacyWorkload ?? null,
       pm_workload: record.pmWorkload,
       request_type: record.requestType,
       report_id: reportId,

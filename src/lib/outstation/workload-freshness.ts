@@ -58,9 +58,9 @@ export type WorkloadFreshnessVerdict =
   | "unknown";
 
 export type WorkloadFreshness = {
-  /** Total visits the stored snapshot recorded (AM + PM). */
+  /** Total visits the stored snapshot recorded (AM + PM + Pharmacies). */
   readonly storedTotal: number;
-  /** Total visits the live CRM read finds now (AM + PM). */
+  /** Total visits the live CRM read finds now (AM + PM + Pharmacies). */
   readonly liveTotal: number;
   /** How many visits the stored snapshot is missing. Never negative. */
   readonly missedVisits: number;
@@ -93,6 +93,9 @@ const clean = (value: string | null | undefined): string => (value ?? "").trim()
  */
 export function resolveWorkloadFreshness(input: {
   readonly liveAmWorkload: number | null | undefined;
+  /** THE AM · PM · PHARMACIES GOLDEN RULE: the live read keeps pharmacies out of AM/PM, and a
+   * pharmacy visit is field work (owner, 2026-09-21), so it belongs in both totals. */
+  readonly livePharmacyWorkload?: number | null | undefined;
   readonly livePmWorkload: number | null | undefined;
   /** The live read's own verdict, so an `unmapped` traveller is never judged. */
   readonly liveMatchStatus: string | null | undefined;
@@ -100,10 +103,14 @@ export function resolveWorkloadFreshness(input: {
   /** When the stored verdict was stamped, ISO. Only used to date the headline. */
   readonly storedMatchedAt: string | null | undefined;
   readonly storedMatchStatus: string | null | undefined;
+  /** NULL on a request stamped before the split — its pharmacies are already inside stored AM/PM,
+   * so counting NULL as 0 keeps that request's total comparable with the live three figures. */
+  readonly storedPharmacyWorkload?: number | null | undefined;
   readonly storedPmWorkload: number | null | undefined;
 }): WorkloadFreshness {
-  const storedTotal = count(input.storedAmWorkload) + count(input.storedPmWorkload);
-  const liveTotal = count(input.liveAmWorkload) + count(input.livePmWorkload);
+  const storedTotal =
+    count(input.storedAmWorkload) + count(input.storedPmWorkload) + count(input.storedPharmacyWorkload);
+  const liveTotal = count(input.liveAmWorkload) + count(input.livePmWorkload) + count(input.livePharmacyWorkload);
   const missedVisits = Math.max(0, liveTotal - storedTotal);
   const storedStatus = clean(input.storedMatchStatus);
   const liveStatus = clean(input.liveMatchStatus);
