@@ -21,6 +21,8 @@ export const dynamic = "force-dynamic";
 
 // One row per trip. "Claimed Total" and "Approved Amount" are the before/after pair the Deduction
 // field on the decision panel is built on — never re-derived a second way here.
+// The upload importer refuses this file by some of these labels (EXPENSE_APPROVALS_DOWNLOAD_COLUMNS in
+// src/lib/outstation/expense-import.ts); renaming one fails tests/outstation-sheet-refuses-approvals-export.test.ts.
 const COLUMNS: ExportColumn[] = [
   { key: "specialist", label: "Employee" },
   { key: "hrId", label: "HR ID" },
