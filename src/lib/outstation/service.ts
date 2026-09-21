@@ -21,6 +21,12 @@ import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analyt
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import { validateLiveArrivalEvidence } from "@/lib/outstation/car-evidence";
 import {
+  formatOutstationDescriptionInline,
+  humanizeOutstationCode,
+  parseOutstationDescription,
+  tidyOutstationAddress,
+} from "@/lib/outstation/description-format";
+import {
   isOutstationEvidenceWaivedRole,
   isOutstationTicketWaivedRole,
 } from "@/lib/outstation/evidence-waiver";
@@ -1614,7 +1620,13 @@ async function notifyOutstationSubmitted(
     const heldForReview = Boolean(options.heldForReview);
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
-    const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
+    // The destination is often a geocoder address ("CMWC+993, … Damietta Governorate 8024807,
+    // Egypt"): the mail names the place, without the plus code, postal code or country.
+    const destination =
+      tidyOutstationAddress(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
+    const transportLabel = humanizeOutstationCode(request.transportationType) || "—";
+    // The employee's own words, without the machine audit line appended to the same notes.
+    const employeeNote = parseOutstationDescription(request.notes).note;
     // Resolved for the SPECIFIC recipient this send is addressed to (routing.toHrId) — not a
     // generic default. roleHrefs below is the separate, durable fallback so the stored in-app row
     // still resolves correctly whenever/however it is later read (viewer role changes, etc.).
@@ -1666,7 +1678,7 @@ async function notifyOutstationSubmitted(
       { label: "Line", value: text(request.employeeLine) || "—" },
       { label: "Area", value: text(request.employeeArea) || "—" },
       { label: "Manager", value: managerName },
-      { label: "Transportation", value: request.transportationType },
+      { label: "Transportation", value: transportLabel },
       { label: "Expense type", value: request.expenseType },
       // "Amount" and "Trip start"/"Trip end" (not a combined "Trip dates") are the exact
       // labels the OUTSTATION email template's amount/startDate/endDate tokens look up via
@@ -1694,10 +1706,13 @@ async function notifyOutstationSubmitted(
       { label: "Other amount", value: formatEgp(request.otherAmount) },
       { label: "Expected total", value: formatEgp(request.expectedTotalAmount) },
       { label: "Claimed total", value: claimedAmount },
-      { label: "Eligibility", value: `${request.eligibilityStatus} — ${text(request.eligibilityReason) || "—"}` },
+      {
+        label: "Eligibility",
+        value: `${humanizeOutstationCode(request.eligibilityStatus) || "—"} — ${text(request.eligibilityReason) || "—"}`,
+      },
       {
         label: "Approval recommendation",
-        value: `${request.approvalRecommendation} — ${text(request.approvalReason) || "—"}`,
+        value: `${humanizeOutstationCode(request.approvalRecommendation) || "—"} — ${text(request.approvalReason) || "—"}`,
       },
       // This request auto-decides on submit (no human pre-approval gate); the OUTSTATION
       // template's {{approvalFlow}} token describes that process, not a per-request value.
@@ -1708,7 +1723,7 @@ async function notifyOutstationSubmitted(
       { label: "Status", value: "Submitted" },
       {
         label: "Territory validation",
-        value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
+        value: `${humanizeOutstationCode(request.territoryValidationStatus) || "—"} — ${text(request.territoryValidationReason) || "—"}`,
       },
       // Captured location, as a place rather than a coordinate pair. Labels are deliberately
       // prefixed "Captured …": the plain "Area" label above is the EMPLOYEE's area and is what
@@ -1725,7 +1740,9 @@ async function notifyOutstationSubmitted(
           ? `${capturedLocation.confidence} · captured ${formatPhoenixDateTime(request.capturedAt)} (${capturedAccuracyText}, ${request.offlineCaptured ? "offline sync" : "online"})`
           : `Not matched · captured ${formatPhoenixDateTime(request.capturedAt)} (${capturedAccuracyText}, ${request.offlineCaptured ? "offline sync" : "online"})`,
       },
-      { label: "Notes", value: text(request.notes) || "—" },
+      // Read, never printed raw: the stored notes carry "Car live evidence: source=… hr_id=… gps=…
+      // draft_id=…" after the employee's own words (see description-format.ts).
+      { label: "Notes", value: formatOutstationDescriptionInline(request.notes) || "—" },
     ];
 
     // Short human summary only — the structured fields above (rendered separately as the
@@ -1750,9 +1767,10 @@ async function notifyOutstationSubmitted(
           ]
         : []),
       `${request.employeeName} submitted an outstation expense request for ${claimedAmount} on ${formatPhoenixDateTime(request.createdAt)}.`,
-      `Trip: ${formatPhoenixLongDate(request.tripStartDate)} to ${formatPhoenixLongDate(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Trip: ${formatPhoenixLongDate(request.tripStartDate)} to ${formatPhoenixLongDate(request.tripEndDate)} · Destination: ${destination} · Transportation: ${transportLabel}`,
       `Captured location: ${capturedLocation.label}`,
-      `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
+      `Eligibility: ${humanizeOutstationCode(request.eligibilityStatus) || "—"} · Recommendation: ${humanizeOutstationCode(request.approvalRecommendation) || "—"}`,
+      ...(employeeNote ? [`Note: ${employeeNote.split("\n").join(" ")}`] : []),
     ];
 
     await createSystemNotification({
@@ -4607,7 +4625,8 @@ export async function sendOutstationDeparturePhotoReminder(
   });
   if (!due) return false;
 
-  const destination = text(row.toLabel) || text(row.toCity) || text(row.toArea) || "your destination";
+  const destination =
+    tidyOutstationAddress(row.toLabel) || text(row.toCity) || text(row.toArea) || "your destination";
 
   await createSystemNotificationForRecipients(
     {
