@@ -1361,6 +1361,7 @@ import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runSalesTruthNoMismatchTests } from "./sales-truth-no-mismatch.test.ts";
+import { runSalesTruthStoreSplitTests } from "./sales-truth-store-split.test.ts";
 import { runClosingManagerAsOfTests, runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
 import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
@@ -3863,6 +3864,7 @@ await runTest('Top Customers shows Office as one row; the same workbook cannot l
 await runTest('Publishing a closing records what was published (insert-only snapshot)', runClosingPublicationSnapshotTests);
 await runTest('A closing can be published silently, and silence is opt-out only', runClosingPublishSilentlyTests);
 await runTest('SALES TRUTH (one area, one number — every surface reconciles to Monthly Closing)', runSalesTruthNoMismatchTests);
+await runTest('SALES TRUTH Source of Sales carries the closing\'s own store split and asks the merge about its own month', runSalesTruthStoreSplitTests);
 await runTest('RULE #1 Monthly Closing is the only truth (the official-number engine never imports the weekly pipeline)', runOfficialNumbersExcludeWeeklyTests);
 await runTest('Lacto (line, family) key (family_code LA is shared across Pedia + Head Office; never group on it alone)', runLactoLineFamilyGroupingTests);
 await runTest('identity-card DESIGN LOCK (the portal identity banner always renders PhoenixSignatureCard)', runIdentityCardSignatureLockTests);
