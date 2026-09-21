@@ -1,21 +1,15 @@
-import {
-  EmployeePortalPageShell,
-} from "@/components/employee-portal/enterprise-shell";
-import { MarketingCoverageReportWorkspace } from "@/components/marketing-requests/marketing-coverage-report-workspace";
-import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/page-guards";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function EmployeePortalMarketingCoverageReportPage() {
-  const access = await assertEmployeePortalMarketingPageAccess("coverage-report");
-
-  return (
-    <EmployeePortalPageShell
-      badge="Marketing"
-      description="Filter by line, region, area, hierarchy tier or a named person, see premium KPI totals, then expand any request to its target pharmacies — every pharmacy shows its realized sales, even when zero."
-      title="Marketing Coverage Report"
-    >
-      <MarketingCoverageReportWorkspace isSuperAdmin={access.role === "Super Admin"} />
-    </EmployeePortalPageShell>
-  );
+/**
+ * The Marketing Coverage Report merged into the ROI Tracker module on 2026-09-22 (owner
+ * instruction): it is now the Coverage tab of /employee-portals/roi-tracker. This route is kept as
+ * a redirect so existing bookmarks and the command-palette catalog entry still land on the coverage
+ * tab. The role gate now lives on the merged page, whose guard admits the Coverage viewer set
+ * (including Finance Manager / Financial Advisor); redirecting unconditionally is safe because that
+ * page re-checks access and shows only the tabs the viewer may see.
+ */
+export default function EmployeePortalMarketingCoverageReportPage() {
+  redirect("/employee-portals/roi-tracker?tab=coverage");
 }
