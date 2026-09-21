@@ -1,0 +1,69 @@
+// Server-side Google reCAPTCHA verification for public, unauthenticated endpoints.
+//
+// The careers-site application form (POST /api/public/apply) is reachable by anyone, so it cannot
+// rely on a session or a shared secret the way every other cross-origin POST does. reCAPTCHA plus a
+// per-IP rate limit is the anti-abuse story: the browser solves the challenge, sends the token as a
+// form field, and this verifies it against Google before the CV is ingested.
+//
+// TWO DELIBERATE FAIL DIRECTIONS. When the secret is UNSET the check is SKIPPED (ok, skipped) so the
+// feature works the moment the form ships and hardens when the owner adds the key — the rate limit
+// still guards it meanwhile. When the secret IS set, an explicit `success:false` from Google is a
+// hard REJECT (a forged, replayed or absent token), but a NETWORK failure reaching Google fails OPEN
+// (logged): a genuine applicant must not be lost to a Google outage, and abuse at that moment is
+// still rate-limited. So the only thing that turns applicants away is Google itself saying "no".
+
+import { logError } from "@/lib/observability/log";
+
+const SITEVERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
+const DEFAULT_MIN_SCORE = 0.5;
+
+export type RecaptchaResult = { ok: boolean; skipped?: boolean; reason?: string };
+
+function minScore(): number {
+  const raw = Number(process.env.RECRUITMENT_APPLY_RECAPTCHA_MIN_SCORE);
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_MIN_SCORE;
+}
+
+export async function verifyRecaptcha(
+  token: string | null | undefined,
+  remoteIp?: string | null,
+): Promise<RecaptchaResult> {
+  const secret = process.env.RECRUITMENT_APPLY_RECAPTCHA_SECRET?.trim();
+  if (!secret) return { ok: true, skipped: true };
+
+  const response = String(token ?? "").trim();
+  if (!response) return { ok: false, reason: "missing_token" };
+
+  try {
+    const body = new URLSearchParams({ response, secret });
+    if (remoteIp) body.set("remoteip", remoteIp);
+
+    const res = await fetch(SITEVERIFY_URL, {
+      body,
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      method: "POST",
+    });
+    if (!res.ok) {
+      // Google reachable but unhappy at the transport level — treat like an outage, fail open.
+      logError("reCAPTCHA siteverify returned a non-200", {
+        labels: { event: "recaptcha_verify_http_error", status: String(res.status) },
+      });
+      return { ok: true, reason: "verify_unavailable", skipped: true };
+    }
+
+    const data = (await res.json()) as { success?: boolean; score?: number };
+    if (data.success !== true) return { ok: false, reason: "challenge_failed" };
+    // v3 tokens carry a score; v2 tokens do not. Enforce the threshold only when a score is present.
+    if (typeof data.score === "number" && data.score < minScore()) {
+      return { ok: false, reason: "low_score" };
+    }
+    return { ok: true };
+  } catch (error) {
+    // Network failure reaching Google — never lose a real applicant to it.
+    logError("reCAPTCHA siteverify request failed", {
+      error,
+      labels: { event: "recaptcha_verify_request_failed" },
+    });
+    return { ok: true, reason: "verify_unavailable", skipped: true };
+  }
+}

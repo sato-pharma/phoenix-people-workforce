@@ -207,7 +207,12 @@ function securityProxy(request: NextRequest): NextResponse | null {
       request.nextUrl.pathname === "/api/integrations/ftp-videos" ||
       // RFC 8058 one-click unsubscribe: the mailbox provider POSTs cross-origin; the
       // signed token (not a session) authorises it, so it is CSRF-exempt by design.
-      request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")
+      request.nextUrl.pathname.startsWith("/api/email/unsubscribe/") ||
+      // The public careers-site application form (www.satopharma.com/careers) POSTs an applicant's
+      // CV cross-origin. It has no session and no shared secret — a public page cannot hold one — so
+      // it stands on reCAPTCHA + a per-IP rate limit, both verified inside the route. CSRF-exempt for
+      // the same reason the provider webhooks are: the authorisation lives in the route, not a cookie.
+      request.nextUrl.pathname === "/api/public/apply"
     )
   ) {
     return null;
