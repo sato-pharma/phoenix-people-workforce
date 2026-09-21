@@ -57,10 +57,13 @@ status, give it its own line.
 - **A permission allow-rule stores the LITERAL command, so an inline env var bakes a…** — `permission-allowlist-rules-can-embed-a-live-secret`
 - **mcp__supabase-staging__* is PINNED to staging** — `supabase-staging-named-server-broken-2026-08-10`
 - **A Windows USER env var SHADOWS every .env.local, silently.** — `windows-env-var-shadows-every-env-local-key`
+- **ONE Supabase token wears TWO names — both `.mcp.json` entries expand the same Windows user env var** — `supabase-access-and-prod-token-are-one-token` **(inline — load-bearing)**
+- **`CLAUDE_PROJECT_DIR` is the session's OWN worktree, never the primary — the docs say otherwise and hooks break silently** — `claude-project-dir-is-the-sessions-own-worktree` **(inline — load-bearing)**
 - **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate…** — `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 - **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the…** — `exceljs-writes-two-schema-invalid-ooxml-fragments`
 - **Looking at a generated workbook has two modes that LIE (LibreOffice PNG, ExcelJS round-trip).** — `looking-at-a-generated-workbook-two-ways-that-lie` **(inline — load-bearing)**
 - **Deleting a branch does not remove its pushed commit** — `deleting-a-branch-does-not-remove-a-pushed-commit` · `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
+- **`git branch -d` gates NOTHING after a squash merge — it compares against its own STALE tracking ref** — `git-branch-d-is-not-a-safety-gate-after-a-squash-merge` **(inline — load-bearing)**
 - **git push hangs — kill at ~60s and retry.** — `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to main mid-session silently orphans your next push.** — `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
 - **refs/deleted-* is NOT automatic — a plain git branch -D archives NOTHING.** — `deleted-branch-tips-live-in-refs-deleted-branches`
@@ -135,6 +138,8 @@ status, give it its own line.
 - **Verify a 375px mobile layout with NO dev server.** — `verify-a-mobile-layout-without-a-dev-server`
 - **A freeze leaves NO dump** — `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
 - **An interrupted session leaves the tree BROKEN ON PURPOSE.** — `an-interrupted-session-leaves-the-tree-deliberately-broken`
+- **A slow reply is the EFFORT level, not the machine** — `claude-code-effort-max-got-slow-xhigh-is-the-balance` **(inline — load-bearing)**
+- **A slowness audit dates the CHANGE, never a snapshot** — `slowness-audits-compare-before-and-after` **(inline — load-bearing)**
 - **`Agent` with `isolation: "remote"` from a desktop session can run LOCALLY, with no notice of the fallback** — `agent-isolation-remote-ran-locally-in-a-worktree` **(inline — load-bearing)**
 
 ## 2.2 The memory index
