@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
+import { CALL_RATE_TAB } from "@/lib/crm/reps-list-call-rate-route";
 
 /**
- * The Reps List tab strip — Contact List, Reps Weekly Plans and Vacant Areas.
+ * The Reps List tab strip — Contact List, Reps Weekly Plans, Call Rate and Vacant Areas.
  *
  * ## This is not the tab strip that was retired
  *
@@ -21,15 +22,33 @@ import type { CoverageFilterSelection } from "@/lib/crm/coverage-filters";
  * rep's list and signing his plan are not the same authority. Vacant Areas reads the same lists as
  * the contact tab under the same scope, so every Reps List viewer gets it, and the strip therefore
  * always holds at least two tabs.
+ *
+ * ## The call-rate tab is the retired Reps Plans module, and it carries only what this one lacked
+ *
+ * The owner merged the two modules on 2026-09-21 ("merge the 2 modules into 1 module WHICH REPS
+ * LIST"), with one condition: "already the reps list contains the plan, so make sure you're not
+ * duplicating data". So the tab holds the part Reps List never had — the call rate against 2 AM and
+ * 10 PM a working day, reported next to what the GPS check-ins prove, and the per-visit drill-down
+ * under it — and nothing from the weekly plans tab is copied across. A rep's planned calls are read
+ * on the plans tab; this one counts the calls he made.
+ *
+ * It keeps the Reps Plans gate, not the Reps List one (src/lib/crm/reps-plans-access.ts). Every seat
+ * on that list already reaches Reps List, so the tab moves nobody's reach; the one Reps List seat
+ * missing from it is the CEO, who did not have Reps Plans either and does not get the tab.
  */
 
-export type RepsListTab = "contacts" | "plans" | "vacant";
+export type RepsListTab = "contacts" | "plans" | "call-rate" | "vacant";
 
-/** The tab to open. `plans` resolves only THROUGH the gate — a hand-typed `?tab=plans` from a seat
- * without it lands on the contact list rather than on a refusal. */
-export function resolveRepsListTab(value: string | undefined, canSeePlans: boolean): RepsListTab {
+/** The tab to open. `plans` and `call-rate` resolve only THROUGH their gates — a hand-typed `?tab=`
+ * from a seat without one lands on the contact list rather than on a refusal. */
+export function resolveRepsListTab(
+  value: string | undefined,
+  canSeePlans: boolean,
+  canSeeCallRate: boolean,
+): RepsListTab {
   if (value === "vacant") return "vacant";
   if (value === "plans" && canSeePlans) return "plans";
+  if (value === CALL_RATE_TAB && canSeeCallRate) return "call-rate";
   return "contacts";
 }
 
@@ -46,7 +65,8 @@ function tabHref(input: {
   // selection would send him back to the picker to choose the same person again.
   if (input.selection.line) query.set("line", input.selection.line);
   if (input.selection.region) query.set("region", input.selection.region);
-  if (input.selection.area) query.set("area", input.selection.area);
+  // The call-rate board filters by line and region only — it has no area picker to show one in.
+  if (input.selection.area && input.tab !== "call-rate") query.set("area", input.selection.area);
   // A vacant area has no rep, so the rep is not carried INTO that tab.
   if (input.tab !== "vacant") {
     if (input.selection.rep) query.set("rep", input.selection.rep);
@@ -55,6 +75,7 @@ function tabHref(input: {
     query.set("tab", "plans");
     if (input.week) query.set("week", input.week);
   }
+  if (input.tab === "call-rate") query.set("tab", CALL_RATE_TAB);
   if (input.tab === "vacant") query.set("tab", "vacant");
   const search = query.toString();
   return search ? `${input.basePath}?${search}` : input.basePath;
@@ -63,18 +84,21 @@ function tabHref(input: {
 export function RepsListTabs({
   active,
   basePath,
+  canSeeCallRate,
   canSeePlans,
   selection,
   week,
 }: {
   active: RepsListTab;
   basePath: string;
+  canSeeCallRate: boolean;
   canSeePlans: boolean;
   selection: CoverageFilterSelection;
   week: string | null;
 }) {
   const tabs: Array<{ key: RepsListTab; label: string }> = [{ key: "contacts", label: "Contact list" }];
   if (canSeePlans) tabs.push({ key: "plans", label: "Reps weekly plans" });
+  if (canSeeCallRate) tabs.push({ key: "call-rate", label: "Call rate" });
   tabs.push({ key: "vacant", label: "Vacant areas" });
 
   return (

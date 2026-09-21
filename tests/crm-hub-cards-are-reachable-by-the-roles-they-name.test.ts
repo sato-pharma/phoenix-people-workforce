@@ -124,11 +124,20 @@ function crmCardsFor(role: PhoenixRole): string[] {
 
 export function runCrmHubCardReachabilityTests() {
   // ── 1. The headline: Reps Plans is reachable, and the route is now the hub ───────────────────
+  // SINCE 2026-09-21 ITS ROUTE IS THE REPS LIST ROW. The owner merged the two modules ("merge the 2
+  // modules into 1 module WHICH REPS LIST"): the board is the Call rate tab of Reps List, and
+  // /admin/reps-plans is a redirect to it. So the headline now reads the other way round — Super
+  // Admin reaches the call rate through his Reps List row, and holds no second row onto the same
+  // module.
   const superAdminHrefs = adminHrefsFor("Super Admin");
 
   assert.ok(
-    superAdminHrefs.has("/admin/reps-plans"),
-    "Super Admin needs a route to Reps Plans, and since 2026-09-05 a row of its own is the only route there is — the hub button that used to count as the second answer is gone from every rail. With neither, the page is reachable by nobody except a typed URL",
+    superAdminHrefs.has("/admin/reps-list"),
+    "Super Admin needs a route to the call rate, and since 2026-09-21 that is his Reps List row — the Call rate tab is the retired Reps Plans board. With no row, the page is reachable by nobody except a typed URL",
+  );
+  assert.ok(
+    !superAdminHrefs.has("/admin/reps-plans"),
+    "no rail row may still open /admin/reps-plans — it is a redirect onto the Reps List Call rate tab, so a row for it would open the same module twice",
   );
 
   // The 2026-08-30 collapse (owner, asked directly). Super Admin previously had NINE CRM rows and
@@ -139,15 +148,17 @@ export function runCrmHubCardReachabilityTests() {
   // may move it again; what must never come back is the state either arrangement exists to
   // prevent — a hub button sitting beside the rows it duplicates.
   //
-  // The list is the eight hrefs that WERE his rows, spelled out rather than derived from
+  // The list is the hrefs that WERE his rows, spelled out rather than derived from
   // crmPageItems, because one card is not a CRM-module page at all: Workforce Compliance
   // (/admin/field-workforce-compliance) is a People Management row that appears here as a card
   // because it is judged on CRM visit activity, and the SFE Manager — excluded from that row by
   // name — reaches it only through this hub. One page filed under two modules is the arrangement,
   // not the duplication this guards against, and a derived list would flag it on every run.
+  //
+  // /admin/reps-plans was one of them until 2026-09-21, when the owner merged it into Reps List. It
+  // left by becoming a tab of a card still on this list, not by losing a route.
   const CRM_ROWS_COLLAPSED_2026_08_30 = [
     "/admin/crm",
-    "/admin/reps-plans",
     // Was "/admin/doctor-list" until 2026-08-31, when the owner retired that board and replaced it
     // with Reps List. Same card, same slot, same roles — only the route and the label moved, so the
     // href is updated here rather than dropped: dropping it would quietly stop guarding the slot.
@@ -170,9 +181,9 @@ export function runCrmHubCardReachabilityTests() {
   assert.deepEqual(
     collapsedRowsMissing,
     [],
-    "the eight rows the 2026-08-30 collapse folded into the CRM hub are back on Super Admin's rail as of 2026-09-05, under the hub's own heading — with the hub button gone, a missing row is a page he can no longer reach",
+    "the rows the 2026-08-30 collapse folded into the CRM hub are back on Super Admin's rail as of 2026-09-05, under the hub's own heading — with the hub button gone, a missing row is a page he can no longer reach",
   );
-  // Every one of those eight is still a card here, so the collapse removed a row and not a route.
+  // Every one of those is still a card here, so the collapse removed a row and not a route.
   for (const href of CRM_ROWS_COLLAPSED_2026_08_30) {
     assert.ok(
       crmPageItems.some((card) => card.href === href),

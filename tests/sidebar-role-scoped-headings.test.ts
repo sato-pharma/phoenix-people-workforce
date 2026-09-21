@@ -113,7 +113,8 @@ const COLLAPSED_INTO_HUBS = [
   "/admin/probation-settings",
   // → /admin/crm-tools
   "/admin/crm",
-  "/admin/reps-plans",
+  // "/admin/reps-plans" was here until 2026-09-21, when the owner merged Reps Plans into Reps List:
+  // it is now the Call rate tab of the row below, and the old route only redirects there.
   // Was "/admin/doctor-list" until 2026-08-31, when the owner retired that board and Reps List took
   // its card. The route still exists as a redirect stub, so the guard follows the live href.
   "/admin/reps-list",

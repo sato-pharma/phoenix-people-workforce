@@ -451,6 +451,29 @@ function repKeyOf(rep: RepCallRate): string {
 }
 
 /**
+ * The rep the board opens on, from the `rep` in the URL — or null for every rep in view.
+ *
+ * The board's OWN key first: the one its picker and its rows write, `crm:…` for anyone with a CRM
+ * account. Failing that, a Reps List key — `hr:<hr id>`, lower-cased — resolves to that person's row.
+ * It arrives when a manager reads a rep on the contact list and presses the Call rate tab (the two
+ * modules merged on 2026-09-21), and Reps List has only the hr id to key a rep by.
+ *
+ * A person who reported from two CRM accounts inside the window has two rows; the busier one opens,
+ * which is the account he is working from. The match runs over `rows` — the viewer's rows, already
+ * scoped — so a key for somebody else's rep resolves to nothing, exactly as a guessed `crm:` key does.
+ */
+function resolveAppliedRepKey(requested: string | null | undefined, rows: readonly RepsPlansRepRow[]): string | null {
+  if (!requested) return null;
+  if (rows.some((row) => row.repKey === requested)) return requested;
+  if (!requested.startsWith("hr:")) return null;
+  const hrKey = orgHrKey(requested.slice("hr:".length));
+  if (!hrKey) return null;
+  const matches = rows.filter((row) => orgHrKey(row.agentHrId) === hrKey);
+  if (matches.length === 0) return null;
+  return matches.reduce((best, row) => (row.reportedCalls > best.reportedCalls ? row : best)).repKey;
+}
+
+/**
  * What a rep is CALLED on this board.
  *
  * THE DIRECTORY NAMES THE PERSON; THE CRM NAMES THE TERRITORY — the owner's instruction of
@@ -990,8 +1013,7 @@ export function buildRepsPlansBoard(
   const repOptions = visibleRows
     .map((row) => ({ repKey: row.repKey, repName: row.repName }))
     .sort((a, b) => a.repName.localeCompare(b.repName));
-  const appliedRepKey =
-    options.repKey && repOptions.some((option) => option.repKey === options.repKey) ? options.repKey : null;
+  const appliedRepKey = resolveAppliedRepKey(options.repKey, visibleRows);
 
   const geographyLabel =
     [

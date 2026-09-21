@@ -344,10 +344,10 @@ export function runPortalKpisPageConventionsTests() {
   // badge. Four portal conventions came off with the copy; each is pinned here against its two
   // siblings rather than against a remembered rule.
   const page = readCode("app/employee-portals/kpis/page.tsx");
-  const siblings = [
-    ["reps-list", readCode("app/employee-portals/reps-list/page.tsx")],
-    ["reps-plans", readCode("app/employee-portals/reps-plans/page.tsx")],
-  ] as const;
+  // Two siblings until 2026-09-21, when the owner merged Reps Plans into Reps List: the call-rate
+  // board is now a tab of the Reps List page, and app/employee-portals/reps-plans/page.tsx is only a
+  // redirect. So the one page carries both references — and it still has to follow all three.
+  const siblings = [["reps-list", readCode("app/employee-portals/reps-list/page.tsx")]] as const;
 
   // The comparison's own floor. Every assertion below says "KPIs must do what its siblings do",
   // which proves nothing if a sibling quietly stopped doing it.
@@ -370,7 +370,7 @@ export function runPortalKpisPageConventionsTests() {
   );
   assert.ok(
     page.includes('resolveNavigationMode(access) !== "employee-portal"'),
-    "an admin-mode viewer is bounced to /overview, exactly as both siblings do — a seat with a better door must not land on a portal-framed copy",
+    "an admin-mode viewer is bounced to /overview, exactly as Reps List does — a seat with a better door must not land on a portal-framed copy",
   );
   assert.ok(
     page.includes("logPortalFailure("),

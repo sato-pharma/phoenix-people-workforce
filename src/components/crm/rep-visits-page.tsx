@@ -1,6 +1,8 @@
-// The Reps Plans drill-down, shared by both shells.
+// The Call rate drill-down, shared by both shells.
 //
-// ONE BODY, TWO DOORS. /admin/reps-plans/[rep] and /employee-portals/reps-plans/[rep] render this;
+// ONE BODY, TWO DOORS. /admin/reps-list/call-rate/[rep] and /employee-portals/reps-list/call-rate/[rep]
+// render this — the Reps Plans module's rep page, moved under Reps List when the owner merged the
+// two modules on 2026-09-21 (the old /reps-plans/[rep] addresses forward here);
 // each page contributes only its own access gate and its own chrome. Extracted 2026-09-03 when the
 // portal twin landed, rather than copied: this file rebuilds the board to find the clicked row, so a
 // copy that drifted would be a copy whose SCOPE drifted — and a drill-down quietly wider than the
@@ -22,6 +24,7 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { loadCrmMappingCoverage, loadRepVisits } from "@/lib/crm/rep-visits-data";
+import { CALL_RATE_TAB } from "@/lib/crm/reps-list-call-rate-route";
 import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 
 export type RepVisitsPageQuery = {
@@ -38,7 +41,8 @@ export async function RepVisitsPageBody({
   repParam,
 }: {
   access: AccessContext;
-  /** "/admin/reps-plans" or "/employee-portals/reps-plans" — the board this drill-down belongs to. */
+  /** "/admin/reps-list" or "/employee-portals/reps-list" — the Reps List page whose Call rate tab
+   * this drill-down belongs to. Back returns to that tab. */
   basePath: string;
   query: RepVisitsPageQuery | undefined;
   /** The url-encoded rep key from the route segment. */
@@ -54,7 +58,7 @@ export async function RepVisitsPageBody({
   // how a rep silently becomes two rows, and this page has to land on the row that was clicked.
   const repKey = decodeURIComponent(repParam);
   // Preserves the filters the reader came in with, so Back returns to the board they were reading.
-  const backQuery = new URLSearchParams({ month });
+  const backQuery = new URLSearchParams({ tab: CALL_RATE_TAB, month });
   if (range.periodKey !== "month") backQuery.set("period", range.periodKey);
   if (query?.line) backQuery.set("line", query.line);
   if (query?.region) backQuery.set("region", query.region);
@@ -107,7 +111,7 @@ export async function RepVisitsPageBody({
     return (
       <div className="space-y-4">
         <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
-          ← Back to Reps Plans
+          ← Back to Call rate
         </Link>
         <div className="border border-amber-200 bg-amber-50 px-5 py-4">
           <p className="text-sm font-bold text-amber-900">
@@ -145,7 +149,7 @@ export async function RepVisitsPageBody({
   return (
     <div className="space-y-5">
       <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
-        ← Back to Reps Plans
+        ← Back to Call rate
       </Link>
 
       {/* The person, resolved through the organogram — the same seat, tier, line and region the board
