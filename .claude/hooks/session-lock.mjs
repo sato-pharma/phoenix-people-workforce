@@ -34,6 +34,14 @@ const projectDir = process.argv[3] || process.cwd();
 const lockPath = path.join(projectDir, ".claude", "session.lock");
 const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours — a crashed session's leftover lock self-expires this long after its last refresh
 const BEAT_EVERY_MS = 5 * 60 * 1000; // a beat rewrites the lock at most this often
+// A lock refreshed within LIVE_MS is PROOF its holder is alive, so the hook
+// answers "is that other session still running?" itself instead of spending the
+// owner's turn asking him. Measured 2026-09-21: 170 of 198 sessions in the
+// primary hit the non-stale branch below, so that question fired on 86% of
+// them — and the answer was always yes. Must stay comfortably above
+// BEAT_EVERY_MS: a live session rewrites the lock at most every 5 minutes, so
+// a lock younger than three beats cannot belong to a dead holder.
+const LIVE_MS = 3 * BEAT_EVERY_MS; // 15 minutes
 
 function readHookInput() {
   try {
@@ -123,23 +131,41 @@ if (lock && lock.sessionId !== sessionId) {
   if (!stale) {
     const when = formatAge(Date.now() - Date.parse(lock.startedAt || ""));
     const seen = formatAge(ageMs);
-    const warning =
-      `Another Claude Code session appears to be ACTIVE in this exact working directory ` +
-      `(${projectDir}): reported PID ${lock.pid ?? "unknown"}, started ${when}, last active ${seen}, on host ` +
-      `${lock.host || "unknown"}. Sessions sharing one folder have caused real incidents in ` +
-      `this repo before (a session got git-detached by another session's checkout, a branch was ` +
-      `auto-deleted mid-work by a second session reusing its name, a swarm of sessions dropped a ` +
-      `staged file). Do NOT run git checkout/switch/reset/branch -D, do NOT commit or push, and do ` +
-      `NOT edit files in this folder until you have explicitly confirmed with the user whether that ` +
-      `other session is still running. If the user wants to start new work right now, create an ` +
-      `isolated worktree instead: git worktree add <path> -b <branch>, and do the new work there. ` +
-      `Note: a live session refreshes its lock on every Bash, PowerShell, Edit or Write call, and a ` +
-      `session that crashed or was force-closed leaves its lock behind, which self-expires 2 hours ` +
-      `after its last refresh — that AGE is the only staleness test. Do NOT check the PID above: it is this ` +
-      `hook's own short-lived parent shell, dead within seconds of the lock being written, so EVERY ` +
-      `lock names a dead PID and "that process is gone" proves nothing about the session.`;
+    // Two different situations hide behind one non-stale lock and they deserve
+    // opposite answers. Under LIVE_MS the holder is provably alive, so there is
+    // nothing to confirm: the session isolates itself and keeps working. Over
+    // it, the holder may have crashed mid-task, and only the owner knows — that
+    // is the one case worth his turn.
+    const live = ageMs <= LIVE_MS;
+    const shared =
+      `Sessions sharing one folder have caused real incidents in this repo before (a session got ` +
+      `git-detached by another session's checkout, a branch was auto-deleted mid-work by a second ` +
+      `session reusing its name, a swarm of sessions dropped a staged file). Do NOT run ` +
+      `git checkout/switch/reset/branch -D, do NOT commit or push, and do NOT edit files in this folder.`;
+    const warning = live
+      ? `Another Claude Code session is ACTIVE in this exact working directory ` +
+        `(${projectDir}) and is provably LIVE: started ${when}, last active ${seen}, on host ` +
+        `${lock.host || "unknown"}. ${shared} ` +
+        `Do NOT ask the owner whether that other session is still running — a lock refreshed ` +
+        `${seen} IS the proof, because a live session rewrites it on every Bash, PowerShell, Edit ` +
+        `and Write call. Isolate yourself and carry on with his task WITHOUT stopping: run ` +
+        `\`node scripts/new-session.mjs <task>\`, which creates _wt-<task> on codex/<task> from ` +
+        `origin/main with .env.local and a node_modules junction, then do every edit, command and ` +
+        `commit there. READING this folder stays fine. Mention the move in one line at most — it is ` +
+        `routine, it is not a blocker, and it is never a reason to hand the task back to him.`
+      : `Another Claude Code session may still be ACTIVE in this exact working directory ` +
+        `(${projectDir}): started ${when}, last active ${seen}, on host ${lock.host || "unknown"}. ` +
+        `${shared} That lock is older than a live session's refresh interval, so its holder may have ` +
+        `crashed mid-task — confirm with the owner whether it is still running before you touch this ` +
+        `folder. If he wants new work started right now, run \`node scripts/new-session.mjs <task>\` ` +
+        `and work there instead. A leftover lock self-expires 2 hours after its last refresh — ` +
+        `that AGE is the only staleness test. Do NOT check the PID: it is this hook's own short-lived ` +
+        `parent shell, dead within seconds of the lock being written, so EVERY lock names a dead PID ` +
+        `and "that process is gone" proves nothing about the session.`;
     emit({
-      systemMessage: `Warning: another session's lock (PID ${lock.pid ?? "unknown"}, last active ${seen}) is active in this folder.`,
+      systemMessage: live
+        ? `Folder held by a live session (last active ${seen}) — isolate into a worktree and continue; no confirmation needed.`
+        : `Warning: another session's lock (last active ${seen}) may be active in this folder.`,
       hookSpecificOutput: {
         hookEventName: "SessionStart",
         additionalContext: warning,

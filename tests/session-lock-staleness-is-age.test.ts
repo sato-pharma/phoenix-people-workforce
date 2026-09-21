@@ -243,6 +243,69 @@ function testTheHeartbeatIsWired() {
   assert.ok(typeof beat.timeout === "number" && beat.timeout <= 10, "the heartbeat runs on every tool call, so it needs a short timeout");
 }
 
+/*
+ * ASKING COSTS A TURN, AND THE ANSWER WAS ALWAYS YES. Measured 2026-09-21: 170 of the 198 sessions
+ * in the primary checkout hit the non-stale branch, so the old single warning told 86% of them to
+ * stop and "confirm with the user whether that other session is still running". A lock refreshed
+ * within LIVE_MS already answers that: a live session rewrites it on every Bash, PowerShell, Edit
+ * and Write call, so a fresh `refreshedAt` cannot survive its holder's death. Below LIVE_MS the
+ * hook therefore answers the question and the session isolates itself; above it the holder may have
+ * crashed mid-task, which is the one case still worth the owner's turn. Both halves keep the
+ * canonical warning phrase and every destructive-command ban — the split is about who answers, not
+ * about relaxing the guard.
+ */
+const asksTheOwner = (output: string) => /confirm with the owner/.test(output);
+const isolatesAndContinues = (output: string) => /WITHOUT stopping/.test(output);
+const keepsTheBans = (output: string) => /do NOT commit or push/.test(output);
+
+function testAProvablyLiveLockIsolatesInsteadOfAsking(root: string) {
+  const folder = join(root, "provably-live");
+  mkdirSync(folder);
+  runLockHook("start", folder, "holder");
+
+  // Two minutes since the holder's last refresh: it is provably alive.
+  ageLock(folder, 2 / 60);
+  const fresh = runLockHook("start", folder, "second");
+  assert.ok(warns(fresh), "a live holder must still warn the second session");
+  assert.ok(keepsTheBans(fresh), "the commit/push/edit bans must survive the live branch");
+  assert.ok(
+    isolatesAndContinues(fresh),
+    "a lock refreshed two minutes ago must send the session to its own worktree and let it carry on",
+  );
+  assert.ok(
+    !asksTheOwner(fresh),
+    "a lock refreshed two minutes ago already proves the holder is alive — asking the owner to " +
+      "confirm it spends his turn on a question the lock has answered",
+  );
+  assert.equal(lockOf(folder).sessionId, "holder", "a warned second session must not take the lock");
+
+  // Half an hour: past any live session's refresh interval, so the holder may have crashed.
+  ageLock(folder, 0.5);
+  const ambiguous = runLockHook("start", folder, "third");
+  assert.ok(warns(ambiguous), "an ambiguous holder must still warn the second session");
+  assert.ok(keepsTheBans(ambiguous), "the commit/push/edit bans must survive the ambiguous branch");
+  assert.ok(
+    asksTheOwner(ambiguous),
+    "a lock last refreshed 30 minutes ago may belong to a crashed session — only the owner knows",
+  );
+  assert.ok(
+    !isolatesAndContinues(ambiguous),
+    "an ambiguous lock must not be treated as a live one",
+  );
+  assert.equal(lockOf(folder).sessionId, "holder", "an ambiguous lock must not be taken either");
+
+  // The threshold is expressed in beats so it can never sink below one refresh interval, which
+  // would let a live holder be read as crashed.
+  const hook = readFileSync(HOOK, "utf8");
+  const beats = /const LIVE_MS = (\d+) \* BEAT_EVERY_MS/.exec(hook);
+  assert.ok(beats, "LIVE_MS must be defined as a multiple of BEAT_EVERY_MS, not a bare duration");
+  assert.ok(
+    Number(beats![1]) >= 2,
+    `LIVE_MS must span at least two heartbeats (found ${beats![1]}) — a live session refreshes at ` +
+      "most every BEAT_EVERY_MS, so a narrower window reads a live holder as crashed",
+  );
+}
+
 export function runSessionLockStalenessIsAgeTests() {
   testTheHookDecidesByAge();
   testNoShippedTextTeachesThePidRule();
@@ -253,6 +316,7 @@ export function runSessionLockStalenessIsAgeTests() {
     testALiveLongSessionStillWarnsASecondOne(root);
     testABeatNeverTakesAFreshLockAndReclaimsAStaleOne(root);
     testTheLockIsPerFolder(root);
+    testAProvablyLiveLockIsolatesInsteadOfAsking(root);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
