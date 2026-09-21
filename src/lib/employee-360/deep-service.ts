@@ -13,6 +13,8 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getRepContactList } from "@/lib/crm/contact-lists";
+import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
@@ -49,16 +51,30 @@ import { isFieldLeaderCategory, type Employee360RoleCategory } from "./roles";
 const IMPACT_WINDOW_DAYS = 30;
 
 // ── Sales ──────────────────────────────────────────────────────────────────
-export type SalesMonthPoint = { month: string; sales: number; target: number; achievementPct: number | null };
+/** `hasTarget` false: the month carries sales and no target at all — shown, never graded. */
+export type SalesMonthPoint = { month: string; sales: number; target: number; hasTarget: boolean; achievementPct: number | null };
 export type SalesProduct = { product: string; family: string | null; sales: number; target: number; achievementPct: number | null };
 export type SalesFamily = { family: string; sales: number; target: number; achievementPct: number | null };
 export type SalesSummary = {
   hasData: boolean;
+  /** Every month's sales, targeted or not. */
   totalSales: number;
   totalTarget: number;
+  /** The achievement numerator: sales in the months that carry a target. */
+  gradedSales: number;
+  /** gradedSales ÷ totalTarget — a month with no target is left out of both halves. */
   achievementPct: number | null;
   latestMonth: string | null;
   monthsCount: number;
+  /** Months carrying a target — the divisor of "months hit target". */
+  targetedMonthsCount: number;
+  /** Months with sales and no target, ascending (`YYYY-MM`). */
+  untargetedMonths: string[];
+  /**
+   * Those months in words ("Mar – Jun 2026") — only when some months carry a target and some do
+   * not. With no target anywhere every figure already reads "—", so there is nothing to name.
+   */
+  untargetedLabel: string | null;
   monthsHitTarget: number;
   growthPct: number | null;
   salesPerVisit: number | null;
@@ -176,71 +192,152 @@ export async function getEmployeeSalesByFamilies(
   return aggregateSalesRows(rows, false, 0);
 }
 
-/** Pure aggregation of sales rows into the SalesSummary shape (shared by the
- *  team-roll-up and product-based sales paths). */
-function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, contributingRepCount: number): SalesSummary {
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function monthLabel(period: string): string {
+  const [year, month] = period.split("-");
+  return `${MONTH_ABBR[Number(month) - 1] ?? month} ${year}`;
+}
+
+/**
+ * `YYYY-MM` months as words, consecutive months folded into one run. PURE.
+ * ["2026-03","2026-04","2026-05","2026-06"] -> "Mar – Jun 2026"; a lone month stays "Sep 2026".
+ */
+export function describeSalesMonths(periods: readonly string[]): string {
+  const sorted = [...new Set(periods)].filter((p) => /^\d{4}-\d{2}$/.test(p)).sort();
+  const runs: string[][] = [];
+  for (const period of sorted) {
+    const run = runs[runs.length - 1];
+    const prev = run?.[run.length - 1];
+    if (prev) {
+      const [y, m] = prev.split("-").map(Number);
+      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+      if (next === period) {
+        run.push(period);
+        continue;
+      }
+    }
+    runs.push([period]);
+  }
+  return runs
+    .map((run) => {
+      const first = run[0];
+      const last = run[run.length - 1];
+      if (first === last) return monthLabel(first);
+      const sameYear = first.slice(0, 4) === last.slice(0, 4);
+      return `${sameYear ? MONTH_ABBR[Number(first.slice(5)) - 1] : monthLabel(first)} – ${monthLabel(last)}`;
+    })
+    .join(", ");
+}
+
+/**
+ * Pure aggregation of sales rows into the SalesSummary shape (shared by the team-roll-up and
+ * product-based sales paths).
+ *
+ * THE CLOSING'S RULE, the one the Business Review already follows: inside a month every pound
+ * counts, including sales on a product nobody targeted; across months, a month carrying NO target
+ * at all is left out of the achievement — out of the numerator as well as the denominator. Every
+ * month's sales still show, in the total and in the monthly list. March to June 2026 hold sales and
+ * no target anywhere, so before this a long-serving rep's March–June sales were divided by
+ * January's, February's, July's and August's targets: Nosiba Salah read 103% while no month that
+ * carried a target passed 79%.
+ *
+ * "No target" is judged on the SUBJECT's own rows (the rep, the manager's roll-up, the PM's
+ * brands), so an untargeted rep inside a targeted team month still counts toward the team's month.
+ */
+export function aggregateSalesRows(rows: SalesRow[], isTeamRollup: boolean, contributingRepCount: number): SalesSummary {
   const monthMap = new Map<string, { sales: number; target: number }>();
-  const productMap = new Map<string, { family: string | null; sales: number; target: number }>();
-  const familyMap = new Map<string, { sales: number; target: number }>();
+  for (const r of rows) {
+    if (r.month == null || r.year == null) continue;
+    const key = `${r.year}-${String(r.month).padStart(2, "0")}`;
+    const m = monthMap.get(key) ?? { sales: 0, target: 0 };
+    m.sales += Number(r.sales_value ?? 0);
+    m.target += Number(r.target_value ?? 0);
+    monthMap.set(key, m);
+  }
+  const monthHasTarget = (r: SalesRow) => {
+    // A row with no month cannot be placed against any month's target, so it is graded as it
+    // always was: its own target (usually none) is its whole claim.
+    if (r.month == null || r.year == null) return Number(r.target_value ?? 0) > 0;
+    return (monthMap.get(`${r.year}-${String(r.month).padStart(2, "0")}`)?.target ?? 0) > 0;
+  };
+
+  const productMap = new Map<string, { family: string | null; sales: number; graded: number; target: number }>();
+  const familyMap = new Map<string, { sales: number; graded: number; target: number }>();
   let totalSales = 0;
+  let gradedSales = 0;
   let totalTarget = 0;
   for (const r of rows) {
     const sales = Number(r.sales_value ?? 0);
     const target = Number(r.target_value ?? 0);
+    const graded = monthHasTarget(r) ? sales : 0;
     totalSales += sales;
+    gradedSales += graded;
     totalTarget += target;
-    if (r.month != null && r.year != null) {
-      const key = `${r.year}-${String(r.month).padStart(2, "0")}`;
-      const m = monthMap.get(key) ?? { sales: 0, target: 0 };
-      m.sales += sales;
-      m.target += target;
-      monthMap.set(key, m);
-    }
     const pkey = (r.product ?? "—").trim() || "—";
-    const p = productMap.get(pkey) ?? { family: r.family, sales: 0, target: 0 };
+    const p = productMap.get(pkey) ?? { family: r.family, sales: 0, graded: 0, target: 0 };
     p.sales += sales;
+    p.graded += graded;
     p.target += target;
     productMap.set(pkey, p);
     const fkey = (r.family ?? "—").trim() || "—";
-    const f = familyMap.get(fkey) ?? { sales: 0, target: 0 };
+    const f = familyMap.get(fkey) ?? { sales: 0, graded: 0, target: 0 };
     f.sales += sales;
+    f.graded += graded;
     f.target += target;
     familyMap.set(fkey, f);
   }
 
   const monthly = Array.from(monthMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([month, m]) => ({ month, sales: m.sales, target: m.target, achievementPct: achievement(m.sales, m.target) }));
+    .map(([month, m]) => ({ month, sales: m.sales, target: m.target, hasTarget: m.target > 0, achievementPct: achievement(m.sales, m.target) }));
   const topProducts = Array.from(productMap.entries())
-    .map(([product, p]) => ({ product, family: p.family, sales: p.sales, target: p.target, achievementPct: achievement(p.sales, p.target) }))
+    .map(([product, p]) => ({ product, family: p.family, sales: p.sales, target: p.target, achievementPct: achievement(p.graded, p.target) }))
     .sort((a, b) => b.sales - a.sales)
     .slice(0, 6);
   const byFamily = Array.from(familyMap.entries())
-    .map(([family, f]) => ({ family, sales: f.sales, target: f.target, achievementPct: achievement(f.sales, f.target) }))
+    .map(([family, f]) => ({ family, sales: f.sales, target: f.target, achievementPct: achievement(f.graded, f.target) }))
     .sort((a, b) => b.sales - a.sales);
 
-  const overallAchv = achievement(totalSales, totalTarget);
-  const monthsHitTarget = monthly.filter((m) => (m.achievementPct ?? 0) >= 100).length;
+  const overallAchv = achievement(gradedSales, totalTarget);
+  const targetedMonths = monthly.filter((m) => m.hasTarget);
+  const untargetedMonths = monthly.filter((m) => !m.hasTarget).map((m) => m.month);
+  const monthsHitTarget = targetedMonths.filter((m) => (m.achievementPct ?? 0) >= 100).length;
   const growthPct = monthly.length > 1 && monthly[0].sales > 0 ? ((monthly[monthly.length - 1].sales - monthly[0].sales) / monthly[0].sales) * 100 : null;
   const compact = (n: number) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
   const top = topProducts[0];
   const teamPrefix = isTeamRollup ? `Team roll-up (${contributingRepCount} rep${contributingRepCount === 1 ? "" : "s"}): ` : "";
+  const untargetedSales = totalSales - gradedSales;
+  const untargetedLabel = untargetedMonths.length > 0 && targetedMonths.length > 0 ? describeSalesMonths(untargetedMonths) : null;
+  const gradedPart =
+    targetedMonths.length > 0
+      ? `${overallAchv == null ? "—" : Math.round(overallAchv)}% of target (${compact(gradedSales)} / ${compact(totalTarget)}) across ${targetedMonths.length} month${targetedMonths.length === 1 ? "" : "s"} with a target, ` +
+        `hitting target in ${monthsHitTarget}. `
+      : `No month here carries a target, so nothing is graded. `;
+  const untargetedPart = untargetedLabel
+    ? `${untargetedLabel} ${untargetedMonths.length === 1 ? "has" : "have"} no target: ${compact(untargetedSales)} of sales shown, not graded. `
+    : "";
   const summaryText =
     rows.length === 0
       ? "No validated sales records for this employee yet (only ~2/3 of reps have linked sales)."
       : teamPrefix +
-        `${overallAchv == null ? "—" : Math.round(overallAchv)}% of target (${compact(totalSales)} / ${compact(totalTarget)}) across ${monthly.length} month(s), ` +
-        `hitting target in ${monthsHitTarget}. ` +
-        (top ? `Led by ${top.product} (${top.achievementPct == null ? "—" : Math.round(top.achievementPct)}%). ` : "") +
+        `${compact(totalSales)} of sales across ${monthly.length} month${monthly.length === 1 ? "" : "s"}. ` +
+        gradedPart +
+        untargetedPart +
+        (top && top.achievementPct != null ? `Led by ${top.product} (${Math.round(top.achievementPct)}%). ` : top ? `Led by ${top.product}. ` : "") +
         (growthPct != null ? `${growthPct >= 0 ? "+" : ""}${Math.round(growthPct)}% vs the first month.` : "");
 
   return {
     hasData: rows.length > 0,
     totalSales,
     totalTarget,
+    gradedSales,
     achievementPct: overallAchv,
     latestMonth: monthly.length ? monthly[monthly.length - 1].month : null,
     monthsCount: monthly.length,
+    targetedMonthsCount: targetedMonths.length,
+    untargetedMonths,
+    untargetedLabel,
     monthsHitTarget,
     growthPct,
     salesPerVisit: null,
@@ -1176,6 +1273,26 @@ export type Employee360Profile = Employee360Summary & {
   bricks: Employee360BrickPanel | null;
 };
 
+/**
+ * The rep's CURRENT list as contact -> lists, for placing a most-visited customer as an AM doctor,
+ * a PM doctor or a pharmacy. Undefined when it cannot be read: the customers are then placed by
+ * their visits' own signals (customerLaneOf), never dropped and never failing the profile.
+ */
+async function loadRepListsByContact(hrId: string): Promise<Map<number, Set<CrmListType>> | undefined> {
+  try {
+    const rows = await getRepContactList(hrId);
+    const out = new Map<number, Set<CrmListType>>();
+    for (const row of rows) {
+      const lists = out.get(row.contactCrmId) ?? new Set<CrmListType>();
+      lists.add(row.listType);
+      out.set(row.contactCrmId, lists);
+    }
+    return out;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getEmployee360Profile(
   hrId: string,
   nameByHrId: Map<string, string>,
@@ -1196,7 +1313,7 @@ export async function getEmployee360Profile(
     pmSalesFamilies.length > 0
       ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
       : getEmployeeSales(salesTeam, viewerRole);
-  const [visits, checkins, sales, tmIds, expenses, leadership, bricks] = await Promise.all([
+  const [visits, checkins, sales, tmIds, expenses, leadership, bricks, listsByContact] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
     salesPromise,
@@ -1207,10 +1324,11 @@ export async function getEmployee360Profile(
       : Promise.resolve(null),
     // A rep's own area against his own current list. A manager's seat carries no area of his own.
     roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),
+    roleCategory === "medical-rep" ? loadRepListsByContact(hrId) : Promise.resolve(undefined),
   ]);
   const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
-  const visitSummary = summarizeVisits(visits, window);
+  const visitSummary = summarizeVisits(visits, window, listsByContact);
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
   const doubleVisits = buildDoubleVisitHistory(visits, tmIds, nameByHrId);
 

@@ -37,6 +37,7 @@ import type {
   Employee360BrickPanel,
   Employee360BrickStatus,
 } from "@/lib/employee-360/brick-coverage";
+import type { CustomerLane, TopCustomersByLane } from "@/lib/employee-360/service";
 import type { TeamHealthSummary } from "@/lib/employee-360/team-health";
 import type { TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
@@ -392,6 +393,53 @@ function MixRows({ items }: { items: { label: string; count: number; pct: number
   );
 }
 
+// A pharmacy is not a contact (owner rule): AM doctors, PM doctors and pharmacies are three lists,
+// never one ranking.
+const CUSTOMER_LANE_ORDER = ["am", "pm", "pharmacy"] as const satisfies readonly CustomerLane[];
+const CUSTOMER_LANE_TITLE: Record<CustomerLane, string> = { am: "AM doctors", pm: "PM doctors", pharmacy: "Pharmacies" };
+
+function MostVisitedCustomers({ top }: { top: TopCustomersByLane }) {
+  if (CUSTOMER_LANE_ORDER.every((lane) => top[lane].customers === 0) && top.unplaced === 0) return null;
+  return (
+    <div className="mt-5">
+      <div className="mb-2 text-xs font-bold text-slate-500">Most-visited customers</div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        {CUSTOMER_LANE_ORDER.map((lane) => {
+          const group = top[lane];
+          return (
+            <div key={lane} className="min-w-0 border-t-2 border-slate-200 pt-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{CUSTOMER_LANE_TITLE[lane]}</span>
+                <span className="shrink-0 text-phx-2xs tabular-nums text-slate-400">{intFmt.format(group.customers)} visited</span>
+              </div>
+              {group.top.length === 0 ? (
+                <p className="mt-2 text-xs italic text-slate-400">None visited in this period.</p>
+              ) : (
+                <ol className="mt-1.5 space-y-1">
+                  {group.top.map((customer, index) => (
+                    <li key={`${customer.name}-${index}`} className="flex items-start gap-2 text-sm leading-5">
+                      <span className="w-4 shrink-0 text-right text-phx-2xs font-bold tabular-nums text-slate-400">{index + 1}</span>
+                      <span dir="auto" className="min-w-0 flex-1 break-words text-slate-800">{customer.name}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                        {intFmt.format(customer.count)} {customer.count === 1 ? "visit" : "visits"}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {top.unplaced > 0 ? (
+        <p className="mt-2 text-phx-2xs text-slate-400">
+          {intFmt.format(top.unplaced)} {top.unplaced === 1 ? "customer" : "customers"} not listed: no list, no pharmacy mark and no AM/PM flag on the visits.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 const balanceCopy: Record<Employee360Profile["campaignBalanceFlag"], { label: string; tone: string }> = {
   healthy: { label: "Balanced", tone: "text-emerald-600" },
   campaign_starved: { label: "Campaign-starved", tone: "text-amber-600" },
@@ -618,22 +666,14 @@ export function Employee360View({
           <div>
             <DayOfWeekBars counts={summary.visitDayOfWeek} title="Visits by day of week — Sat–Wed full · Thu AM · Fri off" />
             <div className="mt-3 text-xs text-slate-400">Single visits {intFmt.format(summary.singleVisits)} · Double visits {intFmt.format(summary.doublesReceived)}</div>
-            {summary.topCustomers.length > 0 ? (
-              <div className="mt-3">
-                <div className="mb-1.5 text-xs font-bold text-slate-500">Most-visited customers</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {summary.topCustomers.map((c) => (
-                    <span key={c.name} className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-xs text-phx-ink-soft">{c.name} · {c.count}</span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
           <div>
             <div className="mb-1.5 text-xs font-bold text-slate-500">Activity mix (all visit types)</div>
             <MixRows items={summary.activityMix} />
           </div>
         </div>
+
+        <MostVisitedCustomers top={summary.topCustomers} />
       </Card>
 
       {/* Campaign vs Regular */}
@@ -879,6 +919,7 @@ function LeadershipSection({ leadership, isTM }: { leadership: LeadershipActivit
 }
 
 function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
+  const untargeted = sales.untargetedLabel;
   return (
     <Card className={PREMIUM_CARD}>
       <SectionHeader
@@ -895,12 +936,32 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           <SummaryLine text={sales.summaryText} />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiTile label={sales.isTeamRollup ? "Team sales" : "Total sales"} value={compactFmt.format(sales.totalSales)} hint={sales.isTeamRollup ? `${sales.teamRepCount} reps` : sales.latestMonth ? `through ${sales.latestMonth}` : undefined} />
-            <KpiTile label={sales.isTeamRollup ? "Team target" : "Total target"} value={compactFmt.format(sales.totalTarget)} />
-            <KpiTile label="Achievement" value={pctPoints(sales.achievementPct)} benchmark="61% co." goodWhenAbove={sales.achievementPct == null ? null : sales.achievementPct >= 100} />
-            <KpiTile label="Months covered" value={intFmt.format(sales.monthsCount)} />
+            <KpiTile
+              label={sales.isTeamRollup ? "Team target" : "Total target"}
+              value={compactFmt.format(sales.totalTarget)}
+              hint={untargeted ? `none set for ${untargeted}` : undefined}
+            />
+            <KpiTile
+              label="Achievement"
+              value={pctPoints(sales.achievementPct)}
+              benchmark="61% co."
+              goodWhenAbove={sales.achievementPct == null ? null : sales.achievementPct >= 100}
+              hint={untargeted ? "months with a target only" : undefined}
+              explain={
+                untargeted
+                  ? `Sales in the months that carry a target, divided by that target — the Monthly Closing's rule. ${untargeted} carry no target, so their ${compactFmt.format(sales.totalSales - sales.gradedSales)} of sales is in Total sales but not in this percentage.`
+                  : undefined
+              }
+            />
+            <KpiTile label="Months covered" value={intFmt.format(sales.monthsCount)} hint={untargeted ? `${sales.targetedMonthsCount} with a target` : undefined} />
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <KpiTile label="Months hit target" value={`${sales.monthsHitTarget}/${sales.monthsCount}`} goodWhenAbove={sales.monthsCount > 0 ? sales.monthsHitTarget / sales.monthsCount >= 0.5 : null} />
+            <KpiTile
+              label="Months hit target"
+              value={sales.targetedMonthsCount > 0 ? `${sales.monthsHitTarget}/${sales.targetedMonthsCount}` : "—"}
+              hint={untargeted ? "of the months with a target" : undefined}
+              goodWhenAbove={sales.targetedMonthsCount > 0 ? sales.monthsHitTarget / sales.targetedMonthsCount >= 0.5 : null}
+            />
             <KpiTile label="Growth (1st→latest)" value={sales.growthPct == null ? "—" : `${sales.growthPct >= 0 ? "+" : ""}${Math.round(sales.growthPct)}%`} goodWhenAbove={sales.growthPct == null ? null : sales.growthPct >= 0} />
             <KpiTile label="Sales / visit" value={sales.salesPerVisit == null ? "—" : compactFmt.format(sales.salesPerVisit)} hint="window months, per productive visit" />
             <KpiTile label="Sales / customer" value={sales.salesPerCustomer == null ? "—" : compactFmt.format(sales.salesPerCustomer)} hint="window months, per doctor reached" />
@@ -912,7 +973,8 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
                 labels={sales.monthly.map((m) => m.month.slice(5))}
                 series={[
                   { name: "Sales", color: CHART_COLORS.sales, points: sales.monthly.map((m) => m.sales), area: true },
-                  { name: "Target", color: CHART_COLORS.target, points: sales.monthly.map((m) => m.target) },
+                  // A month with no target is a GAP in the target line, never a dive to zero.
+                  { name: "Target", color: CHART_COLORS.target, points: sales.monthly.map((m) => (m.hasTarget ? m.target : null)) },
                 ]}
                 height={170}
                 yFormat={(n) => compactFmt.format(n)}
@@ -923,6 +985,20 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
             <div className="mt-5 space-y-1.5">
               <div className="text-xs font-bold text-slate-500">Monthly achievement (bar = achievement %, capped at 150%)</div>
               {sales.monthly.slice(-12).map((m: SalesMonthPoint) => {
+                if (!m.hasTarget) {
+                  // The month's sales are real and shown; there is no target to grade them against.
+                  return (
+                    <div key={m.month} className="flex items-center gap-3">
+                      <div className="w-16 shrink-0 text-xs font-semibold text-slate-500">{m.month}</div>
+                      <div className="flex min-h-4 flex-1 items-center border border-dashed border-slate-300 bg-white px-2 text-phx-2xs font-semibold text-slate-500">
+                        No target set · sales only
+                      </div>
+                      <div className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-600">
+                        {compactFmt.format(m.sales)} <span className="text-slate-400">sales</span>
+                      </div>
+                    </div>
+                  );
+                }
                 const achv = m.achievementPct ?? 0;
                 const width = Math.min(150, achv) / 1.5; // % of bar
                 const tone = achv >= 100 ? "bg-emerald-500" : achv >= 70 ? "bg-amber-500" : "bg-red-500";

@@ -18,6 +18,10 @@
 //    IS a working day. Only Friday is excluded from working-days (utilization);
 //    the day-of-week charts dim Friday and lighten Thursday.
 
+import { normalizeSession } from "@/lib/crm/call-rate";
+import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
+import type { CrmListType } from "@/lib/crm/contacts-web-client";
+import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
@@ -67,6 +71,8 @@ export type VisitRow = {
   comment: string | null;
   /** 'phoenix' on a native row, 'ireports360' on a vendor row (crm_visits_unified). */
   source?: string | null;
+  /** The visited contact's specialty — the pharmacy signal for a contact on no list of the rep's. */
+  speciality?: string | null;
 };
 
 // Shared "does this row count as a productive visit" check for callers that only
@@ -89,6 +95,55 @@ export type MonthlyVisitPoint = {
 
 export type LabeledCount = { label: string; count: number; pct: number };
 export type NamedCount = { name: string; count: number };
+
+/** Where a visited customer belongs: an AM doctor, a PM doctor, or a pharmacy. */
+export type CustomerLane = "am" | "pm" | "pharmacy";
+export const CUSTOMER_LANES: readonly CustomerLane[] = ["am", "pm", "pharmacy"];
+
+/** Most-visited customers, one list per lane — a pharmacy is never a contact (owner rule). */
+export type TopCustomersByLane = Record<CustomerLane, { customers: number; top: NamedCount[] }> & {
+  /** Customers no lane could be read for (no list, no pharmacy mark, no AM/PM flag). */
+  unplaced: number;
+};
+
+/** How many of each lane's most-visited customers the profile carries. */
+export const TOP_CUSTOMERS_PER_LANE = 5;
+
+/**
+ * Which lane one productive visit's customer falls in. PURE.
+ *
+ * The rep's CURRENT list decides, through the CRM's own rule (`phoenixVisitLane`: the contact's
+ * list, the visit's AM/PM flag only settling a contact carried on both). A customer on no list of
+ * the rep's — an old list, a manager's own visit — falls back to the same two signals the call
+ * rate reads: a pharmacy specialty (or the reps' pharmacy comment on an unlabelled visit) makes a
+ * pharmacy; otherwise the visit's AM/PM flag, which production carries on all but 6 of 23,381
+ * regular visits since 2026-08-01. Null only when none of that is there.
+ */
+export function customerLaneOf(
+  row: Pick<VisitRow, "contact_crm_id" | "visit_date" | "visit_type" | "visit_type_description" | "comment" | "ampm" | "speciality">,
+  listsByContact?: ReadonlyMap<number, ReadonlySet<CrmListType>>,
+): CustomerLane | null {
+  if (listsByContact && row.contact_crm_id != null && (listsByContact.get(row.contact_crm_id)?.size ?? 0) > 0) {
+    const lane = phoenixVisitLane(
+      {
+        contact_crm_id: row.contact_crm_id,
+        visit_date: row.visit_date,
+        visit_type: row.visit_type,
+        visit_type_description: row.visit_type_description,
+        comment: row.comment,
+        ampm: row.ampm,
+        speciality: row.speciality ?? null,
+        hasCheckin: false,
+      },
+      listsByContact,
+    );
+    if (lane !== "campaign") return lane;
+  }
+  if (isPharmacySpeciality(row.speciality)) return "pharmacy";
+  if (classifyVisit(row.visit_type, row.comment, row.visit_type_description).label === "Pharmacy Visit") return "pharmacy";
+  const session = normalizeSession(row.ampm);
+  return session === "unspecified" ? null : session;
+}
 
 export type VisitSummary = {
   productiveVisits: number;
@@ -117,7 +172,7 @@ export type VisitSummary = {
   avgVisitsPerCustomer: number | null;
   repeatCustomers: number;
   oneTimeCustomers: number;
-  topCustomers: NamedCount[];
+  topCustomers: TopCustomersByLane;
   visitDayOfWeek: number[]; // 0=Sun … 6=Sat, productive-visit counts (distinct from the check-in dayOfWeek)
   workingDaysInWindow: number;
   utilization: number | null;
@@ -168,7 +223,8 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     dateTo: window.to,
     // `source` marks a Phoenix native row, where a partner with no CRM id is still a double visit
     // (isCrmDoubleVisitRow). Without it a new hire's confirmed double visits never count here.
-    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment,source",
+    // `speciality` is the pharmacy signal for a most-visited customer on no list of the rep's.
+    columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment,source,speciality",
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
     // the activity mix is unchanged.
@@ -283,7 +339,16 @@ function describeVs(value: number | null, benchmark: number): string {
   return `${diff}% ${ratio > 1 ? "above" : "below"} the company average`;
 }
 
-export function summarizeVisits(visits: VisitRow[], window: Employee360Window): VisitSummary {
+/**
+ * `listsByContact` is the rep's current list (contact -> AM / PM / Pharmacy); it only decides which
+ * lane a most-visited customer is shown in. Absent (a manager, a list that failed to load), every
+ * customer is placed by its visits' own signals — see {@link customerLaneOf}.
+ */
+export function summarizeVisits(
+  visits: VisitRow[],
+  window: Employee360Window,
+  listsByContact?: ReadonlyMap<number, ReadonlySet<CrmListType>>,
+): VisitSummary {
   let regularVisits = 0;
   let campaignVisits = 0;
   let trainingVisits = 0;
@@ -294,7 +359,7 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
   let pmVisits = 0;
   let unknownAmpm = 0;
   const activeDaySet = new Set<string>();
-  const customerCount = new Map<string, { name: string; count: number }>();
+  const customerCount = new Map<string, { name: string; count: number; lanes: Record<CustomerLane, number> }>();
   const monthlyMap = new Map<string, { regular: number; campaign: number }>();
   const typeMix = new Map<string, number>();
   const dow = new Array<number>(7).fill(0);
@@ -335,8 +400,10 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
       }
       const key = customerKeyOf(row);
       if (key) {
-        const c = customerCount.get(key) ?? { name: customerNameOf(row), count: 0 };
+        const c = customerCount.get(key) ?? { name: customerNameOf(row), count: 0, lanes: { am: 0, pm: 0, pharmacy: 0 } };
         c.count += 1;
+        const lane = customerLaneOf(row, listsByContact);
+        if (lane) c.lanes[lane] += 1;
         customerCount.set(key, c);
       }
       const period = String(row.ampm ?? "").trim().toUpperCase();
@@ -387,11 +454,32 @@ export function summarizeVisits(visits: VisitRow[], window: Employee360Window): 
   // nobody (customerKeyOf), so dividing it in would credit every customer with work never done there.
   const customerVisits = customers.reduce((sum, c) => sum + c.count, 0);
   const avgVisitsPerCustomer = distinctCustomers > 0 ? customerVisits / distinctCustomers : null;
-  const topCustomers = customers
-    .filter((c) => c.name !== "—")
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8)
-    .map((c) => ({ name: c.name, count: c.count }));
+  // Each customer sits in ONE lane — the one most of their visits read, AM before PM before
+  // pharmacy on a tie — so a doctor seen in both sessions is never listed twice.
+  const topCustomers: TopCustomersByLane = {
+    am: { customers: 0, top: [] },
+    pm: { customers: 0, top: [] },
+    pharmacy: { customers: 0, top: [] },
+    unplaced: 0,
+  };
+  const byLane: Record<CustomerLane, NamedCount[]> = { am: [], pm: [], pharmacy: [] };
+  for (const c of customers) {
+    let lane: CustomerLane | null = null;
+    for (const candidate of CUSTOMER_LANES) {
+      if (c.lanes[candidate] > 0 && (lane == null || c.lanes[candidate] > c.lanes[lane])) lane = candidate;
+    }
+    if (!lane) {
+      topCustomers.unplaced += 1;
+      continue;
+    }
+    topCustomers[lane].customers += 1;
+    if (c.name !== "—") byLane[lane].push({ name: c.name, count: c.count });
+  }
+  for (const lane of CUSTOMER_LANES) {
+    topCustomers[lane].top = byLane[lane]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, TOP_CUSTOMERS_PER_LANE);
+  }
 
   const workingDaysInWindow = countWorkingDays(window.from, window.to);
   const utilization = workingDaysInWindow > 0 ? activeDays / workingDaysInWindow : null;
