@@ -86,12 +86,26 @@ const RESOLUTION_OPTIONS: Array<{ label: string; value: CrmCustomerResolutionAct
   { label: "Map to Brick ID…", value: "mapped" },
 ];
 
-// DATE-ONLY (`firstSeen`/`lastSeen`, both min/max of `ireports360_visits.visit_date` — a `date` column,
-// not the vendor's timestamptz), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
-// stay: it is what stops the calendar day being shifted by a zone offset. Not an instant — do not "fix"
-// this one to Cairo.
+// DATE-ONLY (`firstSeen`/`lastSeen`: min/max of the visits' `visit_date`, or the contact master's
+// `first_seen_on`/`last_visited_on` for a customer with no visit — all `date` columns, not the vendor's
+// timestamptz), which `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what
+// stops the calendar day being shifted by a zone offset. Not an instant — do not "fix" this one to
+// Cairo. Blank when the contact master holds no date at all.
 function formatDate(value: string) {
+  if (!value) return "—";
   return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/** A customer only on a rep's plan or doctor list has no visit to count or open in the Visits tab. */
+function isNeverVisited(customer: UnmappedCrmCustomerRow) {
+  return customer.visitCount === 0;
+}
+
+function visitCountLabel(customer: UnmappedCrmCustomerRow) {
+  if (!isNeverVisited(customer)) return customer.visitCount.toLocaleString("en-GB");
+  if (customer.source === "plan") return "Never visited — on a rep's plan";
+  if (customer.source === "list") return "Never visited — on a rep's list";
+  return "No visit on record";
 }
 
 function ResolutionCell({
@@ -183,9 +197,10 @@ function ResolutionCell({
   );
 }
 
-/** Punch-list of every CRM customer/contact (the visited doctor/pharmacy/hospital) that has no real
- * Phoenix brick from EITHER map — a contact its mapped CRM locality already places is counted in the
- * header, not listed (getCrmCustomerMappingPunchList). An admin resolves each one as Ignored (hide it — e.g. a duplicate or
+/** Punch-list of every CRM customer/contact (a doctor/pharmacy/hospital that was visited, or is only on
+ * a rep's plan or doctor list) that has no real Phoenix brick from EITHER map — a contact its mapped
+ * CRM locality already places is counted in the header, not listed (getCrmCustomerMappingPunchList).
+ * An admin resolves each one as Ignored (hide it — e.g. a duplicate or
  * CRM-side artifact), Map to Brick ID (assign the real source_of_sales_bricks brick, validated
  * server-side against the CURRENT brick master), or Keep Pending. Mirrors CrmRegionMappingPanel's
  * UX exactly — same resolve/hide/toast pattern, different key (crm_contact_id) and one level finer
@@ -265,7 +280,7 @@ export function CrmCustomerMappingPanel({
           <span className="font-semibold text-slate-900">{localityCount.toLocaleString("en-GB")}</span> placed through their
           CRM locality (Region Mapping tab) · <span className="font-semibold text-slate-900">{ignoredCount.toLocaleString("en-GB")}</span>{" "}
           ignored · <span className="font-semibold text-rose-600">{rows.length.toLocaleString("en-GB")}</span> still{" "}
-          {rows.length === 1 ? "needs" : "need"} a brick, across the full visit history — resolve each one as{" "}
+          {rows.length === 1 ? "needs" : "need"} a brick, across every visit and every rep&rsquo;s plan and list — resolve each one as{" "}
           <span className="font-semibold text-slate-900">Ignore</span> (hide it, never map),{" "}
           <span className="font-semibold text-slate-900">Map to Brick ID</span> (assign the real Phoenix brick), or{" "}
           <span className="font-semibold text-slate-900">Keep Pending</span>.
@@ -308,17 +323,23 @@ export function CrmCustomerMappingPanel({
               actions={
                 <>
                   <ResolutionCell customer={customer} onResolved={handleResolved} />
-                  <button
-                    type="button"
-                    onClick={() => viewInVisits(customer)}
-                    className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
-                  >
-                    View in Visits
-                  </button>
+                  {!isNeverVisited(customer) && (
+                    <button
+                      type="button"
+                      onClick={() => viewInVisits(customer)}
+                      className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
+                    >
+                      View in Visits
+                    </button>
+                  )}
                 </>
               }
               meta={`CRM Contact ID ${customer.crmContactId}`}
-              status={<span className="text-sm font-black text-rose-500">{customer.visitCount}</span>}
+              status={
+                <span className={isNeverVisited(customer) ? "text-xs font-bold text-slate-500" : "text-sm font-black text-rose-500"}>
+                  {visitCountLabel(customer)}
+                </span>
+              }
               title={customer.crmContactName}
             >
               <PortalRecordFields
@@ -347,20 +368,26 @@ export function CrmCustomerMappingPanel({
                   <tr key={customer.crmContactId} className="odd:bg-white even:bg-orange-50/30">
                     <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{customer.crmContactId}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-900">{customer.crmContactName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{customer.visitCount}</td>
+                    <td className={isNeverVisited(customer) ? "px-3 py-2.5 text-xs font-semibold text-slate-500" : "whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500"}>
+                      {visitCountLabel(customer)}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.firstSeen)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.lastSeen)}</td>
                     <td className="px-3 py-2.5">
                       <ResolutionCell customer={customer} onResolved={handleResolved} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => viewInVisits(customer)}
-                        className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
-                      >
-                        View in Visits
-                      </button>
+                      {isNeverVisited(customer) ? (
+                        <span className="text-xs text-slate-400">No visits to open</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => viewInVisits(customer)}
+                          className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
+                        >
+                          View in Visits
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

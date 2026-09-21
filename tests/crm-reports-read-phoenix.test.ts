@@ -266,5 +266,19 @@ export function runCrmReportsReadPhoenixTests() {
       block(brick, "async function scanAllCrmCustomers(").includes('.neq("contact_crm_id", CATCH_ALL_CONTACT_CRM_ID)'),
       "E6: the catch-all contact is not a customer to map",
     );
+    // E6b · a customer only on a rep's plan or doctor list is on the tab too. The visits scan never
+    // sees one, so a new one whose locality was unmapped went unseen by BOTH mapping tabs.
+    const universe = block(brick, "async function loadCustomerUniverse(");
+    assert.ok(universe.includes("loadContactMaster()"), "E6b: the customer universe reads the contact master");
+    assert.ok(universe.includes("visitCount: 0"), "E6b: a contact with no visit joins the universe at visit count 0");
+    assert.ok(universe.includes("contactId === CATCH_ALL_CONTACT_CRM_ID"), "E6b: the catch-all contact stays out of the master half too");
+    for (const reader of ["export async function getCrmCustomerMappingPunchList(", "export async function getAllCrmCustomersForTemplate("]) {
+      assert.ok(block(brick, reader).includes("await loadCustomerUniverse()"), `E6b: ${reader} builds on the full universe`);
+    }
+    assert.doesNotMatch(
+      block(brick, "async function loadContactMaster("),
+      /\.eq\(\s*"brick_status"/,
+      "E6b: the master read is never narrowed to locality-placed contacts",
+    );
   }
 }
