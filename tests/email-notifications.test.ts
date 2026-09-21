@@ -95,6 +95,13 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
+    // The careers-site application confirmation goes to the applicant, who has no Phoenix account and
+    // so no notification preference for the dispatcher to resolve. Like the offer and the interview
+    // invitation it must carry the SATO identity, not Phoenix's, and its body is the SATO house
+    // template rendered in the module itself (renderSatoEmail), not a DB email template. Best-effort
+    // on top of an already-captured application — it never bypasses the confidence gate. See
+    // src/lib/recruitment/inbound/website-apply-confirmation-email.ts.
+    "src/lib/recruitment/inbound/website-apply-confirmation-email.ts",
     // An interview invitation goes to a candidate (no Phoenix account, no notification preference) or
     // to the interviewer the person picked by hand, and is sent only on that person's own press of
     // "Send" in the Interview Calendar — a manual human send, audited through
