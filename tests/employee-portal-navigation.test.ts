@@ -56,10 +56,23 @@ export function runEmployeePortalNavigationTests() {
     /marketing-requests\/roi-tracking/,
     "ROI Tracking must no longer be a sidebar tab for any role now that Coverage Report replaces it (the page/permission stay live for direct-URL access).",
   );
+  // The standalone "Coverage Report" sidebar link was retired on 2026-09-22 (owner instruction):
+  // the ROI Tracker and the Coverage Report merged into ONE two-tab module reached by a single
+  // "ROI Tracker" sidebar link. The old /employee-portals/marketing-requests/coverage-report route
+  // now redirects to /employee-portals/roi-tracker?tab=coverage, so it must no longer ship as its
+  // own sidebar href — coverage is reached through the merged link's Coverage tab instead.
+  assert.doesNotMatch(
+    layoutSource,
+    /href: "\/employee-portals\/marketing-requests\/coverage-report"/,
+    "The standalone Coverage Report sidebar link must be gone — it is now the Coverage tab of the merged ROI Tracker module",
+  );
+  // The one merged link is offered on EITHER flag so the broader Coverage audience (Finance Manager /
+  // Financial Advisor, admitted by showMarketingCoverageReportTab) still reaches the module even
+  // though they hold no ROI-tab access.
   assert.match(
     layoutSource,
-    /marketing-requests\/coverage-report/,
-    "Coverage Report must remain the Marketing & ROI sidebar tab",
+    /showMarketingRoiTrackingTab \|\| showMarketingCoverageReportTab\s*\?\s*\[\{ href: "\/employee-portals\/roi-tracker", label: "ROI Tracker"/,
+    "The merged ROI Tracker sidebar link must be present and gated on either the ROI or the Coverage flag",
   );
   assert.doesNotMatch(marketingDraftsSource, /\u00E2\u20AC\u00A6/, "Marketing request drafts should not render mojibake ellipsis text.");
   assert.match(marketingDraftsSource, /Math\.max\(0, maxLen - 3\)\)\}\.\.\./);
