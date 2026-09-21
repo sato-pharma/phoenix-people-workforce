@@ -108,7 +108,7 @@
 //
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { isCallRateWorkingDay, type CallRateHolidays } from "@/lib/crm/call-rate";
+import { CATCH_ALL_CONTACT_CRM_ID, isCallRateWorkingDay, type CallRateHolidays } from "@/lib/crm/call-rate";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
 import type { DoctorCoverageGradeTier } from "@/lib/crm/doctor-coverage-config";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -116,9 +116,10 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 /**
  * The CRM's catch-all contact. NOT a doctor, a pharmacy or an account — reps log against it when
  * they have nobody real to log against, so it poisons every per-contact figure it reaches. Excluded
- * from both panels and from every visit count here.
+ * from both panels and from every visit count here. Declared in crm/call-rate.ts, whose rate now
+ * excludes it too; re-exported so this module's importers keep their path.
  */
-export const CATCH_ALL_CONTACT_CRM_ID = 100000;
+export { CATCH_ALL_CONTACT_CRM_ID };
 
 /** The two reports, by name. Report 1 spans two lists; report 2 spans one. */
 export const AM_PM_LIST_TYPES = ["AM", "PM"] as const satisfies readonly CrmListType[];

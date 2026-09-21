@@ -190,20 +190,10 @@ export function runRepsPlansNoGpsFeedTests() {
   assert.equal(submittedRow?.noGpsFeed, false);
   assert.equal(submittedRow?.pm.verifiedRate, 2, "every submitted regular visit counts: ten over five days");
 
-  // ── 4. The screen says it, in one wording, and the export carries it ────────────────────────────
-  const tables = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
-  assert.ok(tables.includes('const NO_GPS_FEED = "No GPS feed";'), "one wording for the cell, the card, the search and the export");
-  assert.ok(tables.includes("{row.noGpsFeed ? ("), "the desktop Rep cell and the card render the marker");
-  assert.ok(
-    tables.includes('{ key: "gps_feed", label: "GPS Feed" }') && tables.includes("gps_feed: row.noGpsFeed ? NO_GPS_FEED"),
-    "the export must match the screen — a blank proved rate in the file carries the same reason",
-  );
-  assert.ok(
-    tables.includes('row.noGpsFeed ? "no GPS feed"'),
-    "the phone card's meta line says no GPS feed rather than '0 proved'",
-  );
-  const boardView = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
-  assert.ok(boardView.includes("board.noGpsFeedShown > 0"), "the note above the tiles states how many are left out, and why");
+  // ── 4. The drill-down carries the marker ────────────────────────────────────────────────────────
+  // The A1 marker's board and export wording moved with the call rate to the KPIs board on
+  // 2026-09-21; kpis-no-gps-feed.test.ts pins it there against kpis-board-view.tsx and kpis-board.ts.
+  // The per-rep visits page, opened from a Call Rate row, still carries the same marker in its header.
   const drilldown = readFileSync("src/components/crm/rep-visits-page.tsx", "utf8");
   assert.ok(drilldown.includes("row.noGpsFeed ? ("), "the drill-down header carries the same marker as the board");
 }

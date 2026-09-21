@@ -25,13 +25,11 @@
 // the other tab"). It reads the same lists under the same Reps List gate and scope, so every viewer
 // of the contact tab gets it. Assembly: src/lib/crm/reps-list-vacant-areas.ts.
 //
-// THE CALL RATE TAB is the Reps Plans module, merged in on 2026-09-21 ("merge the 2 modules into 1
-// module WHICH REPS LIST") — /admin/reps-plans now forwards here. It carries only what this board did
-// not already have (the owner: "make sure you're not duplicating data"): the rate against 2 AM and
-// 10 PM a working day, what the check-ins prove, and the per-visit drill-down at
-// /admin/reps-list/call-rate/[rep]. Plans stay on the plans tab. It keeps the Reps Plans gate
-// (src/lib/crm/reps-plans-access.ts), which every one of its seats already passes here, so nobody's
-// reach moved: the CEO reads Reps List and never had Reps Plans, and gets no call-rate tab.
+// THE CALL RATE WAS A TAB HERE for a few hours on 2026-09-21, then the owner took it off: "since the
+// call rate is already in the KPIs tab ... no need for it to be in the reps list tab in ... managers
+// portals and in admin accounts." So this board is back to THREE tabs, and a hand-typed or bookmarked
+// ?tab=call-rate forwards to /admin/kpis?tab=call-rate for a viewer who can open KPIs (the same
+// board that scores the rate), and falls to the contact list for one who cannot.
 //
 // Nothing about WHO may open this lives in this file. The role lists and the scopes are in
 // src/lib/crm/doctor-list-access.ts and src/lib/crm/plan-verification-access.ts; the assemblies are
@@ -43,17 +41,16 @@
 import { redirect } from "next/navigation";
 
 import { RepsListBoardView } from "@/components/crm/reps-list-board";
-import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { RepsListTabs, resolveRepsListTab } from "@/components/crm/reps-list-tabs";
 import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas";
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
+import { ADMIN_KPIS_PATH, kpisCallRateHref } from "@/lib/crm/kpis-call-rate-route";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
-import { getRepsListCallRate } from "@/lib/crm/reps-list-call-rate";
-import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
 import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 
@@ -67,7 +64,7 @@ type PageProps = {
     area?: string;
     line?: string;
     month?: string;
-    /** Call rate tab: `month` (default), `w1`…`w5`, or `YYYY-MM-DD..YYYY-MM-DD`. */
+    /** Carried to KPIs when an old `?tab=call-rate` link forwards there: `month`, `w1`…`w5`, or a range. */
     period?: string;
     plan?: string;
     region?: string;
@@ -102,9 +99,14 @@ export default async function RepsListPage({ searchParams }: PageProps) {
   // The plans tab's own gate, passed INTO the tab resolver so an unauthorised `?tab=plans` lands on
   // the contact list instead of a refusal.
   const canSeePlans = canAccessPlanVerification(access) && (await canAccess(access, "crm_plans", "read"));
-  // The call-rate tab's gate is the retired Reps Plans page's, on top of the two above.
-  const canSeeCallRate = canAccessRepsPlans(access);
-  const tab = resolveRepsListTab(params?.tab, canSeePlans, canSeeCallRate);
+  // The call rate moved to KPIs (owner, 2026-09-21). An old link forwards there for a viewer who can
+  // open KPIs, and falls to the contact list for one who cannot — never a refusal.
+  if (params?.tab === "call-rate" && canSeeDoctorCoverage(access.role)) {
+    redirect(
+      kpisCallRateHref({ basePath: ADMIN_KPIS_PATH, query: { month: params?.month, period: params?.period } }),
+    );
+  }
+  const tab = resolveRepsListTab(params?.tab, canSeePlans);
 
   // TAB THREE — VACANT AREAS, added 2026-09-14: the doctors of the areas with nobody in the seat,
   // read under the Reps List scope because they are the same lists.
@@ -126,7 +128,6 @@ export default async function RepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="vacant"
           basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={vacantBoard?.selection ?? cascade}
           week={params?.week ?? null}
@@ -135,43 +136,6 @@ export default async function RepsListPage({ searchParams }: PageProps) {
           <RepsListVacantAreasView basePath={BASE_PATH} board={vacantBoard} />
         ) : (
           <LoadFailure message={vacantError} />
-        )}
-      </>
-    );
-  }
-
-  if (tab === "call-rate") {
-    let callRate: Awaited<ReturnType<typeof getRepsListCallRate>> | null = null;
-    let callRateError: string | null = null;
-    try {
-      callRate = await getRepsListCallRate({
-        access,
-        params: {
-          line: params?.line,
-          month: params?.month,
-          period: params?.period,
-          region: params?.region,
-          rep: params?.rep,
-        },
-      });
-    } catch (error) {
-      callRateError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
-    }
-
-    return (
-      <>
-        <RepsListTabs
-          active="call-rate"
-          basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
-          canSeePlans={canSeePlans}
-          selection={callRate?.selection ?? cascade}
-          week={params?.week ?? null}
-        />
-        {callRate ? (
-          <RepsPlansBoardView basePath={BASE_PATH} board={callRate.board} />
-        ) : (
-          <LoadFailure message={callRateError} />
         )}
       </>
     );
@@ -205,7 +169,6 @@ export default async function RepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="plans"
           basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={plansBoard?.selection ?? cascade}
           week={plansBoard?.week.key ?? params?.week ?? null}
@@ -235,7 +198,6 @@ export default async function RepsListPage({ searchParams }: PageProps) {
       <RepsListTabs
         active="contacts"
         basePath={BASE_PATH}
-        canSeeCallRate={canSeeCallRate}
         canSeePlans={canSeePlans}
         selection={board?.selection ?? cascade}
         week={params?.week ?? null}

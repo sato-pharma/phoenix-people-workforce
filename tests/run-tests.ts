@@ -424,7 +424,6 @@ import {
 } from "./kpis-filters.test.ts";
 import { runKpiOverallIndexTests } from "./kpi-index.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
-import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.ts";
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
@@ -2795,11 +2794,6 @@ await runTest("two KPI reports (A+ folds into A in step with the coverage board,
 await runTest("two KPI reports (the owner sample rep reads 92% on doctors, not the 65% the mixed number showed)", runTwoKpiReportsSampleRepTests);
 await runTest("two KPI reports (both are tabs on the KPIs board, and AM · PM never prints with a slash)", runTwoKpiReportsTabTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
-await runTest(
-  "reps plans merged into reps list (the rep carries across the tab strip, old /reps-plans links forward "
-  + "with every filter, the tab copies none of the weekly plans, and it keeps the narrower Reps Plans gate)",
-  runRepsListCallRateMergeTests,
-);
 await runTest(
   "reps plans no GPS feed (ruling A1: real visits and no check-in read No GPS feed, not 0%, and leave the "
   + "team figures; a live feed that proves nothing keeps its 0%, and the submitted basis marks nobody)",

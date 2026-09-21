@@ -287,12 +287,14 @@ export function repsPlansRange(
     }
   }
 
-  // ONLY a sub-month window can be "not started". Picking a future MONTH is a deliberate "show me
-  // December" and is scored whole with no data — the behaviour this board has always had, pinned by
-  // crm-reps-plans.test.ts. Picking week 4 on the 10th is the opposite: it is a window inside the
-  // month you are already looking at, and scoring it whole would divide a rep's nothing by days that
-  // have not happened.
-  const notStarted = periodKey !== "month" && todayIso < windowStart;
+  // A window that has not begun is "not started" — whether it is a future WEEK inside the month on
+  // screen or a whole FUTURE MONTH. Both used to be scored whole against no data, printing 0.00 in
+  // red for every rep as though they had all failed; a future month showed a board of red where the
+  // honest answer is "this hasn't happened yet" (audit finding, 2026-09-21). Picking week 4 on the
+  // 10th is the same case seen from inside the month: scoring it whole would divide a rep's nothing
+  // by days that have not happened. A current or past window (`windowStart <= today`) is never
+  // "not started" — it is scored to its own end, or to today while it is still running.
+  const notStarted = todayIso < windowStart;
   // Capped ONLY while today falls inside the window. A window entirely in the past is scored to its
   // own end, and one entirely in the future must not be dragged back to today — that would score
   // December as "1 Dec to 12 Aug", an empty range dressed up as a month. The cap is today, or — for

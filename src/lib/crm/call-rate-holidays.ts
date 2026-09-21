@@ -75,9 +75,14 @@ export async function loadCallRateHolidays(
   dateFrom: string,
   dateTo: string,
 ): Promise<CallRateHolidayLookup> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo) || dateFrom > dateTo) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(dateTo)) {
     return { complete: false, dates: new Set<string>() };
   }
+  // AN EMPTY WINDOW IS COMPLETE, not a failed read. Since ruling C1 (the call rate stops at
+  // yesterday) that is what the first day of every running period looks like — it starts today and
+  // ends yesterday — and answering "incomplete" there put a "holiday calendar could not be read"
+  // warning on a board whose calendar was never asked anything. No day to walk, no holiday missed.
+  if (dateFrom > dateTo) return { complete: true, dates: new Set<string>() };
 
   const months = monthsBetween(dateFrom, dateTo);
   if (months.length === 0) return { complete: false, dates: new Set<string>() };

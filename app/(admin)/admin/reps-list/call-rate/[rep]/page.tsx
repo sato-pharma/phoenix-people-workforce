@@ -1,43 +1,20 @@
-// The drill-down behind one row of the Reps List Call rate tab: the actual visits the rate is made of.
-//
-// It was /admin/reps-plans/[rep] until the owner merged Reps Plans into Reps List on 2026-09-21; that
-// address now forwards here.
-//
-// THIN GATE ONLY. The body — the organogram-resolved header, the two rates, and every classified
-// visit below them — lives in src/components/crm/rep-visits-page.tsx, shared verbatim with the
-// portal twin at /employee-portals/reps-list/call-rate/[rep], because the body rebuilds the board to
-// find the clicked row and a copy that drifted would be a copy whose SCOPE drifted.
-//
-// SAME ACCESS GATES AS THE TAB, re-run here server-side: the Reps List gate, then the call-rate
-// tab's own (the Reps Plans role list), then the permission matrix. A drill-down is its own request,
-// and a role that cannot open the tab must not reach a rep's visit list by typing the URL.
-//
-// THE VIEWER'S SCOPE IS THE OTHER HALF of that, and it is the half a guessed URL attacks. The body
-// resolves the scope itself and looks the clicked rep up in the NARROWED board, so a key belonging
-// to somebody else's rep finds no row and lands on the "nobody by that key" notice.
+// RETIRED 2026-09-21. The owner took the call rate off Reps List the same day it arrived there
+// ("since the call rate is already in the KPIs tab ... no need for it to be in the reps list tab"),
+// and chose "Open it from KPIs" for the per-rep visits page. It lives at /admin/kpis/call-rate/[rep]
+// now, behind the KPIs gates, and this address forwards there with the same rep key, month and
+// window. That page runs every gate; this one renders nothing.
 import { redirect } from "next/navigation";
 
-import { RepVisitsPageBody, type RepVisitsPageQuery } from "@/components/crm/rep-visits-page";
-import { canAccess } from "@/lib/auth/permissions";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canAccessDoctorList } from "@/lib/crm/doctor-list-access";
-import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
+import { ADMIN_KPIS_PATH, kpisCallRateHref } from "@/lib/crm/kpis-call-rate-route";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ rep: string }>;
-  searchParams?: Promise<RepVisitsPageQuery>;
+  searchParams?: Promise<{ month?: string; period?: string }>;
 };
 
-export default async function RepVisitsPage({ params, searchParams }: PageProps) {
-  const access = await resolveAccessContextFromPage();
-  if (!canAccessDoctorList(access) || !canAccessRepsPlans(access)) redirect("/admin");
-  if (!(await canAccess(access, "crm_visits", "read"))) redirect("/admin");
-
-  const { rep: repParam } = await params;
-  const query = await searchParams;
-
-  return <RepVisitsPageBody access={access} basePath="/admin/reps-list" query={query} repParam={repParam} />;
+export default async function RetiredRepsListRepVisitsPage({ params, searchParams }: PageProps) {
+  const { rep } = await params;
+  redirect(kpisCallRateHref({ basePath: ADMIN_KPIS_PATH, query: await searchParams, rep }));
 }

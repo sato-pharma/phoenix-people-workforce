@@ -15,34 +15,34 @@
 // The Reps Weekly Plans tab (2026-09-01) matters more here than on the admin twin, because the seats
 // that hold `crm_plans:approve` — District Manager and Regional Manager — are PORTAL seats.
 // `/admin/plan-verification` lives in the admin shell, `app/(admin)/layout.tsx` redirects every
-// portal-mode viewer out of it, and no portal twin is registered for it. Until this tab existed, the
-// two roles the whole feature was written for could not reach the only screen that used their
-// permission, leaving Super Admin the sole account able to press Verify. Nothing errored, which is
-// why green CI and a clean deploy never showed it.
+// portal-mode viewer out of it. Until this tab existed, the two roles the whole feature was written
+// for could not reach the only screen that used their permission, leaving Super Admin the sole
+// account able to press Verify. Nothing errored, which is why green CI and a clean deploy never
+// showed it. The plan notification links to that admin page; a portal twin (audit, 2026-09-21) now
+// forwards its recipients here — with `?plan` and `?week` carried — instead of to the portal home,
+// and a `?plan` opens this tab (see the tab resolution below).
 //
-// ## THE CALL RATE TAB IS THE RETIRED REPS PLANS MODULE
+// ## THE CALL RATE MOVED TO KPIs
 //
-// Merged in on 2026-09-21 at the owner's instruction ("merge the 2 modules into 1 module WHICH REPS
-// LIST"); /employee-portals/reps-plans now forwards here. It holds only what this page lacked — the
-// rate against 2 AM and 10 PM a working day, what the check-ins prove, and the per-visit drill-down
-// at /employee-portals/reps-list/call-rate/[rep] — because the plans are already on the plans tab
-// ("make sure you're not duplicating data"). It keeps the Reps Plans gate and scope, and every seat
-// on that gate already passes this page's, so no manager's reach changed.
+// It was a tab here for a few hours on 2026-09-21; the owner then took it off both shells ("since the
+// call rate is already in the KPIs tab ... no need for it to be in the reps list tab in ... managers
+// portals and in admin accounts"). This board is back to three tabs, and a bookmarked or hand-typed
+// ?tab=call-rate forwards to /employee-portals/kpis?tab=call-rate for a viewer who can open KPIs, and
+// falls to the contact list for one who cannot — never a refusal.
 import { redirect } from "next/navigation";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { RepsListBoardView } from "@/components/crm/reps-list-board";
-import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { RepsListTabs, resolveRepsListTab } from "@/components/crm/reps-list-tabs";
 import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas";
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { canAccessDoctorList, canAccessMyList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
+import { kpisCallRateHref, PORTAL_KPIS_PATH } from "@/lib/crm/kpis-call-rate-route";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
-import { getRepsListCallRate } from "@/lib/crm/reps-list-call-rate";
-import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
 import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -58,7 +58,7 @@ type PageProps = {
     area?: string;
     line?: string;
     month?: string;
-    /** Call rate tab: `month` (default), `w1`…`w5`, or `YYYY-MM-DD..YYYY-MM-DD`. */
+    /** Carried to KPIs when an old `?tab=call-rate` link forwards there: `month`, `w1`…`w5`, or a range. */
     period?: string;
     plan?: string;
     region?: string;
@@ -96,9 +96,18 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   // The plans tab's own gate, strictly narrower than the one above. Passed INTO the tab resolver,
   // so a hand-typed `?tab=plans` from a seat without it lands on the contact list.
   const canSeePlans = canAccessPlanVerification(access) && (await canAccess(access, "crm_plans", "read"));
-  // The call-rate tab keeps the retired Reps Plans page's gate, on top of the two above.
-  const canSeeCallRate = canAccessRepsPlans(access);
-  const tab = resolveRepsListTab(params?.tab, canSeePlans, canSeeCallRate);
+  // The call rate moved to KPIs (owner, 2026-09-21). An old link forwards there for a viewer who can
+  // open KPIs, and falls to the contact list for one who cannot — never a refusal.
+  if (params?.tab === "call-rate" && canSeeDoctorCoverage(access.role)) {
+    redirect(
+      kpisCallRateHref({ basePath: PORTAL_KPIS_PATH, query: { month: params?.month, period: params?.period } }),
+    );
+  }
+  // A plan-verification notification links here with `?plan=` and no `?tab` (its admin twin forwards
+  // the plan and week — see portal-twins.ts). Default such a link to the plans tab so the recipient
+  // lands on the plan they were told about; resolveRepsListTab still gates `plans` on canSeePlans, so
+  // a seat without it falls to the contact list rather than a refusal.
+  const tab = resolveRepsListTab(params?.tab ?? (params?.plan ? "plans" : undefined), canSeePlans);
 
   // TAB THREE — VACANT AREAS (2026-09-14): the doctors of the areas with nobody in the seat, read
   // under the Reps List scope because they are the same lists the contact tab reads.
@@ -133,58 +142,11 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="vacant"
           basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={vacantBoard.selection}
           week={params?.week ?? null}
         />
         <RepsListVacantAreasView basePath={BASE_PATH} board={vacantBoard} />
-      </EmployeePortalPageShell>
-    );
-  }
-
-  if (tab === "call-rate") {
-    let callRate: Awaited<ReturnType<typeof getRepsListCallRate>> | null = null;
-    try {
-      callRate = await getRepsListCallRate({
-        access,
-        params: {
-          line: params?.line,
-          month: params?.month,
-          period: params?.period,
-          region: params?.region,
-          rep: params?.rep,
-        },
-      });
-    } catch (error) {
-      logPortalFailure({ hrId: access.hrId, module: "reps-list", role: access.role, route: ROUTE }, error);
-      callRate = null;
-    }
-
-    if (!callRate) {
-      return (
-        <EmployeePortalEmptyState
-          message="Call rate could not load. The CRM visit mirror is unavailable right now — this is a load failure, not a team that recorded nothing."
-          title="Reps List Unavailable"
-        />
-      );
-    }
-
-    return (
-      <EmployeePortalPageShell
-        badge="CRM"
-        description="Two AM accounts and ten PM clinics every working day, for each of your reps — what he recorded, and what the GPS check-ins prove."
-        title="Reps List"
-      >
-        <RepsListTabs
-          active="call-rate"
-          basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
-          canSeePlans={canSeePlans}
-          selection={callRate.selection}
-          week={params?.week ?? null}
-        />
-        <RepsPlansBoardView basePath={BASE_PATH} board={callRate.board} />
       </EmployeePortalPageShell>
     );
   }
@@ -227,7 +189,6 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="plans"
           basePath={BASE_PATH}
-          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={plansBoard.selection}
           week={plansBoard.week.key}
@@ -264,7 +225,6 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
       <RepsListTabs
         active="contacts"
         basePath={BASE_PATH}
-        canSeeCallRate={canSeeCallRate}
         canSeePlans={canSeePlans}
         selection={board.selection}
         week={params?.week ?? null}

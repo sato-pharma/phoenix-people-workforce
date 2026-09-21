@@ -32,10 +32,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
+  callRateExclusionOf,
   classifyCallProof,
-  isCallRateWorkingDay,
   normalizeSession,
   type CallProof,
+  type CallRateExclusion,
+  type CallRateHolidays,
   type CallSession,
   type VisitForCallRate,
 } from "@/lib/crm/call-rate";
@@ -107,6 +109,13 @@ export type RepVisitRow = {
   visitTypeLabel: string;
   bucket: VisitBucket;
   standing: RepVisitStanding;
+  /**
+   * Why this FIELD call is listed but not in the rate above it — Thursday or Friday, a national
+   * holiday, or the catch-all contact — or null when it counts. Read from `callRateExclusionOf`,
+   * the gate `computeCallRate` itself applies, so the rows marked here are exactly the ones the rate
+   * left out. Always null on a row that is not field work: a day off is not a call to exclude.
+   */
+  unscored: CallRateExclusion | null;
   partnerHrId: string | null;
   partnerName: string | null;
   comment: string | null;
@@ -244,6 +253,8 @@ export function toRepVisitRow<C extends CheckinForMatch>(
   contactDirectory?: KnownContactIndex,
   /** What the cheap model read, keyed by fragment. Omitted → the rules' answer, unchanged. */
   assisted?: ReadonlyMap<string, CampaignAssistReading>,
+  /** The national holidays the rate took out of its denominator. Omitted → the weekday rule only. */
+  holidays?: CallRateHolidays,
 ): RepVisitRow {
   const { label, bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   const partnerHrId = text(visit.double_hr_id);
@@ -268,9 +279,11 @@ export function toRepVisitRow<C extends CheckinForMatch>(
   // the one it replaced, because it looks researched.
   const rules = campaignReading(visit, bucket);
   const note = rules && assisted ? applyAssist(rules, assisted) : rules;
+  const dateIso = (visit.visit_date ?? "").slice(0, 10);
+  const standing: RepVisitStanding = classifyCallProof(visit, checkinIndex) ?? "excluded";
   return {
     visitCrmId: visit.crm_visit_id,
-    dateIso: (visit.visit_date ?? "").slice(0, 10),
+    dateIso,
     session: normalizeSession(visit.ampm),
     contactCrmId: contactId(visit.contact_crm_id),
     contactName: text(visit.contact_name),
@@ -289,7 +302,8 @@ export function toRepVisitRow<C extends CheckinForMatch>(
     visitTypeCode: visit.visit_type,
     visitTypeLabel: label,
     bucket,
-    standing: classifyCallProof(visit, checkinIndex) ?? "excluded",
+    standing,
+    unscored: standing === "excluded" ? null : callRateExclusionOf(dateIso, visit.contact_crm_id, holidays),
     partnerHrId,
     // The directory names the person; the CRM's `double_name` is a login handle. Same waterfall as
     // the board's own rep column — directory first, CRM handle second, never a bare code.
@@ -315,6 +329,11 @@ export type RepVisitsSummary = {
   campaign: number;
   /** Leave, meetings, training, admin — present on the screen, absent from the KPI. */
   excluded: number;
+  /**
+   * Field calls listed but left out of the rate: Thursday or Friday, a national holiday, or the
+   * catch-all contact. `fieldCalls` + this = every field-work row on the screen.
+   */
+  unscored: number;
   am: number;
   pm: number;
   /**
@@ -350,8 +369,10 @@ export type RepVisitsSummary = {
  *
  * THE 2026-09-05 GATE. `fieldCalls`, the proof totals and every session (including `pharmacy`) now
  * exclude Thursday/Friday rows, mirroring the exact gate `computeCallRate` applies before it will
- * add a visit to any slice (owner: "visists to be counted from sat to wednesday only"). A Thursday
- * row is still RENDERED above — it is real field work — but it must not inflate the numbers this
+ * add a visit to any slice (owner: "visists to be counted from sat to wednesday only") — and, since
+ * 2026-09-21, national holidays and the catch-all contact too, because each row now carries that
+ * gate's own answer as `unscored` and this counts them as `unscored` instead. Such a row is still
+ * RENDERED above, and marked — it is real field work — but it must not inflate the numbers this
  * function reconciles against the board, which no longer counts it either. `excluded`,
  * `distinctContacts`, `distinctRegions`, `unmappedTerritory`, `noTerritory` and
  * `campaignAlreadyKnown` are deliberately NOT gated: they describe data quality across whatever
@@ -367,6 +388,7 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
     unverified: 0,
     campaign: 0,
     excluded: 0,
+    unscored: 0,
     am: 0,
     pm: 0,
     pharmacy: 0,
@@ -397,8 +419,13 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
 
     // THE 2026-09-05 GATE — see the header. A Thursday/Friday row is real field work (counted
     // above) but must not reach fieldCalls, the proof totals or any session, because the board no
-    // longer counts it either.
-    if (!isCallRateWorkingDay(row.dateIso)) continue;
+    // longer counts it either. Since 2026-09-21 the row carries the gate's own answer (`unscored`),
+    // holidays and the catch-all contact included, instead of this function re-deriving the weekday
+    // half of it and missing the rest.
+    if (row.unscored) {
+      summary.unscored += 1;
+      continue;
+    }
 
     summary.fieldCalls += 1;
     summary[row.standing] += 1;
@@ -441,6 +468,11 @@ export function buildRepVisits<C extends CheckinForMatch>(
     /** The rep's registered doctors. Omitted → no campaign row claims to know anyone. */
     contactDirectory?: KnownContactIndex;
     /**
+     * The national holidays the board's rate took out of its denominator, so a call made on one is
+     * marked "not scored" here exactly as it is left out there. Omitted → the weekday rule only.
+     */
+    holidays?: CallRateHolidays;
+    /**
      * What the cheap model read of the fragments the rules could not, keyed by fragment.
      *
      * Omitted → the rules' answer, unchanged, which is what every caller got before 2026-09-02 and
@@ -460,6 +492,7 @@ export function buildRepVisits<C extends CheckinForMatch>(
         options.partnerNameByHrId,
         options.contactDirectory,
         options.assisted,
+        options.holidays,
       ),
     ),
   );
@@ -514,6 +547,21 @@ export const REP_VISIT_STANDING_LABELS: ReadonlyMap<RepVisitStanding, string> = 
   ["campaign", "Campaign"],
   ["excluded", "Not field work"],
 ]);
+
+/**
+ * Why a listed call is not in the rate, in words — or null when it is. The table, the card and the
+ * export all read this, so the three cannot word it differently (an export must match the screen).
+ * The weekday is NAMED, because "Thursday" answers the reader's next question and "weekend" does not.
+ */
+export function unscoredLabel(row: RepVisitRow): string | null {
+  if (row.unscored === "catch-all") return "Not scored · the CRM's catch-all contact, not a doctor";
+  if (row.unscored === "holiday") return "Not scored · public holiday";
+  if (row.unscored === "weekend") {
+    const weekday = /^\d{4}-\d{2}-\d{2}$/.test(row.dateIso) ? new Date(`${row.dateIso}T00:00:00Z`).getUTCDay() : null;
+    return weekday === 4 ? "Not scored · Thursday" : weekday === 5 ? "Not scored · Friday" : "Not scored · not a working day";
+  }
+  return null;
+}
 
 export const REP_VISIT_SESSION_LABELS: ReadonlyMap<CallSession, string> = new Map<CallSession, string>([
   ["am", "AM"],

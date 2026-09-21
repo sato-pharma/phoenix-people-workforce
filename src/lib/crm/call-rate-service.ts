@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeCallRate, type CallRateReport, type VisitForCallRate } from "@/lib/crm/call-rate";
-import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
+import { loadCallRateHolidays, type CallRateHolidayLookup } from "@/lib/crm/call-rate-holidays";
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { kpiRulesFor } from "@/lib/crm/phoenix-kpi-rules";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
@@ -38,6 +38,12 @@ export type CallRateInput = {
   agentHrId?: string | null;
   /** Overrides the owner's daily campaign limit of 3. Only for a caller that exposes the control. */
   campaignLimit?: number;
+  /**
+   * The holiday lookup for these same dates, when the caller has already read it — the visits page
+   * reads it once and hands the SAME set to the rate and to the visit list, so a holiday can never
+   * be out of one and in the other. Omitted, the report reads its own.
+   */
+  holidays?: CallRateHolidayLookup;
 };
 
 /**
@@ -88,7 +94,7 @@ export async function loadCallRateReport(
       columns: VISIT_COLUMNS,
     }),
     queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
-    loadCallRateHolidays(input.dateFrom, input.dateTo),
+    input.holidays ?? loadCallRateHolidays(input.dateFrom, input.dateTo),
     // Phase 6: from the CRM cutover every submitted regular visit counts. With no date set, or an
     // unreadable setting, this answers the old rule and nothing on any screen moves.
     getCrmCutoverSetting().catch(() => NO_CRM_CUTOVER),

@@ -450,8 +450,8 @@ export async function runRepsWeeklyPlansTests() {
         `${page.what} must still build the contact tab from the Reps List scope — one scope for both tabs would either widen who may sign a plan or narrow who may read a list`,
       );
       assert.ok(
-        /const tab = resolveRepsListTab\(params\?\.tab, canSeePlans, canSeeCallRate\)/.test(source),
-        `${page.what} must resolve the tab THROUGH the gates, so a hand-typed ?tab=plans or ?tab=call-rate from a seat without it lands on the contact list rather than on a refusal`,
+        /const tab = resolveRepsListTab\(.*, canSeePlans\)/.test(source),
+        `${page.what} must resolve the tab THROUGH the gate, so a hand-typed ?tab=plans from a seat without it lands on the contact list rather than on a refusal (the call-rate tab moved to the KPIs board on 2026-09-21, so the resolver no longer takes canSeeCallRate)`,
       );
     }
 

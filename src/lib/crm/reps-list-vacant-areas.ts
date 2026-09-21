@@ -76,6 +76,7 @@ import { monthBounds, monthLabelOf, resolveRepDoctorListMonth } from "@/lib/crm/
 import { getRepsListForAgent, type RepsListForRep } from "@/lib/crm/reps-list";
 import { countUnvisited, type RepsListActivity } from "@/lib/crm/reps-list-activity";
 import { loadRepsListActivity } from "@/lib/crm/reps-list-activity-data";
+import { foldAreaCodeForLine, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import {
   allowedHrIdsFor,
   buildRepsCascade,
@@ -277,6 +278,37 @@ export function lastHolderBySeat(input: {
   return best;
 }
 
+/**
+ * PURE — fold a line's merged area cells into ONE vacancy card. Anti Infective's Suez (OT2) and
+ * Ismailia (OT9) became one area, "Ismailia and Suez", on 2026-09-01 (closing-area-merges): one
+ * empty seat covers both cells, so `vacanciesMatching` hands back two rows with the SAME seatId —
+ * two cards, a heading that reads "45" where it should read "44", and a duplicate React key. The
+ * cascade dropdown already folds (coverage-filters); this folds the cards to match.
+ *
+ * Collapse is per SEAT, not per merged code, and only when two of a seat's cells fold to the same
+ * keep-code: a single empty seat that happened to cover two UNMERGED areas still shows two cards, and
+ * two DIFFERENT empty seats are never merged into one — hiding a second empty seat would be worse
+ * than the double count. Folded at the current month, because a vacancy is a now-fact.
+ */
+export function foldVacancyCells(vacancies: readonly CoverageFilterVacancy[]): CoverageFilterVacancy[] {
+  const byKey = new Map<string, CoverageFilterVacancy>();
+  for (const vacancy of vacancies) {
+    const foldedCode = foldAreaCodeForLine(vacancy.lineCode, vacancy.areaCode);
+    const key = `${vacancy.seatId}|${vacancy.lineCode.toUpperCase()}|${foldedCode}`;
+    const mergedName = getMergedAreaName(vacancy.lineCode, foldedCode);
+    const folded: CoverageFilterVacancy = {
+      ...vacancy,
+      areaCode: foldedCode,
+      areaName: mergedName ?? vacancy.areaName,
+    };
+    const existing = byKey.get(key);
+    // Keep the survivor cell (the one already carrying the keep-code) so its own areaName is the
+    // fallback when no merged name is defined; otherwise the first cell seen wins.
+    if (!existing || vacancy.areaCode.toUpperCase() === foldedCode) byKey.set(key, folded);
+  }
+  return [...byKey.values()];
+}
+
 /** PURE — which of the four states a vacancy is in. See the header. */
 export function resolveVacantAreaStatus(
   last: SeatLastPerson | undefined,
@@ -469,7 +501,9 @@ export async function getVacantAreasBoard(input: {
     reps: [],
   };
 
-  const inView = vacanciesMatching(tree, { area: selection.area, line: selection.line, region: selection.region });
+  const inView = foldVacancyCells(
+    vacanciesMatching(tree, { area: selection.area, line: selection.line, region: selection.region }),
+  );
 
   const { lastBySeat, names } = await loadLastHolders(inView);
 

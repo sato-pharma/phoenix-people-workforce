@@ -110,7 +110,9 @@ export function runRepsListThroughYesterdayTests() {
     assert.equal(future.notStarted, true, "a week that has not begun is still 'not started'");
     assert.equal(future.todayLeftOut, false);
     const december = repsPlansRange("2026-12", TODAY, undefined, CALL_RATE_THROUGH_YESTERDAY);
-    assert.equal(december.dateTo, "2026-12-31", "a future month is still scored whole, as it always was");
+    assert.equal(december.notStarted, true, "a whole month still in the future has NOT started (audit fix 2026-09-21)");
+    assert.equal(december.monthEnd, "2026-12-31", "its real end is still known");
+    assert.ok(december.dateTo < december.dateFrom, "a not-started month is empty, not scored whole against no data");
   }
 
   // ── 5. The rate: yesterday's work over the days that are over ─────────────────────────────────
@@ -130,22 +132,18 @@ export function runRepsListThroughYesterdayTests() {
     assert.equal(board.todayLeftOut, true);
   }
 
-  // ── 6. Reps List asks for it, in both places, and the screens say it ──────────────────────────
+  // ── 6. The drill-down opened from a Call Rate row is scored over the same days ─────────────────
+  // The Call rate tab and the Reps Plans board both moved to the KPIs board on 2026-09-21 (the owner:
+  // "since the call rate is already in the KPIs tab … no need for it to be in the reps list tab").
+  // Their C1 screen wording is now pinned on the KPIs board in kpis-call-rate-through-yesterday.test.ts.
+  // What survives on Reps List is the per-rep visits page, opened from a Call Rate row, which still
+  // measures its own window and says why today's calls are not listed yet.
   {
-    const loader = readFileSync("src/lib/crm/reps-list-call-rate.ts", "utf8");
-    assert.ok(
-      loader.includes("repsPlansRange(month, today, params?.period, CALL_RATE_THROUGH_YESTERDAY)"),
-      "the Call rate tab scores through yesterday",
-    );
-    assert.ok(loader.includes("repsPlansWeeks(month, today, CALL_RATE_THROUGH_YESTERDAY)"), "and its week picker counts the same days");
     const drilldown = readFileSync("src/components/crm/rep-visits-page.tsx", "utf8");
     assert.ok(
-      drilldown.includes("repsPlansRange(month, today, query?.period, CALL_RATE_THROUGH_YESTERDAY)"),
+      drilldown.includes("repsPlansRange(month, today, one(query?.period), CALL_RATE_THROUGH_YESTERDAY)"),
       "the rep page opened from a row is measured over the same days as the row",
     );
     assert.ok(drilldown.includes("board.todayLeftOut ?"), "and says why today's calls are not listed yet");
-    const boardView = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
-    assert.ok(boardView.includes("today is not scored until it is over"), "the board's caption says today is left out");
-    assert.ok(boardView.includes("began today — nothing is scored until today is over"), "and why a new window is empty");
   }
 }

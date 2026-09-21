@@ -103,7 +103,11 @@ export function SortableTh({
 
   // Inert (non-sortable) column.
   if (!sortKey || !onSort) {
-    return <th className={cn(base, alignClass, className)}>{label}</th>;
+    return (
+      <th className={cn(base, alignClass, className)} scope="col">
+        {label}
+      </th>
+    );
   }
 
   const active = sort?.key === sortKey;
@@ -112,6 +116,7 @@ export function SortableTh({
     <th
       className={cn(base, alignClass, className)}
       aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"}
+      scope="col"
     >
       <SortButton align={align} label={label} onSort={onSort} sort={sort} sortKey={sortKey} />
     </th>

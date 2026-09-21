@@ -133,15 +133,22 @@ const STATUS_COPY: Record<
  * board that prints them the same way turns "he hasn't planned his week" into "you haven't signed
  * it", which points the blame at the wrong person.
  */
-function repPlanText(rep: RepsWeeklyPlanRep): { text: string; tone: string } {
-  if (rep.plansFiled === 0) return { text: "No plan filed", tone: "text-rose-700" };
+function repPlanText(rep: RepsWeeklyPlanRep, weekIsFuture: boolean): { text: string; tone: string } {
+  // A week that has not begun is not a week anyone has failed to plan — plans are filed in the days
+  // just before it. Saying "No plan filed" in red for every rep on next week's board turns "the week
+  // hasn't started" into "66 reps let you down". Say it plainly and neutrally instead (audit, 2026-09-21).
+  if (rep.plansFiled === 0) {
+    return weekIsFuture
+      ? { text: "Not filed yet", tone: "text-slate-500" }
+      : { text: "No plan filed", tone: "text-rose-700" };
+  }
   const status = planStatusLabel(rep.planStatus);
   const suffix = rep.plansFiled > 1 ? ` · ${rep.plansFiled} plans` : "";
   return { text: `${status}${suffix}`, tone: planStatusClass(rep.planStatus) };
 }
 
-function RepCard({ href, rep }: { href: string; rep: RepsWeeklyPlanRep }) {
-  const plan = repPlanText(rep);
+function RepCard({ href, rep, weekIsFuture }: { href: string; rep: RepsWeeklyPlanRep; weekIsFuture: boolean }) {
+  const plan = repPlanText(rep, weekIsFuture);
   return (
     <Link
       className="block border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50"
@@ -414,8 +421,16 @@ export function RepsWeeklyPlansBoardView({
               active={statusFilter === "missing"}
               href={hrefWithStatus(basePath, board, "missing")}
               label="No plan filed"
-              sub={counts.missing > 0 ? "nothing in the CRM this week" : "everyone filed"}
-              tone={counts.missing > 0 ? "rose" : "emerald"}
+              // A future week has filed nothing yet, which is normal — neither red nor a green
+              // "everyone filed". Say it has not started, in the neutral tone (audit, 2026-09-21).
+              sub={
+                week.offset > 0
+                  ? "the week hasn't started yet"
+                  : counts.missing > 0
+                    ? "nothing in the CRM this week"
+                    : "everyone filed"
+              }
+              tone={week.offset > 0 ? undefined : counts.missing > 0 ? "rose" : "emerald"}
               value={String(counts.missing)}
             />
           </div>
@@ -436,7 +451,12 @@ export function RepsWeeklyPlansBoardView({
           ) : (
             <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">
               {reps.map((rep) => (
-                <RepCard href={hrefWithRep(basePath, board, rep.repKey)} key={rep.repKey} rep={rep} />
+                <RepCard
+                  href={hrefWithRep(basePath, board, rep.repKey)}
+                  key={rep.repKey}
+                  rep={rep}
+                  weekIsFuture={week.offset > 0}
+                />
               ))}
             </div>
           )}
