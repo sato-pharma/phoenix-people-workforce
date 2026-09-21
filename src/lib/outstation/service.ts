@@ -2,7 +2,6 @@
 import {
   normalizeHrId,
   normalizeHrIdForAccess,
-  normalizeRole,
   resolveEmployeeIdentityId,
   resolveNavigationMode,
   systemAccessContext,
@@ -137,6 +136,7 @@ import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseInput,
 } from "@/lib/outstation/medical-rep-expenses";
+import { assertMedicalRepExpenseRole } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   googleDirectionsRoute,
   googleGeocodeAddress,
@@ -831,15 +831,10 @@ function fallbackResidenceFromEmployee(employee: EmployeeDirectoryRow): Employee
   };
 }
 
-function assertMedicalRepRole(role: string | null | undefined) {
-  if (normalizeRole(role) !== "Medical Rep") {
-    throw new Error("Forbidden: only Medical Rep users can use simple expense submission.");
-  }
-}
-
 async function getMedicalRepExpenseIdentity(access: AccessContext) {
   const identity = await getEmployeeIdentity(access);
-  assertMedicalRepRole(identity.employeeRole);
+  // The page reads this refusal through the same module — see medical-rep-expense-viewer.ts.
+  assertMedicalRepExpenseRole(identity.employeeRole);
   const residence =
     (await getResidenceLocationForEmployee(identity.employeeHrId)) ??
     fallbackResidenceFromEmployee(identity.employee);

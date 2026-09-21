@@ -1853,6 +1853,7 @@ import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
+import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6512,6 +6513,11 @@ await runTest(
 await runTest(
   "a local preview wears the named person's real role: /api/dev-auth answers 409 role_mismatch when the hrId's active logins do not hold the requested role (a synthetic or blank hrId is still allowed), and /api/activity/track records only a real signed-in session, so a preview never files page views under a real person's name in production",
   runDevPreviewRoleGuardTests,
+);
+
+await runTest(
+  "the portal expense pages never redirect to each other for one viewer: a Medical Rep login whose job title is not a Medical Rep stays on the expenses page's empty state instead of bouncing (the 2026-09-21 dev-server loop); genuine reps, District Managers and acting District Managers route exactly as before, and both pages decide through the one helper",
+  runMedicalRepExpenseViewerTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

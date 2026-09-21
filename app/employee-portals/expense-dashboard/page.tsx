@@ -4,11 +4,11 @@ import { PersonalExpenseWorkloadDashboard } from "@/components/employee-portal/p
 import {
   assertPermission,
   resolveNavigationMode,
-  isMedicalRep,
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getMedicalRepPortalData } from "@/lib/employee-portal/service";
+import { isMedicalRepExpenseViewer } from "@/lib/outstation/medical-rep-expense-viewer";
 import {
   getOwnOutstationTicketCounts,
   getOwnOutstationRequestsAwaitingDeparturePhoto,
@@ -40,7 +40,8 @@ export default async function EmployeePortalExpenseDashboardPage() {
   if (resolveNavigationMode(access) !== "employee-portal" && !isProductMarketingRole) {
     redirect("/payroll");
   }
-  if (isMedicalRep(access.role)) {
+  // The one Medical Rep answer the expenses page also reads, so it never sends this viewer back.
+  if (isMedicalRepExpenseViewer(access)) {
     redirect("/employee-portals/expenses");
   }
   await assertPermission(access, "expenses", "read");
