@@ -40,22 +40,44 @@ import { isUuid } from "@/lib/http/uuid";
 // decided. Both are explained where they are thrown.
 // ─────────────────────────────────────────────────────────────────────────────
 /**
- * Who may open the register and press the button.
+ * Who may OPEN the register and the customer detail — read only.
  *
- * **Super Admin only.** Owner ruling, 2026-08-22, in plain words: "Super admin only, SFE cannot do
- * this thing. Only super admin." This is deliberately NARROWER than
- * `assertMarketingCustomerDatabaseAccess`, which admits Super Admin AND SFE Manager — do not
- * "align" the two. Seeing the customer database is not the same authority as writing a pharmacy
- * into a second module, and the transfer here does exactly that.
+ * **Super Admin and SFE Manager.** Owner decision, 2026-09-21, asked in chat as multiple choice:
+ * the SFE Manager gets the register VIEW ONLY. This widens the 2026-08-22 ruling ("Super admin
+ * only, SFE cannot do this thing") for reading and nothing else — what SFE still cannot do is the
+ * transfer and the revert, gated by `canTransferValidatedCustomers` below. Do not merge the two
+ * predicates back into one.
  *
  * The marketing workflow roles (Marketing Manager, Product Manager, Group Product Manager) were
- * never in scope either — they raise and approve spend, they do not run the customer desk.
+ * never in scope — they raise and approve spend, they do not run the customer desk.
  */
 export function canOpenValidatedCustomerRegister(
   access: Pick<AccessContext, "role" | "scope">,
 ): boolean {
   if (access.scope === "system") return true;
+  return access.role === "Super Admin" || access.role === "SFE Manager";
+}
+
+/**
+ * Who may press the buttons — transfer a customer into Direct Orders, or revert a transfer.
+ *
+ * **Super Admin only.** Owner ruling, 2026-08-22: "Super admin only, SFE cannot do this thing.
+ * Only super admin." — kept on 2026-09-21 when SFE was given the view. Seeing the register is not
+ * the same authority as writing a pharmacy into a second module, and the transfer does exactly that.
+ */
+export function canTransferValidatedCustomers(
+  access: Pick<AccessContext, "role" | "scope">,
+): boolean {
+  if (access.scope === "system") return true;
   return access.role === "Super Admin";
+}
+
+export function assertValidatedCustomerTransferAccess(access: AccessContext) {
+  if (!canTransferValidatedCustomers(access)) {
+    throw forbiddenError(
+      `Forbidden: ${access.role} can view validated customers but cannot transfer or revert them.`,
+    );
+  }
 }
 
 /**
@@ -771,6 +793,8 @@ export type ValidatedCustomerDetail = {
         cannotRevertReason: string | null;
       })
     | null;
+  /** Whether THIS viewer may transfer or revert. False for the view-only SFE Manager. */
+  viewerCanTransfer: boolean;
 };
 
 /**
@@ -1106,6 +1130,7 @@ export async function getValidatedMarketingCustomerDetail(
     pharmacies,
     photoUrl: photo?.signedUrl ?? null,
     transfer,
+    viewerCanTransfer: canTransferValidatedCustomers(access),
   };
 }
 
@@ -1145,7 +1170,7 @@ export async function transferValidatedCustomerToDirectOrders(
   access: AccessContext,
   input: { customerId: string; notes?: string | null },
 ): Promise<{ transferId: string; directOrderPharmacyId: string; phoenixPharmacyCode: string }> {
-  assertValidatedCustomerRegisterAccess(access);
+  assertValidatedCustomerTransferAccess(access);
 
   const customerId = String(input.customerId ?? "").trim();
   if (!customerId) throw validationError("A customer id is required.");
@@ -1448,7 +1473,7 @@ export async function revertValidatedCustomerTransfer(
   access: AccessContext,
   input: { transferId: string; reason?: string | null },
 ): Promise<{ reverted: true }> {
-  assertValidatedCustomerRegisterAccess(access);
+  assertValidatedCustomerTransferAccess(access);
 
   const transferId = String(input.transferId ?? "").trim();
   if (!transferId) throw validationError("A transfer id is required.");
