@@ -39,14 +39,14 @@ export default function PortalTabsLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            tabBarIcon: ({ color, size }) => <Ionicons color={color} name="home-outline" size={size} />,
+            tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="home-outline" size={size} />,
             title: "Home",
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
-            tabBarIcon: ({ color, size }) => <Ionicons color={color} name="person-outline" size={size} />,
+            tabBarIcon: ({ color, size }) => <Ionicons color={color as string} name="person-outline" size={size} />,
             title: "Profile",
           }}
         />

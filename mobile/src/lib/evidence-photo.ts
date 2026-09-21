@@ -65,7 +65,8 @@ const WATERMARK_LOGO = require("../../assets/phoenix/camera-watermark.png") as n
  */
 async function loadWatermarkLogo() {
   try {
-    return await Skia.Data.fromURI(Image.resolveAssetSource(WATERMARK_LOGO).uri);
+    const source = Image.resolveAssetSource(WATERMARK_LOGO);
+    return source ? await Skia.Data.fromURI(source.uri) : null;
   } catch {
     return null;
   }

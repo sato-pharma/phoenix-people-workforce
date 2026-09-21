@@ -15,7 +15,6 @@
         "backgroundColor": "#0d1015",
         "foregroundImage": "./assets/phoenix/adaptive-foreground.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.CAMERA",
@@ -34,7 +33,7 @@
     },
     "plugins": [
       [
-        "onesignal-expo-plugin",
+        "./plugins/with-onesignal-expo-plugin",
         {
           "mode": "production",
           "disableLocation": true,
