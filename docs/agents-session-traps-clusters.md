@@ -136,6 +136,7 @@ does not fire, so its silence is not evidence that no trap applies.
 **Memory and this index**
 
 - **Sweep memories by CLAIM, never by filename or topic**, and never rewrite a dated record.
+- 🔴 **`memory-index-reachability.mjs` run from a WORKTREE audits the PRIMARY's `AGENTS.md`** — it takes its root from `--git-common-dir`, so a slug you just added there is invisible and one you just deleted still reads `ok`. Its `0 stranded` is about the primary, not your branch. Run it from the primary, or grep the file you actually edited. `memory-reachability-classifier-reads-the-primarys-agents-md`
 
 **Parallel sessions**
 

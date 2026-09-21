@@ -878,6 +878,21 @@ this file already gives them)
   bucket), an outstanding action pointing at dead infrastructure gets retired, and a dated record of
   what was true then gets left alone — **never rewrite a dated record.**
   `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
+- 🔴 **`scripts/memory-index-reachability.mjs` run from a WORKTREE audits the PRIMARY checkout's
+  `AGENTS.md`, not the one you just edited.** It resolves the repository with
+  `git rev-parse --path-format=absolute --git-common-dir` and takes that directory's parent — which
+  in a worktree is the primary. That is right for the memory directory (auto-memory is repo-derived
+  and shared by every worktree) and wrong for `AGENTS.md`, where each worktree holds its own copy.
+  Measured 2026-09-21 from `_wt-memory-config-audit`: a probe slug appended to that worktree's
+  `AGENTS.md` produced **0 occurrences** in the classifier's entire output, whose header read
+  `repo: F:\Phoenix Workforce\phoenix-workforce`. It fails in the reassuring direction both ways — a
+  slug you deleted still reads `ok` (trim it, merge, strand the memory), and a slug you added reads
+  `STRANDED` (add an index line you do not need, against an index with 18 bytes of budget left).
+  §2.2's instruction to prove the condition *in the checkout you trim from* therefore cannot be
+  carried out from a worktree by the tool it names: run it from the primary once the change is
+  there, or check by hand with `git grep -c` over the `AGENTS.md` you actually edited and over
+  `MEMORY.md` in the shared memory directory.
+  `memory-reachability-classifier-reads-the-primarys-agents-md`
 
 **Parallel sessions** (relocated from `MEMORY.md`, 2026-08-27 — these are agent-operating traps, not
 Phoenix business rules, and the index line at its cliff is the wrong place for them)

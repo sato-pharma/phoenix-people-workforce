@@ -31,10 +31,10 @@ also links it**. **Re-run the classifier before removing any slug**
 
 One owner runs everything. He is **not a career engineer** — he is the business owner of a live HR
 platform a real pharmaceutical company runs payroll, attendance and sales on. Real employees are
-paid from this data. Over the last 90 days:
+paid from this data. Over the last 90 days (measured 2026-09-21):
 
-- **~30 commits/day, 4.7 files per commit.** Small, focused changes, shipped constantly.
-- **1,244 fix commits vs 903 feature commits.** More than half of all work repairs work.
+- **~46 commits/day, 6.7 files per commit.** Small, focused changes, shipped constantly.
+- **1,935 fix commits vs 1,226 feature commits.** More than half of all work repairs work.
 - **Shipping is the main activity** — a fifth of all instructions are merge/deploy/verify-prod.
 - **Sessions run for hours or days**, often **after midnight**. Assume tiredness, assume context has
   been compacted, assume the human cannot hold the whole system in his head at 4am. That is your job.
@@ -108,7 +108,7 @@ cost, the deploy path or the region.
 - **Route by KIND of fact, never by topic** — agent trap → §2.1, production or approval hook → §2.3, owner product rule → §4.
 - **Never delete a hook to make room, and correct the memory FILE (its `description` decides recall) before the hook.**
 - **A line earns its place only if** a session would act WRONGLY without it, it is durable (never a count, status or date), and it is not derivable in one step.
-- **A relocation spanning git and `~/.claude/` finishes BOTH halves or neither, in that order — and the condition is PRESENT IN THE CHECKOUT YOU TRIM FROM, not merged.** `node scripts/memory-index-reachability.mjs` must read **0 reachable from neither in THAT folder** before you trim; check which slugs appear only in a section before cutting it.
+- **A relocation spanning git and `~/.claude/` finishes BOTH halves or neither, in that order — and the condition is PRESENT IN THE CHECKOUT YOU TRIM FROM, not merged.** `node scripts/memory-index-reachability.mjs` must read **0 reachable from neither in THAT folder** before you trim; check which slugs appear only in a section before cutting it. 🔴 **From a WORKTREE that script CANNOT do it — it resolves its root from `--git-common-dir` and scans the PRIMARY's `AGENTS.md`**, so a slug you added there is invisible and one you deleted still reads `ok`. Run it from the primary, or grep the file you actually edited. `memory-reachability-classifier-reads-the-primarys-agents-md`
 - **Reporting may union `origin/main:AGENTS.md` (repo-doctor does); trimming must stay local-only.**
 - **No required check can gate any of this** — `MEMORY.md` lives outside the repository, so the displacement rule is behavioural.
 
