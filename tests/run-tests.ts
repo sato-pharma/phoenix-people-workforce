@@ -142,6 +142,7 @@ import { runRecruitmentPipelineStateMachineTests } from "./recruitment-pipeline-
 import { runRecruitmentReadinessTests } from "./recruitment-readiness.test.ts";
 import { runRecruitmentCvExtractionTests } from "./recruitment-cv-extraction.test.ts";
 import { runWebsiteApplyFormTests } from "./website-apply-form.test.ts";
+import { runWebsiteApplyConfirmationEmailTests } from "./website-apply-confirmation-email.test.ts";
 import { runProbationProvisioningTests } from "./probation-provisioning.test.ts";
 import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
@@ -2218,6 +2219,7 @@ await runTest("recruitment pipeline state machine", runRecruitmentPipelineStateM
 await runTest("recruitment readiness", runRecruitmentReadinessTests);
 await runTest("recruitment cv extraction", runRecruitmentCvExtractionTests);
 await runTest("website careers application form", runWebsiteApplyFormTests);
+await runTest("website careers application confirmation e-mail", runWebsiteApplyConfirmationEmailTests);
 await runTest("probation provisioning", runProbationProvisioningTests);
 await runTest("probation date (hire+90 canonical, edge cases)", runProbationDateTests);
 await runTest("probation case provisioning (idempotent ensureCase + hire trigger + backfill dry-run)", runProbationCaseProvisioningTests);
