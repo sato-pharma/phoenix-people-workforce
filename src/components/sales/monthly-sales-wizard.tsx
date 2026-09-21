@@ -21,10 +21,15 @@ import { ProductAddForm, CustomerBrickAddForm, TerritoryAddForm } from "@/compon
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
 import type { DistributorSalesValidationIssue, DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 import type { MonthlySalesRun, MonthlySalesStep } from "@/lib/sales/monthly-sales-run";
+import { officeCommitMessage, type StepConfirmation } from "@/lib/sales/step-confirmation";
 import { cn } from "@/lib/utils";
 
 type RunResponse = { success: boolean; data?: MonthlySalesRun; error?: string; code?: string };
-type ValidateResponse = { success: boolean; data?: DistributorSalesValidationResult; error?: string };
+type ValidateResponse = {
+  success: boolean;
+  data?: DistributorSalesValidationResult & { stepConfirmation?: StepConfirmation | null };
+  error?: string;
+};
 type PreviewResponse = { success: boolean; data?: PreviewResult; error?: string };
 
 const OFFICE = "OFFICE";
@@ -282,7 +287,12 @@ export function MonthlySalesWizard({
       }
       setPreview(payload.data);
       if (mode === "commit") {
-        setMessage({ type: "success", text: "Office allocation saved." });
+        // The save stands either way; an unconfirmed step is shown as the error it is, not as success.
+        const stepConfirmation = payload.data.stepConfirmation ?? null;
+        setMessage({
+          type: stepConfirmation && !stepConfirmation.confirmed ? "error" : "success",
+          text: officeCommitMessage(stepConfirmation),
+        });
         if (fileRef.current) fileRef.current.value = ""; setSelectedFileName(null);
         await refreshRun();
       } else {
