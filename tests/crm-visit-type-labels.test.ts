@@ -23,7 +23,7 @@ const UNDOCUMENTED_CODES = [-5, -6, -7, -16, -19, -20, -21, -30] as const;
 const FIXED_LABELS = [
   { code: -5, rows: 1633, label: "Vacations & Leaves" },
   { code: -6, rows: 26, label: "Vacations & Leaves" },
-  { code: -19, rows: 91, label: "Meetings" },
+  { code: -19, rows: 91, label: "Meeting" },
   { code: -20, rows: 171, label: "Admin Work" },
   { code: -21, rows: 28, label: "Business Review (BRM)" },
 ];
@@ -62,7 +62,7 @@ export function runCrmVisitTypeLabelTests() {
   // -7 and -30 are separable only by the rep's own free text, so the comment routes them.
   assert.equal(resolveVisitTypeLabel(-7, "Unknown", "Sales day"), "Health Day", "-7 'sales day' is a health day");
   assert.equal(resolveVisitTypeLabel(-7, "Unknown", "اجازه"), "Vacations & Leaves", "-7 Arabic leave is leave");
-  assert.equal(resolveVisitTypeLabel(-7, "Unknown", "Weekly meeting"), "Meetings", "-7 meeting text is a meeting");
+  assert.equal(resolveVisitTypeLabel(-7, "Unknown", "Weekly meeting"), "Meeting", "-7 meeting text is a meeting");
   assert.equal(resolveVisitTypeLabel(-7, "Unknown", null), "Admin Work", "-7 with no signal falls back to admin");
   assert.equal(resolveVisitTypeLabel(-30, "Unknown", "ص السلامه"), "Pharmacy Visit", "-30 pharmacy shorthand");
   assert.equal(resolveVisitTypeLabel(-30, "Unknown", "د طارق منصور"), "Regular", "-30 doctor call is a regular visit");
@@ -123,6 +123,45 @@ export function runCrmVisitTypeLabelTests() {
     'the "Training" filter must select both training codes (-9 and -16) by code, not by the stored text',
   );
 
+  // OWNER RULING 2026-09-21 — "Meeting" and "Meetings" are ONE entry, and the surviving name is the
+  // singular. The dropdown carried both: "Meeting" matched the stored description and returned the
+  // vendor's own -11 rows (1,359 on production), while "Meetings" selected code -19 (96 rows). Two
+  // entries one letter apart returning different rows read as a typo, and a manager picking either
+  // one silently lost the other set. He chose to merge them rather than rename one.
+  assert.deepEqual(
+    [...(CRM_VISIT_TYPE_FILTER_CODES.get("Meeting") ?? [])].sort((a, b) => a - b),
+    [-19, -11],
+    'the "Meeting" filter must select the vendor code (-11) AND its undocumented twin (-19) by code',
+  );
+  assert.ok(
+    !CRM_VISIT_TYPE_OPTIONS.includes("Meetings"),
+    '"Meetings" was merged into "Meeting" (owner, 2026-09-21) and must not come back to the dropdown',
+  );
+  assert.equal(
+    resolveVisitTypeLabel(-11, "Meeting", null),
+    resolveVisitTypeLabel(-19, "Unknown", null),
+    "-11 and -19 are one activity, so they must display under one name as well as filter as one entry",
+  );
+
+  // THE CLASS OF BUG, not just this instance: no two dropdown entries may differ only by case or by
+  // a trailing "s". Such a pair cannot be told apart on screen, and because the filter has two
+  // branches — by code, and by the stored description — the pair returns two different sets of rows.
+  // "Group Meeting" (-2, 77 rows) is a genuinely different activity and is untouched by this.
+  const collapseOption = (option: string) => option.toLowerCase().replace(/s$/, "");
+  const optionsByCollapsedName = new Map<string, string[]>();
+  for (const option of CRM_VISIT_TYPE_OPTIONS) {
+    const key = collapseOption(option);
+    optionsByCollapsedName.set(key, [...(optionsByCollapsedName.get(key) ?? []), option]);
+  }
+  for (const [, collided] of optionsByCollapsedName) {
+    assert.equal(
+      collided.length,
+      1,
+      `the Visit Type dropdown offers ${JSON.stringify(collided)} — entries differing only by case or ` +
+        "a trailing plural are indistinguishable on screen and return different rows",
+    );
+  }
+
   // The attendance day detail shows the same label the CRM screens do: a -16 day reads "Training",
   // never the vendor's "Unknown". A real vendor description is still shown as sent.
   const dayRow = (visitType: number, description: string | null, comment: string | null) => ({
@@ -141,7 +180,7 @@ export function runCrmVisitTypeLabelTests() {
   );
   assert.equal(
     describeCrmDay([dayRow(-19, "Unknown", "Weekly meeting")]),
-    "Meetings: Weekly meeting",
+    "Meeting: Weekly meeting",
     "an undocumented code takes its shared display label in the day detail",
   );
   assert.equal(
@@ -159,21 +198,26 @@ export function runCrmVisitTypeLabelTests() {
  * THE TWO COMMENT-SENSITIVE CODES, AND WHY THEIR FILTER ENTRY IS NOT THEIR LABEL.
  *
  * Raised by review on 2026-09-21: a -7 row whose comment says "Weekly meeting" DISPLAYS as
- * "Meetings", but the "Meetings" filter selects only -19, so the report shows a label and then
+ * "Meeting", but the "Meeting" filter selects only -11 and -19, so the report shows a label and then
  * hides the row when you pick it. That is accurate, and it is measured — all 1,130 -7/-30 rows on
- * production display a label other than the entry they file under:
+ * production display a label other than the entry they file under (re-measured 2026-09-21):
  *
- *     624  -30  shown "Pharmacy Visit"      filed "Unlabeled Field Visit"
- *     335  -30  shown "Regular"             filed "Unlabeled Field Visit"
- *     104   -7  shown "Admin Work"          filed "Sales / Leave Day"
- *      36   -7  shown "Health Day"          filed "Sales / Leave Day"
- *      19   -7  shown "Vacations & Leaves"  filed "Sales / Leave Day"
- *      12   -7  shown "Meetings"            filed "Sales / Leave Day"
+ *     629  -30  shown "Pharmacy Visit"      filed "Unlabeled Field Visit"
+ *     333  -30  shown "Regular"             filed "Unlabeled Field Visit"
+ *     101   -7  shown "Admin Work"          filed "Sales / Leave Day"
+ *      32   -7  shown "Health Day"          filed "Sales / Leave Day"
+ *      21   -7  shown "Vacations & Leaves"  filed "Sales / Leave Day"
+ *      14   -7  shown "Meeting"             filed "Sales / Leave Day"
  *
- * It is nevertheless the DESIGN, stated in the doc comment above CRM_VISIT_TYPE_FILTER_CODES:
+ * OWNER RULING 2026-09-21, asked in plain words and answered: LEAVE IT EXACTLY AS IT IS. He was
+ * shown the three options — leave it, rename "Sales / Leave Day" to say what is inside it, or fold
+ * all 168 -7 rows into "Admin Work" — and chose to leave it. It is 168 visits in 134,928, one in
+ * every 800, and the two alternatives each cost more than they buy. Do not re-raise this.
+ *
+ * It is also the DESIGN, stated in the doc comment above CRM_VISIT_TYPE_FILTER_CODES:
  * these two entries are code-grouped rather than label-exact, so selecting one returns every row
- * of that code and the per-row label stays honest. The alternative — mapping "Meetings" to
- * [-19, -7] — would return the 104 rows shown as "Admin Work" under "Meetings", which is a worse
+ * of that code and the per-row label stays honest. The alternative — mapping "Meeting" to
+ * [-11, -19, -7] — would return the 104 rows shown as "Admin Work" under "Meeting", which is a worse
  * lie; and post-filtering on the resolved label is not open to us, because the Visits Report
  * paginates server-side with `count: "exact"` and dropping rows after the page is fetched would
  * make both the page and the total wrong.

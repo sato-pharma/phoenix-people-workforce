@@ -58,7 +58,7 @@ const CRM_VISIT_TYPE_MEANINGS: ReadonlyMap<number, CrmVisitTypeMeaning> = new Ma
   [-12, "CP"], // Traveling
   [-15, "CP"], // Health Day — clinic work (owner ruling 2026-08-01)
   [-16, "CP"], // Training — the vendor labels it "Unknown" (owner ruling 2026-09-17)
-  [-19, "CP"], // Meetings
+  [-19, "CP"], // Meeting — undocumented twin of -11, same activity (owner ruling 2026-09-21)
   [-20, "CP"], // Admin Work
   [-21, "CP"], // Business Review (BRM)
   [-30, "CP"], // Unlabelled field visit

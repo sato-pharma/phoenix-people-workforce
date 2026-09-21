@@ -66,7 +66,7 @@ const MAPPED_RULING: ReadonlyArray<Ruling> = [
  */
 const DEFAULTED_TO_CP: ReadonlyArray<Ruling> = [
   { code: -7, status: "CP", name: "Ambiguous (split by comment text)" },
-  { code: -19, status: "CP", name: "Meetings" },
+  { code: -19, status: "CP", name: "Meeting (undocumented twin of -11)" },
   { code: -20, status: "CP", name: "Admin Work" },
   { code: -21, status: "CP", name: "Business Review (BRM)" },
   { code: -30, status: "CP", name: "Unlabelled field visit" },

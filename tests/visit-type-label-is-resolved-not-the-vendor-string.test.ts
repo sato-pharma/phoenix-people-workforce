@@ -52,7 +52,7 @@ export async function runVisitTypeLabelIsResolvedTests() {
     [-6, "Vacations & Leaves"], // Casual Leave
     [-7, "Admin Work"], // Ambiguous, with no comment to route it
     [-16, "Training"],
-    [-19, "Meetings"],
+    [-19, "Meeting"],
     [-20, "Admin Work"],
     [-21, "Business Review (BRM)"],
     [-30, "Regular"], // Unlabeled field visit, with no comment to route it
@@ -81,7 +81,7 @@ export async function runVisitTypeLabelIsResolvedTests() {
   assert.equal(label(-30, "Unknown", "saw dr ahmed"), "Regular");
   assert.equal(label(-7, "Unknown", "health day"), "Health Day");
   assert.equal(label(-7, "Unknown", "annual leave"), "Vacations & Leaves");
-  assert.equal(label(-7, "Unknown", "meeting with team"), "Meetings");
+  assert.equal(label(-7, "Unknown", "meeting with team"), "Meeting");
 
   // ── mapVisitRow must PASS the comment through, not drop it ────────────────
   // Resolving without the comment silently collapses the two code groups above onto one label.
