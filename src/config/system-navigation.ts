@@ -2057,7 +2057,10 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/recruitment/whatsapp-applicants", icon: MessageSquareText, label: "WhatsApp Applicants", permissions: [{ resource: "recruitment" }] },
       // The HR shell's row for /recruitment/interview-calendar (2026-09-18), for the same reason as
       // WhatsApp Applicants above. Whether the calendar opens is its own sharing, not this clause.
-      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", permissions: [{ resource: "recruitment" }] },
+      // Offered to BOTH seats by ROLE since 2026-09-21, not by the recruitment grant: HR Operations
+      // holds no recruitment grant, and the owner made her the calendar's admin (an owner, in
+      // isInterviewCalendarOwner) — gated on the grant, she could not find the page she runs.
+      { href: "/hr/recruitment/interview-calendar", icon: CalendarClock, label: "Interview Calendar", roles: ["HR Advisory", "HR Operations"] },
       // The /hr spelling of /recruitment/cv-lifecycle-sheet — same page, rewritten by middleware.
       // `action: "export"` rather than the bare resource used by its neighbours, because that is
       // what the page asserts: HR Operations holds no recruitment grant at all, so the row is hers

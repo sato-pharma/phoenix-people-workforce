@@ -239,14 +239,14 @@ const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
   // people you share with" — so the gate is the calendar's own sharing, not a permission, and that
   // is why it cannot be parsed.
   "/hr/recruitment/interview-calendar":
-    "resolveInterviewCalendarRole(access) — owner for the Super Admin, otherwise the seat holder's " +
-    "row in ats_interview_calendar_shares, otherwise null. Verified by CALLING the predicate for " +
-    "each seat rather than by reading it: isInterviewCalendarOwner is FALSE for both (Advisory " +
-    "scope=self, Operations scope=company — neither is the Super Admin), so with no share row the " +
-    "role is null for both. The row carries permissions: [recruitment], which Advisory holds and " +
-    "Operations does not (recruitment=[]), so only Advisory is offered it. A null role renders a " +
-    "plain 'not been shared with you' notice — never a redirect and never a 403 — and every API " +
-    "route asserts the same gate, so the screen is presentation and never the boundary",
+    "resolveInterviewCalendarRole(access) — owner for the Super Admin AND for HR Operations (the " +
+    "owner made her the calendar's admin, 2026-09-21), otherwise the seat holder's row in " +
+    "ats_interview_calendar_shares, otherwise null. Verified by CALLING the predicate for each seat " +
+    "rather than by reading it: isInterviewCalendarOwner is TRUE for Operations and FALSE for " +
+    "Advisory, so Operations opens it as an owner and Advisory needs a share row. The row carries " +
+    "roles: [HR Advisory, HR Operations] and no permission, so both seats are offered it. A null " +
+    "role renders a plain 'not been shared with you' notice — never a redirect and never a 403 — " +
+    "and every API route asserts the same gate, so the screen is presentation and never the boundary",
   // Both added 2026-09-05 by the owner's ruling that no rail row may open a page of modules: each
   // was a card on the /hr/attendance hub, and the hub row that fronted them is gone, so they are
   // rail rows in their own right now. Both verified by CALLING the predicate for each seat rather
