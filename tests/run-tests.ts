@@ -426,6 +426,7 @@ import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
+import { runKpisCallRateThroughYesterdayTests } from "./kpis-call-rate-through-yesterday.test.ts";
 import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
@@ -2792,8 +2793,14 @@ await runTest(
 );
 await runTest(
   "reps list through yesterday (ruling C1: a running window stops at yesterday, today's calls and its working "
-  + "day leave together, a window opened today scores empty, and the KPIs board keeps scoring through today)",
+  + "day leave together, a window opened today scores empty, and the default window still runs through today)",
   runRepsListThroughYesterdayTests,
+);
+await runTest(
+  "KPIs call rate through yesterday (ruling C1 on the KPIs board: every call rate — legacy, Phoenix lanes and "
+  + "the two reports — stops at yesterday with its working days, coverage and frequency still count today, and "
+  + "a period that opened today has no rate and no verdict)",
+  runKpisCallRateThroughYesterdayTests,
 );
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",

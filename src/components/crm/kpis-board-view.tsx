@@ -277,6 +277,15 @@ function sortHref(context: ViewContext, field: KpiSortField): string {
  * month, and a manager who does not know the two measure different things reads that gap as a bug.
  */
 
+/**
+ * The call rate stops at YESTERDAY in a running window (owner ruling C1, 2026-09-21), so on the day a
+ * period opens its call-rate window is empty: it starts today and ends yesterday. Not "not started" —
+ * coverage is already counting today's visits — and never a red 0.00 either.
+ */
+function callRateBeganToday(board: KpisBoard): boolean {
+  return board.range.todayLeftOut && board.range.dateTo < board.range.dateFrom;
+}
+
 function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; standing?: string } {
   const { totals } = board;
   if (board.range.notStarted) {
@@ -284,6 +293,18 @@ function teamVerdict(board: KpisBoard): { headline: string; tone: KpiBand; stand
   }
   if (totals.reps === 0) {
     return { headline: "No reps match what you are looking at.", tone: "noplan" };
+  }
+  // NO WORKING DAY OF THE PERIOD IS OVER YET. Since ruling C1 that is what the first day of every
+  // period looks like, and isTooEarlyToScore deliberately answers false for zero worked (a window with
+  // no data at all is a different case), so without this the board would judge a period that opened
+  // this morning on a handful of visits against its whole plan.
+  if (board.range.todayLeftOut && board.workingDays === 0) {
+    return {
+      headline:
+        "No working day of this period is over yet. Call rates start once today is over, and coverage and frequency climb from here.",
+      tone: "noplan",
+      standing: "Early days",
+    };
   }
 
   // TOO EARLY TO SCORE — the check that has to come before every verdict below.
@@ -1765,7 +1786,9 @@ export function KpisBoardView({
   const filtered = hasActiveKpiFilters(filters);
   // The window is still running, so coverage and frequency are a position rather than a finished
   // score. A tile is read on its own, away from the hero, so the caveat has to travel with it.
-  const partial = board.workingDays > 0 && board.workingDays < board.workingDaysInWindow;
+  // Zero days in counts too once the period has begun — since ruling C1 that is its first day.
+  const partial =
+    board.workingDays < board.workingDaysInWindow && (board.workingDays > 0 || board.range.todayLeftOut);
   const phoenix = isPhoenix(board);
   const callWord = phoenix ? "visits" : "verified";
 
@@ -1865,6 +1888,13 @@ export function KpisBoardView({
             <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
               <p className={`${CAPTION} font-semibold`}>
                 This period has not started yet, so every call rate is blank rather than zero.
+              </p>
+            </div>
+          ) : callRateBeganToday(board) ? (
+            <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+              <p className={`${CAPTION} font-semibold`}>
+                This period began today. Call rates are scored through yesterday, so every one stays blank rather
+                than zero until today is over; coverage and frequency already count today&apos;s visits.
               </p>
             </div>
           ) : null}
@@ -2084,12 +2114,20 @@ export function KpisBoardView({
               * had spanned September's ~21 working days when it had in fact divided by 2. The two dates are
               * equal for a whole month and differ only for a week, which is exactly what the reader needs to
               * see. A `notStarted` window is the one case where dateTo sits BEFORE dateFrom, deliberately, so
-              * printing it would say "week 3 · 15–21 sep to 2026-09-14" — say it has not started instead. */}
+              * printing it would say "week 3 · 15–21 sep to 2026-09-14" — say it has not started instead.
+              *
+              * Since ruling C1 (2026-09-21) the two ends differ in a running window too: coverage runs to
+              * today and the call rate to YESTERDAY, so the rate's end is printed with the reason. On a
+              * period's first day the rate's window is empty (today to yesterday), which is said in words. */}
             <p className={`leading-4 ${CAPTION}`}>
               Coverage and frequency are scored for {board.monthLabel} to {board.asOf}.{" "}
               {board.range.notStarted
                 ? `Call rate is not scored — ${periodPhrase} has not started.`
-                : `Call rate is scored over ${periodPhrase} to ${board.range.dateTo}.`}{" "}
+                : callRateBeganToday(board)
+                  ? `Call rate is not scored yet — ${periodPhrase} began today, and today is not scored until it is over.`
+                  : `Call rate is scored over ${periodPhrase} to ${board.range.dateTo}${
+                      board.range.todayLeftOut ? " — today is not scored until it is over" : ""
+                    }.`}{" "}
               {phoenix
                 ? "Every submitted regular visit counts toward the call rate; GPS is evidence only. PM passes at 10 a day and AM at 2, judged apart. Frequency passes when a doctor gets the visits his grade asks for (A 3, B 2, C 1) — extra visits are fine and ungraded doctors are left out."
                 : "Exact is the only frequency pass — visiting a doctor more often than the plan asked for is a deviation, not a win."}{" "}

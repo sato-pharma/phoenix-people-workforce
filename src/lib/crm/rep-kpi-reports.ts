@@ -533,6 +533,8 @@ function buildBlock(
   listType: CrmListType,
   panel: readonly KpiPanelContact[],
   visitsByContact: ReadonlyMap<number, number>,
+  /** The visits the call rate counts — `visitsByContact` stopped at yesterday in a running window. */
+  callVisitsByContact: ReadonlyMap<number, number>,
   workingDays: number,
   standard: KpiListStandard,
 ): ListKpiBlock {
@@ -550,7 +552,7 @@ function buildBlock(
 
   for (const contact of panel) {
     const seen = visitsByContact.get(contact.contactCrmId) ?? 0;
-    visits += seen;
+    visits += callVisitsByContact.get(contact.contactCrmId) ?? 0;
     if (seen > 0) visited += 1;
 
     const tier = kpiGradeTierOf(contact.grade);
@@ -622,6 +624,12 @@ export function buildRepKpiReports(input: {
   readonly repName: string;
   readonly month: string;
   readonly workingDays: number;
+  /**
+   * The last day a visit counts toward the CALL RATE — yesterday in a running window (owner ruling
+   * C1, 2026-09-21), matching `workingDays`. Coverage and frequency still count every visit given.
+   * Left out, every visit counts toward all three, as it always did.
+   */
+  readonly callRateTo?: string;
   readonly panel: readonly KpiPanelContact[];
   readonly visits: readonly KpiVisitInput[];
   readonly standards?: RepKpiStandards;
@@ -640,6 +648,8 @@ export function buildRepKpiReports(input: {
   }
 
   const visitsByContact = new Map<number, number>();
+  /** The same visits, stopped at `callRateTo` — the call rate's numerator. */
+  const callVisitsByContact = new Map<number, number>();
   let offListVisits = 0;
   for (const visit of input.visits) {
     // THE SAT-WED GATE. Thursday is not a working day (owner, 2026-09-05: "donot count thursday as
@@ -654,10 +664,20 @@ export function buildRepKpiReports(input: {
       continue;
     }
     visitsByContact.set(contactCrmId, (visitsByContact.get(contactCrmId) ?? 0) + 1);
+    if (input.callRateTo == null || visit.visitDateIso <= input.callRateTo) {
+      callVisitsByContact.set(contactCrmId, (callVisitsByContact.get(contactCrmId) ?? 0) + 1);
+    }
   }
 
   const blockFor = (listType: CrmListType): ListKpiBlock =>
-    buildBlock(listType, panelByList.get(listType) ?? [], visitsByContact, input.workingDays, standards[listType]);
+    buildBlock(
+      listType,
+      panelByList.get(listType) ?? [],
+      visitsByContact,
+      callVisitsByContact,
+      input.workingDays,
+      standards[listType],
+    );
 
   const am = blockFor("AM");
   const pm = blockFor("PM");

@@ -250,9 +250,18 @@ export function phoenixVisitLane(
   return lists.has("AM") ? "am" : "pm";
 }
 
+/**
+ * The period one rep is scored over. `dateTo` is the last day whose visits count toward coverage and
+ * frequency (today, in a running window); `windowEnd` is the period's own end, which the plan side
+ * reads. `callRateTo` is the call rate's own last day — yesterday in a running window (owner ruling
+ * C1, 2026-09-21), so the day that is not over yet is in neither the rate's calls nor its working
+ * days. Left out, the call rate runs to `dateTo` as it always did.
+ */
+export type PhoenixKpiWindow = { dateFrom: string; dateTo: string; windowEnd: string; callRateTo?: string };
+
 /** Everything one rep is scored from. See {@link computePhoenixRepKpis} for what each list must cover. */
 export type PhoenixRepInput = {
-  window: { dateFrom: string; dateTo: string; windowEnd: string };
+  window: PhoenixKpiWindow;
   month: { start: string; end: string };
   /** Cairo today. */
   today: string;
@@ -324,7 +333,9 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     }
   }
 
-  const workingDays = employedWorkingDays({ ...input, dateFrom: window.dateFrom, dateTo: window.dateTo, holidays });
+  // Ruling C1: the call rate's days and its calls both stop at `callRateTo`, never one without the other.
+  const callRateTo = window.callRateTo && window.callRateTo < window.dateTo ? window.callRateTo : window.dateTo;
+  const workingDays = employedWorkingDays({ ...input, dateFrom: window.dateFrom, dateTo: callRateTo, holidays });
 
   const counts = { am: 0, pm: 0, pharmacy: 0, campaign: 0, regularNoCheckin: 0 };
   const monthSoFar = { am: 0, pm: 0 };
@@ -341,9 +352,11 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     if (bucket !== "regular" && bucket !== "campaign") continue;
     const inWindow = day >= window.dateFrom;
     const countable = isCallRateWorkingDay(day, holidays);
+    /** A call-rate count: in the window, on a working day, and on a day that is over. */
+    const callRateDay = inWindow && countable && day <= callRateTo;
 
     if (bucket === "campaign") {
-      if (inWindow && countable) counts.campaign += 1;
+      if (callRateDay) counts.campaign += 1;
       continue;
     }
 
@@ -351,7 +364,7 @@ function scorePhoenixRep(input: PhoenixRepInput): {
     // coverage or frequency credit. It is counted on its own line, never blended into a credited
     // lane and never relabelled Campaign.
     if (!visit.hasCheckin) {
-      if (inWindow && countable) counts.regularNoCheckin += 1;
+      if (callRateDay) counts.regularNoCheckin += 1;
       continue;
     }
 
@@ -367,7 +380,7 @@ function scorePhoenixRep(input: PhoenixRepInput): {
       }
       if (countable && day < input.today) monthSoFar[lane] += 1;
     }
-    if (inWindow && countable) counts[lane] += 1;
+    if (callRateDay) counts[lane] += 1;
   }
 
   // Coverage (rule 5) — the doctors planned in the period, pharmacies out.
