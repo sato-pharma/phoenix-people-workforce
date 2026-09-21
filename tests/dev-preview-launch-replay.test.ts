@@ -67,4 +67,6 @@ export function runDevPreviewLaunchReplayTests() {
   assert.match(picker, /setLaunching\(true\);/, "the first click locks the button");
   assert.match(picker, /if \(event\.persisted\) setLaunching\(false\);/, "coming back from the page cache unlocks it");
   assert.doesNotMatch(picker, /\brounded(-|\b)/, "the picker has no rounded corner anywhere (square-edge golden rule)");
+  const nameField = picker.slice(picker.indexOf('id="dev-preview-name"'), picker.indexOf("</SearchableSelect>", picker.indexOf('id="dev-preview-name"')));
+  assert.match(nameField, /\bwrapValue\b/, "the Name field wraps a long value instead of clipping it on a phone");
 }

@@ -237,7 +237,16 @@ export function DevPreviewPicker({
           <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="dev-preview-name">
             Name
           </label>
-          <SearchableSelect aria-label="Name" disabled={isLoading} id="dev-preview-name" onValueChange={setHrId} value={hrId}>
+          {/* wrapValue: the default label and "Name — Area" are wider than a phone-width field, which
+              clipped them mid-word ("Auto-pick a real active employee (r"). */}
+          <SearchableSelect
+            aria-label="Name"
+            disabled={isLoading}
+            id="dev-preview-name"
+            onValueChange={setHrId}
+            value={hrId}
+            wrapValue
+          >
             <option value={AUTO_PICK_VALUE}>Auto-pick a real active employee (recommended)</option>
             {nameOptions.map((candidate) => (
               <option key={candidate.hrId} value={candidate.hrId}>
