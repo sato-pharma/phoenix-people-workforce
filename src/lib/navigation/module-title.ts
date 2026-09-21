@@ -61,7 +61,7 @@ const SEGMENT_ACRONYMS: Readonly<Record<string, string>> = {
 /**
  * A path segment as it was written, not as the browser escaped it.
  *
- * `location.pathname` keeps percent-encoding, so the Reps Plans drill-down key `crm:1468` reaches
+ * `location.pathname` keeps percent-encoding, so the Call rate drill-down key `crm:1468` reaches
  * the CLIENT half as `crm%3A1468` and the SERVER half as `crm:1468` — one page, two spellings, and
  * the tab visibly renamed itself between them. Decoding first means every test below sees one
  * shape. `decodeURIComponent` throws on a malformed escape (a lone `%`), and a bad URL must not
@@ -89,8 +89,8 @@ function looksLikeIdentifier(rawSegment: string): boolean {
   if (isUuid(segment)) return true;
   if (/^[a-z]{1,3}-\d+$/i.test(segment)) return true;
   // A `kind:value` composite key. `repKeyOf` in crm/reps-plans.ts emits three of them — `crm:1468`,
-  // `hr:b-141` and `name:Bishoy Bahaa` — and the Reps Plans drill-down carries one as its whole
-  // path segment, in both shells. None of the shapes above matches, so the key was falling through
+  // `hr:b-141` and `name:Bishoy Bahaa` — and the Call rate drill-down under Reps List (the Reps Plans
+  // one until the 2026-09-21 merge) carries one as its whole path segment, in both shells. None of the shapes above matches, so the key was falling through
   // to the humanizer and naming the tab `Crm%3A1468` on a page whose body reads "Bishoy Bahaa".
   //
   // The COLON alone is the test, and the value half is deliberately unconstrained: no module in

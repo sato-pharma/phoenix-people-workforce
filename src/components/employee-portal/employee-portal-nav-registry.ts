@@ -16,7 +16,6 @@ import {
   FileSpreadsheet,
   FileText,
   Fingerprint,
-  Footprints,
   Gauge,
   Gift,
   Headphones,
@@ -151,16 +150,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Visual Aids — the flyers a rep shows a doctor on the tablet. The permission mirrors the page's own
   // inline gate (app/employee-portals/visual-aids/page.tsx); the line narrowing is server-side.
   { label: "Visual Aids", fullLabel: "Visual Aids", href: "/employee-portals/visual-aids", icon: Presentation, flags: ["showVisualAidsTab"], permission: { resource: "visual_aids", action: "read" } },
-  // The label is the FULL "Reps Plans", not a shortened "Plans", and not "Reps": both are already
-  // taken — "Plans" by the rep's own Weekly / Monthly Plan two entries above, "Reps" by Reps List —
-  // and a District Manager holds every one of those flags at once, so shortening puts two identical
-  // words side by side in his bottom bar. Keeping the full name also holds the two rails to ONE
-  // vocabulary: the bar says exactly what the sidebar says. The bar wraps, so the second word costs
-  // nothing — a tab's floor is its longest WORD, and both of these were already measured.
-  //
-  // Footprints rather than the admin shell's Gauge because Gauge is already Sales vs Target here,
-  // and in a bar that draws the icon larger than the word a duplicate icon misleads first.
-  { label: "Reps Plans", fullLabel: "Reps Plans", href: "/employee-portals/reps-plans", icon: Footprints, flags: ["showRepsPlansTab"], permission: { resource: "crm_visits", action: "read" } },
+  // Reps Plans had an entry here until 2026-09-21, when the owner merged it into Reps List — its board
+  // is the Call rate tab there, and /employee-portals/reps-plans forwards to it.
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },

@@ -19,10 +19,20 @@
 // two roles the whole feature was written for could not reach the only screen that used their
 // permission, leaving Super Admin the sole account able to press Verify. Nothing errored, which is
 // why green CI and a clean deploy never showed it.
+//
+// ## THE CALL RATE TAB IS THE RETIRED REPS PLANS MODULE
+//
+// Merged in on 2026-09-21 at the owner's instruction ("merge the 2 modules into 1 module WHICH REPS
+// LIST"); /employee-portals/reps-plans now forwards here. It holds only what this page lacked — the
+// rate against 2 AM and 10 PM a working day, what the check-ins prove, and the per-visit drill-down
+// at /employee-portals/reps-list/call-rate/[rep] — because the plans are already on the plans tab
+// ("make sure you're not duplicating data"). It keeps the Reps Plans gate and scope, and every seat
+// on that gate already passes this page's, so no manager's reach changed.
 import { redirect } from "next/navigation";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { RepsListBoardView } from "@/components/crm/reps-list-board";
+import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { RepsListTabs, resolveRepsListTab } from "@/components/crm/reps-list-tabs";
 import { RepsListVacantAreasView } from "@/components/crm/reps-list-vacant-areas";
 import { RepsWeeklyPlansBoardView } from "@/components/crm/reps-weekly-plans-board";
@@ -31,6 +41,8 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccessDoctorList, canAccessMyList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
 import { getRepsListBoard } from "@/lib/crm/reps-list-board";
+import { getRepsListCallRate } from "@/lib/crm/reps-list-call-rate";
+import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
 import { getVacantAreasBoard } from "@/lib/crm/reps-list-vacant-areas";
 import { getRepsWeeklyPlansBoard } from "@/lib/crm/reps-weekly-plans-board";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -46,6 +58,8 @@ type PageProps = {
     area?: string;
     line?: string;
     month?: string;
+    /** Call rate tab: `month` (default), `w1`…`w5`, or `YYYY-MM-DD..YYYY-MM-DD`. */
+    period?: string;
     plan?: string;
     region?: string;
     rep?: string;
@@ -82,7 +96,9 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
   // The plans tab's own gate, strictly narrower than the one above. Passed INTO the tab resolver,
   // so a hand-typed `?tab=plans` from a seat without it lands on the contact list.
   const canSeePlans = canAccessPlanVerification(access) && (await canAccess(access, "crm_plans", "read"));
-  const tab = resolveRepsListTab(params?.tab, canSeePlans);
+  // The call-rate tab keeps the retired Reps Plans page's gate, on top of the two above.
+  const canSeeCallRate = canAccessRepsPlans(access);
+  const tab = resolveRepsListTab(params?.tab, canSeePlans, canSeeCallRate);
 
   // TAB THREE — VACANT AREAS (2026-09-14): the doctors of the areas with nobody in the seat, read
   // under the Reps List scope because they are the same lists the contact tab reads.
@@ -117,11 +133,58 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="vacant"
           basePath={BASE_PATH}
+          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={vacantBoard.selection}
           week={params?.week ?? null}
         />
         <RepsListVacantAreasView basePath={BASE_PATH} board={vacantBoard} />
+      </EmployeePortalPageShell>
+    );
+  }
+
+  if (tab === "call-rate") {
+    let callRate: Awaited<ReturnType<typeof getRepsListCallRate>> | null = null;
+    try {
+      callRate = await getRepsListCallRate({
+        access,
+        params: {
+          line: params?.line,
+          month: params?.month,
+          period: params?.period,
+          region: params?.region,
+          rep: params?.rep,
+        },
+      });
+    } catch (error) {
+      logPortalFailure({ hrId: access.hrId, module: "reps-list", role: access.role, route: ROUTE }, error);
+      callRate = null;
+    }
+
+    if (!callRate) {
+      return (
+        <EmployeePortalEmptyState
+          message="Call rate could not load. The CRM visit mirror is unavailable right now — this is a load failure, not a team that recorded nothing."
+          title="Reps List Unavailable"
+        />
+      );
+    }
+
+    return (
+      <EmployeePortalPageShell
+        badge="CRM"
+        description="Two AM accounts and ten PM clinics every working day, for each of your reps — what he recorded, and what the GPS check-ins prove."
+        title="Reps List"
+      >
+        <RepsListTabs
+          active="call-rate"
+          basePath={BASE_PATH}
+          canSeeCallRate={canSeeCallRate}
+          canSeePlans={canSeePlans}
+          selection={callRate.selection}
+          week={params?.week ?? null}
+        />
+        <RepsPlansBoardView basePath={BASE_PATH} board={callRate.board} />
       </EmployeePortalPageShell>
     );
   }
@@ -164,6 +227,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
         <RepsListTabs
           active="plans"
           basePath={BASE_PATH}
+          canSeeCallRate={canSeeCallRate}
           canSeePlans={canSeePlans}
           selection={plansBoard.selection}
           week={plansBoard.week.key}
@@ -200,6 +264,7 @@ export default async function PortalRepsListPage({ searchParams }: PageProps) {
       <RepsListTabs
         active="contacts"
         basePath={BASE_PATH}
+        canSeeCallRate={canSeeCallRate}
         canSeePlans={canSeePlans}
         selection={board.selection}
         week={params?.week ?? null}

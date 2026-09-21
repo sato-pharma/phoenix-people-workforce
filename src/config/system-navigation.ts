@@ -26,7 +26,6 @@ import {
   FileSpreadsheet,
   FileUp,
   Fingerprint,
-  Footprints,
   Gauge,
   HeartPulse,
   Hourglass,
@@ -1198,7 +1197,8 @@ export const adminNavigationSectionSeeds = [
   //                                       recovered-chains review, all on that page's own tab bar.
   //                                       Super Admin's direct link to it was the whole of this
   //                                       section before the 2026-08-02 SFE rebuild.
-  //   /admin/reps-plans                   Reps Plans
+  //   /admin/reps-plans                   Reps Plans — merged into Reps List as its Call rate tab
+  //                                       on 2026-09-21; the route now forwards there.
   //   /admin/doctor-list                  Doctor List           } the District Manager page's two
   //   /admin/plan-verification            Plan Verification     } tabs, two routes, two rows
   //                                       — Doctor List and that tab strip were retired 2026-08-31;
@@ -1637,21 +1637,10 @@ const employeePortalNavigationSectionSeeds = [
       // and land on /admin/kpis instead. Widening this list here grants nothing: getDoctorCoverageScope
       // inside getKpisBoard decides whose reps each viewer sees, and it is asked on every load.
       { href: "/employee-portals/kpis", icon: TrendingUp, label: "KPIs", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
-      // Reps Plans — the portal twin of /admin/reps-plans, added 2026-09-03 when the board was
-      // widened past Super Admin. THE TWIN IS THE POINT: these two seats are portal-mode, and
-      // app/(admin)/layout.tsx redirects them out of the admin shell before that page's own gate
-      // could run, so widening the admin role list alone would have been inert.
-      //
-      // REPS_PLANS_PORTAL_ROLES verbatim (src/lib/crm/reps-plans-access.ts), which with
-      // crm_visits:read is the enforcing gate. Widened 2026-09-03 from the two manager seats to
-      // seven, on the owner's instruction to show the rep list, the plans and the KPIs to the
-      // marketing and field-support seats, then to the National Sales Manager when he was shown that
-      // leaving him off would let a Product Manager read a whole line's performance while the manager
-      // who owns that line could not.
-      //
-      // This list now differs from KPIs directly above by ONE seat, the Medical Rep — who has no
-      // place on a board that scores named reps against each other. That is the only intended gap.
-      { href: "/employee-portals/reps-plans", icon: Footprints, label: "Reps Plans", permissions: [{ resource: "crm_visits", action: "read" }], roles: ["Regional Manager", "District Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
+      // Reps Plans stood here until 2026-09-21, when the owner merged it into Reps List ("merge the 2
+      // modules into 1 module WHICH REPS LIST"). Its board is the Call rate tab on the Reps List row
+      // above, behind the same REPS_PLANS_PORTAL_ROLES gate, and /employee-portals/reps-plans forwards
+      // there — so the separate row went, rather than two rows opening one module.
     ],
     label: "Sales Operations",
   },
@@ -3987,7 +3976,7 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: BookUser,
     label: "Reps List",
     description:
-      "Filter to a line, region and area, then open a rep to see his whole CRM contact list grouped by the brick each contact sits in — the assignment itself, not the activity against it.",
+      "Filter to a line, region and area, then open a rep to see his whole CRM contact list grouped by the brick each contact sits in, his weekly plans, and his call rate against two AM and ten PM a day.",
     roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
   },
   {
@@ -4057,27 +4046,10 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "phoenix_crm", action: "read" }],
     roles: ["Super Admin", "CEO", "SFE Manager"],
   },
-  {
-    // THE ADMIN HALF OF REPS_PLANS_ACCESS_ROLES, and only that half. The board was widened twice on
-    // 2026-09-03 — first to the Regional and District Managers who supervise the reps it scores,
-    // then to the marketing, field-support and national sales seats — and of the nine roles now
-    // admitted, only these two reach the admin shell. Every other one is portal-mode and reaches the identical
-    // board at /employee-portals/reps-plans; app/(admin)/layout.tsx redirects a portal-mode viewer
-    // out of here before this page's own gate could run, so listing them on this entry would show a
-    // row that redirects. ("Rep Doctor Lists", which carried the same reasoning and stood in this
-    // group, was retired 2026-08-28 — see the note above.) The enforcing gate is canAccessRepsPlans
-    // (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the page, and
-    // getDoctorCoverageScope decides whose reps come back; this list is UX only.
-    //
-    // Sits in the CRM group rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
-    // Phoenix's own planning module) because it scores the CRM's recorded visits, not Phoenix's plans.
-    href: "/admin/reps-plans",
-    icon: Gauge,
-    label: "Reps Plans",
-    description:
-      "The split call rate — two AM accounts and ten PM clinics per working day, reported twice: what each rep recorded, and what the check-ins prove.",
-    roles: ["Super Admin", "SFE Manager"],
-  },
+  // Reps Plans had its own card here until 2026-09-21, when the owner merged it into Reps List
+  // ("merge the 2 modules into 1 module WHICH REPS LIST"). The board is now the Call rate tab of the
+  // Reps List card above, still behind canAccessRepsPlans plus crm_visits:read, and /admin/reps-plans
+  // forwards to it.
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx) ────────
@@ -4611,7 +4583,6 @@ export const adminHubPromotions: readonly AdminHubPromotion[] = [
         hrefs: [
           "/admin/crm",
           "/admin/reps-list",
-          "/admin/reps-plans",
           "/admin/kpis",
           "/admin/plan-verification",
           "/admin/doctor-list-changes",

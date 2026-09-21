@@ -13,9 +13,12 @@ import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, SortButton, TableSearchInput, type SortState } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import { splitCrmRepName } from "@/lib/crm/rep-name";
+import { CALL_RATE_TAB } from "@/lib/crm/reps-list-call-rate-route";
 import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 
-// Client half of Reps Plans. Styling copies the CRM coverage tables verbatim
+// Client half of Reps Plans — the Call rate tab of Reps List since the two modules merged on
+// 2026-09-21. `basePath` is the Reps List page; every URL written here pins `tab=call-rate` so a
+// filter change stays on this tab, and the drill-down lives under `${basePath}/call-rate/`. Styling copies the CRM coverage tables verbatim
 // (brick-coverage-tables.tsx), its neighbour in the same shell — flat borders, slate-900 header
 // rows, orange focus — because these boards answer the same kind of question about the same reps
 // and one must not read as a one-off (owner's standing rule).
@@ -150,6 +153,9 @@ export function RepsPlansControls({
   // the sibling board, which read as the filter having been ignored.
   const push = (next: typeof draft) => {
     const params = new URLSearchParams();
+    // The tab first: without it Reps List opens on the contact list, and a changed filter would read
+    // as the board having vanished.
+    params.set("tab", CALL_RATE_TAB);
     params.set("month", next.month);
     if (next.period && next.period !== "month") params.set("period", next.period);
     if (next.line) params.set("line", next.line);
@@ -446,7 +452,7 @@ export function RepsPlansRepTable({
     if (periodKey && periodKey !== "month") query.set("period", periodKey);
     if (appliedLine) query.set("line", appliedLine);
     if (appliedRegion) query.set("region", appliedRegion);
-    return `${basePath}/${encodeURIComponent(row.repKey)}?${query.toString()}`;
+    return `${basePath}/${CALL_RATE_TAB}/${encodeURIComponent(row.repKey)}?${query.toString()}`;
   };
 
   const table = useSortableTable(rows, {
@@ -527,9 +533,9 @@ export function RepsPlansRepTable({
             { key: "unspecified", label: "No AM/PM Flag", numeric: true },
           ]}
           rows={exportRows}
-          sheetName="Reps Plans"
+          sheetName="Call rate"
           subtitle={`${monthLabel} · scored through ${scoredThrough}`}
-          title="Reps Plans — split call rate by rep"
+          title="Call rate — AM and PM by rep"
         />
       </div>
 

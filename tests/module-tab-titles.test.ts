@@ -151,7 +151,8 @@ export function runModuleTabTitlesTests() {
   );
 
   // ── 4b. A COMPOSITE KEY is an identifier too ────────────────────────────────
-  // The Reps Plans drill-down carries `repKeyOf` as its whole path segment — `crm:1468`,
+  // The Call rate drill-down (Reps Plans' until the 2026-09-21 merge into Reps List) carries
+  // `repKeyOf` as its whole path segment — `crm:1468`,
   // `hr:b-141`, `name:Bishoy Bahaa` — and none of the shapes above matches one. So the key
   // fell through to the humanizer and named the tab `Crm%3A1468` on a page whose body reads
   // "Bishoy Bahaa": the address, percent-encoding and all, printed as a module name.
@@ -161,19 +162,22 @@ export function runModuleTabTitlesTests() {
   // the tab visibly renamed itself between the first paint and hydration.
   for (const spelling of ["crm:1468", "crm%3A1468", "hr:b-141", "name%3ABishoy%20Bahaa"]) {
     for (const mode of ["employee-portal", "admin"] as const) {
-      const path = mode === "admin" ? `/admin/reps-plans/${spelling}` : `/employee-portals/reps-plans/${spelling}`;
+      const path =
+        mode === "admin"
+          ? `/admin/reps-list/call-rate/${spelling}`
+          : `/employee-portals/reps-list/call-rate/${spelling}`;
       const name = resolveModuleName(path, mode);
       assert.ok(
         name && !/crm|%3a|:/i.test(name),
         `a drill-down key must never reach the tab name — ${path} gave ${String(name)}`,
       );
-      assert.equal(name, "Reps Plans", `and the page is named after its module — ${path}`);
+      assert.equal(name, "Call Rate", `and the page is named after the tab it opens from — ${path}`);
     }
   }
   // A malformed escape must not take the resolver down with it. `decodeURIComponent` throws on
   // a lone `%`, and a bad URL is exactly where a title resolver must not be the thing that breaks.
   assert.doesNotThrow(
-    () => resolveModuleName("/employee-portals/reps-plans/100%", "employee-portal"),
+    () => resolveModuleName("/employee-portals/reps-list/call-rate/100%", "employee-portal"),
     "an undecodable segment keeps its raw form rather than throwing",
   );
 

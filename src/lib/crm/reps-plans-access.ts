@@ -1,6 +1,13 @@
 /**
  * Who may open Reps Plans, and through which door.
  *
+ * SINCE 2026-09-21 THE DOOR IS A TAB. The owner merged Reps Plans into Reps List ("merge the 2
+ * modules into 1 module WHICH REPS LIST"): the board is the Call rate tab of /admin/reps-list and
+ * /employee-portals/reps-list, its drill-down is at <that page>/call-rate/[rep], and the two old
+ * /reps-plans addresses forward there. This list still decides who gets the tab — every role on it
+ * also passes the Reps List gate, so the merge moved nobody's reach. Where the notes below say
+ * "/admin/reps-plans" or "the portal twin", read the Call rate tab in that shell.
+ *
  * WIDENED 2026-09-03, from Super Admin only to the managers who supervise the reps this board
  * scores. Until then it named every rep in the company and printed how much of their reported work
  * nothing can prove, so it stayed on one account — and the note it carried said a district manager
@@ -87,11 +94,9 @@ export const REPS_PLANS_ACCESS_ROLES: readonly PhoenixRole[] = [
 ] as unknown as readonly PhoenixRole[];
 
 /**
- * The portal half, for the sidebar flag and the nav catalog entry to mirror.
- *
- * Exported so `src/lib/employee-portal/navigation.ts` and `src/config/system-navigation.ts` can
- * stay in step with the gate instead of spelling the pair out a third and fourth time — this module
- * has no server-only import precisely so those two may read it.
+ * The portal half. It drove a Reps Plans sidebar row of its own until the 2026-09-21 merge into Reps
+ * List; the tab now rides on the Reps List row, and this stays exported so the tests can hold the
+ * portal gate to exactly these seats.
  */
 export const REPS_PLANS_PORTAL_ROLES: readonly PhoenixRole[] = PORTAL_ROLES as unknown as readonly PhoenixRole[];
 

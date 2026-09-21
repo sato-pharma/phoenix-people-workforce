@@ -1,7 +1,8 @@
 import { RepsPlansControls, RepsPlansRepTable } from "@/components/crm/reps-plans-tables";
 import { attainmentTone, riskTone, shareTone, type RepsPlansBoard } from "@/lib/crm/reps-plans";
 
-// Server half of Reps Plans. The Section/Tile vocabulary is copied verbatim from
+// Server half of Reps Plans — the Call rate tab of Reps List since 2026-09-21, so `basePath` is the
+// Reps List page (the controls and the rep links add the tab themselves). The Section/Tile vocabulary is copied verbatim from
 // brick-coverage-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar,
 // KPI tiles, orange accent. Never a one-off look (owner's standing rule).
 //
@@ -138,7 +139,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
         description={description}
         title={
           [
-            `Reps Plans — ${board.monthLabel}`,
+            `Call rate — ${board.monthLabel}`,
             // The window is part of the TITLE when it is not the whole month, so a screenshot of
             // these tiles carries what they were measured over.
             board.isWholeMonth ? null : board.periodLabel,

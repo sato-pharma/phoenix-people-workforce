@@ -421,6 +421,7 @@ import {
 } from "./kpis-filters.test.ts";
 import { runKpiOverallIndexTests } from "./kpi-index.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
+import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.ts";
 import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
@@ -2764,6 +2765,11 @@ await runTest("two KPI reports (A+ folds into A in step with the coverage board,
 await runTest("two KPI reports (the owner sample rep reads 92% on doctors, not the 65% the mixed number showed)", runTwoKpiReportsSampleRepTests);
 await runTest("two KPI reports (both are tabs on the KPIs board, and AM · PM never prints with a slash)", runTwoKpiReportsTabTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
+await runTest(
+  "reps plans merged into reps list (the rep carries across the tab strip, old /reps-plans links forward "
+  + "with every filter, the tab copies none of the weekly plans, and it keeps the narrower Reps Plans gate)",
+  runRepsListCallRateMergeTests,
+);
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",
   runRepsPlansSilentRepTests,

@@ -963,45 +963,58 @@ export function runCrmRepsPlansTests() {
   // exactly like a working feature nobody wanted.
   //
   // So the invariant worth pinning is not "these roles are admitted" but "every admitted role has a
-  // DOOR": a portal seat is on the portal entry, an admin seat on the admin card, and neither list
-  // names a role the gate refuses.
+  // DOOR". SINCE 2026-09-21 THE DOOR IS THE REPS LIST ROW: the owner merged Reps Plans into Reps
+  // List, the board is that page's Call rate tab, and the two Reps Plans rows were removed. So a
+  // portal seat must be on the portal Reps List row, an admin seat on the admin Reps List card, and
+  // no row anywhere may still point at the retired address.
   {
     const ADMIN_SHELL_SEATS = new Set(["Super Admin", "SFE Manager", "CEO"]);
 
     for (const role of REPS_PLANS_PORTAL_ROLES) {
       assert.ok(
         (REPS_PLANS_ACCESS_ROLES as readonly string[]).includes(role),
-        `${role} is offered the portal Reps Plans row, so the enforcing gate must admit them`,
+        `${role} is on the portal half of the Call rate gate, so the full gate must admit them`,
       );
       assert.ok(
         !ADMIN_SHELL_SEATS.has(role),
-        `${role} is an admin-shell seat, so a portal entry for them renders a row that redirects`,
+        `${role} is an admin-shell seat, so a portal door for them renders a row that redirects`,
       );
       // The scope resolver is the same one KPIs asks. A role it does not know resolves to `none`,
       // which renders an empty board — indistinguishable from reps who filed nothing.
       assert.ok(
         canSeeDoctorCoverage(role),
-        `${role} is admitted to Reps Plans, so getDoctorCoverageScope must resolve them to a real scope rather than an empty board`,
+        `${role} is admitted to the call rate, so getDoctorCoverageScope must resolve them to a real scope rather than an empty board`,
       );
     }
 
     const portalItems = employeePortalNavigationSections.flatMap((section) => section.items);
-    const portalEntry = portalItems.find((item) => item.href === "/employee-portals/reps-plans");
-    assert.ok(portalEntry, "the portal sidebar catalog must offer Reps Plans");
-    assert.deepEqual(
-      [...(portalEntry.roles ?? [])].sort(),
-      [...REPS_PLANS_PORTAL_ROLES].sort(),
-      "the Reps Plans catalog entry must name exactly REPS_PLANS_PORTAL_ROLES — a hand-maintained second copy is how a row appears for a seat the page refuses",
+    assert.ok(
+      !portalItems.some((item) => item.href.startsWith("/employee-portals/reps-plans")),
+      "the portal sidebar must not keep a Reps Plans row — the board is the Call rate tab of Reps List, and a second row would open the same module twice",
     );
+    const portalRepsList = portalItems.find((item) => item.href === "/employee-portals/reps-list");
+    assert.ok(portalRepsList, "the portal sidebar catalog must offer Reps List, which now carries the call rate");
+    for (const role of REPS_PLANS_PORTAL_ROLES) {
+      assert.ok(
+        ((portalRepsList.roles ?? []) as readonly string[]).includes(role),
+        `${role} reaches the call rate only through the Reps List row, so that row must name them`,
+      );
+    }
 
-    // The admin card carries the OTHER half, and only that half. A portal seat listed here is the
-    // inert entry described above; an admin seat missing from here has no door at all.
-    const adminCard = crmPageItems.find((item) => item.href === "/admin/reps-plans");
-    assert.ok(adminCard, "the CRM hub must still carry the Reps Plans card");
-    assert.deepEqual(
-      [...(adminCard.roles ?? [])].sort(),
-      REPS_PLANS_ACCESS_ROLES.filter((role) => ADMIN_SHELL_SEATS.has(role)).sort(),
-      "the admin Reps Plans card must name exactly the admin-shell half of REPS_PLANS_ACCESS_ROLES",
+    // Widened to plain strings: the hub list is declared `as const`, so its hrefs are literals and a
+    // comparison against the retired address would not even compile — which is the point of it.
+    const hubCards: ReadonlyArray<{ href: string; roles?: readonly string[] }> = crmPageItems;
+    assert.ok(
+      !hubCards.some((item) => item.href === "/admin/reps-plans"),
+      "the CRM hub must not keep a Reps Plans card — its board is the Call rate tab of the Reps List card",
     );
+    const adminRepsList = hubCards.find((item) => item.href === "/admin/reps-list");
+    assert.ok(adminRepsList, "the CRM hub must carry the Reps List card");
+    for (const role of REPS_PLANS_ACCESS_ROLES.filter((seat) => ADMIN_SHELL_SEATS.has(seat))) {
+      assert.ok(
+        (adminRepsList.roles ?? []).includes(role),
+        `${role} reaches the call rate in the admin shell only through the Reps List card, so that card must name them`,
+      );
+    }
   }
 }

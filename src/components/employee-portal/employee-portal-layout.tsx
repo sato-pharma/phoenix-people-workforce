@@ -36,7 +36,6 @@ import {
   FileText,
   FileSpreadsheet,
   Fingerprint,
-  Footprints,
   Gift,
   IdCard,
   CalendarDays,
@@ -216,7 +215,6 @@ function buildEmployeePortalSections({
   showMedRepsPerformanceTab = false,
   showRepsListTab = false,
   showMyListTab = false,
-  showRepsPlansTab = false,
   showKpisTab = false,
   showMedicalRepExpensesTab = false,
   showDsmsPerformanceTab = false,
@@ -400,11 +398,8 @@ function buildEmployeePortalSections({
         // Its role reach is WIDER — a Medical Rep sees their own three KPIs here, and sees My List
         // above instead of Reps List, because that board is about the reps who report to you.
         ...(showKpisTab ? [{ href: "/employee-portals/kpis", label: "KPIs", icon: TrendingUp }] : []),
-        // Reps Plans sits under KPIs because it is the same question one level in: KPIs is how well
-        // the list is being worked, this is how much of that work anything can PROVE. Manager seats
-        // only — a Medical Rep sees KPIs above and correctly no row here, because this board is
-        // about the reps who report to you.
-        ...(showRepsPlansTab ? [{ href: "/employee-portals/reps-plans", label: "Reps Plans", icon: Footprints }] : []),
+        // Reps Plans had a row here until 2026-09-21, when the owner merged it into Reps List as the
+        // Call rate tab — one row for one module.
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),
