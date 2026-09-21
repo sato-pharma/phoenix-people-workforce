@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -53,4 +54,127 @@ export function runCiGateParityTests() {
       `${WORKFLOW_DIR}/*.yml file, so they NEVER run on a PR: [${missing.join(", ")}]. ` +
       `Add each to a workflow — the workflow is the only thing that actually gates a merge.`,
   );
+}
+
+/**
+ * The docs-only fast path must never let a change to the AUTO-LOADED INSTRUCTION FILES skip the
+ * suite that polices them.
+ *
+ * WHY THIS EXISTS. Each of `validate` / `lint` / `typecheck` / `test` answers, inline, whether the
+ * PR is documentation only, and skips its expensive steps when it is. The classification counted
+ * every `*.md` and every `docs/` path as inert. But three tests in the `test` job exist ONLY to
+ * police the auto-loaded files — `autoload-footprint-budget` (CLAUDE.md + AGENTS.md against the
+ * enforced byte budget), `memory-index-reachability` (a memory slug orphaned by an AGENTS.md edit),
+ * and `agents-long-hooks-cite-docs` (AGENTS.md hooks must point at a docs/ account). Measured on PR
+ * #4147 (AGENTS.md + docs/agents-*.md only): the `test` job reported success in 8 seconds with
+ * every real step SKIPPED. So the moment someone grew AGENTS.md past budget or orphaned a memory,
+ * the checks that would catch it skipped, the PR went green on five of six required checks, and a
+ * merge to `main` ships to production immediately (§2 / §2.1) — the failure surfacing only
+ * afterwards as a red `main`, which still builds and serves.
+ *
+ * The fix makes those files NOT count as inert docs. This test proves the shipped classifier's
+ * BEHAVIOUR, not its source text: it lifts the real decision out of `ci.yml` — the two `grep`
+ * conditions verbatim — and RUNS them (through the same `bash`/`grep` the runner uses) against a
+ * table of changed-file lists, asserting the docs_only verdict for each. A reverted or weakened
+ * fix flips a verdict and fails here. It also pins that all four copies of the step stay identical,
+ * because the step is duplicated per job and the four must not drift.
+ */
+
+/** The changed-file lists and the docs_only verdict the classifier must return for each. */
+const DOCS_ONLY_CASES: ReadonlyArray<{ files: string[]; docsOnly: boolean; why: string }> = [
+  // Auto-loaded instruction files — policed by the `test` job, so they must run the full suite.
+  { files: ["AGENTS.md"], docsOnly: false, why: "AGENTS.md is graded by the footprint + reachability tests" },
+  { files: ["CLAUDE.md"], docsOnly: false, why: "CLAUDE.md is graded by the footprint budget test" },
+  { files: ["docs/agents-owner-rules.md"], docsOnly: false, why: "docs/agents-*.md holds the auto-loaded accounts" },
+  { files: ["docs/agents-session-traps.md"], docsOnly: false, why: "docs/agents-*.md holds the auto-loaded accounts" },
+  { files: ["AGENTS.md", "README.md"], docsOnly: false, why: "one policed file is enough to force the suite" },
+  // Genuinely inert docs — the fast path must survive for these, or the fix is worthless.
+  { files: ["README.md"], docsOnly: true, why: "a plain README that no test asserts on" },
+  { files: ["docs/architecture.md"], docsOnly: true, why: "an ordinary docs/ page, not an agents- account" },
+  { files: ["docs/foo/bar.md", "docs/other.md"], docsOnly: true, why: "several inert docs/ pages" },
+  // Code and config always ran the suite; that must not regress.
+  { files: ["src/lib/payroll/policy.ts"], docsOnly: false, why: "source code" },
+  { files: [".github/workflows/ci.yml"], docsOnly: false, why: "the workflow itself is config, not a doc" },
+];
+
+/**
+ * Extract every copy of the docs-only decision from `ci.yml` — the two `if … grep …` blocks plus
+ * the final `answer true`. All copies are meant to be byte-identical; this returns them all so the
+ * caller can assert that and then execute one.
+ */
+function extractDocsOnlyDecisions(ciYml: string): string[] {
+  const re =
+    /if echo "\$files" \| grep -qE '\(\^AGENTS[\s\S]*?answer true "documentation only"/g;
+  return ciYml.match(re) ?? [];
+}
+
+export function runCiDocsOnlyClassifierTests() {
+  const ciYml = readFileSync(path.join(WORKFLOW_DIR, "ci.yml"), "utf8");
+
+  // There are four docs-only jobs — validate, lint, typecheck, test — each answering inline. If the
+  // extraction finds a different count, either a copy was removed (a job would skip its policing
+  // tests) or the fix never landed in every copy. Either way the guarantee is broken.
+  const decisions = extractDocsOnlyDecisions(ciYml);
+  assert.equal(
+    decisions.length,
+    4,
+    `expected 4 identical docs-only decision blocks (validate/lint/typecheck/test), each forcing ` +
+      `the suite when an auto-loaded instruction file changed. Found ${decisions.length}. The block ` +
+      `must lead with \`grep -qE '(^AGENTS\\.md$|^CLAUDE\\.md$|^docs/agents-.*\\.md$)'\` before the ` +
+      `inert-docs check, in EVERY copy — a change to AGENTS.md/CLAUDE.md/docs/agents-*.md must not ` +
+      `take the docs-only fast path, or the tests that police those files skip and a red rule merges.`,
+  );
+
+  // The copies must not drift. The step is duplicated per job on purpose (a shared `changes` job
+  // cost a billed minute on every run); the price of that is four copies that must stay identical.
+  assert.equal(
+    new Set(decisions).size,
+    1,
+    "the four docs-only decision blocks have drifted apart — they must be byte-identical, or one " +
+      "job classifies a PR differently from another. Fix every copy the same way.",
+  );
+
+  const decision = decisions[0];
+  // Both halves must be present, or the block is only half a gate.
+  assert.match(
+    decision,
+    /grep -qE '\(\^AGENTS\\\.md\$\|\^CLAUDE\\\.md\$\|\^docs\/agents-\.\*\\\.md\$\)'/,
+    "the policed-file check must match AGENTS.md, CLAUDE.md and docs/agents-*.md exactly",
+  );
+  assert.match(
+    decision,
+    /grep -qvE '\(\\\.md\$\|\^docs\//,
+    "the original inert-docs check must still follow the policed-file check (the fast path is kept)",
+  );
+
+  // Run the REAL decision, not a re-implementation: stub `answer` to print its verdict word, inject
+  // each sample file list through an env var (so stdin carries only the script), and execute the
+  // extracted block under the same bash/grep the GitHub runner uses. `answer` exits on first call,
+  // so the printed word is exactly the classifier's docs_only result.
+  const run = (files: string[]): string => {
+    const script = `answer() { printf '%s' "$1"; exit 0; }\nfiles="$PHX_FILES"\n${decision}\n`;
+    return execFileSync("bash", ["-s"], {
+      input: script,
+      encoding: "utf8",
+      env: { ...process.env, PHX_FILES: files.join("\n") },
+    }).trim();
+  };
+
+  for (const { files, docsOnly, why } of DOCS_ONLY_CASES) {
+    const verdict = run(files);
+    assert.ok(
+      verdict === "true" || verdict === "false",
+      `the classifier returned "${verdict}" for [${files.join(", ")}] — expected the literal ` +
+        `token from an \`answer\` call. bash/grep may be unavailable on this runner.`,
+    );
+    assert.equal(
+      verdict,
+      String(docsOnly),
+      `docs_only for [${files.join(", ")}] should be ${docsOnly} (${why}), but the shipped ci.yml ` +
+        `classifier returned ${verdict}. ` +
+        (docsOnly
+          ? "The fast path must survive for genuinely inert docs."
+          : "This change must run the full suite; the docs-only fast path would skip the checks that police it."),
+    );
+  }
 }
