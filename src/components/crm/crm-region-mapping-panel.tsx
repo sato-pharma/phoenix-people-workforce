@@ -89,11 +89,28 @@ const RESOLUTION_OPTIONS: Array<{ label: string; value: CrmRegionResolutionActio
 ];
 
 // DATE-ONLY (`firstSeen`/`lastSeen`, both min/max of `ireports360_visits.visit_date` — a `date` column,
-// not the vendor's timestamptz), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
-// stay: it is what stops the calendar day being shifted by a zone offset. Not an instant — do not "fix"
-// this one to Cairo.
+// not the vendor's timestamptz — or, for a plan-only locality, its customers' contact-master dates, also
+// `date` columns), which `new Date` parses as UTC midnight. UTC here is CORRECT and must stay: it is what
+// stops the calendar day being shifted by a zone offset. Not an instant — do not "fix" this one to Cairo.
+// A plan-only locality whose customers carry no date at all sends "", shown as a dash.
 function formatDate(value: string) {
+  if (!value) return "—";
   return formatStableEnGb(new Date(value), { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+/** A locality no visit carries — known only from reps' plans and doctor lists. Its id is a negative
+ * stand-in made from its name (planOnlyCrmRegionId), so it is never shown as if it were the CRM's. */
+function isPlanOnly(region: UnmappedCrmRegionRow) {
+  return region.planOnlyCustomerCount !== null;
+}
+
+function regionIdLabel(region: UnmappedCrmRegionRow) {
+  return isPlanOnly(region) ? "No CRM ID — plan only" : String(region.crmRegionId);
+}
+
+function planOnlyCustomersLabel(region: UnmappedCrmRegionRow) {
+  const count = region.planOnlyCustomerCount ?? 0;
+  return `${count} ${count === 1 ? "customer" : "customers"} on reps' plans or lists`;
 }
 
 const CONFIDENCE_CHIP: Record<SuggestionConfidence, string> = {
@@ -323,7 +340,8 @@ export function CrmRegionMappingPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
         <p className="text-sm font-medium text-slate-600">
-          {rows.length} unmapped CRM {rows.length === 1 ? "region" : "regions"} across the full visit history — resolve
+          {rows.length} unmapped CRM {rows.length === 1 ? "region" : "regions"} across every visit and every
+          rep&rsquo;s plan and list — resolve
           each one as <span className="font-semibold text-slate-900">Ignore</span> (hide it, never map),{" "}
           <span className="font-semibold text-slate-900">Map to Brick ID</span> (assign the real Phoenix brick), or{" "}
           <span className="font-semibold text-slate-900">Keep Pending</span>.
@@ -364,16 +382,22 @@ export function CrmRegionMappingPanel({
               actions={
                 <>
                   <ResolutionCell region={region} onResolved={handleResolved} />
-                  <button
-                    type="button"
-                    onClick={() => viewInVisits(region)}
-                    className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
-                  >
-                    View in Visits
-                  </button>
+                  {isPlanOnly(region) ? null : (
+                    <button
+                      type="button"
+                      onClick={() => viewInVisits(region)}
+                      className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
+                    >
+                      View in Visits
+                    </button>
+                  )}
                 </>
               }
-              meta={`CRM Region ID ${region.crmRegionId}`}
+              meta={
+                isPlanOnly(region)
+                  ? `Never visited — ${planOnlyCustomersLabel(region)}`
+                  : `CRM Region ID ${region.crmRegionId}`
+              }
               status={<span className="text-sm font-black text-rose-500">{region.visitCount}</span>}
               title={region.crmRegionName}
             >
@@ -405,9 +429,16 @@ export function CrmRegionMappingPanel({
               <tbody className="divide-y divide-orange-100">
                 {filtered.map((region) => (
                   <tr key={region.crmRegionId} className="odd:bg-white even:bg-orange-50/30">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{region.crmRegionId}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{regionIdLabel(region)}</td>
                     <td className="px-3 py-2.5 font-medium text-slate-900">{region.crmRegionName}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{region.visitCount}</td>
+                    <td className="px-3 py-2.5 font-semibold text-rose-500">
+                      {region.visitCount}
+                      {isPlanOnly(region) ? (
+                        <span className="block text-phx-xs font-medium text-slate-500">
+                          Never visited — {planOnlyCustomersLabel(region)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.firstSeen)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.lastSeen)}</td>
                     <td className="border-l border-slate-100 px-3 py-2.5">
@@ -417,13 +448,17 @@ export function CrmRegionMappingPanel({
                       <ResolutionCell region={region} onResolved={handleResolved} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => viewInVisits(region)}
-                        className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
-                      >
-                        View in Visits
-                      </button>
+                      {isPlanOnly(region) ? (
+                        <span className="text-xs text-slate-400">No visits to open</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => viewInVisits(region)}
+                          className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
+                        >
+                          View in Visits
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -9,9 +9,11 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Download/upload round-trip for the Region Mapping tab: exports every CRM region ever seen (mapped,
-// ignored, or still pending) with its current Brick ID/Status pre-filled, so an admin bulk-fills in
-// Excel and re-uploads via /api/admin/crm/region-mapping/import.
+// Download/upload round-trip for the Region Mapping tab: exports every CRM region ever seen — visited,
+// or a plan-only locality known only from reps' plans and doctor lists (visit count 0, a negative
+// stand-in regionID made from its name) — mapped, ignored, or still pending, with its current Brick
+// ID/Status pre-filled, so an admin bulk-fills in Excel and re-uploads via
+// /api/admin/crm/region-mapping/import.
 //
 // The admin fills in ONLY the Brick ID (a dropdown of every active brick); the Brick Name, Block,
 // Area and Region (code + name) columns beside it AUTO-FILL from that Brick ID via in-sheet VLOOKUP
@@ -160,7 +162,8 @@ export async function GET(request: Request) {
     notes.addRows([
       { field: "How to map", guidance: "Fill in ONLY the Brick ID column (there's a dropdown of every active brick). Brick Name, Block, Area and Region — code and name — auto-fill beside it so you can confirm you picked the right place, then re-upload this exact file via \"Upload Mapping\"." },
       { field: "CRM regionID / CRM region name", guidance: "Read-only reference — do not edit. Used to match rows back on upload; a row with no matching regionID is rejected." },
-      { field: "Visit Count (all-time)", guidance: "Informational only, ignored on upload. Higher counts = higher priority to map." },
+      { field: "Visit Count (all-time)", guidance: "Informational only, ignored on upload. Higher counts = higher priority to map. 0 = never visited: a plan-only locality (see below)." },
+      { field: "Plan-only locality (negative regionID)", guidance: "A locality no visit has reached, known only from reps' plans and doctor lists. The CRM never sends an ID for those, so the regionID is a stand-in made from the locality's name (always negative). Map it like any other row — every customer there with no brick of its own follows it, including ones added to a plan or list later. Do not edit its regionID or its name: the upload checks that the two still belong together and rejects the row if they do not." },
       { field: "Brick ID", guidance: "Pick a real brick from the dropdown (sourced from the Bricks sheet). Validated against source_of_sales_bricks on upload — an unknown or inactive brick ID is rejected, not silently skipped." },
       { field: "Brick Name / Block / Area / Region", guidance: "Auto-filled from the Brick ID by an in-sheet formula (VLOOKUP against the Bricks sheet) — do not type here; they update the moment you choose a Brick ID. Geography is line-independent: every area serves all product lines, so the brick alone determines block/area/region." },
       { field: "Status", guidance: "Leave blank when Brick ID is filled (defaults to \"mapped\"). Type \"ignored\" with Brick ID blank to mark a region as never worth mapping (e.g. a CRM geography artifact). A blank Brick ID + blank Status leaves that region's decision unchanged." },

@@ -432,6 +432,7 @@ import {
 } from "./portal-crm-boards-audit.test.ts";
 import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
+import { runCrmRegionMappingPlanOnlyTests } from "./crm-region-mapping-plan-only.test.ts";
 import { runCrmRepsPlansPeriodTests } from "./crm-reps-plans-period.test.ts";
 import { runCrmCampaignNoteTests } from "./crm-campaign-note.test.ts";
 import { runCrmCampaignContactMatchTests } from "./crm-campaign-contact-match.test.ts";
@@ -2803,6 +2804,10 @@ await runTest("crm rep visits drill-down (territory states, proof buckets, recon
 await runTest(
   "crm region -> brick suggestion (Arabic name key + the reps' own area; Kit Kat, Beba, and the Dokki/Edku trap)",
   runCrmRegionBrickSuggestTests,
+);
+await runTest(
+  "crm region mapping lists plan-only localities (a stand-in id from the name, checked on every save)",
+  runCrmRegionMappingPlanOnlyTests,
 );
 await runTest(
   "crm campaign note (doctor / speciality / clinic pulled apart; the hospital and the GB rows the owner named)",

@@ -36,7 +36,9 @@ export async function POST(request: Request) {
     };
     const crmRegionId = Number(body.crmRegionId);
     const action = actionParam(body.action);
-    if (!Number.isFinite(crmRegionId) || crmRegionId < 0 || !action) {
+    // A NEGATIVE id is a plan-only locality's stand-in (planOnlyCrmRegionId), so it is not refused
+    // here: the service checks it against the locality name it was made from.
+    if (!Number.isSafeInteger(crmRegionId) || !action) {
       return NextResponse.json(
         { error: "invalid_input", message: "A valid crmRegionId and action (mapped/pending/ignored) are required.", success: false },
         { status: 400 },
