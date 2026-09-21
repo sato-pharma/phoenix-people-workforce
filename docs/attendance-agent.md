@@ -56,6 +56,15 @@ cd local-attendance-agent
 
 This installs a Windows startup shortcut so the agent starts on login.
 
+**`Phoenix Attendance Sync - Every 2 Hours` runs in office hours only** — every 2 hours inside a
+window that opens at 10:30 and closes 7 hours later (10:30, 12:30, 14:30, 16:30), with
+`Phoenix Attendance Sync - Required 5 PM` as the backstop. The sync talks to the ZKTeco device on
+the office LAN, so a run from anywhere else exits 1 with "Device TCP port is not reachable"; with
+the old around-the-clock schedule those fires produced 0 successes in 69 attempts over a fortnight
+(measured 2026-09-21), which left a red task that meant nothing. Nothing is lost by skipping them:
+each successful sync reads the device's whole buffer, so one good run catches the day up. Override
+with `-SyncWindowStart` / `-SyncWindowHours`.
+
 ## Environment Variables (Phoenix Side)
 
 See the "Attendance Agent" section in [docs/environment.md](environment.md) for the Phoenix-side variables (`ATTENDANCE_AGENT_LOCAL_URL`, `ATTENDANCE_AGENT_TOKEN`, etc.).
