@@ -173,6 +173,43 @@ export function isCallRateWorkingDay(dateIso: string, holidays?: CallRateHoliday
 }
 
 /**
+ * The CRM's catch-all contact. NOT a doctor, a pharmacy or an account — reps log against it when
+ * they have nobody real to log against (99 reps, 511 addresses, 415 km apart, measured 2026-08-28),
+ * so it poisons every per-contact figure it reaches. Declared HERE, the lowest module that needs it;
+ * crm/rep-kpi-reports.ts re-exports it, because that file imports this one and not the reverse.
+ */
+export const CATCH_ALL_CONTACT_CRM_ID = 100000;
+
+/**
+ * Why a field call does not reach the call rate, or null when it does.
+ *
+ * ONE GATE, READ BY EVERY SCREEN THAT SHOWS A CALL RATE. {@link computeCallRate} asks it before it
+ * adds a visit to any AM, PM or pharmacy slice, and the rep drill-down (crm/rep-visits.ts) asks it
+ * of every row it lists, so the reader sees "not scored · Thursday" beside the very rows the rate
+ * left out. Before 2026-09-21 the drill-down re-derived the weekday half without the holidays and
+ * skipped the catch-all half altogether, and it listed 112 Thursday and Friday visits in one
+ * September with proof chips and nothing to say they were not in the number above them.
+ *
+ *   weekend    Thursday or Friday — not Sat–Wed (owner, 2026-09-05)
+ *   holiday    a Sat–Wed national holiday, out of the denominator (owner, 2026-09-02)
+ *   catch-all  contact {@link CATCH_ALL_CONTACT_CRM_ID}, which is nobody
+ *
+ * The catch-all is tested FIRST: a Thursday call to nobody is a call to nobody.
+ */
+export type CallRateExclusion = "weekend" | "holiday" | "catch-all";
+
+export function callRateExclusionOf(
+  dateIso: string,
+  contactCrmId: number | null | undefined,
+  holidays?: CallRateHolidays,
+): CallRateExclusion | null {
+  if (contactCrmId === CATCH_ALL_CONTACT_CRM_ID) return "catch-all";
+  if (!isCallRateWorkingDay(dateIso)) return "weekend";
+  if (holidays?.has(dateIso)) return "holiday";
+  return null;
+}
+
+/**
  * How many Sat–Wed days fall in `[dateFrom, dateTo]`, both inclusive, MINUS any
  * of them that are national holidays.
  *
@@ -622,9 +659,11 @@ export function computeCallRate<C extends CheckinForMatch>(
 
     // THE 2026-09-05 GATE: a visit that fell on a day outside the call-rate denominator (Thursday,
     // Friday, or a national holiday) must not inflate any AM/PM or pharmacy slice either — see the
-    // file header. Everything above this line (fieldCalls, campaignCalls, perDay) is deliberately
-    // unaffected, because campaignShare and the daily-limit flag are a different feature.
-    if (!isCallRateWorkingDay(day, options.holidays)) continue;
+    // file header. Nor, since 2026-09-21, a visit to the catch-all contact, which is nobody.
+    // Everything above this line (fieldCalls, campaignCalls, perDay) is deliberately unaffected,
+    // because campaignShare and the daily-limit flag are a different feature. The drill-down reads
+    // the SAME gate — callRateExclusionOf — so its "not scored" rows are exactly these.
+    if (callRateExclusionOf(day, visit.contact_crm_id, options.holidays)) continue;
 
     // Pharmacy is ORTHOGONAL to AM/PM, not a third value of it: a pharmacy call is pulled out
     // regardless of which AM/PM flag it carries (owner, 2026-09-05 — see the header).

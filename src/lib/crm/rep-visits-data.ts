@@ -7,6 +7,7 @@
 // board that links to it.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import type { CallRateHolidays } from "@/lib/crm/call-rate";
 import { buildKnownContactIndex, type KnownContactIndex } from "@/lib/crm/campaign-contact-match";
 import { assistCampaignFragments } from "@/lib/crm/campaign-note-assist-model";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
@@ -260,6 +261,12 @@ export type RepVisitsInput = {
   agentCrmId?: number | null;
   /** hr id (lower-cased) -> real name, for the double-visit partner column. */
   partnerNameByHrId?: ReadonlyMap<string, string>;
+  /**
+   * The national holidays of the window — the SAME set the rate above the list was divided by, so a
+   * call on a holiday is marked "not scored" here exactly where the rate left it out. Omitted, no
+   * day is treated as a holiday (the weekend and the catch-all contact are still marked).
+   */
+  holidays?: CallRateHolidays;
 };
 
 /**
@@ -331,6 +338,7 @@ export async function loadRepVisits(
   return buildRepVisits(visits, scopedCheckins, {
     assisted,
     contactDirectory,
+    holidays: input.holidays,
     partnerNameByHrId: input.partnerNameByHrId,
     territoryIndex,
   });

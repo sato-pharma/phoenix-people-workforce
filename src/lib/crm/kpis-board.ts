@@ -106,7 +106,16 @@ import type { AccessContext } from "@/lib/auth/permissions";
 export type KpiPeriodOption = { label: string; value: string };
 
 /**
- * The months the picker offers, newest first.
+ * The Cairo month the CRM copy in Phoenix begins — plans and visits both start 2026-01-01. A month
+ * before this has no CRM data at all, so offering it in the picker only produces a board of empty
+ * "No activity" rows that read as failures. The floor stops the picker at it; the 12-month window
+ * naturally clears it from mid-2027 on, so this is a safety net, not a permanent clamp.
+ */
+export const CRM_DATA_FLOOR_MONTH = "2026-01";
+
+/**
+ * The months the picker offers, newest first — never earlier than {@link CRM_DATA_FLOOR_MONTH},
+ * and never a future month (the loop only ever counts backward from today).
  *
  * String arithmetic on the date, never Date parsing — a `new Date(todayIso)` here would be UTC
  * midnight and could land in the previous month for a Cairo caller just after midnight, which is
@@ -119,6 +128,8 @@ export function kpiMonthOptions(todayIso: string, count = 12): KpiPeriodOption[]
   if (!Number.isFinite(year) || !Number.isFinite(month)) return options;
   for (let index = 0; index < count; index += 1) {
     const key = `${year}-${String(month).padStart(2, "0")}`;
+    // Stop at the CRM data floor rather than list months that can only show empty rows.
+    if (key < CRM_DATA_FLOOR_MONTH) break;
     options.push({ label: monthLabelOf(key), value: key });
     month -= 1;
     if (month < 1) {

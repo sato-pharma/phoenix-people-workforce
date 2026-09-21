@@ -32,6 +32,7 @@ import {
   OffListNote,
   PharmacyKpiReportTables,
 } from "@/components/crm/kpi-reports-tables";
+import { kpiCallRateRepKey, kpiCallRateRepPath } from "@/lib/crm/kpis-call-rate-route";
 import { KPI_TABS, KPI_TAB_HINT, KPI_TAB_HINT_PHOENIX, KPI_TAB_LABEL, type KpiTab } from "@/lib/crm/kpis-tabs";
 import {
   buildKpisQuery,
@@ -1030,7 +1031,12 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
       <tbody className="divide-y divide-slate-100">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
-            <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
+            <RepCell
+              action={callRateVisitsLink(context, row)}
+              rank={context.showRank ? index + 1 : undefined}
+              row={row}
+              rules={context.board.kpiRules}
+            />
             <td className={NUM}>{row.workingDays}</td>
             <td className={NUM}>
               {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
@@ -1144,6 +1150,32 @@ function coverageDoctorsToggle(context: ViewContext, row: KpiRepRow, surface: "d
     >
       <span>{open ? "Hide doctors" : "Show doctors"}</span>
       <span aria-hidden>{open ? "▴" : "▾"}</span>
+    </Link>
+  );
+}
+
+/**
+ * "Open visits" for one rep on the Call Rate tab — the drill-down onto the very calls this row's rate
+ * is made of, at /…/kpis/call-rate/[rep], scored over the same window the board is on.
+ *
+ * A LINK, like every control on this board, so the drill-down re-runs the server-side scope gate. Null
+ * when the row has no key (neither a CRM account nor a resolved hr id) or logged nothing at all in the
+ * window — there is then nothing to open. The key is the board's own call-rate identity
+ * (`kpiCallRateRepKey`), which the visits page resolves back to this row.
+ */
+function callRateVisitsLink(context: ViewContext, row: KpiRepRow): React.ReactNode {
+  if (!row.hasCallRate) return null;
+  const key = kpiCallRateRepKey(row);
+  if (!key) return null;
+  const query = new URLSearchParams({ month: context.board.month });
+  if (context.board.range.periodKey !== "month") query.set("period", context.board.range.periodKey);
+  return (
+    <Link
+      className="inline-flex items-center gap-1 border border-slate-300 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition-colors hover:border-slate-500 hover:text-slate-900"
+      href={`${kpiCallRateRepPath(context.basePath, key)}?${query.toString()}`}
+    >
+      <span>Open visits</span>
+      <span aria-hidden>→</span>
     </Link>
   );
 }
@@ -2080,7 +2112,13 @@ export function KpisBoardView({
                         key={String(row.agentCrmId ?? `${row.repName}-${index}`)}
                       >
                         <RepCard
-                          action={tab === "coverage" ? coverageDoctorsToggle(context, row, "mobile") : undefined}
+                          action={
+                            tab === "coverage"
+                              ? coverageDoctorsToggle(context, row, "mobile")
+                              : tab === "call-rate"
+                                ? callRateVisitsLink(context, row)
+                                : undefined
+                          }
                           amTarget={board.amTarget}
                           pmTarget={board.pmTarget}
                           rank={context.showRank ? index + 1 : undefined}

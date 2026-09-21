@@ -385,10 +385,19 @@ export function runKpiTabTests() {
 
   // The month picker is string arithmetic on the date, never Date parsing: a `new Date(todayIso)`
   // is UTC midnight and lands in the PREVIOUS month for a Cairo caller just after midnight, which
-  // is precisely when this app is used.
+  // is precisely when this app is used. The year-boundary walk is shown above the CRM data floor —
+  // a caller in Jan 2027 still sees Dec and Nov 2026 — so the string arithmetic is proven without
+  // asking the picker to offer months the audit (2026-09-21, #9) stopped it listing.
+  assert.deepEqual(
+    kpiMonthOptions("2027-01-01", 3).map((option) => option.value),
+    ["2027-01", "2026-12", "2026-11"],
+    "the month list walks backwards across a year boundary without touching Date",
+  );
+  // The floor (audit 2026-09-21, #9): the CRM mirror starts in Jan 2026, so a caller there is
+  // offered that month alone, never the empty pre-CRM months the picker used to list.
   assert.deepEqual(
     kpiMonthOptions("2026-01-01", 3).map((option) => option.value),
-    ["2026-01", "2025-12", "2025-11"],
-    "the month list walks backwards across a year boundary without touching Date",
+    ["2026-01"],
+    "the picker stops at the CRM data floor rather than offering months that can only show empty rows",
   );
 }

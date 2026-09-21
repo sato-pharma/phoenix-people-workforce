@@ -32,7 +32,22 @@
 
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { weekStartFor } from "@/lib/crm/plan-week";
 import { planStatusLabel, type PlanKind, type PlanVerificationAction } from "@/lib/crm/plan-verification";
+
+/**
+ * Where a plan notification points. `/admin/plan-verification` is the Super Admin's screen; a
+ * portal-mode recipient (the rep's District/Regional Manager, or the rep) is carried from there to
+ * the portal Reps List plans tab by the twin in `portal-twins.ts`, rather than bounced to the portal
+ * home as a dead link (audit, 2026-09-21). The week rides along for a weekly plan so the portal lands
+ * on the right week instead of the current one; the admin page resolves by plan and month and simply
+ * ignores it.
+ */
+function planVerificationHref(plan: { crmPlanId: number; firstDate?: string | null; kind: PlanKind }): string {
+  const params = new URLSearchParams({ plan: String(plan.crmPlanId) });
+  if (plan.kind === "weekly" && plan.firstDate) params.set("week", weekStartFor(plan.firstDate));
+  return `/admin/plan-verification?${params.toString()}`;
+}
 
 /**
  * The most new plans one sync run will announce.
@@ -152,7 +167,7 @@ export async function announceNewPlansToManagers(plans: readonly NewPlanAnnounce
     const manager = managers.get(rep.manager_hr_id);
     const period = planPeriodLabel(plan);
     const repName = rep.full_name?.trim() || plan.repHrId;
-    const actionUrl = `/admin/plan-verification?plan=${plan.crmPlanId}`;
+    const actionUrl = planVerificationHref(plan);
     try {
       await createSystemNotification({
         actionUrl,
@@ -265,7 +280,7 @@ export async function notifyRepPlanStatusChanged(input: {
 
   const period = planPeriodLabel(input);
   const by = input.verifiedByName?.trim() || "your manager";
-  const actionUrl = `/admin/plan-verification?plan=${input.crmPlanId}`;
+  const actionUrl = planVerificationHref(input);
   const undone = input.action === "unverify";
 
   // The unverify wording says what CHANGED and what did not. A rep reading "your plan is pending

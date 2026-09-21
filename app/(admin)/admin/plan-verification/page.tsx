@@ -20,7 +20,7 @@
 import { redirect } from "next/navigation";
 
 import { PlanVerificationBoardView } from "@/components/crm/plan-verification-board";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getPlanVerificationBoard } from "@/lib/crm/plan-board";
 import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
@@ -47,6 +47,14 @@ function cairoToday(): { month: number; year: number } {
 
 export default async function PlanVerificationPage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
+  // The seats this whole page was written for — District Manager and Regional Manager — are PORTAL
+  // seats, and the plan-verification NOTIFICATION links straight here. `app/(admin)/layout.tsx`
+  // redirects every portal-mode viewer out of the admin shell before this page runs, so this line
+  // never actually fires; it is the source-of-truth declaration that `portal-twins.ts` lifts up to
+  // the layout, sending such a viewer to the portal Reps List plans tab (carrying `plan` and `week`)
+  // instead of dropping them on the portal home. Before it, the only screen their crm_plans:approve
+  // grant unlocks was unreachable from its own notification (audit, 2026-09-21).
+  if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/reps-list");
   // Two gates, both server-side: the explicit role list, then the permission matrix that is the
   // real security boundary. No access redirects rather than explaining — inside the admin shell an
   // unreachable page should behave as if it does not exist for that role.

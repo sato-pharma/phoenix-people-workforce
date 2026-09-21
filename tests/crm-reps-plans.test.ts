@@ -139,12 +139,18 @@ export function runCrmRepsPlansTests() {
 
   assert.equal(repsPlansRange("2026-02", "2026-08-12").dateTo, "2026-02-28", "February 2026 ends on the 28th");
   assert.equal(repsPlansRange("2024-02", "2026-08-12").dateTo, "2024-02-29", "a leap February ends on the 29th");
-  assert.equal(repsPlansRange("2026-12", "2026-08-12").dateTo, "2026-12-31", "December rolls the year, not the month");
+  assert.equal(repsPlansRange("2026-12", "2026-08-12").monthEnd, "2026-12-31", "December rolls the year, not the month");
 
-  // A month still in the future is not "current", so it is scored whole and simply has no data.
+  // A whole month still in the future has NOT STARTED (audit fix, 2026-09-21). It used to be scored
+  // whole against no data — every rep 0.00 in red as though they had all failed. Now it is empty:
+  // `notStarted`, dateTo before dateFrom, so every rate comes back blank and the board says the
+  // period has not started rather than printing a wall of red.
   const future = repsPlansRange("2026-09", "2026-08-12");
   assert.equal(future.isCurrentMonth, false);
-  assert.equal(future.dateTo, "2026-09-30");
+  assert.equal(future.notStarted, true, "a future whole month has not started");
+  assert.equal(future.monthEnd, "2026-09-30", "the month's real end is still known");
+  assert.equal(future.dateTo, "2026-08-31", "a not-started month scores empty: dateTo sits before dateFrom");
+  assert.ok(future.dateTo < future.dateFrom, "empty window: nothing to score");
 
   // ── one rep's row ─────────────────────────────────────────────────────────
   // 10 working days. AM: 20 verified = 2.00 against a target of 2 -> exactly on target.
@@ -775,57 +781,13 @@ export function runCrmRepsPlansTests() {
   assert.equal(liveBoard.totals.repsOnTarget, 0);
   assert.equal(liveBoard.campaignLimit, 3, "the owner's daily campaign limit reaches the screen");
 
-  // ── The column is LINE · REGION, and it must never call itself "Territory" ────────────────────
-  //
-  // This is a collision two green PRs made between them, neither able to see it. #2491 shortened
-  // the mobile card title by moving the CRM handle's trailing bracket — "( Down-town / C )", an
-  // AREA and a line letter — down to the card's meta line, and the desktop Rep cell renders that
-  // same bracket inline. This branch then added a column of the ORG MODEL's line and region. Both
-  // merged clean; the result put the line on one row twice, once labelled "Territory" and once not.
-  //
-  // The data is right and stays. The LABEL is what was wrong, so the label is pinned: one word for
-  // one thing. The rep's CRM bracket is his area; this column is what the two pickers filter on.
-  const repsPlansTables = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
-  assert.ok(
-    repsPlansTables.includes("Line · Region"),
-    "the org-model column must be labelled Line · Region — the name of the two things it holds and the two pickers that filter it",
-  );
-  assert.ok(
-    !/>\s*Territory\s*</.test(repsPlansTables) && !/label: "Territory"/.test(repsPlansTables),
-    "and it must NOT be called Territory: the Rep column beside it already ends in the CRM handle's own territory bracket, so a second column of that name puts the line on the row twice under two names",
-  );
-  assert.ok(
-    !repsPlansTables.includes("No territory"),
-    "the marker follows the label — a person with no org seat reads Not in organogram, matching the note above the tiles, not a second sense of the word territory",
-  );
-  assert.ok(
-    repsPlansTables.includes("Not in organogram"),
-    "and the marker says WHERE the seat is missing from, because that is a gap in the org chart to close rather than a fault of the person on the row",
-  );
-
-  const repsPlansBoard = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
-  // This pin used to demand the note say "Not in organogram", because that was what every seatless
-  // row rendered. It is re-aimed rather than re-stated: the SALES organogram has no marketing
-  // branch, so a Product Manager is off it BY DESIGN and now reads as his HR job title. The
-  // contract the pin exists to hold is unchanged — the note must describe what the table actually
-  // shows — so it now checks the fallback the table actually uses.
-  assert.ok(
-    repsPlansBoard.includes("HR job title"),
-    "the note above the tiles must name what a seatless row actually renders — now the person's HR job title, since 'not in organogram' is an accusation to make of somebody head office employs on purpose",
-  );
-  assert.ok(
-    !repsPlansBoard.includes(">Not in organogram<"),
-    "and it must not still promise a marker the table only reaches when the directory cannot name the person either",
-  );
-
-  // The column exists only when the organogram was actually read, so the prop has to reach the
-  // table. Dropping it in a merge would compile — and print "Not in organogram" against all 87 rows
-  // on the one day the read fails, which reads as the company having lost its org chart overnight.
-  assert.equal(
-    repsPlansBoard.split("geographyAvailable={board.geographyAvailable}").length - 1,
-    2,
-    "both the pickers and the table are told whether the organogram was readable",
-  );
+  // The Reps Plans board's org-model column ("Line · Region"), its seatless-row marker and its
+  // geographyAvailable prop threading lived in reps-plans-tables.tsx / reps-plans-board.tsx, both
+  // DELETED on 2026-09-21 when the call rate moved to the KPIs board (owner: "since the call rate is
+  // already in the KPIs tab … no need for it to be in the reps list tab"). Nothing in shipping src
+  // renders "Line · Region" any more, so the column's label pin has nothing to pin; the KPIs board
+  // carries its own columns and is covered by the kpis-* tests. The pure rep-name resolution below
+  // still ships in reps-plans.ts and stays here.
 
   // ── the rep's NAME: the directory names the person, the CRM names the territory ────────────
   // Measured on the live August board before this fix: 84 of 87 rendered labels were CRM login
