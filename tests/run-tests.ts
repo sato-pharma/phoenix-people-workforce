@@ -1561,6 +1561,7 @@ import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
+import { runDocsOnlyGateCoversInstructionFilesTests } from "./docs-only-gate-covers-instruction-files.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
@@ -5286,6 +5287,17 @@ await runTest(
   + "is in MEMORY-ARCHIVE.md is reported as still load-bearing, never as a harmless over-claim — "
   + "the archive does not auto-load, so that AGENTS.md slug is the last pointer a session sees",
   runMemoryIndexReachabilityTests,
+);
+
+await runTest(
+  "The docs-only fast path never skips the tests that police the docs (AGENTS.md, CLAUDE.md and "
+  + "docs/agents-*.md are INPUTS to the footprint, reachability and long-hooks tests, so a PR "
+  + "changing only those must still run the suite that exists to check them; measured on #4147, "
+  + "AGENTS.md grew while five of six required checks did no work at all and only secret-scan "
+  + "executed); the guard is present in EVERY copy of the per-job detect step, the covered list is "
+  + "derived from the three tests rather than hardcoded, and a README-only PR still takes the fast "
+  + "path — the skip is narrowed, not abolished",
+  runDocsOnlyGateCoversInstructionFilesTests,
 );
 
 await runTest(
