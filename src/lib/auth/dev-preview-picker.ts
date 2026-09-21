@@ -1,3 +1,4 @@
+import { devPreviewRoleMismatch } from "@/lib/auth/dev-preview";
 import { normalizeRole, type PhoenixRole } from "@/lib/auth/permissions";
 import {
   getEmployeeDirectory,
@@ -126,4 +127,26 @@ export async function findDevPreviewCandidateByHrId(
 
   const candidates = await listDevPreviewCandidates(role);
   return candidates.find((candidate) => candidate.hrId === targetHrId) ?? null;
+}
+
+/**
+ * The same guarantee `findDevPreviewCandidateByHrId` gives the Super Admin picker, for the bare
+ * `/api/dev-auth` route, which takes any role and any hrId straight from the query string: when the
+ * hrId belongs to someone with an active login, the preview must use a role that login holds.
+ * Returns the person's real role and name when it does not, or null when the preview may proceed.
+ */
+export async function findDevPreviewRoleMismatch(
+  role: PhoenixRole,
+  hrId: string,
+): Promise<{ actualRole: PhoenixRole; fullName: string | null } | null> {
+  const [assignments, activeEmployeesByHrId] = await Promise.all([
+    loadActiveRoleAssignments(),
+    loadActiveEmployeesByHrId(),
+  ]);
+
+  const actualRole = devPreviewRoleMismatch(role, hrId, assignments);
+  if (!actualRole) return null;
+
+  const canonical = canonicalHrIdForDisplay(hrId);
+  return { actualRole, fullName: (canonical ? activeEmployeesByHrId.get(canonical)?.fullName : null) ?? null };
 }
