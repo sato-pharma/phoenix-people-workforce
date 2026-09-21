@@ -38,6 +38,7 @@ import {
   AchievementRing,
   BandChoice,
   BandStat,
+  CommandBand,
   CHART_TOOLTIP_CLASS,
   GrowthPill,
   LABEL_CLASS,
@@ -383,10 +384,13 @@ export function VsTargetDashboard({
   data,
   basePath,
   kicker,
+  surface = "sales",
 }: {
   data: VsTargetDashboardData;
   basePath: string;
   kicker: string;
+  /** "portal" swaps the light command band for the employee-portal identity; see CommandBand. */
+  surface?: "sales" | "portal";
 }) {
   const router = useRouter();
   const [level, setLevel] = useState<LevelKey>(() => {
@@ -449,6 +453,79 @@ export function VsTargetDashboard({
 
   return (
     <div className="space-y-4">
+      {surface === "portal" ? (
+        // Employee-portal identity: the navy shell hero above carries the title, and the same
+        // figures, ring and month selector render as portal cards + a panel here. The admin shell
+        // keeps its own light band in the branch below — including the literal <p> that
+        // tests/section-card-header-fits-a-phone.test.ts pins.
+        <CommandBand
+          surface="portal"
+          // besideFrom="xl" is inert in the portal layout (cards + panel, no headline row), but the
+          // band is handed both a ring and an aside, and tests/sales-command-band-fits-a-laptop.test.ts
+          // requires every such band to carry it.
+          besideFrom="xl"
+          kicker={kicker}
+          title="Sales vs Target"
+          subtitle={`${formatPeriod(data.period)} · ${data.scopeLabel} · Source of Sales + Direct Orders`}
+          stats={
+            data.salesLoaded ? (
+              <>
+                <BandStat
+                  label="Total sales"
+                  value={<CountUpNumber value={data.totals.actualValue} format={formatEgp} />}
+                  note={
+                    data.priorPeriod ? (
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <GrowthPill value={data.growth} /> vs {priorLabel}
+                      </span>
+                    ) : (
+                      "First month — no prior period"
+                    )
+                  }
+                />
+                <BandStat
+                  label="Target"
+                  tone="sky"
+                  value={<CountUpNumber value={data.totals.targetValue} format={formatEgp} />}
+                  note={`${data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines`}
+                />
+                <BandStat
+                  label="Units sold"
+                  value={<CountUpNumber value={data.totals.actualUnits} format={formatNumber} />}
+                  note={data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
+                />
+              </>
+            ) : null
+          }
+          ring={
+            data.salesLoaded ? (
+              <AchievementRing value={data.totals.achievementValue} size={132} stroke={13} label="Achievement" premium />
+            ) : undefined
+          }
+          aside={
+            data.salesLoaded ? (
+              <div>
+                <p className={LABEL_CLASS}>Measured</p>
+                <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-slate-900">
+                  {formatPct(data.coverage)}
+                </p>
+                <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-500">
+                  of sales has a target to be measured against
+                </p>
+              </div>
+            ) : undefined
+          }
+          footer={
+            <BandChoice
+              label="Month"
+              options={data.periods.map((period) => ({ value: period, label: formatPeriod(period) }))}
+              selected={data.period}
+              onSelect={(period) => router.push(`${basePath}?period=${encodeURIComponent(period)}`)}
+            />
+          }
+        />
+      ) : (
+      <>
       {/* ── Page header: light, an orange rule on top, the headline INSIDE it ──
           Rendered inline rather than through the shared CommandBand because the period/scope
           line has to stay a literal <p> here (tests/section-card-header-fits-a-phone.test.ts).
@@ -526,6 +603,8 @@ export function VsTargetDashboard({
           />
         </div>
       </section>
+      </>
+      )}
 
       {!data.salesLoaded ? (
         <div className={cn(SURFACE_CLASS, "px-4 py-12 text-center")}>

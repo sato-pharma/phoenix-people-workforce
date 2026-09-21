@@ -31,15 +31,16 @@ export default async function PortalMakeItHappenPage({
       badge="Field Performance"
       description="Plan the units that reach your target, product by product."
       errorBoundaryTitle="Make It Happen unavailable"
-      // The planner opens with its own command band; the shell's banner would repeat it.
-      hero={<></>}
       title="Make It Happen"
     >
+      {/* surface="portal": the planner drops its light command band for the portal identity under
+          the standard navy shell hero. The admin twin at /sales/make-it-happen is unchanged. */}
       <MakeItHappenPlanner
         key={`${data.periodKind}|${data.periodKey}|${data.viewingRep?.key ?? ""}`}
         basePath="/employee-portals/make-it-happen"
         data={data}
         kicker="Field Performance"
+        surface="portal"
       />
     </EmployeePortalPageShell>
   );

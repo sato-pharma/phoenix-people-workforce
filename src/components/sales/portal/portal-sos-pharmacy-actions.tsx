@@ -357,7 +357,7 @@ function MonthPace({ pace, area }: { pace: MonthPaceResult; area: string }) {
 function LoadingState({ subtitle }: { subtitle: string }) {
   return (
     <div className="space-y-6">
-      <CommandBand kicker={BAND_KICKER} subtitle={subtitle} title={BAND_TITLE} />
+      <CommandBand surface="portal" kicker={BAND_KICKER} subtitle={subtitle} title={BAND_TITLE} />
       <SectionCard icon={Store} title="Where my sales come from">
         <div className="p-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -473,7 +473,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
   if (!response?.success || !data) {
     return (
       <div className="space-y-6">
-        <CommandBand kicker={BAND_KICKER} subtitle={subtitle} title={BAND_TITLE} />
+        <CommandBand surface="portal" kicker={BAND_KICKER} subtitle={subtitle} title={BAND_TITLE} />
         <SectionCard icon={Store} title="Where my sales come from">
           <p className="p-4 text-sm font-semibold text-slate-600">{response?.error ?? "Could not load your pharmacy actions."}</p>
         </SectionCard>
@@ -600,7 +600,7 @@ export function PortalSosPharmacyActions({ subtitle }: { subtitle: string }) {
 
   return (
     <div className="space-y-6">
-      <CommandBand footer={bandFooter} kicker={BAND_KICKER} stats={bandStats} subtitle={subtitle} title={BAND_TITLE} />
+      <CommandBand surface="portal" footer={bandFooter} kicker={BAND_KICKER} stats={bandStats} subtitle={subtitle} title={BAND_TITLE} />
 
       <SectionCard icon={Store} title="Where my sales come from">
         <div className="p-4">

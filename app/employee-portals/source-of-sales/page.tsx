@@ -113,13 +113,12 @@ export default async function PortalSourceOfSalesPage({
       badge="Sales Operations"
       description={description}
       errorBoundaryTitle="Source of Sales unavailable"
-      // The pharmacy action lists open with the shared light command band (as Sales vs Target,
-      // Targets and Make It Happen do); the shell's dark banner would repeat it.
-      hero={<></>}
       title="Source of Sales"
     >
       <div className="space-y-6">
-        <PortalSosPharmacyActions subtitle={description} />
+        {/* Empty band subtitle: the standard navy shell hero above now carries this description,
+            so repeating it as a band caption would print the same sentence twice. */}
+        <PortalSosPharmacyActions subtitle="" />
         {showDistributorDashboard ? (
           <Suspense fallback={<DashboardSkeleton kpiCount={4} chartCount={2} />}>
             <PortalSosContent access={access} filters={filters} />

@@ -25,6 +25,20 @@ html, body { overflow-x: clip; }
     linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
   background-size: 28px 28px;
 }
+/* The command hero's premium depth. A compound selector (both classes) outranks the plain
+   .employee-portal-command-grid above, so ONLY the shell hero — which carries both classes —
+   gets the two corner glows layered over the same grid; plans-workspace.tsx, which reuses the
+   bare -grid class, keeps its plain grid untouched. Owner-approved premium look, 2026-09-21:
+   a warm orange wash from the top-right and a cool blue depth from the bottom-left, both very
+   low alpha over the #08111f navy, so the title and description stay first to the eye. */
+.employee-portal-command-header.employee-portal-command-grid {
+  background-image:
+    radial-gradient(120% 150% at 88% -35%, rgba(249,115,22,0.16), transparent 44%),
+    radial-gradient(95% 130% at 0% 132%, rgba(20,130,194,0.12), transparent 52%),
+    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 28px 28px, 28px 28px;
+}
 .employee-portal-command-header::before {
   content: "";
   position: absolute;
@@ -126,7 +140,8 @@ export function EmployeePortalPageShell({
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-200">
+                <span className="inline-flex items-center gap-2 rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-200">
+                  <span aria-hidden className="h-1 w-1 bg-orange-400 shadow-[0_0_6px_rgba(249,115,22,0.9)]" />
                   {badge ?? "Employee Portal"}
                 </span>
               </div>
@@ -138,20 +153,6 @@ export function EmployeePortalPageShell({
                   {description}
                 </p>
               ) : null}
-            </div>
-            <div className="grid grid-cols-3 overflow-hidden rounded-sm border border-white/10 bg-white/[0.04] text-center lg:min-w-[300px]">
-              <div className="border-r border-white/10 px-3 py-2.5">
-                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Surface</p>
-                <p className="mt-1 text-xs font-black text-slate-100">Portal</p>
-              </div>
-              <div className="border-r border-white/10 px-3 py-2.5">
-                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Mode</p>
-                <p className="mt-1 text-xs font-black text-orange-200">Employee</p>
-              </div>
-              <div className="px-3 py-2.5">
-                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Status</p>
-                <p className="mt-1 text-xs font-black text-emerald-200">Ready</p>
-              </div>
             </div>
           </div>
         </section>
