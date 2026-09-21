@@ -205,6 +205,12 @@ export async function POST(request: Request) {
     const expenses =
       payrollRecords.length > 0
         ? await savePayrollExpenseApprovals({ fileName, records: payrollRecords, reportId }, access, {
+            // This route is the Expense Approvals DECISION-save, not a file import: it may move the
+            // HR decision on a trip, never a trip's workload, Other or claimed total. So an existing
+            // trip keeps its stored import figures whatever the request body carries — a hand-built
+            // POST cannot re-import the Expense Approvals download's own shape (workload → 0, Other
+            // dropped) onto a historical trip, the way the file upload is refused in expense-import.ts.
+            preserveImportedValues: true,
             onPayrollResync: (outcomes) => {
               payrollResync = outcomes;
             },
