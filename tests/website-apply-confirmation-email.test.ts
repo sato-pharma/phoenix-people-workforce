@@ -23,13 +23,18 @@ export function runWebsiteApplyConfirmationEmailTests() {
   assert.doesNotMatch(html, /Dear Mariam Adel Hassan/);
 
   // SATO identity, not the Phoenix shell: the readable letter carries the SATO house-template
-  // reference (SATO-DIS-2026-01) and the Sato sign-off, and the visible text never says "Phoenix".
+  // reference (SATO-DIS-2026-01) and the Sato letterhead, and the visible text never says "Phoenix".
   // (The blanket html must NOT be scanned for /Phoenix/: the brand images are hosted on the
   // phoenix-hr.satopharma.com subdomain — infrastructure, not anything a recipient reads.)
   assert.match(html, /Sato Pharma/);
   assert.match(html, /SATO-DIS-2026-01/);
   assert.doesNotMatch(text, /Phoenix/i);
-  assert.match(text, /Sato Pharma — Talent Acquisition/);
+  // Signed with the DEPARTMENT only. The letterhead and the provenance stamp already carry "Sato
+  // Pharma", so the sign-off must NOT repeat the company name (the duplicate the owner flagged) and
+  // must not say Talent Acquisition. The sign-off line is exactly "Regards, / Human Resources".
+  assert.match(text, /Regards,\s*\n\s*Human Resources\b/);
+  assert.doesNotMatch(text, /Regards,\s*\n\s*Sato Pharma/);
+  assert.doesNotMatch(text, /Regards,\s*\n\s*Talent Acquisition/);
 
   // The house template's own chrome is present (renderSatoEmail wraps the body): it is a full HTML doc.
   assert.match(html, /<html/i);

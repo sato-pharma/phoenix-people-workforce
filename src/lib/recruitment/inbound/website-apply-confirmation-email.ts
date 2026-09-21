@@ -51,7 +51,11 @@ export function renderWebsiteApplyConfirmationEmail(
       `<p>Thank you for considering a career with us.</p>`,
     footnote: "This is an automated confirmation of an application you submitted at satopharma.com/careers.",
     kicker: "Application received",
-    signOff: "Sato Pharma — Talent Acquisition",
+    // Sign with the DEPARTMENT only. The house template already carries "Sato Pharma" in the
+    // letterhead logo and the "Issued by Sato Pharma" provenance stamp, so putting the company name
+    // in the sign-off too made it read twice (the duplicate the owner flagged). Same convention as
+    // interview-invitations.ts, which signs "Human Resources".
+    signOff: "Human Resources",
     subject,
   });
   return { html: rendered.html, subject, text: rendered.text };
