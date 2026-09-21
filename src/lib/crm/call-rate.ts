@@ -85,7 +85,12 @@
 // crm/call-rate-service.ts and goes through the crm/reads.ts single-source door.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { indexCheckinsByAgentContactDay, pickCheckinForVisit, type CheckinForMatch } from "@/lib/crm/checkin-match";
+import {
+  checkinAgentKey,
+  indexCheckinsByAgentContactDay,
+  pickCheckinForVisit,
+  type CheckinForMatch,
+} from "@/lib/crm/checkin-match";
 import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -334,7 +339,43 @@ export type RepCallRate = {
   campaignOverLimitDays: CampaignOverLimitDay[];
   /** Days with campaign calls and not one verified visit. */
   campaignOnlyDays: number;
+  /**
+   * GPS check-ins this rep's CRM account sent inside the window — on ANY contact and any day, so it
+   * measures the FEED, not the matches. Zero beside real regular visits means the CRM received no
+   * GPS from him at all, which {@link hasNoGpsFeed} reads as "No GPS feed" rather than as a rep who
+   * proved nothing (owner, 2026-09-21, ruling A1). Keyed exactly as the match is
+   * ({@link checkinAgentKey}), so a check-in that could prove one of his visits is always counted
+   * here. Optional so a hand-built fixture keeps compiling; ABSENT means "not measured" and is never
+   * read as zero.
+   */
+  gpsCheckins?: number;
 };
+
+/**
+ * A rep who logged real field visits in the window while his account sent NO GPS check-ins at all.
+ *
+ * OWNER'S RULING A1, 2026-09-21: "use A1 no GPS feed for reps without check-ins". Before the CRM
+ * cutover the headline counts only GPS-proved visits, so a rep whose phone never reported a check-in
+ * read a red 0% however much he worked — the board was measuring the feed, not the rep. Such a rep
+ * is now shown as "No GPS feed" and left out of the team figures, while his reported calls stay on
+ * the row.
+ *
+ * Deliberately narrow — each condition is a case the ruling does NOT cover:
+ *  • basis "verified" only. From the cutover every submitted visit counts and GPS is evidence only,
+ *    so a missing feed costs him nothing and there is nothing to excuse.
+ *  • ZERO check-ins, not zero MATCHED ones. A rep whose feed is live but whose visits find no
+ *    same-contact check-in keeps his real 0% — that gap is the exact thing this board exists to show.
+ *  • at least one REGULAR visit on a scored day. A rep with no visits at all (the silent roster row)
+ *    or with campaign calls only did no work a GPS feed could have proved, and his zero stays a zero.
+ *  • `gpsCheckins` measured. Absent means the caller never counted the feed, never that it was empty.
+ */
+export function hasNoGpsFeed(rep: RepCallRate, basis: CallRateBasis = "verified"): boolean {
+  if (basis !== "verified") return false;
+  if (rep.gpsCheckins !== 0) return false;
+  const regularVisits =
+    rep.am.verified + rep.am.unverified + rep.pm.verified + rep.pm.unverified + rep.pharmacy.verified + rep.pharmacy.unverified;
+  return regularVisits > 0;
+}
 
 export type CallRateReport = {
   dateFrom: string;
@@ -445,6 +486,7 @@ export function zeroRepCallRate(
     campaignShare: 0,
     campaignOverLimitDays: [],
     campaignOnlyDays: 0,
+    gpsCheckins: 0,
   };
 }
 
@@ -510,6 +552,15 @@ export function computeCallRate<C extends CheckinForMatch>(
   // which were ever in the denominator. Only the ones actually removed are reportable.
   const holidayDays = countCallRateWorkingDays(dateFrom, dateTo) - workingDays;
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
+  // The FEED per rep, for ruling A1 — every check-in that names an agent and a time, including the
+  // contact-less ones the match index skips: a check-in with no contact still proves the phone was
+  // reporting GPS. Same agent key as the match, so the two can never disagree about whose it is.
+  const checkinsByAgent = new Map<string, number>();
+  for (const checkin of checkins) {
+    const agentKey = checkinAgentKey(checkin.agent_crm_id, checkin.agent_hr_id);
+    if (agentKey == null || !checkin.check_date) continue;
+    checkinsByAgent.set(agentKey, (checkinsByAgent.get(agentKey) ?? 0) + 1);
+  }
 
   type Accumulator = {
     agentCrmId: number | null;
@@ -598,6 +649,9 @@ export function computeCallRate<C extends CheckinForMatch>(
       if (counts.campaign > 0 && counts.verified === 0) campaignOnlyDays += 1;
     }
     overLimit.sort((a, b) => b.campaignCalls - a.campaignCalls || a.day.localeCompare(b.day));
+    // A rep with neither a CRM id nor an hr id has no agent key, so no check-in can ever be his:
+    // zero, which is what the match would find too.
+    const agentKey = checkinAgentKey(rep.agentCrmId, rep.agentHrId);
 
     reps.push({
       agentCrmId: rep.agentCrmId,
@@ -611,6 +665,7 @@ export function computeCallRate<C extends CheckinForMatch>(
       campaignShare: rep.fieldCalls > 0 ? rep.campaignCalls / rep.fieldCalls : 0,
       campaignOverLimitDays: overLimit,
       campaignOnlyDays,
+      gpsCheckins: agentKey ? (checkinsByAgent.get(agentKey) ?? 0) : 0,
     });
   }
 
