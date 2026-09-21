@@ -11,7 +11,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Download/upload round-trip for the Customer Mapping tab: exports every CRM customer/contact ever
-// seen (mapped, ignored, or still pending) with its current Brick ID/Status pre-filled, so an admin
+// seen — visited, or only on a rep's plan or doctor list (visit count 0) — mapped, ignored, or still
+// pending, with its current Brick ID/Status pre-filled, so an admin
 // bulk-fills in Excel and re-uploads via /api/admin/crm/customer-mapping/import.
 //
 // One level finer than the Region Mapping tab (same self-populating design, see that route's own
@@ -160,12 +161,12 @@ export async function GET(request: Request) {
     notes.addRows([
       { field: "How to map", guidance: "Fill in ONLY the Brick ID column (there's a dropdown of every current brick). Brick Name, Block, Area and Region — code and name — auto-fill beside it so you can confirm you picked the right place, then re-upload this exact file via \"Upload Mapping\"." },
       { field: "CRM contactID / CRM contact name", guidance: "Read-only reference — do not edit. Used to match rows back on upload; a row with no matching contactID is rejected." },
-      { field: "Visit Count (all-time)", guidance: "Informational only, ignored on upload. Higher counts = higher priority to map." },
+      { field: "Visit Count (all-time)", guidance: "Informational only, ignored on upload. Higher counts = higher priority to map. 0 = never visited: the customer is only on a rep's plan or doctor list, and is listed so a rep hired into that area already finds it on a brick." },
       { field: "Brick ID", guidance: "Pick a real brick from the dropdown (sourced from the Bricks sheet). Validated against the current brick master on upload — an unknown, inactive, or superseded brick ID is rejected, not silently skipped." },
       { field: "Brick Name / Block / Area / Region", guidance: "Auto-filled from the Brick ID by an in-sheet formula (VLOOKUP against the Bricks sheet) — do not type here; they update the moment you choose a Brick ID." },
       { field: "Status", guidance: "Leave blank when Brick ID is filled (defaults to \"mapped\"). Type \"ignored\" with Brick ID blank to mark a customer as never worth mapping (e.g. a CRM-side duplicate or artifact contact). A blank Brick ID + blank Status leaves that customer's decision unchanged." },
       { field: "Status \"via locality\"", guidance: "This customer has no brick of its own, but its CRM locality is mapped on the Region Mapping tab, so every screen already places it on that locality's brick. Brick ID is left blank on purpose: re-uploading the row untouched changes nothing, and the customer keeps following its locality. Pick a Brick ID only to pin this one customer somewhere else — a customer brick wins over its locality." },
-      { field: "Why map by customer, not just region?", guidance: "A CRM region (\"Dokki\") groups many different customers into one rough locality. Mapping the CUSTOMER directly is more precise — it wins over that customer's region mapping wherever both exist — but is more work (~12.5k contacts vs ~300 regions), so most admins should map regions first and only drop to customer-level for high-volume or misresolved doctors/pharmacies." },
+      { field: "Why map by customer, not just region?", guidance: "A CRM region (\"Dokki\") groups many different customers into one rough locality. Mapping the CUSTOMER directly is more precise — it wins over that customer's region mapping wherever both exist — but is more work (~19k contacts vs ~300 regions), so most admins should map regions first and only drop to customer-level for high-volume or misresolved doctors/pharmacies." },
       { field: "Bricks (reference sheet)", guidance: "The CURRENT brick master only (Brick ID → Block / Area / Region, code + name) — the exact same list the Region Mapping template uses. Superseded pre-rebuild bricks are deliberately NOT listed. Feeds the Brick ID dropdown and the auto-fill formulas — do not delete or rename this sheet." },
     ]);
     notes.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
