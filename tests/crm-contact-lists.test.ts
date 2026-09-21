@@ -15,6 +15,7 @@ import {
   contactSyncSliceForDate,
   contactSyncSliceRefreshedNothing,
   decideContactReplacement,
+  rowFromContact,
   selectContactSyncSlice,
 } from "../src/lib/crm/contacts-sync.ts";
 import {
@@ -379,6 +380,39 @@ export function runCrmContactListsTests() {
     contactSyncSliceRefreshedNothing({ agents: 7, agentsFailed: 0 }),
     false,
     "a slice where every agent refused an empty answer ran fine — the refusal IS the protection",
+  );
+
+  // ── 7d. A mirrored row wears the TARGET's hr id, never one re-resolved from the CRM id ────────
+  // The CRM never deletes an account: when a rep resigns the admin blanks the name, keeps the area
+  // and hands the account to the next hire. So a CRM id identifies a SEAT over time, not a person,
+  // and asking "who is agent 1399" without a date answers with whoever `employees.crm_id` points at
+  // — which on a handed-over seat is the rep who LEFT. identity.ts names that tier in its own
+  // comment: "Tier 2 — employees.crm_id. This is the tier that misattributes a reused CRM slot."
+  //
+  // rowFromContact used to make exactly that call, `resolveEmployeeHrId(agentCrmId, null, maps,
+  // null)`, and a contact list is the one record that cannot survive it: a visit carries a date and
+  // the vendor's own label to tell a seat's two occupants apart, and a list carries NEITHER.
+  //
+  // Measured on production 2026-09-21, both live and both re-stamped every morning by the daily
+  // sweep: slot 1399's 103 rows read B-97 (resigned 2026-06-28) while the seat is Ahmed Farag
+  // Soliman Elakraa's (AI-0020, 72 visits), and slot 1485's 158 rows read B-171 (resigned
+  // 2026-07-11) while the seat is Manar Sadek's (CN-0007, 37 visits). That hr id is copied into
+  // crm_contact_assignments by crm_contact_master_refresh, and the venue picker, Reps List and the
+  // rep KPI reports all scope on it — so both reps' assigned doctors were filed under a leaver.
+  //
+  // The target's own hr id has no such failure mode: loadCrmContactSyncTargets builds it from the
+  // ACTIVE roster and resolves the seat from that person's own visit and plan rows.
+  const handedOverSeat = rowFromContact(first, { agentCrmId: 1399, hrId: "AI-0020" }, "PM");
+  assert.equal(
+    handedOverSeat.agent_hr_id,
+    "AI-0020",
+    "a mirrored contact row must carry the hr id of the ACTIVE rep the sweep targeted — re-resolving it " +
+      "from the CRM id files a handed-over seat's whole doctor list under the rep who resigned",
+  );
+  assert.equal(
+    handedOverSeat.agent_crm_id,
+    1399,
+    "the seat id still comes from the same target — one argument now carries both halves, so they cannot disagree",
   );
 
   // ── 8. The owner's 90-120 rule ────────────────────────────────────────────────────────────────

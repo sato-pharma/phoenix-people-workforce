@@ -26,7 +26,6 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { loadCrmIdentityMaps, resolveEmployeeHrId, type CrmIdentityMaps } from "@/lib/crm/identity";
 import { normalizeContactGrade } from "@/lib/crm/sync";
 import { CRM_CONTACTS_TABLE, CRM_PLAN_ENTRIES_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import {
@@ -230,17 +229,33 @@ export async function loadCrmContactSyncTargets(): Promise<{
 
 export function rowFromContact(
   contact: CrmContactRow,
-  agentCrmId: number,
+  target: CrmContactSyncTarget,
   listType: CrmListType,
-  maps: CrmIdentityMaps,
 ) {
   const now = new Date().toISOString();
   return {
     address: contact.address,
-    agent_crm_id: agentCrmId,
-    // No date to scope the attribution to: a list is a statement about today, so today's mapping
-    // is the right one. That is the opposite of a visit, which must resolve as-of its own date.
-    agent_hr_id: resolveEmployeeHrId(agentCrmId, null, maps, null),
+    agent_crm_id: target.agentCrmId,
+    // THE TARGET'S OWN HR ID — never re-resolved from the CRM id.
+    //
+    // This used to call resolveEmployeeHrId(agentCrmId, null, maps, null), reasoning that "a list is
+    // a statement about today, so today's mapping is the right one". The reasoning was right and the
+    // instrument was wrong. That waterfall is built for a VISIT, which carries a date and the
+    // vendor's own label to tell a handed-over account's two occupants apart; a contact list has
+    // NEITHER, so the call landed on tier 2 — the tier identity.ts's own comment names as "the tier
+    // that misattributes a reused CRM slot" — and answered with whoever `employees.crm_id` points
+    // at, which on a reused slot is the rep who LEFT.
+    //
+    // Measured on production 2026-09-21, both live: slot 1399's 103 rows were stamped B-97 (resigned
+    // 2026-06-28) though the account is Ahmed Farag Soliman Elakraa's (AI-0020, 72 visits), and slot
+    // 1485's 158 rows were stamped B-171 (resigned 2026-07-11) though the account is Manar Sadek's
+    // (CN-0007, 37 visits). The daily sweep re-stamped both every morning.
+    //
+    // `target.hrId` cannot have that failure mode: loadCrmContactSyncTargets builds it from the
+    // ACTIVE employee roster and resolves the CRM id from that person's own visit and plan rows, so
+    // it is today's holder by construction — which is exactly what this module's header says drives
+    // the sweep in the first place.
+    agent_hr_id: target.hrId,
     city: contact.city,
     contact_crm_id: contact.contactCrmId,
     contact_grade: normalizeContactGrade(contact.grade),
@@ -300,7 +315,6 @@ async function mirroredKeysForAgent(agentCrmId: number): Promise<string[]> {
 async function syncOneAgent(
   session: CrmWebSession,
   target: CrmContactSyncTarget,
-  maps: CrmIdentityMaps,
   seenContacts: Set<number>,
 ): Promise<CrmContactAgentOutcome> {
   const outcome: CrmContactAgentOutcome = {
@@ -319,7 +333,7 @@ async function syncOneAgent(
     // replacement from running on a partial answer, which would delete the lists that DID load.
     try {
       const contacts = await crmWebFetchContacts(session, target.agentCrmId, listType);
-      for (const contact of contacts) rows.push(rowFromContact(contact, target.agentCrmId, listType, maps));
+      for (const contact of contacts) rows.push(rowFromContact(contact, target, listType));
     } catch (error) {
       outcome.error = `${listType}: ${error instanceof Error ? error.message : String(error)}`;
       return outcome;
@@ -391,7 +405,6 @@ export async function syncCrmContactLists(input: {
   deadlineAt?: number;
   targets: CrmContactSyncTarget[];
 }): Promise<CrmContactSyncResult> {
-  const maps = await loadCrmIdentityMaps();
   const session = await crmWebLogin();
 
   const contacts = new Set<number>();
@@ -402,7 +415,7 @@ export async function syncCrmContactLists(input: {
       skipped += 1;
       continue;
     }
-    outcomes.push(await syncOneAgent(session, target, maps, contacts));
+    outcomes.push(await syncOneAgent(session, target, contacts));
   }
 
   return {
