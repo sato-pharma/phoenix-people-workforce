@@ -373,7 +373,11 @@ function runRoleTests() {
   const owner = createAccessContext({ hrId: "B-10", role: "Super Admin" });
   assert.equal(isInterviewCalendarOwner(owner), true, "the signed-in Super Admin owns the calendar");
   assert.equal(isInterviewCalendarOwner(systemAccessContext), true, "a system job acts as the owner");
-  for (const role of ["CEO", "Finance Manager", "HR Operations", "HR Advisory", "National Sales Manager", "Employee"]) {
+  // HR Operations is the calendar's admin — an owner, by the owner's ruling of 2026-09-21.
+  const hrOperations = createAccessContext({ hrId: "HR-009", role: "HR Operations" });
+  assert.equal(isInterviewCalendarOwner(hrOperations), true, "HR Operations runs the calendar as an owner");
+  assert.equal(resolveCalendarRole({ isOwner: isInterviewCalendarOwner(hrOperations), shareLevel: "viewer" }), "owner", "a share row cannot demote HR Operations");
+  for (const role of ["CEO", "Finance Manager", "HR Advisory", "National Sales Manager", "Employee"]) {
     const other = createAccessContext({ hrId: "A-99", role });
     assert.equal(isInterviewCalendarOwner(other), false, `${role} (scope ${other.scope}) is not the owner — only a share row lets them in`);
   }

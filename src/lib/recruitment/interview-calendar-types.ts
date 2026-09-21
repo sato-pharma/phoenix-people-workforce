@@ -5,11 +5,12 @@
 // route refusing the request is the lock (src/lib/recruitment/interview-calendar.ts).
 //
 // WHO SEES THE CALENDAR — the owner's own choice, 2026-09-18: "Only you + people you share with".
-//   owner      the Super Admin. Books, moves, cancels, comments, shares, exports.
+//   owner      the Super Admin, and HR Operations as its admin (owner, 2026-09-21). Books, moves,
+//              cancels, comments, shares, exports, records outcomes.
 //   editor     a person he shared it with as Editor — books, moves and cancels too, and comments.
 //   commenter  sees the calendar and opens the CVs on it, and leaves notes on an interview.
 //   viewer     sees the calendar and opens the CVs on it.
-// Everyone who can see it can export it. Nobody but the owner can share it.
+// Everyone who can see it can export it. Nobody but an owner can share it.
 
 export type InterviewCalendarAccessLevel = "viewer" | "commenter" | "editor";
 /**
@@ -89,8 +90,14 @@ export function roleMeets(role: InterviewCalendarRole | null, need: InterviewCal
 }
 
 /**
- * The calendar's owner: the Super Admin — the owner himself, the only account holding that role —
- * or a system context (a job, not a person).
+ * The calendar's owners: the Super Admin — the owner himself, the only account holding that role —
+ * HR Operations, and a system context (a job, not a person).
+ *
+ * HR OPERATIONS IS AN OWNER BY THE OWNER'S OWN RULING, 2026-09-21: "make Yasmeena HR Operations
+ * full access and control to it as admin". She is the only account holding that role. It is the
+ * ROLE, not her HR id, for the same reason the Super Admin's is (interview-calendar.ts, "WHY THE
+ * OWNER IS"); whoever holds the HR Operations seat runs the calendar with him. An owner outranks any
+ * share row, so no one can demote her by sharing with her at a lower level.
  *
  * THE ROLE, NOT THE SCOPE, IS WHAT A SIGNED-IN OWNER CARRIES. `scopeForRole` gives a Super Admin
  * session "company", exactly as it gives the CEO, the Finance Manager and HR Operations; "system"
@@ -100,7 +107,7 @@ export function roleMeets(role: InterviewCalendarRole | null, need: InterviewCal
  * session builds them.
  */
 export function isInterviewCalendarOwner(access: { role: string | null; scope: string }): boolean {
-  return access.scope === "system" || access.role === "Super Admin";
+  return access.scope === "system" || access.role === "Super Admin" || access.role === "HR Operations";
 }
 
 /**

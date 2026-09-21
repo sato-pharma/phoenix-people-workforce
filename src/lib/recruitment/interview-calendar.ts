@@ -31,7 +31,8 @@
 // WHY THE OWNER IS "THE SUPER ADMIN". The owner is the only account holding that role. Tying
 // ownership to the role rather than to one HR id means the check reads the same fact every other
 // Super Admin gate reads, and survives the id being written in a different case. It is the ROLE, not
-// the scope: a signed-in Super Admin's scope is "company" (isInterviewCalendarOwner explains).
+// the scope: a signed-in Super Admin's scope is "company" (isInterviewCalendarOwner explains). HR
+// Operations is an owner too, as the calendar's admin (owner, 2026-09-21).
 
 import { assertPermission, canAccess, type AccessContext } from "@/lib/auth/permissions";
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
@@ -325,12 +326,31 @@ export function requireCalendarAccess(caller: InterviewCalendarCaller, need: Int
   throw new Error(refusalFor(caller, need, role, week));
 }
 
+/**
+ * Whether a caller may reach into Recruitment from the calendar — find a candidate to book, or add an
+ * outside person to Recruitment while booking. Recruitment's own grant, or being an OWNER of the
+ * calendar: the owner gave HR Operations "full access and control" of it (2026-09-21), and she holds
+ * no `candidates` grant, so without this the calendar's admin could not book a Phoenix candidate.
+ * Only here, only from the calendar — it opens nothing else in Recruitment.
+ */
+async function mayUseRecruitmentFromCalendar(access: AccessContext, action: "read" | "create"): Promise<boolean> {
+  if (!isSignedInCaller(access)) return false;
+  if (isInterviewCalendarOwner(access)) return true;
+  return canAccess(access, "candidates", action).catch(() => false);
+}
+
+/** The same rule as a refusal: an owner passes; everyone else needs Recruitment's own grant. */
+async function assertMayUseRecruitmentFromCalendar(access: AccessContext, action: "read" | "create"): Promise<void> {
+  if (isSignedInCaller(access) && isInterviewCalendarOwner(access)) return;
+  await assertPermission(access, "candidates", action);
+}
+
 /** What a caller may do outside the calendar's own tables, for the screen to draw the right choices. */
 export async function interviewCalendarAbilities(access: AccessContext): Promise<{ canSearchCandidates: boolean; canAddToRecruitment: boolean }> {
   if (!isSignedInCaller(access)) return { canAddToRecruitment: false, canSearchCandidates: false };
   const [search, add] = await Promise.all([
-    canAccess(access, "candidates", "read").catch(() => false),
-    canAccess(access, "candidates", "create").catch(() => false),
+    mayUseRecruitmentFromCalendar(access, "read"),
+    mayUseRecruitmentFromCalendar(access, "create"),
   ]);
   return { canAddToRecruitment: Boolean(add), canSearchCandidates: Boolean(search) };
 }
@@ -1128,7 +1148,7 @@ export async function createInterviewBooking(
   const interviewerHrId = await resolveInterviewer(raw.interviewerHrId);
   const cv = options.cv ? checkCvUpload(options.cv) : null;
   const addToRecruitment = raw.addToRecruitment !== false && raw.addToRecruitment !== "false";
-  if (input.external && addToRecruitment) await assertPermission(caller.access, "candidates", "create");
+  if (input.external && addToRecruitment) await assertMayUseRecruitmentFromCalendar(caller.access, "create");
 
   // WHO — a Phoenix candidate, an outside person made one now, or an outside person kept here only.
   let candidateId = input.candidateId;
@@ -1856,7 +1876,7 @@ export type InterviewCandidateMatch = { id: string; name: string; jobTitle: stri
  */
 export async function searchInterviewCandidates(caller: InterviewCalendarCaller, query: unknown): Promise<InterviewCandidateMatch[]> {
   requireCalendarAccess(caller, "book", "any");
-  await assertPermission(caller.access, "candidates", "read");
+  await assertMayUseRecruitmentFromCalendar(caller.access, "read");
   const text = filterText(query);
   if (text.length < 2) return [];
   const digits = text.replace(/\D/g, "");
