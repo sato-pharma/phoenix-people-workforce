@@ -10,7 +10,8 @@
 //   2. Sales vs Target, the portal, employee-360, the business review, SFE team performance and
 //      the canonical admin dashboard — every one of them reads loadAchievementRange, i.e. the SQL
 //      function phx_sales_vs_target_range.
-//   3. Source of Sales — its own aggregates over the import rollup.
+//   3. Source of Sales — its own aggregates over the import rollup, which file every sale where it
+//      was invoiced, BEFORE the closing's store split moves any of it.
 //
 // Route 1 applies TypeScript transforms that route 2 has never seen: the owner's hand-mapped July
 // direct orders (july-2026-direct-orders.ts), the Fayoum/Beni Suef area merge, the store city
@@ -193,6 +194,45 @@ export function closingAreaTotals(
     }
   }
   return totals;
+}
+
+/**
+ * The closing's own store-split net for ONE line and month, exactly as loadClosingStoreSplitNet
+ * returns it and applyStoreSplitToMatrix adds it to the matrix: keyed `${AREA}|${PRODUCT}`
+ * (areaProductKey in store-sales-city-split.ts), positive where a cell gains. Structural, so this
+ * module stays a leaf.
+ */
+export type StoreSplitNetShape = ReadonlyMap<string, { value: number }>;
+
+/**
+ * Apply the closing's store split to per-area totals that were read from BEFORE it.
+ *
+ * The Source of Sales rows file every sale where it was invoiced. From 2026-08 the closing moves two
+ * kinds of that money afterwards, both on the owner's instruction: a wholesaler's sales spread over
+ * its own city's areas, and El Qema's warehouse sales spread by its bands and its Upper Egypt pass.
+ * Both ride in ONE net, computed once per line and month by the closing's own splitter. Adding that
+ * same net here — never a re-derivation of the rule — is what leaves only the differences nobody
+ * declared.
+ *
+ * Summed over products, per area: money is additive across products and this module never reads a
+ * unit. A cell whose area the closing has no row for is still added here, on purpose. The matrix
+ * skips such a delta, so the money leaves the closing, and that is a real difference to report —
+ * never one to normalise away.
+ */
+export function applyStoreSplitNetToTotals(
+  totals: SalesAreaTotals,
+  lineCode: string,
+  net: StoreSplitNetShape,
+): SalesAreaTotals {
+  const adjusted: SalesAreaTotals = new Map();
+  for (const [key, total] of totals) adjusted.set(key, { ...total });
+  for (const [cellKey, cell] of net) {
+    // Area first, product after the separator. Area codes never carry "|"; product codes are not
+    // needed here at all, so the first separator is the only one that matters.
+    const separator = cellKey.indexOf("|");
+    addTo(adjusted, lineCode, separator < 0 ? cellKey : cellKey.slice(0, separator), cell.value);
+  }
+  return adjusted;
 }
 
 /** The slice of an achievement row this module reads. Matches AchievementRow structurally. */

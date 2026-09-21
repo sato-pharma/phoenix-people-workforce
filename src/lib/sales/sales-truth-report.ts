@@ -26,10 +26,20 @@
 // store city split. A comparison that reported those would fire ~35 findings worth 2.5M EGP on a
 // month whose numbers are all right — and a guard that cries wolf on the owner's own decisions is
 // worse than no guard, because the real finding underneath it stops being read. So both sides go
-// through applyAchievementAreaMerges, and the store city split is read from the closing's own
-// splitter. The owner's July direct overlay is the ONE transform deliberately left un-normalised:
-// it is the repair the database is missing, so applying it to the database side would turn the one
-// real defect in this month into a green tick. What survives is only what nobody declared.
+// through applyAchievementAreaMerges, each row AS OF ITS OWN MONTH, and the Source of Sales side
+// gets the store split from the closing's own splitter (loadClosingStoreSplitNet — the net the
+// matrix itself adds). The owner's July direct overlay is the ONE transform deliberately left
+// un-normalised: it is the repair the database is missing, so applying it to the database side
+// would turn the one real defect in this month into a green tick. What survives is only what
+// nobody declared.
+//
+// Until 2026-09-21 this header claimed the split was already read from the closing's splitter, and
+// it was not: the Source of Sales side compared the rows as filed against a matrix that had the
+// split. July agreed only because the split starts at 2026-08. August then reported 105 areas and
+// 4,599,761.25 EGP misplaced — El Qema's 1,797,120.00 EGP filed on Pedia Qalubeya alone, which the
+// closing spreads over the republic by its warehouse rule. The same run left Pedia Beni Suef
+// unfolded, because the merge was asked "as of now" (September, when Pedia's fold has ended) about
+// an August that the closing folds.
 //
 // The three Monthly Closing surfaces — screen, frozen XLSX, premium .xlsm — are deliberately NOT
 // compared against each other here. They all call loadMonthlyClosingPartsWithStoreSplit, so they
@@ -40,6 +50,7 @@
 
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
+import { loadClosingStoreSplitNet } from "@/lib/sales/closing-store-split-net";
 import {
   listMonthlyClosingLines,
   listMonthlyClosingPeriods,
@@ -50,6 +61,7 @@ import {
   type SalesAreaTotals,
   type SalesTruthReport,
   achievementAreaTotals,
+  applyStoreSplitNetToTotals,
   closingAreaTotals,
   reconcileAreaTotals,
 } from "@/lib/sales/sales-truth-reconciliation";
@@ -162,10 +174,16 @@ async function loadDirectRollupRows(period: string): Promise<DirectRollupRow[]> 
 }
 
 /**
- * Per-area money as the DATABASE files it — the Source of Sales view.
+ * Per-area money as the DATABASE files it — the Source of Sales view — with the closing's own store
+ * split added on top.
  *
  * Distributor half straight from the closing's own RPC (same predicates, areas untouched); direct
- * half from the rollup exactly as it is stored, overlay and all repairs deliberately withheld.
+ * half from the rollup exactly as it is stored, overlay and all repairs deliberately withheld. Then
+ * the store split, read through loadClosingStoreSplitNet: the SAME net
+ * loadMonthlyClosingPartsWithStoreSplit adds to the matrix this is compared with, for the same line
+ * and month, and empty wherever the closing applies none (every month before 2026-08, and any line
+ * the split never touches). Never a re-implementation of the rule — a guard that re-derives the
+ * split proves only that it agrees with itself.
  */
 async function loadSourceOfSalesAreaTotals(input: {
   line: string;
@@ -197,14 +215,28 @@ async function loadSourceOfSalesAreaTotals(input: {
     if (row.officialLine.toLowerCase() !== lineKey) continue;
     addTo(totals, input.lineCode, row.areaCode, row.directValue);
   }
-  return totals;
+
+  // The store city split and El Qema's warehouse rule are the closing's decisions, not the
+  // database's, so the rows above know nothing of them. Pedia August files 1,797,120.00 EGP of El
+  // Qema on Qalubeya that the closing spreads over the republic; leaving the split out reported that
+  // one decision as 105 misplaced areas. What this cannot land is left in on purpose — see
+  // applyStoreSplitNetToTotals.
+  const storeSplitNet = await loadClosingStoreSplitNet(input.line, input.period);
+  return applyStoreSplitNetToTotals(totals, input.lineCode, storeSplitNet);
 }
 
-/** Fold the Fayoum/Beni Suef style merges into a totals map so both sides share one area vocabulary. */
-function applyMergesToTotals(totals: SalesAreaTotals): SalesAreaTotals {
+/**
+ * Fold the Fayoum/Beni Suef style merges into a totals map so both sides share one area vocabulary.
+ *
+ * AS OF THE MONTH BEING CHECKED. Every merge rule is dated, and a row without a period is resolved
+ * as of today — so an August checked in September lost Pedia's fold (it ends with August) while the
+ * closing kept it, and reported Beni Suef as money the closing never booked.
+ */
+function applyMergesToTotals(totals: SalesAreaTotals, period: string): SalesAreaTotals {
   const asRows = [...totals.values()].map((total) => ({
     lineCode: total.lineCode,
     areaCode: total.areaCode,
+    period,
     salesValue: total.salesValue,
   }));
   const merged: SalesAreaTotals = new Map();
@@ -289,7 +321,7 @@ async function loadSalesTruthReportForPeriod(selectedPeriod: string | null): Pro
     reconcileAreaTotals({
       surface: SURFACE_SOURCE_OF_SALES,
       truth,
-      candidate: applyMergesToTotals(sourceOfSales),
+      candidate: applyMergesToTotals(sourceOfSales, selectedPeriod),
     }),
   ];
 
