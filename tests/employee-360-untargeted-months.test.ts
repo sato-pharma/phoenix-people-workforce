@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { aggregateSalesRows, describeSalesMonths, type SalesRow } from "../src/lib/employee-360/deep-service.ts";
+import type { CrmListType } from "../src/lib/crm/contacts-web-client.ts";
 import { customerLaneOf, summarizeVisits, TOP_CUSTOMERS_PER_LANE, type VisitRow } from "../src/lib/employee-360/service.ts";
 
 // Employee 360, owner 2026-09-21.
@@ -119,10 +120,10 @@ export async function runEmployee360UntargetedMonthsTests() {
   assert.match(none.summaryText, /No month here carries a target, so nothing is graded\./);
 
   // ── customerLaneOf: the rep's list decides, then the visit's own signals ──
-  const lists = new Map([
-    [11, new Set(["AM" as const])],
-    [22, new Set(["PM" as const])],
-    [33, new Set(["Pharmacy" as const])],
+  const lists = new Map<number, Set<CrmListType>>([
+    [11, new Set<CrmListType>(["AM"])],
+    [22, new Set<CrmListType>(["PM"])],
+    [33, new Set<CrmListType>(["Pharmacy"])],
   ]);
   assert.equal(customerLaneOf(visit({ contact_crm_id: 11, ampm: "PM" }), lists), "am", "an AM-list doctor is AM whatever session the visit says");
   assert.equal(customerLaneOf(visit({ contact_crm_id: 33, ampm: "AM" }), lists), "pharmacy", "a pharmacy on the list is a pharmacy");
