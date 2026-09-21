@@ -163,22 +163,22 @@ jobs:
           [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
+          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
+          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
+          # check. If those files took the docs-only fast path, the very checks that guard them
+          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
+          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
+          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
+          # see the note above the step.)
+          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
+            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
+          fi
           # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
           if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
             answer false "code or config changed"
-          fi
-          # Some Markdown IS AN INPUT TO THE SUITE, and skipping it skips precisely the check that
-          # was written for the change being made. tests/autoload-footprint-budget.test.ts grades
-          # CLAUDE.md + AGENTS.md against the enforced byte budget;
-          # tests/memory-index-reachability.test.ts catches a memory slug orphaned by an AGENTS.md
-          # edit; tests/agents-long-hooks-cite-docs.test.ts reads AGENTS.md. Measured on PR #4147
-          # (2026-09-21): AGENTS.md grew by 362 bytes while FIVE of the six required checks did no
-          # work at all — only secret-scan actually executed. The failure then surfaces as a red
-          # `main` after the merge has already shipped to production, instead of blocking it.
-          # tests/docs-only-gate-covers-instruction-files.test.ts derives the real list of doc
-          # inputs from those tests and goes red if one stops being covered by this pattern.
-          if echo "$files" | grep -qE '^(AGENTS\.md|CLAUDE\.md|docs/agents-.*\.md)$'; then
-            answer false "an instruction file the test suite asserts on changed"
           fi
           answer true "documentation only"
 
@@ -429,22 +429,22 @@ jobs:
           [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
+          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
+          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
+          # check. If those files took the docs-only fast path, the very checks that guard them
+          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
+          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
+          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
+          # see the note above the step.)
+          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
+            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
+          fi
           # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
           if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
             answer false "code or config changed"
-          fi
-          # Some Markdown IS AN INPUT TO THE SUITE, and skipping it skips precisely the check that
-          # was written for the change being made. tests/autoload-footprint-budget.test.ts grades
-          # CLAUDE.md + AGENTS.md against the enforced byte budget;
-          # tests/memory-index-reachability.test.ts catches a memory slug orphaned by an AGENTS.md
-          # edit; tests/agents-long-hooks-cite-docs.test.ts reads AGENTS.md. Measured on PR #4147
-          # (2026-09-21): AGENTS.md grew by 362 bytes while FIVE of the six required checks did no
-          # work at all — only secret-scan actually executed. The failure then surfaces as a red
-          # `main` after the merge has already shipped to production, instead of blocking it.
-          # tests/docs-only-gate-covers-instruction-files.test.ts derives the real list of doc
-          # inputs from those tests and goes red if one stops being covered by this pattern.
-          if echo "$files" | grep -qE '^(AGENTS\.md|CLAUDE\.md|docs/agents-.*\.md)$'; then
-            answer false "an instruction file the test suite asserts on changed"
           fi
           answer true "documentation only"
 
@@ -519,22 +519,22 @@ jobs:
           [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
+          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
+          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
+          # check. If those files took the docs-only fast path, the very checks that guard them
+          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
+          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
+          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
+          # see the note above the step.)
+          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
+            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
+          fi
           # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
           if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
             answer false "code or config changed"
-          fi
-          # Some Markdown IS AN INPUT TO THE SUITE, and skipping it skips precisely the check that
-          # was written for the change being made. tests/autoload-footprint-budget.test.ts grades
-          # CLAUDE.md + AGENTS.md against the enforced byte budget;
-          # tests/memory-index-reachability.test.ts catches a memory slug orphaned by an AGENTS.md
-          # edit; tests/agents-long-hooks-cite-docs.test.ts reads AGENTS.md. Measured on PR #4147
-          # (2026-09-21): AGENTS.md grew by 362 bytes while FIVE of the six required checks did no
-          # work at all — only secret-scan actually executed. The failure then surfaces as a red
-          # `main` after the merge has already shipped to production, instead of blocking it.
-          # tests/docs-only-gate-covers-instruction-files.test.ts derives the real list of doc
-          # inputs from those tests and goes red if one stops being covered by this pattern.
-          if echo "$files" | grep -qE '^(AGENTS\.md|CLAUDE\.md|docs/agents-.*\.md)$'; then
-            answer false "an instruction file the test suite asserts on changed"
           fi
           answer true "documentation only"
 
@@ -619,22 +619,22 @@ jobs:
           [ -n "$files" ] || answer false "no files resolved; refusing to assume docs-only"
 
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          # NOT every .md / docs/ path is inert. CLAUDE.md, AGENTS.md and docs/agents-*.md are the
+          # auto-loaded instruction files, and tests in the `test` job exist ONLY to police them:
+          # the autoload footprint budget (CLAUDE.md + AGENTS.md), the memory-index reachability
+          # scan (a memory slug orphaned by an AGENTS.md edit), and the long-hook docs-pointer
+          # check. If those files took the docs-only fast path, the very checks that guard them
+          # would skip, and a PR that grew AGENTS.md past its byte budget or orphaned a memory would
+          # go green on five of six required checks and merge — surfacing only afterwards as a red
+          # `main`, which still ships to production (§2.1). So they are NOT documentation for this
+          # purpose: matched FIRST, they force the full suite. (Still shell, no third-party action —
+          # see the note above the step.)
+          if echo "$files" | grep -qE '(^AGENTS\.md$|^CLAUDE\.md$|^docs/agents-.*\.md$)'; then
+            answer false "auto-loaded instruction files changed; the tests that police them are in the full suite"
+          fi
           # One non-doc path is enough to need the full suite. Mirrors the old paths-ignore list.
           if echo "$files" | grep -qvE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/|^\.github/PULL_REQUEST_TEMPLATE/)'; then
             answer false "code or config changed"
-          fi
-          # Some Markdown IS AN INPUT TO THE SUITE, and skipping it skips precisely the check that
-          # was written for the change being made. tests/autoload-footprint-budget.test.ts grades
-          # CLAUDE.md + AGENTS.md against the enforced byte budget;
-          # tests/memory-index-reachability.test.ts catches a memory slug orphaned by an AGENTS.md
-          # edit; tests/agents-long-hooks-cite-docs.test.ts reads AGENTS.md. Measured on PR #4147
-          # (2026-09-21): AGENTS.md grew by 362 bytes while FIVE of the six required checks did no
-          # work at all — only secret-scan actually executed. The failure then surfaces as a red
-          # `main` after the merge has already shipped to production, instead of blocking it.
-          # tests/docs-only-gate-covers-instruction-files.test.ts derives the real list of doc
-          # inputs from those tests and goes red if one stops being covered by this pattern.
-          if echo "$files" | grep -qE '^(AGENTS\.md|CLAUDE\.md|docs/agents-.*\.md)$'; then
-            answer false "an instruction file the test suite asserts on changed"
           fi
           answer true "documentation only"
 

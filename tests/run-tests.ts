@@ -1226,7 +1226,7 @@ import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
 import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
-import { runCiGateParityTests } from "./ci-gate-parity.test.ts";
+import { runCiGateParityTests, runCiDocsOnlyClassifierTests } from "./ci-gate-parity.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
@@ -1561,7 +1561,6 @@ import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runMemoryIndexReachabilityTests } from "./memory-index-reachability.test.ts";
 import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runAutoloadFootprintBudgetTests } from "./autoload-footprint-budget.test.ts";
-import { runDocsOnlyGateCoversInstructionFilesTests } from "./docs-only-gate-covers-instruction-files.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 import { runRepoDoctorArchiveRefsTests, runStrandedArchiveCases } from "./repo-doctor-archive-refs.test.ts";
 
@@ -3990,6 +3989,7 @@ await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup k
 await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, multi-role fan-out)", runMarketingRoiCohortsTests);
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
+await runTest("CI docs-only classifier (AGENTS.md/CLAUDE.md/docs/agents-* must NOT skip the suite that polices them)", runCiDocsOnlyClassifierTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
@@ -5287,17 +5287,6 @@ await runTest(
   + "is in MEMORY-ARCHIVE.md is reported as still load-bearing, never as a harmless over-claim — "
   + "the archive does not auto-load, so that AGENTS.md slug is the last pointer a session sees",
   runMemoryIndexReachabilityTests,
-);
-
-await runTest(
-  "The docs-only fast path never skips the tests that police the docs (AGENTS.md, CLAUDE.md and "
-  + "docs/agents-*.md are INPUTS to the footprint, reachability and long-hooks tests, so a PR "
-  + "changing only those must still run the suite that exists to check them; measured on #4147, "
-  + "AGENTS.md grew while five of six required checks did no work at all and only secret-scan "
-  + "executed); the guard is present in EVERY copy of the per-job detect step, the covered list is "
-  + "derived from the three tests rather than hardcoded, and a README-only PR still takes the fast "
-  + "path — the skip is narrowed, not abolished",
-  runDocsOnlyGateCoversInstructionFilesTests,
 );
 
 await runTest(
