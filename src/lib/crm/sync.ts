@@ -20,6 +20,7 @@ import {
   blockReasonFor,
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
+  isSettledUnmappedRow,
   recordsNoWorkToAttribute,
   resolveEmployeeAttribution,
   resolveEmployeeHrId,
@@ -294,7 +295,7 @@ export type BlockedAttributionCounts = { postExit: number; preHire: number };
  *
  * Both counters mean one specific thing: "these rows need an identity override recorded", and a
  * non-zero count marks the sync degraded and pages a human. So a row only counts if an override
- * could actually change something about it. Two shapes cannot, and are skipped:
+ * could actually change something about it. Three shapes cannot, and are skipped:
  *
  *   1. A REFUSED OVERRIDE (blockedByOverride). The slot already HAS a human's decision; it was
  *      refused only because this date falls outside that person's employment. Nothing is left to
@@ -302,6 +303,10 @@ export type BlockedAttributionCounts = { postExit: number; preHire: number };
  *   2. A row that records NO WORK — a public holiday or casual-leave marker. iReports360 sprays one
  *      across every account on the day, deactivated ones included, so a block on one says only that
  *      a dead slot still exists. See recordsNoWorkToAttribute for the measurement.
+ *   3. A row the Unmapped Agents list treats as SETTLED (isSettledUnmappedRow): its label names a
+ *      known employee and nobody it names was employed that day. The owner's date rule credits
+ *      such a row to nobody, and no mapping could change that. This alarm tells a human to map the
+ *      account on that list, so it must never fire for a row the list does not show.
  *
  * Skipping is safe against the one case that would matter — a CRM slot genuinely reused for a new
  * hire — because such a slot also produces real calls, and those still count.
@@ -318,6 +323,8 @@ export function countBlockedAttributions(
     if (!agent.blockedHrId) continue;
     if (agent.blockedByOverride) continue;
     if (recordsNoWorkToAttribute(visit.visitType)) continue;
+    const slot = { crmId: visit.agentID, label: visit.agentName, visitDate: visitDay, visitType: visit.visitType };
+    if (isSettledUnmappedRow(slot, maps)) continue;
     if (blockReasonFor(agent.blockedHrId, visitDay, maps) === "pre_hire") preHire += 1;
     else postExit += 1;
   }

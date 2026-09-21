@@ -411,6 +411,78 @@ function overrideRefusal(overrideRefusedHrId: string | null): CrmAttribution {
   return { blockedByOverride: true, blockedHrId: overrideRefusedHrId, hrId: null };
 }
 
+/** One unattributed visit slot (agent or double) as the settled-row test reads it. */
+export type UnmappedSlotRow = {
+  crmId: number | null;
+  label: string | null;
+  visitDate: string | null;
+  visitType: number | null;
+};
+
+/**
+ * Everyone this row's CRM LABEL names: the person whose own crm_username it is, the account's
+ * crm_id holder when the label is theirs, and the person a mapping recorded against this exact
+ * label. Empty when the label names nobody we know: a stranger's name, a name-stripped
+ * "( Area / X )" label, or no label at all.
+ *
+ * The label is the only evidence of who DID a row's work. A crm_id says whose account it is, and an
+ * account passes from one holder to the next. A mapping saved without a label names the account
+ * too, never a person, so it names nobody here.
+ */
+function peopleNamedByLabel(row: UnmappedSlotRow, maps: CrmIdentityMaps): string[] {
+  const label = normalizeCrmName(row.label);
+  if (!label) return [];
+  const named = new Set<string>();
+  const byUsername = maps.hrIdByCrmUsername.get(label);
+  if (byUsername) named.add(byUsername);
+  if (row.crmId != null) {
+    const holder = maps.hrIdByCrmId.get(String(row.crmId));
+    if (holder && maps.crmUsernameByHrId.get(holder) === label) named.add(holder);
+    const override = maps.hrIdByManualOverride.get(String(row.crmId));
+    if (override?.label === label) named.add(override.hrId);
+  }
+  return [...named];
+}
+
+/**
+ * Is this unattributed row already ANSWERED, so it needs no decision on the Unmapped Agents list
+ * and no alarm from the sync? The owner's rule for that list, 2026-09-21: "always clean — except
+ * when there is a real unmapped agent". A row is settled in two shapes:
+ *
+ *   1. It records NO WORK: a public-holiday or casual-leave marker. iReports360 sprays one across
+ *      every account on the day, including accounts nobody held that day. On production
+ *      2026-09-21, 21 of the 25 accounts left on the list carried nothing but these markers.
+ *   2. Its label names a KNOWN employee, and nobody it names was employed that day. The employee
+ *      is known and the date rule answers the row: "GIVE HIM STARTING FROM HIS HIRING DATE" (owner,
+ *      2026-09-21, on Ahmed Nabil's account; his rule since 2026-08-28: "If matches, then credit
+ *      him. If not matches, leave him."). When an account changes hands, iReports360 relabels the
+ *      previous holder's rows with the new holder's name. Those rows are not the new holder's, and
+ *      no decision on this screen could make them so. Listing them made every handed-over account
+ *      look broken. Ahmed Nabil's 33 rows from 7 to 15 May, before he joined on 16 May, are the case.
+ *
+ * Three shapes stay listed, because each is work that someone still has to act on:
+ *   - the label names NOBODY we know: a stranger, a stripped "( Area / X )" label, or no label at
+ *     all. This is the real unmapped agent: somebody did this work and the roster cannot say who.
+ *     A reused slot shows up here too: the new holder's calls arrive after the old holder left.
+ *   - a person the label names WAS employed that day, but the waterfall reached someone else first,
+ *     for example a leaver who still holds the account's crm_id. Mapping the account credits them.
+ *   - the resolver credits somebody today but the stored row still says nobody. It is waiting to be
+ *     stamped, and the Map button stamps it.
+ *
+ * Shared by the list (getUnmappedCrmIdentities), reconciliation check 9, and the sync's block
+ * counters (countBlockedAttributions). The list, the check it is compared against, and the alarm
+ * that sends a human to the list therefore can never disagree about which rows count.
+ */
+export function isSettledUnmappedRow(row: UnmappedSlotRow, maps: CrmIdentityMaps): boolean {
+  if (row.crmId == null) return false;
+  if (recordsNoWorkToAttribute(row.visitType)) return true;
+  const day = row.visitDate?.slice(0, 10) || null;
+  if (resolveEmployeeAttribution(row.crmId, row.label, maps, day).hrId !== null) return false;
+  const named = peopleNamedByLabel(row, maps);
+  if (named.length === 0) return false;
+  return !named.some((hrId) => isAttributableOn(hrId, day, maps, row.label));
+}
+
 /** The waterfall's hr-id answer alone — the shape every existing caller expects. */
 export function resolveEmployeeHrId(
   crmId: number | string | null | undefined,
