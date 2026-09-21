@@ -144,6 +144,7 @@ does not fire, so its silence is not evidence that no trap applies.
 
 - **Sweep memories by CLAIM, never by filename or topic**, and never rewrite a dated record.
 - 🔴 **`memory-index-reachability.mjs` run from a WORKTREE audits the PRIMARY's `AGENTS.md`** — it takes its root from `--git-common-dir`, so a slug you just added there is invisible and one you just deleted still reads `ok`. Its `0 stranded` is about the primary, not your branch. Run it from the primary, or grep the file you actually edited. `memory-reachability-classifier-reads-the-primarys-agents-md`
+- 🔴 **Session history lives in TWO stores with TWO retention keys, so an empty `~/.claude/projects` is NOT proof the history is gone.** `~/.claude/projects/<slug>/*.jsonl` holds the conversation TEXT and is pruned by `cleanupPeriodDays`; `AppData\Roaming\Claude\claude-code-sessions\<accountUuid>\` holds one metadata record per session **per account** — title, folder, model, turns, and every PR that session opened — and is pruned by the SEPARATE `desktopSessionCleanupPeriodDays`. A third store, `~/.claude/file-history/<sessionId>/`, keeps every version of every file a session edited and is pruned by NEITHER. On 2026-09-21 a 7-day sweep of the first store took 1,771 files across 628 sessions while the second still held **3,410 records back to 9 May** and the third held 1,629 file versions. **Look in all three before telling the owner anything is lost**, and check the per-account store's own key before assuming it is safe. `two-session-stores-two-retention-keys`
 
 **Parallel sessions**
 

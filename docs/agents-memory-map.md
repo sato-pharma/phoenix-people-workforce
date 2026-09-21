@@ -150,6 +150,7 @@ status, give it its own line.
 - **Never delete a hook to make room, and correct the FILE before the hook.** — `memory-index-floor-is-13kb-dont-gut-it-chasing-17`
 - **What earns a line — all three:** — `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 - **A relocation's condition is present in the checkout you trim from — and from a worktree the classifier cannot read that checkout.** — `memory-reachability-classifier-reads-the-primarys-agents-md` **(inline — load-bearing)**
+- **Session history lives in THREE stores with two retention keys — an empty `~/.claude/projects` proves nothing.** — `two-session-stores-two-retention-keys` **(inline — load-bearing)**
 
 ## 2.3 Production and approval hooks
 

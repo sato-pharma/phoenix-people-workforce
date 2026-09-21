@@ -2165,6 +2165,65 @@ character is a dot. The over-broad form would have had sessions exporting the va
 `git show` and reading a correct result as a rescued one — a rule wider than the fault it describes,
 which is the same class of error as the zero it documents.
 
+## An empty `~/.claude/projects` was read as "the history is gone" — 2026-09-21
+
+Measured on this machine on 2026-09-21, after the owner reported that every session had started
+feeling like a fresh repo with no memory of anything.
+
+**What actually happened.** Two retention keys were added to `~/.claude/settings.json` in the small
+hours, where **neither had existed before**:
+
+| Time (Cairo) | Key added | What it prunes |
+| --- | --- | --- |
+| 03:15 | `cleanupPeriodDays: 7` | `~/.claude/projects` — the conversation transcripts |
+| 03:17 | `desktopSessionCleanupPeriodDays: 7` | the desktop app's own per-account session store |
+
+At 03:23 a sweep under the first key removed **1,771 files, 3.877 GB, across 628 distinct sessions**
+(459 of them in the Phoenix primary folder); a second sweep at 03:25 took cached tool results. Its
+own record — `~/.claude/backups/deleted-transcripts-2026-09-21.txt`, a full `mtime/bytes/path`
+manifest — states that the content is not recoverable, and it is right: the Recycle Bin held **0
+items** (the delete bypassed it), the Volume Shadow Copy service returned *initialization failure*
+with no shadow storage configured, and there were no System Restore points. **The conversation text
+was genuinely gone.**
+
+**Why "gone" was still the wrong answer.** The sweep touched ONE store. There are three:
+
+1. **`~/.claude/projects/<slug>/*.jsonl`** — the conversation TEXT. Pruned by `cleanupPeriodDays`.
+   442 transcripts survived the sweep, 198 of them in the Phoenix primary folder.
+2. **`AppData\Roaming\Claude\claude-code-sessions\<accountUuid>\`** — one JSON metadata record per
+   session **per account**: title, folder, model, effort, turn count, archive state, and every pull
+   request that session opened with its branch and merge state. Untouched by the sweep, and it held
+   **3,410 records across 8 account folders, 3,631 distinct pull requests, reaching back to 9 May
+   2026** — four months earlier than the oldest surviving transcript.
+3. **`~/.claude/file-history/<sessionId>/<hash>@vN`** — every version of every file a session
+   edited. Pruned by NEITHER key. 1,629 versions were still on disk.
+
+Store 3 settled the only question that mattered for the codebase: every recovered version was
+hash-checked with `git hash-object` + `git cat-file -e` against the repository, and **all of them
+were already in git** except one 655-byte ad-hoc test runner from a scratch worktree — whose two
+test functions are both registered in the live `tests/run-tests.ts` today. **No code, no commit, no
+branch and no file was lost.** What was lost was the text of the conversations, and the catalogues
+built from store 2 now name 3,410 of them.
+
+**The second loss that was about to happen.** `desktopSessionCleanupPeriodDays: 7`, added at 03:17,
+governs store 2 exactly — and **2,990 of its 3,410 records were already older than seven days.** The
+store that made the recovery possible was itself one interactive startup away from being swept. A
+full verified copy (3,454 files, 200 MB, per-folder counts confirmed identical) was taken to
+`F:\Claude Recovery 2026-09-21` before anything could run.
+
+**The rule.** An empty or thin `~/.claude/projects` is **not** evidence that a session's history is
+gone; it is evidence about one of three stores. Look in all three before telling the owner anything
+is lost, and when one store turns out to be the recovery, check its OWN retention key before
+assuming it is safe. Raising or removing either key is a `settings.json` edit, which is the owner's
+own paste — a session cannot make it for him
+(`automode-allow-cannot-authorize-editing-the-permission-config`).
+
+**Where the artifacts are:** [docs/recovery-2026-09-21.md](recovery-2026-09-21.md) — the master
+copy at `F:\Claude Recovery 2026-09-21`, a gitignored working copy in the repo folder, and what each
+catalogue holds.
+
+`two-session-stores-two-retention-keys`
+
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
 On 2026-09-12 `AGENTS.md` was cut to roughly half its size at the owner's request ("Load less of AGENTS.md"): every hook was reduced to its rule plus the one detail needed to obey it. This is that section's hook text **verbatim** from `origin/main` 3eea44aef, kept so that no measurement, date, count or diagnosis a condensed hook dropped is lost. Search it for the hook's wording. The accounts earlier in this file remain the fuller record.
