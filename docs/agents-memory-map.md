@@ -123,6 +123,7 @@ status, give it its own line.
 - **A gitignored _wt-*/ scratch folder makes a worktree look clean.** — `gitignored-wt-scratch-makes-a-worktree-look-clean`
 - **The pre-push gate is GONE — a bare worktree pushes fine.** — `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`
 - **"Permission denied" on git worktree remove still DEREGISTERS the worktree.** — `worktree-remove-permission-denied-still-deregisters`
+- **A husk is pinned by a PROCESS whose cwd is inside it, not by the session's — and MSYS `/proc` cannot see the holder.** — `a-worktree-husk-is-pinned-by-the-session-not-its-cwd` **(inline — load-bearing)**
 - **--fix / --strip-idle need exactly ONE live session** — `repo-doctor-strip-idle-cannot-run-with-sessions-open` · `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not…** — `repo-doctor-no-origin-ref-is-usually-squash-residue`
 - **Self-removing a worktree MUTES its own session-end guard.** — `self-removing-a-worktree-mutes-its-own-session-end-guard`

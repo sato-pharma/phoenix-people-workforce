@@ -1489,6 +1489,48 @@ routinely misread, and both make an occupied worktree look free:
   A session sitting idle still holds its folder, and killing on that signal is how a worktree gets
   removed under someone.
 
+## A husk is pinned by a PROCESS, not by the session's cwd — 2026-09-21
+
+Two wrong answers reported to the owner before this was measured properly. Both are the kind that
+sound settled, so they are written down as errors rather than as findings.
+
+**1. "The husks are held by each session's current directory, so moving that session frees it."**
+Five husks stood under `F:\Phoenix Workforce`. Session `a15b5e6b` was relayed out of
+`_wt-classifier-permission` and changed cwd at **01:30:43Z**; the folder stayed held for another
+ten minutes. A session's *logical* cwd is not the handle. The handle belongs to an
+already-running child **process** whose own current directory is inside the folder, and moving the
+session does not move a `powershell.exe` or `node.exe` it started earlier — those keep their cwd
+until they exit. Two husks did clear after a relay, which is exactly what made the theory look
+right: those sessions' children happened to exit too.
+
+**2. "Without Sysinternals `handle64.exe` the holder cannot be named."** Wrong, and wrong in a way
+this file already records — the 2026-09-05 section above says the holder IS findable and names the
+tool. `scripts/find-worktree-holder.ps1` ships in this repo, reads each process's PEB via
+`NtQueryInformationProcess` + `ReadProcessMemory`, and prints pid, name, kernel CPU and cwd. Run
+here it read **202 processes** and named every holder, including `PID 20644 claude` flagged
+`KERNEL-STUCK?` in `_wt-device-mgmt\`. The mistake was repeated because a whole session of worktree
+work went by without the **Worktrees** cluster ever being opened — which is the failure mode
+AGENTS.md §2.1 warns about in its own words: the injector fails open and silent, so its silence is
+not evidence the cluster does not apply.
+
+**Why the scan that produced answer 2 said "no holder".** It enumerated `/proc/<pid>/cwd` under
+MSYS and saw only `bash` and `sleep`. **MSYS `/proc` exposes ONLY MSYS processes.** `claude`,
+`node.exe` and `powershell.exe` are invisible there, and they were the actual holders. A clean
+`/proc` result is not evidence about a Windows process — it is evidence about nothing.
+
+Two mechanics that make the outcome easy to misread either way:
+
+- **`[IO.Directory]::Delete` is accepted and left PENDING.** Windows marks the directory for
+  deletion and removes it once the last handle closes, so a folder whose delete "failed" can be
+  gone minutes later with no further command, and one whose delete "succeeded" can still be on
+  disk. Re-measure `Test-Path`; never report either outcome from the call alone.
+- **Rename succeeds while delete fails.** `Rename-Item` on a held husk works, which reads as
+  proof that no handle exists. It is not a test for one.
+
+What to do with a named holder is unchanged and lives above: archive the owning session (no
+reboot), a session can never clear its own husk, `--fix` clears only a zero-file husk, and a
+zero-priced husk is not worth chasing at all.
+
 ## Two ways a Windows liveness check lies, and a count that invents a row — 2026-09-05
 
 All three were hit while building `xlsx-tripwire.ps1`, the watcher that names the process deleting
