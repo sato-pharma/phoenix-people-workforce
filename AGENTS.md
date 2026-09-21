@@ -307,8 +307,9 @@ runs out. Read free RAM live, never a remembered figure or the session count. �
 HEAVY JOB ANY MORE — the heavy-job gate and its queue were RETIRED on 2026-09-17 at the owner's
 instruction, and are never to be rebuilt** (`docs/agents-worktree-and-machine-limits.md`); a
 typecheck, build or dev server is now YOUR judgement from live free RAM. 🔴 **`mem-watchdog.ps1`
-reaps NODE JOBS, never a dev server** — under **1,800 MB** a typecheck, build or test run, under
-**500 MB** any node job.
+reaps NODE JOBS, and a dev server only as a RUNAWAY (8 GB+ of commit) or after 25 minutes with NO
+WORK** (owner's choice, 2026-09-21) — one in use under 8 GB is never touched. Under **1,800 MB** it
+reaps a typecheck, build or test run, under **500 MB** any node job.
 
 Route work by tier:
 
