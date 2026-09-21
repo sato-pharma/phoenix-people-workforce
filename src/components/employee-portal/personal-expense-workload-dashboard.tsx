@@ -92,6 +92,9 @@ type ExpenseRow = {
   transportationType: string;
   amWorkload: number;
   pmWorkload: number;
+  // The third workload figure (AM · PM · Pharmacies golden rule). null = not counted separately:
+  // a trip stamped before the 2026-09-21 split carries its pharmacy visits inside AM/PM.
+  pharmacyWorkload: number | null;
   // Doctor/pharmacy/institution split of the trip's regular CRM visits — recorded only on
   // Phoenix-submitted requests since the pharmacy-split change; undefined on historical /
   // Excel-imported rows (deliberately NOT zero, so "not recorded" never reads as "none").
@@ -779,6 +782,7 @@ export function PersonalExpenseWorkloadDashboard({
       transportationType: canonicalizeTransport(expense.transportationType) ?? "",
       amWorkload: Number(expense.amWorkload ?? 0),
       pmWorkload: Number(expense.pmWorkload ?? 0),
+      pharmacyWorkload: typeof expense.pharmacyWorkload === "number" ? expense.pharmacyWorkload : null,
       doctorVisits: typeof expense.doctorVisits === "number" ? expense.doctorVisits : undefined,
       pharmacyVisits: typeof expense.pharmacyVisits === "number" ? expense.pharmacyVisits : undefined,
       institutionVisits: typeof expense.institutionVisits === "number" ? expense.institutionVisits : undefined,
@@ -1157,13 +1161,20 @@ export function PersonalExpenseWorkloadDashboard({
   const hasWorkloadData = data.workload?.hasWorkloadFields ?? false;
   const totalAmWorkload = filteredTrips.reduce((sum, row) => sum + row.amWorkload, 0);
   const totalPmWorkload = filteredTrips.reduce((sum, row) => sum + row.pmWorkload, 0);
+  // Pharmacies is its own figure, never inside AM or PM. A trip stamped before the split has no
+  // third figure (its pharmacy visits already sit inside AM/PM), so it adds 0 here, not a guess.
+  const totalPharmacyWorkload = filteredTrips.reduce((sum, row) => sum + (row.pharmacyWorkload ?? 0), 0);
+  const pharmacyUncountedTrips = filteredTrips.filter((row) => row.pharmacyWorkload === null).length;
+  // No trip in view counted pharmacies apart: the figure is unknown, never a measured 0.
+  const pharmacyCounted = filteredTrips.length > pharmacyUncountedTrips;
+  const totalTripWorkload = totalAmWorkload + totalPmWorkload + totalPharmacyWorkload;
   const workloadTripCount = filteredTrips.length;
-  const averageWorkloadPerTrip =
-    workloadTripCount > 0 ? (totalAmWorkload + totalPmWorkload) / workloadTripCount : 0;
+  const averageWorkloadPerTrip = workloadTripCount > 0 ? totalTripWorkload / workloadTripCount : 0;
 
   const workloadChartData = [
     { name: "AM", value: totalAmWorkload, color: "#10b981" },
     { name: "PM", value: totalPmWorkload, color: "#f97316" },
+    ...(pharmacyCounted ? [{ name: "Pharmacies", value: totalPharmacyWorkload, color: "#0ea5e9" }] : []),
   ];
 
   /* -------- NEW INSIGHTS (smart suggestions) -------- */
@@ -1851,7 +1862,7 @@ export function PersonalExpenseWorkloadDashboard({
           </div>
         </ChartCard>
 
-        <ChartCard description="AM / PM visit balance and totals" title="Workload Summary">
+        <ChartCard description="AM · PM · Pharmacies visit balance and totals" title="Workload Summary">
           {!hasWorkloadData ? (
             <EmptyState
               title="No workload data"
@@ -1859,7 +1870,7 @@ export function PersonalExpenseWorkloadDashboard({
             />
           ) : (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200 sm:grid-cols-4">
+              <div className="grid grid-cols-2 divide-x divide-slate-200 border-y border-slate-200 sm:grid-cols-5">
                 <div className="px-3 py-3">
                   <p className={labelClass}>AM visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
@@ -1873,9 +1884,19 @@ export function PersonalExpenseWorkloadDashboard({
                   </p>
                 </div>
                 <div className="px-3 py-3">
+                  <p className={labelClass}>Pharmacies</p>
+                  {pharmacyCounted ? (
+                    <p className="mt-1 text-base font-bold text-slate-800">
+                      {Math.round(totalPharmacyWorkload).toLocaleString()}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm font-semibold text-slate-500">Not counted separately</p>
+                  )}
+                </div>
+                <div className="px-3 py-3">
                   <p className={labelClass}>Total visits</p>
                   <p className="mt-1 text-base font-bold text-slate-800">
-                    {(totalAmWorkload + totalPmWorkload).toLocaleString()}
+                    {totalTripWorkload.toLocaleString()}
                   </p>
                 </div>
                 <div className="px-3 py-3">
@@ -1885,6 +1906,13 @@ export function PersonalExpenseWorkloadDashboard({
                   </p>
                 </div>
               </div>
+              {pharmacyUncountedTrips > 0 && (
+                <p className="text-xs leading-relaxed text-slate-500">
+                  {pharmacyUncountedTrips.toLocaleString()} earlier{" "}
+                  {pharmacyUncountedTrips === 1 ? "trip carries its" : "trips carry their"} pharmacy visits inside AM
+                  and PM — Pharmacies has been counted separately since 21 Sep 2026.
+                </p>
+              )}
               {(() => {
                 // Doctor/pharmacy/institution mix — only trips whose snapshot recorded the split
                 // (Phoenix-submitted since the pharmacy-split change); historical imports never
@@ -2206,10 +2234,11 @@ export function PersonalExpenseWorkloadDashboard({
                                       </>
                                     )}
                                   </div>
-                                  {hasWorkloadData && (trip.amWorkload > 0 || trip.pmWorkload > 0) && (
+                                  {hasWorkloadData &&
+                                    (trip.amWorkload > 0 || trip.pmWorkload > 0 || (trip.pharmacyWorkload ?? 0) > 0) && (
                                     <div>
                                       <p className={labelClass}>Workload</p>
-                                      <div className="mt-1 flex gap-5">
+                                      <div className="mt-1 flex flex-wrap gap-5">
                                         <div>
                                           <p className="text-slate-500">AM visits</p>
                                           <p className="text-base font-bold text-emerald-700">{trip.amWorkload}</p>
@@ -2217,6 +2246,12 @@ export function PersonalExpenseWorkloadDashboard({
                                         <div>
                                           <p className="text-slate-500">PM visits</p>
                                           <p className="text-base font-bold text-orange-600">{trip.pmWorkload}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500">Pharmacies</p>
+                                          <p className="text-base font-bold text-sky-700">
+                                            {trip.pharmacyWorkload === null ? "Not counted separately" : trip.pharmacyWorkload}
+                                          </p>
                                         </div>
                                       </div>
                                     </div>

@@ -36,6 +36,7 @@ const COLUMNS: ExportColumn[] = [
   { key: "distanceFlag", label: "Distance Flag" },
   { key: "workloadAm", label: "Declared AM", numeric: true },
   { key: "workloadPm", label: "Declared PM", numeric: true },
+  { key: "workloadPharmacies", label: "Declared Pharmacies", numeric: true },
   { key: "travelCost", label: "Travel Cost", numeric: true },
   { key: "meetingAmount", label: "Meeting Amount", numeric: true },
   { key: "allowance", label: "Allowance", numeric: true },

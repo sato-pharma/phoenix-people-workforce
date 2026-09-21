@@ -56,6 +56,9 @@ export type ExpenseApprovalExportRow = {
   tripStartDate: string;
   tripType: string;
   workloadAm: number;
+  /** AM · PM · Pharmacies. The words, never a 0, when the trip did not count pharmacies apart
+   * (a pre-split, hand-typed or imported trip) — Excel's SUM skips the text. */
+  workloadPharmacies: number | string;
   workloadPm: number;
 };
 
@@ -107,6 +110,10 @@ function toExportRow(record: PayrollExpenseApproval): ExpenseApprovalExportRow {
     tripStartDate: record.date,
     tripType: record.tripType,
     workloadAm: record.amWorkload,
+    workloadPharmacies:
+      record.pharmacyWorkload === null || record.pharmacyWorkload === undefined
+        ? "Not counted separately"
+        : record.pharmacyWorkload,
     workloadPm: record.pmWorkload,
   };
 }

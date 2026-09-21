@@ -2052,7 +2052,15 @@ function ExpensesSection({
                   <KpiTile label="Campaign visits" value={intFmt.format(activity.campaignVisits)} />
                 </div>
                 <div className="mt-2 text-xs text-slate-400">
-                  Workload logged on trips: {intFmt.format(payroll.amWorkload)} AM · {intFmt.format(payroll.pmWorkload)} PM
+                  {/* AM · PM · Pharmacies, three figures apart. A trip stamped before the split carries its
+                      pharmacy visits inside AM/PM, so it is named rather than silently read as 0. */}
+                  Workload logged on trips: AM {intFmt.format(payroll.amWorkload)} · PM {intFmt.format(payroll.pmWorkload)} · Pharmacies{" "}
+                  {payroll.pharmacyWorkload === null || payroll.pharmacyWorkload === undefined
+                    ? "not counted separately"
+                    : intFmt.format(payroll.pharmacyWorkload)}
+                  {payroll.pharmacyWorkload !== null && payroll.pharmacyWorkload !== undefined && (payroll.pharmacyUncountedTrips ?? 0) > 0
+                    ? ` (${intFmt.format(payroll.pharmacyUncountedTrips)} earlier ${payroll.pharmacyUncountedTrips === 1 ? "trip carries its" : "trips carry their"} pharmacy visits inside AM and PM)`
+                    : null}
                 </div>
               </div>
             </>

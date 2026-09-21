@@ -66,6 +66,7 @@ type RequestRow = {
   evidence_gate_status: string | null;
   expected_total_amount: number | null;
   id: number;
+  pharmacy_workload: number | null;
   pm_workload: number | null;
   status: string | null;
   trip_end_date: string | null;
@@ -193,7 +194,7 @@ async function diagnose(db: SupabaseClient, request: RequestRow) {
   console.log(`    gate        blocker=${gate.blocker ?? "none"}  payrollEligible=${gate.isPayrollEligible}`);
   console.log(`                ${gate.message}`);
   console.log(
-    `    stored      AM ${request.am_workload ?? 0} / PM ${request.pm_workload ?? 0}` +
+    `    stored      AM ${request.am_workload ?? 0} · PM ${request.pm_workload ?? 0} · Pharmacies ${request.pharmacy_workload ?? "not counted separately"}` +
       `  gate=${request.workload_gate_status}  match=${request.workload_match_status}` +
       `  source=${request.workload_source}  attempts=${request.workload_capture_attempts ?? 0}`,
   );
@@ -253,15 +254,15 @@ async function diagnose(db: SupabaseClient, request: RequestRow) {
     return { capture, futile: false, request };
   }
 
-  console.log(`    retry would compute AM ${capture.amWorkload} / PM ${capture.pmWorkload}`);
+  console.log(`    retry would compute AM ${capture.amWorkload} · PM ${capture.pmWorkload} · Pharmacies ${capture.pharmacyWorkload}`);
   for (const dayCount of capture.days) {
-    console.log(`                ${dayCount.date}  AM ${dayCount.am} / PM ${dayCount.pm}  counted: ${dayCount.countedHrIds.join(", ")}`);
+    console.log(`                ${dayCount.date}  AM ${dayCount.am} · PM ${dayCount.pm} · Pharmacies ${dayCount.pharmacies}  counted: ${dayCount.countedHrIds.join(", ")}`);
   }
 
-  const futile = capture.amWorkload === 0 && capture.pmWorkload === 0;
+  const futile = capture.amWorkload === 0 && capture.pmWorkload === 0 && capture.pharmacyWorkload === 0;
   if (futile) {
     console.log(
-      `    → RETRY IS FUTILE. It would still succeed, and stamp AM 0 / PM 0 as an` +
+      `    → RETRY IS FUTILE. It would still succeed, and stamp AM 0 · PM 0 · Pharmacies 0 as an` +
         ` iReports360 MEASUREMENT with the gate marked complete. Enter the workload by hand instead.`,
     );
   } else {
@@ -353,18 +354,18 @@ async function main() {
         console.log(`SKIP ${request.id} — the capture is currently failing: ${capture.reason}`);
         continue;
       }
-      const before = `AM ${request.am_workload ?? 0} / PM ${request.pm_workload ?? 0}`;
+      const before = `AM ${request.am_workload ?? 0} · PM ${request.pm_workload ?? 0} · Pharmacies ${request.pharmacy_workload ?? "-"}`;
       const result = await retryOutstationWorkloadCapture(request.id, systemAccessContext);
       // Re-read rather than trust the message: retryOutstationWorkloadCapture is deliberately
       // best-effort and reports what it found, so the row is the only honest "after".
       const { data: after } = await db
         .from("outstation_expense_requests")
-        .select("am_workload, pm_workload, workload_gate_status, workload_source, workload_capture_attempts")
+        .select("am_workload, pharmacy_workload, pm_workload, workload_gate_status, workload_source, workload_capture_attempts")
         .eq("id", request.id)
         .maybeSingle();
       const row = (after ?? {}) as Partial<RequestRow>;
       console.log(
-        `RETRIED ${request.id}: ${before} → AM ${row.am_workload ?? "?"} / PM ${row.pm_workload ?? "?"}` +
+        `RETRIED ${request.id}: ${before} → AM ${row.am_workload ?? "?"} · PM ${row.pm_workload ?? "?"} · Pharmacies ${row.pharmacy_workload ?? "?"}` +
           `  gate=${row.workload_gate_status}  source=${row.workload_source}` +
           `  attempts=${row.workload_capture_attempts}`,
       );

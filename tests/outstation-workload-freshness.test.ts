@@ -126,6 +126,28 @@ export async function runOutstationWorkloadFreshnessTests() {
   assert.equal(badStamp.verdict, "stale", "a bad stamp must not suppress the warning itself");
   assert.doesNotMatch(String(badStamp.headline), /invalid date/i, "an unparseable stamp is omitted, never printed");
 
+  // 8b. THE AM · PM · PHARMACIES GOLDEN RULE (owner, 2026-09-21). A request stamped BEFORE the split
+  // carries its pharmacy visits inside AM/PM and no third figure (NULL); the live read now files the
+  // same visits under Pharmacies. Same visits, same total — so it must read fresh, never "missed".
+  const preSplit = resolveWorkloadFreshness({
+    ...base,
+    liveAmWorkload: 2,
+    livePharmacyWorkload: 3,
+    livePmWorkload: 5,
+    storedAmWorkload: 2,
+    storedMatchStatus: "matched",
+    storedPharmacyWorkload: null,
+    storedPmWorkload: 8,
+  });
+  assert.equal(preSplit.verdict, "fresh", "a pre-split stamp holding its pharmacies inside PM is not contradicted by the split read");
+  assert.equal(preSplit.liveTotal, 10, "liveTotal is AM + PM + Pharmacies");
+  assert.equal(preSplit.storedTotal, 10, "storedTotal counts a NULL pharmacy figure as 0 — its visits already sit in AM/PM");
+
+  // 8c. A pharmacy visit is field work: a stored "no activity" beside live PHARMACY visits is stale.
+  const pharmacyOnly = resolveWorkloadFreshness({ ...base, livePharmacyWorkload: 4 });
+  assert.equal(pharmacyOnly.verdict, "stale", "live pharmacy visits contradict a stored 'no activity'");
+  assert.equal(pharmacyOnly.missedVisits, 4, "the pharmacy visits are the missed ones");
+
   // 9. THE WIRING. The comparison is worthless if the screen stops feeding it both sides — and
   // that is exactly the failure shape here, since a panel that silently gets no stored verdict
   // renders no warning and looks perfectly healthy.

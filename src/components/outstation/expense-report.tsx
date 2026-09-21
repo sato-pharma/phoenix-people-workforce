@@ -183,6 +183,9 @@ type WorkloadEvidenceDay = {
   campaign: number;
   date: string;
   other: number;
+  /** THE AM · PM · PHARMACIES GOLDEN RULE: never inside `am`/`pm`. Optional so a payload from a
+   * server built before the split still renders. */
+  pharmacies?: number;
   pm: number;
   regular: number;
   total: number;
@@ -199,6 +202,7 @@ type WorkloadEvidence = {
   matchedDates: string[];
   otherVisits: number;
   pharmacyVisits: number;
+  pharmacyWorkload?: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -609,8 +613,11 @@ export function ExpenseReport({
     }
 
     const data = entry.data;
-    const declaredTotal = record.amWorkload + record.pmWorkload;
-    const actualTotal = data.amWorkload + data.pmWorkload;
+    const actualPharmacies = data.pharmacyWorkload ?? 0;
+    // AM · PM · Pharmacies, all three field work (owner, 2026-09-21). A sheet row or a pre-split
+    // trip has no third figure, its pharmacies inside AM/PM, so its total still compares like for like.
+    const declaredTotal = record.amWorkload + record.pmWorkload + (record.pharmacyWorkload ?? 0);
+    const actualTotal = data.amWorkload + data.pmWorkload + actualPharmacies;
     const mismatch = declaredTotal !== actualTotal;
     const tone = workloadStatusTone[data.matchStatus] ?? "neutral";
 
@@ -625,13 +632,16 @@ export function ExpenseReport({
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
-              AM {formatNumber(record.amWorkload)} · PM {formatNumber(record.pmWorkload)}
+              AM {formatNumber(record.amWorkload)} · PM {formatNumber(record.pmWorkload)} · Pharmacies{" "}
+              {record.pharmacyWorkload === null || record.pharmacyWorkload === undefined
+                ? "not counted separately"
+                : formatNumber(record.pharmacyWorkload)}
             </p>
           </div>
           <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
             <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
-              AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)}
+              AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)} · Pharmacies {formatNumber(actualPharmacies)}
             </p>
             {mismatch ? (
               <p className="mt-0.5 text-phx-2xs font-semibold text-rose-600">
@@ -676,6 +686,7 @@ export function ExpenseReport({
                   fields={[
                     { label: "AM", value: formatNumber(day.am) },
                     { label: "PM", value: formatNumber(day.pm) },
+                    { label: "Pharmacies", value: formatNumber(day.pharmacies ?? 0) },
                     { label: "Regular", value: formatNumber(day.regular) },
                     { label: "Campaign", value: formatNumber(day.campaign) },
                   ]}
@@ -689,9 +700,11 @@ export function ExpenseReport({
                 <th className="px-3 py-2 font-semibold">Day</th>
                 <th className="px-3 py-2 text-right font-semibold">AM</th>
                 <th className="px-3 py-2 text-right font-semibold">PM</th>
+                {/* Pharmacies takes the old Total column's place: Status already prints the day's
+                    total ("N field visits"), so the table keeps its seven columns. */}
+                <th className="px-3 py-2 text-right font-semibold">Pharmacies</th>
                 <th className="px-3 py-2 text-right font-semibold">Regular</th>
                 <th className="px-3 py-2 text-right font-semibold">Campaign</th>
-                <th className="px-3 py-2 text-right font-semibold">Total</th>
                 <th className="px-3 py-2 font-semibold">Status</th>
               </tr>
             </thead>
@@ -701,9 +714,9 @@ export function ExpenseReport({
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
                   <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pharmacies ?? 0)}</td>
                   <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
                   <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
-                  <td className="px-3 py-2 text-right font-mono font-semibold text-text">{formatNumber(day.total)}</td>
                   <td className="whitespace-nowrap px-3 py-2">
                     {day.total === 0 ? (
                       <span className="font-semibold text-rose-600">No activity</span>
@@ -1510,6 +1523,11 @@ export function ExpenseReport({
                               <span className="whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-phx-2xs font-bold text-violet-700">
                                 PM {formatNumber(record.pmWorkload)}
                               </span>
+                              {record.pharmacyWorkload === null || record.pharmacyWorkload === undefined ? null : (
+                                <span className="whitespace-nowrap rounded-md bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-bold text-emerald-700">
+                                  Pharmacies {formatNumber(record.pharmacyWorkload)}
+                                </span>
+                              )}
                               <span className="text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">declared</span>
                             </div>
                             <button

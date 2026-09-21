@@ -120,6 +120,21 @@ export function outstationWorkloadCount(value: unknown): number {
 }
 
 /**
+ * The trip's third workload figure — THE AM · PM · PHARMACIES GOLDEN RULE (owner, 2026-09-21).
+ *
+ * Unlike AM and PM this is NULLABLE, and NULL is not zero: it means no separate pharmacy figure
+ * was recorded — the trip was stamped before the split (its pharmacy visits still sit inside AM/PM,
+ * and the stored record never kept which period each fell in, so it cannot be split after the
+ * fact), or the workload was typed by hand as AM and PM. A display prints "not counted separately"
+ * for it, never a 0 that would read as "he visited no pharmacy".
+ */
+export function outstationPharmacyWorkload(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
  * The ONE payable total for an outstation trip — shared by `mapOutstationRequestToPayrollExpenseRecord`
  * (what gets PUSHED to payroll) and `mapOutstationRequestRowToPayrollApproval` (what the admin table
  * and employee portal DISPLAY). Before 2026-09-03 they used two different formulas and disagreed on
@@ -256,6 +271,7 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     meetingAmount,
     other: outstationReportOverride(request.reportOtherAmount, request.otherAmount),
     pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
+    pharmacyWorkload: outstationPharmacyWorkload(request.pharmacyWorkload),
     pmWorkload: outstationWorkloadCount(request.pmWorkload),
     preserveExistingDecision: options.preserveExistingDecision ?? true,
     reportId: options.reportId ?? undefined,
@@ -303,6 +319,7 @@ export function mapOutstationRequestRowToPayrollApproval(
   // Workload is NOT resolved like the money columns above — see outstationWorkloadCount for why
   // report_am_workload/report_pm_workload are never read on either side.
   const amWorkload = outstationWorkloadCount(row.am_workload);
+  const pharmacyWorkload = outstationPharmacyWorkload(row.pharmacy_workload);
   const pmWorkload = outstationWorkloadCount(row.pm_workload);
   // The HR Status column is the request's own decision — Approved, Rejected or Pending — the same
   // value claims-read.ts gives a claim and the push mapper stamps on an approved trip. Until
@@ -361,6 +378,7 @@ export function mapOutstationRequestRowToPayrollApproval(
     other,
     payoutMonth: payout.month,
     payoutYear: payout.year,
+    pharmacyWorkload,
     pmWorkload,
     reportId: null,
     requestType: "Outstation",

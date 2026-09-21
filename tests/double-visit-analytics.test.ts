@@ -168,18 +168,17 @@ export function runDoubleVisitAnalyticsTests() {
   assert.doesNotMatch(service, /function workloadTime\(/, "the AM · PM-only workload pair must not come back to the calendar");
   assert.doesNotMatch(service, /`AM\/PM: /, "the detail line must not label the pair 'AM/PM'");
   assert.match(service, /visit_type_description, speciality",/, "the double-visit read must carry the contact speciality that marks a pharmacy");
-  // Only the outstation trip-workload fallback (one AM and one PM line) may still split on the raw CRM
-  // period: it feeds the expense gate, so it moves in its own risk-reviewed change, never as a side
-  // effect of a dashboard fix. Every dashboard count is bucketed.
+  // The outstation trip-workload fallback was the last count split on the raw CRM period; it moved to
+  // the bucket helper in its own risk-reviewed change (2026-09-21). No count splits on the period now.
   assert.equal(
     (service.match(/row\.period === "(AM|PM)"\)\.reduce/g) ?? []).length,
-    2,
+    0,
     "no Double Visit Analytics count may bucket on the CRM period alone — that files every pharmacy among the PM doctors",
   );
   assert.equal(
     (service.match(/sumDoubleVisitSplit\(/g) ?? []).length,
-    2,
-    "the KPI band and each manager's summary must both take their AM · PM · Pharmacies figures from the one bucket helper",
+    3,
+    "the KPI band, each manager's summary and the outstation trip-workload fallback must all take their AM · PM · Pharmacies figures from the one bucket helper",
   );
   assert.equal(
     (service.match(/\{ header: "Pharmacy Visits", key: "pharmacyVisits", width: 16 \}/g) ?? []).length,

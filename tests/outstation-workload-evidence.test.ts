@@ -21,7 +21,7 @@ const repWorkload: RepVisitWorkload = {
   amWorkload: 3,
   campaignVisits: 9,
   dateBreakdown: [
-    { am: 3, campaign: 9, checkins: [], date: "2026-06-15", doctor: 1, institution: 0, other: 1, pharmacy: 1, pm: 4, regular: 2, total: 7, visits: [] },
+    { am: 3, campaign: 9, checkins: [], date: "2026-06-15", doctor: 1, institution: 0, other: 1, pharmacies: 1, pharmacy: 1, pm: 3, regular: 2, total: 7, visits: [] },
   ],
   doctorVisits: 1,
   idleDates: ["2026-06-16"],
@@ -30,7 +30,8 @@ const repWorkload: RepVisitWorkload = {
   matchedDates: ["2026-06-15"],
   otherVisits: 1,
   pharmacyVisits: 1,
-  pmWorkload: 4,
+  pharmacyWorkload: 1,
+  pmWorkload: 3,
   regularVisits: 5,
   sourceLabel: "Live iReports360 Visits Report.",
 };
@@ -41,7 +42,12 @@ export function runOutstationWorkloadEvidenceTests() {
   // --- the bug being fixed: solo field days must count as worked ---
 
   assert.equal(merged.amWorkload, 3, "AM workload comes from the CRM read, which sees the rep's solo field days");
-  assert.equal(merged.pmWorkload, 4, "PM workload comes from the CRM read");
+  assert.equal(merged.pmWorkload, 3, "PM workload comes from the CRM read — the doctors only");
+  assert.equal(
+    merged.pharmacyWorkload,
+    1,
+    "THE AM · PM · PHARMACIES GOLDEN RULE: the pharmacy visit rides as its own figure, never inside PM",
+  );
   assert.equal(
     merged.matchStatus,
     "matched",
@@ -69,7 +75,7 @@ export function runOutstationWorkloadEvidenceTests() {
 
   assert.deepEqual(
     merged.dateBreakdown,
-    [{ am: 3, date: "2026-06-15", doctor: 1, evidenceRows: 7, institution: 0, pharmacy: 1, pm: 4, total: 7 }],
+    [{ am: 3, date: "2026-06-15", doctor: 1, evidenceRows: 7, institution: 0, pharmacies: 1, pharmacy: 1, pm: 3, total: 7 }],
     "the persisted breakdown is the compact projection — the doctor/pharmacy/institution ints ride along, but per-visit and per-check-in detail must never be written into the snapshot column",
   );
   assert.equal(merged.doctorVisits, 1, "the trip-total kind split persists from the CRM read (display-only)");

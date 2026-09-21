@@ -1,6 +1,6 @@
 /**
- * Capture the AM/PM workload for one outstation trip — the third and last checkpoint before a
- * request may reach payroll (see expense-gate.ts).
+ * Capture the AM · PM · Pharmacies workload for one outstation trip — the third and last
+ * checkpoint before a request may reach payroll (see expense-gate.ts).
  *
  * Three pieces, deliberately separate so the RULE can be tested without a CRM:
  *   - who counts               → workload-rollup.ts   (pure, tested)
@@ -33,6 +33,8 @@ export type OutstationWorkloadCapture =
       /** Everyone whose visits contributed, across the whole trip. For the evidence snapshot. */
       contributingHrIds: string[];
       hops: number;
+      /** The third figure — pharmacy visits, never inside AM or PM (the golden rule). */
+      pharmacyWorkload: number;
       pmWorkload: number;
       sourceLabel: string;
     }
@@ -102,7 +104,7 @@ export async function captureOutstationTripWorkload(input: {
           });
           return [
             hrId,
-            workload.dateBreakdown.map((day) => ({ am: day.am, date: day.date, pm: day.pm })),
+            workload.dateBreakdown.map((day) => ({ am: day.am, date: day.date, pharmacies: day.pharmacies, pm: day.pm })),
           ] as const;
         }),
       ),
@@ -126,6 +128,7 @@ export async function captureOutstationTripWorkload(input: {
       contributingHrIds,
       days: rolled.days,
       hops,
+      pharmacyWorkload: rolled.pharmacyWorkload,
       pmWorkload: rolled.pmWorkload,
       sourceLabel:
         hops === 0

@@ -22,6 +22,9 @@ export type ExpenseApprovalSummaryRow = {
   date: string;
   destination: string;
   km: number;
+  /** Declared pharmacy visits — the third figure, never inside AM/PM. NULL/absent = not counted
+   * separately (a pre-split, hand-typed or imported trip). */
+  pharmacyWorkload?: number | null;
   /** Declared PM workload from the expense sheet — NOT the CRM evidence figure. */
   pmWorkload: number;
   specialist: string;

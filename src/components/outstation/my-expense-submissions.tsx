@@ -71,6 +71,17 @@ export type Stage = {
  * Every stage carries its own sentence. "Pending" on its own is what made an employee ask why his
  * money had not arrived; the whole point of this strip is that the answer is already on screen.
  */
+/**
+ * AM · PM · Pharmacies, three figures apart. A trip stamped before the split (or typed by hand)
+ * carries its pharmacy visits inside AM/PM and has no third figure, so it reads AM · PM only.
+ */
+function fieldWorkloadLabel(submission: MyOutstationSubmission): string {
+  const pair = `AM ${submission.amWorkload} · PM ${submission.pmWorkload}`;
+  return submission.pharmacyWorkload === null || submission.pharmacyWorkload === undefined
+    ? pair
+    : `${pair} · Pharmacies ${submission.pharmacyWorkload}`;
+}
+
 /** Today's date in Africa/Cairo as YYYY-MM-DD, so a deadline is judged in the employee's own day. */
 function cairoToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -175,7 +186,7 @@ export function buildStages(submission: MyOutstationSubmission): Stage[] {
       workloadDone,
       gateBlocker === "workload",
       workloadDone
-        ? `AM ${submission.amWorkload} · PM ${submission.pmWorkload}${
+        ? `${fieldWorkloadLabel(submission)}${
             submission.workloadSource === "override" ? " (entered by an administrator)" : ""
           }`
         : "Waiting for your visits to be matched from the CRM",
@@ -536,7 +547,7 @@ export function MyExpenseSubmissions({
                       <Fact
                         icon={<Clock className="h-3 w-3" />}
                         label="Field workload"
-                        value={`AM ${submission.amWorkload} · PM ${submission.pmWorkload}`}
+                        value={fieldWorkloadLabel(submission)}
                       />
                       <Fact label="Transport" value={submission.transportationType} />
                     </div>

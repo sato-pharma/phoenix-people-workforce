@@ -652,6 +652,7 @@ test; a second copy is how the next screen drifts.
 | Employee 360 | the visit split and a Pharmacy visits tile beside AM and PM |
 | The executive field-activity bar (SFE field analytics) | a third segment; the header reads AM · PM · Pharmacies |
 | Phoenix KPI rules (after the CRM cutover) | a pharmacy call is the pharmacy lane even when the contact sits on the rep's AM or PM list |
+| The outstation trip workload (#4185) | capture, submit, the approval screens, the payroll expense mapping and the expense dashboards read AM · PM · Pharmacies. Owner ruling, 2026-09-21: pharmacies are field WORK, so a pharmacy-only trip is `matched`, never "no activity". `pharmacy_workload` is NULL — shown as "not counted separately", never 0 — on a trip stamped before the split, a hand-typed workload or an Excel import. No pay formula reads it, and `decision.ts` stays pharmacy-blind (pinned by `tests/outstation-trip-workload-pharmacies.test.ts`). The Excel expense template and the held-requests hand entry are still AM · PM only. |
 
 Two deliberate differences in how an **unmarked** period is treated: the calendar files an unmarked
 visit under PM so every visit lands in exactly one figure; Double Visit Analytics and Employee 360
@@ -659,9 +660,6 @@ keep an unmarked visit out of all three, as they always had. A pharmacy is a pha
 
 **Not yet converted — each needs its own change, never a quiet fold-in:**
 
-- 🔴 **The outstation trip workload** (`am_workload` / `pm_workload`, the expense gate, the payroll
-  expense mapping). It is a **money path**: a trip whose only visits were pharmacies would flip to
-  "no activity" and change what the trip pays. It gets a risk-reviewed PR of its own.
 - The Phoenix native CRM manager reports — native lists are AM and PM only, so a pharmacy reaches them
   only if one sits on a doctor list.
 - The native pilot KPIs, the compliance labels, and the CRM Master AM/PM filter.

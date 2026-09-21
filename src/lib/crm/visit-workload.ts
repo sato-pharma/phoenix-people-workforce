@@ -20,6 +20,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkinAgentKey } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits } from "@/lib/crm/reads";
 import type { CrmCheckinRow } from "@/lib/crm/types";
+import { addVisitToSplit } from "@/lib/crm/visit-count-buckets";
 
 export type RepVisitDetail = {
   ampm: string | null;
@@ -71,6 +72,8 @@ export type RepCheckinDetail = {
 };
 
 export type RepVisitWorkloadDay = {
+  /** AM · PM · Pharmacies (the golden rule): `am` and `pm` never hold a pharmacy visit, whatever
+   * period the vendor tagged it with — those are in `pharmacies`. am + pm + pharmacies = total. */
   am: number;
   campaign: number;
   checkins: RepCheckinDetail[];
@@ -80,6 +83,7 @@ export type RepVisitWorkloadDay = {
   doctor: number;
   institution: number;
   other: number;
+  pharmacies: number;
   pharmacy: number;
   pm: number;
   regular: number;
@@ -98,6 +102,8 @@ export type RepVisitWorkload = {
   matchStatus: "matched" | "no_activity" | "partial" | "unmapped";
   matchedDates: string[];
   otherVisits: number;
+  /** The trip's pharmacy visits — the third workload figure, kept out of AM and PM. */
+  pharmacyWorkload: number;
   pharmacyVisits: number;
   pmWorkload: number;
   regularVisits: number;
@@ -139,10 +145,11 @@ function emptyWorkload(dates: string[], sourceLabel: string, matchStatus: RepVis
   return {
     amWorkload: 0,
     campaignVisits: 0,
-    dateBreakdown: dates.map((date) => ({ am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] })),
+    dateBreakdown: dates.map((date) => ({ am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacies: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] })),
     doctorVisits: 0,
     idleDates: dates,
     institutionVisits: 0,
+    pharmacyWorkload: 0,
     pharmacyVisits: 0,
     matchStatus,
     matchedDates: [],
@@ -155,9 +162,14 @@ function emptyWorkload(dates: string[], sourceLabel: string, matchStatus: RepVis
 
 /**
  * Count the rep's field visits (Regular = visit_type 0, Campaign = visit_type -8) per day across
- * the trip window, split AM/PM. Non-field visit types (Vacation/Meeting/Training/…) are surfaced
- * as `other` but excluded from the AM/PM workload. No collapse of burst re-saves yet — the count
- * mirrors distinct `ireports360_visits` rows (each keyed on `crm_visit_id`).
+ * the trip window, split AM · PM · Pharmacies. Non-field visit types (Vacation/Meeting/Training/…)
+ * are surfaced as `other` but excluded from the workload. No collapse of burst re-saves yet — the
+ * count mirrors distinct `ireports360_visits` rows (each keyed on `crm_visit_id`).
+ *
+ * A pharmacy visit is its own figure and never inside AM or PM (the golden rule, owner
+ * 2026-09-21) — but it is still field work. Owner decision, same day: a trip day whose only visits
+ * were pharmacies is a WORKED day, so `total`, `matchedDates` and `matchStatus` keep counting it
+ * and such a trip never reads "no activity".
  */
 export async function getRepTripVisitWorkload(input: {
   hrId: string | null | undefined;
@@ -210,7 +222,7 @@ export async function getRepTripVisitWorkload(input: {
 
   const byDate = new Map<string, RepVisitWorkloadDay>();
   for (const date of dates) {
-    byDate.set(date, { am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] });
+    byDate.set(date, { am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacies: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] });
   }
 
   // Who logs the GPS check-in each day: the person who SUBMITTED the visit (its agent_crm_id).
@@ -244,9 +256,9 @@ export async function getRepTripVisitWorkload(input: {
     }
     entry.total += 1;
 
-    const ampm = String(row.ampm ?? "").trim().toUpperCase();
-    if (ampm.startsWith("A")) entry.am += 1;
-    else entry.pm += 1; // PM or unmarked → PM, so every counted field visit lands in AM or PM
+    // The one bucket helper: a pharmacy goes to `pharmacies` whatever its period says, and an
+    // unmarked period stays PM, so every counted field visit lands in exactly one of the three.
+    addVisitToSplit(entry, row);
 
     const submitterCrm = row.agent_crm_id == null ? null : Number(row.agent_crm_id);
     const submitterKey = checkinAgentKey(
@@ -343,6 +355,7 @@ export async function getRepTripVisitWorkload(input: {
     matchStatus,
     matchedDates,
     otherVisits: dateBreakdown.reduce((sum, day) => sum + day.other, 0),
+    pharmacyWorkload: dateBreakdown.reduce((sum, day) => sum + day.pharmacies, 0),
     pharmacyVisits: dateBreakdown.reduce((sum, day) => sum + day.pharmacy, 0),
     pmWorkload: dateBreakdown.reduce((sum, day) => sum + day.pm, 0),
     regularVisits: dateBreakdown.reduce((sum, day) => sum + day.regular, 0),

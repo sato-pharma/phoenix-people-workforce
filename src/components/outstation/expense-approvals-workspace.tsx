@@ -523,6 +523,7 @@ export function ExpenseApprovalsWorkspace({
             date: record.date,
             destination: record.location || record.to || "",
             km: record.km,
+            pharmacyWorkload: record.pharmacyWorkload ?? null,
             pmWorkload: record.pmWorkload,
             specialist: record.specialist,
             state: expenseApprovalState(decision),
@@ -1450,7 +1451,7 @@ function EmployeeSummaryPanel({
               {isOpen ? (
                 <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
                   <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
-                    Trips · distance and declared AM/PM workload
+                    Trips · distance and declared workload, AM · PM · Pharmacies
                   </p>
                   {/* Wide content scrolls inside its own box — a long destination must never move
                       the page (see the route line in the decision panel). */}
@@ -1515,6 +1516,11 @@ function EmployeeSummaryPanel({
                                 Declared{" "}
                               </span>
                               AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
+                              {/* The third figure on its own line, so the fixed-width cell never
+                                  widens. Absent on a pre-split trip, whose pharmacies sit in AM/PM. */}
+                              {row.pharmacyWorkload === null || row.pharmacyWorkload === undefined ? null : (
+                                <span className="block">Pharmacies {formatNumberValue(row.pharmacyWorkload)}</span>
+                              )}
                             </span>
                             <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs font-bold text-slate-900 sm:text-right">
                               {egp(row.approvedAmount)}
@@ -1809,6 +1815,7 @@ function ExpenseDecisionPanel({
         {/* Verified workload */}
         <TripWorkloadEvidencePanel
           declaredAm={record.amWorkload}
+          declaredPharmacies={record.pharmacyWorkload ?? null}
           declaredPm={record.pmWorkload}
           hrId={record.hrId ?? null}
           tripEndDate={record.toDate || record.date}

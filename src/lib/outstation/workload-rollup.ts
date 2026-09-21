@@ -26,8 +26,12 @@
  * Pure. The counting rule that decides an expense is asserted without a CRM.
  */
 
-/** One person's AM/PM count on one date. */
-export type WorkloadDayCount = { am: number; date: string; pm: number };
+/**
+ * One person's AM · PM · Pharmacies count on one date. THE AM · PM · PHARMACIES GOLDEN RULE (owner,
+ * 2026-09-21): a pharmacy visit is in `pharmacies` only, never inside `am` or `pm` — the split comes
+ * from visitCountBucket (src/lib/crm/visit-count-buckets.ts), never from the period alone.
+ */
+export type WorkloadDayCount = { am: number; date: string; pharmacies: number; pm: number };
 
 /** Per person (HR ID) → per date → who they were recorded out with that date. */
 export type PartnersByPersonDate = Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
@@ -40,14 +44,29 @@ export type RolledUpWorkloadDay = {
   /** Everyone whose visits were counted into this day, root first. For the audit trail. */
   countedHrIds: string[];
   date: string;
+  pharmacies: number;
   pm: number;
 };
 
 export type RolledUpWorkload = {
   amWorkload: number;
   days: RolledUpWorkloadDay[];
+  pharmacyWorkload: number;
   pmWorkload: number;
 };
+
+/**
+ * The verdict a captured trip workload is stamped with. Owner decision (2026-09-21): pharmacy
+ * visits are the third figure AND field work, so a trip whose only visits were pharmacies is
+ * "matched" — never "no activity", which is what an approver reads as "he did nothing".
+ */
+export function capturedWorkloadMatchStatus(workload: {
+  amWorkload: number;
+  pharmacyWorkload: number;
+  pmWorkload: number;
+}): "matched" | "no_activity" {
+  return workload.amWorkload + workload.pmWorkload + workload.pharmacyWorkload > 0 ? "matched" : "no_activity";
+}
 
 /**
  * How far out to walk from a given seat. Anything not listed counts only its own visits, which
@@ -130,11 +149,13 @@ export function rollUpManagerTripWorkload(input: {
     }
 
     let am = 0;
+    let pharmacies = 0;
     let pm = 0;
     for (const person of counted) {
       const day = workloadIndex.get(person)?.get(date);
       if (!day) continue;
       am += Math.max(0, day.am);
+      pharmacies += Math.max(0, day.pharmacies);
       pm += Math.max(0, day.pm);
     }
 
@@ -144,6 +165,7 @@ export function rollUpManagerTripWorkload(input: {
       // make the audit trail depend on traversal order, which is not a fact about the trip.
       countedHrIds: [root, ...Array.from(counted).filter((id) => id !== root).sort()],
       date,
+      pharmacies,
       pm,
     });
   }
@@ -151,6 +173,7 @@ export function rollUpManagerTripWorkload(input: {
   return {
     amWorkload: days.reduce((sum, day) => sum + day.am, 0),
     days,
+    pharmacyWorkload: days.reduce((sum, day) => sum + day.pharmacies, 0),
     pmWorkload: days.reduce((sum, day) => sum + day.pm, 0),
   };
 }
