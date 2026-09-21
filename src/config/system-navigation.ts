@@ -2999,9 +2999,9 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     icon: ClipboardCheck,
     label: "Validated Customers",
     description: "Validated marketing customers by employee — check the data, then hand one to Direct Orders.",
-    // Owner, 2026-08-22: "Only super admin." Narrower than the Customer Database row above on
-    // purpose — this one carries the button that writes a pharmacy into Direct Orders.
-    roles: ["Super Admin"],
+    // Owner, 2026-09-21: the SFE Manager sees it VIEW ONLY. The button that writes a pharmacy into
+    // Direct Orders stays Super Admin only (2026-08-22) — enforced in the service, not here.
+    roles: ["SFE Manager", "Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
