@@ -834,6 +834,7 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
+import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
@@ -3463,6 +3464,12 @@ await runTest(
   + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
   + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
   runMailboxOffboardingTableFitsTheScreenTests,
+);
+await runTest(
+  "expense dashboard trip table fits the screen (a 1160px min-width under an overflow-x-auto "
+  + "wrapper put main at 1157px against 1096 at a 1280px viewport; twelve columns merged into "
+  + "seven table-fixed ones that fit the 679px box a 768px viewport leaves, and values wrap)",
+  runExpenseDashboardTripsTableFitsTheScreenTests,
 );
 await runTest(
   "company device register (a device signed out to somebody who has LEFT is the flag the register "
