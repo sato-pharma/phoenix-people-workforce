@@ -835,6 +835,7 @@ import { runHrRetentionRegisterTests } from "./hr-retention-register.test.ts";
 import { runMailboxOffboardingTests } from "./mailbox-offboarding.test.ts";
 import { runMailboxBulkRecordingTests } from "./mailbox-bulk-recording.test.ts";
 import { runMailboxOffboardingTableFitsTheScreenTests } from "./mailbox-offboarding-table-fits-the-screen.test.ts";
+import { runExpenseDashboardTripsTableFitsTheScreenTests } from "./expense-dashboard-trips-table-fits-the-screen.test.ts";
 import { runDeviceRegisterTests } from "./device-register.test.ts";
 import { runDeviceRegisterFitsTheScreenTests } from "./device-register-fits-the-screen.test.ts";
 import { runDeviceBulkImportTests } from "./device-bulk-import.test.ts";
@@ -1454,6 +1455,8 @@ import { runOutstationClaimValidationTests } from "./outstation-claim-validation
 import { runOutstationRequestTypeValidationTests } from "./outstation-request-type-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
+import { runOutstationSheetRefusesWorkflowTripIdsTests } from "./outstation-sheet-refuses-workflow-trip-ids.test.ts";
+import { runOutstationSheetRefusesApprovalsExportTests } from "./outstation-sheet-refuses-approvals-export.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -1558,6 +1561,7 @@ import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-are
 import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-customer-scope-guard.test.ts";
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
+import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
@@ -1611,6 +1615,7 @@ import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 import { runOutstationArabicTextDirectionTests } from "./outstation-arabic-text-direction.test.ts";
+import { runOutstationDescriptionFormatTests } from "./outstation-description-format.test.ts";
 import { runMailboxMonitorTextDirectionTests } from "./mailbox-monitor-text-direction.test.ts";
 import {
   runModuleLockAddressMapTests,
@@ -1857,7 +1862,9 @@ import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
 import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
+import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
+import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -3461,6 +3468,12 @@ await runTest(
   + "measured 1840px inside a 909px content box, and the page-level overflow check read clean the "
   + "whole time; four table-fixed columns, merged not shrunk, and long values wrap)",
   runMailboxOffboardingTableFitsTheScreenTests,
+);
+await runTest(
+  "expense dashboard trip table fits the screen (a 1160px min-width under an overflow-x-auto "
+  + "wrapper put main at 1157px against 1096 at a 1280px viewport; twelve columns merged into "
+  + "seven table-fixed ones that fit the 679px box a 768px viewport leaves, and values wrap)",
+  runExpenseDashboardTripsTableFitsTheScreenTests,
 );
 await runTest(
   "company device register (a device signed out to somebody who has LEFT is the flag the register "
@@ -5213,6 +5226,16 @@ await runTest(
 );
 
 await runTest(
+  "a historical expense sheet never writes an app trip's payroll row: a TripID in the workflow's OUTSTATION- namespace (any case or spacing) is refused at analysis — before either upload route saves or the replace route clears its report — and again inside the save unless the caller is the workflow's own push; the uploader is told whose rows by name and row number, and an app trip in the admin Expense Approvals export is refused on its own account, beside the download's own refusal",
+  runOutstationSheetRefusesWorkflowTripIdsTests,
+);
+
+await runTest(
+  "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
+  runOutstationSheetRefusesApprovalsExportTests,
+);
+
+await runTest(
   "sales pharmacy-code sync re-run (twice leaves exactly one row per distributor+code, spreadsheet rows untouched, links not detached)",
   runMarketingSalesCodeSyncRerunTests,
 );
@@ -5222,6 +5245,11 @@ await runTest(
   + "period) matches the RPC's only selective predicate so the plan is a Bitmap Index Scan not a full "
   + "rollup seq scan; index expression and function predicate pinned to stay in lockstep)",
   runTerritoryAreaIndexTests,
+);
+
+await runTest(
+  "Territory Management area pharmacies value a direct order as it is from the source, never units x factory price (owner rule, locked)",
+  runTerritoryDirectValueTests,
 );
 
 await runTest(
@@ -5523,6 +5551,13 @@ await runTest("marketing finance table never labels a request with a raw custome
 await runTest(
   "outstation Arabic direction (residence/route take block dir=auto; notes take it per line)",
   runOutstationArabicTextDirectionTests,
+);
+await runTest(
+  "outstation description reads as a person would write it (the stored notes carry a machine audit "
+  + "line - source=live_camera hr_id=… captured_at=<UTC> gps=… draft_id=<uuid> request_id=… - which "
+  + "the Expense Dashboard, its spreadsheet and the submit email printed raw; now the note, the "
+  + "allowance notice and a Cairo-time photo stamp with a clean address)",
+  runOutstationDescriptionFormatTests,
 );
 await runTest(
   "mailbox monitor Arabic direction (body dir=auto needs whitespace-pre-wrap; From line isolates the name)",
@@ -6532,6 +6567,12 @@ await runTest(
   runMedicalRepExpenseViewerTests,
 );
 
+await runTest(
+  "the portal home and /overview never bounce a role between them: the landing path, the navigation mode and the notification links all read the one portal-role list, so every role lands in the shell it is in (the second role-list copy that could have looped every sign-in)",
+  runPortalShellRolesTests,
+);
+
+await runTest("the Office commit reports an Office step it could not confirm, never swallows it: the allocation stays saved and the reply names the reason", runOfficeCommitConfirmStepTests);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

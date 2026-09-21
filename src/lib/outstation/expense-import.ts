@@ -16,6 +16,10 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { roundCurrency } from "@/lib/payroll/money";
+import {
+  describeWorkflowTripIdRefusal,
+  findRowsCarryingWorkflowTripIds,
+} from "@/lib/outstation/workflow-trip-id-guard";
 
 /**
  * Stable, collision-resistant fallback id for an imported expense row that has
@@ -214,6 +218,69 @@ const expenseTemplateDefinitions: ExpenseTemplateDefinition[] = [
   },
 ];
 
+/**
+ * THE EXPENSE APPROVALS DOWNLOAD IS NOT AN UPLOAD TEMPLATE — owner ruling, 2026-09-21.
+ *
+ * The admin Expense Approvals screen's "Export XLSX" (app/api/admin/outstation/expenses/export/
+ * route.ts) lists trips already in Phoenix, and it shares 13 of the 16 columns the Phoenix
+ * Outstation Expenses template requires — exactly the pass mark in `detectExpenseTemplate`. So it
+ * re-imported with zero errors, and because every save upserts on `trip_id`, each trip in it was
+ * rewritten IN PLACE from the download: AM and PM workload read as 0 (the download says "Declared
+ * AM"/"Declared PM"), Other dropped and the total rebuilt without it (it says "Claimed (Before
+ * Deduction)", not "Total"), the HR comment and any deduction lost (the importer reads neither
+ * column), and the trip moved into the new upload's report — so deleting that upload later deleted
+ * the trips with it. On Replace the report is cleared first, so the pre-July "values only" rule
+ * (imported-history.ts) had nothing stored left to protect. #4188 refuses the download's app trips
+ * (`OUTSTATION-` ids, workflow-trip-id-guard.ts); this refuses the file, historical trips included.
+ *
+ * Asked in chat, the owner chose to refuse the download outright. It is recognised by headers only it
+ * writes, and ANY ONE is enough, so a download with a column or two deleted is still refused. None is
+ * an alias of a template column, so a real historical sheet never carries one. The refusal happens at
+ * analysis, which both upload routes run before they save — and the replace route before it clears.
+ *
+ * tests/outstation-sheet-refuses-approvals-export.test.ts pins every label here to one the download
+ * still writes: renaming a download column without updating this list would silently reopen the hole.
+ */
+export const EXPENSE_APPROVALS_DOWNLOAD_COLUMNS = [
+  "Claimed (Before Deduction)",
+  "Approved (After Deduction)",
+  "Declared AM",
+  "Declared PM",
+  "Declared Pharmacies",
+] as const;
+
+export const EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY = "phoenix-expense-approvals-download";
+
+const UNRECOGNIZED_EXPENSE_TEMPLATE_MESSAGE =
+  "Unrecognized expense template. Please upload the Phoenix Outstation Expenses template.";
+
+function isExpenseApprovalsDownload(columns: string[]) {
+  const present = new Set(columns.map(normalizeHeaderName));
+  return EXPENSE_APPROVALS_DOWNLOAD_COLUMNS.some((label) => present.has(normalizeHeaderName(label)));
+}
+
+/** The refusal the uploader reads. Names no trip and no id — it is about the file, not a row. */
+export function describeExpenseApprovalsDownloadRefusal(): string {
+  return (
+    "This file is the Expense Approvals download, not the outstation expenses upload template, so " +
+    "nothing was imported and no saved upload was changed. Uploading it would rewrite every trip it " +
+    "lists from the download's own columns — workload read as zero, and the Other amount, HR comments " +
+    "and deductions lost — and move those trips into this upload. Upload the Phoenix Outstation " +
+    "Expenses template instead; a trip already in Phoenix is changed on the Expense Approvals screen, " +
+    "never by uploading the download back."
+  );
+}
+
+/**
+ * What an upload route tells the uploader when `analysis.template.recognized` is false — the
+ * download's own refusal when that is what was uploaded, the generic sentence otherwise.
+ */
+export function unrecognizedExpenseTemplateMessage(analysis: Pick<ExpenseAnalysisResult, "template">): string {
+  return analysis.template?.key === EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY
+    ? describeExpenseApprovalsDownloadRefusal()
+    : UNRECOGNIZED_EXPENSE_TEMPLATE_MESSAGE;
+}
+
 function detectExpenseTemplate(
   fileName: string,
   sheetName: string,
@@ -267,6 +334,19 @@ function detectExpenseTemplate(
         score,
       };
     }
+  }
+
+  // Scored like any sheet (so the analysis still reports its column match), then refused: 13 of 16
+  // is a pass, and the download must never be one. See EXPENSE_APPROVALS_DOWNLOAD_COLUMNS.
+  if (isExpenseApprovalsDownload(columns)) {
+    return {
+      key: EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY,
+      missingRequiredColumns: bestMatch.missingRequiredColumns,
+      name: "Expense Approvals download",
+      recognized: false,
+      recognizedColumns: bestMatch.recognizedColumns,
+      requiredColumns: bestMatch.requiredColumns,
+    };
   }
 
   if (!bestMatch.recognized) {
@@ -743,11 +823,21 @@ export async function analyzeExpenseWorkbook(
 
   const specialists = specialistSummary(records);
   const errors: string[] = [];
-  if (!template.recognized) {
+  if (template.key === EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY) {
+    errors.push(describeExpenseApprovalsDownloadRefusal());
+  } else if (!template.recognized) {
     errors.push("Expense workbook does not match the Phoenix Outstation Expenses template.");
   }
   if (records.length === 0) {
     errors.push("No expense rows were detected in the uploaded workbook.");
+  }
+  // An `OUTSTATION-<n>` TripID is an app trip's payroll row: the save upserts on `trip_id`, so this
+  // row would overwrite that trip's money and workload rather than add a trip. Refused as a validation
+  // error so both upload routes stop BEFORE writing — and before the replace route clears its report.
+  // See workflow-trip-id-guard.ts.
+  const workflowTripRows = findRowsCarryingWorkflowTripIds(records);
+  if (workflowTripRows.length > 0) {
+    errors.push(describeWorkflowTripIdRefusal(workflowTripRows));
   }
 
   const invalidRows = records.length - payrollReadyRows;

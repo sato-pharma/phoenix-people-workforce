@@ -1,15 +1,6 @@
-const portalLandingRoleNames = new Set([
-  "employee",
-  "medical rep",
-  "district manager",
-  "regional manager",
-  "national sales manager",
-  "product manager",
-  "group product manager",
-  "marketing manager",
-  "training manager",
-  "manager",
-]);
+// The portal roles are the SAME list the navigation mode reads — see portal-shell-roles.ts for
+// the loop a second copy here would cause.
+import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 
 export function resolveLandingPathForRole(role: string | null | undefined) {
   const normalized = String(role ?? "").trim().toLowerCase();
@@ -41,5 +32,5 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
     return "/hr/admin/hr-command-center";
   }
   if (normalized === "ceo") return "/admin/ceo-command-center";
-  return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
+  return isPortalShellRole(normalized) ? "/employee-portals" : "/admin";
 }

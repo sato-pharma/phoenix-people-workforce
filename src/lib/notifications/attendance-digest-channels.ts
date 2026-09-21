@@ -12,7 +12,8 @@
 //
 // The notice reads as a short letter in paragraphs (owner, same day). On Telegram it keeps its
 // paragraph breaks and carries no "Module:" line; in the email its line breaks show as breaks.
-// Every other module keeps its one-block message in both.
+// Every other module keeps its one-block message in both, except that outstation's EMAIL keeps its
+// breaks too (see emailKeepsLineBreaks).
 //
 // Keyed on MODULE alone, so a notice added to the module later reads the same way.
 
@@ -27,7 +28,14 @@ export function telegramKeepsParagraphs(module: string | null | undefined): bool
   return isAttendanceDigestModule(module);
 }
 
-/** Whether this module's email shows the message's own line breaks, so its paragraphs stay apart. */
+/**
+ * Whether this module's email shows the message's own line breaks, so its paragraphs stay apart.
+ *
+ * Outstation too (owner, 2026-09-21: the submit mail "must be tidied and premium polished"). Its
+ * summary is one fact per line — who and how much, the trip, the captured place, the checks, the
+ * employee's note — and without breaks the email ran them together into one block. Its other
+ * mails are a single line, so this changes nothing for them.
+ */
 export function emailKeepsLineBreaks(module: string | null | undefined): boolean {
-  return isAttendanceDigestModule(module);
+  return isAttendanceDigestModule(module) || String(module ?? "").trim().toLowerCase() === "outstation";
 }

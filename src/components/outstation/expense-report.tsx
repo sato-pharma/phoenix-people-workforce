@@ -307,18 +307,23 @@ type HrApprovalDraft = { hrApproved: boolean; hrComment: string; approvedAmount:
 function HrDecisionControls({
   amountChanged,
   approval,
+  locked,
   onUpdate,
   originalTotal,
   reasonMissing,
 }: {
   amountChanged: boolean;
   approval: HrApprovalDraft;
+  /** A refused upload: its rows are read-only, so no decision made on them can carry into a save. */
+  locked: boolean;
   onUpdate: (patch: Partial<HrApprovalDraft>) => void;
   originalTotal: number;
   reasonMissing: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-2">
+    // A disabled fieldset disables every control inside it natively — the switch, the amount and the
+    // reason — without widening the shared Switch primitive.
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0 disabled:opacity-60" disabled={locked}>
       <Switch
         checked={approval.hrApproved}
         label={approval.hrApproved ? "Approved" : "Approve"}
@@ -347,7 +352,7 @@ function HrDecisionControls({
       {reasonMissing ? (
         <p className="text-phx-2xs font-semibold text-rose-600">Add a reason for the changed amount.</p>
       ) : null}
-    </div>
+    </fieldset>
   );
 }
 
@@ -523,6 +528,9 @@ export function ExpenseReport({
     record: ExpenseTripRecord,
     patch: Partial<{ hrApproved: boolean; hrComment: string; approvedAmount: number }>,
   ) {
+    // Drafts are kept by trip id and outlive the screen they were made on, so a tick recorded on a
+    // refused upload would reappear — and save — on the saved report holding the same trip.
+    if (analysis?.validation?.status === "failed") return;
     setApprovals((current) => {
       const saved = record as ExpenseTripRecord & {
         hrApproved?: boolean;
@@ -863,8 +871,11 @@ export function ExpenseReport({
     (tripDateTo ? 1 : 0) +
     Object.values(columnFilters).filter((value) => value.trim()).length;
 
+  // A refused upload is shown, never saved: Save would import its rows through the approvals route.
+  const analysisRefused = validation.status === "failed";
+
   function saveApprovals() {
-    if (!analysis) return;
+    if (!analysis || analysisRefused) return;
 
     onSaveApprovals(
       analysis.records.map((record) => {
@@ -1075,7 +1086,7 @@ export function ExpenseReport({
           </Button>
           <Button
             className="rounded-2xl border border-phx-accent-line/40 bg-phx-accent px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-phx-accent-hover"
-            disabled={!analysis || savingApprovals}
+            disabled={!analysis || savingApprovals || analysisRefused}
             onClick={saveApprovals}
             variant="secondary"
           >
@@ -1427,6 +1438,7 @@ export function ExpenseReport({
                           <HrDecisionControls
                             amountChanged={amountChanged}
                             approval={approval}
+                            locked={analysisRefused}
                             onUpdate={(patch) => updateApproval(record, patch)}
                             originalTotal={record.total}
                             reasonMissing={reasonMissing}
@@ -1594,6 +1606,7 @@ export function ExpenseReport({
                             <HrDecisionControls
                               amountChanged={amountChanged}
                               approval={approval}
+                              locked={analysisRefused}
                               onUpdate={(patch) => updateApproval(record, patch)}
                               originalTotal={record.total}
                               reasonMissing={reasonMissing}
