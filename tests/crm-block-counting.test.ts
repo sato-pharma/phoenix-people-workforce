@@ -121,11 +121,13 @@ export function runCrmBlockCountingTests() {
   );
 
   // ── (D) The pre-hire counter obeys the identical rule ─────────────────────────────────────
+  //
+  // The label here names nobody: the vendor stripped it, so whoever did this work is unknown.
   assert.deepEqual(
     countBlockedAttributions(
       [
-        visit({ agentID: 1602, agentName: "Soad.Atef ( Cairo East 1 / A )", visitDate: "2026-02-14", visitType: CAMPAIGN_TYPE }),
-        visit({ agentID: 1602, agentName: "Soad.Atef ( Cairo East 1 / A )", visitDate: "2026-02-14", visitType: HOLIDAY_TYPE }),
+        visit({ agentID: 1602, agentName: "( Cairo East 1 / A )", visitDate: "2026-02-14", visitType: CAMPAIGN_TYPE }),
+        visit({ agentID: 1602, agentName: "( Cairo East 1 / A )", visitDate: "2026-02-14", visitType: HOLIDAY_TYPE }),
       ],
       maps,
     ),
@@ -196,4 +198,29 @@ export function runCrmBlockCountingTests() {
     "work inside employment, and an agent the roster does not know at all, produce no blocks",
   );
   assert.deepEqual(countBlockedAttributions([], maps), { postExit: 0, preHire: 0 }, "an empty run counts nothing");
+
+  // ── (H) The alarm never fires for a row the Unmapped Agents list does not show ────────────
+  //
+  // The alarm says "map it on /admin/crm → Unmapped Agents". The owner's rule for that list
+  // (2026-09-21) is that it stays clean except for a real unmapped agent. A pre-hire row under the
+  // joiner's OWN label is the previous holder's history, relabelled at the handover. It is settled,
+  // so paging a human about it would send them to an empty list.
+  assert.deepEqual(
+    countBlockedAttributions(
+      [visit({ agentID: 1602, agentName: "Soad.Atef ( Cairo East 1 / A )", visitDate: "2026-02-14", visitType: CAMPAIGN_TYPE })],
+      maps,
+    ),
+    { postExit: 0, preHire: 0 },
+    "a pre-hire row under a known joiner's own label is settled on the list, so it must not page anyone",
+  );
+  // The safety property survives: the joiner's IN-TENURE work on the leaver's account still pages,
+  // because the leaver's crm_id blocks it and only a mapping can credit the joiner.
+  assert.deepEqual(
+    countBlockedAttributions(
+      [visit({ agentID: 1485, agentName: "Soad.Atef ( Cairo East 1 / A )", visitDate: "2026-07-20", visitType: REGULAR_TYPE })],
+      maps,
+    ),
+    { postExit: 1, preHire: 0 },
+    "a known joiner's own call, filed on a leaver's account while she is employed, still counts",
+  );
 }

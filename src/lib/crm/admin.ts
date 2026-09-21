@@ -9,10 +9,9 @@ import {
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
   isAttributableOn,
+  isSettledUnmappedRow,
   loadCrmIdentityMaps,
   normalizeCrmName,
-  recordsNoWorkToAttribute,
-  resolveEmployeeAttribution,
   type CrmIdentityMaps,
 } from "@/lib/crm/identity";
 import type { CrmMappingEmployeeOption } from "@/lib/crm/mapping-picker";
@@ -67,50 +66,6 @@ function recordUnmappedIdentity(
     // label would scope the mapping to exactly the wrong rows.
     if (name) existing.name = name;
   }
-}
-
-/** One unmapped visit slot (agent or double) as the settled-row test reads it. */
-export type UnmappedSlotRow = {
-  crmId: number | null;
-  label: string | null;
-  visitDate: string | null;
-  visitType: number | null;
-};
-
-/**
- * Is this unattributed row already ANSWERED, so it needs no decision on the Unmapped Agents list?
- * Two shapes, each the same rule the sync applies when it decides whether to page a human
- * (countBlockedAttributions in sync.ts):
- *
- *   1. A row that records NO WORK — a public-holiday or casual-leave marker. iReports360 sprays one
- *      across every account on the day, including accounts nobody held that day, so on its own it
- *      says only that a slot exists. Production 2026-09-21: of the 25 accounts left on the list after
- *      the handover clean-up, 21 carried nothing but these markers (public holidays on 06-07 Jan,
- *      25 Feb, 13 and 25 Apr, 27 Aug), and the owner read the whole list as broken.
- *   2. A row the account's MAPPING already covers but refuses on the date — before that person's
- *      hire date or after their last working day, so no tier credits anyone.
- *      A human has decided whose account it is; the row simply falls outside that person's
- *      employment, and the owner's rule is to leave such rows unassigned. Listing them forever made
- *      every handed-over account impossible to clear.
- *
- * A row carrying a DIFFERENT person's label on a mapped account is not covered by the mapping, so
- * it stays on the list for its own decision. Shared with reconciliation check 9, so the list and the
- * mirror scan it is compared against can never disagree about which rows count.
- */
-export function isSettledUnmappedRow(row: UnmappedSlotRow, maps: CrmIdentityMaps): boolean {
-  if (row.crmId == null) return false;
-  if (recordsNoWorkToAttribute(row.visitType)) return true;
-  // Settled only when a MAPPING covers this row (same three-way label test as the resolver's tier 1)
-  // and still nobody is credited. Asking "was the override refused?" alone missed the commonest
-  // shape: when the mapped person's own employees.crm_id is this account, tier 2 answers after tier 1
-  // with its own block, so blockedByOverride never appears (accounts 1537, 1442, production
-  // 2026-09-21 — both stayed listed after being mapped).
-  const override = maps.hrIdByManualOverride.get(String(row.crmId));
-  if (!override) return false;
-  const recordLabel = normalizeCrmName(row.label);
-  if (override.label && recordLabel && override.label !== recordLabel) return false;
-  const day = row.visitDate?.slice(0, 10) || null;
-  return resolveEmployeeAttribution(row.crmId, row.label, maps, day).hrId === null;
 }
 
 /**
