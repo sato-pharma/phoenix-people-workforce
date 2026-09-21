@@ -2959,7 +2959,7 @@ await runTest("employee 360 role-category scoping (six tabs, others excluded)", 
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)", runEmployee360AccessTests);
 await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
-await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios", runEmployee360CustomerKeyTests);
+await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios + figures start at the hire month", runEmployee360CustomerKeyTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);

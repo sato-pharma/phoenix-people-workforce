@@ -38,6 +38,7 @@
 import { cache } from "react";
 
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import {
@@ -56,6 +57,8 @@ import {
   loadAchievementRange,
   loadUploadedPeriodsInRange,
 } from "@/lib/sales/vs-target";
+import { fetchAllRows } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 import type { SalesRow } from "./deep-service";
 
@@ -210,6 +213,51 @@ export function selectEmployee360RowsForHrIds(
   if (wanted.size === 0) return [];
   return rows.filter((row) => wanted.has(lower(row.employee_hr_id)));
 }
+
+/**
+ * Drop every row for a month before its rep's hire month. PURE.
+ *
+ * Owner ruling 2026-09-21: a rep's Employee 360 starts at their hire month. The engine credits
+ * whoever holds a seat TODAY with that area's whole history (`phx_sales_vs_target_range` names the
+ * current occupant on every past month), so a rep hired in September read January to August as
+ * their own sales and targets — and one hired 1 October read July and August on a seat they had
+ * not yet started. A pre-hire month belongs to the AREA, exactly like a vacant seat's month, so it
+ * leaves a manager's team roll-up too. Area totals, closings and Sales vs Target are untouched.
+ *
+ * The hire month itself is kept (a rep hired on the 14th owns that month's figure). A rep with no
+ * recorded hire date keeps every row: no date is not evidence of a later start.
+ */
+export function dropPreHireEmployee360Rows<T extends { employee_hr_id: string | null; year: number | null; month: number | null }>(
+  rows: readonly T[],
+  hireMonthByHrId: ReadonlyMap<string, string>,
+): T[] {
+  return rows.filter((row) => {
+    const key = canonicalHrIdKey(row.employee_hr_id);
+    const hireMonth = key ? hireMonthByHrId.get(key) : undefined;
+    if (!hireMonth || !row.year || !row.month) return true;
+    return `${row.year}-${String(row.month).padStart(2, "0")}` >= hireMonth;
+  });
+}
+
+/**
+ * Every employee's hire month, keyed by the canonical HR id, as `YYYY-MM`. Memoized per request.
+ * The employee master is a couple of hundred rows, so it is read whole rather than by an `.in()`
+ * over a manager's subtree, which is what overflows the request headers (see deep-service).
+ */
+export const loadEmployee360HireMonths = cache(async (): Promise<Map<string, string>> => {
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<{ hr_id: string | null; hire_date: string | null }>(
+    () => supabase.from("employees").select("hr_id,hire_date").not("hire_date", "is", null),
+    "hr_id",
+  );
+  const out = new Map<string, string>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hr_id);
+    const hireMonth = String(row.hire_date ?? "").slice(0, 7);
+    if (key && /^\d{4}-\d{2}$/.test(hireMonth)) out.set(key, hireMonth);
+  }
+  return out;
+});
 
 /**
  * Keep the rows belonging to these product families. PURE.

@@ -19,7 +19,9 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
 import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
+  dropPreHireEmployee360Rows,
   loadCanonicalEmployee360SalesRows,
+  loadEmployee360HireMonths,
   maskRestrictedEmployee360Rows,
   selectEmployee360RowsForFamilies,
   selectEmployee360RowsForHrIds,
@@ -125,8 +127,14 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
   // from the wrong engine: it read B-158's H1 as 700,019.87 while every other surface read
   // 460,228.50. See sales-canonical.ts.
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
-  const all = await loadCanonicalEmployee360SalesRows();
-  let rows = maskRestrictedEmployee360Rows(selectEmployee360RowsForHrIds(all, keys), viewerRole);
+  const [all, hireMonths] = await Promise.all([loadCanonicalEmployee360SalesRows(), loadEmployee360HireMonths()]);
+  // A rep's figures start at their hire month (owner, 2026-09-21): the engine names today's seat
+  // holder on every past month, and those months belong to the area. Not on the PM path below —
+  // a brand's sales are the Product Manager's whoever held the seat.
+  let rows = maskRestrictedEmployee360Rows(
+    dropPreHireEmployee360Rows(selectEmployee360RowsForHrIds(all, keys), hireMonths),
+    viewerRole,
+  );
   // Code-based masking above is exact; the name pass stays as a backstop for a product whose
   // name matches a restricted one but whose code does not (a rename that outran the master).
   if (!canViewRestrictedProducts(viewerRole)) {
