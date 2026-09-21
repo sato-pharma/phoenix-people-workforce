@@ -1114,15 +1114,21 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             carries no bar and no "of N". */}
         <RepTile
           hint={
-            kpis?.hasCallRate
-              ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
-              : "No calls logged"
+            kpis?.noGpsFeed
+              ? "Calls logged, but no GPS check-in reached the CRM to prove them"
+              : kpis?.hasCallRate
+                ? `${kpis.kpiRules === "phoenix" ? "Visits" : "Verified calls"} per day · ${kpis.workingDays} working days`
+                : "No calls logged"
           }
           label="Call rate"
           meta={shortPeriod(kpis?.monthLabel)}
           rail="bg-sky-500"
         >
-          {kpis?.hasCallRate ? (
+          {/* Ruling A1 (owner, 2026-09-21): the proved rates are blank, not zero, when no GPS
+              check-in reached the CRM at all — so the tile says that rather than drawing three 0.00s. */}
+          {kpis?.noGpsFeed ? (
+            <p className="text-[13px] font-semibold text-slate-400">No GPS feed</p>
+          ) : kpis?.hasCallRate ? (
             <div className="flex gap-4">
               <RepCallHalf label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
               <RepCallHalf label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />

@@ -131,6 +131,9 @@ export type KpiIndexInput = {
    * whenever there are reps — the flag is a per-rep absence, not a team one.
    */
   hasCallRate: boolean;
+  /** Ruling A1 (owner, 2026-09-21): calls logged, no GPS feed to prove them — so AM and PM leave the
+   * average for THAT reason, never "no working days". */
+  noGpsFeed?: boolean;
 };
 
 /** The fixed half of the explanation. Printed under the formula, and identical on every board. */
@@ -142,6 +145,9 @@ export const KPI_INDEX_METHOD =
   "has been set for them yet.";
 
 const clampToStandard = (value: number): number => Math.max(0, Math.min(100, value));
+
+/** Why a rep who DID log calls has no AM or PM attainment. */
+const callRateGap = (input: KpiIndexInput): string => (input.noGpsFeed ? "no GPS feed" : "no working days");
 
 /**
  * The overall KPI for one rep, or for a whole team from its totals.
@@ -165,12 +171,12 @@ export function kpiIndexOf(input: KpiIndexInput): KpiIndex {
     {
       key: "am",
       measuredPct: input.hasCallRate ? input.amAttainmentPct : null,
-      excludedBecause: input.hasCallRate ? (input.amAttainmentPct == null ? "no working days" : null) : "no calls logged",
+      excludedBecause: input.hasCallRate ? (input.amAttainmentPct == null ? callRateGap(input) : null) : "no calls logged",
     },
     {
       key: "pm",
       measuredPct: input.hasCallRate ? input.pmAttainmentPct : null,
-      excludedBecause: input.hasCallRate ? (input.pmAttainmentPct == null ? "no working days" : null) : "no calls logged",
+      excludedBecause: input.hasCallRate ? (input.pmAttainmentPct == null ? callRateGap(input) : null) : "no calls logged",
     },
   ];
 

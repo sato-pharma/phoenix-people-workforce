@@ -47,6 +47,9 @@ export type KpiFilterableRow = {
   campaignShare: number;
   campaignOnlyDays: number;
   hasCallRate: boolean;
+  /** Ruling A1 (owner, 2026-09-21): real visits and no GPS check-in at all, so nothing could be
+   * proved. See `KpiRepRow.noGpsFeed`. Optional so a row built without a call-rate feed reads false. */
+  noGpsFeed?: boolean;
   /** Morning calls against the AM target and afternoon calls against the PM target — two figures,
    * never one. Null with no working days. The owner banned the blend on 2026-09-04; kpis-board.ts
    * carries the reasoning. */
@@ -168,6 +171,7 @@ export function pmBandOf(row: KpiFilterableRow): KpiBand {
 export const KPI_FLAGS = [
   "never-reached",
   "no-calls",
+  "no-gps-feed",
   "no-plan",
   "campaign-heavy",
   "campaign-only-days",
@@ -184,6 +188,7 @@ export type KpiFlag = (typeof KPI_FLAGS)[number];
 export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
   "never-reached": "Never reached a planned doctor",
   "no-calls": "Logged no calls at all",
+  "no-gps-feed": "No GPS feed",
   "no-plan": "Carries no plan",
   "campaign-heavy": "Half or more of calls were campaign",
   "campaign-only-days": "Had campaign-only days",
@@ -199,6 +204,8 @@ export const KPI_FLAG_LABEL: Record<KpiFlag, string> = {
 export const KPI_FLAG_HINT: Record<KpiFlag, string> = {
   "never-reached": "Has planned doctors and visited none of them. The most urgent row on the board.",
   "no-calls": "No CRM row in this window — could be leave, a sync gap, or an idle period.",
+  "no-gps-feed":
+    "Logged visits, but no GPS check-in reached the CRM from this account, so none could be proved. The proved rates are blank and the calls are left out of the team's call rate.",
   "no-plan": "Nothing was planned, so coverage and frequency have no denominator.",
   "campaign-heavy": "Campaign calls name no doctor, so this share of the work cannot be verified.",
   "campaign-only-days": "Days with campaign calls and not one verified visit.",
@@ -242,6 +249,7 @@ export function kpiFlagsOf(row: KpiFilterableRow): KpiFlag[] {
   const flags: KpiFlag[] = [];
   if (row.hasMeasurablePlan && row.visitedDoctors === 0) flags.push("never-reached");
   if (!row.hasCallRate || row.totalCalls === 0) flags.push("no-calls");
+  if (row.noGpsFeed) flags.push("no-gps-feed");
   if (!row.hasMeasurablePlan) flags.push("no-plan");
   if (row.campaignShare >= 0.5 && row.campaignCalls > 0) flags.push("campaign-heavy");
   if (row.campaignOnlyDays > 0) flags.push("campaign-only-days");

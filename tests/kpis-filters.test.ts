@@ -72,6 +72,7 @@ function row(overrides: Partial<KpiRepRow> = {}): KpiRepRow {
     campaignShare: 0,
     campaignOnlyDays: 0,
     hasCallRate: true,
+    noGpsFeed: false,
     amAttainmentPct: 100,
     pmAttainmentPct: 100,
     // Separate from AM/PM entirely (owner, 2026-09-05) — no target yet, so no attainment percentage

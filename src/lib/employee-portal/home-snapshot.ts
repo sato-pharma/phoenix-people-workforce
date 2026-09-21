@@ -216,6 +216,9 @@ export type MrFieldKpis = {
   pharmacyTarget: number | null;
   /** False when the rep logged nothing in the window — distinct from a real zero rate. */
   hasCallRate: boolean;
+  /** Ruling A1 (owner, 2026-09-21): calls logged, no GPS check-in to prove them — the tile says so
+   * rather than printing the blank proved rates as zeros. See `KpiRepRow.noGpsFeed`. */
+  noGpsFeed?: boolean;
   /** "phoenix" from the CRM cutover, when every submitted regular visit counts (phase 6). */
   kpiRules?: "legacy" | "phoenix";
 };
@@ -721,6 +724,7 @@ async function loadMrFieldKpis(access: AccessContext, hrId: string): Promise<MrF
     pharmacyRate: row.pharmacyRate,
     pharmacyTarget: board.pharmacyTarget,
     hasCallRate: row.hasCallRate,
+    noGpsFeed: row.noGpsFeed,
     kpiRules: board.kpiRules ?? "legacy",
   };
 }
