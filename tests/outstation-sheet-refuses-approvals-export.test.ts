@@ -6,6 +6,7 @@ import {
   analyzeExpenseWorkbook,
   describeExpenseApprovalsDownloadRefusal,
   EXPENSE_APPROVALS_DOWNLOAD_COLUMNS,
+  EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME,
   EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY,
   unrecognizedExpenseTemplateMessage,
 } from "../src/lib/outstation/expense-import.ts";
@@ -26,7 +27,9 @@ import {
  * the historical (sheet-imported) trips — 327 of them on production that day.
  *
  * The workbook is built from the download route's REAL column labels, so this proves the vector, not
- * a hand-made look-alike.
+ * a hand-made look-alike. The refusal has two independent triggers, and this covers both: any one of
+ * the download's own columns, and — even with all of them hand-deleted — the download's worksheet
+ * name "Expense Approvals". Both the columns and the name are pinned to what export/route.ts writes.
  */
 
 // A historical trip as the download writes it: dated before July, with workload, an Other amount, a
@@ -78,11 +81,15 @@ const templateRow = {
   TripID: "T-2001",
 };
 
-async function analyzeSheet(columns: ExportColumn[], rows: Array<Record<string, string | number>>) {
+async function analyzeSheet(
+  columns: ExportColumn[],
+  rows: Array<Record<string, string | number>>,
+  sheetName = "Outstation Expenses",
+) {
   const buffer = await buildPhoenixTableWorkbook({
     columns,
     rows,
-    sheetName: "Outstation Expenses",
+    sheetName,
     subtitle: "regression fixture",
     title: "Historical outstation expenses",
   });
@@ -141,6 +148,30 @@ export async function runOutstationSheetRefusesApprovalsExportTests() {
     );
     assert.ok(analysis.validation.errors.includes(refusalText), `a sheet carrying "${label}" is refused as the download`);
   }
+
+  // -- The worksheet NAME alone is enough, even with every signature column deleted -------------
+  // The download names its sheet "Expense Approvals"; the importer's constant must still be what the
+  // route writes, or a rename there would silently reopen the hole a different way.
+  assert.equal(
+    EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME,
+    "Expense Approvals",
+    "the download's worksheet name is pinned to what export/route.ts writes",
+  );
+  const routeSource = readFileSync("app/api/admin/outstation/expenses/export/route.ts", "utf8");
+  assert.match(
+    routeSource,
+    new RegExp(`sheetName:\\s*"${EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME}"`),
+    "the Expense Approvals download still names its worksheet that — rename it there and the sheet-name refusal misses",
+  );
+  // A hand-stripped download: the plain template columns, none of the five signatures, but the sheet
+  // is still named "Expense Approvals". The column check cannot see it; the sheet-name check must.
+  const strippedButNamed = await analyzeSheet(templateColumns, [templateRow], EXPENSE_APPROVALS_DOWNLOAD_SHEET_NAME);
+  assert.ok(
+    strippedButNamed.validation.errors.includes(refusalText),
+    "a download with every signature column deleted is still refused by its worksheet name",
+  );
+  assert.equal(strippedButNamed.template?.key, EXPENSE_APPROVALS_DOWNLOAD_TEMPLATE_KEY);
+  assert.equal(strippedButNamed.template?.recognized, false);
 
   // -- Control: a real historical template sheet still imports --------------------------------
   const genuine = await analyzeSheet(templateColumns, [templateRow]);
