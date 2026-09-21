@@ -1122,7 +1122,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "rows must link to the tracking view",
     );
     // In the READER'S OWN SHELL. This was pinned to a literal "/admin/direct-orders", which is the
-    // wrong shell for almost everyone who uses this form — portalNavigationRoles sends every
+    // wrong shell for almost everyone who uses this form — portalShellRoles sends every
     // District / Regional / National Sales Manager and Product / Group Product Manager to the
     // portal, and they are the people who raise direct orders. It resolved only because the admin
     // detail page redirects them back.

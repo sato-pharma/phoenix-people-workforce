@@ -90,7 +90,7 @@ type Props = {
    * The mounting shell's Direct Orders base.
    *
    * Was hardcoded to "/admin/direct-orders", which is the WRONG shell for almost everyone who uses
-   * this form: portalNavigationRoles sends every District / Regional / National Sales Manager and
+   * this form: portalShellRoles sends every District / Regional / National Sales Manager and
    * Product / Group Product Manager to the portal, and they are the people who raise direct orders.
    * The admin detail page redirects them back, so it worked — via a round trip to the wrong shell.
    */
