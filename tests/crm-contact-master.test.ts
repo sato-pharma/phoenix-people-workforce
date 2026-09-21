@@ -234,11 +234,22 @@ export function runCrmContactMasterTests() {
     "the master refresh must run after the slice is written and before the audit row that reports it",
   );
   assert.match(route, /includeActivity: contactMasterRefreshIncludesActivity\(\{ slice, sliceOf \}\)/);
+  // The first disjunct was `result.agents === 0` until 2026-09-21. `agents` counts ATTEMPTED
+  // agents — a per-agent fetch that throws still lands in `outcomes` — so a tick where the vendor
+  // session rejected every single agent pinged SUCCESS, which is the exact shape this route's own
+  // doc comment says it fails on. `contactSyncSliceRefreshedNothing` is the shared predicate with
+  // the in-process poller; the `contactMaster.status` half below is unchanged and is what this
+  // assertion has always been about.
   assert.match(
     route,
-    /result\.agents === 0 \|\| contactMaster\.status === "failed" \? "fail" : "success"/,
+    /contactSyncSliceRefreshedNothing\(result\) \|\| contactMaster\.status === "failed" \? "fail" : "success"/,
     "a failed master refresh must fail the dead-man ping — the venue picker reads the master, and a refresh failing " +
       "every day would otherwise leave it serving a frozen list with nobody told",
+  );
+  assert.doesNotMatch(
+    route,
+    /result\.agents === 0/,
+    "`result.agents === 0` counts attempted agents and cannot see a slice where every agent failed",
   );
   {
     const start = master.indexOf("export async function refreshCrmContactMaster");

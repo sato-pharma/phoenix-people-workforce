@@ -509,6 +509,78 @@ export function runCrmLivePollerTests() {
   // than that.
   assert.ok(PROBATION_DV_LOOKBACK_DAYS >= 17, "the probation DV lookback must cover the 16-day late-save lag");
 
+  // ── A contact-list slice that refreshed nothing must not advance the cursor ───────────────────
+  // The predicate itself is pinned in crm-contact-lists.test.ts. This pins that BOTH schedulers
+  // actually call it — a correct predicate nobody consults fixes nothing. Shape-pinned with block
+  // comments stripped first, so the prose above cannot satisfy these assertions (AGENTS.md §2.1).
+  const strip = (path: string) =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+  const pollerStripped = strip("src/lib/crm/live-poller.ts");
+  const routeStripped = strip("app/api/cron/crm-contact-lists/route.ts");
+  const contactBranch = pollerStripped.match(/async function runScheduledContactListSync\([\s\S]*?\n\}\n/)?.[0] ?? "";
+  assert.ok(contactBranch, "runScheduledContactListSync must exist");
+  assert.match(
+    contactBranch,
+    /const refreshedNothing = contactSyncSliceRefreshedNothing\(result\);/,
+    "the in-process slice must ask the shared predicate whether it refreshed anything",
+  );
+  assert.match(
+    contactBranch,
+    /if \(refreshedNothing\) \{\s*\n\s*state\.lastContactListFailureMs = Date\.now\(\);\s*\n\s*\} else \{\s*\n\s*state\.contactListSlice = \(slice \+ 1\) % CONTACT_SYNC_SLICE_COUNT;\s*\n\s*state\.lastContactListSuccessMs = Date\.now\(\);/,
+    "an all-failed slice must record a FAILURE and hold the cursor — never advance past the twelfth that got nothing",
+  );
+  assert.doesNotMatch(
+    contactBranch,
+    /result\.agents === 0/,
+    "`result.agents === 0` counts ATTEMPTED agents and cannot see an all-failed slice — it must not come back",
+  );
+  assert.match(
+    contactBranch,
+    /refreshedNothing \|\| contactMaster\.status === "failed" \? "fail" : "success"/,
+    "the in-process heartbeat must go red on a slice that refreshed nothing",
+  );
+
+  // ── The list half is hourly; the contact master's ACTIVITY half must stay daily ───────────────
+  // `contactMasterRefreshIncludesActivity` keys on the last slice of the sweep, written when a
+  // sweep meant once a day. Under the hourly cursor that slice comes round every hour, so the pass
+  // that reads every visit and plan row (2.5s measured, against a PostgREST cut at 8s) would run
+  // ~16 times a day for nothing — visits never arrive through this job. Found by review 2026-09-21.
+  assert.match(
+    contactBranch,
+    /const includeActivity =\s*\n\s*contactMasterRefreshIncludesActivity\(\{ slice, sliceOf: CONTACT_SYNC_SLICE_COUNT \}\) &&\s*\n\s*state\.contactActivityRebuiltOnCairoDay !== cairoToday;/,
+    "the hourly sweep must gate the full activity pass on the Cairo DAY, not just on the last slice",
+  );
+  assert.match(
+    contactBranch,
+    /if \(includeActivity && contactMaster\.status === "refreshed"\) \{\s*\n\s*state\.contactActivityRebuiltOnCairoDay = cairoToday;/,
+    "only a pass that landed may claim the day — a failed one must not lock out the next",
+  );
+  assert.doesNotMatch(
+    contactBranch,
+    /includeActivity: contactMasterRefreshIncludesActivity\(/,
+    "passing the slice helper straight through is what made the daily pass hourly",
+  );
+  // The cron route genuinely runs once a day, so it keeps using the helper unqualified.
+  assert.match(
+    routeStripped,
+    /includeActivity: contactMasterRefreshIncludesActivity\(\{ slice, sliceOf \}\)/,
+    "the once-a-day cron route needs no day stamp — its last slice IS the daily sweep",
+  );
+  assert.match(
+    routeStripped,
+    /contactSyncSliceRefreshedNothing\(result\) \|\| contactMaster\.status === "failed" \? "fail" : "success"/,
+    "the cron route must use the same predicate — the two schedulers cannot disagree on what green means",
+  );
+  assert.doesNotMatch(
+    routeStripped,
+    /result\.agents === 0/,
+    "the route's own doc names 'a vendor session that rejects every agent' — `agents === 0` never caught it",
+  );
+
   // ── startLiveCrmPoller guards: must refuse to start outside the Railway production service ───
   const savedFlag = process.env.PHOENIX_LIVE_CRM_POLL;
   const savedRailway = process.env.RAILWAY_ENVIRONMENT_NAME;

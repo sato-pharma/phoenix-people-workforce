@@ -13,6 +13,7 @@ import {
   CONTACT_SYNC_SLICE_COUNT,
   contactRowKey,
   contactSyncSliceForDate,
+  contactSyncSliceRefreshedNothing,
   decideContactReplacement,
   selectContactSyncSlice,
 } from "../src/lib/crm/contacts-sync.ts";
@@ -340,6 +341,44 @@ export function runCrmContactListsTests() {
     at("2026-01-15T03:25:00Z"),
     at("2026-07-15T03:25:00Z"),
     "the same minute must select the same slice year-round — an hour-offset change must not move the window",
+  );
+
+  // ── 7c. A slice that refreshed NOTHING must not read as a success ─────────────────────────────
+  // `agents` counts ATTEMPTED agents — a per-agent fetch that throws still lands in `outcomes`. So
+  // the condition both schedulers used, `result.agents === 0`, could not see the one shape the cron
+  // route's own doc comment names: "a vendor session that rejects every agent". Login succeeds, all
+  // seven agents in the twelfth fail, `agents === 7` — and the heartbeat pinged SUCCESS while the
+  // mirror rotted, the in-process cursor stepped past that twelfth, and the 15-minute failure retry
+  // was replaced by the 5-minute success gap, so the failed twelfth waited a full hour.
+  // Found by review on 2026-09-21, before this ever ran.
+  assert.equal(
+    contactSyncSliceRefreshedNothing({ agents: 7, agentsFailed: 7 }),
+    true,
+    "a slice where EVERY attempted agent failed refreshed nothing — it must never ping success",
+  );
+  assert.equal(
+    contactSyncSliceRefreshedNothing({ agents: 0, agentsFailed: 0 }),
+    true,
+    "a slice that never started an agent refreshed nothing either",
+  );
+  // Partial degradation stays GREEN, deliberately. Twelve-plus ticks a day means anything flappy
+  // here pages until it is muted, and a muted check is worth less than no check.
+  assert.equal(
+    contactSyncSliceRefreshedNothing({ agents: 7, agentsFailed: 6 }),
+    false,
+    "six of seven failing is an ordinary vendor hiccup on one twelfth — it must stay green",
+  );
+  assert.equal(
+    contactSyncSliceRefreshedNothing({ agents: 7, agentsFailed: 0 }),
+    false,
+    "a clean slice is a success",
+  );
+  // `agentsRefusedEmpty` is the DESIGNED safety, not a failure: those agents kept yesterday's rows
+  // rather than being emptied by a vendor outage. A whole slice of them is still a slice that ran.
+  assert.equal(
+    contactSyncSliceRefreshedNothing({ agents: 7, agentsFailed: 0 }),
+    false,
+    "a slice where every agent refused an empty answer ran fine — the refusal IS the protection",
   );
 
   // ── 8. The owner's 90-120 rule ────────────────────────────────────────────────────────────────

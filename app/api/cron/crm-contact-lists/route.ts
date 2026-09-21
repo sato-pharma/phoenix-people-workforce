@@ -9,6 +9,7 @@ import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@
 import {
   CONTACT_SYNC_SLICE_COUNT,
   contactSyncSliceForDate,
+  contactSyncSliceRefreshedNothing,
   loadCrmContactSyncTargets,
   selectContactSyncSlice,
   syncCrmContactLists,
@@ -205,8 +206,12 @@ export async function GET(request: Request) {
     // deploy and the migration, and stays green.
     await pingDeadMansSwitch(
       JOB_SLUG,
-      result.agents === 0 || contactMaster.status === "failed" ? "fail" : "success",
-      `slice ${slice + 1}/${sliceOf}: ${result.agents} agent(s) refreshed, ${result.upserted} row(s) upserted` +
+      // `result.agents` counts ATTEMPTED agents, so `=== 0` alone never caught the very shape the
+      // doc comment above names — "a vendor session that rejects every agent". That tick pinged
+      // SUCCESS while the mirror rotted. `contactSyncSliceRefreshedNothing` is the shared predicate
+      // with the poller; partial degradation still stays green, exactly as before.
+      contactSyncSliceRefreshedNothing(result) || contactMaster.status === "failed" ? "fail" : "success",
+      `slice ${slice + 1}/${sliceOf}: ${result.agents} agent(s) attempted, ${result.upserted} row(s) upserted` +
         (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
         (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +
         (result.skipped ? `, ${result.skipped} out of time` : "") +

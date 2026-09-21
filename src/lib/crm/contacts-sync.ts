@@ -71,6 +71,32 @@ export type CrmContactSyncResult = {
 };
 
 /**
+ * Did this slice refresh nothing at all?
+ *
+ * **`agents` counts ATTEMPTED agents, not refreshed ones.** A per-agent fetch that throws still
+ * lands in `outcomes`, so `agents === 0` on its own reads a slice where the vendor login succeeded
+ * and then every single agent failed as a SUCCESS — a green heartbeat over a twelfth of the roster
+ * that got nothing, and (in the poller, which carries a cursor) the cursor stepping straight past
+ * it, so the twelfth that failed waits a whole sweep instead of the advertised failure retry.
+ *
+ * Partial degradation deliberately stays green: a handful of `agentsFailed`, or an
+ * `agentsRefusedEmpty` (the designed safety when the vendor answers an empty grid — see
+ * `decideContactReplacement`), is an ordinary hiccup on someone else's web app, and a check that
+ * pages on those gets muted. Total failure is not degradation. It means the slice did not run.
+ *
+ * `skipped` is NOT failure either — those agents were never started because the time budget ran
+ * out, which is the slicing working as designed.
+ *
+ * Shared by the cron route and the in-process poller so the two can never disagree about what a
+ * green contact-list heartbeat means.
+ */
+export function contactSyncSliceRefreshedNothing(
+  result: Pick<CrmContactSyncResult, "agents" | "agentsFailed">,
+): boolean {
+  return result.agents === 0 || result.agentsFailed === result.agents;
+}
+
+/**
  * THE WHOLE SWEEP DOES NOT FIT IN ONE REQUEST, AND THE SCHEDULER CUTS AT 30 SECONDS.
  *
  * Measured 2026-08-28 with a one-shot probe against the real route: cron-job.org killed the
