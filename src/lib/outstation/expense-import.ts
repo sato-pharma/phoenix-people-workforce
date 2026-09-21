@@ -59,6 +59,18 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * The pharmacy workload cell. Blank or missing means "not counted separately" and stays NULL,
+ * never 0, which would claim pharmacies were counted and none were visited. A negative figure or
+ * text is not a count, so it is also NULL; the caller warns about it rather than dropping it silently.
+ */
+function pharmacyWorkloadValue(value: unknown): number | null {
+  const raw = text(value).replace(/^:/, "").replace(/,/g, "");
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 function normalizeHeaderKey(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
@@ -123,6 +135,9 @@ const expenseHeaderAliases = {
   columnRecommendation: ["Recommendation", "Manager Recommendation", "HR Recommendation"],
   columnAmWorkload: ["AM Workload", "AM Workload (hrs)"],
   columnPmWorkload: ["PM Workload", "PM Workload (hrs)"],
+  // AM · PM · Pharmacies. OPTIONAL: a sheet from before 2026-09-21 has no such column and is still
+  // recognised, because it is deliberately absent from requiredColumns below.
+  columnPharmacyWorkload: ["Pharmacy Workload", "Pharmacies Workload", "Pharmacies", "Pharmacy Visits"],
   columnTripType: [
     "Trip Type",
     "Request Type",
@@ -158,6 +173,7 @@ const expenseTemplateColumnLabels: Record<keyof typeof expenseHeaderAliases, str
   columnKm: "KM",
   columnLocation: "Destination",
   columnMeeting: "Meeting Amount",
+  columnPharmacyWorkload: "Pharmacy Workload",
   columnPmWorkload: "PM Workload",
   columnRecommendation: "Recommendation",
   columnRequestType: "Expense Type",
@@ -288,7 +304,7 @@ function resolveResidenceFromEmployee(employee: {
     .join(", ");
 }
 
-type EmployeeLookupMaps = {
+export type EmployeeLookupMaps = {
   codeByName: Map<string, string>;
   codeByHrId: Map<string, string>;
   residenceByHrId: Map<string, string>;
@@ -578,8 +594,12 @@ function specialistSummary(records: ExpenseTripRecord[]) {
     .sort((left, right) => right.total - left.total);
 }
 
-export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
-  const employeeMaps = await buildEmployeeLookupMaps();
+export async function analyzeExpenseWorkbook(
+  file: File,
+  // Tests pass their own directory so a parse check never reads the live employee list.
+  options: { employeeMaps?: EmployeeLookupMaps } = {},
+): Promise<ExpenseAnalysisResult> {
+  const employeeMaps = options.employeeMaps ?? (await buildEmployeeLookupMaps());
   const workbook = await loadExcelWorkbook(await file.arrayBuffer());
   const sheet = firstExcelWorksheet(workbook);
 
@@ -682,6 +702,14 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       payrollReadyRows += 1;
     }
 
+    const pharmacyWorkloadCell = text(rowValueByAlias(...expenseHeaderAliases.columnPharmacyWorkload));
+    const pharmacyWorkload = pharmacyWorkloadValue(pharmacyWorkloadCell);
+    if (pharmacyWorkloadCell && pharmacyWorkload === null) {
+      warnings.push(
+        `Row ${rowNumber} / ${tripId}: Pharmacy Workload '${pharmacyWorkloadCell}' is not a count, so it was saved as not counted separately.`,
+      );
+    }
+
     records.push({
       allowance,
       amWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnAmWorkload)),
@@ -695,6 +723,7 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
       location,
       meetingAmount,
       other: 0,
+      pharmacyWorkload,
       pmWorkload: numberValue(rowValueByAlias(...expenseHeaderAliases.columnPmWorkload)),
       requestType: text(rowValueByAlias(...expenseHeaderAliases.columnRequestType)),
       row: rowNumber,

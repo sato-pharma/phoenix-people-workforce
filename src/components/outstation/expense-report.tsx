@@ -74,6 +74,8 @@ const expenseTemplateHeaders = [
   "Total",
   "AM Workload",
   "PM Workload",
+  // AM · PM · Pharmacies. Blank = not counted separately, never 0; the importer reads it back.
+  "Pharmacy Workload",
   "Status",
   "Comments",
 ] as const;
@@ -910,7 +912,7 @@ export function ExpenseReport({
       sheet.columns = expenseTemplateHeaders.map((header, index) => ({
         header,
         key: header,
-        width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 24, 30][index],
+        width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 14, 24, 30][index],
       }));
 
       const headerRow = sheet.getRow(2);
@@ -949,6 +951,7 @@ export function ExpenseReport({
           "Total": record.total,
           "AM Workload": record.amWorkload,
           "PM Workload": record.pmWorkload,
+          "Pharmacy Workload": record.pharmacyWorkload ?? "",
           "Status": escapeForExcel(record.status),
           "Comments": escapeForExcel(expenseTemplateComment(record, approvalState)),
         };
@@ -973,6 +976,7 @@ export function ExpenseReport({
         row.Total,
         row["AM Workload"],
         row["PM Workload"],
+        row["Pharmacy Workload"],
         row.Status,
         row.Comments,
       ]);
@@ -980,7 +984,7 @@ export function ExpenseReport({
       [5, 6].forEach((columnNumber) => {
         sheet.getColumn(columnNumber).numFmt = "yyyy-mm-dd";
       });
-      [12, 13, 14, 15, 16, 17, 18].forEach((columnNumber) => {
+      [12, 13, 14, 15, 16, 17, 18, 19].forEach((columnNumber) => {
         sheet.getColumn(columnNumber).numFmt = "#,##0.00";
       });
       sheet.eachRow((row, rowNumber) => {
