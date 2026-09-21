@@ -184,7 +184,8 @@ function ResolutionCell({
 }
 
 /** Punch-list of every CRM customer/contact (the visited doctor/pharmacy/hospital) that has no real
- * Phoenix brick assigned yet — an admin resolves each one as Ignored (hide it — e.g. a duplicate or
+ * Phoenix brick from EITHER map — a contact its mapped CRM locality already places is counted in the
+ * header, not listed (getCrmCustomerMappingPunchList). An admin resolves each one as Ignored (hide it — e.g. a duplicate or
  * CRM-side artifact), Map to Brick ID (assign the real source_of_sales_bricks brick, validated
  * server-side against the CURRENT brick master), or Keep Pending. Mirrors CrmRegionMappingPanel's
  * UX exactly — same resolve/hide/toast pattern, different key (crm_contact_id) and one level finer
@@ -192,9 +193,15 @@ function ResolutionCell({
  * resolve, and wins over its region's mapping wherever both exist). */
 export function CrmCustomerMappingPanel({
   customers,
+  ignoredCount,
+  localityCount,
+  mappedCount,
   pathname,
 }: {
   customers: UnmappedCrmCustomerRow[];
+  ignoredCount: number;
+  localityCount: number;
+  mappedCount: number;
   pathname: string;
 }) {
   const router = useRouter();
@@ -217,7 +224,7 @@ export function CrmCustomerMappingPanel({
     setImportSummary(summary);
     setToast(summary.message);
     setRemovedIds(new Set());
-    router.refresh(); // re-fetch getUnmappedCrmCustomers() server-side so the list drops newly-resolved rows
+    router.refresh(); // re-fetch getCrmCustomerMappingPunchList() server-side so the list drops newly-resolved rows
   }
 
   const term = search.trim().toLowerCase();
@@ -254,8 +261,12 @@ export function CrmCustomerMappingPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
         <p className="text-sm font-medium text-slate-600">
-          {rows.length} unmapped CRM {rows.length === 1 ? "customer" : "customers"} across the full visit history — resolve
-          each one as <span className="font-semibold text-slate-900">Ignore</span> (hide it, never map),{" "}
+          <span className="font-semibold text-slate-900">{mappedCount.toLocaleString("en-GB")}</span> mapped here ·{" "}
+          <span className="font-semibold text-slate-900">{localityCount.toLocaleString("en-GB")}</span> placed through their
+          CRM locality (Region Mapping tab) · <span className="font-semibold text-slate-900">{ignoredCount.toLocaleString("en-GB")}</span>{" "}
+          ignored · <span className="font-semibold text-rose-600">{rows.length.toLocaleString("en-GB")}</span> still{" "}
+          {rows.length === 1 ? "needs" : "need"} a brick, across the full visit history — resolve each one as{" "}
+          <span className="font-semibold text-slate-900">Ignore</span> (hide it, never map),{" "}
           <span className="font-semibold text-slate-900">Map to Brick ID</span> (assign the real Phoenix brick), or{" "}
           <span className="font-semibold text-slate-900">Keep Pending</span>.
         </p>
@@ -284,7 +295,9 @@ export function CrmCustomerMappingPanel({
         <PortalResponsiveDataList
           empty={
             <p className="px-3 py-8 text-center text-sm text-slate-500">
-              {rows.length === 0 ? "No unmapped CRM customers — every customer maps to a brick." : "No customers match this search."}
+              {rows.length === 0
+                ? "Every CRM customer has a brick — mapped here or through its CRM locality."
+                : "No customers match this search."}
             </p>
           }
           getKey={(customer) => String(customer.crmContactId)}

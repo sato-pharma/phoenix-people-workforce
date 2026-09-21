@@ -11,7 +11,7 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
-import { CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
+import { CRM_CONTACT_MASTER_TABLE, CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_UNIFIED_VIEW } from "@/lib/crm/tables";
 import { getCurrentBrickIndex } from "@/lib/crm/region-brick";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 
@@ -81,7 +81,7 @@ async function loadResolutionsByContactId(): Promise<Map<number, StoredResolutio
  * cursor stays a plain string comparison. Two ids are excluded because neither names a customer
  * there is anything to map: 0, the vendor's "unspecified contact" sentinel (same convention as
  * computeTriplesInRange in crm/master.ts), and 100000, the catch-all contact that is never a doctor.
- * The single scan both getUnmappedCrmCustomers and getAllCrmCustomersForTemplate build on, so the two
+ * The single scan both getCrmCustomerMappingPunchList and getAllCrmCustomersForTemplate build on, so the two
  * can never disagree about what customers exist. */
 async function scanAllCrmCustomers(): Promise<Map<number, MutableUnmappedCustomer>> {
   const supabase = getSupabaseAdmin();
@@ -126,21 +126,75 @@ async function scanAllCrmCustomers(): Promise<Map<number, MutableUnmappedCustome
   return customers;
 }
 
+/** Every contact the contact master already places through its CRM LOCALITY — no customer decision,
+ * but the locality is mapped on the Region Mapping tab, so every screen (reps list, CRM master,
+ * visits) already puts the contact on that locality's brick (`crm_contacts.brick_status = 'region'`,
+ * the master's customer-then-locality order). Such a contact HAS a brick and is not on the punch-list.
+ * It is deliberately NOT copied into a customer row: a customer row wins over the locality, so a
+ * copy would freeze today's locality brick and a later correction of that locality would stop
+ * reaching the contact. Paginated and ordered for the same reason as loadResolutionsByContactId —
+ * production has ~11k of them. Empty (never throws) before the contact-master migration ships. */
+async function loadLocalityPlacedContactIds(): Promise<Set<number>> {
+  const supabase = getSupabaseAdmin();
+  const ids = new Set<number>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(CRM_CONTACT_MASTER_TABLE)
+      .select("contact_crm_id")
+      .eq("brick_status", "region")
+      .order("contact_crm_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return new Set();
+      throw new Error(error.message);
+    }
+    const rows = (data ?? []) as Array<{ contact_crm_id: number }>;
+    for (const row of rows) ids.add(Number(row.contact_crm_id));
+    if (rows.length < PAGE) break;
+  }
+  return ids;
+}
+
+/** What the Customer Mapping tab shows: the punch-list, plus how every other customer is placed. */
+export type CrmCustomerMappingPunchList = {
+  /** Contacts with no brick from either map — the only ones this tab still has to resolve. */
+  customers: UnmappedCrmCustomerRow[];
+  ignoredCount: number;
+  /** No customer decision, but placed on a brick through their CRM locality. */
+  localityCount: number;
+  /** Mapped one by one, on this tab or its template. */
+  mappedCount: number;
+};
+
 /**
- * Every distinct contact_crm_id that does not yet have a "mapped" resolution — a punch-list for an
- * admin to assign a real Phoenix brick to, ranked by visit volume (highest first) so the busiest
- * customers get attention first. Not date-scoped on purpose, same reasoning as
- * getUnmappedCrmRegions/getUnmappedCrmIdentities: the goal is every customer that still needs a
- * decision, not just ones active in a chosen window.
+ * Every distinct contact_crm_id with NO brick at all — neither a "mapped" customer resolution nor a
+ * mapped CRM locality — and not ignored: a punch-list for an admin to assign a real Phoenix brick
+ * to, ranked by visit volume (highest first) so the busiest customers get attention first. A
+ * contact its locality already places is counted in `localityCount`, not listed: listing it read as
+ * "unmapped" for ~11k contacts every screen already placed. Not date-scoped on purpose, same
+ * reasoning as getUnmappedCrmRegions/getUnmappedCrmIdentities: the goal is every customer that
+ * still needs a decision, not just ones active in a chosen window.
  */
-export async function getUnmappedCrmCustomers(): Promise<UnmappedCrmCustomerRow[]> {
-  const [customers, resolutions] = await Promise.all([scanAllCrmCustomers(), loadResolutionsByContactId()]);
-  return Array.from(customers.values())
-    .filter((customer) => {
-      const status = resolutions.get(customer.crmContactId)?.status;
-      return status !== "mapped" && status !== "ignored";
-    })
-    .sort((a, b) => b.visitCount - a.visitCount);
+export async function getCrmCustomerMappingPunchList(): Promise<CrmCustomerMappingPunchList> {
+  const [customers, resolutions, localityPlaced] = await Promise.all([
+    scanAllCrmCustomers(),
+    loadResolutionsByContactId(),
+    loadLocalityPlacedContactIds(),
+  ]);
+  const punchList: UnmappedCrmCustomerRow[] = [];
+  let mappedCount = 0;
+  let ignoredCount = 0;
+  let localityCount = 0;
+  for (const customer of customers.values()) {
+    const status = resolutions.get(customer.crmContactId)?.status;
+    if (status === "mapped") mappedCount += 1;
+    else if (status === "ignored") ignoredCount += 1;
+    else if (localityPlaced.has(customer.crmContactId)) localityCount += 1;
+    else punchList.push(customer);
+  }
+  punchList.sort((a, b) => b.visitCount - a.visitCount);
+  return { customers: punchList, ignoredCount, localityCount, mappedCount };
 }
 
 /** One row of the full download template: every CRM customer ever seen, with its current
@@ -154,20 +208,35 @@ export type CrmCustomerTemplateRow = {
   visitCount: number;
 };
 
+/** Template status for a contact with no customer decision whose CRM locality places it. Its Brick
+ * ID stays BLANK, so re-uploading the sheet untouched skips the row (blank brick, not "ignored") and
+ * never turns a locality brick into a customer decision; typing a brick into it maps that customer. */
+export const CRM_CUSTOMER_TEMPLATE_VIA_LOCALITY_STATUS = "via locality";
+
 /** Every distinct CRM customer ever seen, each annotated with its current resolution status/brick_id
- * (or "pending"/null when never resolved) — the full punch-list for the downloadable template,
- * unlike getUnmappedCrmCustomers which only lists the ones still needing a decision. Sorted by
- * visit volume (highest first), same ranking rationale. */
+ * ("via locality" when only its CRM locality places it, "pending"/null when nothing does) — the full
+ * list for the downloadable template, unlike getCrmCustomerMappingPunchList which only lists the
+ * ones with no brick at all. Sorted by visit volume (highest first), same ranking rationale. */
 export async function getAllCrmCustomersForTemplate(): Promise<CrmCustomerTemplateRow[]> {
-  const [customers, resolutions] = await Promise.all([scanAllCrmCustomers(), loadResolutionsByContactId()]);
+  const [customers, resolutions, localityPlaced] = await Promise.all([
+    scanAllCrmCustomers(),
+    loadResolutionsByContactId(),
+    loadLocalityPlacedContactIds(),
+  ]);
   return Array.from(customers.values())
     .map((customer) => {
       const resolution = resolutions.get(customer.crmContactId);
+      const decided = resolution?.status === "mapped" || resolution?.status === "ignored";
       return {
         brickId: resolution?.brickId ?? null,
         crmContactId: customer.crmContactId,
         crmContactName: customer.crmContactName,
-        status: resolution?.status ?? "pending",
+        status:
+          decided && resolution
+            ? resolution.status
+            : localityPlaced.has(customer.crmContactId)
+              ? CRM_CUSTOMER_TEMPLATE_VIA_LOCALITY_STATUS
+              : (resolution?.status ?? "pending"),
         visitCount: customer.visitCount,
       };
     })
@@ -176,7 +245,7 @@ export async function getAllCrmCustomersForTemplate(): Promise<CrmCustomerTempla
 
 /**
  * Records an admin's decision for one CRM customer:
- * - "ignored": stores the decision only — the customer drops out of getUnmappedCrmCustomers, on
+ * - "ignored": stores the decision only — the customer drops out of getCrmCustomerMappingPunchList, on
  *   purpose no visit rows are touched.
  * - "mapped": validates brickId against the CURRENT brick index (getCurrentBrickIndex — active AND
  *   not superseded by the geography rebuild), upserts the resolution, and returns the brick's

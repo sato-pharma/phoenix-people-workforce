@@ -16,7 +16,7 @@ import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 import { getCrmMappingEmployeeOptions, getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
 import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
-import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
+import { getCrmCustomerMappingPunchList } from "@/lib/crm/customer-brick";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getCrmCutoverSetting } from "@/lib/crm/cutover";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
@@ -116,9 +116,17 @@ export default async function CrmHubPage({
     derivedView = <CrmRegionMappingPanel pathname={HUB_PATHNAME} regions={regions} />;
   } else if (view === "customer_mapping") {
     activeTab = "customer_mapping";
-    const [customers, latestSyncRuns] = await Promise.all([getUnmappedCrmCustomers(), getLatestVisitsSyncRuns()]);
+    const [punchList, latestSyncRuns] = await Promise.all([getCrmCustomerMappingPunchList(), getLatestVisitsSyncRuns()]);
     syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
-    derivedView = <CrmCustomerMappingPanel customers={customers} pathname={HUB_PATHNAME} />;
+    derivedView = (
+      <CrmCustomerMappingPanel
+        customers={punchList.customers}
+        ignoredCount={punchList.ignoredCount}
+        localityCount={punchList.localityCount}
+        mappedCount={punchList.mappedCount}
+        pathname={HUB_PATHNAME}
+      />
+    );
   } else if (view === "recovered") {
     activeTab = "recovered";
     const [recoveredChains, latestSyncRuns] = await Promise.all([
