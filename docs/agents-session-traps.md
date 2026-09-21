@@ -312,6 +312,17 @@ coming undone. Fixed by mapping the whole list in one pass (PR #3541).
 - **`gh pr checks` LAGS behind the real job state.** `gh-pr-checks-lags-behind-the-real-job-state`
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not
   started". `a-conflicted-pr-runs-no-ci-at-all`
+- **A gate written as "no pendings" reads an EMPTY check list as GREEN, and a fast-moving branch
+  supplies one.** For a few seconds after a push `gh pr checks <pr>` returns no rows at all; a
+  watcher whose test is `grep -c 'pending'` then counts `0` and declares every check passed.
+  Measured 2026-09-21 on #4153, whose session pushed six heads in ten minutes: the watcher printed
+  `ALL SIX GREEN` — with a blank line where the six rows should have been — against a head on which
+  only `secret-scan` had reported, and a live read a moment later was five of six still pending. It
+  was one step from merging a PR whose CI had not started. This is the same shape as every other
+  empty-result trap in this file: an absence read as a verdict, exactly like a mangled `git show`
+  piped into `grep -c`. Gate on the **count of PASSES against the expected 6** required checks, and
+  require the head SHA unchanged across two consecutive polls — so the gate can neither fire into a
+  push nor score a list that does not exist yet.
 - **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
 - **A red `main` still builds, ships, and serves perfectly** — `ignoreBuildErrors` (see the
   exhaustive-`Record` entry under Validation below) hides it from the product, and a green PR is not
