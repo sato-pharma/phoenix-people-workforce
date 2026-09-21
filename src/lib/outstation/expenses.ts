@@ -1310,7 +1310,8 @@ export async function savePayrollExpenseApprovals(input: {
       other_amount: record.other,
       payout_month: period.month,
       payout_year: period.year,
-      // AM · PM · Pharmacies. An Excel-imported row carries no third figure, so it writes NULL.
+      // AM · PM · Pharmacies. An Excel row carries the third figure from its Pharmacy Workload column;
+      // a blank cell, or an older sheet without that column, writes NULL (not counted separately), never 0.
       pharmacy_workload: record.pharmacyWorkload ?? null,
       pm_workload: record.pmWorkload,
       request_type: record.requestType,
