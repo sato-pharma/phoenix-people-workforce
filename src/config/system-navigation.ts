@@ -649,7 +649,7 @@ export const adminNavigationSectionSeeds = [
       //
       // Financial Advisor is here for a specific reason: the ROI Tracker row it used to reach
       // directly listed it, this hub button did not, and it is an admin-shell role (not in
-      // portalNavigationRoles). Folding without it would leave a finance role whose page guard
+      // portalShellRoles). Folding without it would leave a finance role whose page guard
       // admits ROI Tracker with no sidebar route to it at all. Marketing Manager / Product Manager
       // / Group Product Manager are deliberately NOT added — they are portal-only and reach ROI
       // Tracker through the employee portal.

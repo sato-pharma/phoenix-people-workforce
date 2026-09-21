@@ -59,7 +59,7 @@ import { foldRepPlanStatus } from "../src/lib/crm/reps-weekly-plans-board.ts";
  * ## Why this board exists at all, which is the finding worth keeping
  *
  * `/admin/plan-verification` verifies plans and has since it shipped. But it lives in the ADMIN
- * shell, and `portalNavigationRoles` puts District Manager and Regional Manager — the only two seats
+ * shell, and `portalShellRoles` puts District Manager and Regional Manager — the only two seats
  * holding `crm_plans:approve` — in the EMPLOYEE PORTAL. `app/(admin)/layout.tsx` redirects every
  * portal-mode viewer out of `/admin/**`, `portal-twins.ts` registers no twin for it, and the portal
  * builds its own sidebar so the row never appeared either. The two roles the feature was written for

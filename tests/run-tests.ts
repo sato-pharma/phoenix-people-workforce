@@ -1856,6 +1856,7 @@ import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
 import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
+import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -6528,6 +6529,11 @@ await runTest(
 await runTest(
   "the portal expense pages never redirect to each other for one viewer: a Medical Rep login whose job title is not a Medical Rep stays on the expenses page's empty state instead of bouncing (the 2026-09-21 dev-server loop); genuine reps, District Managers and acting District Managers route exactly as before, and both pages decide through the one helper",
   runMedicalRepExpenseViewerTests,
+);
+
+await runTest(
+  "the portal home and /overview never bounce a role between them: the landing path, the navigation mode and the notification links all read the one portal-role list, so every role lands in the shell it is in (the second role-list copy that could have looped every sign-in)",
+  runPortalShellRolesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -8,6 +8,8 @@ import { hrBundleGrants } from "@/lib/auth/hr-functions";
 // Temporary per-account module suspensions. Imported for its VALUE; module-locks.ts imports only
 // TYPES back from this file, so there is no runtime cycle between the two.
 import { isModuleLockedForAccess } from "@/lib/auth/module-locks";
+// The one portal-role list, shared with the landing path. It imports only a TYPE back from here.
+import { isPortalShellRole } from "@/lib/auth/portal-shell-roles";
 
 export const phoenixRoles = [
   "Employee",
@@ -372,20 +374,6 @@ const allActions: PermissionAction[] = ["read", "create", "update", "delete", "a
 // Governance: approval authority is reserved for Super Admin / HR Manager.
 // The HR bundles operate recruitment and personnel workflows but must not inherit the retired
 // broad HR/payroll/leave/outstation authority — see HR_ROLE_BOUNDARIES in hr-functions.ts.
-const portalNavigationRoles = new Set<PhoenixRole>([
-  "Employee",
-  "Medical Rep",
-  "District Manager",
-  "Regional Manager",
-  "National Sales Manager",
-  "Product Manager",
-  "Group Product Manager",
-  "Marketing Manager",
-  "Training Manager",
-  "CEO",
-  "Manager",
-]);
-
 export const adminShellEmployeeRoles = [
   "SFE Manager",
   "Finance Manager",
@@ -1704,7 +1692,7 @@ export function resolveNavigationMode(context: AccessContext): NavigationMode {
   if (context.role === "CEO") {
     return "admin";
   }
-  return portalNavigationRoles.has(context.role) ? "employee-portal" : "admin";
+  return isPortalShellRole(context.role) ? "employee-portal" : "admin";
 }
 
 export function canManageCoachingReports(context: Pick<AccessContext, "role" | "scope">) {

@@ -9,7 +9,7 @@
  * ## Why this exists when /admin/plan-verification already verifies plans
  *
  * Because a district manager cannot open that page. It lives in the ADMIN shell, and
- * `portalNavigationRoles` puts District Manager and Regional Manager in the EMPLOYEE PORTAL:
+ * `portalShellRoles` puts District Manager and Regional Manager in the EMPLOYEE PORTAL:
  * `app/(admin)/layout.tsx` redirects every portal-mode viewer out of `/admin/**`, no twin is
  * registered for it in `portal-twins.ts`, and the portal builds its own sidebar so the row never
  * appears either. The two seats that hold `crm_plans:approve` were the two that could not reach the

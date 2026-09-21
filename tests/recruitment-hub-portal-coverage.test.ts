@@ -36,7 +36,7 @@ import {
  * with two HR seats and placed both on the ADMIN shell.
  *
  * What the old invariant protected, and why it is gone. Talent Acquisition sat in
- * portalNavigationRoles, so resolveNavigationMode put her in the portal shell, and
+ * portalShellRoles, so resolveNavigationMode put her in the portal shell, and
  * app/(admin)/layout.tsx redirects portal-mode users out of the ENTIRE (admin) route group before
  * any page in it renders. The hub was therefore Super-Admin-only in practice however its `roles`
  * read — and nothing failed, because the config naming her was true config and the redirect was

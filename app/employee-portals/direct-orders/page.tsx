@@ -16,7 +16,7 @@ const BASE_PATH = "/employee-portals/direct-orders";
  * The consolidated Direct Orders workspace, portal shell.
  *
  * This is the shell the people who actually RAISE direct orders land in —
- * `portalNavigationRoles` sends District / Regional / National Sales Managers and
+ * `portalShellRoles` sends District / Regional / National Sales Managers and
  * Product / Group Product Managers here, which is why the module ended up built
  * twice. The workspace component is shared with the admin route above it; only
  * `variant` and `basePath` differ.

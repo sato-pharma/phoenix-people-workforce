@@ -1,3 +1,5 @@
+import { portalShellRoles } from "@/lib/auth/portal-shell-roles";
+
 type RoleHrefMap = Record<string, unknown>;
 
 function cleanText(value: unknown) {
@@ -17,20 +19,9 @@ function roleHrefMap(metadata: Record<string, unknown> | null | undefined): Role
 }
 
 // Roles that live in the employee-portal shell and must never land on admin plan pages.
-// Mirrors the portalNavigationRoles set in permissions.ts — kept here as a plain Set
-// so hrefs.ts stays free of auth imports.
-const PORTAL_PLAN_ROLES = new Set([
-  "Employee",
-  "Medical Rep",
-  "District Manager",
-  "Manager",
-  "Regional Manager",
-  "National Sales Manager",
-  "Product Manager",
-  "Group Product Manager",
-  "Marketing Manager",
-  "Training Manager",
-]);
+// The one portal-role list (portal-shell-roles.ts), which has no runtime imports, so hrefs.ts
+// still pulls in no auth code. Matched exactly as stored, as this file always has.
+const PORTAL_PLAN_ROLES = new Set<string>(portalShellRoles);
 
 export function notificationHrefForViewerRole(input: {
   fallbackHref?: string | null;
