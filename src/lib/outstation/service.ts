@@ -140,6 +140,7 @@ import {
 import { isAdjustedAmount } from "@/lib/outstation/approval-state";
 import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval-decisions";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
+import { workflowExpenseReportFileName } from "@/lib/outstation/workflow-expense-report-guard";
 import {
   validateMedicalRepSimpleExpenseInput,
   type MedicalRepSimpleExpenseInput,
@@ -3082,7 +3083,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
     reportId: input.linkedPayroll?.reportId ?? null,
   });
   const saved = await savePayrollExpenseApprovals({
-    fileName: `outstation-request-${input.request.id}.workflow`,
+    fileName: workflowExpenseReportFileName(input.request.id),
     records: [expenseRecord],
     reportId: input.linkedPayroll?.reportId ?? null,
   }, input.access, { allowWorkflowTripIds: true });
@@ -3105,7 +3106,7 @@ async function pushAcceptedOutstationExpenseToPayroll(
     reportId: linkedPayroll?.reportId ?? null,
   });
   const savedExpenses = await savePayrollExpenseApprovals({
-    fileName: `outstation-request-${request.id}.workflow`,
+    fileName: workflowExpenseReportFileName(request.id),
     records: [expenseRecord],
     reportId: linkedPayroll?.reportId ?? null,
   }, access, { allowWorkflowTripIds: true });
@@ -4260,7 +4261,7 @@ async function writeOutstationRequestPayableAmount(input: {
 
   await savePayrollExpenseApprovals(
     {
-      fileName: `outstation-request-${input.request.id}.workflow`,
+      fileName: workflowExpenseReportFileName(input.request.id),
       records: [{ ...record, approvedAmount: input.approvedAmount }],
       reportId: linked.reportId,
     },
