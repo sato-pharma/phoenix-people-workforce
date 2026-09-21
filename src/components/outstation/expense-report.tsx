@@ -616,8 +616,9 @@ export function ExpenseReport({
 
     const data = entry.data;
     const actualPharmacies = data.pharmacyWorkload ?? 0;
-    // AM · PM · Pharmacies, all three field work (owner, 2026-09-21). A sheet row or a pre-split
-    // trip has no third figure, its pharmacies inside AM/PM, so its total still compares like for like.
+    // AM · PM · Pharmacies, all three field work (owner, 2026-09-21). A pre-split trip, or a sheet row
+    // whose Pharmacy Workload cell is blank, has no third figure, its pharmacies inside AM/PM, so its
+    // total still compares like for like.
     const declaredTotal = record.amWorkload + record.pmWorkload + (record.pharmacyWorkload ?? 0);
     const actualTotal = data.amWorkload + data.pmWorkload + actualPharmacies;
     const mismatch = declaredTotal !== actualTotal;
@@ -909,10 +910,8 @@ export function ExpenseReport({
         fgColor: { argb: "FF0F172A" },
       };
 
-      // No `header` here: ExcelJS writes a column's header into ROW 1, over the title, and a row 1
-      // reading "Comments" in every cell made the importer take it as the header row and refuse the
-      // file. The headers go on row 2 below.
       sheet.columns = expenseTemplateHeaders.map((header, index) => ({
+        header,
         key: header,
         width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 14, 24, 30][index],
       }));

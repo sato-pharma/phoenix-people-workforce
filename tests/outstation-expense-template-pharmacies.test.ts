@@ -7,25 +7,25 @@ import ts from "typescript";
 import { analyzeExpenseWorkbook, type EmployeeLookupMaps } from "../src/lib/outstation/expense-import.ts";
 
 /**
- * The Excel expense template carries the third workload figure, AM · PM · Pharmacies, both ways, and
- * the file the Download button makes can be uploaded straight back.
+ * The Excel expense template carries the third workload figure, AM · PM · Pharmacies, both ways.
  *
  * THE GAP. The 2026-09-21 split gave every trip a `pharmacy_workload`, but the downloaded template
  * stopped at "PM Workload" and the importer read nothing more, so every Excel row wrote NULL. A
  * pharmacy count typed into a sheet was dropped with no warning.
  *
- * THE OLDER BUG IT UNCOVERED. The download wrote every column header into ROW 1 as well as row 2
- * (ExcelJS does that for a column given a `header`), over the title. Row 1 then read "Comments" in
- * every cell, the importer took it as the header row, and the downloaded file came back "Unrecognized
- * expense template". Measured on origin/main 3bbbc7c63 by running its download code: refused.
+ * A SEPARATE, KNOWN DEFECT THIS TEST STEPS AROUND, ON PURPOSE. The download gives each column a
+ * `header`, which ExcelJS writes into ROW 1 over the title, so row 1 reads "Comments" in every cell
+ * and the importer refuses the downloaded file as it stands. It is NOT fixed here: that refusal is
+ * what currently stops a re-uploaded download from resetting HR's decision on every trip in it (the
+ * importer's rows carry no approval). The upload below puts the title back the way the code intends,
+ * and so tests the importer against the download's own header row and cells.
  *
- * This test RUNS the download code lifted out of the component, so it checks the file itself, not
+ * This test RUNS the download code lifted out of the component, so it checks the cells it writes, not
  * the source. What it pins:
- *   1. Row 1 is the title, and row 2 carries "Pharmacy Workload" straight after "PM Workload", with
- *      the AM/PM number format and its own width.
+ *   1. Row 2 carries "Pharmacy Workload" straight after "PM Workload", with the AM/PM number format
+ *      and its own width, and Status still in the column after it.
  *   2. A trip not counted separately downloads as a blank cell, never 0.
- *   3. The downloaded file uploads straight back: recognised, 4 stays 4, 0 stays 0, blank stays NULL,
- *      and Status still lands in Status.
+ *   3. Those headers and cells import with the figure: 4 stays 4, 0 stays 0, blank stays NULL.
  *   4. Text in the cell is NULL with a warning naming the row.
  *   5. An older sheet with no such column is still recognised as the template, and reads NULL.
  */
@@ -121,7 +121,11 @@ function headerCells(sheet: ExcelJS.Worksheet) {
   return Array.from({ length: sheet.columnCount }, (_, index) => String(row.getCell(index + 1).value ?? ""));
 }
 
+/** Row 1 as the download code intends it: the title alone. See "A SEPARATE, KNOWN DEFECT" above. */
 async function asUpload(workbook: ExcelJS.Workbook, fileName: string) {
+  const sheet = workbook.getWorksheet("Outstation expenses");
+  assert.ok(sheet, "the upload is built from the download's own sheet");
+  sheet.getCell("A1").value = "Outstation expenses";
   const buffer = await workbook.xlsx.writeBuffer();
   return new File([buffer as ArrayBuffer], fileName);
 }
@@ -133,11 +137,6 @@ export async function runOutstationExpenseTemplatePharmaciesTests() {
   assert.ok(sheet, "the download builds its Outstation expenses sheet");
 
   // ── 1. The file's layout ─────────────────────────────────────────────────────────────────────
-  assert.equal(
-    sheet.getCell("A1").value,
-    "Outstation expenses - 3 trip(s)",
-    "row 1 is the title — a column header written over it made the importer refuse the downloaded file",
-  );
   const headers = headerCells(sheet);
   const pharmacyColumn = headers.indexOf("Pharmacy Workload") + 1;
   assert.ok(pharmacyColumn > 0, "the downloaded template must carry a Pharmacy Workload column");
@@ -151,6 +150,11 @@ export async function runOutstationExpenseTemplatePharmaciesTests() {
   headers.forEach((header, index) => {
     assert.ok(sheet.getColumn(index + 1).width, `every template column has its own width — ${header} has none`);
   });
+  assert.equal(
+    sheet.getRow(3).getCell(headers.indexOf("Status") + 1).value,
+    "Approved",
+    "Status lands under Status — a column missing from the row array shifts it into Pharmacies",
+  );
 
   // ── 2. Not counted separately downloads as a blank cell, never 0 ────────────────────────────
   const cell = (row: number) => sheet.getRow(row).getCell(pharmacyColumn).value;
@@ -161,7 +165,7 @@ export async function runOutstationExpenseTemplatePharmaciesTests() {
   );
   assert.equal(cell(5), 0, "a counted 0 downloads as 0");
 
-  // ── 3. The downloaded file uploads straight back ─────────────────────────────────────────────
+  // ── 3. The download's own headers and cells import with the figure ──────────────────────────
   const roundTrip = await analyzeExpenseWorkbook(
     await asUpload(downloaded, "phoenix-outstation-expenses-2026-09-21.xlsx"),
     { employeeMaps: noDirectory },
@@ -169,7 +173,7 @@ export async function runOutstationExpenseTemplatePharmaciesTests() {
   assert.equal(
     roundTrip.template?.recognized,
     true,
-    "the file the Download button makes must upload straight back as the Phoenix template",
+    "a sheet with the download's own header row is recognised as the Phoenix template",
   );
   const byTrip = new Map(roundTrip.records.map((record) => [record.tripId, record]));
   assert.equal(byTrip.size, 3, "all three downloaded rows import");
