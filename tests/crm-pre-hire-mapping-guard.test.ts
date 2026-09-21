@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 
 import {
   findPreHireMappingConflict,
-  isSettledUnmappedRow,
   preHireMappingNotice,
   selectStampableVisitRowIds,
   type MappingCandidateRow,
   type StampCandidateRow,
 } from "../src/lib/crm/admin.ts";
-import { buildCrmIdentityMaps, normalizeCrmName, type CrmResolutionRow } from "../src/lib/crm/identity.ts";
+import { buildCrmIdentityMaps, isSettledUnmappedRow, normalizeCrmName, type CrmResolutionRow } from "../src/lib/crm/identity.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 
 /**
@@ -273,10 +272,10 @@ export function runCrmPreHireMappingGuardTests() {
   // ── (L) The Unmapped Agents list stops listing rows that are already answered ───────────────
   //
   // Account 1537 (Alex East / A), production 2026-09-21: the current holder joined on 05-16 and the
-  // account also carries 33 rows dated 05-07..05-15 — the handover, which the owner chose to leave
-  // unassigned. Once the account is mapped to him, those rows are settled; they must drop off the list
-  // instead of keeping the account there forever. The list was otherwise 21 accounts carrying nothing
-  // but public-holiday markers, which record no work.
+  // account also carries 33 rows dated 05-07..05-15, relabelled with his name at the handover. The
+  // owner's ruling: credit him from his hiring date. The 33 earlier rows are not his, so they are
+  // settled and must drop off the list instead of keeping the account there forever. The list was
+  // otherwise 21 accounts carrying nothing but public-holiday markers, which record no work.
   const alexLabel = "Ahmed.Nabil ( Alex East / A )";
   const nabil = {
     crmId: null,
@@ -306,7 +305,11 @@ export function runCrmPreHireMappingGuardTests() {
     "still settled when his own crm_id is the account — tier 2's block must not keep it listed",
   );
   assert.equal(isSettledUnmappedRow(slot("2026-05-20", 0), mappedOwnSlot), false, "his in-tenure call on his own slot is not settled");
-  assert.equal(isSettledUnmappedRow(slot("2026-05-07", 0), unmapped), false, "the same call on an UNMAPPED account still needs a decision");
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-05-07", 0), unmapped),
+    false,
+    "with no mapping and no crm_username on the roster, his label names nobody we know — still listed",
+  );
   assert.equal(isSettledUnmappedRow(slot("2026-05-20", 0), mapped), false, "a call inside his employment is NOT settled — it is waiting to be stamped");
   assert.equal(
     isSettledUnmappedRow(slot("2026-05-07", 0, "Someone.Else ( Alex East / A )"), mapped),
@@ -317,4 +320,71 @@ export function runCrmPreHireMappingGuardTests() {
   assert.equal(isSettledUnmappedRow(slot("2026-04-13", -6, "Batool.Rafiq ( Dakahlia 1 / C )", 1532), unmapped), true, "a casual-leave marker records no work");
   assert.equal(isSettledUnmappedRow(slot("2026-04-13", -8, "Batool.Rafiq ( Dakahlia 1 / C )", 1532), unmapped), false, "a campaign day is work and stays listed");
   assert.equal(isSettledUnmappedRow(slot("2026-04-13", -5, null, null), unmapped), false, "no account, nothing to settle");
+
+  // ── (M) THE OWNER'S RULE: the list is clean except for a REAL unmapped agent ────────────────
+  //
+  // "I want this step to be always clean. Except when there is a real unmapped agent." (owner,
+  // 2026-09-21). A row whose label names a known employee who was not employed that day is settled
+  // with NO mapping: the roster already knows whose label it is, and the date rule already answers
+  // the row. Before this, every joiner who inherited an account kept it on the list until somebody
+  // mapped it by hand.
+  const nabilOnRoster = { ...nabil, crmUsername: alexLabel } as unknown as EmployeeDirectoryRow;
+  const knownNoMapping = buildCrmIdentityMaps([nabilOnRoster], []);
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-05-07", 0), knownNoMapping),
+    true,
+    "a pre-hire call under a known employee's own label is settled with no mapping at all",
+  );
+  assert.equal(isSettledUnmappedRow(slot("2026-05-20", 0), knownNoMapping), false, "his in-tenure call is credited, never settled");
+
+  // A REAL unmapped agent stays: a label nobody on the roster carries.
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-05-07", 0, "Stranger.Name ( Tanta / P )", 9999), knownNoMapping),
+    false,
+    "a label that names nobody we know is a real unmapped agent and stays listed",
+  );
+
+  // A reused slot stays. The leaver still holds the crm_id, the vendor stripped her name, and real
+  // calls arrive after she left. The label names nobody, so somebody unknown is doing this work.
+  const behiraLeaver = {
+    crmId: "1485",
+    crmUsername: "Samia.Elgendy ( Behira 2 / C )",
+    hireDate: "2026-01-05",
+    hrId: "B-171",
+    lastWorkingDate: "2026-07-11",
+  } as unknown as EmployeeDirectoryRow;
+  const stripped = "( Behira 2 / C )";
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-08-26", 0, stripped, 1485), buildCrmIdentityMaps([behiraLeaver], [])),
+    false,
+    "real calls on a name-stripped account after its holder left stay listed",
+  );
+  // A mapping saved with no label names the account, never a person, so it cannot settle that row.
+  const labellessMapping = { crmId: 1485, crmName: null, mappedHrId: "B-171", status: "mapped" } as unknown as CrmResolutionRow;
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-08-26", 0, stripped, 1485), buildCrmIdentityMaps([behiraLeaver], [labellessMapping])),
+    false,
+    "a label-less mapping does not turn an unknown worker into a known one",
+  );
+
+  // A known person who WAS employed that day, but whom the waterfall could not reach, stays listed.
+  // The leaver's crm_id answers first and blocks, so mapping the account is what credits the joiner.
+  const behiraJoiner = {
+    crmId: null,
+    crmUsername: "Soad.Atef ( Behira 2 / C )",
+    hireDate: "2026-07-15",
+    hrId: "AI-0003",
+    lastWorkingDate: null,
+  } as unknown as EmployeeDirectoryRow;
+  const handedOver = buildCrmIdentityMaps([behiraLeaver, behiraJoiner], []);
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-08-26", 0, "Soad.Atef ( Behira 2 / C )", 1485), handedOver),
+    false,
+    "the joiner's own in-tenure call on the leaver's account is uncredited work by a known person — listed",
+  );
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-07-13", 0, "Soad.Atef ( Behira 2 / C )", 1485), handedOver),
+    true,
+    "the gap after the leaver left and before the joiner started is nobody's — settled",
+  );
 }
