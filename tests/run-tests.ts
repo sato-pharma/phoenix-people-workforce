@@ -1314,6 +1314,7 @@ import { runDeductionsVacationDayDoubleChargeTests } from "./deductions-vacation
 import { runMarketingRoiSharedAttributionTests } from "./marketing-roi-shared-attribution.test.ts";
 import { runCeoLandingSeatAndProbationCountsTests } from "./ceo-landing-seat-and-probation-counts.test.ts";
 import { runCeoLandingLeaveCountsStayLightTests } from "./ceo-landing-leave-counts-stay-light.test.ts";
+import { runSalesPlatformMetricsCacheTests } from "./sales-platform-metrics-cache.test.ts";
 import { runSosTopCustomersAggregationTests } from "./sos-top-customers-aggregation.test.ts";
 import { runCrmPortalCoveragePopulationsTests } from "./crm-portal-coverage-populations.test.ts";
 import { runExportFollowsScreenFiltersTests } from "./export-follows-screen-filters.test.ts";
@@ -4165,6 +4166,7 @@ await runTest("marketing ROI company totals count each invoice line once even wh
 
 await runTest("CEO landing counts (vacancies dedup by seat + occupancy like the organogram; probation counts match what the destination can show)", runCeoLandingSeatAndProbationCountsTests);
 await runTest("CEO landing Leave tiles stay light (pending-only counts through the report's own helper, never the whole leave report)", runCeoLandingLeaveCountsStayLightTests);
+await runTest("Sales platform metrics are cached on the achievement stamp and the viewer's access context", runSalesPlatformMetricsCacheTests);
 
 await runTest("SoS Top Customers aggregates by distributor+client across selected months instead of duplicating a customer per month", runSosTopCustomersAggregationTests);
 
