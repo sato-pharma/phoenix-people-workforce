@@ -87,11 +87,9 @@ export default async function PortalTargetsPage({
         badge="Field Performance"
         description="Your own targets by product and month, and how far you reached them once each month's closing is published."
         errorBoundaryTitle="Targets unavailable"
-        // The view renders its own command band — the same reason the manager branch below
-        // suppresses the shell's banner.
-        hero={<></>}
         title="Targets"
       >
+        {/* The rep view renders the portal identity under the standard navy shell hero. */}
         <RepTargetsView data={repTargets} basePath="/employee-portals/targets" salesVsTargetHref="/employee-portals/sales-vs-target" />
       </EmployeePortalPageShell>
     );
@@ -214,13 +212,10 @@ export default async function PortalTargetsPage({
       badge="Sales Operations"
       description="Your areas' targets and achievement against loaded distributor sales, by product and month."
       errorBoundaryTitle="Targets unavailable"
-      // The workspace renders its own command band, which carries the headline figures, the
-      // achievement ring and the line/month selectors. Suppress the shell's standard banner so the
-      // page does not open with two stacked dark headers saying the same thing — exactly what the
-      // sibling Sales vs Target portal page does for the same reason.
-      hero={<></>}
       title="Targets"
     >
+      {/* surface="portal": the workspace drops its light command band for the portal identity under
+          the standard navy shell hero. The admin authoring twin at /sales/targets is unchanged. */}
       <TargetsWorkspace
         lines={availableLines}
         periods={periods}
@@ -235,6 +230,7 @@ export default async function PortalTargetsPage({
         error={error}
         canEdit={false}
         basePath="/employee-portals/targets"
+        surface="portal"
       />
     </EmployeePortalPageShell>
   );

@@ -307,7 +307,7 @@ export function RepTargetsView({
 
   const ring =
     published && hasTarget ? (
-      <AchievementRing value={totals.achievementValue} size={150} stroke={13} label="Achievement" />
+      <AchievementRing value={totals.achievementValue} size={150} stroke={13} label="Achievement" premium />
     ) : undefined;
 
   const aside =
@@ -336,6 +336,7 @@ export function RepTargetsView({
   return (
     <div className={cn("space-y-4 p-3 transition-opacity sm:p-4", isPending ? "opacity-60" : undefined)} aria-busy={isPending}>
       <CommandBand
+        surface="portal"
         kicker="Field Performance · Your targets"
         title="Targets"
         subtitle={data.isEmptyScope ? "No areas are assigned to you yet" : subtitle}

@@ -116,6 +116,8 @@ export type TargetsWorkspaceProps = {
   canEdit?: boolean;
   /** Route the period/line picker navigates to. Defaults to the admin surface. */
   basePath?: string;
+  /** "portal" swaps the light command band for the employee-portal identity; see CommandBand. */
+  surface?: "sales" | "portal";
 };
 
 type UploadPreview = { totalRows: number; validRows: number; errors: Array<{ rowNumber: number; field: string; code: string; message: string }> };
@@ -332,6 +334,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const router = useRouter();
   const canEdit = props.canEdit !== false;
   const basePath = props.basePath ?? "/sales/targets";
+  const surface = props.surface ?? "sales";
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
@@ -528,6 +531,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   return (
     <div className="space-y-4 p-3 sm:p-4">
       <CommandBand
+        surface={surface}
         kicker={canEdit ? "Sales Operations · Authoring" : "Sales Operations · View only"}
         title="Targets"
         subtitle={`${lineLabel} · ${formatPeriod(props.selectedPeriod)} · one target per product, per area`}
@@ -557,7 +561,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             </>
           ) : undefined
         }
-        ring={total ? <AchievementRing value={total.achievementValue} size={150} stroke={13} label="Achievement" /> : undefined}
+        ring={total ? <AchievementRing value={total.achievementValue} size={150} stroke={13} label="Achievement" premium={surface === "portal"} /> : undefined}
         aside={
           total ? (
             <div className="border-l border-slate-100 pl-6">

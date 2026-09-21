@@ -191,10 +191,13 @@ export function MakeItHappenPlanner({
   data,
   basePath,
   kicker,
+  surface = "sales",
 }: {
   data: MakeItHappenWorkspace;
   basePath: string;
   kicker: string;
+  /** "portal" swaps the light command band for the employee-portal identity; see CommandBand. */
+  surface?: "sales" | "portal";
 }) {
   const router = useRouter();
   const planNameRef = useRef<HTMLInputElement>(null);
@@ -451,6 +454,7 @@ export function MakeItHappenPlanner({
   return (
     <div className="space-y-4">
       <CommandBand
+        surface={surface}
         kicker={kicker}
         title="Make It Happen"
         subtitle={`${data.periodLabel} · ${data.viewingRep ? data.viewingRep.name : data.scopeLabel}`}
@@ -477,7 +481,7 @@ export function MakeItHappenPlanner({
             ) : null}
           </>
         }
-        ring={<AchievementRing value={overallPct} label="Forecast" />}
+        ring={<AchievementRing value={overallPct} label="Forecast" premium={surface === "portal"} />}
         footer={
           <>
             <BandChoice

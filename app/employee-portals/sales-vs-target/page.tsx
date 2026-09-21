@@ -36,13 +36,13 @@ export default async function PortalSalesVsTargetPage({
       badge="Field Performance"
       description="Your sales against your target, by team, region, area, rep and brick."
       errorBoundaryTitle="Sales vs Target unavailable"
-      // The dashboard renders its own command band, which carries the headline figures and the
-      // month selector. Suppress the shell's standard banner so the page does not open with two
-      // stacked dark headers saying the same thing.
-      hero={<></>}
       title="Sales vs Target"
     >
-      <VsTargetDashboard data={data} basePath="/employee-portals/sales-vs-target" kicker="Field Performance" />
+      {/* surface="portal": the dashboard drops its light command band and renders the figures,
+          ring and month selector as portal cards under the standard navy shell hero above, so this
+          page wears the one employee-portal identity. The admin twin at /sales/vs-target is
+          unchanged. */}
+      <VsTargetDashboard data={data} basePath="/employee-portals/sales-vs-target" kicker="Field Performance" surface="portal" />
     </EmployeePortalPageShell>
   );
 }

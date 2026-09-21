@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 
@@ -13,9 +14,18 @@ import { cn } from "@/lib/utils";
 // so the four screens read as one product — `tests/target-visuals-shared.test.ts` fails if a
 // target module re-declares its own copy.
 //
-// THE LOOK (owner, 2026-09-14): light, clean Phoenix orange. White surfaces, thin slate borders,
-// orange for accents and the selected state, calm dark numbers. No dark bands, no glows, no
-// gradients, and — the square-edge golden rule — no rounded corners anywhere.
+// THE LOOK (owner, 2026-09-14): the "sales" (admin-shell) surface is light, clean Phoenix orange.
+// White surfaces, thin slate borders, orange for accents and the selected state, calm dark numbers.
+// No dark bands, no glows, no gradients — and, the square-edge golden rule, no rounded corners
+// anywhere. That rule governs the DEFAULT `surface="sales"` band and every admin render, which stay
+// byte-identical.
+//
+// THE PORTAL PREMIUM (owner, 2026-09-21 — "full big premium polish"): the `surface="portal"` render
+// is the one owner-approved exception. Grounded in the same Phoenix tokens, it earns depth from
+// LAYERED SHADOWS, a SUBTLE white→slate card gradient, a gradient orange accent rail and a GLOWING
+// achievement ring (AchievementRing `premium`). The square-edge golden rule still holds — no rounded
+// corners, no horizontal scroll. Do NOT bring this surface "into line" with the 2026-09-14 rule: it
+// was shown to the owner and approved.
 //
 // The rules encoded here that are NOT free to change:
 //   • A null achievement is NEUTRAL, never red. An area with no target loaded has not
@@ -157,32 +167,61 @@ export function AchievementRing({
   size = 132,
   stroke = 11,
   label,
+  premium = false,
 }: {
   value: number | null;
   size?: number;
   stroke?: number;
   label?: string;
+  /**
+   * The employee-portal premium ring: a same-hue gradient stroke, a round cap and a soft glow in
+   * the ring's OWN achievement colour (owner-approved 2026-09-21). `false` is the flat admin ring,
+   * unchanged. Both keep the null-is-neutral and arc-capped-at-100% rules identically.
+   */
+  premium?: boolean;
 }) {
+  // Unique per instance — a page draws several rings and must not share one gradient/filter id.
+  // useId returns colon-bearing ids; strip them so the SVG url(#…) reference is always valid.
+  const uid = useId().replace(/:/g, "");
+  const gradientId = `ring-grad-${uid}`;
+  const glowId = `ring-glow-${uid}`;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   // Cap the ARC at 100% so an over-achiever cannot wrap the circle, while the printed
   // number below stays uncapped and truthful.
   const fraction = value == null ? 0 : Math.max(0, Math.min(1, value));
   const color = achievementHex(value);
+  const arcPremium = premium && value != null;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#F1F5F9" strokeWidth={stroke} />
+        {arcPremium ? (
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor={color} stopOpacity="0.7" />
+              <stop offset="1" stopColor={color} />
+            </linearGradient>
+            <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
+              <feGaussianBlur stdDeviation={Math.max(1.6, stroke / 5)} result="b" />
+              <feMerge>
+                <feMergeNode in="b" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+        ) : null}
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={premium ? "#EEF2F7" : "#F1F5F9"} strokeWidth={stroke} />
         {value != null ? (
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke={color}
+            stroke={arcPremium ? `url(#${gradientId})` : color}
             strokeWidth={stroke}
-            strokeLinecap="butt"
+            strokeLinecap={arcPremium ? "round" : "butt"}
             strokeDasharray={`${circumference * fraction} ${circumference}`}
+            filter={arcPremium ? `url(#${glowId})` : undefined}
           />
         ) : null}
       </svg>
@@ -324,6 +363,7 @@ export function CommandBand({
   aside,
   footer,
   besideFrom = "lg",
+  surface = "sales",
 }: {
   kicker: string;
   title: string;
@@ -339,7 +379,57 @@ export function CommandBand({
    * carries both passes "xl".
    */
   besideFrom?: "lg" | "xl";
+  /**
+   * "sales" (default) is the module's own light command band — the admin-shell look, unchanged.
+   * "portal" drops that band entirely: the employee-portal page renders the standard navy shell
+   * hero above (its `kicker`/`title` live there), and this lays the SAME stat, ring and selector
+   * nodes out as portal-native white cards and a panel below it, so the four sales pages read as
+   * one employee-portal identity. Owner decision 2026-09-21. The `kicker` and `title` are ignored
+   * here on purpose — the shell hero already carries them.
+   */
+  surface?: "sales" | "portal";
 }) {
+  if (surface === "portal") {
+    return (
+      <div className="space-y-4">
+        {subtitle ? <p className="text-sm font-medium leading-6 text-slate-500">{subtitle}</p> : null}
+        {stats ? (
+          // Flex-wrap, never a fixed grid, and crucially NO `min-w-0`: a headline money value carries
+          // `whitespace-nowrap`, so its own min-content is the card's floor — the card can never be
+          // squeezed narrower than the number, which would clip it. `flex-1 basis-[13rem]` lets each
+          // card grow to fill the row and share width evenly, and when the numbers no longer fit side
+          // by side the cards wrap to the next line instead of overflowing the page (the fits-the-
+          // screen golden rule). This mirrors the light band's own content-sized `flex flex-wrap`.
+          //
+          // Premium (owner, 2026-09-21): each card earns depth from a subtle white→slate gradient, a
+          // gradient orange accent rail on its left edge, a two-layer shadow and a small hover lift.
+          // Square edges throughout — the fit logic above is untouched.
+          <div className="flex flex-wrap gap-3.5 [&>div]:relative [&>div]:flex-1 [&>div]:basis-[13rem] [&>div]:overflow-hidden [&>div]:border [&>div]:border-slate-200/80 [&>div]:border-l-[3px] [&>div]:border-l-orange-500 [&>div]:bg-gradient-to-b [&>div]:from-white [&>div]:to-slate-50/70 [&>div]:px-4 [&>div]:py-3.5 [&>div]:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_28px_rgba(15,23,42,0.06)] [&>div]:transition-transform [&>div]:duration-200 hover:[&>div]:-translate-y-0.5">
+            {stats}
+          </div>
+        ) : null}
+        {ring || aside || footer ? (
+          <section className="relative overflow-hidden border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/40 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_20px_48px_rgba(15,23,42,0.08)]">
+            {/* Premium orange accent rail — echoes the navy hero's orange top rule. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-500 via-orange-400 to-transparent"
+            />
+            {footer ? (
+              <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-white/60 px-4 py-3">{footer}</div>
+            ) : null}
+            {ring || aside ? (
+              <div className="flex flex-wrap items-center gap-6 px-5 py-5">
+                {ring}
+                {aside ? <div className="min-w-0 flex-1">{aside}</div> : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     // SURFACE_CLASS first: tailwind-merge lets the LATER class win, so the orange top rule must
     // come after the surface's all-sides `border border-slate-200` or it is silently dropped.

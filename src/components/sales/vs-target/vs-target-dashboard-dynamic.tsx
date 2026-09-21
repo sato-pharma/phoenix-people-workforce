@@ -6,6 +6,7 @@ type VsTargetDashboardProps = {
   data: VsTargetDashboardData;
   basePath: string;
   kicker: string;
+  surface?: "sales" | "portal";
 };
 
 export const VsTargetDashboard = dynamic<VsTargetDashboardProps>(() =>
