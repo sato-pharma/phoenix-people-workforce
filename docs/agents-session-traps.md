@@ -2023,6 +2023,19 @@ session reads is `0` — and a zero from a presence check means exactly one thin
 in the shipped file, so the fix did not ship*. This is a plausible WRONG ANSWER, not an error:
 nothing in the output looks broken, and the file was never read at all.
 
+**The two `fatal:`s ARE distinguishable, so you never have to guess which you hit.** Measured
+all three ways:
+
+    mangled          fatal: ambiguous argument 'origin\main;.github\workflows\ci.yml': unknown revision or path not in the working tree.
+    real absence     fatal: path 'docs/no-such-file-here.md' does not exist in 'origin/main'
+    absent AND dotted, with the export set
+                     fatal: path '.github/workflows/no-such.yml' does not exist in 'origin/main'
+
+The mangled form carries BACKSLASHES and a SEMICOLON and blames the whole argument; the honest one
+leaves the argument intact, keeps the forward slashes, and names the ref. The third probe is the one
+that makes the tell trustworthy: with the conversion off, a dotted path that genuinely does not
+exist still gives the ABSENCE message, so the two causes never wear each other's words.
+
 **The exit code does not rescue it.** That pipeline exits `1`, but the `1` is `grep`'s "no matches"
 — the identical status a genuine, correctly-read absence produces. No status here distinguishes
 *git failed* from *the string is not there*.
