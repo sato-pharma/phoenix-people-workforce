@@ -87,7 +87,7 @@ try {
   );
   const employeeResults = await runContext(
     browser,
-    `${baseUrl}/api/dev-auth?role=Employee&loginId=PD-0001&hrId=PD-0001&next=/employee-portals`,
+    `${baseUrl}/api/dev-auth?role=Regional%20Manager&loginId=PD-0001&hrId=PD-0001&next=/employee-portals`,
     employeePages,
   );
 

@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
     if (!access.loginId && !access.hrId) {
       return new NextResponse(null, { status: 204 });
     }
+    // Only a real signed-in session is recorded. A local preview — the dev-auth cookie or the
+    // x-phoenix-* headers, both source "dev-header" — runs against the PRODUCTION database that
+    // .env.local points at, so recording it filed invented page views under real people's names:
+    // on 2026-09-21 one preview left 433 rows showing a District Manager using the portal as a
+    // Medical Rep, which the adoption and error-monitor readers then report as his own activity.
+    if (access.source !== "session") {
+      return new NextResponse(null, { status: 204 });
+    }
 
     const token = request.cookies.get(phoenixSessionCookieName)?.value;
     const sessionId = verifySessionToken(token)?.sid ?? null;

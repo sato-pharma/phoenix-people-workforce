@@ -61,6 +61,32 @@ export function isLocalDevelopmentRequest(request: Request) {
   return [hostname, hostHeader, forwardedHost].some(isLoopbackHostname);
 }
 
+/**
+ * The role a preview of a REAL person has to wear: the one that person actually signs in with.
+ *
+ * Returns that role when `requestedRole` is not one of theirs, and null when the preview is fine —
+ * either one of the hrId's active logins holds `requestedRole`, or the hrId has no active login at
+ * all (a role-only or synthetic preview, such as `PHASE23-DM`, which shows nobody's real account).
+ * Keys compare without case or punctuation, so `pd-0014`, `PD-0014` and `PD0014` are one person.
+ *
+ * Why it exists: on 2026-09-21 a preview opened as a Pedia District Manager with `role=Medical Rep`
+ * rendered a medical rep's command center under his real name, with no team on it, and was read as
+ * his account being broken — while every one of his real sign-ins had been as a District Manager.
+ * A preview under a real name must never show that person a dashboard that is not theirs.
+ */
+export function devPreviewRoleMismatch(
+  requestedRole: PhoenixRole,
+  hrId: string,
+  activeLogins: ReadonlyArray<{ hrId: string | null; role: PhoenixRole }>,
+): PhoenixRole | null {
+  const personKey = (value: string | null | undefined) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const key = personKey(hrId);
+  if (!key) return null;
+  const held = activeLogins.filter((login) => personKey(login.hrId) === key).map((login) => login.role);
+  if (held.length === 0 || held.includes(requestedRole)) return null;
+  return held[0];
+}
+
 export function accessContextFromDevPreviewToken(
   token: string | null | undefined,
 ): AccessContext | null {
