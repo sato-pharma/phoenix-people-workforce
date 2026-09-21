@@ -2831,6 +2831,19 @@ An audit of Reps List, Reps Plans, KPIs and their related screens for Medical Re
 - Three active Anti Infective reps looked orphaned only because the check searched for DM or RM titles; an NSM sits directly above the acting DM, so nothing was invisible.
 - The Product Managers and Group Product Manager on an NSM's Reps List are staff seats, not reps, and are not in the venue picker.
 
+## 100% regular is the best case — owner rule, 2026-09-21
+
+His words: "100% regular is the best case scenario. If the campaign is declining and the regular is inclining, this is the best case scenario."
+
+### The defect it corrected
+Employee 360's Campaign vs Regular section held every rep to a 71:29 "healthy band" and flagged anything under 15% campaign as "Campaign-starved" (and over 45% as "Regular-neglect"). Marian Samir, 91% regular with campaign falling from 100% in February to 1% by July, read "Campaign-starved" in amber. The period-over-period chip and the before/after row both coloured a RISE in campaign share green.
+
+### The rule, as built (PR after #4177)
+- **Verdict** (`campaignMixVerdictOf`): 0% campaign is "All regular · the best case"; under 50% is "Mostly regular"; 50% or more is "Campaign-heavy", the same line the KPIs board's `campaign-heavy` flag uses (`kpis-filters.ts`). No floor.
+- **Direction** (`campaignMixTrendOf`): the first against the last month with productive visits, read on SHARES so a part month at either end cannot fake a move. A fall of 5 points or more is "Campaign falling, regular rising · the best direction"; a rise of 5 or more is flagged; anything smaller is steady.
+- **Change indicators**: a fall in campaign share is the green direction on both.
+- The company's same-month campaign share still shows beside each month as context, not as a target to match.
+
 ## Every reply opens with its next step, and always ends in words he can send — owner rules, 2026-09-07, 2026-09-15 and 2026-09-18
 
 The 2026-09-07 amendment moved the next step to the TOP of the reply (the account is in the §4 text

@@ -8,7 +8,7 @@
 //
 // IMPORTANT (fairness): totals (685 visits, 92 active days, 89 customers) are
 // full-window absolutes and are unfair to part-period / new-hire reps. Prefer
-// the RATE benchmarks (visits/active-day, regular:campaign share) as the primary
+// the RATE benchmarks (visits/active-day, campaign share) as the primary
 // comparison; totals are context only and must be shown with a tenure note.
 
 export const EMPLOYEE_360_BENCHMARKS = {
@@ -16,11 +16,13 @@ export const EMPLOYEE_360_BENCHMARKS = {
   productiveVisits: 685,
   regularVisits: 489,
   campaignVisits: 196,
-  // Healthy campaign share band, anchored on the 71:29 annual blend.
-  regularShare: 0.71,
-  campaignShare: 0.29,
-  campaignShareLow: 0.15, // below → "campaign-starved"
-  campaignShareHigh: 0.45, // above → "regular-neglect"
+  // Owner rule, 2026-09-21: 100% regular is the BEST case, and campaign falling while regular rises
+  // is the best direction. There is no "healthy band" and no campaign floor — the old 71:29 band
+  // called a 91%-regular rep "campaign-starved". Only a campaign MAJORITY is flagged, on the same
+  // line the KPIs board's "campaign-heavy" flag uses (kpis-filters.ts).
+  campaignHeavyShare: 0.5,
+  // A month-to-month change in campaign share under this many points reads as steady.
+  campaignTrendDeadband: 0.05,
   visitsPerActiveDay: 7.4,
   activeDays: 92,
   distinctCustomers: 89,

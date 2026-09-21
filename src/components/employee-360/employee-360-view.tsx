@@ -286,7 +286,7 @@ const DELTA_EXPLAIN: Record<string, string> = {
   "Productive visits": "Real customer visits this period, and how that compares to the previous period (▲ up / ▼ down).",
   "Visits / day": "Average productive visits per active field day, versus the previous period.",
   Customers: "How many different customers were visited this period, versus the previous period.",
-  "Campaign share": "Share of visits that were campaign visits, versus the previous period (pp = percentage points).",
+  "Campaign share": "Share of visits that were campaign visits, versus the previous period (pp = percentage points). A fall is better: 100% regular is the best case.",
   "Check-in coverage": "Share of active days that had a GPS check-in, versus the previous period.",
   "Check-ins": "Total GPS check-ins this period, versus the previous period.",
 };
@@ -324,7 +324,7 @@ function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) 
         <DeltaChip label="Productive visits" delta={comparison.productiveVisits} kind="int" />
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
         <DeltaChip label="Customers" delta={comparison.distinctCustomers} kind="int" />
-        <DeltaChip label="Campaign share" delta={comparison.campaignShare} kind="pct" />
+        <DeltaChip label="Campaign share" delta={comparison.campaignShare} kind="pct" goodUp={false} />
         <DeltaChip label="Check-in coverage" delta={comparison.checkinCoverage} kind="pct" judged={false} />
         <DeltaChip label="Check-ins" delta={comparison.checkinCount} kind="int" judged={false} />
       </div>
@@ -440,12 +440,25 @@ function MostVisitedCustomers({ top }: { top: TopCustomersByLane }) {
   );
 }
 
-const balanceCopy: Record<Employee360Profile["campaignBalanceFlag"], { label: string; tone: string }> = {
-  healthy: { label: "Balanced", tone: "text-emerald-600" },
-  campaign_starved: { label: "Campaign-starved", tone: "text-amber-600" },
-  regular_neglect: { label: "Regular-neglect", tone: "text-amber-600" },
+// Owner rule, 2026-09-21: 100% regular is the best case, and campaign falling while regular rises is
+// the best direction. There is no target mix to sit inside — the more regular, the better.
+const campaignMixCopy: Record<Employee360Profile["campaignMix"], { label: string; tone: string }> = {
+  all_regular: { label: "All regular · the best case", tone: "text-emerald-600" },
+  mostly_regular: { label: "Mostly regular", tone: "text-emerald-600" },
+  campaign_heavy: { label: "Campaign-heavy", tone: "text-amber-600" },
   no_data: { label: "No data", tone: "text-slate-400" },
 };
+
+function campaignTrendCopy(trend: Employee360Profile["campaignTrend"]): { label: string; tone: string } | null {
+  if (!trend) return null;
+  const from = `${Math.round(trend.fromCampaignShare * 100)}%`;
+  const to = `${Math.round(trend.toCampaignShare * 100)}%`;
+  const span = `${trend.fromMonth} → ${trend.toMonth}`;
+  if (trend.direction === "improving") return { label: `▼ Campaign falling, regular rising (${from} → ${to} campaign, ${span}) · the best direction`, tone: "text-emerald-600" };
+  if (trend.direction === "worsening") return { label: `▲ Campaign rising, regular falling (${from} → ${to} campaign, ${span})`, tone: "text-amber-600" };
+  if (trend.fromCampaignShare === 0 && trend.toCampaignShare === 0) return { label: `Held at all regular (${span})`, tone: "text-emerald-600" };
+  return { label: `Steady mix (${from} → ${to} campaign, ${span})`, tone: "text-slate-500" };
+}
 
 const zoneStyle: Record<string, { label: string; tone: string }> = {
   excellence_zone: { label: "Excellence", tone: "text-indigo-600" },
@@ -569,6 +582,7 @@ export function Employee360View({
   const b = summary.benchmarks;
   const tenure = tenureLabel(subject.hireDate);
   const monthlyMax = Math.max(1, ...summary.monthly.map((m) => m.regular + m.campaign));
+  const trendCopy = campaignTrendCopy(summary.campaignTrend);
   const hourMax = Math.max(1, ...summary.hourHistogram);
 
   // Role-driven section composition. A leader (DM / RM / NSM / PM / TM) leads with
@@ -679,15 +693,15 @@ export function Employee360View({
       {/* Campaign vs Regular */}
       {showCampaign ? (
       <Card className={PREMIUM_CARD}>
-        <SectionHeader icon={Megaphone} tone="orange" sub="Each month vs the company's SAME-month campaign share (campaign is seasonal).">
+        <SectionHeader icon={Megaphone} tone="orange" sub="100% regular is the best case; campaign falling while regular rises is the best direction. Each month shows the company's SAME-month campaign share beside it.">
           Campaign vs Regular
         </SectionHeader>
         <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-slate-600">
           <span>
             Mix: <span className="font-black tabular-nums text-slate-900">{pct(summary.regularShare)} regular / {pct(summary.campaignShare)} campaign</span>
           </span>
-          <span className="text-slate-400">healthy band {Math.round(b.regularShare * 100)}:{Math.round(b.campaignShare * 100)}</span>
-          <span className={cn("font-bold", balanceCopy[summary.campaignBalanceFlag].tone)}>● {balanceCopy[summary.campaignBalanceFlag].label}</span>
+          <span className={cn("font-bold", campaignMixCopy[summary.campaignMix].tone)}>● {campaignMixCopy[summary.campaignMix].label}</span>
+          {trendCopy ? <span className={cn("font-bold", trendCopy.tone)}>{trendCopy.label}</span> : null}
         </div>
         {summary.monthly.length > 1 ? (
           <div className="mb-5">
@@ -1418,7 +1432,8 @@ function BeforeAfterBlock({ title, set }: { title: string; set: ImpactSet }) {
       before: pct(set.before.campaignShare),
       after: pct(set.after.campaignShare),
       delta: set.after.campaignShare != null && set.before.campaignShare != null ? (set.after.campaignShare - set.before.campaignShare) * 100 : null,
-      goodUp: true,
+      // A fall in campaign share is the improvement: 100% regular is the best case.
+      goodUp: false,
     },
     {
       label: "Customers reached",

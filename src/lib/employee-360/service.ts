@@ -93,6 +93,73 @@ export type MonthlyVisitPoint = {
   companyCampaignShare: number | null;
 };
 
+/**
+ * Where a rep's mix stands. Owner rule, 2026-09-21: 100% regular is the BEST case — the more
+ * regular, the better, with no floor for campaign. Only a campaign majority is flagged.
+ */
+export type CampaignMixVerdict = "all_regular" | "mostly_regular" | "campaign_heavy" | "no_data";
+
+/**
+ * Which way the mix moved, from the first to the last month with productive visits. Campaign
+ * falling while regular rises is the best direction ("improving"). Read on SHARES, not counts, so a
+ * part month at either end of the window cannot fake a rise or a fall.
+ */
+export type CampaignMixTrend = {
+  direction: "improving" | "worsening" | "steady";
+  fromMonth: string;
+  toMonth: string;
+  fromCampaignShare: number;
+  toCampaignShare: number;
+};
+
+export function campaignMixVerdictOf(campaignVisits: number, productiveVisits: number): CampaignMixVerdict {
+  if (productiveVisits <= 0) return "no_data";
+  if (campaignVisits <= 0) return "all_regular";
+  return campaignVisits / productiveVisits >= EMPLOYEE_360_BENCHMARKS.campaignHeavyShare ? "campaign_heavy" : "mostly_regular";
+}
+
+export function campaignMixTrendOf(monthly: readonly MonthlyVisitPoint[]): CampaignMixTrend | null {
+  const months = monthly.filter((m) => m.regular + m.campaign > 0 && m.campaignShare != null);
+  if (months.length < 2) return null;
+  const first = months[0];
+  const last = months[months.length - 1];
+  const from = first.campaignShare ?? 0;
+  const to = last.campaignShare ?? 0;
+  const change = to - from;
+  const band = EMPLOYEE_360_BENCHMARKS.campaignTrendDeadband;
+  return {
+    direction: change <= -band ? "improving" : change >= band ? "worsening" : "steady",
+    fromMonth: first.month,
+    toMonth: last.month,
+    fromCampaignShare: from,
+    toCampaignShare: to,
+  };
+}
+
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function monthShort(month: string): string {
+  const [y, m] = month.split("-");
+  return `${MONTH_SHORT[Number(m) - 1] ?? m} ${y}`;
+}
+
+const CAMPAIGN_MIX_WORDS: Record<CampaignMixVerdict, string> = {
+  all_regular: "all regular, the best case",
+  mostly_regular: "mostly regular (100% regular is the best case)",
+  campaign_heavy: "campaign-heavy (more campaign than regular)",
+  no_data: "no data",
+};
+
+function describeCampaignTrend(trend: CampaignMixTrend | null): string {
+  if (!trend) return "";
+  const from = `${Math.round(trend.fromCampaignShare * 100)}%`;
+  const to = `${Math.round(trend.toCampaignShare * 100)}%`;
+  const span = `${monthShort(trend.fromMonth)} to ${monthShort(trend.toMonth)}`;
+  if (trend.direction === "improving") return ` Campaign fell from ${from} to ${to} (${span}) while regular rose — the best direction.`;
+  if (trend.direction === "worsening") return ` Campaign rose from ${from} to ${to} (${span}) while regular fell.`;
+  if (trend.toCampaignShare === 0 && trend.fromCampaignShare === 0) return ` Held at all regular from ${span}.`;
+  return ` Campaign steady near ${to} (${span}).`;
+}
+
 export type LabeledCount = { label: string; count: number; pct: number };
 export type NamedCount = { name: string; count: number };
 
@@ -153,7 +220,8 @@ export type VisitSummary = {
   adminVisits: number;
   regularShare: number | null;
   campaignShare: number | null;
-  campaignBalanceFlag: "healthy" | "campaign_starved" | "regular_neglect" | "no_data";
+  campaignMix: CampaignMixVerdict;
+  campaignTrend: CampaignMixTrend | null;
   activeDays: number;
   visitsPerActiveDay: number | null;
   distinctCustomers: number;
@@ -419,12 +487,7 @@ export function summarizeVisits(
   const activeDays = activeDaySet.size;
   const visitsPerActiveDay = activeDays > 0 ? productiveVisits / activeDays : null;
 
-  let campaignBalanceFlag: VisitSummary["campaignBalanceFlag"] = "no_data";
-  if (campaignShare != null) {
-    if (campaignShare < EMPLOYEE_360_BENCHMARKS.campaignShareLow) campaignBalanceFlag = "campaign_starved";
-    else if (campaignShare > EMPLOYEE_360_BENCHMARKS.campaignShareHigh) campaignBalanceFlag = "regular_neglect";
-    else campaignBalanceFlag = "healthy";
-  }
+  const campaignMix = campaignMixVerdictOf(campaignVisits, productiveVisits);
 
   const monthly: MonthlyVisitPoint[] = Array.from(monthlyMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
@@ -485,13 +548,13 @@ export function summarizeVisits(
   const utilization = workingDaysInWindow > 0 ? activeDays / workingDaysInWindow : null;
 
   const b = EMPLOYEE_360_BENCHMARKS;
-  const balanceLabel = campaignBalanceFlag === "healthy" ? "a balanced mix" : campaignBalanceFlag === "campaign_starved" ? "campaign-starved" : campaignBalanceFlag === "regular_neglect" ? "regular-neglect" : "no data";
+  const campaignTrend = campaignMixTrendOf(monthly);
   const summaryText =
     productiveVisits === 0
       ? "No productive visits recorded in this window."
       : `${productiveVisits.toLocaleString()} productive visits over ${activeDays} active days ` +
         `(${visitsPerActiveDay?.toFixed(1)}/day, ${describeVs(visitsPerActiveDay, b.visitsPerActiveDay)}). ` +
-        `Mix is ${Math.round((regularShare ?? 0) * 100)}% regular / ${Math.round((campaignShare ?? 0) * 100)}% campaign — ${balanceLabel}. ` +
+        `Mix is ${Math.round((regularShare ?? 0) * 100)}% regular / ${Math.round((campaignShare ?? 0) * 100)}% campaign — ${CAMPAIGN_MIX_WORDS[campaignMix]}.${describeCampaignTrend(campaignTrend)} ` +
         `Reaches ${distinctCustomers} customers (${avgVisitsPerCustomer?.toFixed(1)} visits each); ${repeatCustomers} seen more than once. ` +
         `Momentum is ${momentumTrend} (last 30d: ${last30} vs prior 30d: ${prev30}).`;
 
@@ -503,7 +566,8 @@ export function summarizeVisits(
     adminVisits,
     regularShare,
     campaignShare,
-    campaignBalanceFlag,
+    campaignMix,
+    campaignTrend,
     activeDays,
     visitsPerActiveDay,
     distinctCustomers,

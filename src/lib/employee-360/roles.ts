@@ -46,7 +46,7 @@ export const EMPLOYEE_360_ROLE_META: Record<Employee360RoleCategory, Employee360
   "medical-rep": {
     label: "Medical Reps",
     tab: "Medical Reps",
-    description: "Individual field performance — visits, campaign balance, GPS timing, own sales, and coaching received.",
+    description: "Individual field performance — visits, regular vs campaign mix, GPS timing, own sales, and coaching received.",
   },
   "district-manager": {
     label: "District Managers",
