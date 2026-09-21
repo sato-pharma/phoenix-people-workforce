@@ -44,7 +44,12 @@ function planText(row: PhoenixCrmKpiRow) {
 
 function windowText(row: PhoenixCrmKpiRow) {
   if (!row.window) return "No day counted this month";
-  return `${dayLabel(row.window.from)} to ${dayLabel(row.window.to)} · ${row.workingDays} working ${row.workingDays === 1 ? "day" : "days"}`;
+  const days = `${dayLabel(row.window.from)} to ${dayLabel(row.window.to)}`;
+  if (!row.callRateWindow) return `${days} · call rate starts once today is over`;
+  const workingDays = `${row.workingDays} working ${row.workingDays === 1 ? "day" : "days"}`;
+  return row.callRateWindow.to === row.window.to
+    ? `${days} · ${workingDays}`
+    : `${days} · call rate to ${dayLabel(row.callRateWindow.to)}, ${workingDays}`;
 }
 
 function Lines({ lines }: { lines: string[] }) {
@@ -67,9 +72,10 @@ export function PhoenixCrmKpiBoard({ view }: { view: PhoenixCrmKpiView }) {
       description={
         <>
           From what the pilot reps entered in Phoenix CRM only, from the day each joined the pilot to today. Call rate is doctor
-          visits per working day (Saturday to Wednesday, national holidays removed), AM against 2 and PM against 10. Coverage is
-          the doctors on a list visited at least once; frequency is those visited as often as their grade asks; plan achieved is
-          the doctors visited on the day a verified plan named.
+          visits per working day (Saturday to Wednesday, national holidays removed), AM against 2 and PM against 10, scored
+          through yesterday: today is not scored until it is over. Coverage is the doctors on a list visited at least once;
+          frequency is those visited as often as their grade asks; plan achieved is the doctors visited on the day a verified
+          plan named. Those three already count today&apos;s visits.
           {view.holidaysComplete ? null : " The holiday calendar could not be read in full, so working days may count too many."}
         </>
       }

@@ -8,6 +8,9 @@
  * THE FOUR MEASURES, each on the definitions the company boards already use:
  *   · CALL RATE — doctor visits per working day, AM against 2 and PM against 10, REPORTED APART and never
  *     averaged or summed. Working days are Saturday to Wednesday less national holidays (call-rate.ts).
+ *     It stops at YESTERDAY while the month runs (the owner's ruling C1, 2026-09-21, as on Reps List and
+ *     the KPIs board): today is not scored until it is over, its calls and its day together. The three
+ *     measures below keep counting today — none divides by days.
  *   · COVERAGE — of the doctors on a list, how many the rep visited at least once in the period.
  *   · FREQUENCY — of the doctors on a list whose grade carries a norm, how many the rep visited at least as
  *     often as the norm asks (rep-kpi-reports.ts). A grade with no norm is left out, never scored as 0.
@@ -21,6 +24,7 @@
  */
 
 import { AM_CALL_RATE_TARGET, PM_CALL_RATE_TARGET } from "@/lib/crm/call-rate";
+import { addDaysIso } from "@/lib/crm/dates";
 import type { DoctorCoverageGradeTier } from "@/lib/crm/doctor-coverage-config";
 import { CATCH_ALL_CONTACT_CRM_ID, DEFAULT_REP_KPI_STANDARDS, kpiGradeTierOf } from "@/lib/crm/rep-kpi-reports";
 import type { NativeVisitShift } from "@/lib/crm/native-visits/rules";
@@ -59,11 +63,17 @@ export type PhoenixCrmPlannedFact = {
 };
 
 export type PhoenixCrmKpiInput = {
-  /** Working days in the rep's window, national holidays already removed. */
+  /** Working days the call rate divides by — those of `callRateWindow` — national holidays already removed. */
   workingDays: number;
   panel: readonly PhoenixCrmListedContact[];
   /** Saved, not deleted, inside the window. */
   visits: readonly PhoenixCrmVisitFact[];
+  /**
+   * The days whose calls the call rate counts (`phoenixCrmCallRateWindow`: the window less a running
+   * today). Null: no day is over yet, so no call counts. Left out: every visit given counts.
+   * Coverage, frequency and plan achieved always read every visit given.
+   */
+  callRateWindow?: { from: string; to: string } | null;
   /** Live items of VERIFIED week plans, inside the window. */
   planned: readonly PhoenixCrmPlannedFact[];
   cairoToday: string;
@@ -110,6 +120,11 @@ function isDoctorVisit(visit: PhoenixCrmVisitFact): visit is PhoenixCrmVisitFact
 export function computePhoenixCrmKpis(input: PhoenixCrmKpiInput): PhoenixCrmKpiResult {
   const norms = input.norms ?? PHOENIX_CRM_FREQUENCY_NORMS;
   const doctorVisits = input.visits.filter(isDoctorVisit);
+  const callWindow = input.callRateWindow;
+  const callVisits =
+    callWindow === undefined
+      ? doctorVisits
+      : doctorVisits.filter((visit) => callWindow !== null && visit.visitDate >= callWindow.from && visit.visitDate <= callWindow.to);
 
   // Visits per doctor, per half-day list.
   const visitsByShift: Record<NativeVisitShift, Map<number, number>> = { AM: new Map(), PM: new Map() };
@@ -125,7 +140,7 @@ export function computePhoenixCrmKpis(input: PhoenixCrmKpiInput): PhoenixCrmKpiR
   const coverage = {} as Record<NativeVisitShift, PhoenixCrmShare>;
   const frequency = {} as Record<NativeVisitShift, PhoenixCrmShare>;
   for (const shift of PHOENIX_CRM_SHIFTS) {
-    const calls = doctorVisits.filter((visit) => visit.shift === shift).length;
+    const calls = callVisits.filter((visit) => visit.shift === shift).length;
     const target = PHOENIX_CRM_CALL_RATE_TARGETS[shift];
     const perDay = input.workingDays > 0 ? Math.round((calls / input.workingDays) * 10) / 10 : null;
     callRate[shift] = {
@@ -209,6 +224,20 @@ export function phoenixCrmRepWindow(
   const from = startsOn > month.from ? startsOn : month.from;
   const to = cairoToday < month.to ? cairoToday : month.to;
   return from <= to ? { from, to } : null;
+}
+
+/**
+ * The days a rep's CALL RATE covers (the owner's ruling C1, 2026-09-21): the KPI window less today while
+ * today is still running — a day is not scored until it is over. A window already over is kept whole.
+ * Null when no day of it is over yet: the rep joined the pilot today, or the month began today.
+ */
+export function phoenixCrmCallRateWindow(
+  window: { from: string; to: string } | null,
+  cairoToday: string,
+): { from: string; to: string } | null {
+  if (!window) return null;
+  const to = window.to < cairoToday ? window.to : addDaysIso(cairoToday, -1);
+  return window.from <= to ? { from: window.from, to } : null;
 }
 
 /** "1.5 AM · 8.2 PM" — the pair side by side, never joined by a slash and never averaged. */

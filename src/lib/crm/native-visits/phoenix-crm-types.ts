@@ -46,6 +46,8 @@ export type PhoenixCrmKpiRow = PhoenixCrmKpiResult & {
   startsOn: string;
   /** The days counted this month; null when the rep joined after it or it has not begun. */
   window: { from: string; to: string } | null;
+  /** The days the call rate scores: the window less a running today (ruling C1); null when none is over yet. */
+  callRateWindow: { from: string; to: string } | null;
   /** "1.5 AM · 8.2 PM" — never one averaged figure. */
   callRateText: string;
 };
