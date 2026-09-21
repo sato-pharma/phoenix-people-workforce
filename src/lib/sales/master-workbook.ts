@@ -50,7 +50,11 @@ async function selectAllOneBatch(
   let headQuery = supabase.from(table).select(columns, { count: "exact", head: true });
   if (inFilter && inFilter.values.length > 0) headQuery = headQuery.in(inFilter.column, inFilter.values);
   const head = await headQuery;
-  if (head.error) return []; // tolerate a missing/empty table
+  // A failed count used to read as "no rows" (`return []`), so a transient error emptied the whole
+  // sheet while the export still answered HTTP 200 — an empty download indistinguishable from an
+  // empty table. Every table read here exists; a failed count must fail the export loudly, exactly
+  // as a failed page already does below. Source of Sales fix backlog, re-measured 2026-09-18, #110.
+  if (head.error) throw head.error;
   const total = head.count ?? 0;
   if (total === 0) return [];
 
@@ -86,7 +90,7 @@ async function selectAllOneBatch(
 // values can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
 // HeadersOverflowError — inFilter.values (e.g. every validated import batch id) has no small fixed
 // cap, so batch it and merge.
-async function selectAll(
+export async function selectAll(
   supabase: SupabaseAdmin,
   table: string,
   columns: string,
@@ -252,10 +256,13 @@ export async function buildMasterWorkbookBuffer(
 
   // Pre-fetch validated batch IDs so the heavy import_rows scan is restricted to validated batches
   // only (uses the existing batch_id B-tree index instead of a 410MB full table scan).
-  const { data: batchIdData } = await supabase
+  // A failed read here used to be ignored: no batch ids meant no import rows, so Raw_Sales,
+  // Normalized_Sales, Exceptions and every summary shipped empty with HTTP 200 (#110).
+  const { data: batchIdData, error: batchIdError } = await supabase
     .from("source_of_sales_import_batches")
     .select("id")
     .eq("status", "validated");
+  if (batchIdError) throw batchIdError;
   const validatedBatchIds = (batchIdData ?? []).map((b) => String(b.id));
 
   const [
