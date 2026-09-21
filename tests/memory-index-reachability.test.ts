@@ -25,8 +25,10 @@ import { join } from "node:path";
 import {
   classifyMemoryReachability,
   classifyMemoryReachabilityAcrossRefs,
+  loaderVisiblePrefix,
   memoryReachabilityLines,
   namedInAgents,
+  splitOverMarkedByAutoLoadedIndex,
   strandedLines,
 } from "../scripts/memory-index-reachability.mjs";
 
@@ -447,4 +449,142 @@ export function runMemoryIndexReachabilityTests() {
       + "nothing about whether an in-progress local edit is about to remove the only copy that "
       + "will exist once it merges",
   );
+
+  // ── 9. AN ARCHIVE-ONLY LINK IS NOT A LICENCE TO TRIM THE MARKER ───────────────────────────────
+  //
+  // The CLI's marker check printed every over-marked slug as "an index links it too, so the marker
+  // over-claims — not a risk", because it asked the reachability question with `MEMORY.md` and
+  // `MEMORY-ARCHIVE.md` CONCATENATED. For the stranding question that is correct and stays. For the
+  // MARKER question it is not: §2.2 makes `MEMORY.md` the ONLY auto-loaded memory file, so a slug
+  // whose sole index link is in the archive still needs its AGENTS.md line — that line is the last
+  // pointer any session loads without being told to go looking.
+  //
+  // Measured 2026-09-21 on the real map: three marked slugs had ZERO matches in `MEMORY.md` and
+  // appeared only in `MEMORY-ARCHIVE.md`, and the CLI called all three a harmless over-claim. Acting
+  // on that would have deleted the last auto-loaded pointer to three live rules.
+  const ARCHIVE_ONLY_SLUG = "owner-sheet-vocabulary-stores-is-office-upa-is-a-channel";
+  const AUTO_LOADED_SLUG = "a-pharmacy-is-not-a-contact";
+  const archiveText = "- [depth](" + ARCHIVE_ONLY_SLUG + ".md) — parked on purpose\n";
+  const autoLoadedText = "- [live](" + AUTO_LOADED_SLUG + ".md) — a hook\n";
+
+  const split = splitOverMarkedByAutoLoadedIndex({
+    overMarked: [ARCHIVE_ONLY_SLUG, AUTO_LOADED_SLUG],
+    autoLoadedIndexText: autoLoadedText,
+  });
+  assert.deepEqual(
+    split.archiveOnly,
+    [ARCHIVE_ONLY_SLUG],
+    "a marked slug that MEMORY.md does NOT link must be reported as still load-bearing — the archive "
+      + "does not auto-load, so cutting its AGENTS.md slug drops the rule out of every session's "
+      + "context even though nothing is technically stranded",
+  );
+  assert.deepEqual(
+    split.recallable,
+    [AUTO_LOADED_SLUG],
+    "a marked slug MEMORY.md does link is the genuine harmless over-claim — that verdict must survive",
+  );
+
+  // THE DISCRIMINATING HALF, as everywhere above: pin what the PRE-FIX rule said about the same
+  // input. It asked only whether EITHER index linked the file, so it called the archive-only slug
+  // harmless — the reassurance this section exists to remove. Without this assertion the two cases
+  // above could pass for free.
+  const preFixCalledItHarmless = (archiveText + autoLoadedText).includes("](" + ARCHIVE_ONLY_SLUG + ".md)");
+  assert.equal(
+    preFixCalledItHarmless,
+    true,
+    "the pre-fix rule (either index counts) DID call the archive-only slug a harmless over-claim — "
+      + "if this ever reads false the fixture no longer reproduces the bug and the test above proves nothing",
+  );
+
+  // THE SAFE DEGRADE, one-way as in section 4. An unreadable `MEMORY.md` arrives as "" and must put
+  // every slug on the keep-the-marker side, never silently clear a marker it could not measure.
+  assert.deepEqual(
+    splitOverMarkedByAutoLoadedIndex({
+      overMarked: [ARCHIVE_ONLY_SLUG, AUTO_LOADED_SLUG],
+      autoLoadedIndexText: "",
+    }),
+    { recallable: [], archiveOnly: [AUTO_LOADED_SLUG, ARCHIVE_ONLY_SLUG].sort() },
+    "with MEMORY.md unreadable every marker must be kept — a marker kept for nothing costs a reader "
+      + "a line, a marker dropped on a bad reassurance costs a live rule its only auto-loaded pointer",
+  );
+
+  // An empty marker list is the ordinary healthy case and must not throw or invent a slug.
+  assert.deepEqual(splitOverMarkedByAutoLoadedIndex({ overMarked: [], autoLoadedIndexText: autoLoadedText }), {
+    recallable: [],
+    archiveOnly: [],
+  });
+
+  // A SUBSTRING MUST NOT COUNT AS A LINK. Memory slugs nest (`...-is-office-upa-is-a-channel` vs a
+  // longer slug ending in it), and the link form is matched with its `](` and `)` for exactly that
+  // reason. A bare `includes(slug)` would read a longer neighbour's line as this slug's own pointer
+  // and clear a marker that is still load-bearing.
+  assert.deepEqual(
+    splitOverMarkedByAutoLoadedIndex({
+      overMarked: ["a-pharmacy-is-not-a-contact"],
+      autoLoadedIndexText: "- [other](not-a-pharmacy-is-not-a-contact-either.md) — a different memory\n",
+    }).archiveOnly,
+    ["a-pharmacy-is-not-a-contact"],
+    "a longer slug's index line must not be read as this slug's pointer",
+  );
+
+  // ── 10. A LINK PAST THE LOADER CLIFF IS NOT A LINK ANY SESSION SEES ───────────────────────────
+  //
+  // Section 9 fixed "which index links it". This is the same mistake one level down: `MEMORY.md` is
+  // auto-loaded only up to MEMORY_INDEX_READ_CEILING bytes and truncated there SILENTLY, so reading
+  // the WHOLE file classifies a link in the invisible tail as recallable — and the CLI would then
+  // call the marker a harmless over-claim and invite a session to cut the last pointer anybody
+  // loads. It bites exactly when this tool is being used: an index over budget, mid-trim.
+  const CEILING = 24_400;
+  const PAST_CLIFF_SLUG = "past-the-cliff-memory";
+  const pastCliffLine = "- [tail](" + PAST_CLIFF_SLUG + ".md) — parked past the cliff\n";
+  const overCliffIndex = "x".repeat(CEILING) + "\n" + pastCliffLine;
+
+  // The fixture must genuinely contain the link, or everything below passes for free.
+  assert.equal(
+    overCliffIndex.includes("](" + PAST_CLIFF_SLUG + ".md)"),
+    true,
+    "the fixture must really carry the link in its tail, or this section proves nothing",
+  );
+
+  assert.deepEqual(
+    splitOverMarkedByAutoLoadedIndex({
+      overMarked: [PAST_CLIFF_SLUG],
+      autoLoadedIndexText: loaderVisiblePrefix(overCliffIndex).text,
+    }),
+    { recallable: [], archiveOnly: [PAST_CLIFF_SLUG] },
+    "a link past the loader cliff is invisible to every session, so the marker guarding it is still "
+      + "load-bearing — grading against the visible prefix is what keeps the last pointer alive",
+  );
+
+  // THE DISCRIMINATING HALF: reading the whole file is precisely what the bug did.
+  assert.deepEqual(
+    splitOverMarkedByAutoLoadedIndex({
+      overMarked: [PAST_CLIFF_SLUG],
+      autoLoadedIndexText: overCliffIndex,
+    }).recallable,
+    [PAST_CLIFF_SLUG],
+    "reading the FULL index calls the invisible link a harmless over-claim — pinned so the assertion "
+      + "above keeps discriminating rather than passing for free",
+  );
+
+  // THE CEILING IS BYTES, NOT CHARACTERS. The index is full of em-dashes and emoji, so a
+  // `.length`-based prefix would over-read by hundreds of bytes and reintroduce the same bug for
+  // every link in that window. An em-dash is three UTF-8 bytes and one character.
+  const tenEmDashes = "—".repeat(10);
+  assert.equal(tenEmDashes.length, 10, "ten characters");
+  assert.equal(loaderVisiblePrefix(tenEmDashes, 30).truncated, false, "thirty bytes fits a 30-byte ceiling");
+  assert.equal(
+    loaderVisiblePrefix(tenEmDashes, 29).truncated,
+    true,
+    "a character-counting implementation would see 10 and call 29 roomy — the ceiling is bytes",
+  );
+  assert.equal(loaderVisiblePrefix(tenEmDashes, 29).bytes, 30, "`bytes` reports the FULL size, not the prefix");
+
+  // An index under the cliff is returned untouched — the common case must not be mangled.
+  const underCliff = "- [live](" + AUTO_LOADED_SLUG + ".md) — a hook\n";
+  assert.deepEqual(loaderVisiblePrefix(underCliff), {
+    text: underCliff,
+    bytes: Buffer.byteLength(underCliff, "utf8"),
+    truncated: false,
+  });
 }

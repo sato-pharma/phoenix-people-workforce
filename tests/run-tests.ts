@@ -5282,7 +5282,9 @@ await runTest(
   + "all six of the 2026-08-29 relocations orphans and told the next session to re-add the index "
   + "lines, undoing the relocation; a genuine orphan is still reported, a file that is both linked "
   + "and named counts once, and an AGENTS.md it cannot read falls back to the old answer rather "
-  + "than claiming reachability it did not prove)",
+  + "than claiming reachability it did not prove); and a load-bearing MARKER whose only index link "
+  + "is in MEMORY-ARCHIVE.md is reported as still load-bearing, never as a harmless over-claim — "
+  + "the archive does not auto-load, so that AGENTS.md slug is the last pointer a session sees",
   runMemoryIndexReachabilityTests,
 );
 

@@ -12,12 +12,27 @@ references costing 7,783 bytes — 11% of the file — re-sent on every turn, to
 **Reachability is unaffected, and that was checked rather than assumed.**
 `scripts/memory-index-reachability.mjs` treats a backticked slug in `AGENTS.md` as proof a
 memory is reachable. The rows marked **(inline — load-bearing)** are the ones where that is the
-ONLY reference — every other slug here names a file `MEMORY.md` still links. Marked slugs therefore
+ONLY reference — every other slug here names a file **an index** still links. Marked slugs therefore
 **stay inline in `AGENTS.md`** and must never be moved here; the rest remain reachable through the
 index. No count is given on purpose: the set has already changed three times (it grew again on
 2026-09-01, when twelve slugs moved the OTHER way, out of `MEMORY.md` and into `AGENTS.md`, to buy
 index budget under the loader cliff). Before removing any slug from `AGENTS.md`, re-run the
 classifier — the load-bearing set changes as the index does.
+
+**A MARKER THE CLASSIFIER CALLS "over-marked" IS NOT AUTOMATICALLY SAFE TO TRIM — read WHICH index
+links it.** "An index" above means `MEMORY.md` **or** `MEMORY-ARCHIVE.md`, and for the marker
+question those two are not interchangeable: §2.2 makes `MEMORY.md` the only auto-loaded memory file.
+A slug whose sole index link is in the **archive** is not stranded — the archive's contract is
+grep-findability — but cutting its `AGENTS.md` line drops the rule out of every session's loaded
+context, leaving it only for whoever thinks to open a file that never loads. **That marker is
+correct and stays.** Measured 2026-09-21, which is why this paragraph exists: three marked slugs
+(`ats-candidate-children-one-has-no-fk-and-one-is-a-view`,
+`offer-chain-was-live-in-the-registry-with-a-hole-past-approval`,
+`owner-sheet-vocabulary-stores-is-office-upa-is-a-channel`) had zero matches in `MEMORY.md` and
+appeared only in `MEMORY-ARCHIVE.md`, and the classifier printed all three as *"an index links it
+too, so the marker over-claims — not a risk"*. The classifier now splits the two cases and prints
+`keep` for the archive-only ones; `splitOverMarkedByAutoLoadedIndex` is the function, and the case is
+pinned in `tests/memory-index-reachability.test.ts` §9.
 
 **The marker is LINE-scoped, not slug-scoped — do not try to remove just one.**
 `scripts/memory-index-reachability.mjs` tests each LINE for the marker text and, on a match, marks
