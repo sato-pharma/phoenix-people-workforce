@@ -154,7 +154,11 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // is the Call rate tab there, and /employee-portals/reps-plans forwards to it.
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"], permission: { resource: "territory", action: "read" } },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"], permission: { resource: "sales", action: "read" } },
-  { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
+  // One link, the merged ROI Tracker module (ROI + former Coverage Report as two tabs, owner
+  // instruction 2026-09-22). Offered on EITHER flag — showMarketingCoverageReportTab is the broader
+  // set (Finance Manager / Financial Advisor), who land on the Coverage tab. Keep in sync with the
+  // sidebar entry in employee-portal-layout.tsx.
+  { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab", "showMarketingCoverageReportTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"], navBadge: "direct-orders-needs-action" },
   { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
@@ -177,7 +181,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "All", fullLabel: "All Marketing Requests", href: "/employee-portals/marketing-requests/all", icon: ClipboardList, flags: ["showMarketingAllRequestsTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },
-  { label: "Coverage", fullLabel: "Marketing Coverage Report", href: "/employee-portals/marketing-requests/coverage-report", icon: MapPinned, flags: ["showMarketingCoverageReportTab"] },
+  // "Coverage" was its own entry until 2026-09-22, when the Coverage Report became the Coverage tab
+  // of the ROI Tracker module above. Its route now redirects there; the merged link carries both flags.
   // Leave Management
   { label: "Vacation", fullLabel: "Vacation Request", href: "/employee-portals/vacation-request", icon: CalendarDays },
   { label: "Leave", fullLabel: "Vacation Report", href: "/employee-portals/vacation-report", icon: FileText },

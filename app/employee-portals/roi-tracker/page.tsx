@@ -1,30 +1,62 @@
-import { MarketingRoiLiveTracker } from "@/components/marketing-requests/marketing-roi-live-tracker";
-import { assertEmployeePortalMarketingPageAccess } from "@/lib/employee-portal/page-guards";
+import { redirect } from "next/navigation";
+
+import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { RoiTrackerTabs } from "@/components/marketing-requests/roi-tracker-tabs";
+import { resolveNavigationMode } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import {
+  canUseEmployeePortalMarketingCoverageReport,
+  canUseEmployeePortalMarketingRoiTracking,
+} from "@/lib/employee-portal/navigation";
 
 export const dynamic = "force-dynamic";
 
 /**
- * ROI Tracker — employee-portal surface.
+ * ROI Tracker — the merged marketing-ROI module (owner instruction, 2026-09-22).
  *
- * Its OWN url and its OWN page file, deliberately: owner rule 2026-07-28 is that admin and portal
- * must not share one page. They share the SERVICE (getMarketingRoiTracker, which composes the
- * authoritative v2 engine) so the two surfaces can never disagree about a number, but the routes
- * are independent — /admin/marketing-roi-tracker and /employee-portals/roi-tracker — so either can
- * change without dragging the other with it.
+ * ONE page, two tabs: the live ROI pipeline (MarketingRoiLiveTracker) and the coverage report
+ * (MarketingCoverageReportWorkspace). These used to be two separate sidebar links —
+ * /employee-portals/roi-tracker and /employee-portals/marketing-requests/coverage-report — showing
+ * genuinely different data; the owner asked for them combined as two tabs of one module rather than
+ * two pages. The old coverage route now redirects here with ?tab=coverage.
  *
- * Reaches the field hierarchy the admin shell cannot: Medical Rep, District/Regional/National Sales
- * Manager, Product Manager, Group Product Manager, Marketing Manager, SFE Manager. Row visibility is
- * still scoped per viewer inside getMarketingRoiReport — this page widens nothing.
+ * The two tabs have DIFFERENT audiences, so this page admits the UNION and each tab is gated
+ * individually inside RoiTrackerTabs:
+ *   · ROI      — the 10 marketingRequestRoles (canUseEmployeePortalMarketingRoiTracking).
+ *   · Coverage — those 10 PLUS Finance Manager and Financial Advisor
+ *                (canUseEmployeePortalMarketingCoverageReport, deliberately broader).
+ * A Finance Manager / Financial Advisor therefore sees only the Coverage tab. Row visibility stays
+ * scoped per viewer inside each component's own service — this page widens nothing.
  *
- * Shows Phoenix-submitted requests only. The historical Excel import is admin-side, in Archived
- * Marketing Requests, and is not surfaced here.
+ * Kept as its OWN url and page file, still separate from /admin/marketing-roi-tracker (owner rule
+ * 2026-07-28: admin and portal must not share one page).
  */
 export default async function EmployeePortalRoiTrackerPage() {
-  await assertEmployeePortalMarketingPageAccess("roi-tracking");
+  const access = await resolveAccessContextFromPage();
+
+  // Mirrors assertEmployeePortalMarketingPageAccess's shell gate: an admin-navigation-mode role has
+  // no working portal route and is bounced to its own overview rather than shown a degraded page.
+  if (resolveNavigationMode(access) !== "employee-portal") {
+    redirect("/overview");
+  }
+
+  const canSeeRoi = canUseEmployeePortalMarketingRoiTracking(access.role);
+  const canSeeCoverage = canUseEmployeePortalMarketingCoverageReport(access.role);
+  if (!canSeeRoi && !canSeeCoverage) {
+    redirect("/employee-portals");
+  }
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <MarketingRoiLiveTracker />
-    </div>
+    <EmployeePortalPageShell
+      badge="Marketing"
+      description="Track the realized return on approved marketing spend, then switch to Coverage to expand any request to its target pharmacies and their realized sales — two views of the same campaigns."
+      title="ROI Tracker"
+    >
+      <RoiTrackerTabs
+        canSeeCoverage={canSeeCoverage}
+        canSeeRoi={canSeeRoi}
+        isSuperAdmin={access.role === "Super Admin"}
+      />
+    </EmployeePortalPageShell>
   );
 }

@@ -420,13 +420,20 @@ function buildEmployeePortalSections({
         // workspace above, which deliberately shows an oversight role only its OWN requests.
         ...(showMarketingAllRequestsTab ? [{ href: "/employee-portals/marketing-requests/all", label: "All Marketing Requests", icon: ClipboardList }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
-        ...(showMarketingCoverageReportTab ? [{ href: "/employee-portals/marketing-requests/coverage-report", label: "Coverage Report", icon: MapPinned }] : []),
         ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
         // ROI Tracker — the marketing-ROI source of truth (portal twin of /admin/marketing-roi-tracker,
-        // its own URL by owner rule 2026-07-28). showMarketingRoiTrackingTab was computed in
-        // navigation.ts but never rendered here, so this page had no sidebar link at all. Distinct
-        // from "ROI Dashboard" above, which is the Sales-Marketing-Intelligence module.
-        ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }] : []),
+        // its own URL by owner rule 2026-07-28). Distinct from "ROI Dashboard" above, which is the
+        // Sales-Marketing-Intelligence module.
+        //
+        // Since 2026-09-22 this one link opens the MERGED ROI Tracker module: the ROI pipeline and
+        // the former Coverage Report as two tabs of one page (owner instruction). So it is offered on
+        // EITHER flag — showMarketingCoverageReportTab is the broader set (adds Finance Manager /
+        // Financial Advisor), and those two land on the Coverage tab, which is the only tab they see.
+        // The standalone "Coverage Report" link was removed here; its route now redirects to
+        // /employee-portals/roi-tracker?tab=coverage.
+        ...(showMarketingRoiTrackingTab || showMarketingCoverageReportTab
+          ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }]
+          : []),
       ],
     },
     // Built as the retired Talent Acquisition seat's portal mirror of the admin-shell
