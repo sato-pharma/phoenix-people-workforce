@@ -1614,6 +1614,7 @@ import { runLeaverRosterExclusionTests } from "./leaver-roster-exclusion.test.ts
 import { runCompanyActivityReportPostExitDaysTests } from "./company-activity-report-post-exit-days.test.ts";
 import { runMarketingApprovedCustomerNameTests } from "./marketing-approved-customer-name.test.ts";
 import { runOutstationArabicTextDirectionTests } from "./outstation-arabic-text-direction.test.ts";
+import { runOutstationDescriptionFormatTests } from "./outstation-description-format.test.ts";
 import { runMailboxMonitorTextDirectionTests } from "./mailbox-monitor-text-direction.test.ts";
 import {
   runModuleLockAddressMapTests,
@@ -5548,6 +5549,13 @@ await runTest("marketing finance table never labels a request with a raw custome
 await runTest(
   "outstation Arabic direction (residence/route take block dir=auto; notes take it per line)",
   runOutstationArabicTextDirectionTests,
+);
+await runTest(
+  "outstation description reads as a person would write it (the stored notes carry a machine audit "
+  + "line - source=live_camera hr_id=… captured_at=<UTC> gps=… draft_id=<uuid> request_id=… - which "
+  + "the Expense Dashboard, its spreadsheet and the submit email printed raw; now the note, the "
+  + "allowance notice and a Cairo-time photo stamp with a clean address)",
+  runOutstationDescriptionFormatTests,
 );
 await runTest(
   "mailbox monitor Arabic direction (body dir=auto needs whitespace-pre-wrap; From line isolates the name)",
