@@ -904,30 +904,46 @@ function RepPercent({ pct, note }: { pct: number; note?: React.ReactNode }) {
  * (see PHARMACY_CALL_RATE_TARGET) — a null target shows the raw rate with no "of N" and no
  * red/amber/green bar, since there is nothing to be a percentage of.
  */
-function RepCallHalf({ label, rate, target }: { label: string; rate: number; target: number | null }) {
-  if (target == null) {
-    return (
-      <div className="min-w-0 flex-1">
-        <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
-        <p className="mt-0.5 flex items-baseline gap-1">
-          <span className="text-[16px] font-bold leading-none tabular-nums text-slate-700">{rate.toFixed(1)}</span>
-          <span className="text-[10px] font-semibold text-slate-400">no target yet</span>
-        </p>
-      </div>
-    );
-  }
-  const attainment = target > 0 ? (rate / target) * 100 : 0;
-  const tone = repTone(attainment);
+function RepCallHalf({
+  code,
+  label,
+  rate,
+  target,
+}: {
+  /** The owner's own shorthand — AM, PM, PH — and the one label that fits a phone's half-width tile. */
+  code: string;
+  label: string;
+  rate: number;
+  target: number | null;
+}) {
+  const attainment = target != null && target > 0 ? (rate / target) * 100 : 0;
+  const tone = target != null ? repTone(attainment) : null;
+  // Stacked, never inline: "3.8 of 10" on one line wrapped mid-figure in a phone's half-width tile.
+  // The number is the same 21px as the tiles beside it, so the three read as peers of Coverage.
   return (
-    <div className="min-w-0 flex-1">
-      <p className="text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
-      <p className="mt-0.5 flex items-baseline gap-1">
-        <span className={`text-[16px] font-bold leading-none tabular-nums ${tone.text}`}>{rate.toFixed(1)}</span>
-        <span className="text-[10px] font-semibold text-slate-400">of {target}</span>
+    <div className="min-w-0 px-2 first:pl-0 last:pr-0">
+      <p className="flex items-baseline gap-1.5">
+        <span className="text-[11px] font-black tracking-[0.06em] text-slate-900">{code}</span>
+        <span className="hidden text-[10px] font-semibold text-slate-400 xl:inline">{label}</span>
       </p>
-      <div className="mt-1.5 h-1 w-full bg-slate-100">
-        <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, attainment))}%` }} />
-      </div>
+      <p
+        className={`mt-1.5 text-[21px] font-bold leading-none tracking-[-0.01em] tabular-nums ${tone?.text ?? "text-slate-700"}`}
+      >
+        {rate.toFixed(1)}
+      </p>
+      <p className="mt-1 text-[11px] font-semibold leading-tight tabular-nums text-slate-500">
+        {target != null ? `of ${target}` : "no target"}
+      </p>
+      {tone ? (
+        <div className="relative mt-2 h-1.5 w-full bg-slate-100">
+          <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, attainment))}%` }} />
+          <div aria-hidden="true" className="absolute -bottom-0.5 -top-0.5 right-0 w-0.5 bg-slate-900" />
+        </div>
+      ) : (
+        // No standard to reach, so no bar to fill — a dashed rule keeps the three columns aligned
+        // without drawing an empty bar that reads as 0%.
+        <div aria-hidden="true" className="mt-2 h-1.5 w-full border-t border-dashed border-slate-300" />
+      )}
     </div>
   );
 }
@@ -1129,10 +1145,10 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           {kpis?.noGpsFeed ? (
             <p className="text-[13px] font-semibold text-slate-400">No GPS feed</p>
           ) : kpis?.hasCallRate ? (
-            <div className="flex gap-4">
-              <RepCallHalf label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
-              <RepCallHalf label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
-              <RepCallHalf label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
+            <div className="grid grid-cols-3 divide-x divide-slate-200">
+              <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
+              <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
+              <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
             </div>
           ) : (
             <p className="text-[13px] font-semibold text-slate-400">Nothing logged yet</p>
