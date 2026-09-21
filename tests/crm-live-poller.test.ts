@@ -544,6 +544,29 @@ export function runCrmLivePollerTests() {
     "the in-process heartbeat must go red on a slice that refreshed nothing",
   );
 
+  // ── Nothing on the poller's timer may call Next's cache bust ───────────────────────────────────
+  // `revalidateTag`/`revalidatePath` need a request's work store and THROW without one (Next 16
+  // `revalidate()`: "Invariant: static generation store missing"). Every function in this file runs
+  // from the poller's timer, never a request, so the bust the contact-list slice used to make failed
+  // on every slice and logged a false ERROR every five minutes, 06:00-22:00 Cairo (production,
+  // 2026-09-21), while busting nothing. The counts it meant to bust catch up through their 300s TTL.
+  assert.doesNotMatch(
+    pollerStripped,
+    /\brevalidate(Tag|Path)\s*\(/,
+    "the in-process poller runs on a timer, where Next's cache bust always throws — it must never call one",
+  );
+  assert.doesNotMatch(
+    pollerStripped,
+    /from "next\/cache"/,
+    "and it has no reason to import next/cache at all",
+  );
+  // The bust that CAN work stays where a request exists.
+  assert.ok(
+    routeStripped.indexOf("revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG") >
+      routeStripped.indexOf("await refreshCrmContactMaster("),
+    "the cron route still busts the list-summaries tag, after its master refresh",
+  );
+
   // ── The list half is hourly; the contact master's ACTIVITY half must stay daily ───────────────
   // `contactMasterRefreshIncludesActivity` keys on the last slice of the sweep, written when a
   // sweep meant once a day. Under the hourly cursor that slice comes round every hour, so the pass

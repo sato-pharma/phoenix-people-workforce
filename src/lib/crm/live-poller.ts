@@ -69,8 +69,6 @@ import {
   type NewlySeenPlan,
 } from "@/lib/crm/plan-sync";
 import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySweep } from "@/lib/crm/parity";
-import { revalidateTag } from "next/cache";
-import { CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG } from "@/lib/crm/contact-lists";
 import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@/lib/crm/contact-master";
 import {
   CONTACT_SYNC_SLICE_COUNT,
@@ -683,18 +681,15 @@ async function runScheduledContactListSync(): Promise<void> {
         labels: { event: "contact_master_refresh_failed", job: "crm-contact-lists" },
       });
     }
-    // THE LISTS JUST MOVED, SO THE CACHED PICKER COUNTS ARE NOW WRONG — busted AFTER the master
-    // refresh, or a board would re-cache the pre-refresh counts for another five minutes. Wrapped
-    // because this runs on a timer, not in a request: if the call is rejected outside a request
-    // scope the rows are still written and the 300s TTL is the fallback, exactly as in the route.
-    try {
-      revalidateTag(CRM_CONTACT_LIST_SUMMARIES_CACHE_TAG, "max");
-    } catch (error) {
-      logError("CRM in-process contact-lists: cache revalidation failed", {
-        error,
-        labels: { event: "cache_revalidate_failed", job: "crm-contact-lists" },
-      });
-    }
+    // NO CACHE BUST HERE — IT CANNOT WORK ON A TIMER. The cached picker counts
+    // (`getRepListSummaries`, tag `crm-contact-list-summaries`, 300s) catch up with this slice through
+    // their own TTL. `revalidateTag` needs the request's work store and THROWS without one
+    // ("Invariant: static generation store missing", Next 16 `revalidate()`), and this function only
+    // ever runs from the poller's timer. The call that used to sit here therefore failed on every
+    // slice — every five minutes from 06:00 to 22:00 Cairo — and logged a false ERROR each time
+    // (seen on production 2026-09-21), while busting nothing. The bust that DOES work stays where a
+    // request exists: the cron route (after its master refresh) and a person's list edit
+    // (`bustListSummaries`). Pinned by `tests/crm-live-poller.test.ts`.
     await pingDeadMansSwitch(
       CONTACT_LIST_JOB_SLUG,
       refreshedNothing || contactMaster.status === "failed" ? "fail" : "success",
