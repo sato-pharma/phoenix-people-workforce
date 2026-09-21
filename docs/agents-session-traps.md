@@ -1316,6 +1316,49 @@ is a font problem, not a layout one.
 And whenever a value is interpolated into markup, check the delimiters. A font stack, a name with an
 apostrophe, an Arabic title — any of them can close the attribute they are dropped into.
 
+## A keyword scan decided a fact, and the fact was a comment — 2026-09-21
+
+The mirror image of the section above. That one verified a fix by reading the source; this one
+*concluded* something about an artifact by pattern-matching the source, and reported it to the
+owner as a finding.
+
+`~/.claude/scripts/scratchpad-regen-run.mjs --run` rebuilt nine scratchpad documents lost to the
+Temp sweep and wrote `_regen-results.json`. One row carried `readsLiveData: true`, and on that flag
+alone the owner was told that the rebuilt video-uploads workbook dated 15 September held **today's**
+figures under that old name, and was asked to decide whether to keep it. **The warning was wrong.**
+Its generator, `build_video_report.py`, imports `openpyxl` and nothing else — no client, no HTTP
+library, no database driver, no environment read, no URL. Every figure is a literal in a
+`rows = [` list. The one occurrence of "Supabase" in the file is a comment recording where the
+numbers were read from on 2026-09-15, and the workbook prints that same provenance into cell A2.
+The eight other rebuilds were literal-data scripts too: **all nine were faithful**, which was the
+correct headline and the opposite of what the flag implied.
+
+**How the flag is computed** (`scratchpad-regen-plan.mjs`, line 141):
+
+    best.readsSupabase = /supabase|SUPABASE_|postgres|psycopg|pg\b|createClient/i.test(code);
+
+One case-insensitive regex over the entire source text. Measured against it:
+
+| Source line | Flags? | Matched |
+| --- | --- | --- |
+| `# numbers read from Supabase on 2026-09-15` | **yes** | `Supabase` |
+| `logo = "sato-pharma-logo.jpg"` | **yes** | `pg` |
+| `from supabase import create_client` | yes | `supabase` |
+| `img = "mark.png"` | no | — |
+| `from openpyxl import Workbook` | no | — |
+
+So there are two false-positive paths, not one: **a provenance comment, and any `.jpg` filename**,
+because `pg\b` matches the tail of `jpg`. A script that embeds a logo reads as a database client.
+
+**How to apply.** A regex over source text is a *hint* about where to look. Before telling the
+owner a rebuilt or regenerated artifact carries different data from the original, open the
+generator, read its imports, and find the actual call. It is one grep. The same shape bites
+anywhere a scan stands in for reading: a word in a comment, a string in a docstring and a
+commented-out line all match exactly as live code does.
+
+The script itself was left as it is: it has done its one run, and the rebuilt set carries its
+provenance in the scratchpad archive's `_regenerated-README.txt`.
+
 ## Relocated from AGENTS.md — 2026-09-01
 
 Verbatim, unabridged. These entries had grown from cues into full accounts inside `AGENTS.md`,
