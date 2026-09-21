@@ -1173,11 +1173,36 @@ export async function savePayrollExpenseApprovals(input: {
   allowWorkflowTripIds?: boolean;
   /** Receives what the payroll resync did, so the save can say when a decision did NOT reach payroll (audit finding 47). */
   onPayrollResync?: (outcomes: ExpenseResyncOutcome[]) => void;
+  /**
+   * True for the two SPREADSHEET UPLOAD routes (analyze + report replace). An upload re-imports a
+   * sheet's trip data; the importer's rows carry no `hrApproved`, `approvedAmount` or `hrComment`,
+   * so without this every existing trip in the file has its HR decision reset — hr_approved back to
+   * false, approved_amount to NULL, the approver and reason cleared — and payroll re-pays the full
+   * claim once the trip is re-approved. It is also the hole that made the review screen's own
+   * download impossible to re-upload safely. So an upload preserves whatever HR already decided on a
+   * row it overwrites, exactly like the workflow's figures-only re-push, and a sheet's Status column
+   * can NEVER approve a trip. See resolveExpenseDecisionWrite / imported-history.ts.
+   */
+  preserveStoredDecisions?: boolean;
+  /**
+   * Report id to CLEAR before the upsert — the report-replace route. The clear must run AFTER this
+   * save has read the rows it is about to overwrite, or the stored decisions it exists to preserve
+   * are already deleted when it looks (the replace route used to clear first, which is why a replace
+   * dropped every HR decision even with preservation on). Kept inside the save so read-then-clear is
+   * ordered by construction, not by two calls a route could reorder.
+   */
+  replaceReportRowsFirst?: string;
 }) {
   // FIRST, before any read and before the report row is minted: a refusal here writes nothing.
   if (!options?.allowWorkflowTripIds) {
     assertNoWorkflowTripIds(input.records);
   }
+
+  // A spreadsheet upload is never an HR decision — see `preserveStoredDecisions` above. Applied per
+  // record so the workflow's own `preserveExistingDecision: true` still wins even without the option.
+  const preserveStoredDecisions = options?.preserveStoredDecisions === true;
+  const recordPreservesDecision = (record: { preserveExistingDecision?: boolean }) =>
+    preserveStoredDecisions || Boolean(record.preserveExistingDecision);
 
   // WHO APPROVED IT - and this column does NOT hold only people.
   //
@@ -1217,6 +1242,14 @@ export async function savePayrollExpenseApprovals(input: {
   );
   const before = existingRows.map(toExpenseDecisionSnapshot);
 
+  // Report-replace clears the report's rows here, AFTER the read above — so a trip kept in the new
+  // file has already had its stored decision captured into `storedByTripId`, and the preserve step
+  // below writes it straight back. A trip dropped from the new file is not in `input.records`, was
+  // not read, and stays deleted. See `replaceReportRowsFirst`.
+  if (options?.replaceReportRowsFirst) {
+    await clearPayrollExpenseReportRows(options.replaceReportRowsFirst, accessContext);
+  }
+
   // IMPORTED HISTORY IS VALUES ONLY — owner ruling 2026-09-12, see imported-history.ts. Enforced
   // here as well as on the screen, so the rule does not rest on a hidden button. A trip dated before
   // July 2026 whose decision this save would CHANGE is refused before anything is written; one that is
@@ -1225,7 +1258,7 @@ export async function savePayrollExpenseApprovals(input: {
   // left out of the check.
   const importedHistory = planImportedHistoryWrites({
     records: input.records
-      .filter((record) => !record.preserveExistingDecision)
+      .filter((record) => !recordPreservesDecision(record))
       .map((record) => ({
         approvedAmount: record.approvedAmount,
         date: record.date,
@@ -1256,7 +1289,7 @@ export async function savePayrollExpenseApprovals(input: {
       },
       now,
       preserveExistingDecision:
-        record.preserveExistingDecision || importedHistory.preserveTripIds.has(String(record.tripId ?? "")),
+        recordPreservesDecision(record) || importedHistory.preserveTripIds.has(String(record.tripId ?? "")),
       stored: storedByTripId.get(String(record.tripId ?? "")) ?? null,
     }),
   );

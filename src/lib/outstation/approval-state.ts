@@ -226,7 +226,21 @@ export function resolveExpenseDecisionWrite(input: {
   stored: StoredExpenseDecision | null;
 }): ExpenseDecisionWrite {
   const carried = input.preserveExistingDecision ? input.stored : null;
-  if (carried) return { ...carried, decidesApproval: false };
+  if (carried) {
+    return {
+      ...carried,
+      // A carry-forward keeps HR's decision verbatim — with ONE cap it cannot skip: approved_amount
+      // may never sit above a claim that this re-import has since LOWERED. approved_amount > total
+      // breaches expense_claims_approved_total_range, which is what froze all 416 claims once (see
+      // normalizeApprovedAmount). The decision branch below already clamps at the claim; a preserved
+      // amount has to as well, or a re-uploaded sheet (or a workflow re-push) that shrinks a trip's
+      // total below what HR approved writes the same over-claim row. This only ever REDUCES a
+      // preserved figure to the trip's new, smaller claim — it never raises a payment, never
+      // approves, and is a no-op whenever the claim is unchanged or higher (the ordinary case).
+      approvedAmount: normalizeApprovedAmount(carried.approvedAmount, input.claimedTotal),
+      decidesApproval: false,
+    };
+  }
 
   const approved = Boolean(input.incoming.hrApproved);
   return {

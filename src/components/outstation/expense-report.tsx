@@ -925,8 +925,12 @@ export function ExpenseReport({
         fgColor: { argb: "FF0F172A" },
       };
 
+      // NO `header` here, on purpose: ExcelJS writes a column's `header` into ROW 1, on top of the
+      // merged title — row 1 then reads the last header ("Comments") in every cell, and the importer's
+      // header-row detector breaks the tie in favour of row 1, so the downloaded file re-imports as an
+      // unrecognized template. Row 2 carries the headers explicitly (headerRow below); the title owns
+      // row 1. Re-adding `header` re-breaks the round-trip. See detectHeaderRowNumber in expense-import.ts.
       sheet.columns = expenseTemplateHeaders.map((header, index) => ({
-        header,
         key: header,
         width: [12, 30, 12, 18, 12, 12, 15, 16, 16, 16, 34, 14, 16, 14, 14, 13, 13, 14, 14, 24, 30][index],
       }));

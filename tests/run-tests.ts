@@ -1821,6 +1821,7 @@ import { runRecruitmentFoldersNowrapLockTests } from "./recruitment-folders-nowr
 import { runSpotlightChequeGeneratorTests } from "./spotlight-cheque-generator.test.ts";
 import { runSpotlightSheetDesignTests } from "./spotlight-sheet-design.test.ts";
 import { runOutstationPaidStampAndImportedHistoryTests } from "./outstation-paid-stamp-and-imported-history.test.ts";
+import { runOutstationExpenseDownloadReuploadKeepsHrDecisionTests } from "./outstation-expense-download-reupload-keeps-hr-decision.test.ts";
 import { runBusinessCardsTests } from "./business-cards.test.ts";
 import { runDevServerExitReasonTests } from "./dev-server-exit-reason.test.ts";
 import { runAutorunGuardFalseArmingTests } from "./autorun-guard-false-arming.test.ts";
@@ -6318,6 +6319,11 @@ await runTest(
 await runTest(
   "outstation meaning sheet answered (owner 2026-09-12): publishing marks the approved trips it paid at HR's edited figure, and trips before July 2026 are imported history — values only, never awaiting a decision",
   runOutstationPaidStampAndImportedHistoryTests,
+);
+
+await runTest(
+  "the outstation expense review-screen download re-imports (no `header` clobbering row 1), and re-uploading it keeps HR's stored decision — the importer carries none, so both upload routes preserve",
+  runOutstationExpenseDownloadReuploadKeepsHrDecisionTests,
 );
 
 await runTest(
