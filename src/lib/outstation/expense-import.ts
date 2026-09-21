@@ -596,10 +596,10 @@ function specialistSummary(records: ExpenseTripRecord[]) {
 
 export async function analyzeExpenseWorkbook(
   file: File,
-  // Tests pass their own directory so a parse check never reads the live employee list.
+  // Tests pass the maps in so a parse runs without the employee directory, which is a database read.
   options: { employeeMaps?: EmployeeLookupMaps } = {},
 ): Promise<ExpenseAnalysisResult> {
-  const employeeMaps = options.employeeMaps ?? (await buildEmployeeLookupMaps());
+  const employeeMaps = options.employeeMaps ?? await buildEmployeeLookupMaps();
   const workbook = await loadExcelWorkbook(await file.arrayBuffer());
   const sheet = firstExcelWorksheet(workbook);
 
