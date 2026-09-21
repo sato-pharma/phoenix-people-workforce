@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { analyzeExpenseWorkbook, unrecognizedExpenseTemplateMessage } from "@/lib/outstation/expense-import";
 import {
-  clearPayrollExpenseReportRows,
   deletePayrollExpenseReport,
   isPayrollExpenseLockSchemaMissing,
   isPayrollExpenseReportLocked,
@@ -138,12 +137,17 @@ export async function PUT(request: Request, { params }: Params) {
       );
     }
 
-    await clearPayrollExpenseReportRows(id, access);
+    // A report-replace re-imports trip data; it is never an HR decision. The save clears the
+    // report's rows itself, AFTER reading the decisions it is about to overwrite, so a trip kept in
+    // the new file keeps whatever HR already decided on it, and a sheet's Status column can never
+    // approve a trip. Clearing here first (as this route used to) deletes those decisions before the
+    // save can read them. See savePayrollExpenseApprovals' `preserveStoredDecisions` /
+    // `replaceReportRowsFirst`.
     const expenses = await savePayrollExpenseApprovals({
       fileName: analysis.fileName,
       records: analysis.records,
       reportId: id,
-    }, access);
+    }, access, { preserveStoredDecisions: true, replaceReportRowsFirst: id });
 
     return NextResponse.json({
       ...analysis,

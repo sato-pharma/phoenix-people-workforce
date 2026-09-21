@@ -70,10 +70,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // A spreadsheet upload re-imports trip data; it is never an HR decision. Keep whatever HR
+    // already decided on any trip already in Phoenix, so re-uploading a sheet (the review screen's
+    // own download included) can never reset an approval, amount, approver or reason. See
+    // savePayrollExpenseApprovals' `preserveStoredDecisions`.
     const expenses = await savePayrollExpenseApprovals({
       fileName: analysis.fileName,
       records: analysis.records,
-    }, access);
+    }, access, { preserveStoredDecisions: true });
 
     return NextResponse.json({
       ...analysis,
