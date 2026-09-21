@@ -268,13 +268,8 @@ export function runDoctorCoverageRepNameTests() {
   assert.equal(crmTerritoryFrom("Aisha.Ehab ( Minia 2 / E )"), "Minia 2 / E");
   assert.equal(crmTerritoryFrom(""), null);
 
-  const repsPlansSource = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
-  assert.ok(
-    repsPlansSource.includes("splitCrmRepName(row.repName)"),
-    "the Reps Plans card must split the handle rather than printing it whole",
-  );
-  assert.ok(
-    !/whitespace-nowrap[^>]*>\{cardTitle\}/.test(repsPlansSource),
-    "and it must NOT pin the card title to one line — that is the change #2268 reverted, and it returns a sideways-scrolling phone page",
-  );
+  // The Reps Plans card that split the handle inline (reps-plans-tables.tsx) was DELETED on
+  // 2026-09-21 with the call-rate move to the KPIs board. splitCrmRepName / crmTerritoryFrom above
+  // are the pure contract those callers depend on and are pinned here; the KPIs board applies them
+  // and is covered by its own kpis-* tests.
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 
 import {
-  PortalDesktopTable,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
@@ -19,6 +18,7 @@ import {
   offDutyReason,
   partitionRepVisitRows,
   territoryLabel,
+  unscoredLabel,
   type RepVisitRow,
   type RepVisitStanding,
   type RepVisitsSummary,
@@ -29,8 +29,19 @@ import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 // slate-900 header row, orange focus — because this IS that board, one level down (owner's standing
 // rule: match the sibling pages, never invent a one-off look).
 //
-// Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4. Nothing wraps or
-// ellipsises; the table scrolls inside its own container.
+// Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4.
+//
+// THE DESKTOP TABLE FITS; IT NEVER SCROLLS SIDEWAYS (the owner's fits-the-screen golden rule). Until
+// 2026-09-21 it was nine unwrapped columns over a 1,500px minimum, so on every desktop the reader
+// scrolled right to find the proof of the row he was reading. It is now `w-full table-fixed` with a
+// colgroup and FIVE columns, each merging the fields that belong together — day with session,
+// doctor with his speciality, clinic with the place, visit type with the double-visit partner — so
+// every field is still on screen and no type was shrunk. Text wraps inside its cell; nothing
+// ellipsises.
+//
+// NAMES, NEVER CODES, on screen: the CRM contact number that used to sit under each doctor is gone.
+// It stays in the export, where somebody reconciles against the CRM and a name alone cannot be
+// matched back.
 
 const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const CHIP = "px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]";
@@ -123,6 +134,7 @@ const VISIT_COLS = [
  * the same rows through the same classifier.
  */
 function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
+  // Wrapped, never scrolled: cells grow to fill each line, so no line ends in an empty grey slot.
   const cells: Array<{ label: string; tone: string; value: number }> = [
     { label: "Calls", tone: "text-slate-900", value: summary.fieldCalls },
     { label: "Proved", tone: "text-emerald-700", value: summary.verified },
@@ -137,12 +149,16 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     // Separate from AM/PM entirely (owner, 2026-09-05) — see crm/call-rate.ts.
     { label: "Pharmacy", tone: "text-slate-700", value: summary.pharmacy },
     { label: "Doctors", tone: "text-slate-700", value: summary.distinctContacts },
+    // Field calls listed below and left OUT of the rate — Thursday or Friday, a public holiday, or
+    // the CRM's catch-all contact — by the rate's own gate (callRateExclusionOf). They are not in
+    // "Calls" or any number beside it; each one is marked on its own row.
+    { label: "Not scored", tone: "text-slate-500", value: summary.unscored },
     { label: "Not field work", tone: "text-slate-400", value: summary.excluded },
   ];
   return (
-    <div className="grid grid-cols-2 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-3 lg:grid-cols-9">
+    <div className="flex flex-wrap border-l border-t border-slate-200">
       {cells.map((cell) => (
-        <div className="bg-white px-3 py-2.5" key={cell.label}>
+        <div className="min-w-[7.5rem] flex-1 border-b border-r border-slate-200 bg-white px-3 py-2.5" key={cell.label}>
           <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
           <p className={`text-lg font-black ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
         </div>
@@ -202,6 +218,8 @@ export function RepVisitsDetail({
     customer: row.customerName ?? "",
     date: row.dateIso,
     grade: row.grade ?? "",
+    // The same words the row shows, blank when the call is in the rate.
+    not_scored: unscoredLabel(row) ?? "",
     partner: row.partnerName ?? "",
     session: sessionText(row),
     speciality: row.speciality ?? "",
@@ -264,6 +282,7 @@ export function RepVisitsDetail({
                 { key: "crm_region_id", label: "CRM Region ID" },
                 { key: "visit_type", label: "Visit Type" },
                 { key: "standing", label: "Proof" },
+                { key: "not_scored", label: "Not Scored" },
                 { key: "partner", label: "Double Visit With" },
                 { key: "visit_crm_id", label: "CRM Visit ID" },
               ]}
@@ -280,6 +299,7 @@ export function RepVisitsDetail({
             items={table.rows}
             renderCard={(row) => {
               const note = campaignContactNote(row);
+              const unscored = unscoredLabel(row);
               return (
               <PortalRecordCard
                 accent={
@@ -297,30 +317,22 @@ export function RepVisitsDetail({
               >
                 <PortalRecordFields
                   fields={[
-                    /* Same provenance line the desktop table prints under the doctor's name: a
-                       registered contact carries its CRM id, and a campaign call carries the marker
-                       saying this is a real doctor who is simply not on this rep's list. Without it
-                       the card title reads as a resolved contact on mobile and as free text on
-                       desktop — the same row telling two different stories. */
-                    ...(row.contactCrmId != null
+                    /* Same line the desktop table prints under the doctor's name: a campaign
+                       call carries the marker saying this is a real doctor who is simply not on this
+                       rep's list, so the card title cannot read as a resolved contact on one screen
+                       and as free text on the other. A registered contact needs no line at all. */
+                    ...(row.contactCrmId == null && note
                       ? [
                           {
                             label: "Doctor",
-                            value: <span className="font-semibold text-slate-500">CRM #{row.contactCrmId}</span>,
+                            value: (
+                              <span className={`font-black uppercase tracking-[0.1em] ${note.tone}`}>{note.text}</span>
+                            ),
                           },
                         ]
-                      : note
-                        ? [
-                            {
-                              label: "Doctor",
-                              value: (
-                                <span className={`font-black uppercase tracking-[0.1em] ${note.tone}`}>
-                                  {note.text}
-                                </span>
-                              ),
-                            },
-                          ]
-                        : []),
+                      : []),
+                    // Marked on the card exactly as on the desktop row: listed, and not in the rate.
+                    ...(unscored ? [{ label: "Rate", value: <span className="text-slate-500">{unscored}</span> }] : []),
                     ...(row.speciality
                       ? [{ label: "Speciality", value: <span className="text-slate-600">{row.speciality}</span> }]
                       : []),
@@ -352,103 +364,94 @@ export function RepVisitsDetail({
               );
             }}
             renderTable={() => (
-              <PortalDesktopTable className="text-xs" minWidth="1500px">
-                <thead>
-                  <tr className="bg-slate-900 text-left">
-                    <SortableTh className={THEAD} label="Date" onSort={table.toggleSort} sort={table.sort} sortKey="dateIso" />
-                    <SortableTh className={THEAD} label="AM / PM" onSort={table.toggleSort} sort={table.sort} sortKey="session" />
-                    <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contact" />
-                    <SortableTh
-                      className={THEAD}
-                      label="Speciality"
-                      onSort={table.toggleSort}
-                      sort={table.sort}
-                      sortKey="speciality"
-                    />
-                    <SortableTh
-                      className={THEAD}
-                      label="Clinic / Account"
-                      onSort={table.toggleSort}
-                      sort={table.sort}
-                      sortKey="customer"
-                    />
-                    <SortableTh
-                      className={`${THEAD} border-l border-slate-700`}
-                      label="Where"
-                      onSort={table.toggleSort}
-                      sort={table.sort}
-                      sortKey="territory"
-                    />
-                    <SortableTh
-                      className={`${THEAD} border-l border-slate-700`}
-                      label="Visit Type"
-                      onSort={table.toggleSort}
-                      sort={table.sort}
-                      sortKey="visitType"
-                    />
-                    <SortableTh className={THEAD} label="Proof" onSort={table.toggleSort} sort={table.sort} sortKey="standing" />
-                    <SortableTh
-                      className={THEAD}
-                      label="Double Visit With"
-                      onSort={table.toggleSort}
-                      sort={table.sort}
-                      sortKey="partner"
-                    />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {table.rows.map((row, index) => {
-                    const note = campaignContactNote(row);
-                    return (
-                    <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={`${row.visitCrmId ?? "row"}-${index}`}>
-                      <td className="px-3 py-2 font-semibold text-slate-900">{dayText(row.dateIso)}</td>
-                      <td className="px-3 py-2 font-bold text-slate-500">{sessionText(row)}</td>
-                      {/* The doctor, named, with the CRM contact id beneath — the record this row
-                          points at, so a reader can reconcile against the CRM without guessing.
-
-                          A campaign row has no such record: the doctor is real but off the rep's
-                          registered list, so what shows is the rep's own note and it is MARKED as
-                          free text rather than passed off as a resolved contact. */}
-                      <td className="px-3 py-2">
-                        <span className="flex flex-col leading-tight">
-                          <span className="font-semibold text-slate-900">{contactText(row)}</span>
-                          {row.contactCrmId != null ? (
-                            <span className="text-phx-2xs font-semibold text-slate-400">CRM #{row.contactCrmId}</span>
-                          ) : note ? (
-                            <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${note.tone}`}>
-                              {note.text}
-                            </span>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {row.speciality ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {row.customerName ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      {/* Brick · Area · Region once the CRM region is mapped. Until then the region
-                          still NAMES itself and is marked — never blank, never a silent guess. */}
-                      <td className="border-l border-slate-100 px-3 py-2">
-                        <span className="flex items-center gap-2">
-                          <span className="text-slate-600">{territoryLabel(row)}</span>
-                          {row.territory.status === "unmapped" ? (
-                            <span className={`${CHIP} border border-amber-300 bg-amber-50 text-amber-700`}>Not mapped</span>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className="border-l border-slate-100 px-3 py-2 text-slate-600">{row.visitTypeLabel}</td>
-                      <td className="px-3 py-2">
-                        <span className={standingChip(row.standing)}>{standingText(row.standing)}</span>
-                      </td>
-                      <td className="px-3 py-2 text-slate-600">
-                        {row.partnerName ?? <span className="text-slate-300">—</span>}
-                      </td>
+              <div className="hidden md:block">
+                <table className="w-full table-fixed border-collapse text-left text-xs" data-portal-desktop-table>
+                  <colgroup>
+                    <col style={{ width: "13%" }} />
+                    <col style={{ width: "27%" }} />
+                    <col style={{ width: "26%" }} />
+                    <col style={{ width: "16%" }} />
+                    <col style={{ width: "18%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-slate-900 text-left">
+                      <SortableTh className={THEAD} label="Day" onSort={table.toggleSort} sort={table.sort} sortKey="dateIso" />
+                      <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contact" />
+                      <SortableTh
+                        className={`${THEAD} border-l border-slate-700`}
+                        label="Clinic · Where"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="territory"
+                      />
+                      <SortableTh
+                        className={`${THEAD} border-l border-slate-700`}
+                        label="Visit Type"
+                        onSort={table.toggleSort}
+                        sort={table.sort}
+                        sortKey="visitType"
+                      />
+                      <SortableTh className={THEAD} label="Proof" onSort={table.toggleSort} sort={table.sort} sortKey="standing" />
                     </tr>
-                    );
-                  })}
-                </tbody>
-              </PortalDesktopTable>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {table.rows.map((row, index) => {
+                      const note = campaignContactNote(row);
+                      const unscored = unscoredLabel(row);
+                      return (
+                        <tr className="bg-white align-top hover:bg-slate-50" key={`${row.visitCrmId ?? "row"}-${index}`}>
+                          <td className="break-words px-3 py-2">
+                            <span className="block font-semibold text-slate-900">{dayText(row.dateIso)}</span>
+                            <span className="block font-bold text-slate-500">{sessionText(row)}</span>
+                          </td>
+                          {/* The doctor, named, with his speciality beneath. A campaign row has no
+                              contact record — the doctor is real but off the rep's registered list —
+                              so what shows is the rep's own note, MARKED as free text rather than
+                              passed off as a resolved contact. */}
+                          <td className="break-words px-3 py-2">
+                            <span className="block font-semibold leading-tight text-slate-900">{contactText(row)}</span>
+                            {row.contactCrmId == null && note ? (
+                              <span className={`block text-phx-2xs font-black uppercase tracking-[0.1em] ${note.tone}`}>
+                                {note.text}
+                              </span>
+                            ) : null}
+                            {row.speciality ? <span className="block text-slate-500">{row.speciality}</span> : null}
+                          </td>
+                          {/* The clinic, then Brick · Area · Region once the CRM region is mapped.
+                              Until then the region still NAMES itself and is marked — never blank,
+                              never a silent guess. */}
+                          <td className="break-words border-l border-slate-100 px-3 py-2">
+                            {row.customerName ? <span className="block text-slate-700">{row.customerName}</span> : null}
+                            <span className="block text-slate-500">{territoryLabel(row)}</span>
+                            {row.territory.status === "unmapped" ? (
+                              <span className={`mt-1 inline-block ${CHIP} border border-amber-300 bg-amber-50 text-amber-700`}>
+                                Not mapped
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="break-words border-l border-slate-100 px-3 py-2">
+                            <span className="block text-slate-600">{row.visitTypeLabel}</span>
+                            {row.partnerName ? (
+                              <span className="block text-phx-2xs font-semibold text-slate-500">
+                                Double visit with {row.partnerName}
+                              </span>
+                            ) : null}
+                          </td>
+                          {/* The proof, and — when the rate's own gate left this call out — why, on
+                              the row itself. Before this a Thursday call carried a green "Proved" and
+                              nothing to say it was not in the number above. */}
+                          <td className="break-words px-3 py-2">
+                            <span className={`inline-block ${standingChip(row.standing)}`}>{standingText(row.standing)}</span>
+                            {unscored ? (
+                              <span className="mt-1 block text-phx-2xs font-semibold leading-4 text-slate-500">{unscored}</span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           />
         </div>
@@ -491,26 +494,40 @@ export function RepVisitsDetail({
                 </PortalRecordCard>
               )}
               renderTable={() => (
-                <PortalDesktopTable className="text-xs" minWidth="700px">
-                  <thead>
-                    <tr className="bg-slate-600 text-left">
-                      <th className={THEAD}>Date</th>
-                      <th className={THEAD}>Day</th>
-                      <th className={THEAD}>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {offDutyRows.map((row, index) => (
-                      <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={`${row.visitCrmId ?? "off"}-${index}`}>
-                        <td className="px-3 py-2 font-semibold text-slate-900">{dayText(row.dateIso)}</td>
-                        <td className="px-3 py-2 font-semibold text-slate-600">{row.visitTypeLabel}</td>
-                        <td className="px-3 py-2 text-slate-600">
-                          {offDutyReason(row) ?? <span className="text-slate-300">—</span>}
-                        </td>
+                // Fitted like the table above — three columns never needed a 700px minimum.
+                <div className="hidden md:block">
+                  <table className="w-full table-fixed border-collapse text-left text-xs" data-portal-desktop-table>
+                    <colgroup>
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "28%" }} />
+                      <col style={{ width: "54%" }} />
+                    </colgroup>
+                    <thead>
+                      <tr className="bg-slate-600 text-left">
+                        <th className={THEAD} scope="col">
+                          Date
+                        </th>
+                        <th className={THEAD} scope="col">
+                          Day
+                        </th>
+                        <th className={THEAD} scope="col">
+                          Reason
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </PortalDesktopTable>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {offDutyRows.map((row, index) => (
+                        <tr className="bg-white align-top hover:bg-slate-50" key={`${row.visitCrmId ?? "off"}-${index}`}>
+                          <td className="break-words px-3 py-2 font-semibold text-slate-900">{dayText(row.dateIso)}</td>
+                          <td className="break-words px-3 py-2 font-semibold text-slate-600">{row.visitTypeLabel}</td>
+                          <td className="break-words px-3 py-2 text-slate-600">
+                            {offDutyReason(row) ?? <span className="text-slate-300">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             />
           </div>

@@ -186,8 +186,18 @@ export function summarisePlans(
       if (!plan.firstDate || row.plan_date < plan.firstDate) plan.firstDate = row.plan_date;
       if (!plan.lastDate || row.plan_date > plan.lastDate) plan.lastDate = row.plan_date;
     }
-    // Latest sync stamp across the plan's rows, so "last refreshed" is honest for the whole plan.
-    if (row.synced_at && (!plan.syncedAt || row.synced_at > plan.syncedAt)) plan.syncedAt = row.synced_at;
+    // The plan's STATUS is the status of its most-recently-synced row, NOT its first row. A weekly
+    // plan straddles a month end, and plan-sync only re-reads the CURRENT month — so a plan for the
+    // week of 29 Aug–4 Sep keeps its Aug rows frozen at "Pending" (last synced 31 Aug) while its Sep
+    // rows are re-read as "Verified" (synced 21 Sep). Taking the first row's status showed such plans
+    // as Pending and counted them in "Awaiting you" although the CRM had signed them off weeks ago
+    // (audit, 2026-09-21). The latest sync stamp is the CRM's latest word on the plan, and its status
+    // is the one to trust. Tracked together so the two never disagree, and so "last refreshed" stays
+    // honest for the whole plan.
+    if (row.synced_at && (!plan.syncedAt || row.synced_at > plan.syncedAt)) {
+      plan.syncedAt = row.synced_at;
+      plan.status = row.plan_status;
+    }
   }
 
   const summaries: PlanSummary[] = [];
@@ -454,10 +464,18 @@ export async function getPlanForVerification(crmPlanId: number): Promise<{
   year: number | null;
 } | null> {
   const supabase = getSupabaseAdmin();
+  // Read the MOST-RECENTLY-SYNCED row, so the status the write is checked against matches the one
+  // the board shows. Without an order, `.limit(1)` returned an arbitrary row of the plan's ~100: for
+  // a plan straddling a month end (Aug rows frozen Pending, Sep rows Verified — see summarisePlans),
+  // the same Verify click randomly got "already verified" or a real re-write (audit, 2026-09-21). The
+  // agent, month, year and kind are plan-level constants, so only the status turns on which row wins;
+  // the plan_status tiebreak keeps it deterministic when two rows share a sync stamp.
   const { data, error } = await supabase
     .from(CRM_PLAN_ENTRIES_TABLE)
-    .select("agent_crm_id, agent_hr_id, plan_kind, plan_month, plan_status, plan_year")
+    .select("agent_crm_id, agent_hr_id, plan_kind, plan_month, plan_status, plan_year, synced_at")
     .eq("crm_plan_id", crmPlanId)
+    .order("synced_at", { ascending: false, nullsFirst: false })
+    .order("plan_status", { ascending: false })
     .limit(1);
   if (error) {
     if (isPlanSchemaMissing(error)) return null;

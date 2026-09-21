@@ -1,9 +1,11 @@
-// The Call rate drill-down, shared by both shells.
+// One rep's visits behind his KPIs Call Rate row, shared by both shells.
 //
-// ONE BODY, TWO DOORS. /admin/reps-list/call-rate/[rep] and /employee-portals/reps-list/call-rate/[rep]
-// render this — the Reps Plans module's rep page, moved under Reps List when the owner merged the
-// two modules on 2026-09-21 (the old /reps-plans/[rep] addresses forward here);
-// each page contributes only its own access gate and its own chrome. Extracted 2026-09-03 when the
+// ONE BODY, TWO DOORS. /admin/kpis/call-rate/[rep] and /employee-portals/kpis/call-rate/[rep] render
+// this — the Reps Plans module's rep page, which moved under Reps List when the owner merged the two
+// modules on 2026-09-21 and under KPIs the same day, when he took the call rate off Reps List because
+// KPIs already carries it and chose "Open it from KPIs" for this page. Every older address
+// (/reps-plans/[rep], /reps-list/call-rate/[rep]) forwards here. Each page contributes only its own
+// access gate and its own chrome. Extracted 2026-09-03 when the
 // portal twin landed, rather than copied: this file rebuilds the board to find the clicked row, so a
 // copy that drifted would be a copy whose SCOPE drifted — and a drill-down quietly wider than the
 // board that links to it is exactly the fault a guessed URL is aimed at.
@@ -19,20 +21,27 @@ import Link from "next/link";
 
 import { RepVisitsDetail } from "@/components/crm/rep-visits-detail";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { loadCallRateHolidays } from "@/lib/crm/call-rate-holidays";
 import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
+import { KPIS_CALL_RATE_TAB } from "@/lib/crm/kpis-call-rate-route";
+import { buildKpisQuery, parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { loadCrmMappingCoverage, loadRepVisits } from "@/lib/crm/rep-visits-data";
-import { CALL_RATE_TAB } from "@/lib/crm/reps-list-call-rate-route";
 import { buildRepsPlansBoard, CALL_RATE_THROUGH_YESTERDAY, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 
-export type RepVisitsPageQuery = {
-  line?: string;
-  month?: string;
-  period?: string;
-  region?: string;
-};
+/**
+ * The KPIs board's own query, carried through unchanged — month, window and every advanced filter —
+ * so Back lands on exactly the board the row was clicked on. Left open for the same reason the KPIs
+ * page leaves it open: parseKpiFilters drops anything it does not recognise.
+ */
+export type RepVisitsPageQuery = Record<string, string | string[] | undefined>;
+
+/** First value only: a repeated `?month=a&month=b` must resolve to one month, not to an array. */
+function one(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export async function RepVisitsPageBody({
   access,
@@ -41,38 +50,52 @@ export async function RepVisitsPageBody({
   repParam,
 }: {
   access: AccessContext;
-  /** "/admin/reps-list" or "/employee-portals/reps-list" — the Reps List page whose Call rate tab
-   * this drill-down belongs to. Back returns to that tab. */
+  /** "/admin/kpis" or "/employee-portals/kpis" — the KPIs board whose Call Rate tab this page
+   * belongs to. Back returns to that tab. */
   basePath: string;
   query: RepVisitsPageQuery | undefined;
   /** The url-encoded rep key from the route segment. */
   repParam: string;
 }) {
   const today = cairoTodayIso();
-  const month = resolveRepsPlansMonth(query?.month, today);
+  const month = resolveRepsPlansMonth(one(query?.month), today);
   // The SAME window the board was read on. A rep opened from a one-week board must be scored over
   // that week here too, or the drill-down contradicts the row that was clicked — through yesterday,
   // as the tab is (ruling C1).
-  const range = repsPlansRange(month, today, query?.period, CALL_RATE_THROUGH_YESTERDAY);
-  // The board's own key — "crm:2103" — url-encoded into the path. Deliberately the SAME identity the
-  // board uses rather than a second scheme keyed on hr id: one person occupying two keys is exactly
-  // how a rep silently becomes two rows, and this page has to land on the row that was clicked.
-  const repKey = decodeURIComponent(repParam);
-  // Preserves the filters the reader came in with, so Back returns to the board they were reading.
-  const backQuery = new URLSearchParams({ tab: CALL_RATE_TAB, month });
-  if (range.periodKey !== "month") backQuery.set("period", range.periodKey);
-  if (query?.line) backQuery.set("line", query.line);
-  if (query?.region) backQuery.set("region", query.region);
-  const backHref = `${basePath}?${backQuery.toString()}`;
+  const range = repsPlansRange(month, today, one(query?.period), CALL_RATE_THROUGH_YESTERDAY);
+  // The call-rate board's own key — "crm:2103" — url-encoded into the path, or "hr:<id>" for a rep
+  // with no CRM account (kpiCallRateRepKey). Deliberately the SAME identity the board keys its rows
+  // by: one person occupying two schemes is exactly how a rep silently becomes two rows, and this
+  // page has to land on the row that was clicked.
+  let repKey = repParam;
+  try {
+    repKey = decodeURIComponent(repParam);
+  } catch {
+    // A malformed escape names nobody; the lookup below answers so.
+  }
+  // Built by the KPIs board's ONE query builder from the filters the reader came in with, so Back
+  // returns to the board they were reading — same month, window and filters, on the Call Rate tab.
+  const backHref = `${basePath}?${buildKpisQuery({
+    month,
+    period: range.periodKey,
+    tab: KPIS_CALL_RATE_TAB,
+    filters: parseKpiFilters(query ?? {}),
+  })}`;
 
   // The board is rebuilt here rather than passed through, so the header cannot drift from the row
   // that was clicked: same report, same organogram, same scope, same shaping — the identical
   // RepsPlansRepRow.
+  //
+  // THE HOLIDAYS ARE READ ONCE, and the same set goes to the rate and to the visit list, so a call on
+  // a public holiday is left out of the rate AND marked "not scored" in the list — never one without
+  // the other.
+  const holidays = await loadCallRateHolidays(range.dateFrom, range.dateTo);
   let board: Awaited<ReturnType<typeof buildRepsPlansBoard>> | null = null;
+  let holidaysComplete = holidays.complete;
   let loadError: string | null = null;
   try {
     const [report, repNameByHrId, jobTitleByHrId, tree, scope] = await Promise.all([
-      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
+      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo, holidays }),
       loadRepNamesByHrId().catch(() => undefined),
       loadJobTitlesByHrId().catch(() => undefined),
       loadOrgPlacementTree().catch(() => null),
@@ -82,11 +105,16 @@ export async function RepVisitsPageBody({
       // and lands on the notice — which is the whole URL defence.
       getDoctorCoverageScope(access),
     ]);
+    holidaysComplete = report.holidaysComplete;
     board = buildRepsPlansBoard(report, {
       isCurrentMonth: range.isCurrentMonth,
       jobTitleByHrId,
       month,
       range,
+      // Resolved by the board over the viewer's SCOPED rows: a `crm:` key must be one of them, and an
+      // `hr:` key opens that person's busiest account among them. A key outside the reach resolves
+      // to nothing.
+      repKey,
       repNameByHrId,
       scope,
       tree,
@@ -104,7 +132,9 @@ export async function RepVisitsPageBody({
     );
   }
 
-  const row = board.reps.find((candidate) => candidate.repKey === repKey) ?? null;
+  const row = board.appliedRepKey
+    ? (board.reps.find((candidate) => candidate.repKey === board.appliedRepKey) ?? null)
+    : null;
   if (!row) {
     // Not a crash, and deliberately the SAME answer for two different causes: a rep who recorded
     // nothing in the month asked for, and a rep this viewer has no reach over. Naming which one it
@@ -112,7 +142,7 @@ export async function RepVisitsPageBody({
     return (
       <div className="space-y-4">
         <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
-          ← Back to Call rate
+          ← Back to Call Rate
         </Link>
         <div className="border border-amber-200 bg-amber-50 px-5 py-4">
           <p className="text-sm font-bold text-amber-900">
@@ -134,6 +164,7 @@ export async function RepVisitsPageBody({
       agentHrId: row.agentHrId,
       dateFrom: range.dateFrom,
       dateTo: range.dateTo,
+      holidays: holidays.dates,
       // The directory names the double-visit partner, for the same reason it names the rep: the
       // CRM's `double_name` is a login handle.
       partnerNameByHrId: await loadRepNamesByHrId().catch(() => undefined),
@@ -150,12 +181,12 @@ export async function RepVisitsPageBody({
   return (
     <div className="space-y-5">
       <Link className="text-xs font-bold text-orange-600 hover:underline" href={backHref}>
-        ← Back to Call rate
+        ← Back to Call Rate
       </Link>
 
       {/* The person, resolved through the organogram — the same seat, tier, line and region the board
-          shows, because it is the same row object. The HR id is printed because it is the join that
-          makes all of this one system rather than two. */}
+          shows, because it is the same row object. Named, never coded: the HR id that joins it all is
+          not printed (the owner's standing rule — names, never codes, on screen). */}
       <div className="border border-slate-200 bg-white px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -165,7 +196,6 @@ export async function RepVisitsPageBody({
                 {roleLabel}
               </span>
               {territory ? <span>{territory}</span> : null}
-              {row.agentHrId ? <span className="text-slate-400">HR {row.agentHrId.toUpperCase()}</span> : null}
               {/* Ruling A1 (owner, 2026-09-21): the same marker as the board, because the rates
                   beside it read "—" for the same reason. */}
               {row.noGpsFeed ? (
@@ -178,25 +208,25 @@ export async function RepVisitsPageBody({
           {/* The board's own two rates, repeated here so the reader can see at a glance that the rows
               below are what produced them. A manager's percentages stay blank, exactly as on the
               board — the 2 AM / 10 PM target is a medical rep's. */}
-          <div className="flex gap-5">
+          <div className="flex flex-wrap gap-5">
             <div className="text-right">
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `AM of ${row.am.target}` : "AM rate"}
               </p>
-              <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(1) ?? "—"}</p>
+              <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className="text-right">
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
               </p>
-              <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(1) ?? "—"}</p>
+              <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             {/* Pharmacies are separate from AM/PM (owner, 2026-09-05) and have no target set yet —
                 see PHARMACY_CALL_RATE_TARGET — so this tile shows the raw rate with no "of N". Zero
                 is a normal reading, not a gap: never badge it the way a zero AM/PM would be. */}
             <div className="text-right">
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Pharmacy rate</p>
-              <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(1) ?? "—"}</p>
+              <p className="text-lg font-black text-slate-900">{row.pharmacy.verifiedRate?.toFixed(2) ?? "—"}</p>
             </div>
             <div className="text-right">
               <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
@@ -210,6 +240,14 @@ export async function RepVisitsPageBody({
           {" · "}every call below is classified by the same rule the rate uses, so these rows and that rate are the
           same number seen twice.
         </p>
+        {/* THE HOLIDAY CAVEAT, in the KPIs board's own words. A holiday the calendar did not return
+            is still a working day in the rate above and an unmarked day in the list below. */}
+        {holidaysComplete ? null : (
+          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">
+            The national holiday calendar could not be read for this period. Any public holiday it did not return is
+            still counted as a working day, so the rates above may be lower than the real figure.
+          </p>
+        )}
         {row.noGpsFeed ? (
           <p className="mt-2 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">
             No GPS check-in reached the CRM from this account in {windowLabel}, so none of the visits below could be
