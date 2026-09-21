@@ -805,3 +805,35 @@ export async function getRepsListForAgent(
 
   return groupContactsByBrick(annotated, { brickByContactId, brickByRegionName, metaByBrickId });
 }
+
+/**
+ * WHERE EACH CONTACT ON ONE REP'S LIST SITS — the grouping alone, without the check-ins, sharing,
+ * insight and trade annotations `getRepsListForAgent` adds for its own board.
+ *
+ * For a caller that needs only brick placement: Employee 360 compares the bricks of a rep's current
+ * list with the bricks of his area. It resolves the brick with the SAME two steps and the SAME
+ * loaders as the board above, so the two screens can never place one doctor in two bricks. Skipping
+ * the annotations also skips the company-wide roster read, which this caller has no use for.
+ */
+export async function getRepsListBrickPlacement(hrId: string): Promise<RepsListForRep> {
+  const rows = await getRepContactList(hrId);
+  if (rows.length === 0) {
+    return {
+      counts: { am: 0, contacts: 0, pharmacy: 0, pm: 0, total: 0 },
+      groups: [],
+      unmappedContactCount: 0,
+      unmappedRegionCount: 0,
+    };
+  }
+  const [brickByContactId, brickByRegionName] = await Promise.all([
+    loadContactBrickMap(rows.map((row) => row.contactCrmId)),
+    loadRegionBrickMap(),
+  ]);
+  const needed = new Set<string>();
+  for (const row of rows) {
+    const brickId = brickByContactId.get(row.contactCrmId) ?? brickByRegionName.get(normalizeRegionKey(row.region));
+    if (brickId) needed.add(brickId);
+  }
+  const metaByBrickId = await loadBrickMeta([...needed]);
+  return groupContactsByBrick(rows, { brickByContactId, brickByRegionName, metaByBrickId });
+}

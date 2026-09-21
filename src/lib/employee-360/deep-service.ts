@@ -42,6 +42,7 @@ import {
   type VisitRow,
 } from "./service";
 import { EMPLOYEE_360_BENCHMARKS } from "./benchmarks";
+import { loadEmployee360BrickPanel, type Employee360BrickPanel } from "./brick-coverage";
 import { canonicalizeLocation, canonicalizeTransport, resolveGovernorate } from "./egypt-locations";
 import { isFieldLeaderCategory, type Employee360RoleCategory } from "./roles";
 
@@ -1171,6 +1172,8 @@ export type Employee360Profile = Employee360Summary & {
   impact: InterventionImpact;
   expenses: EmployeeExpenses;
   leadership: LeadershipActivity | null;
+  /** The area-vs-list brick panel — Medical Reps only; null for every other role. */
+  bricks: Employee360BrickPanel | null;
 };
 
 export async function getEmployee360Profile(
@@ -1193,7 +1196,7 @@ export async function getEmployee360Profile(
     pmSalesFamilies.length > 0
       ? getEmployeeSalesByFamilies(pmSalesFamilies, viewerRole)
       : getEmployeeSales(salesTeam, viewerRole);
-  const [visits, checkins, sales, tmIds, expenses, leadership] = await Promise.all([
+  const [visits, checkins, sales, tmIds, expenses, leadership, bricks] = await Promise.all([
     fetchVisitRows(hrId, window),
     fetchCheckinRows(hrId, window),
     salesPromise,
@@ -1202,6 +1205,8 @@ export async function getEmployee360Profile(
     isLeader
       ? getLeadershipActivity(hrId, window, nameByHrId, roleCategory === "training-manager")
       : Promise.resolve(null),
+    // A rep's own area against his own current list. A manager's seat carries no area of his own.
+    roleCategory === "medical-rep" ? loadEmployee360BrickPanel(hrId, window, viewerRole) : Promise.resolve(null),
   ]);
   const coaching = await getEmployeeCoaching(hrId, nameByHrId);
 
@@ -1265,5 +1270,6 @@ export async function getEmployee360Profile(
     impact,
     expenses,
     leadership,
+    bricks,
   };
 }

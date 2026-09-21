@@ -9,6 +9,7 @@ import {
   Footprints,
   GraduationCap,
   Info,
+  MapPin,
   Megaphone,
   Sparkles,
   TrendingUp,
@@ -31,6 +32,11 @@ import type {
   LeadershipActivity,
   SalesMonthPoint,
 } from "@/lib/employee-360/deep-service";
+import type {
+  Employee360BrickCoverage,
+  Employee360BrickPanel,
+  Employee360BrickStatus,
+} from "@/lib/employee-360/brick-coverage";
 import type { TeamHealthSummary } from "@/lib/employee-360/team-health";
 import type { TeamLifecycleSummary } from "@/lib/employee-360/team-lifecycle";
 import type { TrainingManagerAnalytics } from "@/lib/employee-360/tm-analytics";
@@ -752,6 +758,9 @@ export function Employee360View({
       {/* Sales & Achievement — reps see their own here (leaders saw team sales up top). */}
       {!isLeader ? <SalesSection sales={summary.sales} /> : null}
 
+      {/* Bricks — the rep's area against the rep's CURRENT list (Medical Reps only; null otherwise). */}
+      {!isLeader && summary.bricks ? <BrickCoverageSection panel={summary.bricks} /> : null}
+
       {/* Expenses & Outstation — leaders only (DM / RM / NSM / PM / TM). */}
       {showExpenses ? (
         <ExpensesSection
@@ -964,6 +973,273 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           ) : null}
         </>
       )}
+    </Card>
+  );
+}
+
+// ── Bricks: the rep's area against the rep's current list ────────────────────
+// The owner's request, 2026-09-21: every brick his area's sales are counted on, sold or not, beside
+// the bricks holding the doctors on his list TODAY. Built in `src/lib/employee-360/brick-coverage.ts`.
+
+const BRICK_STATUS: Record<Employee360BrickStatus, { label: string; className: string }> = {
+  covered: { label: "Sales + doctors", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  "sales-no-doctor": { label: "Sales, no listed doctor", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  "doctor-no-sales": { label: "Doctors, no sales", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  idle: { label: "No sales, no doctors", className: "border-slate-200 bg-slate-50 text-slate-500" },
+};
+
+const monthLabelFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+
+function brickMonthLabel(period: string): string {
+  const [year, month] = period.split("-").map(Number);
+  if (!year || !month) return period;
+  return monthLabelFmt.format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+function brickMonthsLabel(months: string[]): string {
+  if (months.length === 0) return "no landed month";
+  if (months.length === 1) return brickMonthLabel(months[0]);
+  return `${brickMonthLabel(months[0])} to ${brickMonthLabel(months[months.length - 1])}`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${intFmt.format(count)} ${count === 1 ? one : many}`;
+}
+
+function BrickStatusChip({ status }: { status: Employee360BrickStatus }) {
+  const meta = BRICK_STATUS[status];
+  return (
+    <span className={cn("inline-block border px-1.5 py-0.5 text-phx-2xs font-black uppercase leading-4 tracking-wide", meta.className)}>
+      {meta.label}
+    </span>
+  );
+}
+
+function brickSummaryText(coverage: Employee360BrickCoverage): string {
+  const { totals } = coverage;
+  const areas = coverage.areaNames.join(" + ") || "the area";
+  const months = brickMonthsLabel(coverage.salesMonths);
+  const parts = [
+    `${intFmt.format(totals.bricksWithSales)} of ${plural(totals.areaBricks, "brick", "bricks")} in ${areas} booked sales in ${months}; the current list puts ${intFmt.format(totals.doctorsInArea)} of ${plural(totals.listDoctors, "doctor", "doctors")} in them.`,
+  ];
+  if (totals.salesNoDoctor > 0) {
+    parts.push(
+      `${plural(totals.salesNoDoctor, "selling brick has", "selling bricks have")} no listed doctor — ${pct(totals.salesNoDoctorShare)} of the bricks' sales.`,
+    );
+  }
+  if (totals.doctorsOutside > 0) {
+    parts.push(
+      `${plural(totals.doctorsOutside, "listed doctor sits", "listed doctors sit")} in ${plural(coverage.outside.length, "brick", "bricks")} outside the area.`,
+    );
+  }
+  return parts.join(" ");
+}
+
+function BrickCoverageSection({ panel }: { panel: Employee360BrickPanel }) {
+  if (panel.status === "no-seat") return null;
+  if (panel.status === "failed") {
+    return (
+      <Card className={PREMIUM_CARD}>
+        <SectionHeader icon={MapPin} tone="indigo">
+          Bricks — Area vs Current List
+        </SectionHeader>
+        <EmptyState>The brick comparison could not be loaded just now. The rest of this page is unaffected.</EmptyState>
+      </Card>
+    );
+  }
+
+  const { coverage } = panel;
+  const { totals } = coverage;
+  const months = brickMonthsLabel(coverage.salesMonths);
+  const monthNote =
+    coverage.salesMonths.length === 0
+      ? "No distributor files have landed since this rep's hire month, so no brick shows sales yet."
+      : coverage.salesMonthsFallback
+        ? `Sales are ${months}, the latest month whose distributor files have landed — none of this period's months has landed yet.`
+        : `Sales are ${months}.`;
+  const areaLabel = coverage.areaNames.join(" + ") || "This rep's area";
+  const sub = `${coverage.lineName} · ${areaLabel}. Every brick of the area this rep carries the target for, sold or not, against the doctors on the rep's CURRENT CRM list — never the area's old lists. ${monthNote} A brick's sales are what distributors booked on it, so they do not add up to the Sales figure above, which also credits the area with city splits, the Office allocation and direct orders.`;
+
+  if (coverage.bricks.length === 0 && coverage.outside.length === 0 && totals.listDoctors + totals.listPharmacies === 0) {
+    return (
+      <Card className={PREMIUM_CARD}>
+        <SectionHeader icon={MapPin} tone="indigo" sub={sub}>
+          Bricks — Area vs Current List
+        </SectionHeader>
+        <EmptyState>No bricks on file for this area, and nobody on this rep&apos;s current list.</EmptyState>
+      </Card>
+    );
+  }
+
+  const doctorNoSales = coverage.bricks.filter((brick) => brick.status === "doctor-no-sales").length;
+  return (
+    <Card className={PREMIUM_CARD}>
+      <SectionHeader icon={MapPin} tone="indigo" sub={sub}>
+        Bricks — Area vs Current List
+      </SectionHeader>
+      <SummaryLine text={brickSummaryText(coverage)} />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiTile
+          label="Area bricks"
+          value={intFmt.format(totals.areaBricks)}
+          hint={`${intFmt.format(totals.bricksWithSales)} with sales`}
+          explain="Every brick of the area this rep carries the target for — the ones that sold and the ones that did not."
+        />
+        <KpiTile
+          label="Bricks with doctors"
+          value={intFmt.format(totals.bricksWithDoctors)}
+          hint={`of ${intFmt.format(totals.areaBricks)} · ${plural(totals.doctorsInArea, "doctor", "doctors")}`}
+          explain="How many of the area's bricks hold at least one doctor (AM or PM) from the rep's current CRM list."
+        />
+        <KpiTile
+          label="Sales, no doctor"
+          value={intFmt.format(totals.salesNoDoctor)}
+          hint={totals.salesNoDoctorShare == null ? "no brick sales" : `${pct(totals.salesNoDoctorShare)} of brick sales`}
+          goodWhenAbove={totals.salesNoDoctor > 0 ? false : null}
+          explain="Bricks that booked sales but hold no doctor from the rep's current list — sales nobody on the list is placed to support."
+        />
+        <KpiTile
+          label="Doctors, no sales"
+          value={intFmt.format(doctorNoSales)}
+          hint="bricks"
+          goodWhenAbove={doctorNoSales > 0 ? false : null}
+          explain="Bricks of the area holding listed doctors where no sales were booked in the months shown."
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <KpiTile
+          label="Brick sales"
+          value={compactFmt.format(totals.brickSales)}
+          hint={months}
+          explain="What distributors booked on the area's bricks in the months shown. It does not add up to the rep's Sales figure, which also credits money no brick holds."
+        />
+        <KpiTile
+          label="Current list"
+          value={intFmt.format(totals.listDoctors)}
+          hint={`doctors · ${plural(totals.listPharmacies, "pharmacy", "pharmacies")} apart`}
+          explain="The doctors (AM + PM) on the rep's CRM list today. Pharmacies are counted apart — a pharmacy is not a contact."
+        />
+        <KpiTile
+          label="Doctors outside"
+          value={intFmt.format(totals.doctorsOutside)}
+          hint={`in ${plural(coverage.outside.length, "brick", "bricks")}`}
+          goodWhenAbove={totals.doctorsOutside > 0 ? false : null}
+          explain="Doctors on the rep's current list whose brick belongs to another area."
+        />
+        <KpiTile
+          label="Not on a brick"
+          value={intFmt.format(coverage.unmapped.doctors)}
+          hint={`doctors · ${plural(coverage.unmapped.regions, "CRM region", "CRM regions")}`}
+          explain="Doctors on the current list whose CRM region is not yet placed on any brick, so they sit in neither column."
+        />
+      </div>
+
+      {coverage.bricks.length > 0 ? (
+        <div className="mt-5">
+          <div className="mb-1.5 text-xs font-bold text-slate-500">The area&apos;s bricks — biggest seller first, unsold bricks after</div>
+          {/*
+            Fits-the-screen golden rule (AGENTS.md §4): a fixed table on desktop, cards on a phone,
+            never a horizontal scroll. Doctors and pharmacies share one cell to win the width.
+          */}
+          <table className="hidden w-full table-fixed border-collapse text-sm sm:table">
+            <colgroup>
+              <col className="w-[42%]" />
+              <col className="w-[18%]" />
+              <col className="w-[16%]" />
+              <col className="w-[24%]" />
+            </colgroup>
+            <thead>
+              <tr className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
+                <th className="py-1.5 pr-2 text-left align-bottom">Brick</th>
+                <th className="px-2 py-1.5 text-right align-bottom">Sales</th>
+                <th className="px-2 py-1.5 text-right align-bottom">
+                  Doctors
+                  <span className="block font-black text-slate-300">pharmacies</span>
+                </th>
+                <th className="py-1.5 pl-2 text-left align-bottom">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coverage.bricks.map((brick) => (
+                <tr key={brick.brickId} className="border-t border-slate-100 align-top">
+                  <td className="break-words py-1.5 pr-2">
+                    <span className="block font-semibold text-slate-800">{brick.brickName}</span>
+                    {coverage.areaNames.length > 1 && brick.areaName ? (
+                      <span className="block text-phx-xs text-slate-400">{brick.areaName}</span>
+                    ) : null}
+                  </td>
+                  <td className={cn("px-2 py-1.5 text-right tabular-nums", brick.salesValue > 0 ? "font-bold text-slate-800" : "text-slate-300")}>
+                    {brick.salesValue > 0 ? compactFmt.format(brick.salesValue) : "—"}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <span className={cn("block", brick.doctors > 0 ? "font-bold text-slate-800" : "text-slate-300")}>{intFmt.format(brick.doctors)}</span>
+                    <span className="block text-phx-xs text-slate-400">{intFmt.format(brick.pharmacies)}</span>
+                  </td>
+                  <td className="py-1.5 pl-2">
+                    <BrickStatusChip status={brick.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="border border-slate-200 sm:hidden">
+            {coverage.bricks.map((brick) => (
+              <div key={brick.brickId} className="border-b border-slate-100 px-3 py-2.5 last:border-b-0">
+                <div className="break-words text-sm font-semibold text-slate-800">{brick.brickName}</div>
+                {coverage.areaNames.length > 1 && brick.areaName ? (
+                  <div className="text-phx-xs text-slate-400">{brick.areaName}</div>
+                ) : null}
+                <div className="mt-1 text-xs tabular-nums text-slate-500">
+                  Sales {brick.salesValue > 0 ? compactFmt.format(brick.salesValue) : "—"} · {plural(brick.doctors, "doctor", "doctors")} ·{" "}
+                  {plural(brick.pharmacies, "pharmacy", "pharmacies")}
+                </div>
+                <div className="mt-1.5">
+                  <BrickStatusChip status={brick.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5">
+          <EmptyState>No bricks on file for this area yet.</EmptyState>
+        </div>
+      )}
+
+      {coverage.outside.length > 0 ? (
+        <div className="mt-5">
+          <div className="mb-1.5 text-xs font-bold text-slate-500">On the current list, but in another area&apos;s brick</div>
+          <div className="border border-slate-200">
+            {coverage.outside.map((brick) => (
+              <div key={brick.brickId} className="flex items-start justify-between gap-3 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0 hover:bg-slate-50/70">
+                <div className="min-w-0 break-words">
+                  <span className="block text-slate-800">{brick.brickName}</span>
+                  <span className="block text-phx-xs text-slate-400">{brick.areaName ?? "Area not named"}</span>
+                </div>
+                <span className="shrink-0 text-right text-xs tabular-nums text-slate-400">
+                  {plural(brick.doctors, "doctor", "doctors")}
+                  <span className="block">{plural(brick.pharmacies, "pharmacy", "pharmacies")}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {coverage.unmapped.doctors + coverage.unmapped.pharmacies > 0 || coverage.salesWithoutBrick !== 0 ? (
+        <div className="mt-4 space-y-1 text-xs text-slate-400">
+          {coverage.unmapped.doctors + coverage.unmapped.pharmacies > 0 ? (
+            <p>
+              {plural(coverage.unmapped.doctors, "doctor", "doctors")} and {plural(coverage.unmapped.pharmacies, "pharmacy", "pharmacies")} on the
+              current list are in {plural(coverage.unmapped.regions, "CRM region", "CRM regions")} not yet placed on a brick.
+            </p>
+          ) : null}
+          {coverage.salesWithoutBrick !== 0 ? (
+            <p>{compactFmt.format(coverage.salesWithoutBrick)} of the sales booked to the area carry no brick, so no row above holds them.</p>
+          ) : null}
+        </div>
+      ) : null}
     </Card>
   );
 }
