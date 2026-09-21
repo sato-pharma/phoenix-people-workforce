@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache.js";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { SalesWorkflowError, isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
@@ -17,6 +19,7 @@ import {
   stripRestrictedRowsByName,
 } from "@/lib/sales/access-scope";
 import { loadCanonicalDashboardRecords } from "@/lib/sales/dashboard-canonical";
+import { loadAchievementCacheStamp } from "@/lib/sales/vs-target";
 import { salesAchievementRate } from "@/lib/sales/metrics";
 import {
   buildSalesOwnershipContext,
@@ -1170,7 +1173,32 @@ export async function getSalesDashboard(
   };
 }
 
+/**
+ * Cached across requests, keyed on the achievement cache stamp AND the viewer's access context.
+ *
+ * These seven numbers are the whole payload, but producing them rebuilds the full monthly
+ * dashboard — every canonical closing row since the history floor (7,129 on 2026-09-21), ownership
+ * classification, linkage — and /admin asks for it three times per render. The stamp changes the
+ * key whenever actuals, targets or seat occupancy move (see loadAchievementCacheStamp), so a hit can
+ * never serve stale sales; the TTL only bounds an employee-directory edit, which moves the ownership
+ * split. A null stamp builds live, never from cache. The context is in the key, so a scoped viewer
+ * never reads another viewer's figures. Same shape as the Business Review bundle cache.
+ */
+const SALES_PLATFORM_METRICS_CACHE_TTL_SECONDS = 300;
+
 export async function getSalesPlatformMetrics(accessContext?: AccessContext | null) {
+  const context = accessContext ?? null;
+  const stamp = await loadAchievementCacheStamp();
+  if (!stamp) return buildSalesPlatformMetrics(context);
+  const cached = unstable_cache(
+    () => buildSalesPlatformMetrics(context),
+    ["sales-platform-metrics", stamp, JSON.stringify(context)],
+    { revalidate: SALES_PLATFORM_METRICS_CACHE_TTL_SECONDS },
+  );
+  return cached();
+}
+
+async function buildSalesPlatformMetrics(accessContext: AccessContext | null) {
   const sales = await getSalesDashboard({}, accessContext);
   return {
     achievementRate: Number(sales.summary.achievementRate ?? 0),
