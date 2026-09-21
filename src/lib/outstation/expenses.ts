@@ -1171,6 +1171,17 @@ export async function savePayrollExpenseApprovals(input: {
    * route. See workflow-trip-id-guard.ts.
    */
   allowWorkflowTripIds?: boolean;
+  /**
+   * True ONLY for the Expense Approvals decision-save (POST /api/admin/outstation/expenses). That
+   * screen decides an already-imported trip; it never edits a trip's workload, Other or claimed
+   * total, and its Save posts those columns back exactly as it loaded them. So for a trip that
+   * already exists, this save writes the STORED workload (AM · PM · Pharmacies), Other and total,
+   * not whatever the request carried — a hand-built POST cannot re-import the Expense Approvals
+   * download's own shape (workload → 0, Other dropped) onto a historical trip through this route,
+   * the way a file upload was refused in expense-import.ts. The file import (analyze / replace) and
+   * the workflow push leave this off, because setting those columns from the file IS their job.
+   */
+  preserveImportedValues?: boolean;
   /** Receives what the payroll resync did, so the save can say when a decision did NOT reach payroll (audit finding 47). */
   onPayrollResync?: (outcomes: ExpenseResyncOutcome[]) => void;
   /**
@@ -1239,6 +1250,11 @@ export async function savePayrollExpenseApprovals(input: {
   );
   const storedByTripId = new Map(
     existingRows.map((row) => [String(row.trip_id ?? ""), toStoredExpenseDecision(row)] as const),
+  );
+  // The import-set figures each existing trip already carries. Read only for `preserveImportedValues`:
+  // a decision-save writes these back unchanged so nothing but the HR decision can move on this route.
+  const storedImportByTripId = new Map(
+    existingRows.map((row) => [String(row.trip_id ?? ""), toStoredImportValues(row)] as const),
   );
   const before = existingRows.map(toExpenseDecisionSnapshot);
 
@@ -1395,9 +1411,19 @@ export async function savePayrollExpenseApprovals(input: {
     // auditable instead of overwriting the evidence.
     const decision = decisions[index];
 
+    // On the Expense Approvals decision-save, a trip that already exists keeps its STORED workload,
+    // Other and claimed total — the screen never edits those, so a request that carries different
+    // ones is not a decision but an attempt to re-import over a historical trip. New trips (no stored
+    // row) are written as sent, since there is nothing yet to protect. See resolveExpenseImportWrite.
+    const importWrite = resolveExpenseImportWrite({
+      preserve: Boolean(options?.preserveImportedValues),
+      record,
+      stored: storedImportByTripId.get(String(record.tripId ?? "")) ?? null,
+    });
+
     return {
       allowance: record.allowance,
-      am_workload: record.amWorkload,
+      am_workload: importWrite.amWorkload,
       approved_amount: decision.approvedAmount,
       approved_at: decision.approvedAt,
       approved_by: decision.approvedBy,
@@ -1412,13 +1438,13 @@ export async function savePayrollExpenseApprovals(input: {
       km: record.km,
       location: record.location,
       meeting_amount: record.meetingAmount,
-      other_amount: record.other,
+      other_amount: importWrite.other,
       payout_month: period.month,
       payout_year: period.year,
       // AM · PM · Pharmacies. An Excel row carries the third figure from its Pharmacy Workload column;
       // a blank cell, or an older sheet without that column, writes NULL (not counted separately), never 0.
-      pharmacy_workload: record.pharmacyWorkload ?? null,
-      pm_workload: record.pmWorkload,
+      pharmacy_workload: importWrite.pharmacyWorkload,
+      pm_workload: importWrite.pmWorkload,
       request_type: record.requestType,
       report_id: reportId,
       source_file_name: input.fileName,
@@ -1427,7 +1453,7 @@ export async function savePayrollExpenseApprovals(input: {
       status: decision.status,
       to_date: record.toDate || null,
       to_location: record.to,
-      total: record.total,
+      total: importWrite.total,
       transportation_type: record.transportationType,
       travel_cost: record.travelCost,
       trip_id: record.tripId,
@@ -1498,8 +1524,69 @@ function toExpenseDecisionSnapshot(row: Record<string, unknown>): ExpenseDecisio
  * gave, the label they left, and who signed it off. Reading the diff columns without these is how
  * an amount survives a re-push while the reason behind it silently reverts.
  */
+// The workload trio and Other join the read so `preserveImportedValues` can write a trip's STORED
+// figures back on a decision-save. `total` already rides in EXPENSE_DECISION_COLUMNS.
+const EXPENSE_PRESERVED_IMPORT_COLUMNS = "am_workload,pm_workload,pharmacy_workload,other_amount";
 const EXPENSE_CARRY_FORWARD_COLUMNS =
-  `${EXPENSE_DECISION_COLUMNS},approved_at,approved_by,hr_comment,hr_status`;
+  `${EXPENSE_DECISION_COLUMNS},approved_at,approved_by,hr_comment,hr_status,${EXPENSE_PRESERVED_IMPORT_COLUMNS}`;
+
+/** The import-set figures a save writes to `outstation_expenses`, and preserves on a decision-save. */
+export type ExpenseImportValues = {
+  amWorkload: number | null;
+  other: number;
+  pharmacyWorkload: number | null;
+  pmWorkload: number | null;
+  total: number;
+};
+
+/**
+ * The import-set figures a stored trip already carries, read back for `preserveImportedValues`. A
+ * blank workload cell is NULL, never 0 — the AM · PM · Pharmacies rule (a 0 would claim none were
+ * visited); a missing money cell is 0. Written back verbatim, so a decision-save never re-imports
+ * a trip's workload or Other from the request body.
+ */
+function toStoredImportValues(row: Record<string, unknown>): ExpenseImportValues {
+  const intOrNull = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const moneyOrZero = (value: unknown) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  return {
+    amWorkload: intOrNull(row.am_workload),
+    other: moneyOrZero(row.other_amount),
+    pharmacyWorkload: intOrNull(row.pharmacy_workload),
+    pmWorkload: intOrNull(row.pm_workload),
+    total: moneyOrZero(row.total),
+  };
+}
+
+/**
+ * The import-set figures ONE upsert writes. Pure, so the guard can be tested without a database.
+ *
+ * On a decision-save (`preserve`) with a trip that ALREADY exists (`stored`), the stored figures win
+ * over whatever the request carried — the Expense Approvals screen never edits a trip's workload,
+ * Other or claimed total, so a body that differs is not a decision but an attempt to re-import over a
+ * historical trip (the download vector, expense-import.ts). Every other case — a file import, a
+ * workflow push, or a brand-new trip with nothing stored to protect — writes the record's own values.
+ */
+export function resolveExpenseImportWrite(input: {
+  preserve: boolean;
+  record: { amWorkload: number; other: number; pharmacyWorkload?: number | null; pmWorkload: number; total: number };
+  stored: ExpenseImportValues | null;
+}): ExpenseImportValues {
+  if (input.preserve && input.stored) return input.stored;
+  return {
+    amWorkload: input.record.amWorkload,
+    other: input.record.other,
+    pharmacyWorkload: input.record.pharmacyWorkload ?? null,
+    pmWorkload: input.record.pmWorkload,
+    total: input.record.total,
+  };
+}
 
 function toStoredExpenseDecision(row: Record<string, unknown>): StoredExpenseDecision {
   const approvedAmount = Number(row.approved_amount);

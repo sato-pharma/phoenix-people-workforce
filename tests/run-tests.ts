@@ -1457,6 +1457,7 @@ import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.t
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationSheetRefusesWorkflowTripIdsTests } from "./outstation-sheet-refuses-workflow-trip-ids.test.ts";
 import { runOutstationSheetRefusesApprovalsExportTests } from "./outstation-sheet-refuses-approvals-export.test.ts";
+import { runOutstationExpenseDecisionSavePreservesImportTests } from "./outstation-expense-decision-save-preserves-import.test.ts";
 import { runOutstationWorkflowReportDeleteGuardTests } from "./outstation-workflow-report-delete-guard.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
@@ -5237,6 +5238,11 @@ await runTest(
 await runTest(
   "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns — or, with all of them deleted, its worksheet name 'Expense Approvals' — refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
   runOutstationSheetRefusesApprovalsExportTests,
+);
+
+await runTest(
+  "the Expense Approvals decision-save (POST /api/admin/outstation/expenses) cannot re-import a historical trip (owner ruling 2026-09-21): it is a JSON route that never parsed a file to refuse, so an existing trip keeps its STORED workload, Other and claimed total whatever the request body carries — a hand-built POST cannot zero a historical trip's workload the way a file upload was refused — while a file import and a brand-new trip still write the values they were sent, and the route turns the guard on",
+  runOutstationExpenseDecisionSavePreservesImportTests,
 );
 
 await runTest(
