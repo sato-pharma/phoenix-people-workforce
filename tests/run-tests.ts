@@ -422,6 +422,7 @@ import {
 import { runKpiOverallIndexTests } from "./kpi-index.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.ts";
+import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
@@ -2769,6 +2770,11 @@ await runTest(
   "reps plans merged into reps list (the rep carries across the tab strip, old /reps-plans links forward "
   + "with every filter, the tab copies none of the weekly plans, and it keeps the narrower Reps Plans gate)",
   runRepsListCallRateMergeTests,
+);
+await runTest(
+  "reps plans no GPS feed (ruling A1: real visits and no check-in read No GPS feed, not 0%, and leave the "
+  + "team figures; a live feed that proves nothing keeps its 0%, and the submitted basis marks nobody)",
+  runRepsPlansNoGpsFeedTests,
 );
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",

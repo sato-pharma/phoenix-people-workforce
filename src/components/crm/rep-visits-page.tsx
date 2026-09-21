@@ -165,6 +165,13 @@ export async function RepVisitsPageBody({
               </span>
               {territory ? <span>{territory}</span> : null}
               {row.agentHrId ? <span className="text-slate-400">HR {row.agentHrId.toUpperCase()}</span> : null}
+              {/* Ruling A1 (owner, 2026-09-21): the same marker as the board, because the rates
+                  beside it read "—" for the same reason. */}
+              {row.noGpsFeed ? (
+                <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700">
+                  No GPS feed
+                </span>
+              ) : null}
             </p>
           </div>
           {/* The board's own two rates, repeated here so the reader can see at a glance that the rows
@@ -200,6 +207,13 @@ export async function RepVisitsPageBody({
           {windowLabel} · {row.workingDays} working {row.workingDays === 1 ? "day" : "days"} · every call below is
           classified by the same rule the rate uses, so these rows and that rate are the same number seen twice.
         </p>
+        {row.noGpsFeed ? (
+          <p className="mt-2 border-l-[3px] border-l-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-slate-700">
+            No GPS check-in reached the CRM from this account in {windowLabel}, so none of the visits below could be
+            proved. They are real reported calls; the proved rate is left blank rather than read as zero, and this rep
+            is left out of the team figures on the board.
+          </p>
+        ) : null}
       </div>
 
       <RepVisitsDetail

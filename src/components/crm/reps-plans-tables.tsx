@@ -355,6 +355,19 @@ function roleText(row: RepsPlansRepRow): string {
 const NOT_PLACED = "Not in organogram";
 
 /**
+ * OWNER'S RULING A1, 2026-09-21: "use A1 no GPS feed for reps without check-ins".
+ *
+ * A rep with real visits and no GPS check-in at all from his account reads this marker instead of a
+ * red 0% — his proved rates arrive null from the board, so every proved and % target cell already
+ * prints "—" and sorts to the bottom rather than to the top of the default worst-PM sort. The marker
+ * is amber because it is a gap in the DATA, to be chased on the phone, not a verdict on the rep.
+ * One wording, for the cell, the card, the search and the export.
+ */
+const NO_GPS_FEED = "No GPS feed";
+const NO_GPS_FEED_TITLE =
+  "No GPS check-in reached the CRM from this account in the window, so no visit could be proved. Reported calls are shown; the row is left out of the team figures.";
+
+/**
  * THE OWNER'S RULE, 2026-08-28: the 2 AM / 10 PM target is a MEDICAL REP'S.
  *
  * A manager keeps his real rates on the row — that is his account appearing, which is what was
@@ -463,9 +476,16 @@ export function RepsPlansRepTable({
     // Line · Region is searchable so "CNS" or "Delta" narrows the table without touching the
     // pickers — and so is the role, so "District Manager" lists the managers and "Product Manager"
     // lists head office.
+    // "GPS" lists the reps with no GPS feed, so a manager can find every phone to chase at once.
     searchAccessors: geographyAvailable
-      ? [(r) => r.repName, (r) => r.agentHrId ?? "", (r) => territoryText(r) || roleText(r), (r) => roleText(r)]
-      : [(r) => r.repName, (r) => r.agentHrId ?? ""],
+      ? [
+          (r) => r.repName,
+          (r) => r.agentHrId ?? "",
+          (r) => territoryText(r) || roleText(r),
+          (r) => roleText(r),
+          (r) => (r.noGpsFeed ? NO_GPS_FEED : ""),
+        ]
+      : [(r) => r.repName, (r) => r.agentHrId ?? "", (r) => (r.noGpsFeed ? NO_GPS_FEED : "")],
   });
 
   const exportRows = table.rows.map((row) => ({
@@ -476,6 +496,9 @@ export function RepsPlansRepTable({
     campaign_only_days: row.campaignOnlyDays,
     campaign_share: row.campaignSharePct,
     flagged_days: row.flaggedDays,
+    // The export must match the screen: the file's blank proved rates carry the same reason the
+    // screen's marker gives, rather than reading as missing data.
+    gps_feed: row.noGpsFeed ? NO_GPS_FEED : "",
     hr_id: row.agentHrId ?? "",
     pm_proved: row.pm.verifiedRate,
     pm_reported: row.pm.reportedRate,
@@ -516,6 +539,7 @@ export function RepsPlansRepTable({
               : []),
             { key: "hr_id", label: "HR ID" },
             { key: "working_days", label: "Working Days", numeric: true },
+            { key: "gps_feed", label: "GPS Feed" },
             { key: "am_proved", label: `AM ${headlineLabel} Rate`, numeric: true },
             { key: "am_reported", label: "AM Reported Rate", numeric: true },
             { key: "am_pct", label: "AM % Of Target", numeric: true },
@@ -563,7 +587,7 @@ export function RepsPlansRepTable({
             // Unscored rows carry no verdict colour — the accent is a judgement against the target,
             // and a manager is measured against none.
             accent={row.scored ? attainmentAccent(row.pm.attainmentPct) : "slate"}
-            meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${count(row.workingDays)} working days · ${count(row.reportedCalls)} calls reported, ${count(row.verifiedCalls)} proved`}
+            meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${count(row.workingDays)} working days · ${count(row.reportedCalls)} calls reported, ${row.noGpsFeed ? "no GPS feed" : `${count(row.verifiedCalls)} proved`}`}
             // Both rates sit in the badge, labelled. Neither answers the owner's question alone: AM
             // is the two accounts, PM is the ten clinics, and a rep can clear one and miss the other.
             status={
@@ -597,6 +621,19 @@ export function RepsPlansRepTable({
           >
             <PortalRecordFields
               fields={[
+                // First, so a phone shows why the two rates in the badge read "—" before anything else.
+                ...(row.noGpsFeed
+                  ? [
+                      {
+                        label: "GPS",
+                        value: (
+                          <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700" title={NO_GPS_FEED_TITLE}>
+                            {NO_GPS_FEED}
+                          </span>
+                        ),
+                      },
+                    ]
+                  : []),
                 ...(geographyAvailable
                   ? [
                       {
@@ -900,9 +937,9 @@ export function RepsPlansRepTable({
                       <Link className="hover:text-orange-600 hover:underline" href={visitsHref(row)}>
                         {row.repName}
                       </Link>
-                      {geographyAvailable ? (
+                      {geographyAvailable || row.noGpsFeed ? (
                         <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {row.territories.length === 0 ? (
+                          {!geographyAvailable ? null : row.territories.length === 0 ? (
                             <span
                               className={
                                 row.jobTitle
@@ -922,6 +959,13 @@ export function RepsPlansRepTable({
                               )}
                             </>
                           )}
+                          {/* Shown with or without the organogram — the missing feed is a fact about
+                              the check-ins, not about the chart. */}
+                          {row.noGpsFeed ? (
+                            <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-amber-700" title={NO_GPS_FEED_TITLE}>
+                              {NO_GPS_FEED}
+                            </span>
+                          ) : null}
                         </span>
                       ) : null}
                     </td>

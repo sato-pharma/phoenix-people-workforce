@@ -25,6 +25,7 @@ import {
   PHARMACY_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
   countCallRateWorkingDays,
+  hasNoGpsFeed,
   zeroRepCallRate,
   type CallRateBasis,
   type CallRateReport,
@@ -442,6 +443,15 @@ export type RepsPlansRepRow = {
    * evidence he is a rep, so inventing a target for him would be a guess printed as a fact.
    */
   scored: boolean;
+  /**
+   * He logged real field visits and his CRM account sent NO GPS check-ins in the window (owner,
+   * 2026-09-21, ruling A1 — see {@link hasNoGpsFeed}). The row then reads "No GPS feed" instead of a
+   * red 0%: every PROVED rate, every % of target and the unproven share are null, because with no
+   * feed there was nothing that COULD prove a visit, and he is left out of the team figures. His
+   * REPORTED rates and call counts stay exactly as they are — the visits were made and are shown.
+   * Always false from the CRM cutover, when GPS stops deciding the rate.
+   */
+  noGpsFeed: boolean;
 };
 
 function repKeyOf(rep: RepCallRate): string {
@@ -527,10 +537,18 @@ export function toRepsPlansRow(
   placement?: OrgPlacement | null,
   repNameByHrId?: ReadonlyMap<string, string>,
   jobTitleByHrId?: ReadonlyMap<string, string>,
+  /** The report's basis. Omitted means "verified", the rule before the CRM cutover. */
+  basis: CallRateBasis = "verified",
 ): RepsPlansRepRow {
-  const am = toSession(rep.am);
-  const pm = toSession(rep.pm);
-  const pharmacy = toPharmacySession(rep.pharmacy);
+  // Ruling A1: with no GPS feed there is no proved rate to state, so the proved half of each
+  // session is blanked rather than printed as a zero he never had the means to beat. The reported
+  // half is untouched.
+  const noGpsFeed = hasNoGpsFeed(rep, basis);
+  const unproved = <S extends { verifiedRate: number | null; attainmentPct: number | null }>(session: S): S =>
+    noGpsFeed ? { ...session, verifiedRate: null, attainmentPct: null } : session;
+  const am = unproved(toSession(rep.am));
+  const pm = unproved(toSession(rep.pm));
+  const pharmacy = unproved(toPharmacySession(rep.pharmacy));
   const verifiedCalls = am.verified + pm.verified;
   const reportedCalls = am.reported + pm.reported + rep.unspecified;
   const campaignCalls = am.campaign + pm.campaign;
@@ -549,7 +567,10 @@ export function toRepsPlansRow(
     reportedCalls,
     campaignCalls,
     campaignSharePct: Math.round(rep.campaignShare * 100),
-    unprovenPct: reportedCalls > 0 ? Math.round(((reportedCalls - verifiedCalls) / reportedCalls) * 100) : null,
+    // Null, not 100%, with no feed: "nothing proves these calls" is only a finding when something
+    // could have.
+    unprovenPct:
+      !noGpsFeed && reportedCalls > 0 ? Math.round(((reportedCalls - verifiedCalls) / reportedCalls) * 100) : null,
     flaggedDays: rep.campaignOverLimitDays.length,
     worstCampaignDay: worst ? worst.day : null,
     worstCampaignCalls: worst ? worst.campaignCalls : 0,
@@ -561,6 +582,7 @@ export function toRepsPlansRow(
     // the directory over it would let a stale HR job title contradict the chart the owner maintains.
     jobTitle: placement ? null : jobTitleFor(rep, jobTitleByHrId),
     scored: placement?.scored ?? false,
+    noGpsFeed,
   };
 }
 
@@ -598,6 +620,9 @@ export type RepsPlansTotals = {
  * number that is read against 2 and 10 — they would move the company's rate without ever being
  * measured by it. `buildRepsPlansBoard` is the only caller and it filters first; the assertion is
  * kept there rather than here so this stays a plain fold.
+ *
+ * The same caller also leaves out every `noGpsFeed` row (ruling A1, 2026-09-21): a rep whose visits
+ * nothing could prove would pull the team's proved rate down with calls he did make.
  */
 function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number, basis: CallRateBasis = "verified"): RepsPlansTotals {
   const denominator = workingDays * rows.length;
@@ -734,6 +759,12 @@ export type RepsPlansBoard = {
    */
   managersShown: number;
   unplacedShown: number;
+  /**
+   * Listed and marked "No GPS feed", and in no tile (ruling A1, 2026-09-21): real visits, no check-in
+   * from his account in the window. Counted so the screen can say why the tiles cover fewer reps
+   * than the table lists. Always 0 from the CRM cutover.
+   */
+  noGpsFeedShown: number;
   /** False when the organogram could not be read — the two pickers are then hidden, not empty. */
   geographyAvailable: boolean;
   /**
@@ -848,8 +879,15 @@ export function buildRepsPlansBoard(
   // into a KPI outage, so the board falls back to exactly how it read before this feature existed:
   // everyone scored, no geography column, no pickers.
   const orgAvailable = tree != null;
+  const rateBasis: CallRateBasis = report.basis ?? "verified";
   const feedRows = report.reps.map((rep) => {
-    const row = toRepsPlansRow(rep, placementOf(rep.agentHrId), options.repNameByHrId, options.jobTitleByHrId);
+    const row = toRepsPlansRow(
+      rep,
+      placementOf(rep.agentHrId),
+      options.repNameByHrId,
+      options.jobTitleByHrId,
+      rateBasis,
+    );
     return orgAvailable ? row : { ...row, scored: true };
   });
 
@@ -888,6 +926,7 @@ export function buildRepsPlansBoard(
             placement,
             options.repNameByHrId,
             options.jobTitleByHrId,
+            rateBasis,
           ),
         )
     : [];
@@ -1002,13 +1041,14 @@ export function buildRepsPlansBoard(
   const unplacedOutOfScope = geographyActive ? allRows.filter((row) => row.territories.length === 0) : [];
   const visibleRows = geographyActive ? [...inScope, ...unplacedOutOfScope] : allRows;
 
-  // ONLY the scored rows. A manager in scope is visible above and absent here, by the owner's rule.
-  const rateBasis: CallRateBasis = report.basis ?? "verified";
-  const totals = totalsOf(inScope.filter((row) => row.scored), report.workingDays, rateBasis);
+  // ONLY the scored rows. A manager in scope is visible above and absent here, by the owner's rule —
+  // and so is a rep with no GPS feed (ruling A1): listed, marked, and in no tile.
+  const totals = totalsOf(inScope.filter((row) => row.scored && !row.noGpsFeed), report.workingDays, rateBasis);
   // Both are 0 with no organogram: "37 people hold no seat" would be a claim about a chart nothing
   // managed to read, and the note under the tiles states these as facts about the org.
   const managersShown = orgAvailable ? visibleRows.filter((row) => !row.scored && row.territories.length > 0).length : 0;
   const unplacedShown = orgAvailable ? visibleRows.filter((row) => row.territories.length === 0).length : 0;
+  const noGpsFeedShown = visibleRows.filter((row) => row.noGpsFeed).length;
 
   const repOptions = visibleRows
     .map((row) => ({ repKey: row.repKey, repName: row.repName }))
@@ -1055,6 +1095,7 @@ export function buildRepsPlansBoard(
     geographyLabel,
     managersShown,
     unplacedShown,
+    noGpsFeedShown,
     geographyAvailable: lineOptions.length > 0,
     scopeLabel:
       scope == null || scope.kind === "company" ? null : scope.kind === "agents" ? scope.label : scope.reason,

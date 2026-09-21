@@ -221,6 +221,23 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             </p>
           ) : null}
 
+          {/* OWNER'S RULING A1, 2026-09-21 — "use A1 no GPS feed for reps without check-ins". Before
+              the CRM cutover only a GPS-proved visit counts, so a rep whose account sent no check-in
+              at all would read 0% however much he worked. He is listed, marked "No GPS feed", and
+              kept out of the tiles — and this line says so, so a table longer than the tiles' rep
+              count is never a mystery. */}
+          {board.noGpsFeedShown > 0 ? (
+            <p className="border-l-[3px] border-l-amber-500 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-slate-700">
+              <span className="font-black text-slate-900">{board.noGpsFeedShown}</span>{" "}
+              {board.noGpsFeedShown === 1 ? "rep logged visits" : "reps logged visits"} in{" "}
+              {board.isWholeMonth ? "this month" : board.periodLabel} with no GPS check-in at all from{" "}
+              {board.noGpsFeedShown === 1 ? "that CRM account" : "their CRM accounts"}, so no visit could be proved.{" "}
+              {board.noGpsFeedShown === 1 ? "The row is" : "Their rows are"} marked{" "}
+              <span className="font-black text-slate-900">No GPS feed</span> below — reported calls shown, no proved
+              rate — and left out of the figures above.
+            </p>
+          ) : null}
+
           {/* Row one: the KPI itself, AM then PM, each with the target it is measured against. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile
