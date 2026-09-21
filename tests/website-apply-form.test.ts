@@ -67,20 +67,38 @@ const NOTE_EXTRA: ScreeningQuestion = {
   sortOrder: 20,
 };
 
+// The active area names per region, as areaNamesForRegion would return them. Deliberately small, and
+// D3 is EMPTY on purpose — Delta (3) is a live region whose areas are not drawn yet, so its only
+// answer is the typed escape, exactly the case the bot handles by sending area down its free-text path.
+const AREAS_BY_REGION = new Map<string, string[]>([
+  ["CA", ["Cairo 1", "Cairo 2"]],
+  ["GZ", ["Giza 1"]],
+  ["D3", []],
+]);
+
 export function runWebsiteApplyFormTests() {
   // ── The role registry ─────────────────────────────────────────────────────────────────────────
-  assert.deepEqual(websiteApplyRoleKeys(), ["talent_acquisition_specialist"]);
+  assert.deepEqual(websiteApplyRoleKeys(), [
+    "talent_acquisition_specialist",
+    "national_sales_manager",
+    "medical_representative",
+    "regulatory_affairs_specialist",
+    "quality_control_analyst",
+  ]);
   const role = resolveWebsiteApplyRole("talent_acquisition_specialist");
   assert.ok(role, "the launch role must resolve");
   assert.equal(role.jobTitle, "Talent Acquisition Specialist");
   assert.equal(role.roleFamily, "human_resources");
   assert.equal(resolveWebsiteApplyRole("nope"), null);
   assert.equal(resolveWebsiteApplyRole(null), null);
+  // The two office families ride "other" — the bot asks them neither region nor area.
+  assert.equal(resolveWebsiteApplyRole("regulatory_affairs_specialist")?.roleFamily, "other");
+  assert.equal(resolveWebsiteApplyRole("quality_control_analyst")?.roleFamily, "other");
 
   assert.equal(websiteExtraFieldKey("hr_ats_experience"), "extra:hr_ats_experience");
 
-  // ── Form assembly: identity + CV, then experience + salary, then the extras in sort order ───────
-  const form = assembleWebsiteApplyForm(role, HR_AUDIENCES, [ATS_EXTRA, NOTE_EXTRA]);
+  // ── HR form assembly: identity + CV, then experience + salary, then the extras in sort order ────
+  const form = assembleWebsiteApplyForm(role, HR_AUDIENCES, [ATS_EXTRA, NOTE_EXTRA], AREAS_BY_REGION);
   assert.deepEqual(
     form.fields.map((field) => field.key),
     ["full_name", "email", "phone", "cv", "experience", "salary", "extra:hr_ats_experience", "extra:hr_note"],
@@ -98,12 +116,60 @@ export function runWebsiteApplyFormTests() {
   // The extras are optional — a blank answer must never block an application.
   assert.equal(form.fields.find((field) => field.key === "extra:hr_ats_experience")?.required, false);
 
-  // A role whose flow would include an unsupported built-in (region/area/background) is a
-  // code-level misconfiguration and fails loudly rather than shipping a form that drops the answer.
-  const regionForHr: SavedAudiences = new Map<string, readonly string[]>([["region", ["human_resources"]]]);
-  assert.throws(() => assembleWebsiteApplyForm(role, regionForHr, []), /built-in "background"|built-in "region"/);
+  // ── The office family ("other"): background + experience + salary, NO region/area, NO extras ─────
+  const officeRole = resolveWebsiteApplyRole("regulatory_affairs_specialist");
+  assert.ok(officeRole);
+  const officeForm = assembleWebsiteApplyForm(officeRole, HR_AUDIENCES, [], AREAS_BY_REGION);
+  assert.deepEqual(
+    officeForm.fields.map((field) => field.key),
+    ["full_name", "email", "phone", "cv", "background", "experience", "salary"],
+    "Regulatory Affairs is asked background (the office families are in that audience) but not region/area",
+  );
 
-  // ── Validation: a good submission produces the exact classification the bot would write ─────────
+  // ── The field-force family (NSM): background + region + area + experience + salary ───────────────
+  const nsmRole = resolveWebsiteApplyRole("national_sales_manager");
+  assert.ok(nsmRole);
+  const nsmForm = assembleWebsiteApplyForm(nsmRole, HR_AUDIENCES, [], AREAS_BY_REGION);
+  assert.deepEqual(
+    nsmForm.fields.map((field) => field.key),
+    ["full_name", "email", "phone", "cv", "background", "region", "area", "experience", "salary"],
+    "the field-force families are asked the full geographic set in the bot's own order",
+  );
+
+  const background = nsmForm.fields.find((field) => field.key === "background");
+  assert.ok(background);
+  assert.equal(background.otherTextKey, "background_other");
+  assert.deepEqual(
+    background.options?.map((option) => option.value),
+    ["pharmacy", "science", "vet", "medicine", "dentistry", "other"],
+    "background offers the five degrees then the typed Other escape, last",
+  );
+
+  const region = nsmForm.fields.find((field) => field.key === "region");
+  assert.ok(region);
+  assert.equal(region.otherTextKey, "region_other");
+  assert.deepEqual(
+    region.options?.map((option) => option.value),
+    ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT", "other"],
+    "region offers the reviewed codes then the 'not listed' escape",
+  );
+
+  const area = nsmForm.fields.find((field) => field.key === "area");
+  assert.ok(area);
+  assert.equal(area.dependsOnKey, "region", "area's options depend on the chosen region");
+  assert.equal(area.otherTextKey, "area_other");
+  assert.deepEqual(
+    area.optionsByRegion?.CA.map((option) => option.value),
+    ["Cairo 1", "Cairo 2", "other"],
+    "a region with areas lists them, then the typed escape",
+  );
+  assert.deepEqual(
+    area.optionsByRegion?.D3.map((option) => option.value),
+    ["other"],
+    "Delta (3) has no areas drawn yet, so only the typed escape is offered — never a dead end",
+  );
+
+  // ── HR validation: a good submission produces the exact classification the bot would write ───────
   const good: WebsiteApplyRawAnswers = {
     answers: {
       experience: "3_5",
@@ -126,6 +192,10 @@ export function runWebsiteApplyFormTests() {
     hr_ats_experience: "Yes",
     hr_note: "I am relocating to Cairo.",
   });
+  // HR is asked none of the geographic three, so all three classification columns stay null.
+  assert.equal(validated.classification.declaredBackground, null);
+  assert.equal(validated.classification.regionCode, null);
+  assert.equal(validated.classification.areaName, null);
 
   // A verbatim, non-numeric salary is kept as words and never coerced to a number.
   const negotiable = validateWebsiteApplication(role, form, { ...good, answers: { ...good.answers, salary: "negotiable" } });
@@ -155,4 +225,61 @@ export function runWebsiteApplyFormTests() {
   });
   assert.ok(noExtras.ok);
   assert.deepEqual(noExtras.classification.extraAnswers, {});
+
+  // ── Geographic validation on the NSM form ────────────────────────────────────────────────────
+  const nsmBase: WebsiteApplyRawAnswers = {
+    answers: { area: "Cairo 1", background: "pharmacy", experience: "gt_5", region: "CA", salary: "40000" },
+    email: "omar@example.com",
+    fullName: "Omar Nabil",
+    phone: "01111111111",
+  };
+  const nsm = validateWebsiteApplication(nsmRole, nsmForm, nsmBase);
+  assert.ok(nsm.ok, "a full field-force submission is accepted");
+  assert.equal(nsm.classification.declaredBackground, "Pharmacy", "a tapped background stores its label");
+  assert.equal(nsm.classification.regionCode, "CA", "a tapped region stores its CODE, not its label");
+  assert.equal(nsm.classification.regionOtherText, null);
+  assert.equal(nsm.classification.areaName, "Cairo 1", "a picked area stores its name");
+
+  // A picked area that does not belong to the chosen region is rejected — the region/area pair is
+  // validated against the schema's own per-region list, so a stale or cross-region value cannot land.
+  const wrongArea = validateWebsiteApplication(nsmRole, nsmForm, {
+    ...nsmBase,
+    answers: { ...nsmBase.answers, area: "Giza 1", region: "CA" },
+  });
+  assert.equal(wrongArea.ok, false, "an area from another region is refused");
+
+  // The typed "Other" escapes: a typed region goes to the NAME column (never the code column), and a
+  // typed area rides through with it — the exact split writeClassification enforces.
+  const typedGeo = validateWebsiteApplication(nsmRole, nsmForm, {
+    ...nsmBase,
+    answers: {
+      area: "other",
+      area_other: "  Mansoura  ",
+      background: "other",
+      background_other: "  Commerce  ",
+      experience: "gt_5",
+      region: "other",
+      region_other: "  Delta (3)  ",
+      salary: "40000",
+    },
+  });
+  assert.ok(typedGeo.ok, "typed-Other answers on all three are accepted");
+  assert.equal(typedGeo.classification.declaredBackground, "Commerce");
+  assert.equal(typedGeo.classification.regionCode, null, "a typed region never lands in the code column");
+  assert.equal(typedGeo.classification.regionOtherText, "Delta (3)");
+  assert.equal(typedGeo.classification.areaName, "Mansoura");
+
+  // "Other" chosen but nothing typed is a real error, not a silent skip — the field is required.
+  const emptyOther = validateWebsiteApplication(nsmRole, nsmForm, {
+    ...nsmBase,
+    answers: { ...nsmBase.answers, region: "other", region_other: "   " },
+  });
+  assert.equal(emptyOther.ok, false, "choosing Other for the region without typing it fails");
+
+  // A missing background on a role that asks it fails — background is required where it applies.
+  const noBackground = validateWebsiteApplication(nsmRole, nsmForm, {
+    ...nsmBase,
+    answers: { ...nsmBase.answers, background: "" },
+  });
+  assert.equal(noBackground.ok, false);
 }
