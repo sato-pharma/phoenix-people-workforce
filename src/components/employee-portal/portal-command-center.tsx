@@ -918,31 +918,35 @@ function RepCallHalf({
 }) {
   const attainment = target != null && target > 0 ? (rate / target) * 100 : 0;
   const tone = target != null ? repTone(attainment) : null;
-  // Stacked, never inline: "3.8 of 10" on one line wrapped mid-figure in a phone's half-width tile.
-  // The number is the same 21px as the tiles beside it, so the three read as peers of Coverage.
+  // One ROW per rate, never three side-by-side columns: on a phone the tile is half the screen, and
+  // three columns left each figure 49px — too narrow for a 10.2 at any size bigger than its siblings.
+  // A row gives the figure the tile's whole width, so it runs at 26px everywhere, with the code,
+  // the target and (where there is room) the full name on the same baseline.
   return (
-    <div className="min-w-0 px-2 first:pl-0 last:pr-0">
-      <p className="flex items-baseline gap-1.5">
-        <span className="text-[11px] font-black tracking-[0.06em] text-slate-900">{code}</span>
-        <span className="hidden text-[10px] font-semibold text-slate-400 xl:inline">{label}</span>
-      </p>
-      <p
-        className={`mt-1.5 text-[21px] font-bold leading-none tracking-[-0.01em] tabular-nums ${tone?.text ?? "text-slate-700"}`}
-      >
-        {rate.toFixed(1)}
-      </p>
-      <p className="mt-1 text-[11px] font-semibold leading-tight tabular-nums text-slate-500">
-        {target != null ? `of ${target}` : "no target"}
+    <div className="relative min-w-0 pl-3">
+      <div aria-hidden="true" className={`absolute inset-y-0 left-0 w-0.5 ${tone?.rail ?? "bg-slate-300"}`} />
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="w-7 shrink-0 text-[12px] font-black tracking-[0.06em] text-slate-900">{code}</span>
+        <span className={`text-[26px] font-bold leading-none tracking-[-0.02em] tabular-nums ${tone?.text ?? "text-slate-700"}`}>
+          {rate.toFixed(1)}
+        </span>
+        <span className="text-[12px] font-semibold tabular-nums text-slate-500">
+          {target != null ? `of ${target}` : "no target"}
+        </span>
+        {/* Hidden where the tile is narrowest (phone, and the 4-up row from lg to xl). */}
+        <span className="ml-auto hidden text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:inline lg:hidden xl:inline">
+          {label}
+        </span>
       </p>
       {tone ? (
-        <div className="relative mt-2 h-1.5 w-full bg-slate-100">
+        <div className="relative mt-1.5 h-1.5 w-full bg-slate-100">
           <div className={`h-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, attainment))}%` }} />
           <div aria-hidden="true" className="absolute -bottom-0.5 -top-0.5 right-0 w-0.5 bg-slate-900" />
         </div>
       ) : (
-        // No standard to reach, so no bar to fill — a dashed rule keeps the three columns aligned
+        // No standard to reach, so no bar to fill — a dashed rule keeps the three rows aligned
         // without drawing an empty bar that reads as 0%.
-        <div aria-hidden="true" className="mt-2 h-1.5 w-full border-t border-dashed border-slate-300" />
+        <div aria-hidden="true" className="mt-1.5 h-1.5 w-full border-t border-dashed border-slate-300" />
       )}
     </div>
   );
@@ -1145,7 +1149,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           {kpis?.noGpsFeed ? (
             <p className="text-[13px] font-semibold text-slate-400">No GPS feed</p>
           ) : kpis?.hasCallRate ? (
-            <div className="grid grid-cols-3 divide-x divide-slate-200">
+            <div className="space-y-2.5">
               <RepCallHalf code="AM" label="Morning" rate={kpis.amRate ?? 0} target={kpis.amTarget} />
               <RepCallHalf code="PM" label="Afternoon" rate={kpis.pmRate ?? 0} target={kpis.pmTarget} />
               <RepCallHalf code="PH" label="Pharmacy" rate={kpis.pharmacyRate ?? 0} target={kpis.pharmacyTarget} />
