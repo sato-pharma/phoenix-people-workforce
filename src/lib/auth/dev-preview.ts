@@ -61,6 +61,35 @@ export function isLocalDevelopmentRequest(request: Request) {
   return [hostname, hostHeader, forwardedHost].some(isLoopbackHostname);
 }
 
+/** One person, however the HR id is written: `pd-0014`, `PD-0014` and `PD0014` share a key. */
+function devPreviewPersonKey(value: string | null | undefined) {
+  return (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * True when a request to launch a preview asks for the preview this session is ALREADY in — the
+ * same role, as the same person. `/api/dev-auth/preview` answers that with the landing page the
+ * first launch was heading to, instead of refusing it.
+ *
+ * Why it exists: on 2026-09-21 the Super Admin launched a Medical Rep preview from
+ * `/admin/dev-preview` and landed on a raw `{"error":"forbidden"}` page — twice, in two dev-server
+ * runs, with the identical trace each time: preview 307, dev-auth 307, "Compiling /employee-portals"
+ * (30 to 60 seconds on this laptop, while the route-transition bar gives up after 9), then the SAME
+ * preview address again, answered 403. The launch is three hops, and its first two replace the
+ * caller: the preview route deletes the real session, and dev-auth sets the preview cookie. So a
+ * second click on the still-visible button, or a reload of the still-pending address, reached the
+ * preview route wearing the Medical Rep it had just minted, failed its Super Admin gate, and the 403
+ * replaced the portal the first click was loading. The launch was not safe to repeat, and on a slow
+ * first compile it is always repeated.
+ */
+export function isDevPreviewReplay(
+  current: { hrId: string | null; role: PhoenixRole },
+  requested: { hrId: string; role: PhoenixRole },
+): boolean {
+  const key = devPreviewPersonKey(requested.hrId);
+  return key !== "" && current.role === requested.role && devPreviewPersonKey(current.hrId) === key;
+}
+
 /**
  * The role a preview of a REAL person has to wear: the one that person actually signs in with.
  *
@@ -79,10 +108,9 @@ export function devPreviewRoleMismatch(
   hrId: string,
   activeLogins: ReadonlyArray<{ hrId: string | null; role: PhoenixRole }>,
 ): PhoenixRole | null {
-  const personKey = (value: string | null | undefined) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const key = personKey(hrId);
+  const key = devPreviewPersonKey(hrId);
   if (!key) return null;
-  const held = activeLogins.filter((login) => personKey(login.hrId) === key).map((login) => login.role);
+  const held = activeLogins.filter((login) => devPreviewPersonKey(login.hrId) === key).map((login) => login.role);
   if (held.length === 0 || held.includes(requestedRole)) return null;
   return held[0];
 }

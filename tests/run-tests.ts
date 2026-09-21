@@ -1866,6 +1866,7 @@ import { runCandidateCommentLinksAndInAppTests } from "./candidate-comment-links
 import { runPortalCandidatesProxyRedirectTests } from "./portal-candidates-proxy-redirect.test.ts";
 import { runOpenVacancyManagerFollowsSeatTests } from "./open-vacancy-manager-follows-seat.test.ts";
 import { runDevPreviewRoleGuardTests } from "./dev-preview-role-guard.test.ts";
+import { runDevPreviewLaunchReplayTests } from "./dev-preview-launch-replay.test.ts";
 import { runMedicalRepExpenseViewerTests } from "./medical-rep-expense-viewer.test.ts";
 import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
@@ -6588,6 +6589,11 @@ await runTest(
 await runTest(
   "a local preview wears the named person's real role: /api/dev-auth answers 409 role_mismatch when the hrId's active logins do not hold the requested role (a synthetic or blank hrId is still allowed), and /api/activity/track records only a real signed-in session, so a preview never files page views under a real person's name in production",
   runDevPreviewRoleGuardTests,
+);
+
+await runTest(
+  "a repeated dev-preview launch lands on the preview, never on a raw forbidden page: /api/dev-auth/preview answers a preview session asking for the very preview it is already in with that preview's landing page, minting nothing, and every other non-Super-Admin caller still gets the 403; the picker locks Launch after the first click (the 2026-09-21 double launch during a slow first compile)",
+  runDevPreviewLaunchReplayTests,
 );
 
 await runTest(
