@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { MEMORY_INDEX_READ_CEILING } from "./memory-index-budget.mjs";
+
 // A MEMORY FILE NAMED IN `AGENTS.md` IS REACHABLE. THE DOCTOR USED TO CALL IT AN ORPHAN.
 //
 // WHY THIS EXISTS. The orphan check asks one question — is this file pointed at from `MEMORY.md` or
@@ -35,6 +37,19 @@ import { pathToFileURL } from "node:url";
 // someone a minute, while a false "reachable" hides a memory nothing can recall.
 
 /**
+ * The one place that decides whether an index text points at a memory file. Both the reachability
+ * classifier and the marker check below call it, deliberately: they ask different questions of the
+ * same relation, and a second hand-inlined copy of this substring is how the two answers would
+ * quietly stop agreeing about the same file.
+ *
+ * @param {string} indexText an index file's contents (or several concatenated)
+ * @param {string} file a memory filename, e.g. `some-slug.md`
+ */
+function indexLinksMemory(indexText, file) {
+  return indexText.includes("](" + file + ")");
+}
+
+/**
  * Split memory files into the three ways one can be reachable, or not.
  *
  * Linked wins over relocated when a file is both, so the two buckets never double-count and
@@ -52,7 +67,7 @@ export function classifyMemoryReachability({ files, indexText = "", agentsText =
   const orphans = [];
 
   for (const file of files) {
-    if (indexText.includes("](" + file + ")")) {
+    if (indexLinksMemory(indexText, file)) {
       linked.push(file);
       continue;
     }
@@ -331,6 +346,79 @@ function frontmatterOf(dir, file) {
 }
 
 /** Backticked slugs in a chunk of text — the same convention `namedInAgents` matches. */
+/**
+ * WHAT THE LOADER ACTUALLY SEES OF `MEMORY.md`, WHICH IS NOT THE WHOLE FILE.
+ *
+ * The index is auto-loaded up to `MEMORY_INDEX_READ_CEILING` bytes and truncated there **silently**
+ * (§2.2). So "does `MEMORY.md` link this memory?" and "will a session SEE that link?" are the same
+ * question only while the file is under the cliff. Past it, a link sitting in the tail is invisible
+ * to every session, and reading the whole file would classify it `recallable` — the CLI would then
+ * call the marker a harmless over-claim and invite a session to delete the last pointer anybody
+ * loads. That is the same failure as the archive-only case below, one level down, and it bites in
+ * exactly the situation this tool exists for: an index over budget, being trimmed.
+ *
+ * Truncation is done in BYTES, against the same ceiling the loader uses, so the prefix is faithful.
+ * A link straddling the boundary is half-present here and half-present there, and counts in neither.
+ * A multibyte character split at the boundary decodes to U+FFFD, which cannot complete a link match.
+ *
+ * @param {string} text the full index file
+ * @param {number} [ceilingBytes] the loader's read ceiling
+ * @returns {{ text: string, bytes: number, truncated: boolean }} `text` is the visible prefix;
+ *   `bytes` is the FULL size, so a caller can report how much is invisible
+ */
+export function loaderVisiblePrefix(text = "", ceilingBytes = MEMORY_INDEX_READ_CEILING) {
+  const buf = Buffer.from(text, "utf8");
+  if (buf.byteLength <= ceilingBytes) return { text, bytes: buf.byteLength, truncated: false };
+  return {
+    text: buf.subarray(0, ceilingBytes).toString("utf8"),
+    bytes: buf.byteLength,
+    truncated: true,
+  };
+}
+
+/**
+ * AN ARCHIVE-ONLY LINK DOES NOT MAKE A MARKER SAFE TO REMOVE.
+ *
+ * The orphan question above counts `MEMORY-ARCHIVE.md` as a pointer on purpose, and that is right
+ * for the question it asks: the archive advertises grep-findability, and a memory linked from it is
+ * not stranded. The MARKER question is a different one — "is it safe to cut this slug from
+ * `AGENTS.md`?" — and there the two index files are not interchangeable. §2.2: **`MEMORY.md` is the
+ * ONLY auto-loaded memory file**, and `docs/agents-memory-map.md` states the marker rule in those
+ * exact terms — a slug removed from `AGENTS.md` orphans that memory *unless `MEMORY.md` also links
+ * it*. Cut a slug whose only index link is in the archive and nothing is stranded, but the rule
+ * leaves every session's context: it survives only for whoever thinks to open a file that never
+ * loads. That is precisely the invisibility the marker exists to prevent, so the marker is CORRECT
+ * and must stay.
+ *
+ * Measured 2026-09-21, which is why this exists: three marked slugs
+ * (`ats-candidate-children-one-has-no-fk-and-one-is-a-view`,
+ * `offer-chain-was-live-in-the-registry-with-a-hole-past-approval`,
+ * `owner-sheet-vocabulary-stores-is-office-upa-is-a-channel`) have ZERO matches in `MEMORY.md` and
+ * appear only in `MEMORY-ARCHIVE.md`. The CLI printed all three as "an index links it too, so the
+ * marker over-claims — not a risk", which is an invitation to delete the last auto-loaded pointer
+ * to three live rules. The reassurance was the defect, not the markers.
+ *
+ * THE DEGRADE DIRECTION IS THE SAFE ONE, as everywhere else in this file. An unreadable `MEMORY.md`
+ * arrives here as `""`, which puts every over-marked slug in `archiveOnly` — "keep the marker". A
+ * marker kept for nothing costs a reader a line; a marker dropped on a bad reassurance costs a live
+ * rule its only auto-loaded pointer.
+ *
+ * @param {object} input
+ * @param {string[]} input.overMarked marked slugs that an index links, so not AGENTS.md-only
+ * @param {string} input.autoLoadedIndexText `MEMORY.md` ALONE — never the archive concatenated in
+ * @returns {{ recallable: string[], archiveOnly: string[] }} `recallable` over-claims harmlessly;
+ *   `archiveOnly` is a marker that is still load-bearing and must not be trimmed
+ */
+export function splitOverMarkedByAutoLoadedIndex({ overMarked = [], autoLoadedIndexText = "" }) {
+  const recallable = [];
+  const archiveOnly = [];
+  for (const slug of overMarked) {
+    if (indexLinksMemory(autoLoadedIndexText, slug + ".md")) recallable.push(slug);
+    else archiveOnly.push(slug);
+  }
+  return { recallable: recallable.sort(), archiveOnly: archiveOnly.sort() };
+}
+
 function slugsIn(text) {
   const tick = String.fromCharCode(96);
   const pattern = new RegExp(tick + "([a-z0-9]+(?:-[a-z0-9]+){2,})" + tick, "g");
@@ -357,7 +445,19 @@ function main() {
     return;
   }
 
-  const INDEX_FILES = ["MEMORY.md", "MEMORY-ARCHIVE.md"];
+  // Both files answer "is this memory stranded" (the archive's contract is grep-findability, and a
+  // file linked from it is findable). Only `MEMORY.md` answers "will a session SEE this without
+  // being told to look" — §2.2: it is the only auto-loaded memory file. The marker check below needs
+  // that narrower text on its own, so keep the two readable separately and never let the
+  // concatenation stand in for the auto-loaded one.
+  const AUTO_LOADED_INDEX = "MEMORY.md";
+  const INDEX_FILES = [AUTO_LOADED_INDEX, "MEMORY-ARCHIVE.md"];
+  // Only the prefix the loader actually reads counts as "a session will see this" — see
+  // loaderVisiblePrefix. The FULL text still feeds the stranding question below: a link past the
+  // cliff is invisible in context but perfectly greppable, exactly like an archive link, so it is
+  // reachability without recall rather than a stranded memory.
+  const autoLoaded = loaderVisiblePrefix(readTextOr(join(memoryDir, AUTO_LOADED_INDEX)));
+  const autoLoadedIndexText = autoLoaded.text;
   const indexText = INDEX_FILES.map((f) => readTextOr(join(memoryDir, f))).join("\n");
   const files = readdirSync(memoryDir).filter(
     (f) => f.endsWith(".md") && !INDEX_FILES.includes(f) && !f.includes(".bak"),
@@ -390,12 +490,17 @@ function main() {
   const present = new Set(files.map((f) => f.slice(0, -".md".length)));
   const unmarked = relocatedSlugs.filter((s) => !marked.has(s));
 
-  // Two ways a marker goes stale, with opposite severities, so never print them as one list. DEAD
-  // is a defect — the map points at a memory that no longer exists, and the test's by-name check
-  // then guards a slug for nothing. OVER-MARKED is not: an index also links the memory, so the
-  // marker merely over-claims and nothing can be stranded by removing it.
+  // THREE ways a marker can be out of step, with different severities, so never print them as one
+  // list. DEAD is a defect — the map points at a memory that no longer exists, and the test's
+  // by-name check then guards a slug for nothing. The other two both look like "an index links it
+  // too", and they are not the same finding: only a link from the AUTO-LOADED index makes the marker
+  // a harmless over-claim. An archive-only link leaves the AGENTS.md slug as the last pointer any
+  // session actually loads, so that marker is still load-bearing — see
+  // splitOverMarkedByAutoLoadedIndex, and the three real slugs that occasioned it.
   const dead = [...marked].filter((s) => !present.has(s)).sort();
   const overMarked = [...marked].filter((s) => present.has(s) && !live.has(s)).sort();
+  const { recallable: overMarkedRecallable, archiveOnly: overMarkedArchiveOnly } =
+    splitOverMarkedByAutoLoadedIndex({ overMarked, autoLoadedIndexText });
 
   console.log("MEMORY REACHABILITY (which memories AGENTS.md is the only pointer for)");
   console.log("  repo:   " + root);
@@ -413,6 +518,21 @@ function main() {
   );
   if (agentsText === "") {
     console.log("  WARNING: AGENTS.md could not be read, so every memory falls through to orphan.");
+  }
+  if (autoLoaded.truncated) {
+    console.log(
+      "  🔴 " +
+        AUTO_LOADED_INDEX +
+        " is " +
+        autoLoaded.bytes +
+        " bytes, OVER the " +
+        MEMORY_INDEX_READ_CEILING +
+        "-byte loader cliff — its last " +
+        (autoLoaded.bytes - MEMORY_INDEX_READ_CEILING) +
+        " bytes are invisible to every session.",
+    );
+    console.log("  Marker verdicts below are graded against the VISIBLE prefix only, which is the");
+    console.log("  whole point: a link past the cliff cannot make a marker safe to trim.");
   }
   console.log("");
 
@@ -449,10 +569,29 @@ function main() {
   for (const slug of dead) {
     console.log("    DEAD    " + slug + "  (marked load-bearing, but no such memory file exists)");
   }
-  for (const slug of overMarked) {
-    console.log("    over-marked  " + slug + "  (an index links it too, so the marker over-claims — not a risk)");
+  for (const slug of overMarkedRecallable) {
+    console.log(
+      "    over-marked  " + slug + "  (" + AUTO_LOADED_INDEX + " links it too, so the marker over-claims — not a risk)",
+    );
   }
-  if (mapText !== "" && unmarked.length === 0 && dead.length === 0 && overMarked.length === 0) {
+  if (overMarkedArchiveOnly.length > 0) {
+    console.log(
+      "    " +
+        overMarkedArchiveOnly.length +
+        " marked slug(s) an index links, but only MEMORY-ARCHIVE.md — which does NOT auto-load (§2.2),",
+    );
+    console.log("    so the AGENTS.md slug is the last pointer a session sees. KEEP THE MARKER; do not trim:");
+    for (const slug of overMarkedArchiveOnly) {
+      console.log("      keep    " + slug);
+    }
+    if (autoLoadedIndexText === "") {
+      console.log(
+        "    NOTE: " + AUTO_LOADED_INDEX + " could not be read, so every one of these is listed on the safe",
+      );
+      console.log("    side rather than measured. Fix that before acting on the list.");
+    }
+  }
+  if (mapText !== "" && unmarked.length === 0 && dead.length === 0 && overMarkedRecallable.length === 0) {
     console.log("    -> in step. Every AGENTS.md-only memory is marked, and every marker is still true.");
   }
 }
