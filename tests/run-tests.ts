@@ -423,6 +423,7 @@ import { runKpiOverallIndexTests } from "./kpi-index.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.ts";
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
+import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
@@ -2776,6 +2777,11 @@ await runTest(
   "reps plans no GPS feed (ruling A1: real visits and no check-in read No GPS feed, not 0%, and leave the "
   + "team figures; a live feed that proves nothing keeps its 0%, and the submitted basis marks nobody)",
   runRepsPlansNoGpsFeedTests,
+);
+await runTest(
+  "kpis no GPS feed (ruling A1 on the KPIs board: the row reads No GPS feed with blank proved rates, "
+  + "leaves the podiums and the team call-rate sums with its days, keeps coverage, and the cutover marks nobody)",
+  runKpisNoGpsFeedTests,
 );
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",

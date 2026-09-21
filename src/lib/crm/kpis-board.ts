@@ -89,7 +89,14 @@ import {
 import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
 import { resolveRepKpiStandards, type RepKpiReports } from "@/lib/crm/rep-kpi-reports";
 import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
-import { AM_CALL_RATE_TARGET, PHARMACY_CALL_RATE_TARGET, PM_CALL_RATE_TARGET, type RepCallRate } from "@/lib/crm/call-rate";
+import {
+  AM_CALL_RATE_TARGET,
+  hasNoGpsFeed,
+  PHARMACY_CALL_RATE_TARGET,
+  PM_CALL_RATE_TARGET,
+  type CallRateBasis,
+  type RepCallRate,
+} from "@/lib/crm/call-rate";
 import { getCrmCutoverSetting, NO_CRM_CUTOVER } from "@/lib/crm/cutover";
 import { loadPhoenixRepKpis } from "@/lib/crm/phoenix-kpi-data";
 import { kpiRulesFor, type KpiRules, type PhoenixRepKpis } from "@/lib/crm/phoenix-kpi-rules";
@@ -187,6 +194,19 @@ export type KpiRepRow = {
   campaignOnlyDays: number;
   /** False when the rep logged nothing at all in the period — distinct from a real zero rate. */
   hasCallRate: boolean;
+  /**
+   * OWNER'S RULING A1, 2026-09-21 — "use A1 no GPS feed for reps without check-ins", carried to this
+   * board the same morning ("apply A1 to the KPIs board too").
+   *
+   * True when the rep logged real regular visits in the window and his CRM account sent NO GPS
+   * check-in at all, so before the cutover not one of those visits could be proved. His proved rates
+   * and his AM and PM attainment are then null — "No GPS feed", never a red 0% against a target he
+   * had no means to beat — and his calls leave the team's call-rate figures. Coverage and frequency
+   * never read GPS, so they still score him. ONE rule for every board: `hasNoGpsFeed` in
+   * crm/call-rate.ts, whose narrowness (a LIVE feed that proves nothing keeps its real 0%) is the
+   * point. Always false under the Phoenix rules, where GPS decides nothing.
+   */
+  noGpsFeed: boolean;
   /**
    * AM against ITS target, PM against ITS target — two numbers, never one.
    *
@@ -449,6 +469,12 @@ export type KpisBoard = {
    */
   scopedReps: number;
   /**
+   * How many of `reps` read "No GPS feed" (ruling A1, owner 2026-09-21): listed and marked, but left
+   * out of the team's AM, PM and pharmacy call-rate figures. Printed above the tiles, so a call-rate
+   * tile that covers fewer reps than the head count beside it is never a mystery.
+   */
+  noGpsFeedShown: number;
+  /**
    * The owner's two KPI reports per rep — AM/PM, and pharmacies — for the SAME rows as `reps`.
    *
    * Kept beside the four KPI tabs rather than folded into `KpiRepRow` because they answer against a
@@ -671,11 +697,17 @@ export function joinKpiRows(input: {
   pmTarget?: number;
   /** Null until the owner sets one — see PHARMACY_CALL_RATE_TARGET. */
   pharmacyTarget?: number | null;
+  /**
+   * The basis the call-rate report counted on. Ruling A1 applies on "verified" only — from the CRM
+   * cutover every submitted visit counts, so a missing feed costs a rep nothing and excuses nothing.
+   */
+  basis?: CallRateBasis;
 }): KpiRepRow[] {
   const { callRates, docLists, scope, workingDays } = input;
   const amTarget = input.amTarget ?? AM_CALL_RATE_TARGET;
   const pmTarget = input.pmTarget ?? PM_CALL_RATE_TARGET;
   const pharmacyTarget = input.pharmacyTarget ?? PHARMACY_CALL_RATE_TARGET;
+  const basis = input.basis ?? "verified";
 
   // Keyed on the CANONICAL hr id on both sides. Production hr ids are mixed case and carry legacy
   // aliases, and `canonicalHrIdKey` is the one comparison that handles both — a plain
@@ -719,6 +751,7 @@ export function joinKpiRows(input: {
     campaignShare: 0,
     campaignOnlyDays: 0,
     hasCallRate: false,
+    noGpsFeed: false,
     amAttainmentPct: null,
     pmAttainmentPct: null,
     pharmacyVerified: 0,
@@ -786,6 +819,15 @@ export function joinKpiRows(input: {
     row.pharmacyRate = rate.pharmacy.verifiedRate;
     row.pharmacyReported = rate.pharmacy.total;
     row.pharmacyReportedRate = rate.pharmacy.totalRate;
+    // Ruling A1: nothing could prove his visits, so the proved rates are ABSENT, not zero — and
+    // `attainmentPct` below returns null for him on the same flag. The reported rates stay: they
+    // are what he logged, and the gap between the two is still worth seeing.
+    row.noGpsFeed = hasNoGpsFeed(rate, basis);
+    if (row.noGpsFeed) {
+      row.amRate = null;
+      row.pmRate = null;
+      row.pharmacyRate = null;
+    }
   }
 
   for (const list of docLists) {
@@ -870,7 +912,8 @@ export type KpiDirectoryEntry = {
 function attainmentPct(row: KpiRepRow, verified: number, target: number | null): number | null {
   if (target == null) return null;
   const expected = row.workingDays * target;
-  if (!row.hasCallRate || expected <= 0) return null;
+  // A rep with no GPS feed (ruling A1) has no proved calls to be a percentage of anything.
+  if (!row.hasCallRate || row.noGpsFeed || expected <= 0) return null;
   return Math.round((verified / expected) * 100);
 }
 
@@ -891,6 +934,9 @@ export function applyPhoenixKpis(row: KpiRepRow, kpis: PhoenixRepKpis): KpiRepRo
   // 2026-09-20) keeps it off the Campaign line, identified on its own via `row.phoenix.regularNoCheckin`.
   const fieldVisits = kpis.am.visits + kpis.pm.visits + kpis.campaignVisits + kpis.regularNoCheckin;
   row.phoenix = kpis;
+  // Ruling A1 is a pre-cutover rule: under these rules GPS is evidence only, so a missing feed
+  // neither blanks a rate nor takes a rep out of the team figures.
+  row.noGpsFeed = false;
   row.workingDays = kpis.workingDays;
   row.amVerified = kpis.am.visits;
   row.pmVerified = kpis.pm.visits;
@@ -965,6 +1011,7 @@ export async function getKpisBoard(input: {
     reps: [],
     kpiReports: [],
     scopedReps: 0,
+    noGpsFeedShown: 0,
     facets: buildKpiFacets([]),
     filters,
     podium: buildKpiPodium([]),
@@ -1060,6 +1107,7 @@ export async function getKpisBoard(input: {
     amTarget: AM_CALL_RATE_TARGET,
     pmTarget: PM_CALL_RATE_TARGET,
     pharmacyTarget: PHARMACY_CALL_RATE_TARGET,
+    basis: callRate.basis ?? "verified",
     directory: employees.map((employee) => ({
       hrId: employee.hrId,
       displayName: employee.displayName || employee.fullName || null,
@@ -1147,49 +1195,8 @@ export async function getKpisBoard(input: {
   // Totals are summed from the SCOPED rows, never taken from either source's own `totals`. Those
   // cover the whole company, and a District Manager reading a company total beside his own six reps
   // would have no way to tell the two apart.
-  const totals = reps.reduce(
-    (accumulator, row) => {
-      accumulator.reps += 1;
-      accumulator.amVerified += row.amVerified;
-      accumulator.pmVerified += row.pmVerified;
-      accumulator.amReported += row.amReported;
-      accumulator.pmReported += row.pmReported;
-      accumulator.campaignCalls += row.campaignCalls;
-      accumulator.totalCalls += row.totalCalls;
-      accumulator.plannedDoctors += row.plannedDoctors;
-      accumulator.visitedDoctors += row.visitedDoctors;
-      accumulator.onPlanDoctors += row.onPlanDoctors;
-      accumulator.underDoctors += row.underDoctors;
-      accumulator.overDoctors += row.overDoctors;
-      accumulator.pharmacyVerified += row.pharmacyVerified;
-      accumulator.pharmacyReported += row.pharmacyReported;
-      accumulator.repWorkingDays += row.workingDays;
-      accumulator.gradedDoctors += row.phoenix?.frequency.judged ?? 0;
-      accumulator.ungradedDoctors += row.phoenix?.frequency.ungraded ?? 0;
-      accumulator.regularNoCheckin += row.phoenix?.regularNoCheckin ?? 0;
-      return accumulator;
-    },
-    {
-      reps: 0,
-      amVerified: 0,
-      pmVerified: 0,
-      amReported: 0,
-      pmReported: 0,
-      campaignCalls: 0,
-      totalCalls: 0,
-      plannedDoctors: 0,
-      visitedDoctors: 0,
-      onPlanDoctors: 0,
-      underDoctors: 0,
-      overDoctors: 0,
-      pharmacyVerified: 0,
-      pharmacyReported: 0,
-      repWorkingDays: 0,
-      gradedDoctors: 0,
-      ungradedDoctors: 0,
-      regularNoCheckin: 0,
-    },
-  );
+  const totals = sumKpiTeamTotals(reps);
+  const noGpsFeedShown = reps.filter((row) => row.noGpsFeed).length;
 
   // The team rate is the team's calls over ONE rep-equivalent's working days times the head count —
   // i.e. the average rep's rate, not the sum. Summing the rates instead would make a district of six
@@ -1234,6 +1241,7 @@ export async function getKpisBoard(input: {
     coverageDetail,
     kpiReports,
     scopedReps: scopedReps.length,
+    noGpsFeedShown,
     facets,
     filters,
     // The podium ranks the FILTERED rows on purpose: filter to Pedia and the leaderboard answers
@@ -1281,6 +1289,63 @@ export async function getKpisBoard(input: {
       amAttainmentPct: teamAmAttainmentPct,
       pmAttainmentPct: teamPmAttainmentPct,
       hasCallRate: totals.reps > 0,
+      // Every rep on the board read "No GPS feed", so the team has no proved call to score.
+      noGpsFeed: noGpsFeedShown > 0 && noGpsFeedShown === totals.reps,
     }),
   };
+}
+
+/**
+ * The team's sums over the rows on screen — what every team tile and the overall KPI are built from.
+ *
+ * Pure, so the one exclusion in it can be tested without a database: a rep with NO GPS FEED (ruling
+ * A1, owner 2026-09-21) is counted as a rep and in coverage and frequency, which never read GPS,
+ * but his calls and his working days leave the call-rate sums TOGETHER. Leaving only his proved
+ * calls out would divide the rest of the team's calls by his days as well, and read the team lower
+ * for a feed that failed; leaving only his days out would count calls against no one.
+ */
+export function sumKpiTeamTotals(reps: readonly KpiRepRow[]) {
+  const accumulator = {
+    reps: 0,
+    amVerified: 0,
+    pmVerified: 0,
+    amReported: 0,
+    pmReported: 0,
+    campaignCalls: 0,
+    totalCalls: 0,
+    plannedDoctors: 0,
+    visitedDoctors: 0,
+    onPlanDoctors: 0,
+    underDoctors: 0,
+    overDoctors: 0,
+    pharmacyVerified: 0,
+    pharmacyReported: 0,
+    repWorkingDays: 0,
+    gradedDoctors: 0,
+    ungradedDoctors: 0,
+    regularNoCheckin: 0,
+  };
+  for (const row of reps) {
+    accumulator.reps += 1;
+    if (!row.noGpsFeed) {
+      accumulator.amVerified += row.amVerified;
+      accumulator.pmVerified += row.pmVerified;
+      accumulator.amReported += row.amReported;
+      accumulator.pmReported += row.pmReported;
+      accumulator.pharmacyVerified += row.pharmacyVerified;
+      accumulator.pharmacyReported += row.pharmacyReported;
+      accumulator.repWorkingDays += row.workingDays;
+    }
+    accumulator.campaignCalls += row.campaignCalls;
+    accumulator.totalCalls += row.totalCalls;
+    accumulator.plannedDoctors += row.plannedDoctors;
+    accumulator.visitedDoctors += row.visitedDoctors;
+    accumulator.onPlanDoctors += row.onPlanDoctors;
+    accumulator.underDoctors += row.underDoctors;
+    accumulator.overDoctors += row.overDoctors;
+    accumulator.gradedDoctors += row.phoenix?.frequency.judged ?? 0;
+    accumulator.ungradedDoctors += row.phoenix?.frequency.ungraded ?? 0;
+    accumulator.regularNoCheckin += row.phoenix?.regularNoCheckin ?? 0;
+  }
+  return accumulator;
 }

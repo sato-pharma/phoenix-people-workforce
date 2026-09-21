@@ -114,6 +114,24 @@ function rate(value: number | null): string {
   return value == null ? "—" : value.toFixed(2);
 }
 
+/**
+ * OWNER'S RULING A1, 2026-09-21 — the marker for a rep who logged visits with no GPS check-in at all
+ * from his CRM account, so none could be proved (`KpiRepRow.noGpsFeed`). Said once, so the cells, the
+ * card and the flag chip cannot drift apart on the wording; the chip reads the same words from
+ * KPI_FLAG_LABEL.
+ */
+const NO_GPS_FEED = "No GPS feed";
+
+/**
+ * The line under an AM or PM figure. For a rep with no GPS feed it says what he REPORTED, because the
+ * proved rate it would otherwise quote is blank for want of a feed, not zero.
+ */
+function sessionCaption(row: KpiRepRow, session: "am" | "pm", target: number, none: string): string {
+  if (row.noGpsFeed) return `${session === "am" ? row.amReported : row.pmReported} reported · none provable`;
+  if (!row.hasCallRate) return none;
+  return `${rate(session === "am" ? row.amRate : row.pmRate)} of ${target} a day`;
+}
+
 /** A percentage, or a marker when the rep has no plan to be a percentage OF. */
 function planPct(row: KpiRepRow, value: number): string {
   return row.hasMeasurablePlan ? `${value}%` : "No plan";
@@ -128,10 +146,12 @@ function planPct(row: KpiRepRow, value: number): string {
  * and this ten. Don't never get average."
  */
 function amPct(row: KpiRepRow): string {
+  if (row.noGpsFeed) return NO_GPS_FEED;
   return row.hasCallRate && row.amAttainmentPct != null ? `${row.amAttainmentPct}%` : "No calls";
 }
 
 function pmPct(row: KpiRepRow): string {
+  if (row.noGpsFeed) return NO_GPS_FEED;
   return row.hasCallRate && row.pmAttainmentPct != null ? `${row.pmAttainmentPct}%` : "No calls";
 }
 
@@ -143,6 +163,7 @@ function pmPct(row: KpiRepRow): string {
  * an absent AM/PM figure would be; that string is reserved for a rep with no call rate at all.
  */
 function pharmacyValue(row: KpiRepRow): string {
+  if (row.noGpsFeed) return NO_GPS_FEED;
   return row.hasCallRate ? rate(row.pharmacyRate) : "No calls";
 }
 
@@ -162,6 +183,7 @@ function repKpiIndex(row: KpiRepRow): KpiIndex {
     amAttainmentPct: row.amAttainmentPct,
     pmAttainmentPct: row.pmAttainmentPct,
     hasCallRate: row.hasCallRate,
+    noGpsFeed: row.noGpsFeed,
   });
 }
 
@@ -883,13 +905,13 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
             />
             <MeasureCell
               band={amBandOf(row)}
-              caption={row.hasCallRate ? `${rate(row.amRate)} of ${context.board.amTarget} a day` : "No calls logged"}
+              caption={sessionCaption(row, "am", context.board.amTarget, "No calls logged")}
               fill={amFill(row)}
               value={amPct(row)}
             />
             <MeasureCell
               band={pmBandOf(row)}
-              caption={row.hasCallRate ? `${rate(row.pmRate)} of ${context.board.pmTarget} a day` : "No calls logged"}
+              caption={sessionCaption(row, "pm", context.board.pmTarget, "No calls logged")}
               fill={pmFill(row)}
               value={pmPct(row)}
             />
@@ -992,21 +1014,29 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
             <td className={NUM}>
               {rate(row.amRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.amTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {amPct(row)} · {row.amVerified} of {row.workingDays * board.amTarget} asked for
+                {amPct(row)} ·{" "}
+                {row.noGpsFeed
+                  ? `${row.amReported} reported, none provable`
+                  : `${row.amVerified} of ${row.workingDays * board.amTarget} asked for`}
                 {followUpText(row, "am")}
               </span>
             </td>
             <td className={NUM}>
               {rate(row.pmRate)} <span className="text-phx-3xs font-bold text-slate-400">of {board.pmTarget}</span>
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {pmPct(row)} · {row.pmVerified} of {row.workingDays * board.pmTarget} asked for
+                {pmPct(row)} ·{" "}
+                {row.noGpsFeed
+                  ? `${row.pmReported} reported, none provable`
+                  : `${row.pmVerified} of ${row.workingDays * board.pmTarget} asked for`}
                 {followUpText(row, "pm")}
               </span>
             </td>
             <td className={NUM}>
               {pharmacyValue(row)}
               <span className="mt-0.5 block text-phx-3xs font-semibold leading-4 text-slate-500">
-                {row.pharmacyVerified} {phoenix ? "visits" : "verified"}
+                {row.noGpsFeed
+                  ? `${row.pharmacyReported} reported`
+                  : `${row.pharmacyVerified} ${phoenix ? "visits" : "verified"}`}
               </span>
             </td>
             <td className={NUM}>
@@ -1585,14 +1615,14 @@ function RepCard({
     },
     {
       band: amBandOf(row),
-      caption: row.hasCallRate ? `${rate(row.amRate)} of ${amTarget} a day` : "No calls",
+      caption: sessionCaption(row, "am", amTarget, "No calls"),
       fill: amFill(row),
       label: "AM call rate",
       value: amPct(row),
     },
     {
       band: pmBandOf(row),
-      caption: row.hasCallRate ? `${rate(row.pmRate)} of ${pmTarget} a day` : "No calls",
+      caption: sessionCaption(row, "pm", pmTarget, "No calls"),
       fill: pmFill(row),
       label: "PM call rate",
       value: pmPct(row),
@@ -1602,9 +1632,11 @@ function RepCard({
       // always this band because pharmacyAttainmentPct is always null (see
       // PHARMACY_CALL_RATE_TARGET); the caption says why, so the chip does not read as a fault.
       band: kpiBandOf(row.pharmacyAttainmentPct),
-      caption: row.hasCallRate
-        ? `${row.pharmacyVerified} ${row.phoenix ? "visits" : "verified"} · no target set yet`
-        : "No calls",
+      caption: row.noGpsFeed
+        ? `${row.pharmacyReported} reported · none provable`
+        : row.hasCallRate
+          ? `${row.pharmacyVerified} ${row.phoenix ? "visits" : "verified"} · no target set yet`
+          : "No calls",
       fill: null,
       label: "Pharmacy",
       value: pharmacyValue(row),
@@ -1801,6 +1833,27 @@ export function KpisBoardView({
               </p>
             </div>
           )}
+
+          {/* OWNER'S RULING A1, 2026-09-21 — "use A1 no GPS feed for reps without check-ins", then
+              "apply A1 to the KPIs board too". Before the CRM cutover only a GPS-proved call counts, so
+              a rep whose account sent no check-in at all would read 0% however much he worked. He is
+              listed and marked, and his calls are kept out of the team's call rates — and this says
+              so, in the same banner as the holiday caveat above, because both are gaps in the DATA
+              that change what the call-rate tiles mean. */}
+          {board.noGpsFeedShown > 0 ? (
+            <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 sm:px-5">
+              <p className="text-phx-xs font-bold text-amber-900">
+                {board.noGpsFeedShown} of {totals.reps} {totals.reps === 1 ? "rep" : "reps"} logged visits in{" "}
+                {board.range.isWholeMonth ? board.monthLabel : board.range.periodLabel} with no GPS check-in at all from{" "}
+                {board.noGpsFeedShown === 1 ? "that CRM account" : "their CRM accounts"}.
+              </p>
+              <p className="mt-0.5 text-phx-2xs leading-4 text-amber-800">
+                No visit could be proved, so {board.noGpsFeedShown === 1 ? "the row reads" : "those rows read"}{" "}
+                {NO_GPS_FEED} instead of 0%, and {board.noGpsFeedShown === 1 ? "its calls are" : "their calls are"} left
+                out of the AM, PM and pharmacy call rates below. Coverage and frequency are unaffected.
+              </p>
+            </div>
+          ) : null}
 
           {board.kpiRulesNote ? (
             <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
