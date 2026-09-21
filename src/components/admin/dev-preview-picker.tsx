@@ -75,6 +75,21 @@ export function DevPreviewPicker({
 
   const [hrId, setHrId] = React.useState<string>(AUTO_PICK_VALUE);
 
+  // Set by the first click on Launch and kept: the launch is three hops plus a first compile of the
+  // landing page — a minute on this laptop — and a second click in that time used to land on a raw
+  // "forbidden" page, because the first click had already switched this browser into the preview
+  // (see `isDevPreviewReplay` in src/lib/auth/dev-preview.ts).
+  const [launching, setLaunching] = React.useState(false);
+
+  // Coming BACK to this page out of the browser's page cache restores the locked button; unlock it.
+  React.useEffect(() => {
+    function onPageShow(event: PageTransitionEvent) {
+      if (event.persisted) setLaunching(false);
+    }
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   // Fetch the candidate catalog for a newly selected role on demand (cached per role).
   // `isLoading` above derives purely from candidatesByRole[role] being absent — no separate
   // loading state to keep in sync with this effect.
@@ -235,11 +250,28 @@ export function DevPreviewPicker({
         </div>
 
         <a
-          className="inline-flex items-center justify-center rounded-[6px] bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition hover:bg-orange-700"
+          aria-disabled={launching || undefined}
+          className={`inline-flex items-center justify-center rounded-[6px] bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition ${
+            launching ? "cursor-wait opacity-70" : "hover:bg-orange-700"
+          }`}
           href={previewHref}
+          onClick={(event) => {
+            if (launching) {
+              event.preventDefault();
+              return;
+            }
+            setLaunching(true);
+          }}
         >
-          Launch preview as {launchLabel}
+          {launching ? `Opening preview as ${launchLabel}…` : `Launch preview as ${launchLabel}`}
         </a>
+
+        {launching ? (
+          <p aria-live="polite" className="text-xs font-semibold text-slate-600">
+            Switching you over. The first open of a page compiles it on this laptop and can take a minute — there is
+            no need to click again.
+          </p>
+        ) : null}
 
         <p className="text-xs leading-5 text-slate-500">
           This ends your current admin session in this browser and starts an 8-hour preview session as{" "}

@@ -3,14 +3,60 @@ import { cookies } from "next/headers";
 
 import { revokeAppSession } from "@/lib/auth/app-sessions";
 import { writeAuthAudit } from "@/lib/auth/audit";
-import { isLocalDevelopmentRequest } from "@/lib/auth/dev-preview";
+import { isDevPreviewReplay, isLocalDevelopmentRequest } from "@/lib/auth/dev-preview";
 import { findDevPreviewCandidate, findDevPreviewCandidateByHrId } from "@/lib/auth/dev-preview-picker";
-import { parseRoleStrict } from "@/lib/auth/permissions";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { parseRoleStrict, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
+import { isPreviewSession } from "@/lib/auth/preview-session-guard";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { phoenixSessionCookieName, verifySessionToken } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type LaunchParams = { area: string | null; hrId: string | null; line: string | null; region: string | null };
+
+function readLaunchParams(url: URL): LaunchParams {
+  return {
+    area: url.searchParams.get("area")?.trim() || null,
+    hrId: url.searchParams.get("hrId")?.trim() || null,
+    line: url.searchParams.get("line")?.trim() || null,
+    region: url.searchParams.get("region")?.trim() || null,
+  };
+}
+
+function resolveLaunchCandidate(role: PhoenixRole, params: LaunchParams) {
+  return params.hrId
+    ? findDevPreviewCandidateByHrId(role, params.hrId)
+    : findDevPreviewCandidate(role, { areaName: params.area, lineName: params.line, regionName: params.region });
+}
+
+/**
+ * Where a REPEATED launch goes, or null when this is not one. A second click on the picker's button,
+ * or a reload of the still-pending address, arrives wearing the preview the first click already
+ * switched to, and so fails the Super Admin gate — see `isDevPreviewReplay` for the incident. It is
+ * sent where the first click was going: the landing page `/api/dev-auth` redirects to.
+ *
+ * It grants nothing. It answers only a preview session asking for the very preview it is already in,
+ * and all it returns is that session's own landing page — no session is minted, no cookie is set,
+ * the real session is not touched and no audit row is written. Everything else stays a 403.
+ */
+async function replayLandingUrl(access: AccessContext, url: URL): Promise<URL | null> {
+  if (!isPreviewSession(access)) return null;
+
+  let role: PhoenixRole;
+  try {
+    role = parseRoleStrict(url.searchParams.get("role"));
+  } catch {
+    return null;
+  }
+  if (role !== access.role) return null;
+
+  const candidate = await resolveLaunchCandidate(role, readLaunchParams(url));
+  if (!candidate || !isDevPreviewReplay(access, { hrId: candidate.hrId, role })) return null;
+
+  return new URL(resolveLandingPathForRole(role), url);
+}
 
 /**
  * Super Admin-only front door onto the existing `/api/dev-auth` bootstrap route:
@@ -26,6 +72,8 @@ export async function GET(request: Request) {
 
   const access = await resolveAccessContext(request);
   if (access.role !== "Super Admin") {
+    const replay = await replayLandingUrl(access, new URL(request.url));
+    if (replay) return NextResponse.redirect(replay);
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -36,14 +84,9 @@ export async function GET(request: Request) {
   } catch {
     return NextResponse.json({ error: "invalid_role" }, { status: 400 });
   }
-  const hrId = url.searchParams.get("hrId")?.trim() || null;
-  const line = url.searchParams.get("line")?.trim() || null;
-  const region = url.searchParams.get("region")?.trim() || null;
-  const area = url.searchParams.get("area")?.trim() || null;
-
-  const candidate = hrId
-    ? await findDevPreviewCandidateByHrId(role, hrId)
-    : await findDevPreviewCandidate(role, { areaName: area, lineName: line, regionName: region });
+  const launch = readLaunchParams(url);
+  const { area, hrId, line, region } = launch;
+  const candidate = await resolveLaunchCandidate(role, launch);
 
   if (!candidate) {
     const backUrl = new URL("/admin/dev-preview", url);
