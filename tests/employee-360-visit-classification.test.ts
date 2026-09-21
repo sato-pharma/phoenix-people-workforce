@@ -20,7 +20,7 @@ export async function runEmployee360VisitClassificationTests() {
   assert.deepEqual(classifyVisit(-6, "Morning Excuse", "Unknown"), { label: "Vacations & Leaves", bucket: "admin" });
 
   // ── -19 Meeting, -20 Admin Work, -21 BRM — clean 1:1 labels ──
-  assert.deepEqual(classifyVisit(-19, "Weekly meeting", "Unknown"), { label: "Meetings", bucket: "admin" });
+  assert.deepEqual(classifyVisit(-19, "Weekly meeting", "Unknown"), { label: "Meeting", bucket: "admin" });
   assert.deepEqual(classifyVisit(-20, "Admin work", "Unknown"), { label: "Admin Work", bucket: "admin" });
   assert.deepEqual(classifyVisit(-20, "Interviews", "Unknown"), { label: "Admin Work", bucket: "admin" });
   assert.deepEqual(classifyVisit(-21, "BRM Cairo", "Unknown"), { label: "Business Review (BRM)", bucket: "admin" });
@@ -29,7 +29,7 @@ export async function runEmployee360VisitClassificationTests() {
   assert.deepEqual(classifyVisit(-7, "Sales day", "Unknown"), { label: "Health Day", bucket: "admin" });
   assert.deepEqual(classifyVisit(-7, "Health day", "Unknown"), { label: "Health Day", bucket: "admin" });
   assert.deepEqual(classifyVisit(-7, "اجازه", "Unknown"), { label: "Vacations & Leaves", bucket: "admin" });
-  assert.deepEqual(classifyVisit(-7, "meeting with team", "Unknown"), { label: "Meetings", bucket: "admin" });
+  assert.deepEqual(classifyVisit(-7, "meeting with team", "Unknown"), { label: "Meeting", bucket: "admin" });
   assert.deepEqual(classifyVisit(-7, "something with no clear signal", "Unknown"), { label: "Admin Work", bucket: "admin" }, "no match falls back to Admin Work, never bare Unknown");
   assert.deepEqual(classifyVisit(-7, null, "Unknown"), { label: "Admin Work", bucket: "admin" }, "null comment also falls back to Admin Work");
 

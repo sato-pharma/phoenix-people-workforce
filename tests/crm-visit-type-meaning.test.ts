@@ -45,7 +45,7 @@ const OLD_LITERAL_ANSWERS: ReadonlyArray<OldAnswers> = [
   { code: -11, name: "Meeting", fwc: "CP", leaver: "CP", dayMap: "CP" },
   { code: -12, name: "Traveling", fwc: "CP", leaver: "CP", dayMap: "CP" },
   { code: -15, name: "Health Day", fwc: "CP", leaver: "CP", dayMap: "CP" },
-  { code: -19, name: "Meetings", fwc: "CP", leaver: undefined, dayMap: "CP" },
+  { code: -19, name: "Meeting (undocumented twin of -11)", fwc: "CP", leaver: undefined, dayMap: "CP" },
   { code: -20, name: "Admin Work", fwc: "CP", leaver: undefined, dayMap: "CP" },
   { code: -21, name: "Business Review (BRM)", fwc: "CP", leaver: undefined, dayMap: "CP" },
   { code: -30, name: "Unlabelled field visit", fwc: "CP", leaver: undefined, dayMap: "CP" },

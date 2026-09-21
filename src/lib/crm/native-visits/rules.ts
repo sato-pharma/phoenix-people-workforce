@@ -51,7 +51,7 @@ export type NativeVisitTypeKey =
  * THE catalogue. The migration's `crm_native_visits_legacy_code` check holds the same pairs, and
  * tests/crm-native-visits.test.ts keeps the two in step.
  *
- * Deliberately absent: -7 (Ambiguous) and -19 (a second "Meetings") exist only because the vendor
+ * Deliberately absent: -7 (Ambiguous) and -19 (a second, undocumented "Meeting") exist only because the vendor
  * form let a rep pick a code whose meaning nobody could state; -30 (Unlabelled field visit) is a
  * regular visit the vendor never labelled. A native entry is explicit, so none of the three can be
  * created here.
