@@ -40,24 +40,72 @@ import { KPI_BAND_SHORT, type KpiBand } from "@/lib/crm/kpis-filters";
 // ── Tone ──────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * One tone per band, used by the meter, the chip and the podium alike.
+ * One tone per band, used by the meter, the chip, the tile and the podium alike.
  *
  * `noplan` is deliberately the quietest tone on the board. It is not a bad score — it is the
  * absence of one — and painting it rose would accuse a rep of missing a target nobody set him.
+ *
+ * ## The godmode premium pass — depth, not radius (owner golden rule, 2026-09-08)
+ *
+ * `grad` (a two-stop tonal gradient) fills the meter and caps a tile so a flat colour reads as a
+ * lit surface rather than a printed block, and `dot` is the same tone as a status pip. They ride
+ * ALONGSIDE the flat `bar`/`chip`/`text` this board already used — nothing here changes a value, a
+ * width or a corner. The square-edge golden rule is untouched: not one class in this file rounds an
+ * edge, and the admin shell's own `border-radius: 0 !important` would win even if one did.
  */
-type Tone = { bar: string; chip: string; text: string };
+type Tone = { bar: string; chip: string; text: string; grad: string; dot: string };
 
 const TONES: Record<KpiBand, Tone> = {
-  elite: { bar: "bg-emerald-500", chip: "border-emerald-200 bg-emerald-50 text-emerald-800", text: "text-emerald-700" },
-  strong: { bar: "bg-sky-500", chip: "border-sky-200 bg-sky-50 text-sky-800", text: "text-sky-700" },
-  steady: { bar: "bg-amber-500", chip: "border-amber-200 bg-amber-50 text-amber-900", text: "text-amber-700" },
-  behind: { bar: "bg-rose-500", chip: "border-rose-200 bg-rose-50 text-rose-800", text: "text-rose-700" },
-  noplan: { bar: "bg-slate-300", chip: "border-slate-200 bg-slate-50 text-slate-600", text: "text-slate-500" },
+  elite: {
+    bar: "bg-emerald-500",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    text: "text-emerald-700",
+    grad: "from-emerald-400 to-emerald-600",
+    dot: "bg-emerald-500",
+  },
+  strong: {
+    bar: "bg-sky-500",
+    chip: "border-sky-200 bg-sky-50 text-sky-800",
+    text: "text-sky-700",
+    grad: "from-sky-400 to-sky-600",
+    dot: "bg-sky-500",
+  },
+  steady: {
+    bar: "bg-amber-500",
+    chip: "border-amber-200 bg-amber-50 text-amber-900",
+    text: "text-amber-700",
+    grad: "from-amber-400 to-amber-600",
+    dot: "bg-amber-500",
+  },
+  behind: {
+    bar: "bg-rose-500",
+    chip: "border-rose-200 bg-rose-50 text-rose-800",
+    text: "text-rose-700",
+    grad: "from-rose-400 to-rose-600",
+    dot: "bg-rose-500",
+  },
+  noplan: {
+    bar: "bg-slate-300",
+    chip: "border-slate-200 bg-slate-50 text-slate-600",
+    text: "text-slate-500",
+    grad: "from-slate-300 to-slate-400",
+    dot: "bg-slate-400",
+  },
 };
 
 export function toneOf(band: KpiBand): Tone {
   return TONES[band];
 }
+
+/**
+ * The two-layer premium shadow (owner's godmode golden rule): a 1px contact shadow so the card has
+ * an edge, and a wide ambient one so it sits above the page. It states its own depth, so the
+ * shell's ambient `main` rule (`:not([class*="shadow"])`) leaves it alone rather than stacking a
+ * second shadow on it. box-shadow is outside the box model, so it moves nothing — the
+ * fits-the-screen rule is untouched.
+ */
+const DEPTH = "shadow-[0_1px_2px_rgba(15,23,42,0.05),0_10px_26px_rgba(15,23,42,0.06)]";
+const DEPTH_HAIR = "shadow-[0_1px_2px_rgba(15,23,42,0.05)]";
 
 // A DailyVisitBand tone map and chip lived here briefly (2026-09-05), for a combined AM+PM
 // "visits/day" band the owner retracted the same week — see call-rate.ts's header comment where
@@ -92,7 +140,12 @@ export function KpiSection({
 }) {
   return (
     <div className="border-b border-slate-200 bg-white last:border-b-0">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-slate-900 px-4 py-3 sm:px-5">
+      {/* Premium pass: a subtle diagonal on the near-black bar so it reads as a lit surface, an
+          orange light-edge across the top, and a left accent tick — the same command-bar language
+          the module's other section headers use. Type and spacing are unchanged. */}
+      <div className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden border-b border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#111c31_60%,#1a2436_100%)] px-4 py-3 pl-5 sm:px-5 sm:pl-6">
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-orange-400 to-orange-500" />
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-orange-500/0 via-orange-400/70 to-orange-500/0" />
         <div className="min-w-0 flex-1">
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
           {description ? <p className="mt-0.5 text-phx-2xs leading-4 text-slate-400">{description}</p> : null}
@@ -116,18 +169,29 @@ export function KpiSection({
 export function KpiMeter({ band, value }: { band: KpiBand; value: number | null }) {
   const fill = value == null ? 0 : Math.max(0, Math.min(100, value));
   return (
-    <div aria-hidden className="mt-1.5 h-1.5 w-full bg-slate-100">
-      <div className={`h-1.5 ${toneOf(band).bar}`} style={{ width: `${fill}%` }} />
+    // Premium pass: a recessed track (inner shadow) under a two-stop tonal fill with a faint glow,
+    // so the bar reads as a lit gauge rather than a flat block. Height is UNCHANGED at h-1.5 — the
+    // row rhythm the four tables and the mobile card were measured against does not move.
+    <div
+      aria-hidden
+      className="relative mt-1.5 h-1.5 w-full overflow-hidden bg-slate-100 shadow-[inset_0_1px_1px_rgba(15,23,42,0.07)]"
+    >
+      <div
+        className={`h-full bg-gradient-to-r ${toneOf(band).grad} shadow-[0_0_6px_rgba(15,23,42,0.16)]`}
+        style={{ width: `${fill}%` }}
+      />
     </div>
   );
 }
 
 /** A band as a small chip. Short label — this sits inside a table cell. */
 export function KpiBandChip({ band }: { band: KpiBand }) {
+  const tone = toneOf(band);
   return (
     <span
-      className={`inline-block border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${toneOf(band).chip}`}
+      className={`inline-flex items-center gap-1 border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em] ${tone.chip} ${DEPTH_HAIR}`}
     >
+      <span aria-hidden className={`h-1.5 w-1.5 ${tone.dot}`} />
       {KPI_BAND_SHORT[band]}
     </span>
   );
@@ -157,10 +221,15 @@ export function KpiTile({
   value: string;
 }) {
   const tone = band ? toneOf(band) : null;
+  // The top accent cap: the band's own tonal gradient when the tile scores something, a quiet slate
+  // gradient when it does not (the reps count and the untargeted pharmacy rate), so a neutral tile
+  // never wears a colour that would read as a band it does not have.
+  const cap = tone ? tone.grad : "from-slate-300 to-slate-400";
   return (
-    <div className="relative overflow-hidden border border-slate-200 bg-white px-4 py-3.5">
+    <div className={`relative overflow-hidden border border-slate-200 bg-white px-4 pb-3.5 pt-4 ${DEPTH}`}>
+      <span aria-hidden className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${cap}`} />
       <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
-      <p className={`mt-1 text-2xl font-black leading-none tabular-nums ${tone ? tone.text : "text-slate-900"}`}>
+      <p className={`mt-1 text-[1.7rem] font-black leading-none tabular-nums ${tone ? tone.text : "text-slate-900"}`}>
         {value}
       </p>
       {progress != null && band ? <KpiMeter band={band} value={progress} /> : null}
@@ -178,13 +247,16 @@ export function KpiTile({
  * Android and would break the row's vertical rhythm on exactly the phones the field force uses.
  */
 export function KpiRank({ rank }: { rank: number }) {
+  // Metallic gold / silver / bronze for the podium three — a two-stop vertical gradient and a soft
+  // contact shadow so each disc reads as a struck medal, not a flat swatch. A plain number after
+  // that carries no medal and no depth.
   const style =
     rank === 1
-      ? "border-amber-300 bg-amber-100 text-amber-900"
+      ? "border-amber-300 bg-gradient-to-b from-amber-100 to-amber-300 text-amber-900 shadow-[0_1px_2px_rgba(146,64,14,0.35)]"
       : rank === 2
-        ? "border-slate-300 bg-slate-100 text-slate-700"
+        ? "border-slate-300 bg-gradient-to-b from-slate-50 to-slate-200 text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.2)]"
         : rank === 3
-          ? "border-orange-300 bg-orange-100 text-orange-900"
+          ? "border-orange-300 bg-gradient-to-b from-orange-100 to-orange-300 text-orange-900 shadow-[0_1px_2px_rgba(154,52,18,0.3)]"
           : "border-transparent bg-transparent text-slate-400";
   return (
     <span
@@ -225,9 +297,10 @@ export function KpiPodiumCard({
   title: string;
 }) {
   return (
-    <div className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 bg-slate-50 px-3 py-2">
-        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">{title}</p>
+    <div className={`relative overflow-hidden border border-slate-200 bg-white ${DEPTH}`}>
+      <span aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-orange-400 to-orange-500" />
+      <div className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white px-3 py-2">
+        <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-600">{title}</p>
         <p className="mt-0.5 text-phx-3xs leading-4 text-slate-400">{hint}</p>
       </div>
       {entries.length === 0 ? (
@@ -237,7 +310,12 @@ export function KpiPodiumCard({
       ) : (
         <ol className="divide-y divide-slate-100">
           {entries.map((entry, index) => (
-            <li className="flex items-start gap-2 px-3 py-2" key={`${entry.repName}-${index}`}>
+            <li
+              className={`flex items-start gap-2 px-3 py-2 transition-colors hover:bg-slate-50 ${
+                index === 0 ? "bg-amber-50/40" : ""
+              }`}
+              key={`${entry.repName}-${index}`}
+            >
               <KpiRank rank={index + 1} />
               <span className="min-w-0 flex-1">
                 <span className="block text-phx-xs font-bold leading-4 text-slate-900" dir="auto">
@@ -245,7 +323,7 @@ export function KpiPodiumCard({
                 </span>
                 <span className="block text-phx-3xs leading-4 text-slate-500">{entry.caption}</span>
               </span>
-              <span className="shrink-0 text-sm font-black tabular-nums text-slate-900">
+              <span className="shrink-0 text-base font-black tabular-nums text-slate-900">
                 {entry.value}
                 {suffix}
               </span>
