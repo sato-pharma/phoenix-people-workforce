@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 
 import {
   findPreHireMappingConflict,
-  preHireMappingRefusalMessage,
+  isSettledUnmappedRow,
+  preHireMappingNotice,
   selectStampableVisitRowIds,
   type MappingCandidateRow,
   type StampCandidateRow,
 } from "../src/lib/crm/admin.ts";
-import { normalizeCrmName } from "../src/lib/crm/identity.ts";
+import { buildCrmIdentityMaps, normalizeCrmName, type CrmResolutionRow } from "../src/lib/crm/identity.ts";
 import type { EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
 
 /**
@@ -156,14 +157,15 @@ export function runCrmPreHireMappingGuardTests() {
   //
   // The screen showed one consistent name across the whole account, so a bare "invalid mapping"
   // reads as a bug in the tool rather than a real finding about the data.
-  const message = preHireMappingRefusalMessage({
+  const message = preHireMappingNotice({
     conflict: { count: 1136, earliest: "2026-01-01", latest: "2026-06-01" },
     employeeName: "Soad Atef",
     hireDate: "2026-06-20",
   });
   assert.ok(message.includes("Soad Atef"), "names the employee, never a bare HR ID");
   assert.ok(message.includes("2026-06-20"), "states the hire date being applied");
-  assert.ok(message.includes("1136 visits"), "states how many visits would have been miscredited");
+  assert.ok(message.includes("1136 visits"), "states how many visits were left unassigned");
+  assert.ok(message.includes("left unassigned"), "says the mapping SAVED and those visits stayed unassigned — it no longer refuses");
   assert.ok(message.includes("2026-01-01") && message.includes("2026-06-01"), "states the offending range");
   assert.ok(
     message.includes("handed-over") || message.includes("previous holder"),
@@ -171,7 +173,7 @@ export function runCrmPreHireMappingGuardTests() {
   );
   assert.ok(
     /1 visit(?!s)/.test(
-      preHireMappingRefusalMessage({
+      preHireMappingNotice({
         conflict: { count: 1, earliest: "2026-01-01", latest: "2026-01-01" },
         employeeName: "Gannatallah Amer",
         hireDate: "2026-08-01",
@@ -180,7 +182,7 @@ export function runCrmPreHireMappingGuardTests() {
     "a single offending visit reads as '1 visit', not '1 visits'",
   );
   assert.ok(
-    preHireMappingRefusalMessage({
+    preHireMappingNotice({
       conflict: { count: 1, earliest: "2026-01-01", latest: "2026-01-01" },
       employeeName: "Gannatallah Amer",
       hireDate: "2026-08-01",
@@ -267,4 +269,52 @@ export function runCrmPreHireMappingGuardTests() {
     ["any"],
     "an employee with no recorded dates is stamped as before",
   );
+
+  // ── (L) The Unmapped Agents list stops listing rows that are already answered ───────────────
+  //
+  // Account 1537 (Alex East / A), production 2026-09-21: the current holder joined on 05-16 and the
+  // account also carries 33 rows dated 05-07..05-15 — the handover, which the owner chose to leave
+  // unassigned. Once the account is mapped to him, those rows are settled; they must drop off the list
+  // instead of keeping the account there forever. The list was otherwise 21 accounts carrying nothing
+  // but public-holiday markers, which record no work.
+  const alexLabel = "Ahmed.Nabil ( Alex East / A )";
+  const nabil = {
+    crmId: null,
+    crmUsername: null,
+    hireDate: "2026-05-16",
+    hrId: "AI-0002",
+    lastWorkingDate: null,
+  } as unknown as EmployeeDirectoryRow;
+  const mappedTo = (crmId: number, crmName: string | null) =>
+    ({ crmId, crmName, mappedHrId: "AI-0002", status: "mapped" }) as unknown as CrmResolutionRow;
+  const mapped = buildCrmIdentityMaps([nabil], [mappedTo(1537, alexLabel)]);
+  // The real shape: his employees.crm_id IS 1537, so tier 2 answers after the refused override.
+  const nabilOwnsSlot = { ...nabil, crmId: "1537", crmUsername: alexLabel } as unknown as EmployeeDirectoryRow;
+  const mappedOwnSlot = buildCrmIdentityMaps([nabilOwnsSlot], [mappedTo(1537, alexLabel)]);
+  const unmapped = buildCrmIdentityMaps([nabil], []);
+  const slot = (visitDate: string, visitType: number, label: string | null = alexLabel, crmId: number | null = 1537) => ({
+    crmId,
+    label,
+    visitDate,
+    visitType,
+  });
+
+  assert.equal(isSettledUnmappedRow(slot("2026-05-07", 0), mapped), true, "a pre-hire call on a MAPPED account is settled — the mapping left it unassigned on purpose");
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-05-07", 0), mappedOwnSlot),
+    true,
+    "still settled when his own crm_id is the account — tier 2's block must not keep it listed",
+  );
+  assert.equal(isSettledUnmappedRow(slot("2026-05-20", 0), mappedOwnSlot), false, "his in-tenure call on his own slot is not settled");
+  assert.equal(isSettledUnmappedRow(slot("2026-05-07", 0), unmapped), false, "the same call on an UNMAPPED account still needs a decision");
+  assert.equal(isSettledUnmappedRow(slot("2026-05-20", 0), mapped), false, "a call inside his employment is NOT settled — it is waiting to be stamped");
+  assert.equal(
+    isSettledUnmappedRow(slot("2026-05-07", 0, "Someone.Else ( Alex East / A )"), mapped),
+    false,
+    "a row carrying ANOTHER person's label is not covered by this mapping and stays on the list",
+  );
+  assert.equal(isSettledUnmappedRow(slot("2026-04-13", -5, "Batool.Rafiq ( Dakahlia 1 / C )", 1532), unmapped), true, "a public-holiday marker records no work");
+  assert.equal(isSettledUnmappedRow(slot("2026-04-13", -6, "Batool.Rafiq ( Dakahlia 1 / C )", 1532), unmapped), true, "a casual-leave marker records no work");
+  assert.equal(isSettledUnmappedRow(slot("2026-04-13", -8, "Batool.Rafiq ( Dakahlia 1 / C )", 1532), unmapped), false, "a campaign day is work and stays listed");
+  assert.equal(isSettledUnmappedRow(slot("2026-04-13", -5, null, null), unmapped), false, "no account, nothing to settle");
 }

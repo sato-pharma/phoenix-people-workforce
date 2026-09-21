@@ -1,8 +1,8 @@
 import { systemAccessContext } from "@/lib/auth/permissions";
-import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
+import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities, isSettledUnmappedRow } from "@/lib/crm/admin";
 import { resolveVendorSyncStandDown } from "@/lib/crm/cutover";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { getCrmIdentityResolutions, loadCrmIdentityMaps } from "@/lib/crm/identity";
 import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { addDaysToDateOnly } from "@/lib/date-only";
 import { diffSets, formatCount, formatList, formatMoney, moneyMatches } from "@/lib/reconciliation/compare";
@@ -28,8 +28,12 @@ const SYNC_FRESHNESS_HOURS = 24;
 type VisitIdentityScanRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
+  agent_name: string | null;
   double_crm_id: number | null;
   double_hr_id: string | null;
+  double_name: string | null;
+  visit_date: string | null;
+  visit_type: number | null;
 };
 
 /**
@@ -69,10 +73,11 @@ const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
   run: retryOnceIfBreached(async (): Promise<ReconciliationOutcome> => {
     const cutoff = addDaysToDateOnly(cairoTodayIso(), -RECENT_VISIT_WINDOW_DAYS) ?? cairoTodayIso();
 
-    const [identities, excludedIds, resolutions, visitRows] = await Promise.all([
+    const [identities, excludedIds, resolutions, maps, visitRows] = await Promise.all([
       getUnmappedCrmIdentities(),
       getEffectiveExcludedAgentCrmIds(),
       getCrmIdentityResolutions(),
+      loadCrmIdentityMaps(),
       // Read through crm/reads.ts, never a raw mirror query: the CRM module is the single door
       // (tests/crm-single-source.test.ts enforces it), and going around it would ALSO make this
       // check wrong — the door is what applies the effective resigned/excluded-agent exclusion that
@@ -81,7 +86,7 @@ const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
       // from a different derivation (a window scan re-aggregated below) rather than from bypassing
       // the door.
       queryVisits<VisitIdentityScanRow>({
-        columns: "agent_crm_id, agent_hr_id, double_crm_id, double_hr_id",
+        columns: "agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, visit_date, visit_type",
         dateFrom: cutoff,
       }),
     ]);
@@ -99,10 +104,14 @@ const recentVisitsAllResolveToAnEmployee: ReconciliationCheck = {
     // unattributed DOUBLE (ride-along) slot are both work filed under nobody, and a rep can appear
     // as either. Collecting both from the same window scan is what makes this side an independent
     // derivation of the punch-list's answer rather than a second call to it.
+    // Settled rows (no-work markers, and rows a mapping already answered by leaving them unassigned)
+    // are dropped on BOTH sides by the same shared predicate — see isSettledUnmappedRow.
+    const settled = (crmId: number | null, label: string | null, row: VisitIdentityScanRow) =>
+      isSettledUnmappedRow({ crmId, label, visitDate: row.visit_date, visitType: row.visit_type }, maps);
     const rightIds = visitRows
       .flatMap((row) => [
-        row.agent_hr_id === null ? Number(row.agent_crm_id) : Number.NaN,
-        row.double_hr_id === null ? Number(row.double_crm_id) : Number.NaN,
+        row.agent_hr_id === null && !settled(row.agent_crm_id, row.agent_name, row) ? Number(row.agent_crm_id) : Number.NaN,
+        row.double_hr_id === null && !settled(row.double_crm_id, row.double_name, row) ? Number(row.double_crm_id) : Number.NaN,
       ])
       .filter((crmId) => isRealCrmIdentity(crmId) && !ignored.has(crmId));
 
