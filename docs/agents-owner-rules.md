@@ -622,6 +622,55 @@ Pinned by `runKpiAttainmentAndIdentityTests` in `tests/kpis-filters.test.ts`, wh
 `validate` job. Shipped in
 [#3068](https://github.com/Gawish-1997/phoenix-people-workforce/pull/3068), live as `28fb7a40d`.
 
+### 🔒 AM · PM · Pharmacies — a pharmacy is never counted among the PM doctors
+
+Owner 2026-09-21, while the Private Calendar was being recoloured: *"let's put this a golden goal
+system wide. Anything that have number of visits count … never … count pharmacies with p.m.
+doctors."* Every figure that counts CRM visits is three figures reported apart — **AM**, **PM** and
+**Pharmacies** — and a pharmacy visit is counted in Pharmacies only.
+
+**Why a count that reads `ampm` alone is wrong.** The vendor tags a pharmacy visit with a period like
+any other visit. Between 2026-08-01 and 2026-09-20, 1,827 pharmacy visits carried `PM` and 426
+carried `AM`. A count that buckets on the period files every one of them among the doctors, so a
+rep's PM figure looked like doctors seen when part of it was pharmacy counters.
+
+**What a pharmacy visit is — one test, in one place.** `isPharmacyVisitRow` in
+`src/lib/crm/visit-count-buckets.ts`: the visited contact's speciality is a pharmacy, or the visit is
+the contact-less `-30` field visit and the rep's comment reads as a pharmacy (the same test the
+call-rate board already used, `classifyVisit(...).label === "Pharmacy Visit"`). A comment on any
+other visit type never routes it — a regular visit is judged by its contact. The helper is pure, so a
+client component imports it as readily as a server service. **Never write a second copy** of the
+test; a second copy is how the next screen drifts.
+
+**Where it applies, as of #4169:**
+
+| Surface | What changed |
+| --- | --- |
+| Private Calendar | key figures, the team snapshot and the download count AM · PM · Pharmacies |
+| Double Visit Analytics | KPI band, manager summaries, role rollups, weekly trend, the balance insight, the workbook, the period filter |
+| Double Visit Report and the DV planner | the Period column reads "Pharmacies", its filter and summary metrics, the PDF and the workbook |
+| Employee 360 | the visit split and a Pharmacy visits tile beside AM and PM |
+| The executive field-activity bar (SFE field analytics) | a third segment; the header reads AM · PM · Pharmacies |
+| Phoenix KPI rules (after the CRM cutover) | a pharmacy call is the pharmacy lane even when the contact sits on the rep's AM or PM list |
+
+Two deliberate differences in how an **unmarked** period is treated: the calendar files an unmarked
+visit under PM so every visit lands in exactly one figure; Double Visit Analytics and Employee 360
+keep an unmarked visit out of all three, as they always had. A pharmacy is a pharmacy in both.
+
+**Not yet converted — each needs its own change, never a quiet fold-in:**
+
+- 🔴 **The outstation trip workload** (`am_workload` / `pm_workload`, the expense gate, the payroll
+  expense mapping). It is a **money path**: a trip whose only visits were pharmacies would flip to
+  "no activity" and change what the trip pays. It gets a risk-reviewed PR of its own.
+- The Phoenix native CRM manager reports — native lists are AM and PM only, so a pharmacy reaches them
+  only if one sits on a doctor list.
+- The native pilot KPIs, the compliance labels, and the CRM Master AM/PM filter.
+
+**Never** join the three with a slash — the separator is the middle dot, as for the call rate above.
+Pinned by `tests/visit-count-golden-rule.test.ts` (and the pharmacy fixtures in
+`tests/double-visit-analytics.test.ts` and `tests/double-visit-report-export.test.ts`), which run in
+the required CI `test` job.
+
 ### 🔒 The August / Delta (3) golden rule
 
 Owner 2026-08-29, who said "golden rule, no negotiation" twice in one breath: *"The closing of August

@@ -18,6 +18,7 @@ import {
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { checkPlannedDate } from "@/lib/double-visit-analytics/date-check";
 import { summarizeRosterCoverage, type DvCoverageSummary } from "@/lib/double-visit-analytics/roster-summary";
+import { entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import type { DoubleVisitReportRow, DoubleVisitRosterEntry } from "@/lib/double-visit-analytics/types";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
@@ -234,7 +235,7 @@ function VisitHistory({ visits }: { visits: DoubleVisitReportRow[] }) {
             <div className="mt-1 space-y-0.5">
               {day.visits.map((visit, index) => (
                 <div className="flex items-center justify-between gap-3 text-phx-xs text-slate-500" key={`${day.date}-${index}`}>
-                  <span className="text-slate-400">{visit.period}</span>
+                  <span className="text-slate-400">{entryPeriodLabel(visit)}</span>
                   <span className="min-w-0 flex-1 break-words text-right leading-snug">
                     {visit.doubleVisitorName ?? "Unknown"}
                     {visit.doubleVisitorRole ? ` · ${visit.doubleVisitorRole}` : ""}

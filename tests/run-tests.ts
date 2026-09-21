@@ -476,6 +476,7 @@ import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runRepsWeeklyPlansTests } from "./reps-weekly-plans.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
+import { runVisitCountGoldenRuleTests } from "./visit-count-golden-rule.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runHrIdStorageCasingTests } from "./hr-id-storage-casing.test.ts";
 import { runRecruitmentHiringAnalyticsTests } from "./recruitment-hiring-analytics.test.ts";
@@ -2913,6 +2914,10 @@ await runTest(
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
+await runTest(
+  "THE AM · PM · PHARMACIES GOLDEN RULE: every visit count is AM, PM and Pharmacies apart and a pharmacy is never counted inside PM or AM (its contact speciality, or the -30 comment, decides it whatever period the vendor tagged); the Private Calendar colours every kind of day apart — single, double and chain, each regular or campaign — pairs a chain visit's two CRM halves so it counts once, and folds its key figures and filters into two narrow rows each",
+  runVisitCountGoldenRuleTests,
+);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("hr ids are stored in canonical casing everywhere, never the lowercase comparison key", runHrIdStorageCasingTests);

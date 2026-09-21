@@ -425,10 +425,17 @@ export async function runCrmPortalCoveragePopulationsTests() {
       /Unnamed/,
       "a day the CRM does not name must fall back to the visit count, never to a placeholder word",
     );
+    // Every visit row lands in the AM · PM · Pharmacies split — one row, one visit — and nothing
+    // reads a count off the name set.
     assert.match(
       fieldVisits,
-      /existing\.visits \+= 1/,
+      /addVisitToSplit\(existing\.split, row\);/,
       "the chip's count must count VISITS; counting the name set showed '? field visits' once every name turned out to be blank",
+    );
+    assert.doesNotMatch(
+      fieldVisits,
+      /customers\.size/,
+      "the chip's count must never be read off the set of customer names",
     );
   }
 

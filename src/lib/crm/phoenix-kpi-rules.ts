@@ -236,6 +236,10 @@ function isPharmacyCall(visit: PhoenixVisit): boolean {
  * only settles a contact carried on both lists. A contact on no list of the rep's is unplanned, and
  * an unplanned visit is a campaign visit (rule 8) — including the vendor's catch-all contact, which
  * is not a doctor.
+ *
+ * THE AM · PM · PHARMACIES GOLDEN RULE (owner, 2026-09-21) outranks the list: a pharmacy call — the
+ * contact's own speciality, or a -30 comment that reads as one — is a pharmacy visit even when the
+ * contact sits on the rep's AM or PM list, so it is never counted among the PM doctors.
  */
 export function phoenixVisitLane(
   visit: PhoenixVisit,
@@ -245,7 +249,7 @@ export function phoenixVisitLane(
   const lists = contact != null && contact !== CATCH_ALL_CONTACT_CRM_ID ? listsByContact.get(contact) : undefined;
   if (!lists || lists.size === 0) return "campaign";
   const onDoctorList = lists.has("AM") || lists.has("PM");
-  if (lists.has("Pharmacy") && (!onDoctorList || isPharmacyCall(visit))) return "pharmacy";
+  if (isPharmacyCall(visit) || (lists.has("Pharmacy") && !onDoctorList)) return "pharmacy";
   if (lists.has("AM") && lists.has("PM")) return normalizeSession(visit.ampm) === "am" ? "am" : "pm";
   return lists.has("AM") ? "am" : "pm";
 }

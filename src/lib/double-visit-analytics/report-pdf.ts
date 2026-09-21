@@ -1,6 +1,7 @@
 import pdfMake from "pdfmake";
 import type { Content } from "pdfmake";
 
+import { entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import type {
   DoubleVisitFocusProbationEntry,
@@ -128,7 +129,7 @@ function buildPreviewTable(
             row.visitedName ?? row.visitedHrId ?? "—",
             row.areaName ?? "—",
             row.regionName ?? "—",
-            row.period,
+            entryPeriodLabel(row),
             row.visitKind,
             String(row.visitCount),
           ]),

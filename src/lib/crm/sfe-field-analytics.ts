@@ -11,7 +11,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
-import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
+import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
+import { UNLABELED_FIELD_VISIT_TYPE, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 
 export type SfeStartTimeRow = {
   agentHrId: string | null;
@@ -36,8 +37,12 @@ export type SfeCrmFieldAnalytics = {
   avgVisitsPerRepDay: number;
   /** Distinct contacts actually seen; the reach behind the visit count. */
   contactsCovered: number;
+  // THE AM · PM · PHARMACIES GOLDEN RULE (src/lib/crm/visit-count-buckets.ts): three figures
+  // apart, and a pharmacy visit is counted in pharmacyVisits only — never in pmVisits, whatever
+  // period the vendor tagged it with.
   amVisits: number;
   pmVisits: number;
+  pharmacyVisits: number;
   /** Visits carrying a double/triple visitor — manager field presence. */
   doubleVisits: number;
   byVisitType: Array<{ label: string; count: number }>;
@@ -59,6 +64,7 @@ type VisitRow = {
   crm_save_date: string | null;
   double_crm_id: number | null;
   crm_visit_id: number | null;
+  speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
   visit_type_description: string | null;
@@ -71,7 +77,11 @@ type CheckinRow = {
 };
 
 const VISIT_COLUMNS =
-  "agent_crm_id,agent_hr_id,agent_name,ampm,contact_crm_id,crm_save_date,double_crm_id,crm_visit_id,visit_date,visit_type,visit_type_description";
+  "agent_crm_id,agent_hr_id,agent_name,ampm,contact_crm_id,crm_save_date,double_crm_id,crm_visit_id,speciality,visit_date,visit_type,visit_type_description";
+// The -30 field visit carries no contact, so only the rep's comment says it was a pharmacy. The
+// comment is read for those rows alone — across every visit in the window it would dominate the
+// payload (see the note on resolveVisitTypeLabel below).
+const UNLABELED_COMMENT_COLUMNS = "crm_visit_id,comment";
 const CHECKIN_COLUMNS = "agent_crm_id,agent_hr_id,check_date";
 
 /**
@@ -174,10 +184,21 @@ export async function getSfeCrmFieldAnalytics(input: {
   topN?: number;
 }): Promise<SfeCrmFieldAnalytics> {
   const topN = input.topN ?? 6;
-  const [rawVisits, checkins] = await Promise.all([
+  const [rawVisits, checkins, unlabeledComments] = await Promise.all([
     queryVisits<VisitRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: VISIT_COLUMNS }),
     queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
+    queryVisits<{ comment: string | null; crm_visit_id: number | null }>({
+      columns: UNLABELED_COMMENT_COLUMNS,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
+      visitTypes: [UNLABELED_FIELD_VISIT_TYPE],
+    }),
   ]);
+  const unlabeledCommentById = new Map(
+    unlabeledComments
+      .filter((row) => row.crm_visit_id !== null && row.crm_visit_id !== undefined)
+      .map((row) => [row.crm_visit_id as number, row.comment]),
+  );
 
   // Same collapse every other CRM consumer applies, so this page's visit count cannot disagree
   // with DV Analytics or the Visits Report for the same window.
@@ -193,6 +214,7 @@ export async function getSfeCrmFieldAnalytics(input: {
   const perRep = new Map<string, { label: string; visits: number; contacts: Set<number> }>();
   let amVisits = 0;
   let pmVisits = 0;
+  let pharmacyVisits = 0;
   let doubleVisits = 0;
 
   for (const visit of visits) {
@@ -201,8 +223,17 @@ export async function getSfeCrmFieldAnalytics(input: {
     if (visit.visit_date) repDays.add(`${key}|${visit.visit_date}`);
     if (visit.contact_crm_id) contacts.add(visit.contact_crm_id);
 
+    // A visit with no period at all stays out of the split, as it always has; a pharmacy is a
+    // pharmacy whatever period it carries.
     const ampm = (visit.ampm ?? "").trim().toUpperCase();
-    if (ampm === "AM") amVisits++;
+    const bucket = visitCountBucket({
+      ampm: visit.ampm,
+      comment: visit.visit_type === UNLABELED_FIELD_VISIT_TYPE && visit.crm_visit_id !== null ? unlabeledCommentById.get(visit.crm_visit_id) ?? null : null,
+      speciality: visit.speciality,
+      visit_type: visit.visit_type,
+    });
+    if (bucket === "Pharmacies") pharmacyVisits++;
+    else if (ampm === "AM") amVisits++;
     else if (ampm === "PM") pmVisits++;
     if (visit.double_crm_id) doubleVisits++;
 
@@ -249,6 +280,7 @@ export async function getSfeCrmFieldAnalytics(input: {
     contactsCovered: contacts.size,
     amVisits,
     pmVisits,
+    pharmacyVisits,
     doubleVisits,
     byVisitType: [...byType.entries()]
       .map(([label, count]) => ({ label, count }))

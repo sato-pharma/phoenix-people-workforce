@@ -1,3 +1,4 @@
+import { entryCountBucket, entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import type {
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusRosterEntry,
@@ -39,7 +40,8 @@ export function filterLogRows(rows: DoubleVisitReportRow[], filters: ReportLogFi
     if (filters.roleFilter !== ALL && row.doubleVisitorRole !== filters.roleFilter) return false;
     if (filters.visitorFilter !== ALL && (row.doubleVisitorName ?? row.doubleVisitorHrId) !== filters.visitorFilter) return false;
     if (filters.visitKindFilter !== ALL && row.visitKind !== filters.visitKindFilter) return false;
-    if (filters.periodFilter !== ALL && row.period !== filters.periodFilter) return false;
+    // A pharmacy row is found under "Pharmacies", never under the PM its CRM period says.
+    if (filters.periodFilter !== ALL && entryPeriodLabel(row) !== filters.periodFilter) return false;
     if (!term) return true;
     return (
       (row.visitedName ?? "").toLowerCase().includes(term) ||
@@ -102,8 +104,10 @@ export function buildReportSummaryMetrics(filtered: {
     { metric: "Distinct Visited MRs", value: countDistinct(logRows.map((row) => row.visitedHrId ?? row.visitedName)) },
     { metric: "Distinct Areas", value: countDistinct(logRows.map((row) => row.areaName)) },
     { metric: "Distinct Regions", value: countDistinct(logRows.map((row) => row.regionName)) },
-    { metric: "AM Visits", value: sumVisitCount(logRows.filter((row) => row.period === "AM")) },
-    { metric: "PM Visits", value: sumVisitCount(logRows.filter((row) => row.period === "PM")) },
+    // AM · PM · Pharmacies, three figures apart — a pharmacy is never counted among the PM doctors.
+    { metric: "AM Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "AM")) },
+    { metric: "PM Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "PM")) },
+    { metric: "Pharmacy Visits", value: sumVisitCount(logRows.filter((row) => entryCountBucket(row) === "Pharmacies")) },
     { metric: "Regular Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind === "Regular")) },
     { metric: "Campaign Visits", value: sumVisitCount(logRows.filter((row) => row.visitKind !== "Regular")) },
     { metric: "Never Visited / At Risk (filtered)", value: neverVisitedRows.length },

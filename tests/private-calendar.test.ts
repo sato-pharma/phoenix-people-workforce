@@ -6,9 +6,12 @@ import {
   buildPrivateCalendarTeamSummary,
   derivePrivateCalendarExceptions,
   isPrivateCalendarGlobalViewer,
+  isWithinEmploymentWindow,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
+  PRIVATE_CALENDAR_PAGE_SIZE,
+  readAllPrivateCalendarRows,
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
 } from "../src/lib/private-calendar/logic.ts";
@@ -26,7 +29,7 @@ function access(overrides: Partial<AccessContext>): AccessContext {
   };
 }
 
-export function runPrivateCalendarTests() {
+export async function runPrivateCalendarTests() {
   const employee = { hrId: "E-1", managerHrId: "M-1" };
   const directReport = { hrId: "E-2", managerHrId: "M-1" };
   const indirectReport = { hrId: "E-3", managerHrId: "E-2" };
@@ -214,7 +217,7 @@ export function runPrivateCalendarTests() {
     isExpectedWorkday: () => true,
     items: [],
     start: "2026-06-17",
-    today: "2026-06-17",
+    today: "2026-06-18",
   });
   assert.equal(
     noItemsExceptions.filter((e) => e.title === "No Activity Recorded").length,
@@ -264,7 +267,7 @@ export function runPrivateCalendarTests() {
       isExpectedWorkday: () => true,
       items: [fieldVisitItem],
       start: "2026-06-17",
-      today: "2026-06-17",
+      today: "2026-06-18",
     });
     assert.equal(
       covered.filter((e) => e.title === "No Activity Recorded").length,
@@ -311,7 +314,7 @@ export function runPrivateCalendarTests() {
     isExpectedWorkday: () => true,
     items: [halfDayVacation, halfDayAttendance],
     start: "2026-07-09",
-    today: "2026-07-09",
+    today: "2026-07-10",
   });
   assert.equal(
     halfDayExceptions.some((e) => e.title === "Attendance during vacation"),
@@ -353,7 +356,7 @@ export function runPrivateCalendarTests() {
     isExpectedWorkday: () => true,
     items: [fullDayVacation, fullDayAttendance],
     start: "2026-07-10",
-    today: "2026-07-10",
+    today: "2026-07-11",
   });
   assert.ok(
     fullDayExceptions.some((e) => e.title === "Attendance during vacation"),
@@ -373,7 +376,7 @@ export function runPrivateCalendarTests() {
     end: "2026-06-18",
     items: [lateAttendance],
     start: "2026-06-17",
-    today: "2026-06-18",
+    today: "2026-06-19",
   });
   assert.ok(exceptions.some((item) => item.title === "Late arrival"), "exceptions must include attendance warning flags");
   assert.ok(exceptions.some((item) => item.title === "No Activity Recorded"), "exceptions must include uncovered workdays");
@@ -396,7 +399,7 @@ export function runPrivateCalendarTests() {
     isExpectedWorkday: (_employee, date) => ["2026-05-04", "2026-05-06"].includes(date),
     items: [],
     start: "2026-05-04",
-    today: "2026-05-06",
+    today: "2026-05-07",
   });
   assert.deepEqual(
     customWorkdayExceptions.filter((item) => item.title === "No Activity Recorded").map((item) => item.date),
@@ -418,7 +421,7 @@ export function runPrivateCalendarTests() {
     end: "2026-07-11",
     items: [],
     start: "2026-07-10",
-    today: "2026-07-11",
+    today: "2026-07-12",
   });
   assert.deepEqual(
     weekendExceptions.filter((item) => item.title === "No Activity Recorded").map((item) => `${item.employeeHrId}:${item.date}`),
@@ -576,7 +579,7 @@ export function runPrivateCalendarTests() {
     isExpectedWorkday: () => true,
     items: suppressed,
     start: dvDate,
-    today: dvDate,
+    today: "2026-06-23",
   });
   assert.equal(
     teammateCoverageExceptions.filter((exception) => exception.title === "No Activity Recorded").length,
@@ -747,28 +750,38 @@ export function runPrivateCalendarTests() {
     /divide-y divide-black\/15/,
     "stacked chip lines (each 'sentence' — DV partner / AM-PM count / area) must be visually separated from the line below them",
   );
-  assert.doesNotMatch(
-    privateCalendarUiSource,
-    /source === "double_visit"\) return "[^"]*(blue|indigo)/,
-    "double_visit must not use blue or indigo — both read too close to vacation's blue at chip size",
+  // Colours live in ONE table keyed by kind of day (kindTones), read by every helper. A double visit
+  // — regular or campaign — wears fuchsia in all three slots (accent, chip, swatch), never blue or
+  // indigo (too close to vacation's sky at chip size), and no other kind wears fuchsia.
+  const kindTonesBlock = privateCalendarUiSource.match(/const kindTones: Record<[^>]+> = \{([\s\S]*?)\n\};/)?.[1] ?? "";
+  assert.ok(kindTonesBlock, "the calendar keeps one colour table keyed by kind of day");
+  const kindToneEntries = new Map(
+    [...kindTonesBlock.matchAll(/\n {2}(\w+): \{([\s\S]*?)\n {2}\}/g)].map((match) => [match[1], match[2]] as const),
   );
-  const doubleVisitFuchsiaMatches = privateCalendarUiSource.match(/source === "double_visit"\) return "[^"]*fuchsia/g) ?? [];
-  assert.equal(
-    doubleVisitFuchsiaMatches.length,
-    3,
-    "double_visit must get its own distinct fuchsia consistently across all remaining source-color helpers (accent, chip, swatch)",
-  );
-  assert.doesNotMatch(
-    privateCalendarUiSource,
-    /return "[^"]*teal/,
-    "holiday (the source-color fallback) must not use teal — it read too close to attendance's emerald green at chip size",
-  );
-  const holidayVioletMatches = privateCalendarUiSource.match(/return "[^"]*violet/g) ?? [];
-  assert.equal(
-    holidayVioletMatches.length,
-    3,
-    "holiday (the source-color fallback) must get its own distinct violet consistently across accent, chip, and swatch",
-  );
+  for (const kind of ["double_regular", "double_campaign"]) {
+    const entry = kindToneEntries.get(kind) ?? "";
+    for (const slot of ["accent", "chip", "swatch"]) {
+      const value = entry.match(new RegExp(`${slot}: "([^"]*)"`))?.[1] ?? "";
+      assert.match(value, /fuchsia/, `${kind} must wear fuchsia in its ${slot}`);
+      assert.doesNotMatch(value, /blue|indigo/, `${kind} must not use blue or indigo in its ${slot} — both read too close to vacation at chip size`);
+    }
+  }
+  for (const [kind, entry] of kindToneEntries) {
+    if (kind.startsWith("double_")) continue;
+    assert.doesNotMatch(entry, /fuchsia/, `fuchsia is the double visit's own colour — ${kind} must not wear it`);
+  }
+  // A national holiday wears its own violet in all three slots, never teal (too close to
+  // attendance's emerald at chip size), and no other kind wears violet.
+  const holidayEntry = kindToneEntries.get("holiday") ?? "";
+  for (const slot of ["accent", "chip", "swatch"]) {
+    const value = holidayEntry.match(new RegExp(`${slot}: "([^"]*)"`))?.[1] ?? "";
+    assert.match(value, /violet/, `holiday must wear its own violet in its ${slot}`);
+    assert.doesNotMatch(value, /teal/, `holiday must not use teal in its ${slot} — it read too close to attendance's emerald at chip size`);
+  }
+  for (const [kind, entry] of kindToneEntries) {
+    if (kind === "holiday") continue;
+    assert.doesNotMatch(entry, /violet/, `violet is the national holiday's own colour — ${kind} must not wear it`);
+  }
   assert.doesNotMatch(
     privateCalendarUiSource,
     /function sourceTone\(/,
@@ -801,4 +814,205 @@ export function runPrivateCalendarTests() {
 
   const excuseDecisionRouteSource = readFileSync("app/api/excuses/[id]/decision/route.ts", "utf8");
   assert.match(excuseDecisionRouteSource, /private calendar/, "excuse approval result must mention private calendar impact");
+
+  // ── Private Calendar audit, 2026-09-21. Every case below was a defect measured live on the
+  // portal before it was fixed; each assertion is the one that goes red if the fix is undone.
+
+  // TODAY IS NEVER JUDGED. A rep's visits sync from the CRM through the day and an office
+  // worker's second punch lands at the end of it, so judging today flagged everyone mid-shift.
+  {
+    const emptyToday = derivePrivateCalendarExceptions({
+      employees: [{ departmentName: null, fullName: "Employee Two", hrId: "E-2", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
+      end: "2026-06-17",
+      isExpectedWorkday: () => true,
+      items: [],
+      start: "2026-06-17",
+      today: "2026-06-17",
+    });
+    assert.equal(emptyToday.length, 0, "today is still in progress — an empty today must never read 'No Activity Recorded'");
+
+    const officeWorker = [{ departmentName: null, fullName: "Employee One", hrId: "E-1", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }];
+    const morningPunchToday = derivePrivateCalendarExceptions({
+      employees: officeWorker,
+      end: "2026-06-19",
+      isExpectedWorkday: () => true,
+      items: [singlePunchNoDeduction],
+      start: "2026-06-19",
+      today: "2026-06-19",
+    });
+    assert.equal(
+      morningPunchToday.some((exception) => exception.title === "Single punch"),
+      false,
+      "this morning's punch is not a missing punch yet — the evening punch has not happened",
+    );
+    const morningPunchEnded = derivePrivateCalendarExceptions({
+      employees: officeWorker,
+      end: "2026-06-19",
+      isExpectedWorkday: () => true,
+      items: [singlePunchNoDeduction],
+      start: "2026-06-19",
+      today: "2026-06-20",
+    });
+    assert.ok(
+      morningPunchEnded.some((exception) => exception.title === "Single punch"),
+      "once the day has ended, a lone punch is flagged for review",
+    );
+  }
+
+  // THE EMPLOYMENT WINDOW. A rep hired on the 12th was flagged "No Activity Recorded" for every
+  // workday of the month before he joined.
+  assert.equal(isWithinEmploymentWindow("2026-09-11", { hireDate: "2026-09-12" }), false, "a day before the hire date is outside employment");
+  assert.equal(isWithinEmploymentWindow("2026-09-12", { hireDate: "2026-09-12" }), true, "the hire date itself is a working day");
+  assert.equal(
+    isWithinEmploymentWindow("2026-09-21", { hireDate: "2026-09-01T00:00:00+00:00", lastWorkingDate: "2026-09-20" }),
+    false,
+    "a day after the last working date is outside employment (and a timestamped hire date reads as its date)",
+  );
+  assert.equal(isWithinEmploymentWindow("2026-09-20", { lastWorkingDate: "2026-09-20" }), true, "the last working date itself is a working day");
+  assert.equal(isWithinEmploymentWindow("2026-09-20", { hireDate: null, lastWorkingDate: null }), true, "no recorded dates means no window to apply");
+  {
+    const newHire = derivePrivateCalendarExceptions({
+      employees: [{ departmentName: null, fullName: "New Hire", hrId: "PD-1", jobTitle: "Medical Rep", lineName: "Pedia", managerHrId: "M-1", managerName: "Manager One" }],
+      end: "2026-09-14",
+      isExpectedWorkday: (_employee, date) => isWithinEmploymentWindow(date, { hireDate: "2026-09-12" }),
+      items: [],
+      start: "2026-09-10",
+      today: "2026-09-21",
+    });
+    assert.deepEqual(
+      newHire.filter((exception) => exception.title === "No Activity Recorded").map((exception) => exception.date),
+      ["2026-09-12", "2026-09-13", "2026-09-14"],
+      "days before the hire date are never judged — only the days he was employed",
+    );
+  }
+  assert.equal(
+    (serviceSource.match(/isExpectedWorkday: expectedWorkdayResolver\(/g) ?? []).length,
+    2,
+    "the employee/team calendar AND the company no-activity engine must both apply the employment window through the one resolver",
+  );
+  assert.match(
+    serviceSource,
+    /if \(employmentWindow && !isWithinEmploymentWindow\(date, employmentWindow\)\) return false;/,
+    "the resolver must refuse every day outside the employment window before it consults the attendance policy",
+  );
+
+  // ATTENDANCE COLOUR FOLLOWS THE FLAGS, never the raw status word: a zero-deduction Short day
+  // raised no flag in the strip yet painted amber on the grid.
+  assert.equal(shortNoDeductionAttendance.severity, "info", "a Short day in a zero-deduction band is plain information, not a warning");
+  assert.equal(lateNoDeductionAttendance.severity, "info", "a Late status in a zero-deduction band is plain information, not a warning");
+  assert.equal(lateAttendance.severity, "warning", "a late arrival that costs a deduction needs review");
+  assert.equal(singlePunchNoDeduction.severity, "warning", "a lone punch always needs review");
+  assert.equal(attendance.severity, "success", "a complete day is good news");
+  const absentAttendance = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "",
+    actualLastPunch: "",
+    dateIso: "2026-06-19",
+    deductionDays: "1",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "",
+    recommendedAction: "Absence",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Absent",
+    timeLong: "00:00",
+  });
+  assert.equal(absentAttendance.severity, "danger", "an absence that costs a deduction is a real problem");
+
+  // A LONE PUNCH READS "Punch", never "From": a 5:06 PM punch is almost certainly a departure.
+  assert.equal(singlePunchNoDeduction.title, "Office punch 9:03 AM - Single punch", "a lone punch must not claim to be the arrival");
+  assert.deepEqual(singlePunchNoDeduction.chipLines, ["Office", "Punch 9:03 AM", "Single punch"], "the month-grid chip must say Punch, not From");
+
+  // HALF-DAY VACATION reads the house label ("PM only"), never the raw code cased ("Pm Only").
+  assert.equal(halfDayVacation.time, "PM only", "a half-day vacation's time must read 'PM only'");
+  assert.ok(halfDayVacation.detailLines.includes("Day part: PM only"), "the detail line must use the same label");
+
+  // AN APPROVED EXCUSE IS COVERED TIME — it painted the same amber as a late punch.
+  assert.equal(excuse.severity, "info", "an approved excuse is not something to review");
+
+  // THE TEAM SNAPSHOT counts what needs review only — a review request's own status (info) is
+  // news for the employee, never a warning against them.
+  {
+    const teamEmployee = [{ departmentName: "Marketing", fullName: "Employee One", hrId: "E-1", jobTitle: "Product Manager", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }];
+    const reviewException = exceptions.find((exception) => exception.title === "Late arrival");
+    assert.ok(reviewException, "fixture: the late-arrival exception must exist");
+    const infoOnly = buildPrivateCalendarTeamSummary({ employees: teamEmployee, exceptions: [{ ...reviewException, severity: "info" }], items: [] });
+    assert.equal(infoOnly[0]?.exceptionCount, 0, "an info exception must not count as a warning in the team snapshot");
+    const oneWarning = buildPrivateCalendarTeamSummary({ employees: teamEmployee, exceptions: [reviewException], items: [] });
+    assert.equal(oneWarning[0]?.exceptionCount, 1, "a real warning still counts");
+  }
+
+  // THE LEAVE LOADERS PAGE THROUGH EVERY ROW. Both stopped at a fixed 100, so a team or
+  // company month past 100 leave rows lost the rest — and every lost day read "No Activity
+  // Recorded" although the leave was approved.
+  {
+    assert.equal(PRIVATE_CALENDAR_PAGE_SIZE, 1000, "a page is PostgREST's own 1,000-row cap");
+    const source = Array.from({ length: 2500 }, (_, index) => ({ id: index }));
+    const ranges: Array<[number, number]> = [];
+    const rows = await readAllPrivateCalendarRows<{ id: number }>(async (from, to) => {
+      ranges.push([from, to]);
+      return { data: source.slice(from, to + 1), error: null };
+    });
+    assert.equal(rows.length, 2500, "every one of 2,500 rows must come back, not the first 100 or 1,000");
+    assert.deepEqual(ranges, [[0, 999], [1000, 1999], [2000, 2999]], "pages must be contiguous and never overlap");
+
+    const exactRanges: Array<[number, number]> = [];
+    const exact = await readAllPrivateCalendarRows<{ id: number }>(async (from, to) => {
+      exactRanges.push([from, to]);
+      return { data: source.slice(0, 1000).slice(from, to + 1), error: null };
+    });
+    assert.equal(exact.length, 1000, "an exact multiple of the page size must not lose or repeat a row");
+    assert.equal(exactRanges.length, 2, "a full page is never assumed to be the last one");
+
+    await assert.rejects(
+      readAllPrivateCalendarRows(async () => ({ data: null, error: new Error("page failed") })),
+      /page failed/,
+      "a failed page must throw, never return a silently short list",
+    );
+  }
+  assert.doesNotMatch(serviceSource, /\.limit\(100\)/, "no private calendar loader may stop at a fixed 100 rows");
+  assert.equal(
+    (serviceSource.match(/await readAllPrivateCalendarRows<(VacationCalendarRow|ExcuseCalendarRow)>\(/g) ?? []).length,
+    2,
+    "both leave loaders must read through the pager",
+  );
+
+  // ONE NAME PER PERSON: a vacation row carries the legal name it was filed under, which made one
+  // person read as two different people across a team calendar.
+  assert.match(
+    serviceSource,
+    /employeeName: employee\.fullName \|\| item\.employeeName,/,
+    "the directory's display name must win over the name a source row carries",
+  );
+
+  // CAIRO'S MONTH: both routes defaulted to UTC's, which is still the previous month for the
+  // first hours of every month in Cairo.
+  for (const [label, routeSource] of [["calendar API", apiSource], ["calendar export", exportRouteSource]] as const) {
+    assert.match(routeSource, /currentCairoDateParts\(\)/, `the ${label} must default to Cairo's month`);
+    assert.doesNotMatch(routeSource, /getUTCMonth\(\)|getUTCFullYear\(\)/, `the ${label} must never default to UTC's month`);
+  }
+
+  // THE PALETTE: one colour per KIND of day — who went (single, double, chain) crossed with
+  // regular or campaign for a visit — pinned in full by tests/visit-count-golden-rule.test.ts.
+  assert.match(privateCalendarUiSource, /const kindTones: Record<PrivateCalendarActivityKind/, "every kind of day has its own tones");
+  assert.doesNotMatch(
+    privateCalendarUiSource,
+    /function sourceChipTone\(source: PrivateCalendarSource, severity/,
+    "a problem must never repaint a kind's colour — severity is an outline round the kind's own card",
+  );
+
+  // THE SCREEN: every visit is counted AM · PM · Pharmacies apart, the strip never silently drops
+  // rows past 8, a sent review request shows at once, and a phone gets a compact month instead of
+  // one-letter lines.
+  assert.match(privateCalendarUiSource, /<KeyFigures\b/, "the key figures count every kind, visits AM · PM · Pharmacies apart");
+  assert.doesNotMatch(privateCalendarUiSource, /filteredExceptions\.slice\(0, 8\)\.map/, "the exception strip must not silently cap at 8");
+  assert.match(privateCalendarUiSource, /Show all \$\{filteredExceptions\.length\}/, "the strip must offer every exception past the first 8");
+  assert.match(
+    privateCalendarUiSource,
+    /await loadWorkspace\(year, month, selectedEmployee\.hrId, selectedDate, viewMode\)\.catch\(\(\) => undefined\);/,
+    "a sent review request must re-read the month so its pending status shows at once",
+  );
+  assert.match(privateCalendarUiSource, /"mt-1\.5 hidden space-y-2 md:block"/, "the full day-cell entries must show from md up only");
+  assert.match(privateCalendarUiSource, /"flex flex-wrap justify-center gap-0\.5 md:hidden"/, "a phone must get one colour marker per kind instead of the entries");
 }

@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { utcDate } from "@/lib/format/cairo-datetime";
 import { ALL, filterLogRows, filterNeverVisitedRows, filterProbationRows } from "@/lib/double-visit-analytics/report-filters";
+import { entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import type {
   DoubleVisitFocusProbationEntry,
   DoubleVisitFocusRosterEntry,
@@ -239,7 +240,7 @@ function LogVisitCard({ row }: { row: DoubleVisitReportRow }) {
           { label: "Area", value: row.areaName ?? "—" },
           { label: "Region", value: row.regionName ?? "—" },
           { label: "Line", value: row.lineName ?? "—" },
-          { label: "Period", value: row.period },
+          { label: "Period", value: entryPeriodLabel(row) },
           { label: "Visits", value: row.visitCount },
         ]}
       />
@@ -325,8 +326,9 @@ export function DoubleVisitReportWorkspace({
   const [neverPage, setNeverPage] = useState(0);
   const [probPage, setProbPage] = useState(0);
 
-  // Distinct AM/PM/UNKNOWN periods present in the data (no server-provided list).
-  const periodOptions = useMemo(() => [...new Set(data.rows.map((row) => row.period))].sort(), [data.rows]);
+  // Distinct periods present in the data (no server-provided list) — AM, PM, Pharmacies or UNKNOWN,
+  // a pharmacy visit listed under Pharmacies whatever period the CRM tagged it with.
+  const periodOptions = useMemo(() => [...new Set(data.rows.map((row) => entryPeriodLabel(row)))].sort(), [data.rows]);
 
   const logRows = useMemo(
     () => filterLogRows(data.rows, { areaFilter, periodFilter, regionFilter, roleFilter, search, visitKindFilter, visitorFilter }),
@@ -354,7 +356,7 @@ export function DoubleVisitReportWorkspace({
         case "area": return row.areaName ?? "";
         case "region": return row.regionName ?? "";
         case "line": return row.lineName ?? "";
-        case "period": return row.period;
+        case "period": return entryPeriodLabel(row);
         case "visits": return row.visitCount;
         case "kind": return row.visitKind;
       }
@@ -627,7 +629,7 @@ export function DoubleVisitReportWorkspace({
                         <td className="px-3 py-2.5">{row.areaName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.regionName ?? "—"}</td>
                         <td className="px-3 py-2.5">{row.lineName ?? "—"}</td>
-                        <td className="px-3 py-2.5">{row.period}</td>
+                        <td className="px-3 py-2.5">{entryPeriodLabel(row)}</td>
                         <td className="px-3 py-2.5">
                           <VisitKindBadge kind={row.visitKind} />
                         </td>

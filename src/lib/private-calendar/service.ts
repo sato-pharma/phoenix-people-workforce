@@ -20,6 +20,7 @@ import {
   configuredPrivateCalendarGlobalHrIds,
   derivePrivateCalendarExceptions,
   isPrivateCalendarGlobalViewer,
+  isWithinEmploymentWindow,
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
   mapHolidayToPrivateCalendarItem,
@@ -27,15 +28,18 @@ import {
   mapVacationRowToPrivateCalendarItem,
   privateCalendarHrIdKey,
   privateCalendarSources,
+  readAllPrivateCalendarRows,
   resolvePrivateCalendarVisibleEmployees,
   suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
+  type PrivateCalendarEmployeeOption,
   type PrivateCalendarException,
   type PrivateCalendarItem,
   type PrivateCalendarSource,
   type PrivateCalendarViewMode,
   type PrivateCalendarWorkspace,
 } from "@/lib/private-calendar/logic";
+import { summarizePrivateCalendarVisits } from "@/lib/private-calendar/activity-kinds";
 
 type VacationCalendarRow = {
   day_part: string | null;
@@ -128,7 +132,10 @@ function decorateItemsWithEmployeeMetadata(items: PrivateCalendarItem[], employe
       employeeDepartmentName: employee.departmentName,
       employeeJobTitle: employee.jobTitle,
       employeeLineName: employee.lineName,
-      employeeName: item.employeeName || employee.fullName,
+      // The directory's display name wins over the one a source row carries: a vacation row
+      // stores the legal name the request was filed under ("Mina Farouk Nawar Rizkallah"),
+      // which made one person read as two different people across a team calendar.
+      employeeName: employee.fullName || item.employeeName,
       managerName: employee.managerName,
     };
   });
@@ -277,23 +284,23 @@ async function loadVacationItems(employeeHrIds: string[], start: string, end: st
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let query = getSupabaseAdmin()
+    // Paged — never a fixed limit (see readAllPrivateCalendarRows).
+    const rows = await readAllPrivateCalendarRows<VacationCalendarRow>((from, to) => getSupabaseAdmin()
       .from("v2_vacation_requests")
       .select("id,employee_hr_id,employee_name,start_date,end_date,vacation_type,status,manager_decision,day_part,duration_days,paid_duration_days,payment_status,notes")
       .in("status", ["needs_assignment", "pending_manager", "pending_hr", "approved", "submitted"])
+      .in("employee_hr_id", employeeHrKeys)
       .lte("start_date", end)
       .gte("end_date", start)
       .order("start_date", { ascending: true })
-      .limit(100);
-    query = query.in("employee_hr_id", employeeHrKeys);
-    const { data, error } = await query;
-    if (error) throw error;
+      .order("id", { ascending: true })
+      .range(from, to));
     // Covered = the manager has signed off (manager_decision='approved', which
     // also implies status='pending_hr') or HR has recorded it (status='approved').
     // Everything else is a live pending request: it reserves the day on the
     // calendar (so attendance isn't flagged "missing") but renders as pending.
     return {
-      items: ((data ?? []) as VacationCalendarRow[]).map((row) => {
+      items: rows.map((row) => {
         const covered = row.manager_decision === "approved" || row.status === "approved";
         return mapVacationRowToPrivateCalendarItem(row, { pending: !covered });
       }),
@@ -310,22 +317,49 @@ async function loadExcuseItems(employeeHrIds: string[], start: string, end: stri
     const normalizedHrIds = employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean);
     const employeeHrKeys = expandHrIdLookupKeys(normalizedHrIds);
     if (employeeHrKeys.length === 0) return { items: [], ready: true };
-    let query = getSupabaseAdmin()
+    const rows = await readAllPrivateCalendarRows<ExcuseCalendarRow>((from, to) => getSupabaseAdmin()
       .from("v2_excuse_requests")
       .select("id,employee_hr_id,employee_name,excuse_date,excuse_type,duration_hours,status,manager_decision_comment")
       .eq("status", "approved")
+      .in("employee_hr_id", employeeHrKeys)
       .gte("excuse_date", start)
       .lte("excuse_date", end)
       .order("excuse_date", { ascending: true })
-      .limit(100);
-    query = query.in("employee_hr_id", employeeHrKeys);
-    const { data, error } = await query;
-    if (error) throw error;
-    return { items: ((data ?? []) as ExcuseCalendarRow[]).map(mapExcuseRowToPrivateCalendarItem), ready: true };
+      .order("id", { ascending: true })
+      .range(from, to));
+    return { items: rows.map(mapExcuseRowToPrivateCalendarItem), ready: true };
   } catch (error) {
     if (schemaMissing(error, "v2_excuse_requests")) return { items: [], ready: false };
     throw error;
   }
+}
+
+// One expected-workday rule for both engines below. The employee's attendance policy decides
+// the weekly-off days; the employment window then removes every day before the hire date and
+// after the last working date (isWithinEmploymentWindow) — the directory row carries both.
+function expectedWorkdayResolver(
+  employees: EmployeeDirectoryRow[],
+  attendancePolicyRows: Awaited<ReturnType<typeof loadAttendancePolicyScheduleRows>>,
+) {
+  const employmentWindows = new Map(employees.map((employee) => [
+    privateCalendarHrIdKey(employee.hrId),
+    { hireDate: employee.hireDate, lastWorkingDate: employee.lastWorkingDate },
+  ]));
+  return (employee: PrivateCalendarEmployeeOption, date: string) => {
+    const employmentWindow = employmentWindows.get(privateCalendarHrIdKey(employee.hrId));
+    if (employmentWindow && !isWithinEmploymentWindow(date, employmentWindow)) return false;
+    const policy = resolveActiveAttendancePolicy(
+      { hr_id: employee.hrId, job_title: employee.jobTitle },
+      attendancePolicyRows,
+      date,
+      date,
+    );
+    return isAttendanceScheduledWorkingDay({
+      dateIso: date,
+      jobTitle: employee.jobTitle,
+      workingWeekdays: policy?.working_weekdays,
+    });
+  };
 }
 
 export function canUsePrivateCalendarAdminSurface(access: AccessContext) {
@@ -393,19 +427,7 @@ export async function getPrivateCalendarWorkspace(input: {
   const exceptions = derivePrivateCalendarExceptions({
     employees: mappedScopeEmployees,
     end,
-    isExpectedWorkday: (employee, date) => {
-      const policy = resolveActiveAttendancePolicy(
-        { hr_id: employee.hrId, job_title: employee.jobTitle },
-        attendancePolicyRows,
-        date,
-        date,
-      );
-      return isAttendanceScheduledWorkingDay({
-        dateIso: date,
-        jobTitle: employee.jobTitle,
-        workingWeekdays: policy?.working_weekdays,
-      });
-    },
+    isExpectedWorkday: expectedWorkdayResolver(scopeEmployees, attendancePolicyRows),
     items,
     start,
   });
@@ -437,6 +459,7 @@ export async function getPrivateCalendarWorkspace(input: {
     selectedEmployee: mapPrivateCalendarEmployee(selectedEmployee),
     sourceReadiness,
     summary: summarizePrivateCalendarItems(displayItems),
+    visitSummary: summarizePrivateCalendarVisits(displayItems),
     exceptions: exceptionsWithStatuses,
     teamSummary: buildPrivateCalendarTeamSummary({
       employees: mappedScopeEmployees,
@@ -532,19 +555,7 @@ export async function getCompanyNoActivityDays(input: {
   const exceptions = derivePrivateCalendarExceptions({
     employees: mappedEmployees,
     end: input.end,
-    isExpectedWorkday: (employee, date) => {
-      const policy = resolveActiveAttendancePolicy(
-        { hr_id: employee.hrId, job_title: employee.jobTitle },
-        attendancePolicyRows,
-        date,
-        date,
-      );
-      return isAttendanceScheduledWorkingDay({
-        dateIso: date,
-        jobTitle: employee.jobTitle,
-        workingWeekdays: policy?.working_weekdays,
-      });
-    },
+    isExpectedWorkday: expectedWorkdayResolver(employees, attendancePolicyRows),
     items,
     start: input.start,
   });
