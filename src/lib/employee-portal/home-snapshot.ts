@@ -162,6 +162,90 @@ function sumSales(rows: readonly { totalSales: number }[]): number {
   return rows.reduce((sum, row) => sum + (Number.isFinite(row.totalSales) ? row.totalSales : 0), 0);
 }
 
+type DistrictTeamMember = {
+  hrId: string;
+  name: string;
+  achievementPercent: number;
+  totalSales: number;
+  totalTarget: number;
+};
+
+/**
+ * The people on a District Manager's landing page: the "My Reps" board, the team size, the leavers
+ * note and the CRM first-visit roster, all from the team the sales service returned.
+ *
+ * THE VIEWER IS NEVER ON HER OWN TEAM. An acting District Manager (app role District Manager, job
+ * title Medical Representative, which HR keeps on purpose) still occupies the rep seat of one of the
+ * areas she manages, so the sales engine attributes that area's rows to HER as a rep and the team
+ * service hands her back as one of her own reps. On 2026-09-21 the one acting District Manager in
+ * production saw herself on "My Reps", counted in "Team Size" (3 instead of her 2 reps) and listed
+ * red on her own CRM first-visit board. Owner rule: she sees exactly what a District Manager sees,
+ * her team and never her own row. A real District Manager holds no rep seat, so for him this
+ * removes nothing.
+ *
+ * Only the PEOPLE lists and the head count drop her. The district's sales, target and achievement
+ * stay whole: her area belongs to the district, and her NSM's view of the same district counts it.
+ *
+ * Leavers come off BEFORE the top-10 slice, never after: a rep who resigned mid-window still carries
+ * real sales, so filtering afterwards would let a departed name hold one of the ten slots and push a
+ * serving rep off the board entirely.
+ */
+export function districtManagerLandingPeople(
+  teamMembers: readonly DistrictTeamMember[],
+  directoryRows: readonly EmployeeDirectoryRow[],
+  viewerHrId: string | null | undefined,
+): {
+  members: DistrictTeamMember[];
+  memberCount: number;
+  departedCount: number;
+  departedSales: number;
+  crmReps: Array<{ hrId: string; name: string }>;
+} {
+  // One hyphen- and case-insensitive HR-ID key for every match below (canonical "B100" and stored
+  // "B-100" both match), the same key splitDepartedRoster uses.
+  const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  const viewerKey = nameKey(viewerHrId);
+  const team = viewerKey ? teamMembers.filter((member) => nameKey(member.hrId) !== viewerKey) : [...teamMembers];
+
+  // Show the nickname when set, else the full name. The performance services return
+  // raw full names, so resolve the directory's nickname-aware displayName by that key.
+  const displayByKey = new Map<string, string>();
+  for (const row of directoryRows) {
+    const key = nameKey(row.hrId);
+    if (key) displayByKey.set(key, row.displayName);
+  }
+  const display = (hrId: string | null | undefined, fallback: string) =>
+    displayByKey.get(nameKey(hrId)) ?? fallback;
+
+  const roster = splitDepartedRoster(team, directoryRows);
+  const members = roster.active
+    .slice()
+    .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
+    .slice(0, 10)
+    .map((m) => ({
+      hrId: m.hrId,
+      name: display(m.hrId, m.name),
+      achievementPercent: m.achievementPercent,
+      totalSales: m.totalSales,
+      totalTarget: m.totalTarget,
+    }));
+
+  return {
+    members,
+    // The count of reps she actually has today, not the count of rows with sales in the window —
+    // those differ by exactly the people who have since left.
+    memberCount: roster.active.length,
+    departedCount: roster.departed.length,
+    departedSales: sumSales(roster.departed),
+    // CRM first-visit compliance covers the FULL serving roster — deliberately not the `members`
+    // leaderboard above, which is sliced to the top 10 by achievement. Ranking a compliance board
+    // off a sales leaderboard would silently hide every rep outside the top 10 from both the green
+    // and the red list.
+    crmReps: roster.active.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+  };
+}
+
 /**
  * The sales window a performance keycard actually covers, named.
  *
@@ -440,45 +524,17 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       ]);
       if (!team) return emptyRoleExtras;
 
-      // Show the nickname when set, else the full name. The performance services return
-      // raw full names, so resolve the directory's nickname-aware displayName by a
-      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
-      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const displayByKey = new Map<string, string>();
-      for (const row of directoryRows) {
-        const key = nameKey(row.hrId);
-        if (key) displayByKey.set(key, row.displayName);
-      }
-      const display = (hrId: string | null | undefined, fallback: string) =>
-        displayByKey.get(nameKey(hrId)) ?? fallback;
+      // Every person on this landing page comes from ONE call, which is where the viewer herself is
+      // taken off her own team (an acting District Manager also holds a rep seat under her) and
+      // where leavers are split out. See districtManagerLandingPeople.
+      const people = districtManagerLandingPeople(team.members ?? [], directoryRows, hrId);
 
-      // Leavers come off BEFORE the top-10 slice, never after: a rep who resigned mid-window still
-      // carries real sales, so filtering afterwards would let a departed name hold one of the ten
-      // slots and push a serving rep off the board entirely.
-      const roster = splitDepartedRoster(team.members ?? [], directoryRows);
-      const members = roster.active
-        .slice()
-        .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
-        .slice(0, 10)
-        .map((m) => ({
-          hrId: m.hrId,
-          name: display(m.hrId, m.name),
-          achievementPercent: m.achievementPercent,
-          totalSales: m.totalSales,
-          totalTarget: m.totalTarget,
-        }));
-
-      // CRM first-visit compliance over the DM's FULL direct-report roster — deliberately
-      // `team.members`, not the `members` leaderboard above, which is sliced to the top 10 by
-      // achievement. Ranking a compliance board off a sales leaderboard would silently hide every
-      // rep outside the top 10 from both the green and the red list. `dsms: []` because a District
-      // Manager anchors med reps only (getDsmTeamPerformance runs in "dsm-direct" mode), and the
-      // board is uncapped so nobody on a team this size drops off the ranking.
+      // CRM first-visit compliance over the DM's FULL serving roster, not the top-10 leaderboard.
+      // `dsms: []` because a District Manager anchors med reps only (getDsmTeamPerformance runs in
+      // "dsm-direct" mode), and the board is uncapped so nobody on a team this size drops off the
+      // ranking.
       const crmInput = {
-        reps: activeRosterOnly(
-          (team.members ?? []).map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
-          directoryRows,
-        ),
+        reps: people.crmReps,
         dsms: [],
         limit: Number.POSITIVE_INFINITY,
       };
@@ -494,16 +550,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
         ...emptyRoleExtras,
         dsmTeam: {
           achievementPercent: team.teamAchievementPercent,
-          // The count of reps he actually has today, not the count of rows with sales in the
-          // window — those differ by exactly the people who have since left.
-          memberCount: roster.active.length,
+          memberCount: people.memberCount,
           totalSales: team.teamTotalSales,
           totalTarget: team.teamTotalTarget,
           pendingApprovals: approvals.length,
           windowLabel: salesWindowLabel(team.periods),
-          departedCount: roster.departed.length,
-          departedSales: sumSales(roster.departed),
-          members,
+          departedCount: people.departedCount,
+          departedSales: people.departedSales,
+          members: people.members,
           crm,
         },
       };
