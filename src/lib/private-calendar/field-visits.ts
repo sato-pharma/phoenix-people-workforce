@@ -13,8 +13,17 @@
 //
 // Read-only. Never mutates CRM, attendance or deduction data.
 
-import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { collapseDuplicateVisitSubmissions, CRM_DOUBLE_VISIT_TYPE_CODES, scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { addVisitToSplit, emptyVisitCountSplit, formatVisitCountSplit, type VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import { CRM_LEAVE_VISIT_TYPE_CODES } from "@/lib/crm/visit-type-meaning";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import {
+  privateCalendarActivityKindLabels,
+  privateCalendarVisitKind,
+  visitCategoryOfType,
+  type PrivateCalendarActivityKind,
+} from "@/lib/private-calendar/activity-kinds";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 
 // `contact_name`, never `customer_name`: the mirror leaves customer_name empty on 100% of rows
@@ -23,17 +32,24 @@ import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 // is blank by construction on every other type, where the contact id is a shared vendor sentinel and
 // the real identity only exists in free-text `comment` — parsing that would repeat the mistake the
 // duplicate-collapse comment rule already cost us (see crm/reads.ts), so unnamed days show a count.
-type FieldVisitRow = {
+export type FieldVisitRow = {
   agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
+  ampm: string | null;
+  comment: string | null;
   contact_crm_id: number | null;
   contact_name: string | null;
   crm_save_date: string | null;
   crm_visit_id: number | null;
   double_crm_id: number | null;
+  double_hr_id: string | null;
+  double_name: string | null;
+  source: string | null;
+  speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
+  visit_type_description: string | null;
 };
 
 function normalizedKey(value: string | null | undefined): string | null {
@@ -41,10 +57,58 @@ function normalizedKey(value: string | null | undefined): string | null {
   return keys.length > 0 ? keys[0] : null;
 }
 
+/** The CRM's canonical double-visit test (see the `doubleOnly` predicate in crm/reads.ts): a real
+ * partner crm id — not the vendor's `0` sentinel — or, on a Phoenix native row, a partner hr id. */
+function hasRealPartner(row: Pick<FieldVisitRow, "double_crm_id" | "double_hr_id" | "source">): boolean {
+  if (row.source === "phoenix" && row.double_hr_id) return true;
+  return row.double_crm_id !== null && row.double_crm_id !== undefined && Number(row.double_crm_id) !== 0;
+}
+
+/** The Double Visit feed's own visit types — a partnered visit of
+ * these types is shown by that feed, never here. */
+const DOUBLE_VISIT_FEED_TYPES: ReadonlySet<number> = new Set<number>(CRM_DOUBLE_VISIT_TYPE_CODES);
+
 /**
- * One item per (employee, day) that the employee logged at least one CRM visit
- * on. Grouped rather than one-per-visit so a 12-visit day is a single calendar
- * chip, matching how the double-visit loader presents its days.
+ * Which colour a CRM row wears on this calendar, or null when the Double Visit feed shows it.
+ *
+ * A partnered regular or campaign visit is the Double Visit feed's (it sits on the manager's
+ * calendar AND the rep's, paired into a chain when a senior manager joined), so it is never
+ * counted here as well. Everything else the rep logged is theirs alone: a single visit, a
+ * partnered -30 field visit the Double Visit feed does not read, a CRM leave day, or any other
+ * CRM activity (meetings, training, admin work, a public holiday worked in the field).
+ */
+export function fieldVisitActivityKind(
+  row: Pick<FieldVisitRow, "double_crm_id" | "double_hr_id" | "source" | "visit_type">,
+): PrivateCalendarActivityKind | null {
+  const type = row.visit_type ?? null;
+  const partnered = hasRealPartner(row);
+  if (partnered && type !== null && DOUBLE_VISIT_FEED_TYPES.has(type)) return null;
+  if (type !== null && CRM_LEAVE_VISIT_TYPE_CODES.has(type)) return "vacation";
+  const category = visitCategoryOfType(type);
+  if (!category) return "other_crm";
+  return privateCalendarVisitKind(partnered ? "double" : "single", category);
+}
+
+type FieldVisitGroup = {
+  activities: Map<string, number>;
+  customers: Set<string>;
+  date: string;
+  hrId: string;
+  kind: PrivateCalendarActivityKind;
+  name: string | null;
+  partners: Set<string>;
+  split: VisitCountSplit;
+};
+
+function countedList(counts: Map<string, number>): string {
+  return [...counts.entries()].map(([label, count]) => `${label} ${count}`).join(" · ");
+}
+
+/**
+ * One item per (employee, day, colour) for the CRM activity the employee logged themselves.
+ * Grouped rather than one-per-visit so a 12-visit day is a single calendar chip, matching how
+ * the double-visit loader presents its days. Every visit count on it is AM · PM · Pharmacies
+ * apart — never a pharmacy inside PM (src/lib/crm/visit-count-buckets.ts).
  *
  * Best-effort by design, mirroring loadDoubleVisitPrivateCalendarItems: if the
  * CRM read fails this returns nothing rather than throwing, because a CRM outage
@@ -67,42 +131,52 @@ export async function loadFieldVisitPrivateCalendarItems(
     // scanVisitsForRange does not collapse on its own, so the chip's count runs through the same
     // canonical read-time collapse DV Analytics and FWC use — otherwise a rep re-saving one stop
     // reads as an extra visit here while every other surface counts it once. The extra columns are
-    // the collapse's fingerprint; the aggregation below ignores them.
+    // the collapse's fingerprint and the AM · PM · Pharmacies bucket's inputs.
     const rows = collapseDuplicateVisitSubmissions(
       await scanVisitsForRange<FieldVisitRow>({
         dateFrom: start,
         dateTo: end,
         columns:
-          "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,visit_type",
+          "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,double_hr_id,double_name,source,visit_type,visit_type_description,ampm,speciality,comment",
       }),
     );
 
-    // Group by (employee, day). Keyed on the rep's own hr_id — a visit where this
+    // Group by (employee, day, colour). Keyed on the rep's own hr_id — a visit where this
     // employee is the *visited* party (a double visit received) is the other
     // person's field work, not theirs, and is already handled by the double-visit
     // feed.
-    const byKey = new Map<string, { hrId: string; name: string | null; date: string; customers: Set<string>; visits: number }>();
+    const byKey = new Map<string, FieldVisitGroup>();
     for (const row of rows) {
       const hrKey = normalizedKey(row.agent_hr_id);
       if (!hrKey || !selected.has(hrKey)) continue;
       const date = String(row.visit_date ?? "").slice(0, 10);
       if (!date) continue;
-      const key = `${hrKey}|${date}`;
+      const kind = fieldVisitActivityKind(row);
+      if (!kind) continue;
+      const key = `${hrKey}|${date}|${kind}`;
       const existing = byKey.get(key) ?? {
-        hrId: String(row.agent_hr_id ?? ""),
-        name: row.agent_name ?? null,
-        date,
+        activities: new Map<string, number>(),
         customers: new Set<string>(),
-        visits: 0,
+        date,
+        hrId: String(row.agent_hr_id ?? ""),
+        kind,
+        name: row.agent_name ?? null,
+        partners: new Set<string>(),
+        split: emptyVisitCountSplit(),
       };
       const customer = String(row.contact_name ?? "").trim();
       if (customer) existing.customers.add(customer);
-      existing.visits += 1;
+      const partner = String(row.double_name ?? "").trim();
+      if (partner && hasRealPartner(row)) existing.partners.add(partner);
+      const activity = resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment);
+      existing.activities.set(activity, (existing.activities.get(activity) ?? 0) + 1);
+      addVisitToSplit(existing.split, row);
       byKey.set(key, existing);
     }
 
     const items: PrivateCalendarItem[] = [];
     for (const [key, group] of byKey) {
+      const kindLabel = privateCalendarActivityKindLabels[group.kind];
       const customerList = [...group.customers];
       const shown = customerList.slice(0, 3).join(", ");
       const more = customerList.length > 3 ? ` +${customerList.length - 3} more` : "";
@@ -110,14 +184,32 @@ export async function loadFieldVisitPrivateCalendarItems(
       // and the count alone is the honest chip. Counting VISITS (not distinct names) also matters —
       // reading the number off the name set showed "? field visits" on every day once customer_name
       // turned out to be empty everywhere.
-      const label = customerList.length > 0 ? `${shown}${more}` : null;
-      const visitCountLine = `${group.visits} field visit${group.visits === 1 ? "" : "s"}`;
+      const customers = customerList.length > 0 ? `${shown}${more}` : null;
+      const partners = group.partners.size > 0 ? [...group.partners].join(", ") : null;
+      const isVisit = group.kind !== "vacation" && group.kind !== "other_crm";
+      const counts = isVisit ? formatVisitCountSplit(group.split, { compact: true }) : countedList(group.activities);
+      const headline = group.kind === "vacation" ? "Annual vacation logged in CRM" : kindLabel;
       items.push({
+        activityKind: group.kind,
         approvalImpact:
           "CRM field-visit evidence is read-only activity context. It does not mutate attendance, leave, deductions, payroll, or compliance decisions.",
-        chipLines: label ? [visitCountLine, label] : [visitCountLine],
-        description: `Logged CRM field visits from the live iReports360 visit mirror.`,
-        detailLines: label ? [visitCountLine, `Customers: ${label}`] : [visitCountLine],
+        chipLines: [
+          headline,
+          ...(group.kind === "vacation" ? [] : [counts]),
+          ...(partners ? [`With ${partners}`] : []),
+          ...(customers ? [customers] : []),
+        ],
+        description: isVisit
+          ? "Logged CRM field visits from the live iReports360 visit mirror, AM · PM · Pharmacies apart."
+          : group.kind === "vacation"
+            ? "An annual vacation day the employee logged in CRM, from the live iReports360 visit mirror."
+            : "CRM activity other than a customer visit, from the live iReports360 visit mirror.",
+        detailLines: [
+          `Kind: ${headline}`,
+          ...(isVisit ? [`Visits: ${formatVisitCountSplit(group.split)}`] : [`Logged: ${countedList(group.activities)}`]),
+          ...(partners ? [`With: ${partners}`] : []),
+          ...(customers ? [`Customers: ${customers}`] : []),
+        ],
         employeeDepartmentName: null,
         employeeHrId: group.hrId,
         employeeJobTitle: null,
@@ -135,8 +227,9 @@ export async function loadFieldVisitPrivateCalendarItems(
         sourceTable: "ireports360_visits",
         startDate: group.date,
         status: "performed",
-        time: "Full day",
-        title: label ? `Field visits: ${label}` : `Field visits (${group.visits})`,
+        time: group.kind === "vacation" ? "Full day" : counts,
+        title: group.kind === "vacation" ? headline : customers ? `${headline}: ${counts} - ${customers}` : `${headline}: ${counts}`,
+        visitCounts: isVisit ? group.split : null,
       });
     }
     return { items, ready: true };

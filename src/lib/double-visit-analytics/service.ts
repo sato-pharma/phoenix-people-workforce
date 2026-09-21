@@ -21,6 +21,16 @@ import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
+import {
+  classifyDoubleVisitRows,
+  doubleVisitCompanions,
+  privateCalendarActivityKindLabels,
+  privateCalendarVisitKind,
+  type ClassifiedDoubleVisitRow,
+  type PrivateCalendarVisitKind,
+} from "@/lib/private-calendar/activity-kinds";
+import { addBucketToSplit, emptyVisitCountSplit, formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import { doubleVisitCountBucket, entryPeriodLabel, sumDoubleVisitSplit } from "@/lib/double-visit-analytics/count-bucket";
 import type {
   DoubleVisitBreakdownRow,
   DoubleVisitCadenceBand,
@@ -98,6 +108,9 @@ export type DoubleVisitDbRow = {
   chain_hinge_hr_id?: string | null;
   chain_hinge_name?: string | null;
   chain_customer_names?: string[] | null;
+  // The vendor's contact speciality — 'pharmacy' marks a pharmacy visit, which is counted apart
+  // from AM and PM (see src/lib/crm/visit-count-buckets.ts). Sent on regular visits only.
+  speciality?: string | null;
 };
 
 function text(value: unknown) {
@@ -151,6 +164,7 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
       averageVisitsPerDoubleVisitor: 0,
       doubleVisitorCount: 0,
       mrCoverageCount: 0,
+      pharmacyVisitCount: 0,
       pmVisitCount: 0,
       totalVisits: 0,
       vacantOrUnmappedShare: 0,
@@ -399,6 +413,7 @@ type MirrorVisitRow = {
   double_hr_id: string | null;
   double_name: string | null;
   id: string;
+  speciality?: string | null;
   visit_date: string;
   visit_type: number | null;
   visit_type_description: string | null;
@@ -448,7 +463,7 @@ async function paginateLiveMirrorVisits(
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description",
+      "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description, speciality",
   });
 }
 
@@ -525,6 +540,7 @@ function dbRowFromMirrorVisit(
     visit_type_description: visit.visit_type_description,
     source_record_id: String(visit.crm_visit_id),
     source_type: "ireports360",
+    speciality: visit.speciality ?? null,
     visit_count: 1,
     visited_employee_hr_id: effectiveVisitedHrId,
     visited_employee_name: preferRawLabel
@@ -711,14 +727,17 @@ function isoWeekStart(dateIso: string): string {
 }
 
 function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
-  const byWeek = new Map<string, { am: number; mrs: Set<string>; pm: number; total: number }>();
+  const byWeek = new Map<string, { am: number; mrs: Set<string>; pharmacies: number; pm: number; total: number }>();
   for (const row of rows) {
     const week = isoWeekStart(row.activity_date);
-    const bucket = byWeek.get(week) ?? { am: 0, mrs: new Set<string>(), pm: 0, total: 0 };
+    const bucket = byWeek.get(week) ?? { am: 0, mrs: new Set<string>(), pharmacies: 0, pm: 0, total: 0 };
     const count = asNumber(row.visit_count);
     bucket.total += count;
-    if (row.period === "AM") bucket.am += count;
-    if (row.period === "PM") bucket.pm += count;
+    // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
+    const countBucket = doubleVisitCountBucket(row);
+    if (countBucket === "AM") bucket.am += count;
+    else if (countBucket === "PM") bucket.pm += count;
+    else if (countBucket === "Pharmacies") bucket.pharmacies += count;
     const visitedKey = canonicalHrIdKey(row.visited_employee_hr_id);
     if (visitedKey) bucket.mrs.add(visitedKey);
     byWeek.set(week, bucket);
@@ -727,6 +746,7 @@ function buildWeeklyTrend(rows: DoubleVisitDbRow[]): DoubleVisitTrendPoint[] {
     .map(([weekStart, bucket]) => ({
       amVisits: bucket.am,
       distinctMrs: bucket.mrs.size,
+      pharmacyVisits: bucket.pharmacies,
       pmVisits: bucket.pm,
       totalDvs: bucket.total,
       weekStart,
@@ -1028,8 +1048,11 @@ export function buildManagerSummariesDetailed(
 
     const totalDvs = visitorRows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
     const activeDvDays = new Set(visitorRows.map((row) => row.activity_date).filter(Boolean)).size;
-    const amVisits = visitorRows.filter((row) => row.period === "AM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-    const pmVisits = visitorRows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+    // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
+    const visitSplit = sumDoubleVisitSplit(visitorRows, doubleVisitCountBucket, (row) => asNumber(row.visit_count));
+    const amVisits = visitSplit.am;
+    const pmVisits = visitSplit.pm;
+    const pharmacyVisits = visitSplit.pharmacies;
 
     const visitedTally = new Map<string, number>();
     const visitedTeamKeys = new Set<string>();
@@ -1090,6 +1113,7 @@ export function buildManagerSummariesDetailed(
       managerName: nullableText(employee?.displayName) ?? nullableText(visitorRows[0]?.double_visitor_name) ?? visitorKey,
       neglectedMrCount,
       overFocusedMrCount,
+      pharmacyVisits,
       pmVisits,
       role: dv?.role ?? null,
       roleCode: dv?.roleCode ?? null,
@@ -1200,20 +1224,23 @@ function buildDoubleVisitInsights(
     });
   }
 
+  // The balance compares the doctors' mornings with their afternoons; pharmacy visits are counted
+  // apart and never tip it (THE AM · PM · PHARMACIES GOLDEN RULE).
   const am = kpis.amVisitCount;
   const pm = kpis.pmVisitCount;
+  const pharmacies = kpis.pharmacyVisitCount;
   const totalPeriod = am + pm;
   if (totalPeriod > 0) {
     const minorityShare = Math.min(am, pm) / totalPeriod;
     const amPct = round((am / totalPeriod) * 100, 0);
     raw.push({
       category: "balance",
-      detail: `Field effort splits ${am} AM vs ${pm} PM (${amPct}% AM). ${am <= pm ? "Mornings are under-covered." : "Afternoons are under-covered."}`,
+      detail: `Field effort splits ${am} AM vs ${pm} PM (${amPct}% AM)${pharmacies > 0 ? `, with ${pharmacies} pharmacy visit${pharmacies === 1 ? "" : "s"} counted apart` : ""}. ${am <= pm ? "Mornings are under-covered." : "Afternoons are under-covered."}`,
       id: "ampm-imbalance",
       managerHrId: null,
       mrHrId: null,
       severity: minorityShare < 0.2 ? "warning" : "info",
-      title: "AM / PM balance",
+      title: "AM · PM balance",
     });
   }
 
@@ -1298,6 +1325,7 @@ export function buildExecutiveSummary(
       avgCoveragePct: coverageValues.length ? round(coverageValues.reduce((sum, value) => sum + value, 0) / coverageValues.length, 1) : null,
       distinctMrs: union.size,
       neglectedMrCount: neglectedValues.length ? neglectedValues.reduce((sum, value) => sum + value, 0) : null,
+      pharmacyVisits: group.reduce((sum, summary) => sum + summary.pharmacyVisits, 0),
       pmVisits: group.reduce((sum, summary) => sum + summary.pmVisits, 0),
       roleCode,
       roleLabel: DV_ROLE_LABELS[roleCode],
@@ -1399,8 +1427,11 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
   const totalVisits = rows.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
   const activeDoubleVisitDays = new Set(rows.map((row) => `${canonicalHrIdKey(row.double_visitor_hr_id)}|${row.activity_date}`)).size;
   const doubleVisitorCount = new Set(rows.map((row) => canonicalHrIdKey(row.double_visitor_hr_id)).filter(Boolean)).size;
-  const amVisitCount = rows.filter((row) => row.period === "AM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-  const pmVisitCount = rows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
+  // AM · PM · Pharmacies apart, so the AM : PM ratio below compares doctors' periods only.
+  const visitSplit = sumDoubleVisitSplit(rows, doubleVisitCountBucket, (row) => asNumber(row.visit_count));
+  const amVisitCount = visitSplit.am;
+  const pmVisitCount = visitSplit.pm;
+  const pharmacyVisitCount = visitSplit.pharmacies;
   const activeMappedVisitCount = rows.filter((row) => row.visited_employee_status === "active_mapped").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
   const vacantOrUnmappedVisitCount = totalVisits - activeMappedVisitCount;
   return {
@@ -1413,6 +1444,7 @@ function buildKpis(rows: DoubleVisitDbRow[]): DoubleVisitKpis {
     averageVisitsPerDoubleVisitor: doubleVisitorCount > 0 ? round(totalVisits / doubleVisitorCount, 2) : 0,
     doubleVisitorCount,
     mrCoverageCount: new Set(rows.map((row) => canonicalHrIdKey(row.visited_employee_hr_id)).filter(Boolean)).size,
+    pharmacyVisitCount,
     pmVisitCount,
     totalVisits,
     vacantOrUnmappedShare: totalVisits > 0 ? round((vacantOrUnmappedVisitCount / totalVisits) * 100, 1) : 0,
@@ -1504,6 +1536,7 @@ export async function getDoubleVisitDashboardData(input: {
   const visitLog: DoubleVisitLogEntry[] = filteredRows
     .map((row) => ({
       area: nullableText(row.area_name),
+      countBucket: doubleVisitCountBucket(row),
       date: row.activity_date,
       doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
       doubleVisitorName: nullableText(row.double_visitor_name),
@@ -1998,6 +2031,7 @@ export async function getDoubleVisitReportData(input: {
       return {
         activityDate: row.activity_date,
         areaName,
+        countBucket: doubleVisitCountBucket(row),
         daysSinceVisitedHire: daysBetween(visitedHireDate, dateTo),
         doubleVisitorHrId: nullableText(row.double_visitor_hr_id),
         doubleVisitorName: nullableText(row.double_visitor_name),
@@ -2079,17 +2113,12 @@ function joinedDistinct(values: Array<string | null | undefined>, fallback: stri
   return distinct.length > 0 ? distinct.join(", ") : fallback;
 }
 
-function workloadTime(rows: DoubleVisitDbRow[]) {
-  const am = rows.filter((row) => row.period === "AM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-  const pm = rows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-  return [am > 0 ? `AM ${am}` : null, pm > 0 ? `PM ${pm}` : null].filter(Boolean).join(" / ") || "Double Visit";
-}
-
 function calendarItemId(prefix: string, employeeHrId: string, date: string) {
   return `${prefix}-${normalizedHrKey(employeeHrId) ?? employeeHrId}-${date}`;
 }
 
 function privateCalendarItem(input: {
+  activityKind: PrivateCalendarVisitKind;
   chipLines: string[];
   date: string;
   description: string;
@@ -2100,8 +2129,11 @@ function privateCalendarItem(input: {
   status: string;
   time: string;
   title: string;
+  visitCounts: PrivateCalendarItem["visitCounts"];
+  visitRecords: PrivateCalendarItem["visitRecords"];
 }): PrivateCalendarItem {
   return {
+    activityKind: input.activityKind,
     approvalImpact: "Double Visit evidence is read-only field activity context. It does not mutate attendance, leave, deductions, payroll, or compliance decisions.",
     chipLines: input.chipLines,
     description: input.description,
@@ -2125,17 +2157,77 @@ function privateCalendarItem(input: {
     status: input.status,
     time: input.time,
     title: input.title,
+    visitCounts: input.visitCounts,
+    visitRecords: input.visitRecords,
   };
 }
 
-function groupCalendarRows(rows: DoubleVisitDbRow[], keyFn: (row: DoubleVisitDbRow) => string | null) {
-  const groups = new Map<string, DoubleVisitDbRow[]>();
-  for (const row of rows) {
-    const key = keyFn(row);
+type ClassifiedCalendarRow = ClassifiedDoubleVisitRow<DoubleVisitDbRow>;
+
+function groupCalendarRows(rows: ClassifiedCalendarRow[], keyFn: (entry: ClassifiedCalendarRow) => string | null) {
+  const groups = new Map<string, ClassifiedCalendarRow[]>();
+  for (const entry of rows) {
+    const key = keyFn(entry);
     if (!key) continue;
-    groups.set(key, [...(groups.get(key) ?? []), row]);
+    groups.set(key, [...(groups.get(key) ?? []), entry]);
   }
   return groups;
+}
+
+function calendarVisitKind(entry: ClassifiedCalendarRow): PrivateCalendarVisitKind {
+  return privateCalendarVisitKind(entry.companion, entry.category);
+}
+
+// One double or chain calendar item: the kind (who went × regular/campaign), who went with the
+// calendar owner, and the visits AM · PM · Pharmacies apart — never a pharmacy inside PM.
+function doubleVisitCalendarItem(group: ClassifiedCalendarRow[], side: "performed" | "received") {
+  const first = group[0];
+  const ownerHrId = side === "performed" ? first.row.double_visitor_hr_id : first.row.visited_employee_hr_id;
+  if (!ownerHrId) return null;
+  const kind = calendarVisitKind(first);
+  const kindLabel = privateCalendarActivityKindLabels[kind];
+  const split = emptyVisitCountSplit();
+  for (const entry of group) addBucketToSplit(split, entry.bucket);
+  const total = visitCountSplitTotal(split);
+  const withNames = joinedDistinct(group.flatMap((entry) => doubleVisitCompanions(entry, side)), "Unmapped or vacant");
+  const areaLabel = joinedDistinct(group.map((entry) => entry.row.area_name), "Unmapped");
+  const lineLabel = joinedDistinct(group.map((entry) => entry.row.line_name), "Unmapped");
+  // Resolved to a resigned employee -> dbRowFromMirrorVisit already substituted the raw
+  // CRM name/area for display, but that identity has not been matched to a current
+  // Phoenix employee record (their replacement may not even be onboarded yet) — say so
+  // plainly rather than silently presenting an unverified name as confirmed.
+  const identityUnverified = side === "performed" && group.some((entry) => entry.row.visited_employee_status === "resigned");
+  const counts = formatVisitCountSplit(split, { compact: true });
+  return privateCalendarItem({
+    activityKind: kind,
+    chipLines: [
+      kindLabel,
+      `With ${withNames}`,
+      counts,
+      areaLabel,
+      ...(identityUnverified ? ["Name from CRM, unmatched to an employee record"] : []),
+    ],
+    date: first.row.activity_date,
+    description: `${total} ${kindLabel} visit${total === 1 ? "" : "s"} ${side === "performed" ? "performed" : "received"}, from the live iReports360 visit mirror.`,
+    detailLines: [
+      `Kind: ${kindLabel}`,
+      `Visits: ${formatVisitCountSplit(split)}`,
+      `${side === "performed" ? "With" : "Double visitor"}: ${withNames}`,
+      `Area: ${areaLabel}`,
+      `Line: ${lineLabel}`,
+      ...(identityUnverified
+        ? ["Note: this name/area comes straight from the CRM sync — it could not be matched to a current Phoenix employee record (the CRM account may have been reassigned to a new hire)."]
+        : []),
+    ],
+    employeeHrId: ownerHrId,
+    employeeName: side === "performed" ? first.row.double_visitor_name : first.row.visited_employee_name,
+    id: calendarItemId(`double-visit-${side}-${kind}`, ownerHrId, first.row.activity_date),
+    status: side,
+    time: counts,
+    title: `${kindLabel}: ${total} visit${total === 1 ? "" : "s"} with ${withNames} - ${areaLabel}`,
+    visitCounts: split,
+    visitRecords: group.map((entry) => ({ bucket: entry.bucket, id: entry.physicalId })),
+  });
 }
 
 export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[], start: string, end: string) {
@@ -2149,85 +2241,35 @@ export async function loadDoubleVisitPrivateCalendarItems(employeeHrIds: string[
     // in that case, since the resolution is frequently just a stale, reused CRM account —
     // see memory crm-resigned-slot-reused-for-new-hire). Never silently hide a real visit.
     const rows = await getLiveDoubleVisitRows(start, end, employees, { includeResignedAgents: true });
+    // Pairs a chain visit's two CRM halves (see classifyDoubleVisitRows), so a chain stop is ONE
+    // chain visit on every calendar it touches and never a double visit counted twice.
+    const classified = classifyDoubleVisitRows(rows);
     const items: PrivateCalendarItem[] = [];
 
     const performed = groupCalendarRows(
-      rows.filter((row) => selected.has(normalizedHrKey(row.double_visitor_hr_id) ?? "")),
-      (row) => {
-        const key = normalizedHrKey(row.double_visitor_hr_id);
-        return key ? `${key}|${row.activity_date}` : null;
+      classified.filter((entry) => selected.has(normalizedHrKey(entry.row.double_visitor_hr_id) ?? "")),
+      (entry) => {
+        const key = normalizedHrKey(entry.row.double_visitor_hr_id);
+        return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
       },
     );
-
     for (const group of performed.values()) {
-      const first = group[0];
-      if (!first?.double_visitor_hr_id) continue;
-      const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-      const visitedNames = joinedDistinct(group.map((row) => row.visited_employee_name), "Unmapped or vacant");
-      const areaLabel = joinedDistinct(group.map((row) => row.area_name), "Unmapped");
-      // Resolved to a resigned employee -> dbRowFromMirrorVisit already substituted the raw
-      // CRM name/area for display, but that identity has not been matched to a current
-      // Phoenix employee record (their replacement may not even be onboarded yet) — say so
-      // plainly rather than silently presenting an unverified name as confirmed.
-      const identityUnverified = group.some((row) => row.visited_employee_status === "resigned");
-      items.push(privateCalendarItem({
-        chipLines: [
-          `DV with ${visitedNames}`,
-          `${workloadTime(group)} visits`,
-          areaLabel,
-          ...(identityUnverified ? ["Name from CRM, unmatched to an employee record"] : []),
-        ],
-        date: first.activity_date,
-        description: `${total} Double Visit activity count from the live iReports360 visit mirror.`,
-        detailLines: [
-          `AM/PM: ${workloadTime(group)}`,
-          `Area: ${areaLabel}`,
-          `Line: ${joinedDistinct(group.map((row) => row.line_name), "Unmapped")}`,
-          `Visited: ${visitedNames}`,
-          ...(identityUnverified
-            ? ["Note: this name/area comes straight from the CRM sync — it could not be matched to a current Phoenix employee record (the CRM account may have been reassigned to a new hire)."]
-            : []),
-        ],
-        employeeHrId: first.double_visitor_hr_id,
-        employeeName: first.double_visitor_name,
-        id: calendarItemId("double-visit-performed", first.double_visitor_hr_id, first.activity_date),
-        status: "performed",
-        time: workloadTime(group),
-        title: `Performed ${total} visit${total === 1 ? "" : "s"} with ${visitedNames} - ${areaLabel}`,
-      }));
+      const item = doubleVisitCalendarItem(group, "performed");
+      if (item) items.push(item);
     }
 
+    // A senior manager's half folded into the rep's row is the same stop — the rep's own row
+    // already carries it as a chain visit, so it never reaches the rep's calendar a second time.
     const received = groupCalendarRows(
-      rows.filter((row) => selected.has(normalizedHrKey(row.visited_employee_hr_id) ?? "")),
-      (row) => {
-        const key = normalizedHrKey(row.visited_employee_hr_id);
-        return key ? `${key}|${row.activity_date}` : null;
+      classified.filter((entry) => !entry.absorbed && selected.has(normalizedHrKey(entry.row.visited_employee_hr_id) ?? "")),
+      (entry) => {
+        const key = normalizedHrKey(entry.row.visited_employee_hr_id);
+        return key ? `${key}|${entry.row.activity_date}|${calendarVisitKind(entry)}` : null;
       },
     );
-
     for (const group of received.values()) {
-      const first = group[0];
-      if (!first?.visited_employee_hr_id) continue;
-      const total = group.reduce((sum, row) => sum + asNumber(row.visit_count), 0);
-      const doubleVisitorNames = joinedDistinct(group.map((row) => row.double_visitor_name), "Unmapped");
-      const areaLabel = joinedDistinct(group.map((row) => row.area_name), "Unmapped");
-      items.push(privateCalendarItem({
-        chipLines: [`DV with ${doubleVisitorNames}`, `${workloadTime(group)} visits`, areaLabel],
-        date: first.activity_date,
-        description: `${total} Double Visit received from the live iReports360 visit mirror.`,
-        detailLines: [
-          `AM/PM: ${workloadTime(group)}`,
-          `Double visitor: ${doubleVisitorNames}`,
-          `Area: ${areaLabel}`,
-          `Line: ${joinedDistinct(group.map((row) => row.line_name), "Unmapped")}`,
-        ],
-        employeeHrId: first.visited_employee_hr_id,
-        employeeName: first.visited_employee_name,
-        id: calendarItemId("double-visit-received", first.visited_employee_hr_id, first.activity_date),
-        status: "received",
-        time: workloadTime(group),
-        title: `Received ${total} visit${total === 1 ? "" : "s"} with ${doubleVisitorNames} - ${areaLabel}`,
-      }));
+      const item = doubleVisitCalendarItem(group, "received");
+      if (item) items.push(item);
     }
 
     return { items, ready: true };
@@ -2323,6 +2365,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { metric: "Active Double Visit Days", value: data.kpis.activeDoubleVisitDays },
     { metric: "AM Activity", value: data.kpis.amVisitCount },
     { metric: "PM Activity", value: data.kpis.pmVisitCount },
+    { metric: "Pharmacy Activity", value: data.kpis.pharmacyVisitCount },
     { metric: "Average Visits per DV Day", value: data.kpis.averageVisitsPerDoubleVisitDay },
     { metric: "Resigned / Vacant Territory Share", value: `${data.kpis.vacantOrUnmappedShare}%` },
     { metric: "Neglected MRs", value: data.neglectedMrs.length },
@@ -2374,6 +2417,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Calls / Day", key: "callsPerActiveDay", width: 12 },
     { header: "AM Visits", key: "amVisits", width: 12 },
     { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "Pharmacy Visits", key: "pharmacyVisits", width: 16 },
     { header: "MRs Visited", key: "distinctMrs", width: 14 },
     { header: "Team Size", key: "teamMrCount", width: 12 },
     { header: "Coverage %", key: "coveragePct", width: 12 },
@@ -2398,6 +2442,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Avg Coverage %", key: "avgCoveragePct", width: 16 },
     { header: "AM Visits", key: "amVisits", width: 12 },
     { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "Pharmacy Visits", key: "pharmacyVisits", width: 16 },
     { header: "MRs Covered", key: "distinctMrs", width: 14 },
     { header: "Neglected MRs", key: "neglectedMrCount", width: 15 },
   ];
@@ -2420,6 +2465,7 @@ export async function buildDoubleVisitExportWorkbook(data: DoubleVisitDashboardD
     { header: "Total DVs", key: "totalDvs", width: 12 },
     { header: "AM Visits", key: "amVisits", width: 12 },
     { header: "PM Visits", key: "pmVisits", width: 12 },
+    { header: "Pharmacy Visits", key: "pharmacyVisits", width: 16 },
     { header: "MRs Covered", key: "distinctMrs", width: 14 },
   ];
   trend.addRows(data.trend);
@@ -2503,7 +2549,7 @@ export async function buildDoubleVisitReportExportWorkbook(
       doubleVisitor: row.doubleVisitorName ?? row.doubleVisitorHrId ?? "—",
       kind: row.visitKind,
       line: row.lineName ?? "—",
-      period: row.period,
+      period: entryPeriodLabel(row),
       region: row.regionName ?? "—",
       role: row.doubleVisitorRole ?? "—",
       visited: row.visitedName ?? row.visitedHrId ?? "—",

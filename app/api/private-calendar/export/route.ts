@@ -4,6 +4,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildPrivateCalendarPdf, buildPrivateCalendarWorkbook } from "@/lib/private-calendar/export";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,10 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format") ?? "xlsx";
-    const year = Number(searchParams.get("year") ?? new Date().getUTCFullYear());
-    const month = Number(searchParams.get("month") ?? new Date().getUTCMonth() + 1);
+    // Cairo's month, never UTC's — see the calendar API route.
+    const now = currentCairoDateParts();
+    const year = Number(searchParams.get("year") ?? now.year);
+    const month = Number(searchParams.get("month") ?? now.month);
     const employeeHrId = searchParams.get("employeeHrId") ?? undefined;
     const viewMode = searchParams.get("view") ?? undefined;
     const actualOnly = searchParams.get("actualOnly") === "1";

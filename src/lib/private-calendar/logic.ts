@@ -3,6 +3,14 @@ import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
+import { VACATION_DAY_PARTS } from "@/lib/vacation/types";
+import type { VisitCountSplit } from "@/lib/crm/visit-count-buckets";
+import {
+  summarizePrivateCalendarVisits,
+  type PrivateCalendarActivityKind,
+  type PrivateCalendarVisitRecord,
+  type PrivateCalendarVisitSummary,
+} from "@/lib/private-calendar/activity-kinds";
 
 export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "field_visit" | "holiday" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
@@ -42,10 +50,14 @@ export type PrivateCalendarReportDetails = {
 };
 
 export type PrivateCalendarItem = {
+  // The colour the item wears — who went (single, double, chain) crossed with regular or campaign
+  // for a CRM visit; attendance, vacation, excuse, holiday or other CRM activity otherwise. Absent
+  // on items that predate the colour key: privateCalendarItemKind falls back by source.
+  activityKind?: PrivateCalendarActivityKind;
   approvalImpact: string | null;
-  // Short, stacked lines for the cramped month-grid day-cell chip (e.g. ["DV with
-  // Omar", "4 AM / 8 PM visits", "Nasr City"]). Falls back to `title` on a single
-  // line when absent — only double-visit and attendance items set this today.
+  // Short, stacked lines for the cramped month-grid day-cell chip (e.g. ["Double · Regular",
+  // "With Omar", "AM 4 · PM 8 · Pharmacies 2", "Nasr City"]). Falls back to `title` on a single
+  // line when absent.
   chipLines?: string[];
   description: string | null;
   detailLines: string[];
@@ -69,6 +81,12 @@ export type PrivateCalendarItem = {
   status: string | null;
   time: string | null;
   title: string;
+  // A CRM visit item's visits, AM · PM · Pharmacies apart (never a pharmacy inside PM). Null on
+  // every other item.
+  visitCounts?: VisitCountSplit | null;
+  // The physical visits behind a double or chain item. The same visit sits on the calendar of
+  // everyone on it, so a team view counts it once by these ids (summarizePrivateCalendarVisits).
+  visitRecords?: PrivateCalendarVisitRecord[];
 };
 
 export type PrivateCalendarException = {
@@ -87,6 +105,8 @@ export type PrivateCalendarTeamSummary = PrivateCalendarEmployeeOption & {
   exceptionCount: number;
   itemCount: number;
   sourceCounts: Record<PrivateCalendarSource, number>;
+  // Every visit on this person's calendar — single, double and chain — AM · PM · Pharmacies apart.
+  visitCounts: VisitCountSplit;
 };
 
 export type PrivateCalendarWorkspace = {
@@ -102,6 +122,9 @@ export type PrivateCalendarWorkspace = {
   sourceReadiness: Record<PrivateCalendarSource, boolean>;
   summary: Record<PrivateCalendarSource, number> & { total: number };
   teamSummary: PrivateCalendarTeamSummary[];
+  // The visits in view per colour, AM · PM · Pharmacies apart — a double or chain visit counted
+  // once however many of the people on it the view holds.
+  visitSummary: PrivateCalendarVisitSummary;
   visibleEmployees: PrivateCalendarEmployeeOption[];
   viewMode: PrivateCalendarViewMode;
   weeks: Array<Array<{ date: string | null; inMonth: boolean }>>;
@@ -246,10 +269,12 @@ function attendanceStatusLabel(status: string, halfDayVacationPart?: "am_only" |
   return status === "Complete" ? "Full day" : status || "Recorded";
 }
 
+// A day with ONE punch cannot say whether that punch was the arrival or the departure (a
+// 5:06 PM punch is almost certainly a check-out), so it reads as a bare "Punch", never "From".
 function attendanceTitle(status: string, checkIn: string | null, checkOut: string | null, halfDayVacationPart?: "am_only" | "pm_only") {
   const statusLabel = attendanceStatusLabel(status, halfDayVacationPart);
   if (checkIn && checkOut) return `Office ${checkIn} to ${checkOut} - ${statusLabel}`;
-  if (checkIn) return `Office from ${checkIn} - ${statusLabel}`;
+  if (checkIn) return `Office punch ${checkIn} - ${statusLabel}`;
   return `Attendance - ${statusLabel}`;
 }
 
@@ -257,13 +282,19 @@ function attendanceTitle(status: string, checkIn: string | null, checkOut: strin
 function attendanceChipLines(status: string, checkIn: string | null, checkOut: string | null, halfDayVacationPart?: "am_only" | "pm_only") {
   const statusLabel = attendanceStatusLabel(status, halfDayVacationPart);
   if (checkIn && checkOut) return ["Office", `From ${checkIn}`, `To ${checkOut}`, statusLabel];
-  if (checkIn) return ["Office", `From ${checkIn}`, statusLabel];
+  if (checkIn) return ["Office", `Punch ${checkIn}`, statusLabel];
   return ["Attendance", statusLabel];
 }
 
-function attendanceSeverity(status: string, hasException?: boolean): PrivateCalendarSeverity {
+// The chip's colour follows the SAME judgement the exception strip makes, never the raw status
+// word: a "Short day" or "Late" that lands in a zero-deduction band raises no flag (see
+// attendanceExceptionFlags), so it must not paint amber either — it used to, which showed an
+// employee a warning on a day the strip itself said needed no review.
+function attendanceSeverity(status: string, flags: string[], hasException?: boolean): PrivateCalendarSeverity {
+  const problems = flags.filter((flag) => flag !== "Approved attendance exception");
+  if (problems.includes("Absence risk")) return "danger";
+  if (problems.length > 0) return "warning";
   if (hasException || status === "Complete") return "success";
-  if (/absence|single punch|late|early|short/i.test(status)) return "warning";
   return "info";
 }
 
@@ -304,6 +335,7 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
   const scheduledTime = scheduledStart || scheduledEnd ? [scheduledStart, scheduledEnd].filter(Boolean).join(" - ") : null;
   const workingHours = nullableText(row.timeLong);
   const time = firstPunch && lastPunch ? `${firstPunch} - ${lastPunch}` : firstPunch || lastPunch || null;
+  const exceptionFlags = attendanceExceptionFlags(row);
   const detailLines = [
     scheduledTime ? `Schedule: ${scheduledTime}` : null,
     workingHours ? `Working hours: ${workingHours}` : null,
@@ -323,7 +355,7 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
     employeeLineName: null,
     employeeName: row.employeeName,
     endDate: row.dateIso,
-    exceptionFlags: attendanceExceptionFlags(row),
+    exceptionFlags,
     id: `attendance-${privateCalendarHrIdKey(row.employeeHrId)}-${row.dateIso}`,
     managerName: null,
     reportDetails: {
@@ -332,7 +364,7 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
       scheduledTime,
       workingHours,
     },
-    severity: attendanceSeverity(row.status, row.hasException),
+    severity: attendanceSeverity(row.status, exceptionFlags, row.hasException),
     source: "attendance",
     sourceLabel: "Imported fingerprint punches",
     sourceRecordId: `${privateCalendarHrIdKey(row.employeeHrId)}-${row.dateIso}`,
@@ -343,6 +375,14 @@ export function mapAttendanceRowToPrivateCalendarItem(row: PrivateCalendarAttend
     time,
     title: attendanceTitle(row.status, firstPunch || null, lastPunch || null, row.halfDayVacationPart),
   };
+}
+
+// The vacation module's own wording ("AM only", "PM only"), never the title-cased enum
+// ("Am Only") the generic displayEnum produced.
+function vacationDayPartLabel(value: string | null | undefined) {
+  const text = cleanText(value);
+  if (!text) return null;
+  return VACATION_DAY_PARTS.find((part) => part.value === text)?.label ?? displayEnum(text);
 }
 
 export function mapVacationRowToPrivateCalendarItem(
@@ -362,7 +402,7 @@ export function mapVacationRowToPrivateCalendarItem(
       duration ? `Duration: ${duration} day(s)` : null,
       paid ? `Paid: ${paid} day(s)` : null,
       row.payment_status ? `Payment: ${displayEnum(row.payment_status)}` : null,
-      row.day_part ? `Day part: ${displayEnum(row.day_part)}` : null,
+      row.day_part ? `Day part: ${vacationDayPartLabel(row.day_part)}` : null,
     ].filter((value): value is string => Boolean(value)),
     employeeDepartmentName: null,
     employeeHrId: row.employee_hr_id,
@@ -381,7 +421,7 @@ export function mapVacationRowToPrivateCalendarItem(
     sourceTable: "v2_vacation_requests",
     startDate: row.start_date,
     status: row.status,
-    time: row.day_part && row.day_part !== "full_day" ? displayEnum(row.day_part) : "Full day",
+    time: row.day_part && row.day_part !== "full_day" ? vacationDayPartLabel(row.day_part) : "Full day",
     title: pending ? `${type} Vacation (pending)` : `${type} Vacation`,
   };
 }
@@ -402,7 +442,9 @@ export function mapExcuseRowToPrivateCalendarItem(row: PrivateCalendarExcuseRow)
     exceptionFlags: [],
     id: `excuse-${row.id}`,
     managerName: null,
-    severity: "warning",
+    // An APPROVED excuse is covered time, not something to review — "warning" painted it the
+    // same amber as a late punch and tinted its export row as a problem.
+    severity: "info",
     source: "excuse",
     sourceLabel: "Approved excuse request",
     sourceRecordId: row.id,
@@ -446,6 +488,25 @@ export function mapHolidayToPrivateCalendarItem(input: {
     time: "Full day",
     title: input.name,
   };
+}
+
+// PostgREST answers at most 1,000 rows per request, and both leave loaders used to stop at a
+// fixed 100 — a team or company-wide month past 100 leave rows silently lost the rest, and every
+// lost day then read "No Activity Recorded" although the leave was approved. Reads page by page
+// until a short page; a caller orders on a unique column last so pages never overlap.
+export const PRIVATE_CALENDAR_PAGE_SIZE = 1000;
+
+export async function readAllPrivateCalendarRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PRIVATE_CALENDAR_PAGE_SIZE) {
+    const { data, error } = await page(from, from + PRIVATE_CALENDAR_PAGE_SIZE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as T[];
+    rows.push(...batch);
+    if (batch.length < PRIVATE_CALENDAR_PAGE_SIZE) return rows;
+  }
 }
 
 export function privateCalendarItemOccursOn(item: PrivateCalendarItem, date: string) {
@@ -521,18 +582,22 @@ export function buildPrivateCalendarTeamSummary(input: {
   return input.employees.map((employee) => {
     const employeeKey = privateCalendarHrIdKey(employee.hrId);
     const counts = sourceCounts();
-    let itemCount = 0;
+    const employeeItems: PrivateCalendarItem[] = [];
     for (const item of input.items) {
       if (item.employeeHrId && privateCalendarHrIdKey(item.employeeHrId) !== employeeKey) continue;
       if (!item.employeeHrId && item.source !== "holiday") continue;
       counts[item.source] += 1;
-      itemCount += 1;
+      employeeItems.push(item);
     }
     return {
       ...employee,
-      exceptionCount: input.exceptions.filter((exception) => privateCalendarHrIdKey(exception.employeeHrId) === employeeKey).length,
-      itemCount,
+      // Counts what needs review only. An "info" exception is a review request's own status
+      // (pending, verified) — news for the employee, never a warning against them.
+      exceptionCount: input.exceptions.filter((exception) =>
+        exception.severity !== "info" && privateCalendarHrIdKey(exception.employeeHrId) === employeeKey).length,
+      itemCount: employeeItems.length,
       sourceCounts: counts,
+      visitCounts: summarizePrivateCalendarVisits(employeeItems).all,
     };
   });
 }
@@ -561,6 +626,24 @@ function createException(input: Omit<PrivateCalendarException, "id">) {
   };
 }
 
+/**
+ * Whether a date falls inside an employee's employment: on or after the hire date and on or
+ * before the last working date. A day outside that window is never an expected workday — before
+ * this gate an employee hired on the 12th read "No Activity Recorded" on every workday from the
+ * 1st, days the company did not employ them. Either bound may be missing, and then it does not
+ * limit anything.
+ */
+export function isWithinEmploymentWindow(
+  date: string,
+  window: { hireDate?: string | null; lastWorkingDate?: string | null },
+) {
+  const hireDate = cleanText(window.hireDate).slice(0, 10);
+  const lastWorkingDate = cleanText(window.lastWorkingDate).slice(0, 10);
+  if (hireDate && date < hireDate) return false;
+  if (lastWorkingDate && date > lastWorkingDate) return false;
+  return true;
+}
+
 function todayInCairo() {
   // Africa/Cairo local calendar date (the app's operating timezone). Using UTC
   // here would slip the "up to today" cutoff a day for a few hours after local
@@ -586,7 +669,11 @@ export function derivePrivateCalendarExceptions(input: {
     dateIso: date,
     jobTitle: employee.jobTitle,
   }));
-  const dates = eachDate(input.start, input.end).filter((date) => date <= today);
+  // Only days that have ENDED are judged. Today is still in progress: a rep's visits sync from
+  // the CRM through the day, and an office worker's second punch arrives at the end of it, so
+  // judging today flagged every employee "No Activity Recorded" (and every morning punch a
+  // "Single punch") on the day they were in the middle of working.
+  const dates = eachDate(input.start, input.end).filter((date) => date < today);
   const exceptions: PrivateCalendarException[] = [];
   const itemsByEmployeeDate = new Map<string, PrivateCalendarItem[]>();
   const companyItemsByDate = new Map<string, PrivateCalendarItem[]>();
@@ -658,7 +745,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "attendance_during_vacation",
           date,
-          description: `${employee.fullName} has fingerprint attendance while an approved full-day vacation covers the same date.`,
+          description: `${employee.fullName} has fingerprint attendance while a full-day vacation covers the same date.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [...attendance, ...vacations].map((item) => item.id),

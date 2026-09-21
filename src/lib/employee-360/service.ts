@@ -23,6 +23,7 @@ import { isPharmacySpeciality } from "@/lib/crm/contact-taxonomy";
 import type { CrmListType } from "@/lib/crm/contacts-web-client";
 import { phoenixVisitLane } from "@/lib/crm/phoenix-kpi-rules";
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { visitCountBucket } from "@/lib/crm/visit-count-buckets";
 import { classifyVisit } from "@/lib/crm/visit-types";
 import { CATCH_ALL_CONTACT_CRM_ID } from "@/lib/crm/rep-kpi-reports";
 import {
@@ -71,7 +72,10 @@ export type VisitRow = {
   comment: string | null;
   /** 'phoenix' on a native row, 'ireports360' on a vendor row (crm_visits_unified). */
   source?: string | null;
-  /** The visited contact's specialty — the pharmacy signal for a contact on no list of the rep's. */
+  /**
+   * The visited contact's speciality — 'pharmacy' puts the visit under Pharmacies, never AM or PM,
+   * and is the pharmacy signal for a most-visited contact on no list of the rep's.
+   */
   speciality?: string | null;
 };
 
@@ -227,8 +231,11 @@ export type VisitSummary = {
   distinctCustomers: number;
   doublesReceived: number;
   singleVisits: number;
+  // THE AM · PM · PHARMACIES GOLDEN RULE (src/lib/crm/visit-count-buckets.ts): three figures
+  // apart — a pharmacy visit is counted in pharmacyVisits only, never in pmVisits or amVisits.
   amVisits: number;
   pmVisits: number;
+  pharmacyVisits: number;
   unknownAmpm: number;
   monthly: MonthlyVisitPoint[];
   // deep analytics
@@ -291,7 +298,8 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     dateTo: window.to,
     // `source` marks a Phoenix native row, where a partner with no CRM id is still a double visit
     // (isCrmDoubleVisitRow). Without it a new hire's confirmed double visits never count here.
-    // `speciality` is the pharmacy signal for a most-visited customer on no list of the rep's.
+    // `speciality` is the pharmacy signal: it files a visit under Pharmacies, never AM or PM, and
+    // marks a most-visited customer on no list of the rep's.
     columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment,source,speciality",
     // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
     // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
@@ -425,6 +433,7 @@ export function summarizeVisits(
   let productiveDoubles = 0;
   let amVisits = 0;
   let pmVisits = 0;
+  let pharmacyVisits = 0;
   let unknownAmpm = 0;
   const activeDaySet = new Set<string>();
   const customerCount = new Map<string, { name: string; count: number; lanes: Record<CustomerLane, number> }>();
@@ -474,8 +483,11 @@ export function summarizeVisits(
         if (lane) c.lanes[lane] += 1;
         customerCount.set(key, c);
       }
+      // A pharmacy is a pharmacy whatever period the rep tagged; a visit with no period at all stays
+      // "unmarked", as it always has.
       const period = String(row.ampm ?? "").trim().toUpperCase();
-      if (period === "AM") amVisits += 1;
+      if (visitCountBucket(row) === "Pharmacies") pharmacyVisits += 1;
+      else if (period === "AM") amVisits += 1;
       else if (period === "PM") pmVisits += 1;
       else unknownAmpm += 1;
     }
@@ -575,6 +587,7 @@ export function summarizeVisits(
     singleVisits: productiveVisits - productiveDoubles,
     amVisits,
     pmVisits,
+    pharmacyVisits,
     unknownAmpm,
     monthly,
     activityMix,

@@ -586,8 +586,11 @@ function StartTimeTable({
 
 function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
   const n = (v: number) => Math.round(v).toLocaleString("en-US");
-  const classified = data.amVisits + data.pmVisits;
-  const amPct = classified > 0 ? Math.round((data.amVisits / classified) * 100) : 0;
+  // AM · PM · Pharmacies, three figures apart — a pharmacy is never counted among the PM doctors
+  // (src/lib/crm/visit-count-buckets.ts). An older cached payload without the field reads as zero.
+  const pharmacyVisits = data.pharmacyVisits ?? 0;
+  const classified = data.amVisits + data.pmVisits + pharmacyVisits;
+  const share = (value: number) => (classified > 0 ? (value / classified) * 100 : 0);
   return (
     <div className="space-y-5 p-5">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -610,14 +613,15 @@ function CrmFieldWidget({ data }: { data: SfeCrmFieldAnalytics }) {
       {classified > 0 ? (
         <div>
           <div className="mb-1 flex items-baseline justify-between">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">AM / PM split</p>
+            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">AM · PM · Pharmacies</p>
             <p className="text-phx-2xs text-slate-400">
-              {n(data.amVisits)} AM · {n(data.pmVisits)} PM
+              AM {n(data.amVisits)} · PM {n(data.pmVisits)} · Pharmacies {n(pharmacyVisits)}
             </p>
           </div>
           <div className="flex h-3 w-full overflow-hidden border border-slate-200">
-            <div className="bg-orange-500" style={{ width: `${amPct}%` }} />
-            <div className="bg-slate-300" style={{ width: `${100 - amPct}%` }} />
+            <div className="bg-orange-500" style={{ width: `${share(data.amVisits)}%` }} />
+            <div className="bg-slate-300" style={{ width: `${share(data.pmVisits)}%` }} />
+            <div className="bg-emerald-600" style={{ width: `${share(pharmacyVisits)}%` }} />
           </div>
         </div>
       ) : null}

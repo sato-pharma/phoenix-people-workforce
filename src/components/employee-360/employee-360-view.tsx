@@ -801,7 +801,7 @@ export function Employee360View({
             </div>
 
             <div className="mt-4 text-xs text-slate-400">
-              Visit AM/PM split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM</span>
+              Visit split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM · {intFmt.format(summary.pharmacyVisits ?? 0)} Pharmacies</span>
               {summary.unknownAmpm > 0 ? ` · ${intFmt.format(summary.unknownAmpm)} unmarked` : ""}
             </div>
           </>
@@ -822,6 +822,7 @@ export function Employee360View({
           activity={{
             amVisits: summary.amVisits,
             pmVisits: summary.pmVisits,
+            pharmacyVisits: summary.pharmacyVisits ?? 0,
             unknownAmpm: summary.unknownAmpm,
             regularVisits: summary.regularVisits,
             campaignVisits: summary.campaignVisits,
@@ -1891,7 +1892,7 @@ function ExpensesSection({
   activity,
 }: {
   expenses: Employee360Profile["expenses"];
-  activity: { amVisits: number; pmVisits: number; unknownAmpm: number; regularVisits: number; campaignVisits: number };
+  activity: { amVisits: number; pmVisits: number; pharmacyVisits: number; unknownAmpm: number; regularVisits: number; campaignVisits: number };
 }) {
   const { payroll, outstation } = expenses;
   const hasAny = payroll.hasData || outstation.hasData;
@@ -2039,13 +2040,14 @@ function ExpensesSection({
                 </div>
               </div>
 
-              {/* Field activity behind the spend — AM/PM split and Regular vs Campaign
-                  visit mix (from the visits system, this period). */}
+              {/* Field activity behind the spend — AM · PM · Pharmacies apart and the Regular vs
+                  Campaign visit mix (from the visits system, this period). */}
               <div className="mt-5">
                 <div className="mb-1.5 text-xs font-bold text-slate-500">Field activity (visits this period)</div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                   <KpiTile label="AM visits" value={intFmt.format(activity.amVisits)} hint={activity.unknownAmpm > 0 ? `${intFmt.format(activity.unknownAmpm)} unmarked` : undefined} />
                   <KpiTile label="PM visits" value={intFmt.format(activity.pmVisits)} />
+                  <KpiTile label="Pharmacy visits" value={intFmt.format(activity.pharmacyVisits)} />
                   <KpiTile label="Regular visits" value={intFmt.format(activity.regularVisits)} />
                   <KpiTile label="Campaign visits" value={intFmt.format(activity.campaignVisits)} />
                 </div>

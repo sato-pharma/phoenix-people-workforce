@@ -177,6 +177,25 @@ export async function runDoubleVisitReportExportTests() {
   assert.equal(metricValue("Distinct Visited MRs"), 3, "distinct visited-MR count");
   assert.equal(metricValue("AM Visits"), 2, "AM visit sum");
   assert.equal(metricValue("PM Visits"), 4, "PM visit sum");
+  assert.equal(metricValue("Pharmacy Visits"), 0, "no pharmacy rows in the base fixture");
+
+  // THE AM · PM · PHARMACIES GOLDEN RULE: a pharmacy row the CRM tagged PM counts under Pharmacy
+  // Visits only, and the Period filter lists and finds it under "Pharmacies", never under PM.
+  const pharmacyRow: DoubleVisitReportRow = { ...logRow({ activityDate: "2026-06-09", period: "PM", visitCount: 5 }), countBucket: "Pharmacies" };
+  const withPharmacy = buildReportSummaryMetrics({ ...filtered, logRows: [...LOG_ROWS, pharmacyRow] });
+  const withPharmacyValue = (label: string) => withPharmacy.find((m) => m.metric === label)?.value;
+  assert.equal(withPharmacyValue("PM Visits"), 4, "a pharmacy visit tagged PM is never counted among the PM doctors");
+  assert.equal(withPharmacyValue("Pharmacy Visits"), 5, "a pharmacy visit is counted under Pharmacy Visits");
+  assert.deepEqual(
+    filterLogRows([...LOG_ROWS, pharmacyRow], { ...NO_LOG_FILTERS, periodFilter: "Pharmacies" }),
+    [pharmacyRow],
+    "the Pharmacies period filter finds the pharmacy row",
+  );
+  assert.equal(
+    filterLogRows([...LOG_ROWS, pharmacyRow], { ...NO_LOG_FILTERS, periodFilter: "PM" }).includes(pharmacyRow),
+    false,
+    "the PM period filter never returns a pharmacy row",
+  );
   assert.equal(metricValue("Regular Visits"), 3, "Regular visit sum");
   assert.equal(metricValue("Campaign Visits"), 3, "Campaign visit sum");
   assert.equal(metricValue("Never Visited / At Risk (filtered)"), 2);

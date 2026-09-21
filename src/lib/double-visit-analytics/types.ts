@@ -3,6 +3,12 @@
 // A "double visit" = a visit with a double_crm_id partner AND visit_type in (0 Regular,
 // -8 Campaign/Prospection) — owner decision, since a shared double_crm_id on a Meeting/
 // Training/Conference/Vacation row is joint-attendance bookkeeping, not fieldwork.
+//
+// Every visit count below is AM · PM · Pharmacies, three figures apart: a pharmacy visit is never
+// counted in pmVisits (or amVisits), whatever period the CRM tagged it with — THE AM · PM ·
+// PHARMACIES GOLDEN RULE, decided in src/lib/crm/visit-count-buckets.ts.
+
+import type { VisitCountBucket } from "@/lib/crm/visit-count-buckets";
 
 export type DoubleVisitSourceType = "excel" | "ireports360";
 export type DoubleVisitPeriod = "AM" | "PM" | "UNKNOWN";
@@ -24,6 +30,7 @@ export type DoubleVisitKpis = {
   averageVisitsPerDoubleVisitor: number;
   doubleVisitorCount: number;
   mrCoverageCount: number;
+  pharmacyVisitCount: number;
   pmVisitCount: number;
   totalVisits: number;
   vacantOrUnmappedShare: number;
@@ -79,6 +86,8 @@ export type DoubleVisitExecutiveManagerReport = {
 
 export type DoubleVisitLogEntry = {
   area: string | null;
+  /** The figure this row counts in; null when the CRM recorded no period. Absent on an older payload. */
+  countBucket?: VisitCountBucket | null;
   date: string;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;
@@ -111,6 +120,7 @@ export type DoubleVisitManagerSummary = {
   managerName: string;
   neglectedMrCount: number | null;
   overFocusedMrCount: number;
+  pharmacyVisits: number;
   pmVisits: number;
   role: string | null;
   roleCode: DoubleVisitRoleCode | null;
@@ -125,6 +135,7 @@ export type DoubleVisitRoleRollup = {
   avgCoveragePct: number | null;
   distinctMrs: number;
   neglectedMrCount: number | null;
+  pharmacyVisits: number;
   pmVisits: number;
   roleCode: DoubleVisitRoleCode;
   roleLabel: string;
@@ -220,6 +231,7 @@ export type DoubleVisitExpenseWorkloadEvidence = {
 export type DoubleVisitTrendPoint = {
   amVisits: number;
   distinctMrs: number;
+  pharmacyVisits: number;
   pmVisits: number;
   totalDvs: number;
   weekStart: string;
@@ -352,6 +364,8 @@ export type DoubleVisitPortalFocus = {
 export type DoubleVisitReportRow = {
   activityDate: string;
   areaName: string | null;
+  /** The figure this row counts in; null when the CRM recorded no period. Absent on an older payload. */
+  countBucket?: VisitCountBucket | null;
   daysSinceVisitedHire: number | null;
   doubleVisitorHrId: string | null;
   doubleVisitorName: string | null;

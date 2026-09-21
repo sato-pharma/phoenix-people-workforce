@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Download,
   FileSearch,
   ListFilter,
@@ -15,11 +16,18 @@ import {
 
 
 import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
+import { formatVisitCountSplit, visitCountSplitTotal } from "@/lib/crm/visit-count-buckets";
+import {
+  privateCalendarActivityKindLabels,
+  privateCalendarActivityKinds,
+  privateCalendarItemKind,
+  privateCalendarVisitKinds,
+  type PrivateCalendarActivityKind,
+} from "@/lib/private-calendar/activity-kinds";
 import {
   privateCalendarHrIdKey,
   privateCalendarItemOccursOn,
   privateCalendarSourceLabels,
-  privateCalendarSources,
   type PrivateCalendarException,
   type PrivateCalendarItem,
   type PrivateCalendarSource,
@@ -94,64 +102,190 @@ function monthDateIso(year: number, month: number, preferredDay = 1) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-// Every source gets its own hue, chosen to stay visually distinct even at
-// small chip sizes: double_visit is fuchsia (indigo read too close to
-// vacation's blue), holiday defaults to violet (teal read too close to
-// attendance's emerald green).
-function sourceAccentColor(source: PrivateCalendarSource, severity?: string) {
-  if (severity === "danger") return "border-l-red-500";
-  if (severity === "warning") return "border-l-amber-400";
-  if (source === "attendance") return "border-l-emerald-500";
-  if (source === "vacation") return "border-l-blue-500";
-  if (source === "excuse") return "border-l-amber-500";
-  if (source === "double_visit") return "border-l-fuchsia-500";
-  return "border-l-violet-500";
+// ONE colour per kind of day, everywhere on this screen — the grid, the phone markers, the
+// timeline, the agenda, the key figures and the legend (owner, 2026-09-21). A CRM visit is
+// coloured by WHO went: single is blue, double fuchsia, chain teal. Within a family a REGULAR
+// visit wears the colour solid, on a tinted card, and a CAMPAIGN visit wears it hatched, on a
+// white card with a dashed frame — so the family reads first and the kind of visit second, even
+// on a phone's 8px marker. Attendance emerald, vacation sky (an HR vacation and one logged in CRM
+// alike), excuse amber, national holiday violet and other CRM activity (meetings, training, admin
+// work) slate each keep a hue of their own. No Activity Recorded is the one solid red block, see
+// exceptionChipTone. Orange stays the selection and warning colour and indigo the review-update
+// colour, so no kind wears either. Severity never repaints a kind (a late punch used to turn the
+// same amber as an excuse): it is an outline round the card instead, see severityOutline.
+//
+// Every class is spelled out in full: Tailwind only generates a class it finds written out.
+const kindTones: Record<PrivateCalendarActivityKind, { accent: string; chip: string; swatch: string }> = {
+  attendance: {
+    accent: "border-l-emerald-600",
+    chip: "border-l-[3px] border-l-emerald-600 bg-emerald-50",
+    swatch: "bg-emerald-600",
+  },
+  vacation: {
+    accent: "border-l-sky-500",
+    chip: "border-l-[3px] border-l-sky-500 bg-sky-50",
+    swatch: "bg-sky-500",
+  },
+  excuse: {
+    accent: "border-l-amber-500",
+    chip: "border-l-[3px] border-l-amber-500 bg-amber-50",
+    swatch: "bg-amber-500",
+  },
+  holiday: {
+    accent: "border-l-violet-600",
+    chip: "border-l-[3px] border-l-violet-600 bg-violet-50",
+    swatch: "bg-violet-600",
+  },
+  single_regular: {
+    accent: "border-l-blue-700",
+    chip: "border-l-[3px] border-l-blue-700 bg-blue-50",
+    swatch: "bg-blue-700",
+  },
+  single_campaign: {
+    accent: "border-dashed border-l-blue-700",
+    chip: "border border-l-[3px] border-dashed border-blue-300 border-l-blue-700 bg-white",
+    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-blue-700)_0_2px,var(--color-blue-100)_2px_4px)]",
+  },
+  double_regular: {
+    accent: "border-l-fuchsia-700",
+    chip: "border-l-[3px] border-l-fuchsia-700 bg-fuchsia-50",
+    swatch: "bg-fuchsia-700",
+  },
+  double_campaign: {
+    accent: "border-dashed border-l-fuchsia-700",
+    chip: "border border-l-[3px] border-dashed border-fuchsia-300 border-l-fuchsia-700 bg-white",
+    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-fuchsia-700)_0_2px,var(--color-fuchsia-100)_2px_4px)]",
+  },
+  chain_regular: {
+    accent: "border-l-teal-700",
+    chip: "border-l-[3px] border-l-teal-700 bg-teal-50",
+    swatch: "bg-teal-700",
+  },
+  chain_campaign: {
+    accent: "border-dashed border-l-teal-700",
+    chip: "border border-l-[3px] border-dashed border-teal-300 border-l-teal-700 bg-white",
+    swatch: "bg-[repeating-linear-gradient(135deg,var(--color-teal-700)_0_2px,var(--color-teal-100)_2px_4px)]",
+  },
+  other_crm: {
+    accent: "border-l-slate-500",
+    chip: "border-l-[3px] border-l-slate-500 bg-slate-100",
+    swatch: "bg-slate-500",
+  },
+};
+
+function kindAccentColor(kind: PrivateCalendarActivityKind) {
+  return kindTones[kind].accent;
 }
 
-function sourceChipTone(source: PrivateCalendarSource, severity?: string) {
-  if (severity === "danger") return "bg-red-100 text-red-700";
-  if (severity === "warning") return "bg-amber-100 text-amber-700";
-  if (source === "attendance") return "bg-emerald-100 text-emerald-700";
-  if (source === "vacation") return "bg-blue-100 text-blue-700";
-  if (source === "excuse") return "bg-amber-100 text-amber-700";
-  if (source === "double_visit") return "bg-fuchsia-100 text-fuchsia-700";
-  return "bg-violet-100 text-violet-700";
+function kindChipTone(kind: PrivateCalendarActivityKind) {
+  return kindTones[kind].chip;
 }
 
-// Solid swatch colour per source for legend dots / agenda markers.
-function sourceSwatchColor(source: PrivateCalendarSource) {
-  if (source === "attendance") return "bg-emerald-500";
-  if (source === "vacation") return "bg-blue-500";
-  if (source === "excuse") return "bg-amber-500";
-  if (source === "double_visit") return "bg-fuchsia-500";
-  return "bg-violet-500";
+// Solid (or hatched) swatch per kind for legend squares, phone markers, agenda markers and the
+// key figures.
+function kindSwatchColor(kind: PrivateCalendarActivityKind) {
+  return kindTones[kind].swatch;
 }
 
-// Every private calendar exception is either a real problem (danger) or a
-// lighter warning (e.g. late arrival) — shared tone lookup for the day-cell
-// chip, the actionable strip, the agenda, and the detail panel.
+// No Activity Recorded — a working day with nothing logged anywhere — is the one exception that
+// wears a solid block rather than a tinted card, so it reads as its own colour on the key.
+const NO_ACTIVITY_CODE = "no_activity_recorded";
+const noActivitySwatch = "bg-red-700";
+
+// A problem on an item is an outline round the source's own card — orange for something to
+// check, red for a real problem — so the card still says WHICH source it is.
+function severityOutline(severity: PrivateCalendarItem["severity"]) {
+  if (severity === "danger") return "ring-1 ring-inset ring-red-500";
+  if (severity === "warning") return "ring-1 ring-inset ring-orange-500";
+  return "";
+}
+
+// An item's flag is good news (an approved exception), a real problem (absence) or something
+// to check (everything else). It used to paint every flag red, the approved one included.
+function flagTone(flag: string) {
+  if (flag === "Approved attendance exception") return "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200";
+  if (flag === "Absence risk") return "bg-red-50 text-red-800 ring-1 ring-inset ring-red-200";
+  return "bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200";
+}
+
+// Every private calendar exception is a real problem (danger), something to check (warning, e.g.
+// a late arrival) or news about a review the employee asked for (info) — shared tone lookup for
+// the day-cell chip, the actionable strip, the agenda, and the detail panel. Three hues of their
+// own, none of them a source's: red, orange, indigo. Info used to fall into the warning amber.
+function exceptionChipTone(exception: PrivateCalendarException) {
+  if (exception.code === NO_ACTIVITY_CODE) return "border-l-[3px] border-l-red-950 bg-red-700 text-white";
+  return exceptionTone(exception.severity).chip;
+}
+
 function exceptionTone(severity: string) {
   if (severity === "danger") {
     return {
-      badge: "bg-red-200 text-red-800",
-      border: "border-l-red-500",
-      chip: "bg-red-100 text-red-700",
-      dot: "bg-red-500",
-      panel: "bg-red-50/40",
-      panelStrong: "bg-red-50/80 ring-red-100",
+      badge: "bg-red-600 text-white",
+      border: "border-l-red-600",
+      chip: "border-l-[3px] border-l-red-600 bg-red-50 text-red-800",
+      dot: "bg-red-600",
+      label: "Needs review",
+      panel: "bg-red-50/50",
+      panelStrong: "bg-red-50 ring-red-200",
       text: "text-red-800",
+      title: "text-red-900",
+    };
+  }
+  if (severity === "warning") {
+    return {
+      badge: "bg-orange-600 text-white",
+      border: "border-l-orange-500",
+      chip: "border-l-[3px] border-l-orange-500 bg-orange-50 text-orange-800",
+      dot: "bg-orange-500",
+      label: "Needs review",
+      panel: "bg-orange-50/50",
+      panelStrong: "bg-orange-50 ring-orange-200",
+      text: "text-orange-800",
+      title: "text-orange-900",
     };
   }
   return {
-    badge: "bg-amber-200 text-amber-800",
-    border: "border-l-amber-400",
-    chip: "bg-amber-100 text-amber-700",
-    dot: "bg-amber-500",
-    panel: "bg-amber-50/30",
-    panelStrong: "bg-amber-50/80 ring-amber-100",
-    text: "text-amber-800",
+    badge: "bg-indigo-600 text-white",
+    border: "border-l-indigo-500",
+    chip: "border-l-[3px] border-l-indigo-500 bg-indigo-50 text-indigo-800",
+    dot: "bg-indigo-500",
+    label: "Update",
+    panel: "bg-indigo-50/40",
+    panelStrong: "bg-indigo-50 ring-indigo-200",
+    text: "text-indigo-800",
+    title: "text-indigo-900",
   };
 }
+
+// The team snapshot's day counts, in the calendar's canonical order. Visits are not letters here:
+// they are one AM · PM · Pharmacies line under these, see TeamSummaryPanel.
+const teamSummarySources = [
+  { letter: "A", source: "attendance" },
+  { letter: "V", source: "vacation" },
+  { letter: "E", source: "excuse" },
+] as const satisfies ReadonlyArray<{ letter: string; source: Exclude<PrivateCalendarSource, "double_visit" | "field_visit" | "holiday"> }>;
+
+// Collapsed/expanded choices a viewer makes on this screen, remembered in THEIR browser only. A
+// private window or blocked storage throws — the screen then simply opens with the defaults.
+function readStoredOpen(key: string): boolean | null {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === "1" ? true : value === "0" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeOpen(key: string, open: boolean) {
+  try {
+    window.localStorage.setItem(key, open ? "1" : "0");
+  } catch {
+    // Storage unavailable: the choice lasts until the page reloads, which is all it can do.
+  }
+}
+
+const KEY_FIGURES_OPEN_KEY = "phx.privateCalendar.keyFiguresOpen";
+const FILTERS_OPEN_KEY = "phx.privateCalendar.filtersOpen";
 
 function itemSearchText(item: PrivateCalendarItem) {
   return [
@@ -235,7 +369,7 @@ export function PrivateCalendar({
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selectedDate, setSelectedDate] = useState(todayIsoProp);
-  const [sourceFilter, setSourceFilter] = useState<string>(allValue);
+  const [kindFilter, setKindFilter] = useState<string>(allValue);
   const [statusFilter, setStatusFilter] = useState<string>(allValue);
   const [employeeFilter, setEmployeeFilter] = useState<string>(allValue);
   const [departmentFilter, setDepartmentFilter] = useState<string>(allValue);
@@ -243,7 +377,21 @@ export function PrivateCalendar({
   const [exceptionOnly, setExceptionOnly] = useState(false);
   const [query, setQuery] = useState("");
   const [calendarView, setCalendarView] = useState<"month" | "list">("month");
-  const [hiddenSources, setHiddenSources] = useState<Set<PrivateCalendarSource>>(() => new Set());
+  const [hiddenKinds, setHiddenKinds] = useState<Set<PrivateCalendarActivityKind>>(() => new Set());
+  // Both panels open on the server's render; after mount a remembered choice wins, and with none
+  // remembered a phone starts with the filters folded away so the month is on screen first.
+  const [keyFiguresOpen, setKeyFiguresOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(true);
+  useEffect(() => {
+    // Read after mount, never in the initial state: the server has no storage, so reading it
+    // there would hand the browser a different first render than the server sent.
+    const storedFigures = readStoredOpen(KEY_FIGURES_OPEN_KEY);
+    const filtersStartOpen = readStoredOpen(FILTERS_OPEN_KEY) ?? !window.matchMedia("(max-width: 767px)").matches;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (storedFigures !== null) setKeyFiguresOpen(storedFigures);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFiltersOpen(filtersStartOpen);
+  }, []);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   // Every source this calendar reads (attendance, CRM double visits, vacation,
@@ -267,6 +415,7 @@ export function PrivateCalendar({
     teamSummary,
     viewMode,
     visibleEmployees,
+    visitSummary,
     weeks,
     year,
   } = workspace;
@@ -290,11 +439,11 @@ export function PrivateCalendar({
     ? "overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm"
     : "overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60";
   const inputClass = isWorkspaceSurface
-    ? "h-10 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
-    : "h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
+    ? "h-9 w-full rounded-sm border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+    : "h-9 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300 disabled:cursor-not-allowed disabled:opacity-60";
   const searchInputClass = isWorkspaceSurface
-    ? "h-10 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15"
-    : "h-10 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
+    ? "h-9 w-full rounded-sm border border-slate-300 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-500/15"
+    : "h-9 w-full rounded-sm border-0 bg-slate-100 pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300";
   const controlRadiusClass = "rounded-sm";
 
   const employeeByHrId = useMemo(
@@ -310,8 +459,9 @@ export function PrivateCalendar({
     const search = query.trim().toLowerCase();
     return items.filter((item) => {
       const employee = item.employeeHrId ? employeeByHrId.get(privateCalendarHrIdKey(item.employeeHrId)) : null;
-      if (hiddenSources.has(item.source)) return false;
-      if (sourceFilter !== allValue && item.source !== sourceFilter) return false;
+      const kind = privateCalendarItemKind(item);
+      if (hiddenKinds.has(kind)) return false;
+      if (kindFilter !== allValue && kind !== kindFilter) return false;
       if (statusFilter !== allValue && item.status !== statusFilter) return false;
       if (employeeFilter !== allValue && item.employeeHrId && privateCalendarHrIdKey(item.employeeHrId) !== privateCalendarHrIdKey(employeeFilter)) return false;
       if (departmentFilter !== allValue && item.employeeHrId && employee?.departmentName !== departmentFilter) return false;
@@ -320,7 +470,7 @@ export function PrivateCalendar({
       if (search && !itemSearchText(item).includes(search)) return false;
       return true;
     });
-  }, [departmentFilter, employeeByHrId, employeeFilter, exceptionOnly, hiddenSources, items, lineFilter, query, sourceFilter, statusFilter]);
+  }, [departmentFilter, employeeByHrId, employeeFilter, exceptionOnly, hiddenKinds, items, kindFilter, lineFilter, query, statusFilter]);
 
   const filteredExceptions = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -329,15 +479,18 @@ export function PrivateCalendar({
       if (employeeFilter !== allValue && privateCalendarHrIdKey(exception.employeeHrId) !== privateCalendarHrIdKey(employeeFilter)) return false;
       if (departmentFilter !== allValue && employee?.departmentName !== departmentFilter) return false;
       if (lineFilter !== allValue && employee?.lineName !== lineFilter) return false;
-      if (sourceFilter !== allValue) {
-        const relatedSources = exception.relatedItemIds.map((id) => itemById.get(id)?.source).filter(Boolean);
-        if (relatedSources.length === 0 && sourceFilter !== "attendance") return false;
-        if (relatedSources.length > 0 && !relatedSources.includes(sourceFilter as PrivateCalendarSource)) return false;
+      if (kindFilter !== allValue) {
+        const relatedKinds = exception.relatedItemIds
+          .map((id) => itemById.get(id))
+          .filter((item): item is PrivateCalendarItem => Boolean(item))
+          .map(privateCalendarItemKind);
+        if (relatedKinds.length === 0 && kindFilter !== "attendance") return false;
+        if (relatedKinds.length > 0 && !relatedKinds.includes(kindFilter as PrivateCalendarActivityKind)) return false;
       }
       if (search && !exceptionSearchText(exception).includes(search)) return false;
       return true;
     });
-  }, [departmentFilter, employeeByHrId, employeeFilter, exceptions, itemById, lineFilter, query, sourceFilter]);
+  }, [departmentFilter, employeeByHrId, employeeFilter, exceptions, itemById, kindFilter, lineFilter, query]);
 
   const itemsByDay = useMemo(() => {
     const map = new Map<string, PrivateCalendarItem[]>();
@@ -378,11 +531,29 @@ export function PrivateCalendar({
       }));
   }, [exceptionsByDay, itemsByDay, month]);
 
-  // Sources actually present in the (unfiltered-by-hide) data, in canonical order.
-  const presentSources = useMemo(() => {
-    const present = new Set(items.map((item) => item.source));
-    return privateCalendarSources.filter((source) => present.has(source));
+  // Kinds actually present in the (unfiltered-by-hide) data, in canonical order.
+  const presentKinds = useMemo(() => {
+    const present = new Set(items.map(privateCalendarItemKind));
+    return privateCalendarActivityKinds.filter((kind) => present.has(kind));
   }, [items]);
+  const noActivityDays = useMemo(
+    () => new Set(exceptions.filter((exception) => exception.code === NO_ACTIVITY_CODE).map((exception) => exception.date)).size,
+    [exceptions],
+  );
+  const otherCrmDays = useMemo(
+    () => new Set(items.filter((item) => privateCalendarItemKind(item) === "other_crm").map((item) => `${item.employeeHrId ?? ""}|${item.startDate}`)).size,
+    [items],
+  );
+  const activeFilterCount = [
+    query.trim() !== "",
+    kindFilter !== allValue,
+    statusFilter !== allValue,
+    employeeFilter !== allValue,
+    departmentFilter !== allValue,
+    lineFilter !== allValue,
+    exceptionOnly,
+    hiddenKinds.size > 0,
+  ].filter(Boolean).length;
 
   const selectedItems = useMemo(
     () => filteredItems.filter((item) => privateCalendarItemOccursOn(item, selectedDate)),
@@ -390,10 +561,25 @@ export function PrivateCalendar({
   );
   const selectedExceptions = useMemo(() => filteredExceptions.filter((exception) => exception.date === selectedDate), [filteredExceptions, selectedDate]);
   const timelineItems = useMemo(() => sortTimelineItems(selectedItems), [selectedItems]);
+  // "Exceptions" and "Days w/ Issues" count what needs review only. An info exception is a review
+  // request's own status (pending, verified) — news for the employee, never an issue; counting it
+  // made a verified correction read as one more problem day.
+  const reviewExceptions = useMemo(() => exceptions.filter((exception) => exception.severity !== "info"), [exceptions]);
   const daysWithIssues = useMemo(
-    () => new Set(exceptions.map((ex) => ex.date)).size,
-    [exceptions],
+    () => new Set(reviewExceptions.map((ex) => ex.date)).size,
+    [reviewExceptions],
   );
+  const filteredReviewExceptions = useMemo(
+    () => filteredExceptions.filter((exception) => exception.severity !== "info"),
+    [filteredExceptions],
+  );
+  const [showAllExceptions, setShowAllExceptions] = useState(false);
+  const stripExceptions = showAllExceptions ? filteredExceptions : filteredExceptions.slice(0, 8);
+  const stripHeading = filteredReviewExceptions.length > 0
+    ? `${filteredReviewExceptions.length} ${filteredReviewExceptions.every((exception) => exception.title === "No Activity Recorded")
+      ? `No Activity Day${filteredReviewExceptions.length === 1 ? "" : "s"}`
+      : `Exception${filteredReviewExceptions.length === 1 ? "" : "s"}`} Need${filteredReviewExceptions.length === 1 ? "s" : ""} Review`
+    : `${filteredExceptions.length} Review Update${filteredExceptions.length === 1 ? "" : "s"}`;
 
   // Flag-this-day is a self-service action — only the employee whose calendar
   // this is can act on it, never a manager/admin paging through someone else's
@@ -445,6 +631,10 @@ export function PrivateCalendar({
       setDisputeSourceOptions([]);
       setDisputeSourceDetail("");
       setDisputeMessage("Request submitted — a Super Admin will review it.");
+      // Re-read the month so the day shows its "Review Requested — Pending" status now, not
+      // only after the next navigation. A failed refresh must not turn a sent request into an
+      // error message, so it is swallowed here; Sync Now retries it.
+      await loadWorkspace(year, month, selectedEmployee.hrId, selectedDate, viewMode).catch(() => undefined);
     } catch (error) {
       setDisputeMessage(error instanceof Error ? error.message : "Unable to submit this dispute.");
     } finally {
@@ -546,22 +736,36 @@ export function PrivateCalendar({
   }
 
   function resetFilters() {
-    setSourceFilter(allValue);
+    setKindFilter(allValue);
     setStatusFilter(allValue);
     setEmployeeFilter(allValue);
     setDepartmentFilter(allValue);
     setLineFilter(allValue);
     setExceptionOnly(false);
     setQuery("");
-    setHiddenSources(new Set());
+    setHiddenKinds(new Set());
   }
 
-  function toggleSource(source: PrivateCalendarSource) {
-    setHiddenSources((current) => {
+  function toggleKind(kind: PrivateCalendarActivityKind) {
+    setHiddenKinds((current) => {
       const next = new Set(current);
-      if (next.has(source)) next.delete(source);
-      else next.add(source);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
       return next;
+    });
+  }
+
+  function toggleKeyFigures() {
+    setKeyFiguresOpen((open) => {
+      storeOpen(KEY_FIGURES_OPEN_KEY, !open);
+      return !open;
+    });
+  }
+
+  function toggleFilters() {
+    setFiltersOpen((open) => {
+      storeOpen(FILTERS_OPEN_KEY, !open);
+      return !open;
     });
   }
 
@@ -654,44 +858,53 @@ export function PrivateCalendar({
                 <Download className="h-3.5 w-3.5" />
                 PDF
               </a>
-              <button
-                aria-label="Previous month"
-                className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
-                disabled={isPending}
-                onClick={() => shiftMonth(-1)}
-                type="button"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button
-                className={["h-9 bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
-                disabled={isPending}
-                onClick={goToday}
-                type="button"
-              >
-                Today
-              </button>
-              <button
-                aria-label="Next month"
-                className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
-                disabled={isPending}
-                onClick={() => shiftMonth(1)}
-                type="button"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <div className="inline-flex items-center gap-2">
+                <button
+                  aria-label="Previous month"
+                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
+                  disabled={isPending}
+                  onClick={() => shiftMonth(-1)}
+                  type="button"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  className={["h-9 bg-orange-500 px-4 text-sm font-black text-white shadow-md transition hover:bg-orange-400 disabled:opacity-50", controlRadiusClass].join(" ")}
+                  disabled={isPending}
+                  onClick={goToday}
+                  type="button"
+                >
+                  Today
+                </button>
+                <button
+                  aria-label="Next month"
+                  className={["inline-flex h-9 w-9 items-center justify-center bg-white/10 text-white/80 ring-1 ring-white/20 transition hover:bg-white/20 disabled:opacity-40", controlRadiusClass].join(" ")}
+                  disabled={isPending}
+                  onClick={() => shiftMonth(1)}
+                  type="button"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-6">
-          <Metric label="Attendance" ready={sourceReadiness.attendance} value={summary.attendance} />
-          <Metric label="Vacations" ready={sourceReadiness.vacation} value={summary.vacation} />
-          <Metric label="Excuses" ready={sourceReadiness.excuse} value={summary.excuse} />
-          <Metric label="National" ready={sourceReadiness.holiday} value={summary.holiday} />
-          <Metric label="Exceptions" ready value={exceptions.length} tone="warning" />
-          <Metric label="Days w/ Issues" ready value={daysWithIssues} tone="warning" />
-        </div>
+        {/* KEY FIGURES — two narrow rows, folded away with one click (owner, 2026-09-21). Row one is
+            every visit, per colour, AM · PM · Pharmacies apart — never a pharmacy inside PM; row
+            two is every other kind of day. The eight tall cards this replaces took a screen of
+            their own and counted a double visit twice across a team. */}
+        <KeyFigures
+          daysWithIssues={daysWithIssues}
+          exceptionCount={reviewExceptions.length}
+          noActivityDays={noActivityDays}
+          onToggle={toggleKeyFigures}
+          open={keyFiguresOpen}
+          otherCrmDays={otherCrmDays}
+          sourceReadiness={sourceReadiness}
+          summary={summary}
+          visitSummary={visitSummary}
+        />
       </section>
 
       {message ? (
@@ -701,191 +914,222 @@ export function PrivateCalendar({
         </div>
       ) : null}
 
-      {/* ── Filters ── */}
+      {/* ── Filters — at most two narrow rows, folded away with one click (owner, 2026-09-21) ── */}
       <section className={secondaryPanelClass}>
-        <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
-        </div>
-        <div className={canFilterAcrossEmployees
-          ? "grid gap-4 p-5 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end"
-          : "grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-[minmax(160px,260px)_auto] lg:items-end"}
+        <button
+          aria-controls="private-calendar-filters"
+          aria-expanded={filtersOpen}
+          className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"
+          onClick={toggleFilters}
+          type="button"
         >
-          {canFilterAcrossEmployees ? (
-            <>
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
-                <span className="relative block">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    className={searchInputClass}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search calendar…"
-                    value={query}
-                  />
-                </span>
-              </label>
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Filter &amp; Search</span>
+            {activeFilterCount > 0 ? (
+              <span className="bg-orange-500 px-1.5 py-0.5 text-phx-2xs font-black text-white">
+                {activeFilterCount} active
+              </span>
+            ) : null}
+          </span>
+          <span className="inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+            {filtersOpen ? "Hide" : "Show"}
+            {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </span>
+        </button>
+        {filtersOpen ? (
+          <div
+            className="grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 px-4 py-3 lg:grid-cols-4 lg:items-end"
+            id="private-calendar-filters"
+          >
+            {canFilterAcrossEmployees ? (
+              <>
+                <label className="col-span-2 block lg:col-span-1">
+                  <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+                  <span className="relative block">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      className={searchInputClass}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Search calendar…"
+                      value={query}
+                    />
+                  </span>
+                </label>
 
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">View</span>
-                <SearchableSelect
-                  className={inputClass}
-                  disabled={isPending}
-                  onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
-                  value={viewMode}
-                >
-                  <option value="employee">Employee</option>
-                  <option value="team">Team</option>
-                </SearchableSelect>
-              </label>
-
-              {!isTeamView ? (
                 <label className="block">
-                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">View</span>
                   <SearchableSelect
                     className={inputClass}
+                    wrapValue
                     disabled={isPending}
-                    onChange={(event) => changeEmployee(event.target.value)}
-                    value={selectedEmployee.hrId}
+                    onChange={(event) => changeViewMode(event.target.value as PrivateCalendarViewMode)}
+                    value={viewMode}
                   >
-                    {visibleEmployees.map((employee) => (
-                      <option key={employee.hrId} value={employee.hrId}>
-                        {employeeOptionLabel(employee)}
-                      </option>
-                    ))}
+                    <option value="employee">Employee</option>
+                    <option value="team">Team</option>
                   </SearchableSelect>
                 </label>
-              ) : (
+
+                {!isTeamView ? (
+                  <label className="block">
+                    <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                    <SearchableSelect
+                      className={inputClass}
+                      wrapValue
+                      disabled={isPending}
+                      onChange={(event) => changeEmployee(event.target.value)}
+                      value={selectedEmployee.hrId}
+                    >
+                      {visibleEmployees.map((employee) => (
+                        <option key={employee.hrId} value={employee.hrId}>
+                          {employeeOptionLabel(employee)}
+                        </option>
+                      ))}
+                    </SearchableSelect>
+                  </label>
+                ) : (
+                  <label className="block">
+                    <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                    <SearchableSelect
+                      className={inputClass}
+                      wrapValue
+                      onChange={(event) => setEmployeeFilter(event.target.value)}
+                      value={employeeFilter}
+                    >
+                      <option value={allValue}>All visible</option>
+                      {visibleEmployees.map((employee) => (
+                        <option key={employee.hrId} value={employee.hrId}>
+                          {employee.fullName} ({employee.hrId})
+                        </option>
+                      ))}
+                    </SearchableSelect>
+                  </label>
+                )}
+
                 <label className="block">
-                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
                   <SearchableSelect
                     className={inputClass}
-                    onChange={(event) => setEmployeeFilter(event.target.value)}
-                    value={employeeFilter}
+                    wrapValue
+                    onChange={(event) => setLineFilter(event.target.value)}
+                    value={lineFilter}
                   >
-                    <option value={allValue}>All visible</option>
-                    {visibleEmployees.map((employee) => (
-                      <option key={employee.hrId} value={employee.hrId}>
-                        {employee.fullName} ({employee.hrId})
-                      </option>
-                    ))}
+                    <option value={allValue}>All lines</option>
+                    {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
                   </SearchableSelect>
                 </label>
-              )}
 
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
-                <SearchableSelect
-                  className={inputClass}
-                  onChange={(event) => setLineFilter(event.target.value)}
-                  value={lineFilter}
-                >
-                  <option value={allValue}>All lines</option>
-                  {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
-                </SearchableSelect>
-              </label>
+                <label className="block">
+                  <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+                  <SearchableSelect
+                    className={inputClass}
+                    wrapValue
+                    onChange={(event) => setDepartmentFilter(event.target.value)}
+                    value={departmentFilter}
+                  >
+                    <option value={allValue}>All departments</option>
+                    {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+                  </SearchableSelect>
+                </label>
+              </>
+            ) : null}
 
-              <label className="block">
-                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
-                <SearchableSelect
-                  className={inputClass}
-                  onChange={(event) => setDepartmentFilter(event.target.value)}
-                  value={departmentFilter}
-                >
-                  <option value={allValue}>All departments</option>
-                  {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
-                </SearchableSelect>
-              </label>
-            </>
-          ) : null}
+            <label className="block">
+              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Kind</span>
+              <SearchableSelect
+                className={inputClass}
+                wrapValue
+                onChange={(event) => setKindFilter(event.target.value)}
+                value={kindFilter}
+              >
+                <option value={allValue}>All kinds</option>
+                {presentKinds.map((kind) => (
+                  <option key={kind} value={kind}>{privateCalendarActivityKindLabels[kind]}</option>
+                ))}
+              </SearchableSelect>
+            </label>
 
-          <label className="block">
-            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
-            <SearchableSelect
-              className={inputClass}
-              onChange={(event) => setSourceFilter(event.target.value)}
-              value={sourceFilter}
-            >
-              <option value={allValue}>All sources</option>
-              {presentSources.map((source) => (
-                <option key={source} value={source}>{privateCalendarSourceLabels[source]}</option>
-              ))}
-            </SearchableSelect>
-          </label>
+            <label className="block">
+              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
+              <SearchableSelect
+                className={inputClass}
+                wrapValue
+                onChange={(event) => setStatusFilter(event.target.value)}
+                value={statusFilter}
+              >
+                <option value={allValue}>All statuses</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </SearchableSelect>
+            </label>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              className={[
-                "inline-flex h-10 items-center gap-2 px-3 text-sm font-black ring-1 transition",
-                controlRadiusClass,
-                exceptionOnly
-                  ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
-                  : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200",
-              ].join(" ")}
-              onClick={() => setExceptionOnly((value) => !value)}
-              type="button"
-            >
-              <ListFilter className="h-4 w-4" />
-              Exceptions
-            </button>
-            <button
-              className={["h-10 bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200 disabled:opacity-50", controlRadiusClass].join(" ")}
-              disabled={isPending}
-              onClick={resetFilters}
-              type="button"
-            >
-              Reset
-            </button>
+            <div className="col-span-2 flex flex-wrap items-end gap-2 lg:col-span-1">
+              <button
+                className={[
+                  "inline-flex h-9 items-center gap-2 px-3 text-sm font-black ring-1 transition",
+                  controlRadiusClass,
+                  exceptionOnly
+                    ? "bg-red-50 text-red-700 ring-red-200 hover:bg-red-100"
+                    : "bg-slate-100 text-slate-700 ring-slate-200/60 hover:bg-slate-200",
+                ].join(" ")}
+                onClick={() => setExceptionOnly((value) => !value)}
+                type="button"
+              >
+                <ListFilter className="h-4 w-4" />
+                Exceptions
+              </button>
+              <button
+                className={["h-9 bg-slate-100 px-3 text-sm font-black text-slate-600 ring-1 ring-slate-200/60 transition hover:bg-slate-200 disabled:opacity-50", controlRadiusClass].join(" ")}
+                disabled={isPending}
+                onClick={resetFilters}
+                type="button"
+              >
+                Reset
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div className="grid gap-4 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block">
-            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
-            <SearchableSelect
-              className={inputClass}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              value={statusFilter}
-            >
-              <option value={allValue}>All statuses</option>
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </SearchableSelect>
-          </label>
-        </div>
+        ) : null}
       </section>
 
       {isTeamView ? <TeamSummaryPanel rows={teamSummary} /> : null}
 
-      {/* ── Source legend / toggle chips ── */}
-      {presentSources.length > 0 ? (
-        <section className={[secondaryPanelClass, "px-5 py-4"].join(" ")}>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Sources</span>
-            {presentSources.map((source) => {
-              const hidden = hiddenSources.has(source);
+      {/* ── Colour key — one toggle per kind, plus No Activity Recorded ── */}
+      {presentKinds.length > 0 || noActivityDays > 0 ? (
+        <section className={[secondaryPanelClass, "px-4 py-3"].join(" ")}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Key</span>
+            {presentKinds.map((kind) => {
+              const hidden = hiddenKinds.has(kind);
               return (
                 <button
+                  aria-pressed={!hidden}
                   className={[
-                    "inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] transition",
+                    "inline-flex items-center gap-1.5 border px-2.5 py-1 text-phx-xs font-black transition",
                     controlRadiusClass,
                     hidden
                       ? "border-slate-200 bg-slate-50 text-slate-400 line-through"
-                      : "border-slate-900 bg-slate-900 text-white",
+                      : "border-slate-300 bg-white text-slate-800 hover:border-slate-500",
                   ].join(" ")}
-                  key={source}
-                  onClick={() => toggleSource(source)}
+                  key={kind}
+                  onClick={() => toggleKind(kind)}
                   type="button"
                 >
-                  <span className={["h-2.5 w-2.5 shrink-0 rounded-full", hidden ? "bg-slate-300" : sourceSwatchColor(source)].join(" ")} />
-                  <span className="whitespace-nowrap">{privateCalendarSourceLabels[source]}</span>
+                  <span className={["h-3 w-3 shrink-0", hidden ? "bg-slate-300" : kindSwatchColor(kind)].join(" ")} />
+                  <span>{privateCalendarActivityKindLabels[kind]}</span>
                 </button>
               );
             })}
-            {hiddenSources.size > 0 ? (
+            {noActivityDays > 0 ? (
+              <span className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black text-slate-800">
+                <span className={["h-3 w-3 shrink-0", noActivitySwatch].join(" ")} />
+                <span>No Activity Recorded</span>
+              </span>
+            ) : null}
+            {hiddenKinds.size > 0 ? (
               <button
-                className={["inline-flex items-center px-3 py-1.5 text-xs font-black text-orange-600 transition hover:text-orange-700", controlRadiusClass].join(" ")}
-                onClick={() => setHiddenSources(new Set())}
+                className={["inline-flex items-center px-2.5 py-1 text-phx-xs font-black text-orange-600 transition hover:text-orange-700", controlRadiusClass].join(" ")}
+                onClick={() => setHiddenKinds(new Set())}
                 type="button"
               >
                 Show all
@@ -897,32 +1141,40 @@ export function PrivateCalendar({
 
       {/* ── Actionable exceptions strip ── */}
       {filteredExceptions.length > 0 ? (
-        <section className={["border-l-4 border-l-red-500", secondaryPanelClass].join(" ")}>
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
-            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-red-700">
-              {filteredExceptions.length} {filteredExceptions.every((exception) => exception.title === "No Activity Recorded")
-                ? `No Activity Day${filteredExceptions.length === 1 ? "" : "s"}`
-                : `Exception${filteredExceptions.length === 1 ? "" : "s"}`} Need Review
+        <section className={["border-l-4", filteredReviewExceptions.length > 0 ? "border-l-red-600" : "border-l-indigo-500", secondaryPanelClass].join(" ")}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
+            <span className={["text-phx-xs font-black uppercase tracking-[0.14em]", filteredReviewExceptions.length > 0 ? "text-red-700" : "text-indigo-700"].join(" ")}>
+              {stripHeading}
             </span>
+            {filteredExceptions.length > 8 ? (
+              <button
+                className="text-phx-xs font-black uppercase tracking-[0.12em] text-orange-600 transition hover:text-orange-700"
+                onClick={() => setShowAllExceptions((value) => !value)}
+                type="button"
+              >
+                {showAllExceptions ? "Show the first 8" : `Show all ${filteredExceptions.length}`}
+              </button>
+            ) : null}
           </div>
           <div className="divide-y divide-slate-100">
-            {filteredExceptions.slice(0, 8).map((exception) => {
+            {stripExceptions.map((exception) => {
               const tone = exceptionTone(exception.severity);
               return (
                 <button
-                  className={["flex w-full flex-wrap items-center gap-2 px-5 py-3 text-left transition hover:bg-orange-50/40", tone.panel].join(" ")}
+                  className={["flex w-full flex-wrap items-center gap-x-2 gap-y-1 px-5 py-3 text-left transition hover:bg-orange-50/60", tone.panel].join(" ")}
                   key={exception.id}
                   onClick={() => focusException(exception.date)}
                   type="button"
                 >
+                  <span aria-hidden="true" className={["h-2 w-2 shrink-0", tone.dot].join(" ")} />
                   <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
-                  <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
+                  <span className="text-sm font-black text-slate-900">{exception.title}</span>
                   {exception.employeeName ? (
-                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-100 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
+                    <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
                       {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
                     </span>
                   ) : null}
-                  <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-500 ring-1 ring-slate-200/60">
+                  <span className="w-full pl-4 text-phx-xs font-semibold leading-relaxed text-slate-600">
                     {exception.description}
                   </span>
                 </button>
@@ -954,7 +1206,10 @@ export function PrivateCalendar({
               header row and the day grid below or the columns misalign. */}
           <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] bg-slate-950">
             {weekdays.map((weekday) => (
-              <div key={weekday} className="px-1 py-3 text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
+              <div
+                className={["px-1 py-3 text-center text-phx-2xs font-black uppercase tracking-[0.14em]", weekday === "Fri" ? "text-slate-500" : "text-slate-300"].join(" ")}
+                key={weekday}
+              >
                 {weekday}
               </div>
             ))}
@@ -972,12 +1227,28 @@ export function PrivateCalendar({
               const visibleExceptionCount = Math.min(dayExceptions.length, 2);
               const visibleItemCount = Math.min(dayItems.length, dayExceptions.length > 0 ? 1 : 2);
               const hiddenCount = dayItems.length + dayExceptions.length - visibleExceptionCount - visibleItemCount;
+              // Friday — everyone's day off — is a quiet shade, so the working week reads at a glance.
+              const isFriday = index % 7 === 5;
+              const dayNeedsReview = dayExceptions.some((exception) => exception.severity !== "info");
+              const dayHasNoActivity = dayExceptions.some((exception) => exception.code === NO_ACTIVITY_CODE);
+              // One marker per kind present that day, for the phone's compact month.
+              const dayKinds = [...new Set(dayItems.map(privateCalendarItemKind))];
               return (
                 <button
                   className={[
-                    "min-h-[150px] bg-white p-2 text-left align-top transition-colors",
-                    day.inMonth ? "text-slate-900 hover:bg-orange-50/50" : "bg-slate-50/40 text-slate-300 hover:bg-orange-50/20",
-                    selected ? "ring-2 ring-inset ring-orange-400" : "",
+                    // PHONE: a day column is ~49px wide, where the entries wrapped one letter per
+                    // line down a 600px-tall cell. Below md the cell is a compact square — the date
+                    // and one colour marker per source — and the day's entries read in full in
+                    // the Daily Timeline under the grid. From md up the entries show in the cell.
+                    // flex-col keeps the date at the TOP: a <button> centres its content
+                    // vertically, which floated every date to the middle of a tall cell.
+                    "flex min-h-[60px] flex-col items-center justify-start gap-1 px-0.5 py-1.5 text-left transition-colors md:min-h-[150px] md:items-stretch md:gap-0 md:p-2",
+                    !day.inMonth
+                      ? "bg-slate-50/60 text-slate-300 hover:bg-orange-50/30"
+                      : isFriday
+                        ? "bg-slate-50 text-slate-900 hover:bg-orange-50/60"
+                        : "bg-white text-slate-900 hover:bg-orange-50/60",
+                    selected ? "ring-2 ring-inset ring-orange-500" : "",
                   ].join(" ")}
                   disabled={!date}
                   key={`${date ?? "blank"}-${index}`}
@@ -988,28 +1259,45 @@ export function PrivateCalendar({
                     <span
                       className={[
                         "flex h-6 w-6 items-center justify-center text-xs font-black",
-                        isToday ? "rounded-full bg-orange-500 text-white" : "",
+                        isToday ? "bg-orange-500 text-white" : "",
                       ].join(" ")}
                     >
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
-                    <span className="flex items-center gap-1">
+                    <span className="hidden items-center gap-1 md:flex">
                       {dayExceptions.length > 0 ? (
-                        <span className="rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-black text-phx-danger">
+                        <span className={["px-1.5 py-0.5 text-phx-2xs font-black", dayNeedsReview ? "bg-red-600 text-white" : "bg-indigo-100 text-indigo-700"].join(" ")}>
                           {dayExceptions.length}
                         </span>
                       ) : null}
                       {dayItems.length > 0 ? (
-                        <span className="rounded-full bg-phx-paper px-1.5 py-0.5 text-phx-2xs font-black text-phx-ink-soft">
+                        <span className="bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black text-slate-600">
                           {dayItems.length}
                         </span>
                       ) : null}
                     </span>
                   </span>
-                  <span className="mt-1.5 block space-y-2">
+                  {dayItems.length > 0 || dayExceptions.length > 0 ? (
+                    <span className="flex flex-wrap justify-center gap-0.5 md:hidden">
+                      {dayExceptions.length > 0 ? (
+                        <span
+                          aria-hidden="true"
+                          className={["h-2 w-3.5", dayHasNoActivity ? noActivitySwatch : dayNeedsReview ? "bg-red-600" : "bg-indigo-500"].join(" ")}
+                        />
+                      ) : null}
+                      {dayKinds.map((kind) => (
+                        <span aria-hidden="true" className={["h-2 w-2", kindSwatchColor(kind)].join(" ")} key={kind} />
+                      ))}
+                      <span className="sr-only">
+                        {dayItems.length} entr{dayItems.length === 1 ? "y" : "ies"}
+                        {dayExceptions.length > 0 ? `, ${dayExceptions.length} to review` : ""}
+                      </span>
+                    </span>
+                  ) : null}
+                  <span className="mt-1.5 hidden space-y-2 md:block">
                     {dayExceptions.slice(0, visibleExceptionCount).map((exception) => (
                       <span
-                        className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-700"
+                        className={["block px-1.5 py-1 text-phx-2xs font-black leading-tight [overflow-wrap:anywhere]", exceptionChipTone(exception)].join(" ")}
                         key={exception.id}
                         title={exception.description}
                       >
@@ -1021,7 +1309,13 @@ export function PrivateCalendar({
                       const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...baseLines] : baseLines;
                       return (
                         <span
-                          className={["block divide-y divide-black/15 rounded px-1.5 py-0.5 text-phx-2xs font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
+                          className={[
+                            // The first line names the entry (Office, the visit kind, the vacation type)
+                            // in strong ink; the lines under it are its detail in a softer one.
+                            "block divide-y divide-black/15 px-1.5 py-0.5 text-phx-2xs font-semibold leading-tight text-slate-600 [&>span:first-child]:font-black [&>span:first-child]:text-slate-900",
+                            kindChipTone(privateCalendarItemKind(item)),
+                            severityOutline(item.severity),
+                          ].join(" ")}
                           key={item.id}
                           title={chipTitle(item, viewMode)}
                         >
@@ -1032,7 +1326,7 @@ export function PrivateCalendar({
                       );
                     })}
                     {hiddenCount > 0 ? (
-                      <span className="block rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-500">
+                      <span className="block bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-600">
                         + {hiddenCount} more
                       </span>
                     ) : null}
@@ -1045,7 +1339,7 @@ export function PrivateCalendar({
 
         {/* ── Daily Timeline ── */}
         <section className={panelClass}>
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
             <div>
               <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
                 Daily Timeline
@@ -1053,7 +1347,7 @@ export function PrivateCalendar({
               <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
+              <span className="bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
                 {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
               </span>
               {canActOnOwnDay ? (
@@ -1070,7 +1364,7 @@ export function PrivateCalendar({
           </div>
 
           {disputeFormOpen ? (
-            <div className="border-b border-sky-200 bg-sky-50/60 px-6 py-4">
+            <div className="border-b border-sky-200 bg-sky-50/60 px-4 py-4 sm:px-6">
               <p className="text-xs font-black uppercase tracking-[0.1em] text-sky-700">Request a Review — {dayLabel(selectedDate)}</p>
               <p className="mt-1 text-xs font-semibold text-sky-800">
                 If something here doesn&apos;t look right, let us know what actually happened and where a Super Admin can check.
@@ -1118,7 +1412,7 @@ export function PrivateCalendar({
             </div>
           ) : null}
 
-          <div className="grid gap-6 p-6 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
+          <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(260px,360px)_minmax(0,1fr)]">
             {selectedExceptions.length > 0 ? (
               <section>
                 <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-red-600">
@@ -1177,8 +1471,8 @@ function PrivateCalendarAgenda({
             onClick={() => onSelectDate(date)}
             type="button"
           >
-            <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-            <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">
+            <span className="text-sm font-black text-white">{dayLabel(date)}</span>
+            <span className="text-right text-phx-xs font-bold text-slate-300">
               {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
               {dayExceptions.length > 0 ? ` · ${dayExceptions.length} exception${dayExceptions.length === 1 ? "" : "s"}` : ""}
             </span>
@@ -1187,21 +1481,21 @@ function PrivateCalendarAgenda({
             {dayExceptions.map((exception) => {
               const tone = exceptionTone(exception.severity);
               return (
-                <div className={["px-4 py-3", tone.panel].join(" ")} key={exception.id}>
+                <div className={["border-l-[3px] px-4 py-3", tone.border, tone.panel].join(" ")} key={exception.id}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", tone.dot].join(" ")} />
-                    <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
-                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
-                      Exception
+                    <span className={["inline-block h-2.5 w-2.5 shrink-0", tone.dot].join(" ")} />
+                    <span className="text-sm font-black text-slate-900">{exception.title}</span>
+                    <span className={["ml-auto inline-flex items-center whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
+                      {tone.label}
                     </span>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                     {exception.employeeName ? (
-                      <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
+                      <span className="inline-flex items-center bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
                         {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
                       </span>
                     ) : null}
-                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
+                    <span className="w-full text-phx-xs font-semibold leading-relaxed text-slate-600">
                       {exception.description}
                     </span>
                   </div>
@@ -1216,15 +1510,15 @@ function PrivateCalendarAgenda({
                 item.description,
               ].filter((value): value is string => Boolean(value));
               return (
-                <div className="px-4 py-3" key={item.id}>
+                <div className={["px-4 py-3", severityOutline(item.severity)].join(" ")} key={item.id}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", sourceSwatchColor(item.source)].join(" ")} />
-                    <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
-                      {privateCalendarSourceLabels[item.source]}
+                    <span className={["inline-block h-2.5 w-2.5 shrink-0", kindSwatchColor(privateCalendarItemKind(item))].join(" ")} />
+                    <span className="text-sm font-black text-slate-900">{item.title}</span>
+                    <span className={["inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
+                      {privateCalendarActivityKindLabels[privateCalendarItemKind(item)]}
                     </span>
                     {item.status ? (
-                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+                      <span className="ml-auto inline-flex items-center whitespace-nowrap bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
                         {item.status}
                       </span>
                     ) : null}
@@ -1233,7 +1527,7 @@ function PrivateCalendarAgenda({
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {meta.map((value, index) => (
                         <span
-                          className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
+                          className="inline-flex items-center bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200/70"
                           key={`${item.id}-meta-${index}`}
                         >
                           {value}
@@ -1244,7 +1538,7 @@ function PrivateCalendarAgenda({
                   {item.exceptionFlags.length > 0 ? (
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {item.exceptionFlags.map((flag) => (
-                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-danger" key={flag}>
+                        <span className={["inline-flex items-center px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", flagTone(flag)].join(" ")} key={flag}>
                           {flag}
                         </span>
                       ))}
@@ -1260,26 +1554,115 @@ function PrivateCalendarAgenda({
   );
 }
 
-function Metric({
+type KeyFiguresProps = {
+  daysWithIssues: number;
+  exceptionCount: number;
+  noActivityDays: number;
+  onToggle: () => void;
+  open: boolean;
+  otherCrmDays: number;
+  sourceReadiness: PrivateCalendarWorkspace["sourceReadiness"];
+  summary: PrivateCalendarWorkspace["summary"];
+  visitSummary: PrivateCalendarWorkspace["visitSummary"];
+};
+
+// One narrow cell: the kind's swatch, its name, and its figure. A source that could not be read
+// says so instead of showing a zero it never measured.
+function KeyFigure({
+  alert = false,
   label,
-  ready,
-  tone = "neutral",
+  ready = true,
+  swatch,
   value,
 }: {
+  alert?: boolean;
   label: string;
-  ready: boolean;
-  tone?: "neutral" | "warning";
-  value: number;
+  ready?: boolean;
+  swatch?: string;
+  value: string;
 }) {
   return (
-    <div className={["rounded-sm border p-4", tone === "warning" ? "bg-red-50/60 border-red-100" : "bg-slate-50/60 border-slate-200"].join(" ")}>
-      <div className="flex items-center justify-end">
-        <span className={["rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
-          {ready ? "Ready" : "N/A"}
+    <span className="inline-flex min-w-0 items-center gap-1.5 py-0.5">
+      {swatch ? <span aria-hidden="true" className={["h-2.5 w-2.5 shrink-0", swatch].join(" ")} /> : null}
+      <span className="text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-500">{label}</span>
+      <span className={["text-xs font-black tabular-nums [overflow-wrap:anywhere]", !ready ? "text-amber-700" : alert ? "text-red-700" : "text-slate-900"].join(" ")}>
+        {ready ? value : "Unavailable"}
+      </span>
+    </span>
+  );
+}
+
+function KeyFigures({
+  daysWithIssues,
+  exceptionCount,
+  noActivityDays,
+  onToggle,
+  open,
+  otherCrmDays,
+  sourceReadiness,
+  summary,
+  visitSummary,
+}: KeyFiguresProps) {
+  // A workspace from before the visit summary existed (an old cached response) reads as none.
+  const visits = visitSummary ?? null;
+  const visitsReady = sourceReadiness.double_visit !== false && sourceReadiness.field_visit !== false;
+  const allVisits = visits ? formatVisitCountSplit(visits.all) : "AM 0 · PM 0 · Pharmacies 0";
+  return (
+    <div className="border-t border-slate-200">
+      <button
+        aria-controls="private-calendar-key-figures"
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 text-left transition hover:bg-slate-50"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Key figures</span>
+          {!open ? (
+            <span className="text-xs font-bold text-slate-700">
+              Visits {allVisits}
+              {exceptionCount > 0 ? ` · ${exceptionCount} to review` : ""}
+            </span>
+          ) : null}
         </span>
-      </div>
-      <p className="mt-3 text-3xl font-black text-slate-950">{value}</p>
-      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <span className="inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
+          {open ? "Hide" : "Show"}
+          {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </span>
+      </button>
+      {open ? (
+        <div id="private-calendar-key-figures">
+          {/* Row one — every visit, per colour, AM · PM · Pharmacies apart. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-100 bg-white px-4 py-2">
+            <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:w-auto">Visits</span>
+            {privateCalendarVisitKinds.map((kind) => {
+              const split = visits?.[kind];
+              return (
+                <KeyFigure
+                  key={kind}
+                  label={privateCalendarActivityKindLabels[kind]}
+                  ready={visitsReady}
+                  swatch={kindSwatchColor(kind)}
+                  value={split && visitCountSplitTotal(split) > 0 ? formatVisitCountSplit(split, { compact: true }) : "None"}
+                />
+              );
+            })}
+            <KeyFigure label="All visits" ready={visitsReady} value={allVisits} />
+          </div>
+          {/* Row two — every other kind of day. */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-slate-100 bg-slate-50 px-4 py-2">
+            <span className="w-full text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400 sm:w-auto">Days</span>
+            <KeyFigure label="Attendance" ready={sourceReadiness.attendance} swatch={kindSwatchColor("attendance")} value={String(summary.attendance)} />
+            <KeyFigure label="Vacations" ready={sourceReadiness.vacation} swatch={kindSwatchColor("vacation")} value={String(summary.vacation)} />
+            <KeyFigure label="Excuses" ready={sourceReadiness.excuse} swatch={kindSwatchColor("excuse")} value={String(summary.excuse)} />
+            <KeyFigure label="National" ready={sourceReadiness.holiday} swatch={kindSwatchColor("holiday")} value={String(summary.holiday)} />
+            <KeyFigure label="Other CRM" ready={sourceReadiness.field_visit} swatch={kindSwatchColor("other_crm")} value={String(otherCrmDays)} />
+            <KeyFigure alert={noActivityDays > 0} label="No activity" swatch={noActivitySwatch} value={String(noActivityDays)} />
+            <KeyFigure alert={exceptionCount > 0} label="Exceptions" value={String(exceptionCount)} />
+            <KeyFigure alert={daysWithIssues > 0} label="Days w/ issues" value={String(daysWithIssues)} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1301,24 +1684,36 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
       </div>
       <div className="grid max-h-72 gap-3 overflow-y-auto p-5 md:grid-cols-2 xl:grid-cols-3">
         {sortedRows.slice(0, 18).map((row) => (
-          <article key={row.hrId} className="rounded-sm border border-slate-200 bg-slate-50 p-4">
+          <article key={row.hrId} className="border border-slate-200 bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <h4 className="whitespace-nowrap text-sm font-black text-slate-900">{row.fullName}</h4>
-                <p className="mt-0.5 whitespace-nowrap text-phx-xs font-semibold text-slate-400">
+                <h4 className="text-sm font-black text-slate-900">{row.fullName}</h4>
+                <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">
                   {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
-              <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-phx-2xs font-black", row.exceptionCount ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"].join(" ")}>
+              <span className={["shrink-0 px-2.5 py-0.5 text-phx-2xs font-black", row.exceptionCount ? "bg-red-600 text-white" : "bg-emerald-50 text-emerald-700"].join(" ")}>
                 {row.exceptionCount} warn{row.exceptionCount === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-phx-2xs font-black text-slate-500">
-              <span className="rounded-sm bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
-              <span className="rounded-sm bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
-              <span className="rounded-sm bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
-              <span className="rounded-sm bg-indigo-100 px-1 py-1.5 text-indigo-700">D {row.sourceCounts.double_visit}</span>
+            {/* The day kinds in the grid's own colours, then every visit AM · PM · Pharmacies
+                apart — a pharmacy is never counted among the PM doctors. */}
+            <div className="mt-3 grid grid-cols-3 gap-1.5 text-center text-phx-2xs font-black text-slate-800">
+              {teamSummarySources.map(({ letter, source }) => (
+                <span
+                  aria-label={`${privateCalendarSourceLabels[source]}: ${row.sourceCounts[source]}`}
+                  className={["px-1 py-1.5", kindChipTone(source)].join(" ")}
+                  key={source}
+                  title={privateCalendarSourceLabels[source]}
+                >
+                  {letter} {row.sourceCounts[source]}
+                </span>
+              ))}
             </div>
+            <p className="mt-2 text-phx-xs font-bold text-slate-700">
+              <span className="font-black uppercase tracking-[0.1em] text-slate-500">Visits </span>
+              {row.visitCounts ? formatVisitCountSplit(row.visitCounts) : "AM 0 · PM 0 · Pharmacies 0"}
+            </p>
           </article>
         ))}
       </div>
@@ -1381,11 +1776,10 @@ function VerificationSourceMultiSelect({
 
 function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
   const tone = exceptionTone(exception.severity);
-  const isDanger = exception.severity === "danger";
   return (
-    <article className={["rounded-sm border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
+    <article className={["border-l-4 p-4 shadow-sm ring-1", tone.border, tone.panelStrong].join(" ")}>
       <div className="min-w-0">
-        <h4 className={["text-sm font-black", isDanger ? "text-red-900" : "text-amber-900"].join(" ")}>
+        <h4 className={["text-sm font-black", tone.title].join(" ")}>
           {exception.title}
         </h4>
         {exception.employeeName ? (
@@ -1403,16 +1797,22 @@ function ExceptionItem({ exception }: { exception: PrivateCalendarException }) {
 
 function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode: PrivateCalendarViewMode }) {
   return (
-    <article className={["overflow-hidden rounded-sm border-l-4 bg-white shadow-sm ring-1 ring-slate-200/60", sourceAccentColor(item.source, item.severity)].join(" ")}>
+    <article
+      className={[
+        "overflow-hidden border-l-4 bg-white shadow-sm ring-1",
+        item.severity === "danger" ? "ring-red-300" : item.severity === "warning" ? "ring-orange-300" : "ring-slate-200/70",
+        kindAccentColor(privateCalendarItemKind(item)),
+      ].join(" ")}
+    >
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={["inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
-                {privateCalendarSourceLabels[item.source]}
+              <span className={["inline-flex items-center gap-1.5 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-800", kindChipTone(privateCalendarItemKind(item))].join(" ")}>
+                {privateCalendarActivityKindLabels[privateCalendarItemKind(item)]}
               </span>
               {item.time ? (
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-phx-2xs font-black text-slate-600">
+                <span className="bg-slate-100 px-2 py-0.5 text-phx-2xs font-black text-slate-600">
                   {item.time}
                 </span>
               ) : null}
@@ -1425,7 +1825,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
             ) : null}
           </div>
           {item.status ? (
-            <span className="shrink-0 rounded-full bg-phx-paper px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
+            <span className="shrink-0 bg-phx-paper px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
               {item.status}
             </span>
           ) : null}
@@ -1434,7 +1834,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         {item.exceptionFlags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {item.exceptionFlags.map((flag) => (
-              <span key={flag} className="rounded-full bg-phx-danger-bg px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-danger">
+              <span key={flag} className={["px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", flagTone(flag)].join(" ")}>
                 {flag}
               </span>
             ))}

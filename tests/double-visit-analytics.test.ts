@@ -72,6 +72,7 @@ const zeroKpis: DoubleVisitKpis = {
   averageVisitsPerDoubleVisitor: 0,
   doubleVisitorCount: 0,
   mrCoverageCount: 0,
+  pharmacyVisitCount: 0,
   pmVisitCount: 0,
   totalVisits: 0,
   vacantOrUnmappedShare: 0,
@@ -135,26 +136,63 @@ export function runDoubleVisitAnalyticsTests() {
   assert.match(service, /loadDoubleVisitPrivateCalendarItems/, "private calendar must receive Double Visit evidence");
   assert.doesNotMatch(service, /title: "Performed Double Visits"/, "performed double-visit items must show the visit count, visited name(s), and area instead of a generic title");
   assert.doesNotMatch(service, /title: "Received Double Visit"/, "received double-visit items must show the visit count, double-visitor name(s), and area instead of a generic title");
+  // One calendar item per person, day and KIND — double or chain, regular or campaign — titled
+  // with the kind, the people who went, and the area; its visits AM · PM · Pharmacies apart.
   assert.match(
     service,
-    /title: `Performed \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{visitedNames\} - \$\{areaLabel\}`/,
-    "performed double-visit calendar title must read as 'Performed N visit(s) with <name> - <area>'",
+    /title: `\$\{kindLabel\}: \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{withNames\} - \$\{areaLabel\}`/,
+    "a double-visit calendar title must read '<kind>: N visit(s) with <names> - <area>'",
   );
   assert.match(
     service,
-    /title: `Received \$\{total\} visit\$\{total === 1 \? "" : "s"\} with \$\{doubleVisitorNames\} - \$\{areaLabel\}`/,
-    "received double-visit calendar title must read as 'Received N visit(s) with <name> - <area>'",
+    /chipLines: \[\s*kindLabel,\s*`With \$\{withNames\}`,\s*counts,\s*areaLabel,/,
+    "a double-visit month-grid chip must stack kind / with-names / AM · PM · Pharmacies / area on separate lines",
   );
   assert.match(
     service,
-    /`DV with \$\{visitedNames\}`,\s*\n\s*`\$\{workloadTime\(group\)\} visits`,\s*\n\s*areaLabel,/,
-    "performed double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
+    /const counts = formatVisitCountSplit\(split, \{ compact: true \}\);/,
+    "the chip's visit count must come from the golden-rule formatter, never a hand-built AM · PM pair",
   );
   assert.match(
     service,
-    /chipLines: \[`DV with \$\{doubleVisitorNames\}`, `\$\{workloadTime\(group\)\} visits`, areaLabel\]/,
-    "received double-visit month-grid chip must stack DV-with-name / visit-count / area on separate lines",
+    /const classified = classifyDoubleVisitRows\(rows\);/,
+    "the calendar loader must pair a chain visit's two CRM halves so a chain stop counts once",
   );
+  assert.match(
+    service,
+    /classified\.filter\(\(entry\) => !entry\.absorbed && selected\.has/,
+    "a senior manager's half folded into the rep's row must never reach the rep's calendar a second time",
+  );
+  // THE AM · PM · PHARMACIES GOLDEN RULE: the old AM · PM pair filed every pharmacy among the PM
+  // doctors, so it is gone from the calendar feed.
+  assert.doesNotMatch(service, /function workloadTime\(/, "the AM · PM-only workload pair must not come back to the calendar");
+  assert.doesNotMatch(service, /`AM\/PM: /, "the detail line must not label the pair 'AM/PM'");
+  assert.match(service, /visit_type_description, speciality",/, "the double-visit read must carry the contact speciality that marks a pharmacy");
+  // Only the outstation trip-workload fallback (one AM and one PM line) may still split on the raw CRM
+  // period: it feeds the expense gate, so it moves in its own risk-reviewed change, never as a side
+  // effect of a dashboard fix. Every dashboard count is bucketed.
+  assert.equal(
+    (service.match(/row\.period === "(AM|PM)"\)\.reduce/g) ?? []).length,
+    2,
+    "no Double Visit Analytics count may bucket on the CRM period alone — that files every pharmacy among the PM doctors",
+  );
+  assert.equal(
+    (service.match(/sumDoubleVisitSplit\(/g) ?? []).length,
+    2,
+    "the KPI band and each manager's summary must both take their AM · PM · Pharmacies figures from the one bucket helper",
+  );
+  assert.equal(
+    (service.match(/\{ header: "Pharmacy Visits", key: "pharmacyVisits", width: 16 \}/g) ?? []).length,
+    3,
+    "Manager Activity, By Role and Weekly Trend must each carry a Pharmacy Visits column beside AM and PM",
+  );
+  assert.match(service, /\{ metric: "Pharmacy Activity", value: data\.kpis\.pharmacyVisitCount \}/, "the workbook's summary names pharmacy activity apart");
+  const dvWorkspace = readFileSync(new URL("../src/components/double-visit-analytics/double-visit-analytics-workspace.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(dvWorkspace, /<AmPmBar am=\{[^}]+\} pm=\{[^}]+\} \/>/, "every AM · PM bar on the dashboard must carry its pharmacies segment");
+  assert.doesNotMatch(dvWorkspace, /e\.period === "(AM|PM)"|row\.period === "(AM|PM)"|e\.period === periodFilter/, "the dashboard must count and filter by the golden-rule bucket, never the raw CRM period");
+  assert.match(dvWorkspace, /\["ALL", "AM", "PM", "Pharmacies"\] as PeriodFilter\[\]/, "the period filter must offer Pharmacies as its own choice");
+  assert.match(dvWorkspace, /label="Pharmacy Visits" value=\{fmt\(dashboard\.kpis\.pharmacyVisitCount/, "the KPI band must show pharmacy visits as their own figure");
+  assert.doesNotMatch(dvWorkspace, />AM \/ PM</, "no column header may join AM and PM with a slash");
   // The private calendar DOES opt into seeing resigned-agent rows — a real double visit
   // the calendar owner performed stays real proof of field work even when the visited
   // party's resolved identity is a resigned employee. But it must never trust that
@@ -174,7 +212,7 @@ export function runDoubleVisitAnalyticsTests() {
   );
   assert.match(
     service,
-    /const identityUnverified = group\.some\(\(row\) => row\.visited_employee_status === "resigned"\);/,
+    /const identityUnverified = side === "performed" && group\.some\(\(entry\) => entry\.row\.visited_employee_status === "resigned"\);/,
     "the private calendar must detect an unverified (resigned-resolved) identity from the row's already-computed status",
   );
   assert.match(
@@ -286,6 +324,23 @@ export function runDoubleVisitAnalyticsTests() {
   assert.equal(dsm!.callsPerActiveDay, 2.5, "calls/day = totalDvs / active days");
   assert.equal(dsm!.amVisits, 2);
   assert.equal(dsm!.pmVisits, 8);
+  assert.equal(dsm!.pharmacyVisits, 0);
+
+  // THE AM · PM · PHARMACIES GOLDEN RULE: a pharmacy visit the CRM tagged PM (or AM) is counted
+  // under Pharmacies only — never among the PM doctors — and a row with no period stays out of all
+  // three, as it always has on this screen.
+  const pharmacyRows = asRows([
+    dvRow({ date: "2026-06-01", dvHrId: "P-1", period: "PM", visit: 1, visitedHrId: "MA" }),
+    { ...dvRow({ date: "2026-06-01", dvHrId: "P-1", period: "PM", visit: 1, visitedHrId: "MB" }), speciality: "Pharmacy" },
+    { ...dvRow({ date: "2026-06-02", dvHrId: "P-1", period: "AM", visit: 1, visitedHrId: "MC" }), speciality: "pharmacy" },
+    dvRow({ date: "2026-06-03", dvHrId: "P-1", period: "UNKNOWN", visit: 1, visitedHrId: "MD" }),
+  ]);
+  const pharmacySummary = buildManagerSummariesDetailed(pharmacyRows, [], "2026-06-30").summaries[0];
+  assert.deepEqual(
+    { am: pharmacySummary.amVisits, pharmacies: pharmacySummary.pharmacyVisits, pm: pharmacySummary.pmVisits, total: pharmacySummary.totalDvs },
+    { am: 0, pharmacies: 2, pm: 1, total: 4 },
+    "a pharmacy double visit is counted under Pharmacies, never in PM or AM, and the total still counts every visit",
+  );
   assert.equal(dsm!.teamMrCount, 5, "team = active MR descendants");
   assert.equal(dsm!.coveragePct, 60, "visited 3 of 6-in-team rule (3/5)");
   assert.equal(dsm!.neglectedMrCount, 2);
@@ -347,6 +402,10 @@ export function runDoubleVisitAnalyticsTests() {
   assert.ok(exec.roleRollups.some((r) => r.roleCode === "PM"), "PM rollup present");
   const ampm = exec.insights.find((i) => i.id === "ampm-imbalance");
   assert.ok(ampm, "AM/PM imbalance insight present");
+  assert.equal(ampm!.title, "AM · PM balance", "the balance insight never joins the pair with a slash");
+  const withPharmacies = buildExecutiveSummary(execSummaries, [], { ...execKpis, pharmacyVisitCount: 40 }, execEmployees, visitedKeysByManager)
+    .insights.find((i) => i.id === "ampm-imbalance");
+  assert.match(withPharmacies!.detail, /113 AM vs 543 PM \(17% AM\), with 40 pharmacy visits counted apart\./, "pharmacy visits are named apart and never tip the AM · PM balance");
   assert.equal(ampm!.managerHrId, null, "org-wide insight has no manager link");
   exec.insights.forEach((insight, index) => assert.equal(insight.rank, index, "insight ranks are contiguous"));
   const severityWeight: Record<string, number> = { critical: 0, info: 2, positive: 3, warning: 1 };

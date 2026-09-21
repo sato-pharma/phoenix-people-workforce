@@ -42,10 +42,11 @@ import type {
   DoubleVisitRoleRollup,
   DoubleVisitTrendPoint,
 } from "@/lib/double-visit-analytics/types";
+import { entryCountBucket, entryPeriodLabel } from "@/lib/double-visit-analytics/count-bucket";
 import { stableEnGbFormatter } from "@/lib/format/cairo-datetime";
 
 type Tab = "summary" | "managers" | "mr-status" | "trends";
-type PeriodFilter = "ALL" | "AM" | "PM";
+type PeriodFilter = "ALL" | "AM" | "PM" | "Pharmacies";
 type RoleFilter = "ALL" | DoubleVisitRoleCode;
 type SortKey =
   | "activeDvDays"
@@ -92,10 +93,12 @@ function bandClass(b: "critical" | "healthy" | "warning") {
   return "bg-rose-50 text-rose-700 ring-rose-200";
 }
 
-// AM/PM two-tone kept on-brand: AM = orange accent, PM = neutral slate.
-function periodPillClass(p: "AM" | "PM" | "UNKNOWN") {
+// AM · PM · Pharmacies kept on-brand: AM = orange accent, PM = neutral slate, Pharmacies = emerald —
+// the same three tones as the split bar below. A pharmacy is never shown, or counted, as PM.
+function periodPillClass(p: "AM" | "PM" | "Pharmacies" | "UNKNOWN") {
   if (p === "AM") return "bg-orange-100 text-orange-700";
   if (p === "PM") return "bg-slate-200 text-slate-700";
+  if (p === "Pharmacies") return "bg-emerald-100 text-emerald-800";
   return "bg-slate-100 text-slate-500";
 }
 
@@ -127,13 +130,16 @@ function RoleBadge({ role }: { role: DoubleVisitRoleCode | null }) {
   return <span className={`rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
 }
 
-function AmPmBar({ am, pm }: { am: number; pm: number }) {
-  const total = am + pm;
-  const amPct = total > 0 ? (am / total) * 100 : 0;
+// THE AM · PM · PHARMACIES GOLDEN RULE: three segments, never a two-way AM/PM split that files the
+// pharmacies among the PM doctors.
+function AmPmBar({ am, pharmacies, pm }: { am: number; pharmacies: number; pm: number }) {
+  const total = am + pm + pharmacies;
+  const share = (value: number) => (total > 0 ? (value / total) * 100 : 0);
   return (
-    <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={`AM ${am} · PM ${pm}`}>
-      <div className="h-2 bg-phx-accent" style={{ width: `${amPct}%` }} />
-      <div className="h-2 bg-slate-400" style={{ width: `${100 - amPct}%` }} />
+    <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={`AM ${am} · PM ${pm} · Pharmacies ${pharmacies}`}>
+      <div className="h-2 bg-phx-accent" style={{ width: `${share(am)}%` }} />
+      <div className="h-2 bg-slate-400" style={{ width: `${share(pm)}%` }} />
+      <div className="h-2 bg-emerald-600" style={{ width: `${share(pharmacies)}%` }} />
     </div>
   );
 }
@@ -244,6 +250,7 @@ type MrVisitRow = {
   key: string;
   lastDate: string | null;
   name: string;
+  pharmacies: number;
   pm: number;
   score: DoubleVisitMrScore | null;
   visits: number;
@@ -259,25 +266,29 @@ function buildManagerProfile(
   // All-period rows for this manager — drives the stable summary chips.
   const allRows = visitLog.filter((e) => hk(e.doubleVisitorHrId) === managerKey);
   const totalVisits = allRows.reduce((s, e) => s + e.visitCount, 0);
-  const amVisits = allRows.filter((e) => e.period === "AM").reduce((s, e) => s + e.visitCount, 0);
-  const pmVisits = allRows.filter((e) => e.period === "PM").reduce((s, e) => s + e.visitCount, 0);
+  // AM · PM · Pharmacies apart — a pharmacy visit is never one of the PM doctors (count-bucket.ts).
+  const amVisits = allRows.filter((e) => entryCountBucket(e) === "AM").reduce((s, e) => s + e.visitCount, 0);
+  const pmVisits = allRows.filter((e) => entryCountBucket(e) === "PM").reduce((s, e) => s + e.visitCount, 0);
+  const pharmacyVisits = allRows.filter((e) => entryCountBucket(e) === "Pharmacies").reduce((s, e) => s + e.visitCount, 0);
   const lastDate = [...new Set(allRows.map((e) => e.date))].sort().at(-1) ?? null;
 
   // All-period visited set — an MR visited in any period is NOT neglected.
   const visitedKeysAll = new Set(allRows.map((e) => hk(e.visitedHrId)).filter(Boolean));
 
   // Period-scoped rows reshape only the breakdown table below the chips.
-  const scopedRows = periodFilter === "ALL" ? allRows : allRows.filter((e) => e.period === periodFilter);
+  const scopedRows = periodFilter === "ALL" ? allRows : allRows.filter((e) => entryCountBucket(e) === periodFilter);
 
   const byMr = new Map<string, MrVisitRow>();
   for (const row of scopedRows) {
     const key = hk(row.visitedHrId) || `name:${row.visitedName ?? "unknown"}`;
     const existing =
       byMr.get(key) ??
-      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pm: 0, score: null, visits: 0, visitsPerDay: 0 };
+      { am: 0, area: row.area, dates: new Set<string>(), days: 0, firstDate: null, hrId: row.visitedHrId, key, lastDate: null, name: row.visitedName ?? "Unmapped MR", pharmacies: 0, pm: 0, score: null, visits: 0, visitsPerDay: 0 };
     existing.visits += row.visitCount;
-    if (row.period === "AM") existing.am += row.visitCount;
-    if (row.period === "PM") existing.pm += row.visitCount;
+    const countBucket = entryCountBucket(row);
+    if (countBucket === "AM") existing.am += row.visitCount;
+    else if (countBucket === "PM") existing.pm += row.visitCount;
+    else if (countBucket === "Pharmacies") existing.pharmacies += row.visitCount;
     existing.dates.add(row.date.slice(0, 10));
     if (!existing.lastDate || row.date > existing.lastDate) existing.lastDate = row.date;
     if (!existing.firstDate || row.date < existing.firstDate) existing.firstDate = row.date;
@@ -321,6 +332,7 @@ function buildManagerProfile(
     mrBreakdown,
     neglectedMrs,
     overFocusedKeys,
+    pharmacyVisits,
     pmVisits,
     topN,
     totalVisits,
@@ -357,7 +369,7 @@ function ExpandableMrRow({
   const mrHistory = useMemo(() => {
     const scoreKey = hk(score.hrId);
     const rows = visitLog.filter(
-      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || e.period === periodFilter),
+      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || entryCountBucket(e) === periodFilter),
     );
     return [...rows].sort((a, b) => b.date.localeCompare(a.date));
   }, [visitLog, score.hrId, periodFilter]);
@@ -420,8 +432,8 @@ function ExpandableMrRow({
                       <td className="py-1.5 pr-6 text-slate-700">{e.doubleVisitorName ?? e.doubleVisitorHrId ?? "—"}</td>
                       <td className="py-1.5 pr-6 text-slate-600">{e.area ?? "—"}</td>
                       <td className="py-1.5 pr-6">
-                        {e.period !== "UNKNOWN" ? (
-                          <span className={`rounded px-1.5 py-0.5 text-xs font-black ${periodPillClass(e.period)}`}>{e.period}</span>
+                        {entryPeriodLabel(e) !== "UNKNOWN" ? (
+                          <span className={`rounded px-1.5 py-0.5 text-xs font-black ${periodPillClass(entryPeriodLabel(e))}`}>{entryPeriodLabel(e)}</span>
                         ) : "—"}
                       </td>
                       <td className="py-1.5 text-right font-bold text-slate-800 tabular-nums">{e.visitCount}</td>
@@ -457,7 +469,7 @@ function MrScoreCard({
   const mrHistory = useMemo(() => {
     const scoreKey = hk(score.hrId);
     const rows = visitLog.filter(
-      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || e.period === periodFilter),
+      (e) => hk(e.visitedHrId) === scoreKey && (periodFilter === "ALL" || entryCountBucket(e) === periodFilter),
     );
     return [...rows].sort((a, b) => b.date.localeCompare(a.date));
   }, [visitLog, score.hrId, periodFilter]);
@@ -522,8 +534,8 @@ function MrScoreCard({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {e.period !== "UNKNOWN" ? (
-                    <span className={`rounded px-1.5 py-0.5 text-phx-2xs font-black ${periodPillClass(e.period)}`}>{e.period}</span>
+                  {entryPeriodLabel(e) !== "UNKNOWN" ? (
+                    <span className={`rounded px-1.5 py-0.5 text-phx-2xs font-black ${periodPillClass(entryPeriodLabel(e))}`}>{entryPeriodLabel(e)}</span>
                   ) : null}
                   <span className="font-black tabular-nums text-slate-800">{e.visitCount}</span>
                 </div>
@@ -561,11 +573,12 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
         )}
       </div>
       <div className="mt-3">
-        <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           <span>AM {rollup.amVisits}</span>
           <span>PM {rollup.pmVisits}</span>
+          <span>Pharmacies {rollup.pharmacyVisits}</span>
         </div>
-        <div className="mt-1"><AmPmBar am={rollup.amVisits} pm={rollup.pmVisits} /></div>
+        <div className="mt-1"><AmPmBar am={rollup.amVisits} pharmacies={rollup.pharmacyVisits} pm={rollup.pmVisits} /></div>
       </div>
     </button>
   );
@@ -633,11 +646,12 @@ function LeaderboardCard({
           },
         ]}
       />
-      <div className="mt-1 flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {row.amVisits}</span>
         <span>PM {row.pmVisits}</span>
+        <span>Pharmacies {row.pharmacyVisits}</span>
       </div>
-      <div className="mt-1"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
+      <div className="mt-1"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} pm={row.pmVisits} /></div>
     </PortalRecordCard>
   );
 }
@@ -680,6 +694,7 @@ function MrBreakdownCard({
           },
           { label: "AM", value: row.am > 0 ? row.am : "—" },
           { label: "PM", value: row.pm > 0 ? row.pm : "—" },
+          { label: "Pharmacies", value: row.pharmacies > 0 ? row.pharmacies : "—" },
           { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
         ]}
       />
@@ -700,6 +715,7 @@ function VacantTerritoryCard({ row }: { row: MrVisitRow }) {
           { label: "Days", value: row.days },
           { label: "AM", value: row.am > 0 ? row.am : "—" },
           { label: "PM", value: row.pm > 0 ? row.pm : "—" },
+          { label: "Pharmacies", value: row.pharmacies > 0 ? row.pharmacies : "—" },
           { label: "Span", value: `${fmtDate(row.firstDate)} – ${fmtDate(row.lastDate)}` },
         ]}
       />
@@ -715,11 +731,12 @@ function TrendCard({ week }: { week: DoubleVisitTrendPoint }) {
       status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{fmt(week.totalDvs)} DVs</span>}
     >
       <PortalRecordFields fields={[{ label: "MRs covered", value: week.distinctMrs }]} />
-      <div className="mt-2 flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {week.amVisits}</span>
         <span>PM {week.pmVisits}</span>
+        <span>Pharmacies {week.pharmacyVisits}</span>
       </div>
-      <div className="mt-1"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div>
+      <div className="mt-1"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} pm={week.pmVisits} /></div>
     </PortalRecordCard>
   );
 }
@@ -1006,7 +1023,7 @@ export function DoubleVisitAnalyticsWorkspace({
       {(activeTab === "managers" || activeTab === "mr-status") && (
         <div className="flex flex-wrap items-center gap-3 rounded border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <div className="flex overflow-hidden rounded border border-slate-200">
-            {(["ALL", "AM", "PM"] as PeriodFilter[]).map((p) => (
+            {(["ALL", "AM", "PM", "Pharmacies"] as PeriodFilter[]).map((p) => (
               <button
                 key={p}
                 type="button"
@@ -1062,7 +1079,8 @@ export function DoubleVisitAnalyticsWorkspace({
               <KpiCard icon={UsersRound} label="MR Coverage" value={fmt(dashboard.kpis.mrCoverageCount)} hint="Mapped MRs with at least one DV in range." />
               <KpiCard icon={Flame} label="Neglected MRs" value={fmt(weakMrs.length)} hint={`${criticalMrs.length} critical (≥60 days or 0 DVs/90d).`} />
               <KpiCard icon={Activity} label="AM Visits" value={fmt(dashboard.kpis.amVisitCount)} hint="Morning double visit workload." />
-              <KpiCard icon={Activity} label="PM Visits" value={fmt(dashboard.kpis.pmVisitCount)} hint="Afternoon double visit workload." />
+              <KpiCard icon={Activity} label="PM Visits" value={fmt(dashboard.kpis.pmVisitCount)} hint="Afternoon double visits to doctors — pharmacies are counted apart." />
+              <KpiCard icon={Activity} label="Pharmacy Visits" value={fmt(dashboard.kpis.pharmacyVisitCount ?? 0)} hint="Double visits to pharmacies, never counted in AM or PM." />
             </div>
 
             {/* Role rollups */}
@@ -1167,7 +1185,7 @@ export function DoubleVisitAnalyticsWorkspace({
                         <SortHeader label="MRs / Team" field="distinctMrs" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
                         <SortHeader label="Coverage" field="coveragePct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                         <SortHeader label="Concentration" field="concentrationPct" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} align="right" />
-                        <th className="px-3 py-3">AM / PM</th>
+                        <th className="px-3 py-3">AM · PM · Pharmacies</th>
                         <SortHeader label="Last Visit" field="daysSinceLastDv" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                       </tr>
                     </thead>
@@ -1200,7 +1218,7 @@ export function DoubleVisitAnalyticsWorkspace({
                             {row.concentrationPct != null ? `${row.concentrationPct}%` : "—"}
                           </td>
                           <td className="px-3 py-2.5">
-                            <div className="w-24"><AmPmBar am={row.amVisits} pm={row.pmVisits} /></div>
+                            <div className="w-24"><AmPmBar am={row.amVisits} pharmacies={row.pharmacyVisits} pm={row.pmVisits} /></div>
                           </td>
                           <td className="px-3 py-2.5 text-sm text-slate-600">
                             {fmtDate(row.lastDvDate)}
@@ -1338,11 +1356,11 @@ export function DoubleVisitAnalyticsWorkspace({
                   <p className="-mt-1 text-xs font-semibold text-slate-400">Headline stats above cover all periods; the {periodLabel} filter applies to the MR breakdown below.</p>
                 ) : null}
 
-                {/* AM/PM + concentration / focus signal */}
+                {/* AM · PM · Pharmacies + concentration / focus signal */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits}</span>
-                    <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
+                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits} · Pharmacies {selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits}</span>
+                    <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pharmacies={selectedSummary?.pharmacyVisits ?? managerProfile.pharmacyVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
                   </div>
                   {selectedSummary?.teamMrCount != null && (
                     <MiniStat tone="orange" value={`${selectedSummary.distinctMrs}/${selectedSummary.teamMrCount}`} label="team MRs visited" />
@@ -1394,6 +1412,7 @@ export function DoubleVisitAnalyticsWorkspace({
                               <th className="px-3 py-3">Span</th>
                               <th className="px-3 py-3 text-right">AM</th>
                               <th className="px-3 py-3 text-right">PM</th>
+                              <th className="px-3 py-3 text-right">Pharmacies</th>
                               <th className="px-3 py-3">Band</th>
                             </tr>
                           </thead>
@@ -1420,6 +1439,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
                                 <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
                                 <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                                <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{row.pharmacies > 0 ? row.pharmacies : <span className="text-slate-300">—</span>}</td>
                                 <td className="px-3 py-2.5">
                                   {row.score ? (
                                     <span className={`rounded px-2 py-0.5 text-xs font-black uppercase ring-1 ${bandClass(row.score.band)}`}>{row.score.band}</span>
@@ -1456,6 +1476,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <th className="px-3 py-3 text-right">Days</th>
                                 <th className="px-3 py-3 text-right">AM</th>
                                 <th className="px-3 py-3 text-right">PM</th>
+                                <th className="px-3 py-3 text-right">Pharmacies</th>
                                 <th className="px-3 py-3">Span</th>
                               </tr>
                             </thead>
@@ -1470,6 +1491,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-orange-600">{row.am > 0 ? row.am : <span className="text-slate-300">—</span>}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-600">{row.pm > 0 ? row.pm : <span className="text-slate-300">—</span>}</td>
+                                  <td className="px-3 py-2.5 text-right text-sm tabular-nums text-emerald-700">{row.pharmacies > 0 ? row.pharmacies : <span className="text-slate-300">—</span>}</td>
                                   <td className="px-3 py-2.5 text-xs text-slate-500">{fmtDate(row.firstDate)} – {fmtDate(row.lastDate)}</td>
                                 </tr>
                               ))}
@@ -1594,7 +1616,7 @@ export function DoubleVisitAnalyticsWorkspace({
           <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><TrendingUp className="h-5 w-5" /> Weekly double-visit trend</h2>
-              <p className="text-sm text-slate-500">Total DVs, AM/PM split, and MR coverage by ISO week within the selected range.</p>
+              <p className="text-sm text-slate-500">Total DVs, the AM · PM · Pharmacies split, and MR coverage by ISO week within the selected range.</p>
             </div>
             <PortalResponsiveDataList
               empty={<PortalEmptyState title="No trend data" message="No double visits in this range." />}
@@ -1607,7 +1629,7 @@ export function DoubleVisitAnalyticsWorkspace({
                     <tr>
                       <th className="px-3 py-3">Week Of</th>
                       <th className="px-3 py-3 text-right">Total DVs</th>
-                      <th className="px-3 py-3">AM / PM</th>
+                      <th className="px-3 py-3">AM · PM · Pharmacies</th>
                       <th className="px-3 py-3 text-right">MRs Covered</th>
                     </tr>
                   </thead>
@@ -1616,7 +1638,7 @@ export function DoubleVisitAnalyticsWorkspace({
                       <tr key={week.weekStart} className="border-t border-slate-100">
                         <td className="px-3 py-2.5 font-semibold text-slate-800">{fmtDate(week.weekStart)}</td>
                         <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-950">{fmt(week.totalDvs)}</td>
-                        <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pm={week.pmVisits} /></div></td>
+                        <td className="px-3 py-2.5"><div className="w-28"><AmPmBar am={week.amVisits} pharmacies={week.pharmacyVisits} pm={week.pmVisits} /></div></td>
                         <td className="px-3 py-2.5 text-right tabular-nums text-slate-700">{week.distinctMrs}</td>
                       </tr>
                     ))}

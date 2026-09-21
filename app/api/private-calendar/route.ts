@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,9 +31,11 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     const url = new URL(request.url);
-    const now = new Date();
-    const year = clampYear(url.searchParams.get("year"), now.getUTCFullYear());
-    const month = clampMonth(url.searchParams.get("month"), now.getUTCMonth() + 1);
+    // The default month is Cairo's, like the page's: UTC still reads the previous month for the
+    // first two or three hours of every month in Cairo.
+    const now = currentCairoDateParts();
+    const year = clampYear(url.searchParams.get("year"), now.year);
+    const month = clampMonth(url.searchParams.get("month"), now.month);
     const employeeHrId = url.searchParams.get("employeeHrId");
     const viewMode = url.searchParams.get("view");
     const actualOnly = url.searchParams.get("actualOnly") === "1";

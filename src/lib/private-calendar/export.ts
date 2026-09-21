@@ -4,13 +4,22 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import type { PrivateCalendarEmployeeOption, PrivateCalendarSeverity, PrivateCalendarWorkspace } from "@/lib/private-calendar/logic";
 import { privateCalendarItemOccursOn, privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
+import {
+  privateCalendarActivityKindLabels,
+  privateCalendarItemKind,
+  privateCalendarVisitKinds,
+  summarizePrivateCalendarVisits,
+} from "@/lib/private-calendar/activity-kinds";
 
 // Phoenix-identity export for the private calendar.
 // Every calendar day of the month gets exactly one row in a single table — never
 // split across a separate "Exceptions" table/sheet — so an employee's whole month
 // reads as one clear, continuous list. Days with no recognized item fall back to
 // that day's exception (if any) or a plain "-" (non-workday / nothing to report).
-// Columns: Date · Day · [Employee, team exports only] · Source · Activity · Status · Time · Detail
+// Columns: Date · Day · [Employee, team exports only] · Kind · Activity · Status · Time · Detail
+// "Kind" names the colour the entry wears on screen — Single · Regular, Double · Campaign,
+// Attendance, Vacation and the rest — and the Summary sheet counts every visit AM · PM ·
+// Pharmacies apart, never a pharmacy inside PM (src/lib/crm/visit-count-buckets.ts).
 //
 // This module holds no filter rules of its own: it renders exactly the items and exceptions the
 // workspace carries, and re-deriving the screen's filter predicate here would be a second copy of
@@ -166,7 +175,7 @@ function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
             : dayItems.some((item) => item.severity === "warning")
               ? "warning"
               : dayItems[0].severity,
-          source: dayItems.map((item) => privateCalendarSourceLabels[item.source] ?? item.source).join(" + "),
+          source: [...new Set(dayItems.map((item) => privateCalendarActivityKindLabels[privateCalendarItemKind(item)]))].join(" + "),
           status: dayItems.map((item) => compact(item.status ?? "")).filter(Boolean).join(" | "),
           time: dayItems.map((item) => compact(item.time ?? "")).filter(Boolean).join(" | "),
           title: dayItems.map((item) => compact(item.title)).join(" | "),
@@ -229,7 +238,7 @@ export async function buildPrivateCalendarWorkbook(
     { header: "Date", key: "date", width: 15 },
     { header: "Day", key: "day", width: 8 },
     ...(multiEmployee ? [{ header: "Employee", key: "employee", width: 30 }] : []),
-    { header: "Source", key: "source", width: 18 },
+    { header: "Kind", key: "source", width: 22 },
     { header: "Activity", key: "title", width: 36 },
     { header: "Status", key: "status", width: 20 },
     { header: "Time", key: "time", width: 14 },
@@ -290,7 +299,7 @@ export async function buildPrivateCalendarWorkbook(
       cell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: false };
       cell.border = thinGrid();
     });
-    // Tint source cell by severity
+    // Tint the kind cell by severity
     const sourceCell = row.getCell(sourceColIndex);
     sourceCell.fill = fill(tone.fill);
     sourceCell.font = { size: 9, bold: true, color: { argb: tone.text } };
@@ -298,8 +307,8 @@ export async function buildPrivateCalendarWorkbook(
 
   // ── Summary sheet ────────────────────────────────────────────────────────
   const wsSum = wb.addWorksheet("Summary");
-  wsSum.columns = [{ header: "Source", width: 24 }, { header: "Count", width: 10 }];
-  wsSum.mergeCells(1, 1, 1, 2);
+  wsSum.columns = [{ header: "Source", width: 24 }, { header: "Count", width: 10 }, { width: 10 }, { width: 12 }];
+  wsSum.mergeCells(1, 1, 1, 4);
   const sumBrand = wsSum.getCell(1, 1);
   sumBrand.value = `Summary — ${monthLabel}`;
   sumBrand.fill = fill(X.slate900);
@@ -312,6 +321,34 @@ export async function buildPrivateCalendarWorkbook(
     row.height = 18;
     row.eachCell((c) => {
       c.font = source === "total" ? { bold: true, size: 9, color: { argb: X.slate900 } } : { size: 9, color: { argb: X.slate700 } };
+      c.alignment = { vertical: "middle", indent: 1 };
+      c.border = thinGrid();
+    });
+  });
+
+  // Every visit in the month, per kind, AM · PM · Pharmacies apart — three figures, never one
+  // combined number and never a pharmacy inside PM. A double or chain visit counts once however
+  // many of the people on it the export holds. A workspace built before the summary existed is
+  // summarised here from its items, the same function the screen uses.
+  const visitSummary = workspace.visitSummary ?? summarizePrivateCalendarVisits(workspace.items);
+  wsSum.addRow([]);
+  const visitHeader = wsSum.addRow(["Visits", "AM", "PM", "Pharmacies"]);
+  visitHeader.height = 20;
+  visitHeader.eachCell((c) => {
+    c.fill = fill(X.slate900);
+    c.font = { bold: true, color: { argb: X.orange500 }, size: 9 };
+    c.alignment = { vertical: "middle", indent: 1 };
+    c.border = thinGrid();
+  });
+  const visitRows = [
+    ...privateCalendarVisitKinds.map((kind) => ({ label: privateCalendarActivityKindLabels[kind], split: visitSummary[kind], total: false })),
+    { label: "ALL VISITS", split: visitSummary.all, total: true },
+  ];
+  visitRows.forEach(({ label, split, total }) => {
+    const row = wsSum.addRow([label, split.am, split.pm, split.pharmacies]);
+    row.height = 18;
+    row.eachCell((c) => {
+      c.font = total ? { bold: true, size: 9, color: { argb: X.slate900 } } : { size: 9, color: { argb: X.slate700 } };
       c.alignment = { vertical: "middle", indent: 1 };
       c.border = thinGrid();
     });
@@ -345,9 +382,11 @@ export async function buildPrivateCalendarPdf(
   // Every day of the month is one row of this single table (headers repeat per page,
   // but it is still one continuous table — never a separate exceptions table).
   const headers = multiEmployee
-    ? ["Date", "Day", "Employee", "Source", "Activity", "Status", "Time", "Detail"]
-    : ["Date", "Day", "Source", "Activity", "Status", "Time", "Detail"];
-  const colWidths = multiEmployee ? [62, 26, 110, 58, 150, 80, 50, 0] : [68, 30, 64, 180, 90, 54, 0]; // last col fills remaining
+    ? ["Date", "Day", "Employee", "Kind", "Activity", "Status", "Time", "Detail"]
+    : ["Date", "Day", "Kind", "Activity", "Status", "Time", "Detail"];
+  // The Kind column fits its longest single name ("Other CRM activity") at 7pt — the old 64pt cut
+  // "Single - Regular" to "Single - Reg".
+  const colWidths = multiEmployee ? [62, 26, 104, 90, 130, 70, 46, 0] : [66, 28, 90, 170, 80, 50, 0]; // last col fills remaining
   const totalFixed = colWidths.slice(0, -1).reduce((a, b) => a + b, 0);
   colWidths[colWidths.length - 1] = pageW - margin * 2 - totalFixed;
 
