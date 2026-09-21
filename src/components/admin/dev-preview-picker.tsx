@@ -251,7 +251,7 @@ export function DevPreviewPicker({
 
         <a
           aria-disabled={launching || undefined}
-          className={`inline-flex items-center justify-center rounded-[6px] bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition ${
+          className={`inline-flex items-center justify-center bg-orange-600 px-4 py-2 text-sm font-bold text-white shadow-[0_8px_20px_rgba(234,88,12,0.25)] transition ${
             launching ? "cursor-wait opacity-70" : "hover:bg-orange-700"
           }`}
           href={previewHref}
