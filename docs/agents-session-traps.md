@@ -1989,12 +1989,29 @@ actually reached `origin/main`.
 
     git show origin/main:.github/workflows/ci.yml
 
-**What git actually receives.** MSYS path conversion rewrites the whole `<rev>:<path>` argument
-before git ever sees it — the colon becomes a SEMICOLON and every slash a backslash:
+**What git actually receives, and WHEN.** MSYS rewrites the whole `<rev>:<path>` argument before
+git ever sees it — the colon becomes a SEMICOLON and every slash a backslash — but **only when the
+path begins with a dot followed by a name**. That condition is measured below; as first written,
+this account said it happened to every `<rev>:<path>`, which is three times wider than the fault:
 
     fatal: ambiguous argument 'origin\main;.github\workflows\ci.yml': unknown revision or path not in the working tree.
     Use '--' to separate paths from revisions, like this:
     'git <command> [<revision>...] -- [<file>...]'
+
+**Which paths, measured.** The same read, byte counts with and without the export:
+
+| path | without | with `MSYS_NO_PATHCONV=1` | |
+| --- | --- | --- | --- |
+| `.github/workflows/ci.yml` | 0 | 47,311 | **mangled** |
+| `.claude/settings.json` | 0 | 6,129 | **mangled** |
+| `.gitignore` | 0 | 5,015 | **mangled** |
+| `package.json` | 20,391 | 20,391 | fine |
+| `docs/agents-session-traps.md` | 191,722 | 191,722 | fine |
+| `supabase/config.toml` | 15,317 | 15,317 | fine |
+
+So an ordinary path is unaffected, and a `supabase/migrations/…` extraction is safe as written.
+The dotted ones are `.github`, `.claude`, `.gitignore`, `.env*` and their kin — which is where CI
+config, hooks and settings live, so the fault falls precisely on the files a session verifies most.
 
 Run on its own that is an error a session would notice. **The trap is the next step**, which is how
 the command is actually used:
@@ -2026,8 +2043,13 @@ The redirect is still worth doing, but not as the fix: a 0-byte file is *visible
     MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | wc -l                         # 813
     MSYS_NO_PATHCONV=1 git show origin/main:.github/workflows/ci.yml | grep -c "docs-only fast path"  # 4
 
-The PowerShell tool performs no path conversion and needs no variable: the same two readings there
-are **813** and **4**.
+**A `./` in front disarms it, with no variable at all** — the trigger is a dot followed by a NAME,
+not a dot as such:
+
+    git show origin/main:./.github/workflows/ci.yml | wc -l                                       # 813
+
+The PowerShell tool performs no path conversion and needs no variable either: the same two readings
+there are **813** and **4**.
 
 **The real answer was 4 of 4.** #4148 — "fix(ci): a docs-only PR no longer skips the tests that
 police the docs", merged 2026-09-21 00:36 UTC — had shipped exactly as written, and the session
@@ -2045,6 +2067,12 @@ above. The cue lives in the **Shell and tooling** cluster of
 [docs/agents-session-traps-clusters.md](agents-session-traps-clusters.md), and the memory is
 `git-ref-colon-path-is-mangled-by-msys-returns-empty` — whose wording, "returns EMPTY", this
 measurement corrects. It does not return empty. It fails loudly, on a stream nobody is reading.
+
+**Narrowed the same night, 2026-09-21.** As first written this account said MSYS rewrites the
+argument, full stop. A second session measured the boundary and it is narrower: only a path
+beginning with a dot-name. The over-broad form would have had sessions exporting the variable for
+every `git show` and reading a correct result as a rescued one — a rule three times wider than the
+fault, which is the same class of error as the zero it documents.
 
 ## `AGENTS.md` §2.1 Session-level traps — as it stood before the 2026-09-12 condensation
 
