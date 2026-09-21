@@ -103,15 +103,22 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
   // WHICH WINDOW, in the header, whenever it is not the whole month. The rate is per working day and
   // always was; what it divides by is what the reader could not see, and a week's numbers under a
   // heading that says only "August" is the misreading the period picker was built to end.
+  // Ruling C1 (owner, 2026-09-21): Reps List scores through YESTERDAY. The caption says so, so a
+  // manager reading at 9am does not think this morning's calls were lost.
+  const todayNote = board.todayLeftOut ? " · today is not scored until it is over" : "";
   const windowText = board.notStarted
     ? `${board.periodLabel} has not started — nothing to score yet`
-    : board.isWholeMonth
-      ? board.isCurrentMonth
-        ? `month to date — scored through ${scoredThrough}`
-        : `full month to ${scoredThrough}`
-      : board.cappedAtToday
-        ? `${board.periodLabel} — scored through ${scoredThrough}, the days since have not happened yet`
-        : `${board.periodLabel} — ${dayLabel(board.dateFrom)} to ${scoredThrough}`;
+    : board.todayLeftOut && board.dateTo < board.dateFrom
+      ? `${board.isWholeMonth ? "the month" : board.periodLabel} began today — nothing is scored until today is over`
+      : board.isWholeMonth
+        ? board.isCurrentMonth
+          ? `month to date — scored through ${scoredThrough}${todayNote}`
+          : `full month to ${scoredThrough}`
+        : board.cappedAtToday
+          ? board.todayLeftOut
+            ? `${board.periodLabel} — scored through ${scoredThrough}${todayNote}`
+            : `${board.periodLabel} — scored through ${scoredThrough}, the days since have not happened yet`
+          : `${board.periodLabel} — ${dayLabel(board.dateFrom)} to ${scoredThrough}`;
   const description = [
     `${board.workingDays} working days (Sat–Wed) · Thursday and Friday are not working days`,
     "duplicates collapsed · departed agents excluded · leave, meetings and training are not field work",

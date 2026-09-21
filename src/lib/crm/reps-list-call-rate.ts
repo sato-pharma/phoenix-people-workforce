@@ -26,6 +26,7 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import {
   buildRepsPlansBoard,
+  REPS_LIST_WINDOW,
   repsPlansRange,
   repsPlansWeeks,
   resolveRepsPlansMonth,
@@ -63,9 +64,10 @@ export async function getRepsListCallRate({
   const month = resolveRepsPlansMonth(params?.month, today);
   // The window bounds the FETCH as well as the caption, so a week's rate is a week's calls over a
   // week's working days (owner, 2026-08-28: "if this is the plan of the first week, calculate the
-  // call rate on the first week only, not all the month").
-  const range = repsPlansRange(month, today, params?.period);
-  const weekOptions = repsPlansWeeks(month, today);
+  // call rate on the first week only, not all the month"). And it stops at YESTERDAY (owner ruling
+  // C1, 2026-09-21): today's calls and today's working day stay out together until the day is over.
+  const range = repsPlansRange(month, today, params?.period, REPS_LIST_WINDOW);
+  const weekOptions = repsPlansWeeks(month, today, REPS_LIST_WINDOW);
 
   const scope = await getDoctorCoverageScope(access);
   const [report, repNameByHrId, jobTitleByHrId, tree] = await Promise.all([

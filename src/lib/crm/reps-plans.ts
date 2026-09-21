@@ -104,17 +104,45 @@ export type RepsPlansRange = {
   isWholeMonth: boolean;
   /** True when the window has not begun. Every rate is null and the screen says so, never "0.00". */
   notStarted: boolean;
+  /**
+   * True when today falls inside the window and was left out of it — {@link RepsPlansWindowOptions}
+   * `throughYesterday`, which Reps List asks for (owner ruling C1). The screen then says today is not
+   * scored until it is over, rather than letting a reader think the day's visits were lost.
+   */
+  todayLeftOut: boolean;
 };
+
+/**
+ * How far into a running window the rate reaches.
+ *
+ * OWNER RULING C1, 2026-09-21 — "fix Reps List with B2, C1 and D2": Reps List scores through
+ * YESTERDAY. Counting today from midnight divides every rep by a working day he has not worked yet:
+ * at 06:33 on 21 Sep there were 0 visits logged for the day against 561 the day before, so every rate
+ * on the board read about 7% low until the field force caught up, and the whole company was red at
+ * breakfast. Today's calls and today's working day leave the window TOGETHER, so the rate is never a
+ * whole day's calls over a partial day or the reverse.
+ *
+ * Opt-in, and only Reps List opts in (its Call rate tab and the rep drill-down under it). The KPIs
+ * board reads the same helpers and still scores through today: the ruling named Reps List.
+ */
+export type RepsPlansWindowOptions = {
+  throughYesterday?: boolean;
+};
+
+/** Reps List's window — ruling C1. The tab and its drill-down BOTH pass this, so a row and the page it
+ * opens are measured over the same days. */
+export const REPS_LIST_WINDOW: RepsPlansWindowOptions = { throughYesterday: true };
 
 const MONTH_SHORT_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
  * The calendar day before this one.
  *
- * Used for ONE thing: making a window that has not begun genuinely empty. `dateFrom > dateTo` is the
+ * Used for two things: making a window that has not begun genuinely empty (`dateFrom > dateTo` is the
  * shape `countCallRateWorkingDays` already documents as answering 0, and the reader fetches no rows
  * for it — so a future week scores null everywhere instead of dividing real work by a day nobody has
- * worked yet. UTC-only construction, and only the date STRING is read back out.
+ * worked yet), and Reps List's ruling C1, which stops a running window at yesterday. UTC-only
+ * construction, and only the date STRING is read back out.
  */
 function previousDay(dateIso: string): string {
   const cursor = new Date(`${dateIso}T00:00:00Z`);
@@ -178,8 +206,13 @@ function isRealCalendarDay(dateIso: string): boolean {
  * The block's own working-day count comes with it, because that is the number the rate divides by
  * and a 5-day block and a 3-day tail are not the same denominator.
  */
-export function repsPlansWeeks(month: string, todayIso: string): RepsPlansPeriodOption[] {
+export function repsPlansWeeks(
+  month: string,
+  todayIso: string,
+  scoring?: RepsPlansWindowOptions,
+): RepsPlansPeriodOption[] {
   const { to: monthEnd } = monthBounds(month);
+  const lastScorable = lastScorableDay(todayIso, scoring);
   const lastDay = Number(monthEnd.slice(8, 10));
   const options: RepsPlansPeriodOption[] = [];
   for (let index = 0; index * 7 < lastDay; index += 1) {
@@ -192,7 +225,7 @@ export function repsPlansWeeks(month: string, todayIso: string): RepsPlansPeriod
       label: `Week ${index + 1} · ${spanLabel(from, to)}`,
       from,
       to,
-      workingDays: countCallRateWorkingDays(from, todayIso < to ? todayIso : to),
+      workingDays: countCallRateWorkingDays(from, lastScorable < to ? lastScorable : to),
       started: todayIso >= from,
     });
   }
@@ -213,7 +246,12 @@ export function repsPlansWeeks(month: string, todayIso: string): RepsPlansPeriod
  * for not having worked them yet. A window that has not begun at all is marked `notStarted` and
  * every rate is null — never a zero, which on this board reads as "did nothing".
  */
-export function repsPlansRange(month: string, todayIso: string, period?: string | null): RepsPlansRange {
+export function repsPlansRange(
+  month: string,
+  todayIso: string,
+  period?: string | null,
+  scoring?: RepsPlansWindowOptions,
+): RepsPlansRange {
   const { from: monthStart, to: monthEnd } = monthBounds(month);
   // Plain string comparison — YYYY-MM-DD sorts correctly as text, and parsing to a Date would move
   // the Cairo day this was resolved from.
@@ -238,7 +276,7 @@ export function repsPlansRange(month: string, todayIso: string, period?: string 
     periodKey = `${windowStart}..${windowEnd}`;
     periodLabel = spanLabel(windowStart, windowEnd);
   } else if (/^w[1-5]$/.test(requested)) {
-    const week = repsPlansWeeks(month, todayIso).find((option) => option.key === requested);
+    const week = repsPlansWeeks(month, todayIso, scoring).find((option) => option.key === requested);
     if (week) {
       windowStart = week.from;
       windowEnd = week.to;
@@ -253,11 +291,14 @@ export function repsPlansRange(month: string, todayIso: string, period?: string 
   // month you are already looking at, and scoring it whole would divide a rep's nothing by days that
   // have not happened.
   const notStarted = periodKey !== "month" && todayIso < windowStart;
-  // Capped at today ONLY while today falls inside the window. A window entirely in the past is
-  // scored to its own end, and one entirely in the future must not be dragged back to today — that
-  // would score December as "1 Dec to 12 Aug", an empty range dressed up as a month.
-  const running = todayIso >= windowStart && todayIso < windowEnd;
-  const dateTo = running ? todayIso : windowEnd;
+  // Capped ONLY while today falls inside the window. A window entirely in the past is scored to its
+  // own end, and one entirely in the future must not be dragged back to today — that would score
+  // December as "1 Dec to 12 Aug", an empty range dressed up as a month. The cap is today, or — for
+  // Reps List, ruling C1 — yesterday; a window that opened TODAY then scores empty (`dateFrom >
+  // dateTo`, 0 working days, every rate null) until the day is over.
+  const lastScorable = lastScorableDay(todayIso, scoring);
+  const running = todayIso >= windowStart && lastScorable < windowEnd;
+  const dateTo = running ? lastScorable : windowEnd;
   return {
     dateFrom: windowStart,
     // A window that has not begun is scored as EMPTY, not as its first day: `dateFrom > dateTo` is
@@ -271,7 +312,13 @@ export function repsPlansRange(month: string, todayIso: string, period?: string 
     windowEnd,
     isWholeMonth: periodKey === "month",
     notStarted,
+    todayLeftOut: Boolean(scoring?.throughYesterday) && !notStarted && todayIso >= windowStart && todayIso <= windowEnd,
   };
+}
+
+/** The last day a running window may score — today, or yesterday under ruling C1. */
+function lastScorableDay(todayIso: string, scoring?: RepsPlansWindowOptions): string {
+  return scoring?.throughYesterday ? previousDay(todayIso) : todayIso;
 }
 
 const round2 = (value: number | null): number | null => (value == null ? null : Math.round(value * 100) / 100);
@@ -732,6 +779,8 @@ export type RepsPlansBoard = {
   notStarted: boolean;
   /** True when the window's own end is later than the day it was scored through. */
   cappedAtToday: boolean;
+  /** True when today was left out of the window (Reps List, ruling C1) — see {@link RepsPlansRange}. */
+  todayLeftOut: boolean;
   /** The weeks offered for this month, each with the working days it would divide by. */
   weekOptions: RepsPlansPeriodOption[];
   workingDays: number;
@@ -1078,6 +1127,7 @@ export function buildRepsPlansBoard(
     isWholeMonth: range?.isWholeMonth ?? true,
     notStarted: range?.notStarted ?? false,
     cappedAtToday: range ? !range.notStarted && report.dateTo < range.windowEnd : false,
+    todayLeftOut: range?.todayLeftOut ?? false,
     weekOptions: options.weekOptions ?? [],
     workingDays: report.workingDays,
     campaignLimit: report.campaignLimit,
