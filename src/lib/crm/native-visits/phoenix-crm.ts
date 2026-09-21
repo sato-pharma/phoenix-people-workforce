@@ -22,6 +22,7 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import {
   computePhoenixCrmKpis,
   phoenixCrmCallRateText,
+  phoenixCrmCallRateWindow,
   phoenixCrmMonthBounds,
   phoenixCrmMonthOf,
   phoenixCrmRepWindow,
@@ -465,10 +466,13 @@ export async function getPhoenixCrmKpis(access: AccessContext, input: { month?: 
     const repKey = canonicalHrIdKey(rep.row.hrId) ?? "";
     const window = phoenixCrmRepWindow(bounds, rep.startsOn, cairoToday);
     const inWindow = (day: string) => Boolean(window && day >= window.from && day <= window.to);
+    // Ruling C1: the call rate stops at yesterday, its calls and its working days together.
+    const callRateWindow = phoenixCrmCallRateWindow(window, cairoToday);
     const result = computePhoenixCrmKpis({
-      workingDays: window ? countCallRateWorkingDays(window.from, window.to, holidays.dates) : 0,
+      workingDays: callRateWindow ? countCallRateWorkingDays(callRateWindow.from, callRateWindow.to, holidays.dates) : 0,
       panel: panels.get(repKey) ?? [],
       visits: (visitsByRep.get(repKey) ?? []).filter((visit) => inWindow(visit.visitDate)),
+      callRateWindow,
       planned: (plannedByRep.get(repKey) ?? []).filter((item) => inWindow(item.planDate)),
       cairoToday,
     });
@@ -479,6 +483,7 @@ export async function getPhoenixCrmKpis(access: AccessContext, input: { month?: 
       detail: repDetail(rep.row),
       startsOn: rep.startsOn,
       window,
+      callRateWindow,
       callRateText: phoenixCrmCallRateText(result.callRate),
     };
   });

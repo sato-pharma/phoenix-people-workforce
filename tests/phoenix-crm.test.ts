@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 import {
   computePhoenixCrmKpis,
   phoenixCrmCallRateText,
+  phoenixCrmCallRateWindow,
   phoenixCrmMonthBounds,
   phoenixCrmRepWindow,
   type PhoenixCrmFrequencyNorms,
+  type PhoenixCrmKpiInput,
 } from "../src/lib/crm/native-visits/phoenix-crm-kpi-rules.ts";
 import {
   isNativeEntryDay,
@@ -128,6 +130,53 @@ export async function runPhoenixCrmTests() {
   assert.deepEqual(phoenixCrmRepWindow(september, "2026-09-14", "2026-09-16"), { from: "2026-09-14", to: "2026-09-16" }, "from the day they joined, to today");
   assert.equal(phoenixCrmRepWindow(september, "2026-09-20", "2026-09-16"), null, "nothing counted before they joined");
 
+  // ── 2b. The owner's ruling C1 (2026-09-21): the call rate stops at yesterday ─────────────────
+  // As on Reps List and the KPIs board: today is not scored until it is over, its calls and its day
+  // together. Coverage, frequency and plan achieved keep counting today — none divides by days.
+  const running = phoenixCrmRepWindow(september, "2026-09-14", "2026-09-16");
+  assert.deepEqual(phoenixCrmCallRateWindow(running, "2026-09-16"), { from: "2026-09-14", to: "2026-09-15" }, "the call rate drops today while it runs");
+  assert.deepEqual(
+    phoenixCrmCallRateWindow({ from: "2026-08-01", to: "2026-08-31" }, "2026-09-16"),
+    { from: "2026-08-01", to: "2026-08-31" },
+    "a month already over is scored whole",
+  );
+  assert.equal(phoenixCrmCallRateWindow({ from: "2026-09-16", to: "2026-09-16" }, "2026-09-16"), null, "a rep who joined today has no day over yet");
+  assert.equal(phoenixCrmCallRateWindow(null, "2026-09-16"), null);
+
+  const c1Input: PhoenixCrmKpiInput = {
+    workingDays: 2,
+    cairoToday: "2026-09-16",
+    norms,
+    panel: [
+      { contactCrmId: 1, lists: ["AM"], grade: "A" },
+      { contactCrmId: 2, lists: ["PM"], grade: "A" },
+      { contactCrmId: 5, lists: ["PM"], grade: "A" },
+    ],
+    visits: [
+      { contactCrmId: 1, shift: "AM", visitDate: "2026-09-14", visitType: "regular" },
+      { contactCrmId: 1, shift: "AM", visitDate: "2026-09-15", visitType: "regular" },
+      { contactCrmId: 2, shift: "PM", visitDate: "2026-09-15", visitType: "regular" },
+      // Today: the only visit doctor 5 has had, and one more for doctor 1.
+      { contactCrmId: 5, shift: "PM", visitDate: "2026-09-16", visitType: "regular" },
+      { contactCrmId: 1, shift: "AM", visitDate: "2026-09-16", visitType: "regular" },
+    ],
+    planned: [{ contactCrmId: 5, planDate: "2026-09-16" }],
+  };
+  const c1 = computePhoenixCrmKpis({ ...c1Input, callRateWindow: { from: "2026-09-14", to: "2026-09-15" } });
+  assert.deepEqual(c1.callRate.AM, { calls: 2, perDay: 1, target: 2, attainmentPct: 50 }, "today's AM call waits for tomorrow");
+  assert.deepEqual(c1.callRate.PM, { calls: 1, perDay: 0.5, target: 10, attainmentPct: 5 }, "and so does today's PM call");
+  assert.deepEqual(c1.coverage.PM, { of: 2, hit: 2, pct: 100 }, "doctor 5, seen only TODAY, is already covered");
+  const allDays = computePhoenixCrmKpis(c1Input);
+  assert.equal(allDays.callRate.AM.calls, 3, "left out, every visit given counts toward the rate");
+  assert.deepEqual(c1.coverage, allDays.coverage, "coverage does not move — the ruling is the call rate's");
+  assert.deepEqual(c1.frequency, allDays.frequency, "and neither does frequency");
+  assert.deepEqual(c1.planAchieved, { of: 1, hit: 1, pct: 100 }, "a planned call kept today still counts as kept");
+  assert.deepEqual(c1.planAchieved, allDays.planAchieved);
+  const joinedToday = computePhoenixCrmKpis({ ...c1Input, workingDays: 0, callRateWindow: null });
+  assert.equal(joinedToday.callRate.AM.calls, 0, "no day over: no call counts");
+  assert.equal(joinedToday.callRate.PM.perDay, null, "so there is no rate — a dash, never a red 0.0");
+  assert.equal(joinedToday.coverage.PM.hit, 2, "while today's doctors already count as covered");
+
   // ── 3. The service ───────────────────────────────────────────────────────────────────────────
   const service = read("src/lib/crm/native-visits/phoenix-crm.ts");
   const exported = [...service.matchAll(/export async function (\w+)\(/g)];
@@ -155,6 +204,16 @@ export async function runPhoenixCrmTests() {
   );
   assert.match(service, /visitType: String\(row\.visit_type/, "the visit type key is carried to the rules, which count only a doctor visit");
   assert.match(service, /status: "verified"/, "plan achieved reads verified plans only");
+  assert.match(
+    service,
+    /const callRateWindow = phoenixCrmCallRateWindow\(window, cairoToday\);\s*const result = computePhoenixCrmKpis\(\{\s*workingDays: callRateWindow \? countCallRateWorkingDays\(callRateWindow\.from, callRateWindow\.to, holidays\.dates\) : 0,/,
+    "ruling C1: the call rate's working days stop at yesterday",
+  );
+  assert.match(service, /visits: \(visitsByRep\.get\(repKey\) \?\? \[\]\)\.filter\(\(visit\) => inWindow\(visit\.visitDate\)\),\s*callRateWindow,/, "and so do its calls");
+  const board = read("src/components/employee-portal/phoenix-crm-kpi-board.tsx");
+  assert.match(board, /scored\s+through yesterday: today is not scored until it is over/, "the board says the call rate stops at yesterday");
+  assert.match(board, /call rate to \$\{dayLabel\(row\.callRateWindow\.to\)\}/, "and to which day, on every row");
+  assert.match(board, /call rate starts once today is over/, "and why a rep who joined today has no rate");
 
   // ── 4. The route and the table ───────────────────────────────────────────────────────────────
   const route = read("app/api/crm/phoenix-crm/pilot-reps/route.ts");
