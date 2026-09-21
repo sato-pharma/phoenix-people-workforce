@@ -1866,6 +1866,7 @@ import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 
 import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.test.ts";
 import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headline.test.ts";
+import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6575,6 +6576,7 @@ await runTest(
 
 await runTest("the Office commit reports an Office step it could not confirm, never swallows it: the allocation stays saved and the reply names the reason", runOfficeCommitConfirmStepTests);
 await runTest("Closing Corrections never reads green when its load failed: the headline chip says it could not check the month, and green is earned only by a load that ran and found nothing", runClosingCorrectionsHeadlineTests);
+await runTest("master workbook: a failed row-count or batch-id read fails the export, never an empty sheet", runMasterWorkbookCountErrorTests);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);
