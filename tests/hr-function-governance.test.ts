@@ -321,6 +321,15 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   "src/lib/probation/service.ts",
   "src/lib/recruitment/access.ts",
   "src/lib/recruitment/account-activation.ts",
+  // Names HR Operations in isInterviewCalendarOwner, added 2026-09-21. Owner, that day: "make
+  // Yasmeena HR Operations full access and control to it as admin". Reviewed verdict: it GRANTS
+  // reach, and only to the interview calendar: she books, moves and cancels interviews, shares the
+  // calendar and records how an interview went. From the calendar she may also search candidates
+  // and add an outside person while booking (interview-calendar.ts, mayUseRecruitmentFromCalendar),
+  // and nothing else in Recruitment opens: her matrix row still holds no recruitment or candidates
+  // grant. The calendar holds no salary, no personnel record and no payroll figure, so it crosses
+  // none of her named boundaries.
+  "src/lib/recruitment/interview-calendar-types.ts",
   "src/lib/reports/organogram.ts",
   "src/lib/resignations/service.ts",
   // Names HR Advisory in canUseSatoEmail, added 2026-09-12 for the Sato Email Composer. Owner
