@@ -75,6 +75,7 @@ import { contactMasterRefreshIncludesActivity, refreshCrmContactMaster } from "@
 import {
   CONTACT_SYNC_SLICE_COUNT,
   contactSyncSliceForDate,
+  contactSyncSliceRefreshedNothing,
   loadCrmContactSyncTargets,
   selectContactSyncSlice,
   syncCrmContactLists,
@@ -393,6 +394,8 @@ type PollerState = {
    * does not send every sweep back to slice 1 and starve the other eleven) and drift-proof (a slow
    * vendor cannot make the schedule skip a slice the way a clock-derived slot can). */
   contactListSlice: number | null;
+  /** Cairo day (YYYY-MM-DD) on which the contact master's full activity pass last succeeded. */
+  contactActivityRebuiltOnCairoDay: string | null;
   lastContactListFailureMs: number | null;
   lastContactListSuccessMs: number | null;
   lastParitySweepFailureMs: number | null;
@@ -412,6 +415,7 @@ type PollerState = {
 const state: PollerState = {
   consecutiveFailures: 0,
   contactListSlice: null,
+  contactActivityRebuiltOnCairoDay: null,
   lastContactListFailureMs: null,
   lastContactListSuccessMs: null,
   lastParitySweepFailureMs: null,
@@ -628,13 +632,41 @@ async function runScheduledContactListSync(): Promise<void> {
     });
     // THE CONTACT MASTER FOLLOWS THE MIRROR — the master's dated assignments are built from these
     // rows, so it is rebuilt right after the slice that changed them. It never throws.
-    const contactMaster = await refreshCrmContactMaster({
-      includeActivity: contactMasterRefreshIncludesActivity({ slice, sliceOf: CONTACT_SYNC_SLICE_COUNT }),
-    });
-    // Advance only on a completed slice, so a failure re-serves the same twelfth rather than
-    // skipping it — the whole point of carrying a cursor instead of reading the clock.
-    state.contactListSlice = (slice + 1) % CONTACT_SYNC_SLICE_COUNT;
-    state.lastContactListSuccessMs = Date.now();
+    //
+    // THE LIST HALF IS HOURLY; THE ACTIVITY HALF STAYS DAILY. `contactMasterRefreshIncludesActivity`
+    // keys on the LAST slice of the sweep, which was written when a sweep meant "once a day" — under
+    // this hourly cursor that slice comes round every hour, so the pass that reads every visit and
+    // plan row (2.5 s measured on production 2026-09-13, against a PostgREST cut at 8 s) would run
+    // about 16 times a day instead of once. Visits do not arrive through this job at all, so nothing
+    // is gained by it. The Cairo-day stamp restores the daily cadence without touching the shared
+    // helper, which the cron route — genuinely once a day — still uses as written.
+    //
+    // The stamp is in memory, so a deploy resets it and that day gets one more pass. Bounded by
+    // deploys rather than by the clock, which is the cheap end of the trade: the alternative is a
+    // row to persist it, for a 2.5-second read.
+    const cairoToday = cairoTodayIso();
+    const includeActivity =
+      contactMasterRefreshIncludesActivity({ slice, sliceOf: CONTACT_SYNC_SLICE_COUNT }) &&
+      state.contactActivityRebuiltOnCairoDay !== cairoToday;
+    const contactMaster = await refreshCrmContactMaster({ includeActivity });
+    // Only a pass that actually landed may claim the day — a failed one must not lock out the next.
+    if (includeActivity && contactMaster.status === "refreshed") {
+      state.contactActivityRebuiltOnCairoDay = cairoToday;
+    }
+    // Advance only on a slice that actually refreshed something, so a failure re-serves the same
+    // twelfth rather than skipping it — the whole point of carrying a cursor instead of reading the
+    // clock. `result.agents` alone cannot answer that: it counts ATTEMPTED agents, so a slice whose
+    // every agent failed used to advance the cursor AND record a success, which both buried the
+    // failed twelfth for a full sweep and swapped the 15-minute retry gap for the 5-minute success
+    // gap. `contactSyncSliceRefreshedNothing` is the shared predicate; partial failure still counts
+    // as a completed slice, deliberately.
+    const refreshedNothing = contactSyncSliceRefreshedNothing(result);
+    if (refreshedNothing) {
+      state.lastContactListFailureMs = Date.now();
+    } else {
+      state.contactListSlice = (slice + 1) % CONTACT_SYNC_SLICE_COUNT;
+      state.lastContactListSuccessMs = Date.now();
+    }
     console.log(
       `[crm:live-poll] in-process contact-lists slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT} — ` +
         `${result.upserted} rows across ${result.agents} agents (${result.contacts} distinct contacts), ` +
@@ -665,8 +697,8 @@ async function runScheduledContactListSync(): Promise<void> {
     }
     await pingDeadMansSwitch(
       CONTACT_LIST_JOB_SLUG,
-      result.agents === 0 || contactMaster.status === "failed" ? "fail" : "success",
-      `in-process slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT}: ${result.agents} agent(s) refreshed, ` +
+      refreshedNothing || contactMaster.status === "failed" ? "fail" : "success",
+      `in-process slice ${slice + 1}/${CONTACT_SYNC_SLICE_COUNT}: ${result.agents} agent(s) attempted, ` +
         `${result.upserted} row(s) upserted` +
         (result.agentsRefusedEmpty ? `, ${result.agentsRefusedEmpty} kept unchanged (empty answer)` : "") +
         (result.agentsFailed ? `, ${result.agentsFailed} failed` : "") +

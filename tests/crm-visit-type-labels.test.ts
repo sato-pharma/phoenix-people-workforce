@@ -151,7 +151,80 @@ export function runCrmVisitTypeLabelTests() {
   );
   assert.equal(describeCrmDay([dayRow(0, null, null)]), "Visit", "a regular visit with no description still reads Visit");
 
+  runCommentSensitiveCodeTests();
   runVisitTypeSurfaceTests();
+}
+
+/**
+ * THE TWO COMMENT-SENSITIVE CODES, AND WHY THEIR FILTER ENTRY IS NOT THEIR LABEL.
+ *
+ * Raised by review on 2026-09-21: a -7 row whose comment says "Weekly meeting" DISPLAYS as
+ * "Meetings", but the "Meetings" filter selects only -19, so the report shows a label and then
+ * hides the row when you pick it. That is accurate, and it is measured — all 1,130 -7/-30 rows on
+ * production display a label other than the entry they file under:
+ *
+ *     624  -30  shown "Pharmacy Visit"      filed "Unlabeled Field Visit"
+ *     335  -30  shown "Regular"             filed "Unlabeled Field Visit"
+ *     104   -7  shown "Admin Work"          filed "Sales / Leave Day"
+ *      36   -7  shown "Health Day"          filed "Sales / Leave Day"
+ *      19   -7  shown "Vacations & Leaves"  filed "Sales / Leave Day"
+ *      12   -7  shown "Meetings"            filed "Sales / Leave Day"
+ *
+ * It is nevertheless the DESIGN, stated in the doc comment above CRM_VISIT_TYPE_FILTER_CODES:
+ * these two entries are code-grouped rather than label-exact, so selecting one returns every row
+ * of that code and the per-row label stays honest. The alternative — mapping "Meetings" to
+ * [-19, -7] — would return the 104 rows shown as "Admin Work" under "Meetings", which is a worse
+ * lie; and post-filtering on the resolved label is not open to us, because the Visits Report
+ * paginates server-side with `count: "exact"` and dropping rows after the page is fetched would
+ * make both the page and the total wrong.
+ *
+ * So this test does NOT assert the mismatch away. It pins the BOUNDARY: exactly two codes may be
+ * comment-sensitive, and each must be filed under an entry no comment can ever produce. A third
+ * such code added without a decision fails here, rather than quietly widening a screen that lies.
+ */
+function runCommentSensitiveCodeTests(): void {
+  // Comments chosen to hit every branch of classifyAmbiguousComment / isPharmacyComment.
+  const probes = [null, "Sales day", "اجازه", "Weekly meeting", "ص السلامه", "د طارق منصور", "x"];
+  const commentSensitive = [...new Set([...CRM_VISIT_TYPE_FILTER_CODES.values()].flat())]
+    .filter((code) => new Set(probes.map((c) => resolveVisitTypeLabel(code, "Unknown", c))).size > 1)
+    .sort((a, b) => a - b);
+  assert.deepEqual(
+    commentSensitive,
+    [-30, -7],
+    "only -7 and -30 may change label with the comment — a third breaks the filter vocabulary silently",
+  );
+
+  const filterEntryFor = new Map<number, string>();
+  for (const [label, codes] of CRM_VISIT_TYPE_FILTER_CODES) for (const code of codes) filterEntryFor.set(code, label);
+  for (const code of commentSensitive) {
+    const entry = filterEntryFor.get(code);
+    const displayed = new Set(probes.map((comment) => resolveVisitTypeLabel(code, "Unknown", comment)));
+    assert.ok(entry, `${code} must have a filter entry — otherwise its rows cannot be selected at all`);
+    assert.ok(
+      !displayed.has(entry!),
+      `"${entry}" must be a GROUP name no row displays — sharing a name with one of its labels ` +
+        "would hide that code's other labels behind it",
+    );
+    assert.ok(
+      displayed.size > 1,
+      `${code} is in the comment-sensitive set, so it must actually produce more than one label`,
+    );
+  }
+
+  // The group names must also stay out of the per-row vocabulary entirely: if `resolveVisitTypeLabel`
+  // ever started returning "Sales / Leave Day" for something, the grouping would become a real label
+  // and the honest-label reasoning above would quietly stop being true.
+  for (const groupName of ["Unlabeled Field Visit", "Sales / Leave Day"]) {
+    for (const code of [-5, -6, -7, -9, -16, -19, -20, -21, -30, 0]) {
+      for (const comment of probes) {
+        assert.notEqual(
+          resolveVisitTypeLabel(code, "Unknown", comment),
+          groupName,
+          `"${groupName}" is a filter GROUP, never a label a row may display`,
+        );
+      }
+    }
+  }
 }
 
 /**
