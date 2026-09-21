@@ -25,6 +25,11 @@ import {
   mapOutstationRequestRowToPayrollApproval,
   outstationPharmacyWorkload,
 } from "@/lib/outstation/payroll-expense-mapping";
+import {
+  planExpenseReportMutation,
+  WorkflowExpenseReportProtectedError,
+} from "@/lib/outstation/workflow-expense-report-guard";
+import { applyLiveExpenseReportCounts } from "@/lib/outstation/expense-report-live-counts";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { fetchAllRows, POSTGREST_PAGE_SIZE } from "@/lib/outstation/page-all-rows";
@@ -644,6 +649,51 @@ export async function listPayrollExpenseReports(accessContext: AccessContext) {
     .map((row) => mapExpenseReport(row));
 }
 
+/**
+ * Replace the stored `rowCount`/`totalExpenses`/`approvedRows` header on each report with its LIVE
+ * totals, so an emptied report reads 0/0/0 and can never be mistaken for the one that still holds
+ * the ledger. See `applyLiveExpenseReportCounts` for why the header goes stale. Only the admin
+ * "Historical Outstation Uploads" route calls this; every other reader keeps the header, so the
+ * change is confined to the one screen whose Delete button makes the confusion a data-loss trap.
+ * The reports passed in are already access-scoped by `listPayrollExpenseReports`, so counting only
+ * their ids reads nothing the caller may not see.
+ */
+export async function withLiveExpenseReportCounts(
+  reports: PayrollExpenseReport[],
+): Promise<PayrollExpenseReport[]> {
+  if (reports.length === 0) return reports;
+
+  const supabase = (await getSupabaseRlsClientIfAvailable()) ?? getSupabaseAdmin();
+  const reportIds = reports.map((report) => report.id).filter(Boolean);
+  const rows: Record<string, unknown>[] = [];
+
+  // Batch the ids at 100 for the same URL-header reason listPayrollExpenseReports does, and page
+  // each batch (a single report can hold hundreds of rows) with a stable order so no row is counted
+  // twice or missed.
+  for (let i = 0; i < reportIds.length; i += 100) {
+    const batch = reportIds.slice(i, i + 100);
+    const { data, error } = await fetchAllRows((from, to) =>
+      supabase
+        .from("outstation_expenses")
+        .select("report_id,total,hr_approved")
+        .in("report_id", batch)
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+
+    if (error) {
+      // A missing schema is the same "return what we have" signal listPayrollExpenseReports uses; the
+      // reports keep their stored header rather than the whole screen failing.
+      if (isPayrollExpensesSchemaMissing(error)) return reports;
+      throw error;
+    }
+
+    rows.push(...((data ?? []) as Record<string, unknown>[]));
+  }
+
+  return applyLiveExpenseReportCounts(reports, rows);
+}
+
 export async function listPayrollExpenses(
   month: number | undefined,
   year: number | undefined,
@@ -944,13 +994,23 @@ async function assertPayrollExpenseReportCanMutate(
   action: "deleted" | "replaced",
   accessContext: AccessContext,
 ) {
+  // The file name is half of the workflow-report test: an empty workflow report has no rows to read.
+  const { data: report, error: reportError } = await getSupabaseAdmin()
+    .from("outstation_expense_reports")
+    .select("file_name")
+    .eq("id", reportId)
+    .maybeSingle();
+
+  if (reportError) throw reportError;
+
   // Paged because this is a LOCK, and it is read with `.some()`. A truncated read cannot report a
   // false lock, only a missing one — so past 1,000 rows this would quietly permit deleting or
-  // replacing a report whose later rows are already in a paid payroll batch.
+  // replacing a report whose later rows are already in a paid payroll batch. `trip_id` is the other
+  // half of the workflow-report test, and `hr_id`/`specialist` name the people in its refusal.
   const { data, error } = await fetchAllRows((from, to) =>
     getSupabaseAdmin()
       .from("outstation_expenses")
-      .select("id,hr_approved,imported_payroll_batch_id,imported_to_payroll_at,status")
+      .select("id,hr_approved,hr_id,imported_payroll_batch_id,imported_to_payroll_at,specialist,status,trip_id")
       .eq("report_id", reportId)
       .order("id", { ascending: true })
       .range(from, to),
@@ -963,28 +1023,40 @@ async function assertPayrollExpenseReportCanMutate(
     throw error;
   }
 
-  if (canBypassPayrollExpenseLocks(accessContext)) {
-    return;
+  // An app trip's payroll report is refused FIRST, for every role: the Super Admin bypass below is
+  // for a paid historical upload, never for an app trip. See workflow-expense-report-guard.ts.
+  const plan = planExpenseReportMutation({
+    bypassPaidLock: canBypassPayrollExpenseLocks(accessContext),
+    fileName: (report as { file_name?: unknown } | null)?.file_name,
+    rows: (data ?? []) as Array<Record<string, unknown>>,
+  });
+
+  if (plan.outcome === "workflow_report") {
+    const named = await withLiveOutstationEmployeeNames(
+      plan.appTripRows,
+      (row) => ({ hrId: row.hr_id ? String(row.hr_id) : null, storedName: String(row.specialist ?? "") }),
+      (row, specialist) => ({ ...row, specialist }),
+    );
+    throw new WorkflowExpenseReportProtectedError(
+      action,
+      named.map((row) => String(row.specialist ?? "")),
+      plan.appTripRows.length,
+    );
   }
 
-  const locked = ((data ?? []) as Array<Record<string, unknown>>).some(
-    (row) => row.imported_payroll_batch_id != null || row.imported_to_payroll_at != null,
-  );
-
-  if (locked) {
+  if (plan.outcome === "paid") {
     throw new PayrollExpenseReportLockedError(action);
   }
 
-  const workflowStatus = ((data ?? []) as Array<Record<string, unknown>>).some(
-    (row) => Boolean(row.hr_approved),
-  )
-    ? "approved"
-    : "pending";
+  if (plan.transitionFrom === null) {
+    return;
+  }
+
   await assertOutstationExpenseWorkflowTransition({
     access: accessContext,
     actionKey: "delete_before_payroll",
     expectedNextStatus: "deleted",
-    status: workflowStatus,
+    status: plan.transitionFrom,
   });
 }
 

@@ -1457,6 +1457,7 @@ import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.t
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationSheetRefusesWorkflowTripIdsTests } from "./outstation-sheet-refuses-workflow-trip-ids.test.ts";
 import { runOutstationSheetRefusesApprovalsExportTests } from "./outstation-sheet-refuses-approvals-export.test.ts";
+import { runOutstationWorkflowReportDeleteGuardTests } from "./outstation-workflow-report-delete-guard.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -5235,6 +5236,11 @@ await runTest(
 await runTest(
   "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns — or, with all of them deleted, its worksheet name 'Expense Approvals' — refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
   runOutstationSheetRefusesApprovalsExportTests,
+);
+
+await runTest(
+  "the uploads list never deletes or replaces an app trip's payroll report: a report named .workflow, or holding any OUTSTATION- trip row, is refused for every role — the Super Admin bypass included — before the paid lock and before anything is removed, with a 409 that names the employees and never an id; the uploads list shows real uploads only; a real upload deletes, locks and bypasses exactly as before",
+  runOutstationWorkflowReportDeleteGuardTests,
 );
 
 await runTest(

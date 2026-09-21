@@ -10,6 +10,7 @@ import {
   isPayrollExpensesSchemaMissing,
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
+import { isWorkflowExpenseReportProtected } from "@/lib/outstation/workflow-expense-report-guard";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
@@ -46,6 +47,10 @@ export async function DELETE(request: Request, { params }: Params) {
     const message = clientSafeErrorMessage(error, "Unable to delete expense report.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    // An app trip's payroll report, refused for every role before anything was removed.
+    if (isWorkflowExpenseReportProtected(error)) {
+      return NextResponse.json({ error: "workflow_expense_report", message }, { status: 409 });
     }
     if (isPayrollExpenseReportLocked(error)) {
       return NextResponse.json({ error: "expense_report_locked", message }, { status: 409 });
@@ -150,6 +155,10 @@ export async function PUT(request: Request, { params }: Params) {
     const message = clientSafeErrorMessage(error, "Unable to replace expense report.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
+    }
+    // An app trip's payroll report, refused for every role before anything was removed.
+    if (isWorkflowExpenseReportProtected(error)) {
+      return NextResponse.json({ error: "workflow_expense_report", message }, { status: 409 });
     }
     if (isPayrollExpenseReportLocked(error)) {
       return NextResponse.json({ error: "expense_report_locked", message }, { status: 409 });

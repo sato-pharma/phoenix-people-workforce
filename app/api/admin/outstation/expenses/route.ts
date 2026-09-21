@@ -5,6 +5,7 @@ import {
   listUnifiedOutstationExpenses,
   listPayrollExpenseReports,
   savePayrollExpenseApprovals,
+  withLiveExpenseReportCounts,
 } from "@/lib/outstation/expenses";
 import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
 import {
@@ -81,7 +82,10 @@ export async function GET(request: Request) {
       }
     }
 
-    const reports = await listPayrollExpenseReports(access);
+    // Live counts, not the stored header: an emptied report keeps a stale "327 rows / EGP 122,256"
+    // header, and on this screen — the only one whose list carries a Delete button — that would let
+    // a Super Admin delete the report that actually holds the ledger, taking it for a duplicate.
+    const reports = await withLiveExpenseReportCounts(await listPayrollExpenseReports(access));
     const targetReportId = reportId;
     // The legacy tables, never the `expense_claims` mirror: both screens on this route SAVE to those
     // tables, so they must read back what they wrote (see `readLegacyTables`).

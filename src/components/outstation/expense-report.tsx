@@ -30,6 +30,7 @@ import type {
   ExpenseTripRecord,
   PayrollExpenseReport,
 } from "@/lib/payroll/types";
+import { historicalUploadReports } from "@/lib/outstation/workflow-expense-report-guard";
 import { cn } from "@/lib/utils";
 
 import { panelClassName, payrollMonths } from "@/components/payroll/dashboard/shared";
@@ -507,6 +508,9 @@ export function ExpenseReport({
   const [expandedTrips, setExpandedTrips] = useState<Set<string>>(() => new Set());
   const [evidenceByTrip, setEvidenceByTrip] = useState<Record<string, TripEvidenceState>>({});
   const replaceReportInputRef = useRef<HTMLInputElement | null>(null);
+  // Real uploads only. An app trip's own payroll report is not an upload, and Replace or Delete on it
+  // would take the trip out of payroll; the server refuses both (workflow-expense-report-guard.ts).
+  const uploadReports = useMemo(() => historicalUploadReports(reports), [reports]);
   const approvalFor = (record: ExpenseTripRecord) => {
     const saved = record as ExpenseTripRecord & {
       hrApproved?: boolean;
@@ -1104,7 +1108,7 @@ export function ExpenseReport({
       <div className="space-y-4 p-5">
       {error && <ExpenseErrorBanner message={error} />}
 
-      {reports.length > 0 && (
+      {uploadReports.length > 0 && (
         <div className="overflow-hidden rounded-[28px] border border-phx-line bg-white/94 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
           <input
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -1123,10 +1127,10 @@ export function ExpenseReport({
                 Preview, replace, or delete historical uploaded expense reports from the system database.
               </p>
             </div>
-            <Badge variant="neutral">{formatNumber(reports.length)} reports</Badge>
+            <Badge variant="neutral">{formatNumber(uploadReports.length)} reports</Badge>
           </div>
           <div className="divide-y divide-slate-100">
-            {reports.slice(0, 12).map((report) => (
+            {uploadReports.slice(0, 12).map((report) => (
               <div
                 className={cn(
                   "flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-phx-accent-soft/70",
