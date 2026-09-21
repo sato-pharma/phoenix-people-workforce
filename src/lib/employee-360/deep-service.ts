@@ -27,12 +27,14 @@ import {
 import {
   CAMPAIGN_TYPE,
   classifyVisit,
+  customerKeyOf,
   defaultWindow,
   fetchCheckinRows,
   fetchVisitRows,
   isProductiveVisit,
   summarizeCheckins,
   summarizeVisits,
+  windowSalesEfficiency,
   type Employee360Summary,
   type Employee360Window,
   type VisitRow,
@@ -986,7 +988,8 @@ async function computeLeaderImpact(
     list.push({
       date: r.visit_date,
       isCampaign: r.visit_type === CAMPAIGN_TYPE,
-      customer: r.contact_crm_id != null ? `id:${r.contact_crm_id}` : (r.contact_name ?? r.customer_name ?? "").trim().toLowerCase(),
+      // Contact 0 (every campaign visit) and the catch-all are nobody — see customerKeyOf.
+      customer: customerKeyOf(r) ?? "",
     });
     rowsByRep.set(key, list);
   }
@@ -1198,14 +1201,21 @@ export async function getEmployee360Profile(
   const checkinSummary = summarizeCheckins(checkins, visits, visitSummary);
   const doubleVisits = buildDoubleVisitHistory(visits, tmIds, nameByHrId);
 
-  // sales efficiency needs the visit context
-  sales.salesPerVisit = visitSummary.productiveVisits > 0 ? sales.totalSales / visitSummary.productiveVisits : null;
-  sales.salesPerCustomer = visitSummary.distinctCustomers > 0 ? sales.totalSales / visitSummary.distinctCustomers : null;
+  // Period-matched sales: only the months the visit window touches, never `sales.totalSales`
+  // (every month since the history floor). The two efficiency ratios and the expense ratio below
+  // all share this one figure — see windowSalesEfficiency.
+  const efficiency = windowSalesEfficiency({
+    monthly: sales.monthly,
+    window,
+    isTeamRollup: sales.isTeamRollup,
+    productiveVisits: visitSummary.productiveVisits,
+    distinctCustomers: visitSummary.distinctCustomers,
+  });
+  const windowSalesValue = efficiency.windowSalesValue;
+  sales.salesPerVisit = efficiency.salesPerVisit;
+  sales.salesPerCustomer = efficiency.salesPerCustomer;
 
   // expense efficiency (cross-domain): cost per visit + expense as % of period-matched sales
-  const fromMonth = window.from.slice(0, 7);
-  const toMonth = window.to.slice(0, 7);
-  const windowSalesValue = sales.monthly.filter((m) => m.month >= fromMonth && m.month <= toMonth).reduce((s, m) => s + m.sales, 0);
   const ep = expenses.payroll;
   ep.costPerVisit = visitSummary.productiveVisits > 0 ? ep.totalCost / visitSummary.productiveVisits : null;
   const tripVisits = ep.amWorkload + ep.pmWorkload;
@@ -1219,7 +1229,7 @@ export async function getEmployee360Profile(
     .map((v) => ({
       date: v.visit_date as string,
       isCampaign: v.visit_type === CAMPAIGN_TYPE,
-      customer: v.contact_crm_id != null ? `id:${v.contact_crm_id}` : (v.contact_name ?? v.customer_name ?? "").trim().toLowerCase(),
+      customer: customerKeyOf(v) ?? "",
     }));
 
   const coachingDates = coaching.reports.map((r) => r.date);

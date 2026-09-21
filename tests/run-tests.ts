@@ -550,6 +550,7 @@ import { runEmployee360RoleCategoryTests } from "./employee-360-role-category.te
 import { runEmployee360WorkweekTests } from "./employee-360-workweek.test.ts";
 import { runEmployee360AccessTests } from "./employee-360-access.test.ts";
 import { runEmployee360PortalBrowseTests } from "./employee-360-portal-browse.test.ts";
+import { runEmployee360CustomerKeyTests } from "./employee-360-customer-key.test.ts";
 import { runWeeklyColumnContractTests } from "./weekly-column-contract.test.ts";
 import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.test.ts";
 import { runSalesReferenceCrosswalkCallersTests } from "./sales-reference-crosswalk-callers.test.ts";
@@ -2958,6 +2959,7 @@ await runTest("employee 360 role-category scoping (six tabs, others excluded)", 
 await runTest("employee 360 workweek + visit/checkin day-of-week separation", runEmployee360WorkweekTests);
 await runTest("employee 360 viewer scope (self/team/hierarchy/line/reps/company)", runEmployee360AccessTests);
 await runTest("employee 360 portal browse-all fallback + detail route", runEmployee360PortalBrowseTests);
+await runTest("employee 360 customer key (contact 0 and the catch-all reach nobody) + window-matched sales ratios", runEmployee360CustomerKeyTests);
 await runTest("weekly column contract", runWeeklyColumnContractTests);
 await runTest("sos customer-map brick fill", runSosCustomerMapBrickFillTests);
 await runTest("sales reference crosswalk callers (name-master callers skip the customer→brick crosswalk; the import auto-fill keeps it)", runSalesReferenceCrosswalkCallersTests);
