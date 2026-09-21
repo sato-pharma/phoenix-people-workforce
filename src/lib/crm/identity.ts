@@ -344,9 +344,9 @@ export function resolveEmployeeAttribution(
     // employed — no matter that nothing else can answer either.
     //
     // The risk the old fallback was protecting against is real and is still covered, in the two
-    // places that actually address it. A mapping that would credit pre-hire rows is REFUSED at save
-    // time, loudly, before anything is written (setUnmappedCrmIdentityResolution) — so an admin
-    // cannot save one that does nothing without being told. And a refusal here is a block rather
+    // places that actually address it. A mapping that leaves pre-hire rows unassigned says so at save
+    // time, naming the count and dates (setUnmappedCrmIdentityResolution) — so an admin is never
+    // left believing it credited them. And a refusal here is a block rather
     // than a silent null, so the row stays honestly unattributed instead of quietly reverting to
     // whatever stale hr id it carried before, which is what "silently did nothing" would really
     // have looked like. (The block is flagged blockedByOverride and deliberately kept OUT of the

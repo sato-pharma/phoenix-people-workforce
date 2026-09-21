@@ -10,14 +10,104 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import { filterCrmMappingEmployeeOptions, type CrmMappingEmployeeOption } from "@/lib/crm/mapping-picker";
 import type { UnmappedCrmIdentityRow, UnmappedCrmResolutionAction } from "@/lib/visits-report/types";
 import { formatStableEnGb } from "@/lib/format/cairo-datetime";
 
 const RESOLUTION_OPTIONS: Array<{ label: string; value: UnmappedCrmResolutionAction }> = [
   { label: "Keep Pending", value: "pending" },
   { label: "Mark Resigned", value: "resigned" },
-  { label: "Map to HR ID…", value: "mapped" },
+  { label: "Map to employee…", value: "mapped" },
 ];
+
+function employmentSpan(option: CrmMappingEmployeeOption) {
+  const from = option.hireDate ? formatDate(option.hireDate) : "start unknown";
+  const to = option.lastWorkingDate ? formatDate(option.lastWorkingDate) : "present";
+  return `${from} – ${to}`;
+}
+
+/** Type a name or an HR ID, pick the person. The pick — never the typed text — is what gets saved, so
+ *  a half-typed name can never map to the wrong employee. */
+function EmployeePicker({
+  onSelect,
+  options,
+  selected,
+}: {
+  onSelect: (option: CrmMappingEmployeeOption | null) => void;
+  options: readonly CrmMappingEmployeeOption[];
+  selected: CrmMappingEmployeeOption | null;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const matches = filterCrmMappingEmployeeOptions(options, query);
+
+  if (selected) {
+    return (
+      <div className="flex min-w-0 items-center gap-1.5 border border-phx-accent-line bg-orange-50/60 px-2 py-1 text-xs">
+        <span className="min-w-0 break-words">
+          <span className="font-bold text-slate-900">{selected.fullName}</span>{" "}
+          <span className="text-slate-500">· {employmentSpan(selected)}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            onSelect(null);
+            setQuery("");
+          }}
+          className="shrink-0 font-bold text-phx-accent hover:underline"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full min-w-0 sm:w-64">
+      <input
+        type="text"
+        value={query}
+        autoFocus
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        placeholder="Type a name or HR ID"
+        aria-label="Employee name or HR ID"
+        className="h-8 w-full border border-phx-line bg-white px-2 text-xs text-slate-800"
+      />
+      {open && query.trim() && (
+        <ul className="absolute left-0 right-0 top-full z-20 mt-0.5 max-h-72 overflow-y-auto border border-phx-line bg-white shadow-lg">
+          {matches.length === 0 ? (
+            <li className="px-2 py-2 text-xs text-slate-500">No employee matches “{query.trim()}”.</li>
+          ) : (
+            matches.map((option) => (
+              <li key={option.hrId}>
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    onSelect(option);
+                    setOpen(false);
+                  }}
+                  className="block w-full px-2 py-1.5 text-left text-xs hover:bg-orange-50"
+                >
+                  <span className="block font-bold text-slate-900">{option.fullName}</span>
+                  <span className="block text-slate-500">
+                    {option.hrId}
+                    {option.jobTitle ? ` · ${option.jobTitle}` : ""} · {employmentSpan(option)}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // DATE-ONLY (`firstSeen`/`lastSeen`, both min/max of `ireports360_visits.visit_date` — a `date` column,
 // not the vendor's timestamptz), which `new Date` parses as UTC midnight. UTC here is CORRECT and must
@@ -28,21 +118,23 @@ function formatDate(value: string) {
 }
 
 function ResolutionCell({
+  employeeOptions,
   identity,
   onResolved,
 }: {
+  employeeOptions: readonly CrmMappingEmployeeOption[];
   identity: UnmappedCrmIdentityRow;
   onResolved: (crmId: number, message: string) => void;
 }) {
   const [action, setAction] = useState<UnmappedCrmResolutionAction>("pending");
-  const [hrIdInput, setHrIdInput] = useState("");
+  const [selected, setSelected] = useState<CrmMappingEmployeeOption | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
-    const trimmedHrId = hrIdInput.trim();
+    const trimmedHrId = selected?.hrId ?? "";
     if (action === "mapped" && !trimmedHrId) {
-      setError("Enter an HR ID to map this identity.");
+      setError("Type a name or HR ID and pick the employee from the list.");
       return;
     }
     setSaving(true);
@@ -65,7 +157,7 @@ function ResolutionCell({
       }
       const message =
         action === "mapped"
-          ? `Mapped ${payload.updatedVisits} visit${payload.updatedVisits === 1 ? "" : "s"} to ${payload.resolvedEmployeeHrId} (${payload.resolvedEmployeeName}).`
+          ? `Mapped ${payload.updatedVisits} visit${payload.updatedVisits === 1 ? "" : "s"} to ${payload.resolvedEmployeeName} — only the visits dated inside their employment.${payload.notice ? ` ${payload.notice}` : ""}`
           : action === "resigned"
             ? `Marked ${identity.name} as resigned — hidden from this list.`
             : `Kept ${identity.name} pending.`;
@@ -78,8 +170,8 @@ function ResolutionCell({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <select
           value={action}
           onChange={(event) => {
@@ -93,12 +185,13 @@ function ResolutionCell({
           ))}
         </select>
         {action === "mapped" && (
-          <input
-            type="text"
-            value={hrIdInput}
-            onChange={(event) => setHrIdInput(event.target.value)}
-            placeholder="e.g. B-82"
-            className="h-8 w-24 border border-phx-line bg-white px-2 text-xs text-slate-800"
+          <EmployeePicker
+            options={employeeOptions}
+            selected={selected}
+            onSelect={(option) => {
+              setSelected(option);
+              setError(null);
+            }}
           />
         )}
         <button
@@ -121,9 +214,11 @@ function ResolutionCell({
  * row at a time. Ported from the former Visits Report page's Unmapped Agents tab; same resolve
  * endpoint, so a fix here and a fix there (if it still existed) could never disagree. */
 export function CrmUnmappedIdentitiesPanel({
+  employeeOptions,
   identities,
   pathname,
 }: {
+  employeeOptions: CrmMappingEmployeeOption[];
   identities: UnmappedCrmIdentityRow[];
   pathname: string;
 }) {
@@ -158,7 +253,7 @@ export function CrmUnmappedIdentitiesPanel({
         <p className="text-sm font-medium text-slate-600">
           {rows.length} unmapped CRM {rows.length === 1 ? "identity" : "identities"} across the full visit history — resolve
           each one as <span className="font-semibold text-slate-900">Resigned</span> (hide it),{" "}
-          <span className="font-semibold text-slate-900">Map to HR ID</span> (fix it now and going forward), or{" "}
+          <span className="font-semibold text-slate-900">Map to employee</span> (type a name or HR ID; only visits inside that person&apos;s employment are credited), or{" "}
           <span className="font-semibold text-slate-900">Keep Pending</span>.
         </p>
         <div className="relative w-64">
@@ -196,7 +291,7 @@ export function CrmUnmappedIdentitiesPanel({
               accent="rose"
               actions={
                 <>
-                  <ResolutionCell identity={identity} onResolved={handleResolved} />
+                  <ResolutionCell employeeOptions={employeeOptions} identity={identity} onResolved={handleResolved} />
                   <button
                     type="button"
                     onClick={() => viewInVisits(identity)}
@@ -242,7 +337,7 @@ export function CrmUnmappedIdentitiesPanel({
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
                     <td className="px-3 py-2.5">
-                      <ResolutionCell identity={identity} onResolved={handleResolved} />
+                      <ResolutionCell employeeOptions={employeeOptions} identity={identity} onResolved={handleResolved} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5">
                       <button

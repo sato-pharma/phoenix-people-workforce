@@ -109,6 +109,8 @@ export type UnmappedCrmIdentityRow = {
 export type UnmappedCrmResolutionAction = "mapped" | "pending" | "resigned";
 
 export type UnmappedCrmResolutionResult = {
+  /** Visits a mapping left unassigned because they predate the person's hire date, as a sentence. */
+  notice: string | null;
   resolvedEmployeeHrId: string | null;
   resolvedEmployeeName: string | null;
   updatedVisits: number;

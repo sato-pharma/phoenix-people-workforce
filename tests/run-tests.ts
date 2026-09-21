@@ -150,6 +150,7 @@ import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
 import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.ts";
 import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.test.ts";
+import { runCrmMappingPickerTests } from "./crm-mapping-picker.test.ts";
 import { runCrmOverrideEmploymentScopeTests } from "./crm-override-employment-scope.test.ts";
 import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
 import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
@@ -2189,6 +2190,7 @@ await runTest("crm identity waterfall (override>crm_id>unique username, no-guess
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
 await runTest("crm pre-hire mapping guard (the Unmapped Agents screen refuses to create that miscredit)", runCrmPreHireMappingGuardTests);
+await runTest("crm mapping picker (map an unmapped CRM account by name or HR ID)", runCrmMappingPickerTests);
 await runTest("crm override employment scope (one mapping credits both holders of a handed-over slot)", runCrmOverrideEmploymentScopeTests);
 await runTest("crm blocked-attribution counting (a holiday marker on a dead slot is not a handover)", runCrmBlockCountingTests);
 await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);

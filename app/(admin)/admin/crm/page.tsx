@@ -13,7 +13,7 @@ import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
-import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
+import { getCrmMappingEmployeeOptions, getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
 import { getCrmAccountSetupQueue } from "@/lib/crm/account-setup";
 import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
@@ -100,9 +100,15 @@ export default async function CrmHubPage({
     );
   } else if (view === "unmapped") {
     activeTab = "unmapped";
-    const [identities, latestSyncRuns] = await Promise.all([getUnmappedCrmIdentities(), getLatestVisitsSyncRuns()]);
+    const [identities, latestSyncRuns, employeeOptions] = await Promise.all([
+      getUnmappedCrmIdentities(),
+      getLatestVisitsSyncRuns(),
+      getCrmMappingEmployeeOptions(),
+    ]);
     syncPanel = { configured: isIReports360Configured(), latestSyncRuns };
-    derivedView = <CrmUnmappedIdentitiesPanel identities={identities} pathname={HUB_PATHNAME} />;
+    derivedView = (
+      <CrmUnmappedIdentitiesPanel employeeOptions={employeeOptions} identities={identities} pathname={HUB_PATHNAME} />
+    );
   } else if (view === "region_mapping") {
     activeTab = "region_mapping";
     const [regions, latestSyncRuns] = await Promise.all([getUnmappedCrmRegions(), getLatestVisitsSyncRuns()]);
