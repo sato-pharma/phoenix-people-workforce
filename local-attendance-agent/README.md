@@ -76,8 +76,15 @@ AUTO_SYNC_REQUIRED_TIMES=17:00
 If Windows Task Scheduler is allowed on the machine, `install-scheduled-tasks.ps1` also installs:
 
 - `Phoenix Attendance Agent - Run At Logon`
-- `Phoenix Attendance Sync - Every 2 Hours`
+- `Phoenix Attendance Sync - Every 2 Hours` — **office hours only.** Every 2 hours inside a window
+  that opens at 10:30 and closes 7 hours later, so it fires at 10:30, 12:30, 14:30 and 16:30.
+  The sync reaches the device over the office LAN, so a run from anywhere else cannot succeed:
+  before the window was added, the overnight fires produced 0 successes in 69 attempts
+  (measured 2026-09-21). Change it with `-SyncWindowStart` / `-SyncWindowHours`.
 - `Phoenix Attendance Sync - Required 5 PM`
+
+A skipped run costs nothing. Every successful sync reads the device's whole buffer, not only the
+punches since last time, so one good run catches the day up.
 
 The scheduled sync script starts the agent if needed, then calls `/sync-now`. Logs are written to:
 
