@@ -15,7 +15,7 @@ import {
   type BrickForSuggestion,
   type CrmRegionBrickSuggestion,
 } from "@/lib/crm/region-brick-suggest";
-import { CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import { CRM_CONTACT_MASTER_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 
 const visitsTable = CRM_VISITS_TABLE;
 const resolutionsTable = CRM_REGION_BRICK_RESOLUTIONS_TABLE;
@@ -27,10 +27,18 @@ export type CrmRegionResolutionAction = "ignored" | "mapped" | "pending";
 
 /** One row on the Region Mapping punch-list: a CRM region with no "mapped" resolution yet. */
 export type UnmappedCrmRegionRow = {
+  /** The vendor's own id — or, for a PLAN-ONLY locality, the negative stand-in planOnlyCrmRegionId. */
   crmRegionId: number;
   crmRegionName: string;
+  /** Visit dates; for a plan-only locality, the contact master's first-seen/last-visit dates of its
+   * customers, "" when it has none. */
   firstSeen: string;
   lastSeen: string;
+  /**
+   * Set only for a PLAN-ONLY locality — one no visit carries, known only from reps' plans and doctor
+   * lists (visitCount 0): how many customers sit in it. Null for a visited region.
+   */
+  planOnlyCustomerCount: number | null;
   visitCount: number;
   /**
    * The brick this region probably IS, from its Arabic name plus the organogram area its visiting
@@ -51,32 +59,183 @@ type MutableUnmappedRegion = {
   crmRegionName: string;
   firstSeen: string;
   lastSeen: string;
+  planOnlyCustomerCount: number | null;
   visitCount: number;
   /** Visits per organogram area of the rep who logged them — the second, name-blind signal. */
   repAreaCounts: Map<string, number>;
 };
 
-type StoredResolution = { brickId: string | null; status: string };
+type StoredResolution = { brickId: string | null; name: string | null; status: string };
 
 /** Every stored resolution decision, keyed by crm_region_id. Returns an empty map (never throws)
  * before the migration ships, matching the identity-resolutions read pattern. */
 async function loadResolutionsByRegionId(): Promise<Map<number, StoredResolution>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from(resolutionsTable).select("crm_region_id, brick_id, status");
+  const { data, error } = await supabase.from(resolutionsTable).select("crm_region_id, crm_region_name, brick_id, status");
   if (error) {
     if (isCrmSchemaMissingError(error)) return new Map();
     throw new Error(error.message);
   }
   const map = new Map<number, StoredResolution>();
-  for (const row of (data ?? []) as Array<{ brick_id: string | null; crm_region_id: number; status: string }>) {
-    map.set(row.crm_region_id, { brickId: row.brick_id, status: row.status });
+  for (const row of (data ?? []) as Array<{
+    brick_id: string | null;
+    crm_region_id: number;
+    crm_region_name: string | null;
+    status: string;
+  }>) {
+    map.set(row.crm_region_id, { brickId: row.brick_id, name: row.crm_region_name, status: row.status });
   }
   return map;
 }
 
+/** How the contact master matches a locality NAME to a resolution row: `lower(btrim(name))` in
+ * crm_contact_master_refresh's region-from-name step. The same key here, so what this tab lists is
+ * exactly what that step will place. */
+function regionNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/**
+ * The stand-in crm_region_id for a PLAN-ONLY locality — a place known only from reps' plans and doctor
+ * lists. The vendor sends those two feeds with the locality's NAME and never its id (measured
+ * 2026-09-21: no id in either payload), so a locality no visit has reached has no id to key a
+ * resolution on. This makes one from the name: FNV-1a over the name key, as a NEGATIVE number, which
+ * no vendor id can ever be. Stable forever, so the tab, the template and the resolver always agree.
+ *
+ * Nothing else has to change for the mapping to work: the contact master's region-from-name step
+ * copies a resolution row's id onto every contact with no id whose locality name matches, and every
+ * reader then joins on that id (or, on the reps list, on the name itself). When a visit later brings
+ * the vendor's real id, that id is a separate region to map; the plan-only contacts keep the stand-in.
+ */
+export function planOnlyCrmRegionId(crmRegionName: string): number {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoder().encode(regionNameKey(crmRegionName))) {
+    hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  }
+  return -((hash % 2147483647) + 1);
+}
+
+/** A stand-in id may only ever be written for the name it was made from, so a hand-edited sheet or a
+ * crafted request cannot park a decision under an id nothing will ever read. Null when it is fine. */
+function standInIdProblem(crmRegionId: number, crmRegionName: string | null | undefined): string | null {
+  if (crmRegionId >= 0) return null;
+  const name = crmRegionName?.trim();
+  if (!name) return "This is a plan-only locality, and it needs its CRM region name to be saved.";
+  if (planOnlyCrmRegionId(name) !== crmRegionId) {
+    return `The CRM regionID on this row does not belong to the locality "${name}" — download a fresh template and map it there.`;
+  }
+  return null;
+}
+
+/**
+ * Every PLAN-ONLY locality: a locality name on a contact-master customer that has no vendor region id
+ * (it came from a plan or a doctor list) — or only a stand-in one — and that nothing else already
+ * covers. A name is covered when a visited region carries it (that region is on this list, and mapping
+ * it names a resolution row the contact master matches by name), or when a real region's resolution
+ * row does (the contact master already matches it by name). Read from `crm_contacts`, which holds
+ * every plan and list customer with its locality name. Empty (never throws) before that table ships.
+ */
+async function loadPlanOnlyRegions(
+  visited: ReadonlyMap<number, MutableUnmappedRegion>,
+  resolutions: ReadonlyMap<number, StoredResolution>,
+): Promise<MutableUnmappedRegion[]> {
+  const supabase = getSupabaseAdmin();
+  const covered = new Set<string>();
+  for (const region of visited.values()) covered.add(regionNameKey(region.crmRegionName));
+  for (const [crmRegionId, resolution] of resolutions) {
+    if (crmRegionId >= 0 && resolution.name) covered.add(regionNameKey(resolution.name));
+  }
+
+  const byKey = new Map<string, { contacts: Set<number>; firstSeen: string; lastSeen: string; spellings: Map<string, number> }>();
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(CRM_CONTACT_MASTER_TABLE)
+      .select("contact_crm_id, crm_region_name, first_seen_on, last_visited_on")
+      .or("crm_region_id.is.null,crm_region_id.lt.0")
+      .not("crm_region_name", "is", null)
+      .order("contact_crm_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return [];
+      throw new Error(error.message);
+    }
+    const rows = (data ?? []) as Array<{
+      contact_crm_id: number;
+      crm_region_name: string | null;
+      first_seen_on: string | null;
+      last_visited_on: string | null;
+    }>;
+    for (const row of rows) {
+      const spelling = row.crm_region_name?.trim();
+      if (!spelling) continue;
+      const key = regionNameKey(spelling);
+      if (!key || covered.has(key)) continue;
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = { contacts: new Set(), firstSeen: "", lastSeen: "", spellings: new Map() };
+        byKey.set(key, entry);
+      }
+      entry.contacts.add(Number(row.contact_crm_id));
+      entry.spellings.set(spelling, (entry.spellings.get(spelling) ?? 0) + 1);
+      const first = row.first_seen_on ?? "";
+      const last = row.last_visited_on ?? row.first_seen_on ?? "";
+      if (first && (!entry.firstSeen || first < entry.firstSeen)) entry.firstSeen = first;
+      if (last && last > entry.lastSeen) entry.lastSeen = last;
+    }
+    if (rows.length < PAGE) break;
+  }
+
+  const regions: MutableUnmappedRegion[] = [];
+  for (const entry of byKey.values()) {
+    // The spelling most of its customers carry, so the row reads the way the reps wrote it.
+    let name = "";
+    let best = 0;
+    for (const [spelling, count] of entry.spellings) {
+      if (count > best) {
+        name = spelling;
+        best = count;
+      }
+    }
+    regions.push({
+      crmRegionId: planOnlyCrmRegionId(name),
+      crmRegionName: name,
+      firstSeen: entry.firstSeen,
+      lastSeen: entry.lastSeen,
+      planOnlyCustomerCount: entry.contacts.size,
+      visitCount: 0,
+      repAreaCounts: new Map(),
+    });
+  }
+  return regions;
+}
+
+/** The one region universe getUnmappedCrmRegions and getAllCrmRegionsForTemplate both build on, so the
+ * two can never disagree: every region a visit carries, plus every plan-only locality. */
+async function loadRegionUniverse(): Promise<{
+  regions: MutableUnmappedRegion[];
+  resolutions: Map<number, StoredResolution>;
+}> {
+  const [visited, resolutions] = await Promise.all([scanAllCrmRegions(), loadResolutionsByRegionId()]);
+  const planOnly = await loadPlanOnlyRegions(visited, resolutions);
+  const regions = Array.from(visited.values());
+  for (const region of planOnly) {
+    if (!visited.has(region.crmRegionId)) regions.push(region);
+  }
+  return { regions, resolutions };
+}
+
+/** Busiest first; among plan-only localities, the one holding the most customers first. */
+function byVolume(
+  a: { planOnlyCustomerCount: number | null; visitCount: number },
+  b: { planOnlyCustomerCount: number | null; visitCount: number },
+): number {
+  return b.visitCount - a.visitCount || (b.planOnlyCustomerCount ?? 0) - (a.planOnlyCustomerCount ?? 0);
+}
+
 /** Full keyset scan (id > cursor) of every distinct crm_region_id in ireports360_visits, with its
- * display name, visit count, and first/last-seen dates. The single scan both getUnmappedCrmRegions
- * and getAllCrmRegionsForTemplate build on, so the two can never disagree about what regions exist. */
+ * display name, visit count, and first/last-seen dates. Visited regions only — loadRegionUniverse adds
+ * the plan-only localities. */
 async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> {
   const supabase = getSupabaseAdmin();
   const areaOfRep = await loadAreaByRepHrId();
@@ -114,6 +273,7 @@ async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> 
           crmRegionName: row.crm_region_name ?? "(no name on visit)",
           firstSeen: row.visit_date,
           lastSeen: row.visit_date,
+          planOnlyCustomerCount: null,
           visitCount: 1,
           repAreaCounts: new Map(),
         };
@@ -195,20 +355,17 @@ function dominantAreaCode(counts: ReadonlyMap<string, number>): string | null {
 }
 
 /**
- * Every distinct crm_region_id that does not yet have a "mapped" resolution — a punch-list for an
- * admin to assign a real Phoenix brick to, ranked by visit volume (highest first) so the busiest
- * localities get attention first. Not date-scoped on purpose, same reasoning as
+ * Every distinct CRM region — visited, or a plan-only locality (loadPlanOnlyRegions) — that does not
+ * yet have a "mapped" or "ignored" resolution: a punch-list for an admin to assign a real Phoenix
+ * brick to, ranked by visit volume (highest first) so the busiest localities get attention first;
+ * plan-only localities follow. Not date-scoped on purpose, same reasoning as
  * getUnmappedCrmIdentities: the goal is every region that still needs a decision, not just ones
  * active in a chosen window.
  */
 export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
-  const [regions, resolutions, bricks] = await Promise.all([
-    scanAllCrmRegions(),
-    loadResolutionsByRegionId(),
-    loadBricksForSuggestion(),
-  ]);
+  const [{ regions, resolutions }, bricks] = await Promise.all([loadRegionUniverse(), loadBricksForSuggestion()]);
   const index = buildBrickNameIndex(bricks);
-  return Array.from(regions.values())
+  return regions
     .filter((region) => {
       const status = resolutions.get(region.crmRegionId)?.status;
       return status !== "mapped" && status !== "ignored";
@@ -217,7 +374,7 @@ export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
       ...region,
       suggestion: suggestBrickForCrmRegion(region.crmRegionName, dominantAreaCode(repAreaCounts), index),
     }))
-    .sort((a, b) => b.visitCount - a.visitCount);
+    .sort(byVolume);
 }
 
 /** One row of the full download template: every CRM region ever seen, with its current
@@ -227,28 +384,31 @@ export type CrmRegionTemplateRow = {
   brickId: string | null;
   crmRegionId: number;
   crmRegionName: string;
+  planOnlyCustomerCount: number | null;
   status: string;
   visitCount: number;
 };
 
-/** Every distinct CRM region ever seen, each annotated with its current resolution status/brick_id
- * (or "pending"/null when never resolved) — the full punch-list for the downloadable template,
- * unlike getUnmappedCrmRegions which only lists the ones still needing a decision. Sorted by visit
- * volume (highest first), same ranking rationale. */
+/** Every distinct CRM region ever seen — visited, or a plan-only locality (visit count 0, stand-in
+ * id) — each annotated with its current resolution status/brick_id (or "pending"/null when never
+ * resolved): the full punch-list for the downloadable template, unlike getUnmappedCrmRegions which
+ * only lists the ones still needing a decision. Sorted by visit volume (highest first), same ranking
+ * rationale. */
 export async function getAllCrmRegionsForTemplate(): Promise<CrmRegionTemplateRow[]> {
-  const [regions, resolutions] = await Promise.all([scanAllCrmRegions(), loadResolutionsByRegionId()]);
-  return Array.from(regions.values())
+  const { regions, resolutions } = await loadRegionUniverse();
+  return regions
     .map((region) => {
       const resolution = resolutions.get(region.crmRegionId);
       return {
         brickId: resolution?.brickId ?? null,
         crmRegionId: region.crmRegionId,
         crmRegionName: region.crmRegionName,
+        planOnlyCustomerCount: region.planOnlyCustomerCount,
         status: resolution?.status ?? "pending",
         visitCount: region.visitCount,
       };
     })
-    .sort((a, b) => b.visitCount - a.visitCount);
+    .sort(byVolume);
 }
 
 /** One active Phoenix brick, pre-joined up its full geography chain (block -> area -> region) with
@@ -474,6 +634,8 @@ export async function setCrmRegionBrickResolution(input: {
   resolvedByHrId: string | null;
 }): Promise<CrmRegionBrickResolutionResult> {
   const supabase = getSupabaseAdmin();
+  const standInProblem = standInIdProblem(input.crmRegionId, input.crmRegionName);
+  if (standInProblem) throw new Error(standInProblem);
 
   let resolvedBrickId: string | null = null;
   let resolvedAreaId: string | null = null;
@@ -582,6 +744,13 @@ export async function bulkImportCrmRegionBrickMappings(input: {
 
   for (const row of input.rows) {
     const brickId = row.brickId.trim();
+    // Only a row that WRITES is checked: a blank row is skipped whatever its id says.
+    const standInProblem =
+      brickId || isIgnoredStatusText(row.statusText) ? standInIdProblem(row.crmRegionId, row.crmRegionName) : null;
+    if (standInProblem) {
+      blockedRows.push({ crmRegionId: row.crmRegionId, reason: standInProblem, row: row.row });
+      continue;
+    }
     if (!brickId) {
       if (isIgnoredStatusText(row.statusText)) {
         ignored += 1;
