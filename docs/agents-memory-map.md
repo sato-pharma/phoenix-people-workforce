@@ -143,6 +143,7 @@ status, give it its own line.
 - **A slowness audit dates the CHANGE, never a snapshot** — `slowness-audits-compare-before-and-after` **(inline — load-bearing)**
 - **`Agent` with `isolation: "remote"` from a desktop session can run LOCALLY, with no notice of the fallback** — `agent-isolation-remote-ran-locally-in-a-worktree` **(inline — load-bearing)**
 - **A new workbook builder takes three checks, and none substitutes for another.** — `verifying-a-new-workbook-builder-takes-three-layers` **(inline — load-bearing)**
+- **A keyword scan over source text matches a COMMENT exactly as it matches a call — read the imports before reporting what a generator reads.** — `regen-readslivedata-flag-matches-a-comment-not-a-call` **(inline — load-bearing)**
 - **Auto mode refuses an `Edit` to `settings.json` as `[Self-Modification]`; his instruction clears it, his own grant does not.** — `automode-allow-cannot-authorize-editing-the-permission-config` **(inline — load-bearing)**
 
 ## 2.2 The memory index
