@@ -171,8 +171,11 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
     );
   }
 
-  const { completeness, contacts, customer, geography, pharmacies, transfer } = detail;
-  const canTransfer = !transfer || transfer.status === "reverted";
+  const { completeness, contacts, customer, geography, pharmacies, transfer, viewerCanTransfer } = detail;
+  // The SFE Manager opens this page VIEW ONLY (owner, 2026-09-21): no transfer, no revert. The
+  // service refuses both for him anyway; hiding them here keeps a button he cannot use off his screen.
+  const canTransfer = viewerCanTransfer && (!transfer || transfer.status === "reverted");
+  const canRevert = viewerCanTransfer && transfer?.status === "transferred" && transfer.canRevert;
 
   return (
     <div className="space-y-6">
@@ -196,7 +199,7 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
               Transfer to Direct Orders
             </button>
           ) : null}
-          {transfer && transfer.status === "transferred" && transfer.canRevert ? (
+          {canRevert ? (
             <button
               className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-black text-slate-700 transition hover:border-rose-300 hover:text-rose-700 disabled:opacity-50"
               disabled={busy}

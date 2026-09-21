@@ -5,6 +5,7 @@ import {
   applyLegacyMarketingAreaAlias,
   buildValidatedCustomerCompleteness,
   canOpenValidatedCustomerRegister,
+  canTransferValidatedCustomers,
   getValidatedMarketingCustomerDetail,
   listValidatedMarketingCustomers,
   revertValidatedCustomerTransfer,
@@ -17,10 +18,10 @@ import {
 // Two things are pinned here, and they are the two that would actually cost something if they
 // broke:
 //
-//   1. THE GATE. Every entry point — read, transfer, revert — refuses a role that is not Super
-//      Admin. Owner ruling 2026-08-22: "Super admin only, SFE cannot do this thing." The
-//      transfer WRITES to a second module, so a hole here is not a visibility bug, it is an
-//      unauthorized write. Each assertion drives the real service function; the gate throws before
+//   1. THE GATE, in two halves. READ (list, detail) admits Super Admin and SFE Manager — owner
+//      decision 2026-09-21, "view only". WRITE (transfer, revert) stays Super Admin only — owner
+//      ruling 2026-08-22: "Super admin only, SFE cannot do this thing." The transfer WRITES to a
+//      second module, so a hole there is not a visibility bug, it is an unauthorized write. Each assertion drives the real service function; the gate throws before
 //      any Supabase call, so no database is needed.
 //
 //   2. THE COMPLETENESS VERDICT. Its whole job is to tell a tired admin at 2am what the automatic
@@ -33,12 +34,9 @@ import {
 // completeness panel into a hard gate.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Roles that must never reach this register — every role in the system except Super Admin.
- *  SFE Manager sits here on the owner's explicit ruling (2026-08-22) even though he DOES hold the
- *  marketing Customer Database: reading customer rows is not authority to write into Direct Orders. */
+/** Roles that must never reach this register at all — every role except Super Admin and SFE Manager. */
 const FORBIDDEN_ROLES = [
   "Employee",
-  "SFE Manager",
   "Medical Rep",
   "District Manager",
   "Regional Manager",
@@ -54,7 +52,14 @@ const FORBIDDEN_ROLES = [
   "CEO",
 ] as const;
 
-const ALLOWED_ROLES = ["Super Admin"] as const;
+/** May open the register and the detail. SFE Manager is VIEW ONLY (owner, 2026-09-21). */
+const VIEW_ROLES = ["Super Admin", "SFE Manager"] as const;
+
+/** May transfer and revert. Everyone else — the view-only SFE Manager included — is refused. */
+const TRANSFER_ROLES = ["Super Admin"] as const;
+
+/** Refused a transfer or a revert: every forbidden role, plus the view-only SFE Manager. */
+const TRANSFER_FORBIDDEN_ROLES = [...FORBIDDEN_ROLES, "SFE Manager"] as const;
 
 const SOME_CUSTOMER_ID = "00000000-0000-0000-0000-000000000001";
 const SOME_TRANSFER_ID = "00000000-0000-0000-0000-000000000002";
@@ -112,7 +117,7 @@ async function testDetailGateRefusesNonAdmins() {
 }
 
 async function testTransferGateRefusesNonAdmins() {
-  for (const role of FORBIDDEN_ROLES) {
+  for (const role of TRANSFER_FORBIDDEN_ROLES) {
     const access = createAccessContext({ hrId: "TEST-1", role });
     await assert.rejects(
       () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID }),
@@ -123,7 +128,7 @@ async function testTransferGateRefusesNonAdmins() {
 }
 
 async function testRevertGateRefusesNonAdmins() {
-  for (const role of FORBIDDEN_ROLES) {
+  for (const role of TRANSFER_FORBIDDEN_ROLES) {
     const access = createAccessContext({ hrId: "TEST-1", role });
     await assert.rejects(
       () => revertValidatedCustomerTransfer(access, { transferId: SOME_TRANSFER_ID }),
@@ -134,13 +139,26 @@ async function testRevertGateRefusesNonAdmins() {
 }
 
 function testAllowedRolesPassThePredicate() {
-  for (const role of ALLOWED_ROLES) {
+  for (const role of VIEW_ROLES) {
     assert.equal(
       canOpenValidatedCustomerRegister({ role, scope: "company" }),
       true,
       `${role} must be able to open the validated customer register`,
     );
   }
+  for (const role of TRANSFER_ROLES) {
+    assert.equal(canTransferValidatedCustomers({ role, scope: "company" }), true, `${role} must be able to transfer`);
+  }
+  for (const role of TRANSFER_FORBIDDEN_ROLES) {
+    assert.equal(
+      canTransferValidatedCustomers({ role, scope: "company" }),
+      false,
+      `${role} must not pass the transfer predicate`,
+    );
+  }
+  // The headline of the 2026-09-21 decision: SFE sees the register and cannot press the button.
+  assert.equal(canOpenValidatedCustomerRegister({ role: "SFE Manager", scope: "company" }), true);
+  assert.equal(canTransferValidatedCustomers({ role: "SFE Manager", scope: "company" }), false);
   for (const role of FORBIDDEN_ROLES) {
     assert.equal(
       canOpenValidatedCustomerRegister({ role, scope: "company" }),
@@ -150,6 +168,7 @@ function testAllowedRolesPassThePredicate() {
   }
   // The page guard and the service gate share this predicate; a system-scope caller passes both.
   assert.equal(canOpenValidatedCustomerRegister({ role: "Employee", scope: "system" }), true);
+  assert.equal(canTransferValidatedCustomers({ role: "Employee", scope: "system" }), true);
 }
 
 function testCompleteRecordReportsNothingOutstanding() {
