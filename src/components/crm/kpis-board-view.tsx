@@ -421,9 +421,21 @@ function KpiHero({ board, showTitle }: { board: KpisBoard; showTitle: boolean })
           </p>
         </div>
         <div className="min-w-0">
-          <div className={`border px-3 py-2 ${tone.chip}`}>
-            <p className="text-[10px] font-black uppercase tracking-[0.14em]">Team standing</p>
-            <p className="mt-0.5 text-[13px] font-black">{verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}</p>
+          {/* The team-standing signal. Premium pass: a live tone pip haloed in white and a hairline
+              contact shadow, so the one verdict on this board reads as a lit status light rather
+              than a printed label. The tone colours are unchanged — `tone.chip` still carries the
+              band, and `noplan` stays the quietest light on the board. */}
+          <div className={`flex items-center gap-2.5 border px-3.5 py-2.5 ${tone.chip} shadow-[0_1px_2px_rgba(15,23,42,0.06)]`}>
+            <span
+              aria-hidden
+              className={`h-2.5 w-2.5 shrink-0 ${tone.bar} shadow-[0_0_0_3px_rgba(255,255,255,0.65)]`}
+            />
+            <span className="min-w-0">
+              <span className="block text-[10px] font-black uppercase tracking-[0.16em]">Team standing</span>
+              <span className="mt-0.5 block text-[13px] font-black leading-tight">
+                {verdict.standing ?? KPI_BAND_LABEL[verdict.tone]}
+              </span>
+            </span>
           </div>
         </div>
       </div>
@@ -457,12 +469,16 @@ function KpiOverallPanel({ board, partial }: { board: KpisBoard; partial: boolea
   const tone = toneOf(band);
   return (
     <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
-      <div className="border border-slate-200 bg-slate-50 px-4 py-3.5">
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+      {/* THE ONE NUMBER, given the board's most premium frame: a lit gradient surface, a left tonal
+          accent stripe in the overall band's own colour, and real depth — the figure a manager reads
+          first should look like the headline it is. Every string below is unchanged. */}
+      <div className="relative overflow-hidden border border-slate-200 bg-gradient-to-br from-white to-slate-50 px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_30px_rgba(15,23,42,0.07)]">
+        <span aria-hidden className={`pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${tone.grad}`} />
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3 pl-2">
           <div className="min-w-0">
-            <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">Overall KPI</p>
-            <p className={`mt-1 text-3xl font-black leading-none tabular-nums ${tone.text}`}>{overallValue(index)}</p>
-            <div className="mt-0.5 w-36 max-w-full">
+            <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Overall KPI</p>
+            <p className={`mt-1 text-[2.6rem] font-black leading-none tabular-nums ${tone.text}`}>{overallValue(index)}</p>
+            <div className="mt-1.5 w-44 max-w-full">
               <KpiMeter band={band} value={index.overallPct} />
             </div>
           </div>
@@ -580,12 +596,18 @@ function KpiTabStrip({ context }: { context: ViewContext }) {
             aria-current={current ? "page" : undefined}
             className={
               current
-                ? `min-w-0 border-b-2 border-b-orange-500 bg-orange-50/60 px-3 py-2.5 sm:px-5${rowTwo}`
-                : `min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${rowTwo}`
+                ? `relative min-w-0 overflow-hidden border-b-2 border-b-orange-500 bg-gradient-to-b from-orange-50 to-orange-50/30 px-3 py-2.5 sm:px-5${rowTwo}`
+                : `relative min-w-0 border-b-2 border-b-transparent px-3 py-2.5 transition-colors hover:bg-slate-50 sm:px-5${rowTwo}`
             }
             href={hrefWith(context, { tab })}
             key={tab}
           >
+            {current ? (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-orange-400 to-orange-500"
+              />
+            ) : null}
             <span
               className={
                 current
@@ -854,7 +876,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
         <col style={{ width: "12%" }} />
         <col style={{ width: "17%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-slate-50">
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -898,7 +920,7 @@ function SummaryTable({ context, rows }: { context: ViewContext; rows: KpiRepRow
           </th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
@@ -984,7 +1006,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
         <col style={{ width: "19%" }} />
         <col style={{ width: "19%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-slate-50">
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -1028,7 +1050,7 @@ function CallRateTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
           />
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <RepCell
@@ -1284,7 +1306,7 @@ function CoverageDoctors({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
             {detail.covered.map((doctor) => (
               <tr key={doctor.contactCrmId}>
                 <td className={TD}>
@@ -1342,7 +1364,7 @@ function CoverageDoctors({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
             {detail.notCovered.map((doctor) => (
               <tr key={doctor.contactCrmId}>
                 <td className={TD}>
@@ -1420,7 +1442,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
         <col style={{ width: "11%" }} />
         <col style={{ width: "18%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-slate-50">
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
         <tr>
           <RepNameTh context={context} />
           <KpiSortableTh
@@ -1461,7 +1483,7 @@ function CoverageTable({ context, rows }: { context: ViewContext; rows: KpiRepRo
           />
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
           <Fragment key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <tr
@@ -1518,7 +1540,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
         <col style={{ width: "21%" }} />
         <col style={{ width: "22%" }} />
       </colgroup>
-      <thead className="border-y border-slate-200 bg-slate-50">
+      <thead className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
         <tr>
           <RepNameTh context={context} />
           {/* THE OWNER'S THREE WORDS, read from ACTIVITY_LABEL rather than repeated here.
@@ -1591,7 +1613,7 @@ function FrequencyTable({ context, rows }: { context: ViewContext; rows: KpiRepR
           />
         </tr>
       </thead>
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-slate-100 [&>tr]:transition-colors [&>tr:hover]:bg-slate-50/70">
         {rows.map((row, index) => (
           <tr key={row.agentCrmId ?? `${row.repName}-${index}`}>
             <RepCell rank={context.showRank ? index + 1 : undefined} row={row} rules={context.board.kpiRules} />
@@ -1785,7 +1807,7 @@ export function KpisBoardView({
 }) {
   if (board.scopeReason) {
     return (
-      <div className={PANEL}>
+      <div className={`${PANEL} shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_44px_rgba(15,23,42,0.07)]`}>
         <div className="px-5 py-6">
           <p className="text-sm font-semibold text-slate-700">{board.scopeReason}</p>
           <p className={`mt-1 ${CAPTION}`}>
@@ -1828,7 +1850,12 @@ export function KpisBoardView({
     <div className="space-y-4">
       <KpiHero board={board} showTitle={chrome === "admin"} />
 
-      <div>
+      {/* The tab strip and the board below it share ONE floating envelope — a two-layer premium
+          shadow on the wrapper (owner's godmode golden rule) rather than one on each, so they read
+          as a single card lifted off the page. The shadow states its own depth, so the shell's
+          ambient `main` rule leaves it alone; box-shadow moves nothing, so the fits-the-screen rule
+          is untouched. */}
+      <div className="shadow-[0_1px_2px_rgba(15,23,42,0.05),0_20px_48px_rgba(15,23,42,0.08)]">
         <KpiTabStrip context={context} />
         <div className={PANEL}>
           <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
