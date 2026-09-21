@@ -155,3 +155,12 @@ next-env.d.ts
 # The CV cabinet fill script's resume ledger — machine-local, never shared.
 .cv-cabinet-ledger.json
 cabinet-build.log
+
+# The 2026-09-21 Claude session recovery, consolidated into the repo folder at the owner's
+# instruction. 5,092 files / 237 MB: a verbatim copy of the desktop app's per-account session
+# store, 1,629 saved file versions, and the catalogues rebuilt from them. It is a COPY — the
+# master stays at `F:\Claude Recovery 2026-09-21`, deliberately outside any git tree, because a
+# `git clean -fdx` overrides ignore rules by design and this folder is not recoverable from
+# history. The readable record is committed as `docs/recovery-2026-09-21.md`; the payload is not,
+# and must not be: 237 MB of per-session JSON would sit in this repository's history forever.
+claude-recovery-2026-09-21/

@@ -55,7 +55,10 @@ const RULES = [
   [/next\s+dev|pnpm\s+run\s+dev|unstable_cache|turbopack/i, 'Next.js runtime'],
   [/dev-auth|x-phoenix-role|localhost:300|browser|playwright/i, 'Browser and dev-auth'],
   [/healthz|railway|cron-job|app_error_events|\bcurl\b.*https?:/i, 'Probing, attributing and reporting production'],
-  [/MEMORY\.md|memory-index|consolidate-memory/i, 'Memory and this index'],
+  // `claude-code-sessions`, `cleanupPeriodDays` and a walk of `~/.claude/projects`
+  // are the cues of a session hunting for lost history — the trap it needs is that
+  // the history lives in three stores, not the one it is looking at.
+  [/MEMORY\.md|memory-index|consolidate-memory|cleanupPeriodDays|claude-code-sessions|file-history|\.claude[\/\\]+projects/i, 'Memory and this index'],
   [/Win32_Process|Get-NetTCPConnection|freemem|commit charge|mem-watchdog/i, 'Machine ceiling'],
   [/grep\s+-r|\brg\b|\bsed\b|ExcelJS|xlsx|MSYS|TZ=|\.env|settings(\.local)?\.json|autoMode/i, 'Shell and tooling'],
 ];
