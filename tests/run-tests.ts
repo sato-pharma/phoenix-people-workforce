@@ -431,6 +431,13 @@ import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
 import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
 import { runKpisCallRateThroughYesterdayTests } from "./kpis-call-rate-through-yesterday.test.ts";
 import {
+  runKpiTrendConsolidateTests,
+  runKpiTrendPlanTests,
+  runKpiTrendSumsTests,
+  runKpiTrendUrlTests,
+  runKpiTrendWiringAndLookTests,
+} from "./kpis-trend.test.ts";
+import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
   runRepsPlansPickerScopeTests,
@@ -2821,6 +2828,30 @@ await runTest(
   + "the two reports — stops at yesterday with its working days, coverage and frequency still count today, and "
   + "a period that opened today has no rate and no verdict)",
   runKpisCallRateThroughYesterdayTests,
+);
+await runTest(
+  "KPIs weekly tab columns (only what has begun: on 22 Sep weeks 1-4 and the month through the 28th, never a "
+  + "blank week 5; a finished month is its five weeks and the whole month; a quarter or semester is its begun months)",
+  runKpiTrendPlanTests,
+);
+await runTest(
+  "KPIs weekly tab sums (a total is calls over days, never an average of percentages; AM, PM and pharmacy stay "
+  + "apart; a no-GPS row leaves its calls and days together; Phoenix frequency divides by graded doctors)",
+  runKpiTrendSumsTests,
+);
+await runTest(
+  "KPIs weekly tab quarter row (a rep's months fold into one row whose numbers match the quarter's cell, a "
+  + "no-GPS month leaves its days out, and identity is the latest month's)",
+  runKpiTrendConsolidateTests,
+);
+await runTest(
+  "KPIs weekly tab URL (no period on the tab, its two switches ride only on it and survive the round trip)",
+  runKpiTrendUrlTests,
+);
+await runTest(
+  "KPIs weekly tab wiring and look (both pages build it per viewer, it reads no table itself, band filters judge "
+  + "the total, and its tables fit the screen with square corners and phone cards)",
+  runKpiTrendWiringAndLookTests,
 );
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",

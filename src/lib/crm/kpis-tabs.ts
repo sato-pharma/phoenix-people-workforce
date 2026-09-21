@@ -12,7 +12,6 @@
  * imports are erased and remain safe; VALUES must come from here.
  */
 
-/** Tab ids, in the order the strip renders them. */
 /**
  * Tab ids, in the order the strip renders them.
  *
@@ -22,8 +21,13 @@
  * carrying all three KPIs for one list. They are appended rather than interleaved precisely
  * because the two axes are different: mixing them into the original four would make the strip read
  * as one list of six comparable things.
+ *
+ * WEEKLY is a third axis — TIME — and is appended last for the same reason (owner, 2026-09-22: "track
+ * them by week. So week one ... week two, week three ... and the total consolidated month of those
+ * three"). It carries the same three KPIs as Summary, cut into the month's weeks beside the month
+ * they add up to, or into months beside their quarter or semester. See crm/kpis-trend.ts.
  */
-export const KPI_TABS = ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies"] as const;
+export const KPI_TABS = ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies", "weekly"] as const;
 
 export type KpiTab = (typeof KPI_TABS)[number];
 
@@ -37,6 +41,7 @@ export const KPI_TAB_LABEL: Record<KpiTab, string> = {
   // 6.57" — a slash between two independent measures reads as a fraction.
   "am-pm": "AM · PM",
   pharmacies: "Pharmacies",
+  weekly: "Weekly",
 };
 
 /**
@@ -57,6 +62,8 @@ export const KPI_TAB_HINT: Record<KpiTab, string> = {
   // to make clear which one a number came from.
   "am-pm": "All three KPIs against his AM and PM lists, reported apart and never averaged.",
   pharmacies: "All three KPIs against his pharmacy list. A rep with no pharmacies is not applicable, not a zero.",
+  weekly:
+    "Call rate, coverage and frequency week by week, beside the month those weeks add up to — or month by month beside the quarter or semester.",
 };
 
 /** The hints that change once the Phoenix KPI rules score a period (phase 6, after the CRM cutover). */

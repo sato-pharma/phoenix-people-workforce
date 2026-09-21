@@ -922,8 +922,11 @@ export type KpiDirectoryEntry = {
  *
  * `target` is nullable so this same function serves pharmacy, which has no owner-set standard yet
  * (see PHARMACY_CALL_RATE_TARGET) — a null target returns null rather than dividing by nothing.
+ *
+ * Exported for the Weekly tab's quarter and semester roll-ups (crm/kpis-trend.ts), so a summed
+ * quarter is scored by this formula and no second copy of it.
  */
-function attainmentPct(row: KpiRepRow, verified: number, target: number | null): number | null {
+export function attainmentPct(row: KpiRepRow, verified: number, target: number | null): number | null {
   if (target == null) return null;
   const expected = row.workingDays * target;
   // A rep with no GPS feed (ruling A1) has no proved calls to be a percentage of anything.
@@ -1004,6 +1007,12 @@ export async function getKpisBoard(input: {
    * {@link selectKpiCoverageRep}). Every other tab leaves it out and pays nothing for it.
    */
   coverageDoctors?: { rep: string | null } | null;
+  /**
+   * False skips the two per-rep KPI reports, and `kpiReports` comes back empty. Only the Weekly tab
+   * passes it: it builds one board per week or month and prints neither report. Every other caller
+   * leaves it out and gets them exactly as before.
+   */
+  includeReports?: boolean;
 }): Promise<KpisBoard> {
   // TWO WINDOWS, one period (owner ruling C1, 2026-09-21 — "apply C1 to the KPIs board too").
   // `range` runs through TODAY and carries coverage and frequency: a doctor seen this morning is a
@@ -1207,21 +1216,27 @@ export async function getKpisBoard(input: {
   // denominator, and that is the same number the other tabs divide by. A second round trip is the
   // price of the two boards agreeing; splitting the fetch from the arithmetic to save it would put
   // a second working-day count on the page, which is the disagreement this is avoiding.
-  const kpiReportRows = await loadRepKpiReports({
-    scope,
-    dateFrom: range.dateFrom,
-    dateTo: range.dateTo,
-    // The reports score coverage and frequency off the same visits, so the fetch still runs through
-    // today and only the call-rate count stops at yesterday — over the same working days.
-    callRateTo: callRange.dateTo,
-    workingDays: callRate.workingDays,
-    holidays: windowHolidays.dates,
-    // Rule 2: the 8-12 PM band is gone under the Phoenix rules — PM passes at 10 or more.
-    standards: phoenix ? withoutPmBand() : undefined,
-    repNameByHrId: new Map(
-      scopedReps.flatMap((row) => (row.agentHrId ? [[row.agentHrId, row.repName] as const] : [])),
-    ),
-  });
+  //
+  // The Weekly tab opts out (`includeReports: false`): it prints neither report, and builds one
+  // board per column, so paying for them there would be a whole wasted read per week.
+  const kpiReportRows: { reports: RepKpiReports[] } =
+    input.includeReports === false
+      ? { reports: [] }
+      : await loadRepKpiReports({
+          scope,
+          dateFrom: range.dateFrom,
+          dateTo: range.dateTo,
+          // The reports score coverage and frequency off the same visits, so the fetch still runs
+          // through today and only the call-rate count stops at yesterday — over the same working days.
+          callRateTo: callRange.dateTo,
+          workingDays: callRate.workingDays,
+          holidays: windowHolidays.dates,
+          // Rule 2: the 8-12 PM band is gone under the Phoenix rules — PM passes at 10 or more.
+          standards: phoenix ? withoutPmBand() : undefined,
+          repNameByHrId: new Map(
+            scopedReps.flatMap((row) => (row.agentHrId ? [[row.agentHrId, row.repName] as const] : [])),
+          ),
+        });
   const visibleRepKeys = new Set(reps.flatMap((row) => (row.agentHrId ? [row.agentHrId] : [])));
   const kpiReports = kpiReportRows.reports.filter((report) => report.repKey != null && visibleRepKeys.has(report.repKey));
 

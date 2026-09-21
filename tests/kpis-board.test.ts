@@ -369,8 +369,8 @@ export function runKpiTabTests() {
   assert.equal(resolveKpiTab(""), "summary", "an empty tab parameter is the same as no tab at all");
   assert.deepEqual(
     [...KPI_TABS],
-    ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies"],
-    "the owner's four KPI tabs, in the order he named them, then his two per-rep reports",
+    ["summary", "call-rate", "coverage", "frequency", "am-pm", "pharmacies", "weekly"],
+    "the owner's four KPI tabs, in the order he named them, then his two per-rep reports, then the Weekly tab (2026-09-22)",
   );
   // THE FIRST FOUR ARE HIS, IN HIS ORDER (2026-09-02: "show four tabs. The first tab is the
   // summary..."). Pinned as a prefix so the two reports appended on 2026-09-05 cannot drift into

@@ -11,6 +11,7 @@ import {
 
 import { KpisFilterBar } from "@/components/crm/kpis-filter-bar";
 import { KpisPeriodPicker, type KpiPickerOption } from "@/components/crm/kpis-period-picker";
+import { KpiTrendView } from "@/components/crm/kpis-trend-view";
 import {
   CAPTION,
   KpiBandChip,
@@ -57,6 +58,8 @@ import {
 import { kpiIndexOf, type KpiIndex } from "@/lib/crm/kpi-index";
 import { ACTIVITY_LABEL } from "@/lib/crm/reps-list-activity";
 import type { KpiCoverageDetail, KpiCoverageDoctor, KpiRepRow, KpisBoard } from "@/lib/crm/kpis-board";
+import type { KpiTrend } from "@/lib/crm/kpis-trend";
+import { KPI_TREND_METRICS, KPI_TREND_SCALES, type KpiTrendMetric, type KpiTrendScale } from "@/lib/crm/kpis-trend-options";
 
 /**
  * The KPIs board — Summary, Call Rate, Coverage and Frequency over one rep list.
@@ -236,6 +239,9 @@ type ViewContext = {
    * opens by itself and so never needs to ride in the URL.
    */
   openRep: string | null;
+  /** The Weekly tab's two switches, carried on every link so a sort or a filter keeps the view. */
+  trendScale: KpiTrendScale;
+  trendMetric: KpiTrendMetric;
 };
 
 /**
@@ -247,15 +253,25 @@ type ViewContext = {
  */
 function hrefWith(
   context: ViewContext,
-  overrides: { tab?: KpiTab; filters?: KpiFilterState; rep?: string | null },
+  overrides: {
+    tab?: KpiTab;
+    filters?: KpiFilterState;
+    rep?: string | null;
+    trend?: KpiTrendScale;
+    measure?: KpiTrendMetric;
+  },
 ): string {
   const { basePath, board } = context;
   return `${basePath}?${buildKpisQuery({
     month: board.month,
-    period: board.range.periodKey,
+    // The Weekly tab's board is the span its weeks cover ("1–28 Sep"), not a period anybody picked,
+    // so leaving that tab opens the next one on the whole month rather than on that span.
+    period: context.tab === "weekly" ? "month" : board.range.periodKey,
     tab: overrides.tab ?? context.tab,
     filters: overrides.filters ?? board.filters,
     rep: overrides.rep !== undefined ? overrides.rep : context.openRep,
+    trend: overrides.trend ?? context.trendScale,
+    measure: overrides.measure ?? context.trendMetric,
   })}`;
 }
 
@@ -533,6 +549,9 @@ function tabHeadline(board: KpisBoard, tab: KpiTab): string {
   if (tab === "am-pm") {
     return `${listCoverage(board, "am")} AM · ${listCoverage(board, "pm")} PM`;
   }
+  // What the tab lays out rather than a number: the strip is drawn from whichever board is on screen,
+  // and a figure computed here would describe that board's period, not the weeks the tab shows.
+  if (tab === "weekly") return "By week & month";
   if (tab === "pharmacies") {
     const withList = board.kpiReports.filter((report) => report.pharmacies.applicable).length;
     // "Not applicable" for the whole tab is a real answer when nobody in view carries pharmacies —
@@ -1790,6 +1809,9 @@ export function KpisBoardView({
   monthOptions,
   periodOptions,
   tab,
+  trend = null,
+  trendMetric = "am",
+  trendScale = "month",
 }: {
   basePath: string;
   board: KpisBoard;
@@ -1804,6 +1826,13 @@ export function KpisBoardView({
   monthOptions: readonly KpiPickerOption[];
   periodOptions: readonly KpiPickerOption[];
   tab: KpiTab;
+  /**
+   * The Weekly tab's weeks and totals (crm/kpis-trend.ts). Built by the page ONLY on that tab, where
+   * `board` is the trend's own anchor; every other tab leaves it null and renders exactly as before.
+   */
+  trend?: KpiTrend | null;
+  trendMetric?: KpiTrendMetric;
+  trendScale?: KpiTrendScale;
 }) {
   if (board.scopeReason) {
     return (
@@ -1831,7 +1860,10 @@ export function KpisBoardView({
     // once a MEASURE is what the order is expressing.
     showRank:
       filters.sort !== "rep" && filters.sort !== "line" && filters.sort !== "area" && filters.sort !== "manager",
+    trendScale,
+    trendMetric,
   };
+  const weekly = tab === "weekly";
 
   // Lowercased for "Whole month" ONLY, which is a common noun sitting mid-sentence. A week's label is
   // "Week 1 · 1–7 Sep" — a proper name carrying a month abbreviation — so lowercasing it printed
@@ -1883,7 +1915,10 @@ export function KpisBoardView({
               rangeFrom={board.range.dateFrom}
               rangeTo={board.range.windowEnd}
               rep={context.openRep}
+              showPeriod={!weekly}
               tab={tab}
+              trend={trendScale}
+              measure={trendMetric}
             />
           </div>
 
@@ -1893,9 +1928,11 @@ export function KpisBoardView({
             filters={filters}
             kpiRules={board.kpiRules}
             month={board.month}
-            period={board.range.periodKey}
+            period={weekly ? "month" : board.range.periodKey}
             rep={context.openRep}
             tab={tab}
+            trend={trendScale}
+            measure={trendMetric}
             total={board.scopedReps}
             visible={board.reps.length}
           />
@@ -1958,6 +1995,11 @@ export function KpisBoardView({
             </div>
           ) : null}
 
+          {/* THE WEEKLY TAB draws its own two tables in place of the overall panel, the six tiles and
+              the leaderboards: each of those describes ONE period, and this tab's whole point is
+              several side by side. Every other tab renders below exactly as it did. */}
+          {weekly ? null : (
+            <>
           {/* THE ONE NUMBER, above the six it comes from. Added 2026-09-17 on the owner's
               instruction; the tiles below are exactly as they were. */}
           <KpiOverallPanel board={board} partial={partial} />
@@ -2041,6 +2083,8 @@ export function KpisBoardView({
               </p>
             </div>
           ) : null}
+            </>
+          )}
 
           {board.reps.length === 0 ? (
             <div className="border-t border-slate-100">
@@ -2064,6 +2108,24 @@ export function KpisBoardView({
                 />
               )}
             </div>
+          ) : weekly ? (
+            trend ? (
+              <KpiTrendView
+                metric={trendMetric}
+                metricHrefs={
+                  Object.fromEntries(
+                    KPI_TREND_METRICS.map((metric) => [metric, hrefWith(context, { measure: metric })]),
+                  ) as Record<KpiTrendMetric, string>
+                }
+                scale={trendScale}
+                scaleHrefs={
+                  Object.fromEntries(
+                    KPI_TREND_SCALES.map((scale) => [scale, hrefWith(context, { trend: scale })]),
+                  ) as Record<KpiTrendScale, string>
+                }
+                trend={trend}
+              />
+            ) : null
           ) : tab === "am-pm" || tab === "pharmacies" ? (
             /* THE TWO REPORTS. No leaderboard above them, deliberately: the podium ranks the four
                plan-based measures, and a "best on pharmacies" board would rank reps against a
@@ -2184,6 +2246,9 @@ export function KpisBoardView({
               * Since ruling C1 (2026-09-21) the two ends differ in a running window too: coverage runs to
               * today and the call rate to YESTERDAY, so the rate's end is printed with the reason. On a
               * period's first day the rate's window is empty (today to yesterday), which is said in words. */}
+            {/* The Weekly tab prints its own version of this note under its tables — one window's end
+                dates would be wrong for five columns of them. */}
+            {weekly ? null : (
             <p className={`leading-4 ${CAPTION}`}>
               Coverage and frequency are scored for {board.monthLabel} to {board.asOf}.{" "}
               {board.range.notStarted
@@ -2199,6 +2264,7 @@ export function KpisBoardView({
               The bands below are these same three measures cut into ranges; nothing on this board blends
               them into a single score.
             </p>
+            )}
             <p className={`mt-1.5 flex flex-wrap items-center gap-1.5 leading-4 ${CAPTION}`}>
               <span>Bands:</span>
               <KpiBandChip band="elite" />

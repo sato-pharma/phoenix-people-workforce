@@ -58,7 +58,10 @@ export function KpisPeriodPicker({
   rangeFrom,
   rangeTo,
   rep,
+  showPeriod = true,
   tab,
+  trend,
+  measure,
 }: {
   basePath: string;
   /** Carried through every change — see the note on losing them below. */
@@ -79,7 +82,16 @@ export function KpisPeriodPicker({
    * another week keeps his list open for the new week; the server rebuilds it for the new window.
    */
   rep?: string | null;
+  /**
+   * False on the Weekly tab, which lays every week of the month out side by side — a Period box there
+   * would pick one window out of a view whose point is all of them. The Month box stays: it chooses
+   * which month's weeks (or which quarter or semester) the tab shows.
+   */
+  showPeriod?: boolean;
   tab: KpiTab;
+  /** The Weekly tab's two switches, carried through a month change so the view stays as it was. */
+  trend?: string | null;
+  measure?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -98,7 +110,9 @@ export function KpisPeriodPicker({
     // unfiltered Summary" — and a picker that silently widened the board while the chips still
     // said a filter was on would be the worst of the two possible bugs.
     startTransition(() =>
-      router.push(`${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, rep, tab, filters })}`),
+      router.push(
+        `${basePath}?${buildKpisQuery({ month: nextMonth, period: nextPeriod, rep, tab, filters, trend, measure })}`,
+      ),
     );
   };
 
@@ -151,24 +165,33 @@ export function KpisPeriodPicker({
             ))}
           </select>
         </label>
-        <label className="block">
-          <span className={LABEL_CLASS}>Period</span>
-          <select
-            className={`mt-1 ${CONTROL_CLASS}`}
-            disabled={pending}
-            onChange={(event) => applyPeriod(event.target.value)}
-            value={customOpen ? KPI_CUSTOM_PERIOD_VALUE : period}
-          >
-            {periodOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {showPeriod ? (
+          <label className="block">
+            <span className={LABEL_CLASS}>Period</span>
+            <select
+              className={`mt-1 ${CONTROL_CLASS}`}
+              disabled={pending}
+              onChange={(event) => applyPeriod(event.target.value)}
+              value={customOpen ? KPI_CUSTOM_PERIOD_VALUE : period}
+            >
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="min-w-0">
+            <span className={LABEL_CLASS}>Period</span>
+            <p className="mt-1 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-2xs font-semibold leading-5 text-slate-600">
+              Laid out below, week by week or month by month.
+            </p>
+          </div>
+        )}
       </div>
 
-      {customOpen ? (
+      {showPeriod && customOpen ? (
         <div className="grid gap-3 border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
           <label className="block">
             <span className={LABEL_CLASS}>From</span>

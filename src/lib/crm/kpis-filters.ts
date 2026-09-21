@@ -548,12 +548,26 @@ export function buildKpisQuery(input: {
    * The server re-checks it against the reps the viewer may see, so the URL can never widen scope.
    */
   rep?: string | null;
+  /**
+   * The Weekly tab's roll-up (`month`, `quarter`, `semester`) and the measure its rep table reads.
+   * Written ONLY on that tab and only when not the default, exactly like `rep` on Coverage — so
+   * leaving the tab drops them rather than carrying them somewhere they mean nothing.
+   */
+  trend?: string | null;
+  measure?: string | null;
 }): string {
   const query = new URLSearchParams();
+  const weekly = input.tab === "weekly";
   query.set("month", input.month);
-  if (input.period && input.period !== "month") query.set("period", input.period);
+  // The Weekly tab lays out every week of the month itself, so a period on it would mean nothing:
+  // it is left out, and moving to another tab from there opens that tab on the whole month.
+  if (!weekly && input.period && input.period !== "month") query.set("period", input.period);
   if (input.tab && input.tab !== "summary") query.set("tab", input.tab);
   if (input.rep && input.tab === "coverage") query.set("rep", input.rep);
+  // The names and defaults are crm/kpis-trend-options.ts's KPI_TREND_PARAMS, spelled out rather than
+  // imported so this file keeps importing nothing; tests/kpis-trend.test.ts pins that they agree.
+  if (weekly && input.trend && input.trend !== "month") query.set("trend", input.trend);
+  if (weekly && input.measure && input.measure !== "am") query.set("measure", input.measure);
   for (const [key, value] of Object.entries(kpiFiltersToParams(input.filters))) query.set(key, value);
   return query.toString();
 }

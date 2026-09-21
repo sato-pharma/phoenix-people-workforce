@@ -25,6 +25,8 @@ import { canSeeDoctorCoverage } from "@/lib/crm/doctor-coverage-roles";
 import { getKpisBoard, kpiMonthOptions, kpiPeriodOptions } from "@/lib/crm/kpis-board";
 import { parseKpiFilters } from "@/lib/crm/kpis-filters";
 import { resolveKpiTab } from "@/lib/crm/kpis-tabs";
+import { getKpisTrend, type KpiTrend } from "@/lib/crm/kpis-trend";
+import { KPI_TREND_PARAMS, resolveKpiTrendMetric, resolveKpiTrendScale } from "@/lib/crm/kpis-trend-options";
 import { resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 
 export const runtime = "nodejs";
@@ -57,23 +59,35 @@ export default async function AdminKpisPage({ searchParams }: PageProps) {
   const month = resolveRepsPlansMonth(one(params?.month), today);
   const tab = resolveKpiTab(one(params?.tab));
   const filters = parseKpiFilters(params ?? {});
+  // The Weekly tab's two switches. Resolved on every tab and ignored off it, so a stray value can only
+  // ever fall back to its default.
+  const trendScale = resolveKpiTrendScale(one(params?.[KPI_TREND_PARAMS.scale]));
+  const trendMetric = resolveKpiTrendMetric(one(params?.[KPI_TREND_PARAMS.metric]));
 
   // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
   // inside try/catch). A data failure renders a plain explanation, never a crash page — and never a
   // zero, which on this board would read as "every rep did nothing".
   let board: Awaited<ReturnType<typeof getKpisBoard>> | null = null;
+  let trend: KpiTrend | null = null;
   let loadError: string | null = null;
   try {
-    board = await getKpisBoard({
-      access,
-      month,
-      period: one(params?.period),
-      todayIso: today,
-      filters,
-      // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
-      // already on this viewer's board, and ignores it otherwise.
-      coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
-    });
+    if (tab === "weekly") {
+      // One board per week (or month) and the total they add up to — each one built through
+      // getKpisBoard, so the scope gate runs for every column. Its anchor board drives the header.
+      trend = await getKpisTrend({ access, scale: trendScale, month, todayIso: today, filters });
+      board = trend.anchor;
+    } else {
+      board = await getKpisBoard({
+        access,
+        month,
+        period: one(params?.period),
+        todayIso: today,
+        filters,
+        // The Coverage tab's doctor lists. `rep` is only a request: getKpisBoard honours it for a rep
+        // already on this viewer's board, and ignores it otherwise.
+        coverageDoctors: tab === "coverage" ? { rep: one(params?.rep) ?? null } : null,
+      });
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : "KPI data is unavailable.";
   }
@@ -94,6 +108,9 @@ export default async function AdminKpisPage({ searchParams }: PageProps) {
       monthOptions={kpiMonthOptions(today)}
       periodOptions={kpiPeriodOptions(month, today)}
       tab={tab}
+      trend={trend}
+      trendMetric={trendMetric}
+      trendScale={trendScale}
     />
   );
 }
