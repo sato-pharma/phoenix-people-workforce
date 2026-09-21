@@ -242,13 +242,15 @@ export function runPnpmWorktreeGuardTests() {
         `the replacement is the script's own body, invoked through node.\n${script}`,
       );
 
-      // The dev server is pinned by AGENTS.md §5, not read from package.json: turbopack rejects
-      // the node_modules junction, so --webpack is not optional in a worktree.
+      // The dev server is pinned by AGENTS.md §5, not read from package.json: it is the launcher,
+      // which picks --webpack on Windows (turbopack rejects the node_modules junction) and caps the
+      // heap. Naming a raw `next dev` here would send the session straight into bash-guard C7.
       const dev = runGuard(worktree, "pnpm run dev").reason;
       assert.ok(
-        dev.includes("node node_modules/next/dist/bin/next dev --webpack --port 3000"),
-        `the dev server must be named in full, with --webpack.\n${dev}`,
+        dev.includes("node scripts/dev-server.mjs --port 3000"),
+        `the dev server must be named as the launcher, with its port.\n${dev}`,
       );
+      assert.ok(!/next dev/.test(dev), `the advice must not be a raw \`next dev\`, which C7 refuses.\n${dev}`);
 
       // A bare binary resolves through that package's own manifest and is checked on disk, so the
       // line printed is one that runs. Guessing `node_modules/tsc/…` would have been plausible,

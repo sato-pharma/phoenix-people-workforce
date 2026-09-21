@@ -85,19 +85,25 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { explainDevServerExit } from "./dev-server-exit-reason.mjs";
+import { resolveHeapCap } from "./dev-server-heap-cap.mjs";
 
 const override = process.env.PHOENIX_DEV_BUNDLER?.trim().toLowerCase();
 const isWindows = process.platform === "win32";
 
+// Pass through anything the caller added, e.g. `pnpm run dev --port 3100`. A bundler flag among
+// them is the caller's own choice (`dev:turbopack` is this launcher plus --turbopack), so it wins
+// over the variable and the platform default, and Next receives it once rather than beside a second.
+const passthrough = process.argv.slice(2);
+const bundlerFlag = passthrough.find((arg) => arg === "--webpack" || arg === "--turbopack" || arg === "--turbo");
+
 let bundler;
-if (override === "turbopack" || override === "webpack") {
+if (bundlerFlag) {
+  bundler = bundlerFlag === "--webpack" ? "webpack" : "turbopack";
+} else if (override === "turbopack" || override === "webpack") {
   bundler = override;
 } else {
   bundler = isWindows ? "webpack" : "turbopack";
 }
-
-// Pass through anything the caller added, e.g. `pnpm run dev --port 3100`.
-const passthrough = process.argv.slice(2);
 
 /*
  * ONE DEV SERVER AT A TIME — ENFORCED HERE, added 2026-09-09.
@@ -208,47 +214,57 @@ if (running.length > 0) {
   process.exit(1);
 }
 
-// NO MEMORY CAP HERE, AND DO NOT ADD ONE BACK. This file shipped with
-// `--max-old-space-size=4096` and a comment claiming it kept the server under the watchdog's
-// 6 GB ceiling. The claim was false. It is corrected here rather than quietly deleted, because
-// a session staring at a killed dev server will reach for exactly that flag next.
+// A 4,096 MB HEAP CAP, ON BY DEFAULT. Added 2026-09-21. It reverses the "NO MEMORY CAP HERE, AND
+// DO NOT ADD ONE BACK" block that stood here from 2026-09-01, because that block was measured on the
+// wrong process. Kept in summary below, since a session reading older notes will meet it.
 //
-// MEASURED 2026-09-01 on this machine, with v8.getHeapStatistics().heap_size_limit:
-//     no NODE_OPTIONS             ->  4288 MB
-//     --max-old-space-size=4096   ->  4288 MB      IDENTICAL — the flag bound nothing
-// Node already defaults to a ~4 GB old space here. And the server it was meant to protect was
-// killed anyway, with the flag set: 02:38:17 KILL pid=5008 commit=6.21GB.
+// What Next does when NODE_OPTIONS carries no --max-old-space-size (next/dist/cli/next-dev.js,
+// 16.3.3): it gives the server it forks HALF THE MACHINE'S RAM. It also restarts that server by
+// itself only once the heap passes 80% of the limit (server/lib/start-server.js,
+// getMemoryRestartStats). Measured 2026-09-21 on the child that does the growing (start-server.js),
+// using a --require probe that reads v8.getHeapStatistics():
+//     raw `next dev`, and this launcher before this change   8,278 MB   (child NODE_OPTIONS: --max-old-space-size=8086)
+//     this launcher now                                     4,288 MB
+// At the default, Next's own restart waits for 6.6 GB of heap, so a busy server grows to 7-8 GB
+// first. mem-watchdog.log, the same morning:
+//     09:07:53 KILL pid=4652 name=node commit=8.14GB reason=runaway-dev-server-over-ceiling
+// With the cap, Next restarts it in place, on the same port, at about 3.4 GB of heap. The process as
+// a whole runs a GB or two above its heap (see below), so it tops out around 5-6 GB rather than 8+.
 //
-// The growth past 6 GB is OFF-HEAP — module graph, source maps, native allocations — which
-// --max-old-space-size cannot bound by construction. AGENTS.md 2.1 already records this for the
-// ExcelJS leak ("off-heap so --max-old-space-size cannot cap it"). It applies here identically.
+// The old block's evidence: "heap_size_limit 4,288 MB with and without --max-old-space-size=4096,
+// so the flag is a no-op". That was read from a plain `node`, whose own default here is about 4 GB,
+// never from the child Next forks. The 6.21 GB kill it cited (02:38:17, pid 5008) was a server that
+// really was capped. But it ran while next.config.ts still preloaded all 1,148 route entries (that
+// stopped 2026-09-09) and while the watchdog stopped anything over 6 GB.
 //
-// A cap that DID bind (say 2048) would be a real behaviour change — more GC, slower rebuilds,
-// possible OOM — so it needs measuring before it is worth shipping.
+// Why 4,096 and not lower. This was measured 2026-09-09: same checkout, the same ten admin routes
+// from cold, with the next.config.ts flags in place:
+//                                  peak commit   peak working set   slowest route
+//     no cap (Next: half of RAM)      5,933 MB          5,665 MB          14.1 s
+//     --max-old-space-size=3072       4,835 MB          4,421 MB          62.1 s
+// At 3,072 the heaviest compiles ran 3-4x slower. On 2026-09-21 a cold /admin/approvals-hub
+// compile peaked at 1,508 MB of heap, so 4,096 leaves it room and still halves Next's ceiling. What
+// no heap cap reaches: that same cold compile holds about 3.4 GB in all, because up to 1.4 GB of it
+// is ArrayBuffers outside the heap. That reading was the same with the cap at 2,560 and at 4,096.
 //
-// MEASURED 2026-09-09, and it CORRECTS the sentence above it. "The growth is off-heap, which
-// --max-old-space-size cannot bound by construction" was over-general: the 4096 test could not
-// bind because node's default old space here is already 4,288 MB, so that flag was a no-op for
-// the arithmetic reason, not because the memory was out of reach. A cap that actually binds does
-// bound it. Same checkout, same ten admin routes from cold, only NODE_OPTIONS differing, all
-// three runs carrying the dev-only next.config.ts flags added the same day:
+// Overrides, strongest first:
+//   - a --max-old-space-size already in NODE_OPTIONS is the caller's choice and is kept as it is;
+//   - PHOENIX_DEV_HEAP_MB=<MB> sets another cap, e.g. 3072 for a session where RAM matters more
+//     than compile speed;
+//   - PHOENIX_DEV_HEAP_MB=0 hands the choice back to Next (half of RAM).
+// If a page ever ends the server with "JavaScript heap out of memory", raise the cap for that run.
+// Nothing ran out of memory at 3,072 across the ten routes on 2026-09-09.
 //
-//                              peak commit   peak working set   slowest route
-//     no flags at all            10,221 MB          7,497 MB          14.0 s
-//     config flags only           5,933 MB          5,665 MB          14.1 s
-//     + --max-old-space-size=3072 4,835 MB          4,421 MB          62.1 s
-//
-// So the cap buys roughly 1.2 GB and costs 3-4x on the heaviest compiles: /admin/approvals-hub
-// went 14.1 s -> 62.1 s and /admin/analytics/source-sales (since retired) 10.5 s -> 37.5 s. Nothing OOM'd; every
-// route still returned 200.
-//
-// NOT SHIPPED BY DEFAULT, deliberately. A minute-long page compile is paid on every edit, and the
-// config flags above already removed the 4.3 GB spike that was actually freezing the machine. Set
-// it by hand for a session where RAM matters more than iteration speed:
-//     $env:NODE_OPTIONS='--max-old-space-size=3072'; pnpm run dev
-// Do not "fix" it back to a permanent flag without re-measuring both columns.
+// Every path that starts a dev server now comes through here: the package.json dev scripts,
+// scripts/dev-supervisor.ps1, and AGENTS.md 5's worktree line. .claude/hooks/bash-guard.mjs C7
+// denies a raw `next dev` at the command line.
+const heap = resolveHeapCap(process.env);
+if (heap.warning) console.warn(heap.warning);
+const childEnv = { ...process.env };
+if (heap.nodeOptions) childEnv.NODE_OPTIONS = heap.nodeOptions;
+else delete childEnv.NODE_OPTIONS;
 
-const args = ["dev", `--${bundler}`, ...passthrough];
+const args = ["dev", `--${bundler}`, ...passthrough.filter((arg) => arg !== bundlerFlag)];
 
 // Resolve Next's bin through the filesystem, NOT through PATH. `pnpm run dev` happens to put
 // node_modules/.bin on PATH, so `spawnSync("next", ...)` works under pnpm and fails with
@@ -265,7 +281,8 @@ const haveBin = fs.existsSync(nextBin);
 
 console.log(
   `[dev-server] ${process.platform} -> ${bundler}` +
-    (override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
+    (bundlerFlag ? ` (${bundlerFlag} flag)` : override ? " (PHOENIX_DEV_BUNDLER override)" : "") +
+    `  | ${heap.note}` +
     `  | next ${args.join(" ")}` +
     (haveBin ? "" : "  (next not found in node_modules - falling back to PATH)"),
 );
@@ -295,10 +312,12 @@ process.on("SIGTERM", () => {});
 const child = haveBin
   ? spawn(process.execPath, [nextBin, ...args], {
       stdio: "inherit",
+      env: childEnv,
     })
   : spawn("next", args, {
       stdio: "inherit",
       shell: true,
+      env: childEnv,
     });
 
 child.on("error", (err) => {

@@ -41,17 +41,20 @@ junctioned worktree fine (`Ready in 1770ms`, HMR and all).
 `node_modules`, aborted with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` and exited 1 without
 ever starting Next. The failure is shaped to mislead: the background task reported **exit code
 0** while port 3000 stayed dead, so it reads as a `preview_start` permissions or path problem
-rather than as pnpm. What works, verified in the same worktree (`✓ Ready in 1154ms`,
-`GET /api/healthz 200`):
+rather than as pnpm. What worked, verified in the same worktree (`✓ Ready in 1154ms`,
+`GET /api/healthz 200`), was invoking Next's binary through node — and the launcher does exactly
+that, resolving Next through the filesystem rather than through `PATH`. Since 2026-09-21 it is the
+only form to use:
 
 ```
-node node_modules/next/dist/bin/next dev --webpack --port 3000
+node scripts/dev-server.mjs --port 3000
 ```
 
-`.claude/launch.json`'s `"//"` note named the `pnpm exec` form until 2026-09-03 and now names
-this one. `scripts/dev-server.mjs` already resolves Next the same way — through the filesystem,
-not through `PATH` — so `node scripts/dev-server.mjs --port 3000` is the equivalent that also
-picks the bundler for you.
+It picks `--webpack` on Windows, caps the server's heap at 4,096 MB, and refuses to start a second
+dev server. The raw form this section used to print — Next's own binary run with `dev` — skips
+all three: Next then hands the server half of RAM (see "The dev server's heap cap" below), and
+`.claude/hooks/bash-guard.mjs` C7 now denies it. `.claude/launch.json`'s `"//"` note named the
+`pnpm exec` form until 2026-09-03, the raw form until 2026-09-21, and names the launcher now.
 
 ## When someone runs `pnpm install` in a worktree anyway, nothing reports it
 
@@ -420,8 +423,45 @@ the junctioned-`node_modules` refusal documented above. Neither is the sawtooth.
 made acute by running **two** servers at once — the rule is one, ever — because each kill/restart
 cycle re-drove RAM to 94% and re-evicted the desktop to the pagefile.
 
-**`--max-old-space-size` cannot help.** Measured a no-op: `heap_size_limit` reads 4288 MB with and
-without it, because the growth is off-heap.
+### The dev server's heap cap
+
+**Corrected 2026-09-21: `--max-old-space-size` DOES bind the dev server.** Until that day this
+section said it was "a measured no-op: `heap_size_limit` reads 4288 MB with and without it, because
+the growth is off-heap". That reading came from a plain `node`, whose own default on this machine is
+about 4 GB — never from the process that grows. That process is the `start-server.js` child Next
+forks, and Next sets that child's limit itself (`next/dist/cli/next-dev.js`, 16.3.3): when
+`NODE_OPTIONS` carries no `--max-old-space-size`, it gives the child **half of RAM**
+(`--max-old-space-size=8086` here). Next restarts the child in place only when a request finishes
+with more than **80%** of that limit in use (`getMemoryRestartStats` — the log line is "Server is
+approaching the used memory threshold, restarting..."). So at the default a busy server climbs past
+6.6 GB of heap before anything happens; the watchdog stopped one at **8.14 GB** at 09:07 Cairo on
+2026-09-21, and another reached 7.5 GB within seven minutes the same morning.
+
+Measured on that child with a `--require` probe reading `v8.getHeapStatistics()`:
+
+| How the server was started | The child's heap limit |
+| --- | --- |
+| a raw `next dev`, or the launcher before 2026-09-21 | **8,278 MB** |
+| `node scripts/dev-server.mjs` — the 4,096 MB default | **4,288 MB** |
+| `PHOENIX_DEV_HEAP_MB=3072` | 3,264 MB |
+| the caller's own `NODE_OPTIONS=--max-old-space-size=6144` (always wins) | 6,336 MB |
+| `PHOENIX_DEV_HEAP_MB=0` (the choice handed back to Next) | 8,278 MB |
+
+With the cap, Next restarts the server in place near 3.4 GB of heap, so the process as a whole tops
+out around 5–6 GB instead of climbing to 8. **What no heap cap reaches:** a cold compile of a heavy
+page holds about 3.4 GB in all, up to 1.4 GB of it in ArrayBuffers outside the heap — measured on
+`/admin/approvals-hub`, the same with the cap at 2,560 and at 4,096. The cap bounds the long-run
+growth, not the first compile.
+
+**Why 4,096 and not lower** (2026-09-09, the same ten admin routes from cold): no cap peaked at 5,933
+MB of commit with a slowest route of 14.1 s; `--max-old-space-size=3072` peaked at 4,835 MB, but its
+slowest route took 62.1 s. `--disable-source-maps` saves only 50–70 MB and costs mapped stack traces.
+
+**Every start path goes through the launcher** — `package.json`'s `dev`, `dev:webpack`,
+`dev:turbopack` and `dev:no-turbopack`, `scripts/dev-supervisor.ps1`, AGENTS.md §5 and
+`.claude/launch.json` — and `.claude/hooks/bash-guard.mjs` C7 denies a raw `next dev` at the
+command line. Pinned by `tests/dev-server-heap-cap.test.ts` (including Next's own reader of the cap
+and its 80% restart, so an upgrade that drops either goes red) and `tests/raw-next-dev-guard.test.ts`.
 
 
 ---
@@ -857,7 +897,7 @@ what left is measurement, narrative, and what §5 already states. Search this se
 
 - **Self-removing a worktree MUTES its own session-end guard — and a `.claude/worktrees/` one canNOT retire itself at all.** `ExitWorktree` no-ops on any worktree it did not create in THAT session, and `change_directory` refuses to move a session pinned to one ("runs in an isolated worktree"), so the session's own cwd holds the folder and `git worktree remove` deregisters-then-husks every time. **So strip the payload FIRST, while you still can**: drop the junction with cmd's NON-recursive `rmdir` (never `Remove-Item -Recurse`, which can follow it into the primary), then `.next`. The husk then holds ZERO files — the only state `--fix` above will clear. Do it in the other order and the husk keeps its payload, and only quiet time and a hand `rmdir /s /q` will shift it.
 
-- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling. It is a watchdog-THRESHOLD problem: this server legitimately reaches ~6 GB, made acute by two servers at once, and `--max-old-space-size` is a measured no-op because the growth is off-heap.
+- **`next dev` in a worktree needs the explicit `--webpack` flag** — TURBOPACK rejects the §5 junction, not Next; `pnpm run dev` now chooses for you (`scripts/dev-server.mjs`). **The watchdog's 6 GB kills are NOT a bundler trait** — SEVEN webpack servers died at the same ceiling. It is a watchdog-THRESHOLD problem: this server legitimately reaches ~6 GB, made acute by two servers at once. 🔴 **`--max-old-space-size` DOES bind the dev server** (corrected 2026-09-21 — the old "measured no-op" was read from a plain `node`): Next gives its server HALF OF RAM unless `NODE_OPTIONS` caps it, so start it with `node scripts/dev-server.mjs --port 3000` (4 GB cap; "The dev server's heap cap" above); `bash-guard.mjs` C7 refuses a raw `next dev`.
 
 - **`gh pr merge` from a worktree exits NON-ZERO after the merge SUCCEEDED.** `fatal: 'main' is already used by worktree` is its LOCAL post-merge step failing, never the merge — and it fires on EVERY merge here, since the primary holds `main`. Treat a non-zero exit as UNKNOWN, not failed: `gh pr view <n> --json state,mergeCommit`; `MERGED` means done and only the local branch is left. Retrying errors on an already-merged PR and reads like a worse failure. `gh-pr-merge-exits-nonzero-from-a-worktree-after-it-succeeded`
 
@@ -1078,7 +1118,7 @@ are in [docs/agents-worktree-and-machine-limits.md](agents-worktree-and-machine-
 - **Never delete a `.xlsx` or `.pdf` file**, even a stray untracked one in a worktree being cleaned up. Scan any folder for them before removing it; if found and not identical to a git-tracked copy, move them into `xlsx/` at the repo root.
 - **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** (fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules`, copy the gitignored env files). It refuses below 6 GB of free commit charge. `--status` prints live headroom, `--repair` fixes a worktree missing either piece, `--from <ref>` branches elsewhere. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently) and no `node_modules`.
 - **A sibling `_wt-<task>` is a NEW project to Claude Code's own memory/settings, unlike a NESTED `.claude/worktrees/<name>` one** — the latter is Claude Code's native worktree feature and is recognized as the same project automatically; the former is just a different absolute path, so a session opened there starts with an empty auto-memory bucket and no `.claude/settings.local.json` (none of `MEMORY.md` or the personal Bash allow-list carries over). `scripts/sync-worktree-env.mjs` (step 4 above, and re-run at every SessionStart) now also copies `.claude/settings.local.json` from the primary when missing and points `autoMemoryDirectory` back at the primary's real memory folder — re-run it by hand (`node scripts/sync-worktree-env.mjs`) on any worktree created before this existed.
-- **Never `pnpm install` inside a worktree, and never `pnpm run` — or `pnpm exec` — there.** Both run the deps-status check first, and it purges `node_modules` once it sees the lockfile has moved, destroying the junction before your command starts. **`pnpm exec` fails SILENTLY-SHAPED**: it aborts the purge (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`) and exits 1 without starting anything, while the background task reports **exit code 0** and the port stays dead — which reads as a permissions or path problem, not as pnpm. Invoke `node scripts/…` directly, and start the dev server as `node node_modules/next/dist/bin/next dev --webpack --port 3000`. The junction is enough for `typecheck`, `lint` and `node scripts/…`, but **not for `next dev`** without the explicit `--webpack` flag (§2.1, Worktrees).
+- **Never `pnpm install` inside a worktree, and never `pnpm run` — or `pnpm exec` — there.** Both run the deps-status check first, and it purges `node_modules` once it sees the lockfile has moved, destroying the junction before your command starts. **`pnpm exec` fails SILENTLY-SHAPED**: it aborts the purge (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`) and exits 1 without starting anything, while the background task reports **exit code 0** and the port stays dead — which reads as a permissions or path problem, not as pnpm. Invoke `node scripts/…` directly, and start the dev server as `node scripts/dev-server.mjs --port 3000` — it passes `--webpack` on Windows and caps the heap at 4 GB (a raw `next dev` is refused by `bash-guard.mjs` C7 since 2026-09-21). The junction is enough for `typecheck`, `lint` and `node scripts/…`, but **not for `next dev`** without the explicit `--webpack` flag (§2.1, Worktrees).
 - **Stopping a dev server: kill it by PORT, not by task.** Stopping the background TASK kills the wrapper shell and leaves `next dev` itself holding 3000 — the harness reports "Successfully stopped", `curl /api/healthz` still answers 200, and the next start then fights a port it cannot have. Three times in one session, 2026-09-02. From PowerShell: `Get-NetTCPConnection -LocalPort 3000 -State Listen`, then `Stop-Process -Id <OwningProcess> -Force`. **Believe only a live probe, in both directions** — a background task can also report a bare `exit 127` moments AFTER serving a healthy 200, so read its log before blaming permissions. A curl of `000` is the only proof the port is free, and holding it stale is what breaks "one dev server at a time, ever" below.
 - Prefer worktrees as siblings (`git worktree add ../_wt-<task>`). If one must live inside the repo, its folder name must start with `_wt-` (or sit under `.codex-worktrees/` or `.claude/worktrees/`) — those patterns are excluded from `tsconfig.json`, `eslint.config.mjs` and `.gitignore`; a folder matching none silently makes every local `typecheck`/`lint` several times slower. Locked worktrees under `.claude/worktrees/` belong to other live sessions — never remove them.
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`**, only after approval. It runs three gates in cost order — untracked `.xlsx`/`.pdf` rescue scan, uncommitted work, then commits on no remote branch **and** with no merged PR — drops the junction with `cmd /c rmdir`, and re-reads the folder's branch live rather than trusting an earlier scan. That last gate asks the merged PR, never reachability — **a squash-merged branch legitimately holds commits `main` does not.**

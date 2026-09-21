@@ -4,6 +4,8 @@
 //   C1  recursive grep  — ~346k path entries make `grep -r` hang 10-40s+. Use rg / git grep.
 //   C6  pnpm inside a LINKED WORKTREE — its deps check offers to delete the PRIMARY's
 //       node_modules, which every worktree's node_modules is only a junction to.
+//   C7  a raw `next dev` — it skips scripts/dev-server.mjs, so Next hands the server half of RAM
+//       (8,086 MB here) instead of the launcher's 4,096, and nothing refuses a second server.
 //
 // And triggers one NON-blocking side effect:
 //   C5  worktree removal — hands the command to worktree-exit-guard.mjs --pre-removal so the
@@ -97,8 +99,99 @@ function linkedWorktree(dir) {
   return { linked: false, primary: null, root: null };
 }
 
-/** AGENTS.md §5's dev-server line. `next dev` in a worktree needs the explicit --webpack flag. */
-const DEV_SERVER = 'node node_modules/next/dist/bin/next dev --webpack --port 3000';
+/**
+ * AGENTS.md §5's dev-server line. The launcher picks --webpack on Windows (turbopack rejects the
+ * worktree's node_modules junction), caps the heap and refuses a second server — C7 below.
+ */
+const DEV_SERVER = 'node scripts/dev-server.mjs --port 3000';
+
+/**
+ * The command split at its command positions — a newline, `|`, `;`, `&`, `(` — but never inside a
+ * quoted string, so a commit message or an echo that MENTIONS a command is not read as running it.
+ * An unbalanced quote swallows the rest of the command, which errs toward allowing: the cheap way to
+ * be wrong for a guard whose worst miss is a dev server that uses too much memory.
+ */
+function commandSegments(text) {
+  const segments = [];
+  let current = '';
+  let quote = null;
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+    } else if ('\n|;&('.includes(ch)) {
+      segments.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  segments.push(current);
+  return segments;
+}
+
+/**
+ * A PowerShell here-string's body is data, like a heredoc's — `@'`…`'@` is how a commit message
+ * gets written from the PowerShell tool, and an apostrophe inside one would otherwise flip the
+ * quote tracking above and turn the next line into a "command".
+ */
+function withoutHereStringBodies(text) {
+  return text.replace(/@(["'])[ \t]*\r?\n[\s\S]*?\r?\n\1@/g, "''");
+}
+
+/** Wrappers that still run what they carry: `cmd /c`, a shell's `-c`, `start`, `VAR=value`, a quote. */
+const LAUNCH_WRAPPERS = [
+  /^cmd(?:\.exe)?\s+\/[ck]\s+/i,
+  /^(?:powershell|pwsh|bash|sh)(?:\.exe)?\s+(?:-{1,2}[\w-]+\s+)*/i,
+  /^start\s+(?:"[^"]*"\s+)?(?:\/\w+\s+)*/i,
+  /^(?:call|exec|nohup|env)\s+/i,
+  /^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/,
+  /^["']/,
+];
+
+function unwrapped(segment) {
+  let text = segment.trim();
+  for (let pass = 0; pass < 8; pass++) {
+    const before = text;
+    for (const wrapper of LAUNCH_WRAPPERS) text = text.replace(wrapper, '').trim();
+    if (text === before) break;
+  }
+  return text;
+}
+
+/**
+ * Next's binary told to run `dev`: through node (bare, or by a full path that may hold spaces),
+ * npx, `pnpm [exec|dlx]`, or `next` itself by any path — a quoted one may hold spaces too, as every
+ * path under `F:\Phoenix Workforce` does. Only flags may sit between the program and Next, so
+ * `node -e "…'next dev'…"` is not read as a launch. `next build`, `next start` and
+ * `node scripts/dev-server.mjs` never match.
+ */
+const RAW_NEXT_DEV =
+  /^(?:(?:[^"'\n]*[\\/])?(?:node|npx|pnpm)(?:\.exe|\.cmd)?["']?(?:\s+-{1,2}[\w-]+(?:=\S+|\s+(?![-"'])[^\s"']+)?)*(?:\s+(?:exec|dlx))?\s+)?(?:["'][^"'\n]*[\\/]|["']?(?:[^\s"']*[\\/])?)next(?:\.cmd)?["']?[\s,'"]+dev(?:[\s,'"]|$)/i;
+
+/**
+ * Start-Process and WMI's process-create take the program and its arguments in any order, often as
+ * a quoted list — so for those, a `next` followed by `dev` anywhere in the segment is the launch.
+ */
+const DETACHED_LAUNCHER = /(?:^|=\s*)(?:start-process|saps|invoke-cimmethod|invoke-wmimethod|wmic)\b/i;
+const NEXT_THEN_DEV = /(?:^|[\s"'\\/,])next(?:\.cmd)?["']?[\s,'"]+dev(?:[\s,'"]|$)/i;
+
+function launchesRawNextDev(segment) {
+  const text = unwrapped(segment);
+  return RAW_NEXT_DEV.test(text) || (DETACHED_LAUNCHER.test(text) && NEXT_THEN_DEV.test(text));
+}
+
+/**
+ * The segment that starts a raw `next dev`, or null. A nudge toward the launcher, not a wall: a
+ * command line assembled in a variable on one line and launched on the next is not chased, and the
+ * memory watchdog stays the backstop for anything that gets past this.
+ */
+function rawNextDevLaunch(command) {
+  return commandSegments(withoutHereStringBodies(withoutHeredocBodies(command))).find(launchesRawNextDev) ?? null;
+}
 
 /** A binary whose package is not named after it. */
 const BIN_PACKAGE = { tsc: 'typescript', tsserver: 'typescript' };
@@ -205,6 +298,30 @@ try {
       'Recursive grep hangs in this repo (~346k path entries get scanned; 10-40s+). ' +
         'Use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
+    );
+  }
+
+  // C7 — a raw `next dev`, anywhere: primary and worktrees alike. Checked BEFORE C6 so that
+  // `pnpm exec next dev` in a worktree is pointed at the launcher, not at node_modules' own copy of
+  // Next's binary, which is the very form this refuses.
+  //
+  // Why it matters (measured 2026-09-21 on the start-server.js child that does the growing): a raw
+  // `next dev` hands that server a heap limit of 8,278 MB — Next's own default of half of RAM — and
+  // Next restarts it only past 80% of that, so a busy one grows to 7-8 GB; the watchdog stopped one
+  // at 8.14 GB that morning. Through the launcher the limit is 4,288 MB and Next restarts it in place
+  // near 3.4 GB. The launcher is also the only thing that refuses a second dev server.
+  const rawLaunch = rawNextDevLaunch(cmd);
+  if (rawLaunch) {
+    const port = /(?:--port|-p)[=\s,'"]+(\d{2,5})/.exec(rawLaunch)?.[1] ?? '3000';
+    deny(
+      'A raw `next dev` is refused here: it skips scripts/dev-server.mjs, so Next gives the server half ' +
+        'of RAM (8,086 MB on this machine) and restarts it only near 6.6 GB, and nothing stops a second ' +
+        'server starting beside it. Start it through the launcher, which passes every flag on to Next:\n' +
+        `  node scripts/dev-server.mjs --port ${port}\n` +
+        'It picks --webpack on Windows, caps the heap at 4,096 MB (Next then restarts the server in place ' +
+        'near 3.4 GB), and refuses a second server. PHOENIX_DEV_HEAP_MB=3072 sets a tighter cap, ' +
+        'PHOENIX_DEV_HEAP_MB=0 hands the choice back to Next, and PHOENIX_ALLOW_MULTIPLE_DEV_SERVERS=1 ' +
+        'allows a second server.',
     );
   }
 
