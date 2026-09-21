@@ -17,6 +17,7 @@ import {
   computePhoenixCoverageDoctors,
   computePhoenixRepKpis,
   type PhoenixCoverageDoctor,
+  type PhoenixKpiWindow,
   type PhoenixPanelContact,
   type PhoenixPlanEntry,
   type PhoenixRepInput,
@@ -62,7 +63,7 @@ export type PhoenixKpiLoad = {
 
 export async function loadPhoenixRepKpis(input: {
   scope: DoctorCoverageScope;
-  window: { dateFrom: string; dateTo: string; windowEnd: string };
+  window: PhoenixKpiWindow;
   month: { start: string; end: string };
   today: string;
   employees: readonly PhoenixEmployeeDates[];

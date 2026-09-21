@@ -88,7 +88,7 @@ import {
 } from "@/lib/crm/rep-doctor-lists";
 import { loadRepKpiReports } from "@/lib/crm/rep-kpi-reports-data";
 import { resolveRepKpiStandards, type RepKpiReports } from "@/lib/crm/rep-kpi-reports";
-import { repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
+import { CALL_RATE_THROUGH_YESTERDAY, repsPlansRange, repsPlansWeeks, type RepsPlansRange } from "@/lib/crm/reps-plans";
 import {
   AM_CALL_RATE_TARGET,
   hasNoGpsFeed,
@@ -429,7 +429,10 @@ export function buildKpiCoverageDetail(input: {
 export type KpisBoard = {
   month: string;
   monthLabel: string;
-  /** The call-rate window: whole month, a week, or an explicit range. */
+  /**
+   * The call-rate window: whole month, a week, or an explicit range. While it is running it stops at
+   * YESTERDAY (ruling C1, `todayLeftOut`); coverage and frequency run to `asOf`, which is today.
+   */
   range: RepsPlansRange;
   /** Sat–Wed days in the window after holidays came out. */
   workingDays: number;
@@ -991,7 +994,14 @@ export async function getKpisBoard(input: {
    */
   coverageDoctors?: { rep: string | null } | null;
 }): Promise<KpisBoard> {
+  // TWO WINDOWS, one period (owner ruling C1, 2026-09-21 — "apply C1 to the KPIs board too").
+  // `range` runs through TODAY and carries coverage and frequency: a doctor seen this morning is a
+  // doctor reached, and neither measure divides by days. `callRange` stops at YESTERDAY and carries
+  // every call rate — the rate's numerator AND its working days — so a day that is not over yet is
+  // never in the denominator with none of its calls in the numerator. Same period, same start, same
+  // window end; only the last day scored differs.
   const range = repsPlansRange(input.month, input.todayIso, input.period);
+  const callRange = repsPlansRange(input.month, input.todayIso, input.period, CALL_RATE_THROUGH_YESTERDAY);
   const scope = await getDoctorCoverageScope(input.access);
   const monthLabel = monthLabelOf(input.month);
   const filters = input.filters ?? EMPTY_KPI_FILTERS;
@@ -999,7 +1009,7 @@ export async function getKpisBoard(input: {
   const empty: KpisBoard = {
     month: input.month,
     monthLabel,
-    range,
+    range: callRange,
     workingDays: 0,
     workingDaysInWindow: 0,
     holidayDays: 0,
@@ -1072,7 +1082,9 @@ export async function getKpisBoard(input: {
   // against a blank line and area — the reads door already decides who is excluded, and this call
   // is only ever putting a name to an id.
   const [callRate, docList, employees, windowHolidays, cutover] = await Promise.all([
-    loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
+    // Through YESTERDAY (ruling C1): its working days are the denominator every rate on this board
+    // divides by, the rep KPI reports below included.
+    loadCallRateReport({ dateFrom: callRange.dateFrom, dateTo: callRange.dateTo }),
     // THE PERIOD REACHES BOTH KPIs. Until 2026-09-04 this was `{ month: input.month }` and the
     // picker moved the call rate alone, so "Week 1" scored week 1's calls against the whole month's
     // doctor list. `windowEnd`, not `dateTo`: dateTo is capped at today, and capping the plan side
@@ -1134,7 +1146,14 @@ export async function getKpisBoard(input: {
     rules.rules === "phoenix"
       ? await loadPhoenixRepKpis({
           scope,
-          window: { dateFrom: range.dateFrom, dateTo: range.dateTo, windowEnd: range.windowEnd },
+          // dateTo through today for the visits coverage and frequency read; callRateTo stops the
+          // call-rate lanes and their working days at yesterday (ruling C1).
+          window: {
+            dateFrom: range.dateFrom,
+            dateTo: range.dateTo,
+            windowEnd: range.windowEnd,
+            callRateTo: callRange.dateTo,
+          },
           month: { start: `${input.month}-01`, end: range.monthEnd },
           today: input.todayIso,
           employees,
@@ -1181,6 +1200,9 @@ export async function getKpisBoard(input: {
     scope,
     dateFrom: range.dateFrom,
     dateTo: range.dateTo,
+    // The reports score coverage and frequency off the same visits, so the fetch still runs through
+    // today and only the call-rate count stops at yesterday — over the same working days.
+    callRateTo: callRange.dateTo,
     workingDays: callRate.workingDays,
     holidays: windowHolidays.dates,
     // Rule 2: the 8-12 PM band is gone under the Phoenix rules — PM passes at 10 or more.

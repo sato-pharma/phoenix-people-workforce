@@ -25,7 +25,7 @@ import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { loadCrmMappingCoverage, loadRepVisits } from "@/lib/crm/rep-visits-data";
 import { CALL_RATE_TAB } from "@/lib/crm/reps-list-call-rate-route";
-import { buildRepsPlansBoard, REPS_LIST_WINDOW, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
+import { buildRepsPlansBoard, CALL_RATE_THROUGH_YESTERDAY, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 
 export type RepVisitsPageQuery = {
   line?: string;
@@ -53,7 +53,7 @@ export async function RepVisitsPageBody({
   // The SAME window the board was read on. A rep opened from a one-week board must be scored over
   // that week here too, or the drill-down contradicts the row that was clicked — through yesterday,
   // as the tab is (ruling C1).
-  const range = repsPlansRange(month, today, query?.period, REPS_LIST_WINDOW);
+  const range = repsPlansRange(month, today, query?.period, CALL_RATE_THROUGH_YESTERDAY);
   // The board's own key — "crm:2103" — url-encoded into the path. Deliberately the SAME identity the
   // board uses rather than a second scheme keyed on hr id: one person occupying two keys is exactly
   // how a rep silently becomes two rows, and this page has to land on the row that was clicked.

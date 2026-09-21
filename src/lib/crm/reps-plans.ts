@@ -106,8 +106,8 @@ export type RepsPlansRange = {
   notStarted: boolean;
   /**
    * True when today falls inside the window and was left out of it — {@link RepsPlansWindowOptions}
-   * `throughYesterday`, which Reps List asks for (owner ruling C1). The screen then says today is not
-   * scored until it is over, rather than letting a reader think the day's visits were lost.
+   * `throughYesterday`, which every call rate asks for (owner ruling C1). The screen then says today
+   * is not scored until it is over, rather than letting a reader think the day's visits were lost.
    */
   todayLeftOut: boolean;
 };
@@ -122,16 +122,18 @@ export type RepsPlansRange = {
  * breakfast. Today's calls and today's working day leave the window TOGETHER, so the rate is never a
  * whole day's calls over a partial day or the reverse.
  *
- * Opt-in, and only Reps List opts in (its Call rate tab and the rep drill-down under it). The KPIs
- * board reads the same helpers and still scores through today: the ruling named Reps List.
+ * Extended to the KPIs board the same morning ("apply C1 to the KPIs board too") — for its CALL
+ * RATE only. The board reads two windows off these helpers: this one for the rate, and the default
+ * (through today) for coverage and frequency, where a visit made this morning is a doctor reached and
+ * leaves no day in any denominator to be unfair about.
  */
 export type RepsPlansWindowOptions = {
   throughYesterday?: boolean;
 };
 
-/** Reps List's window — ruling C1. The tab and its drill-down BOTH pass this, so a row and the page it
- * opens are measured over the same days. */
-export const REPS_LIST_WINDOW: RepsPlansWindowOptions = { throughYesterday: true };
+/** The call-rate window — ruling C1. Reps List's tab and its drill-down, and the KPIs board's call rate,
+ * ALL pass this, so a row and the page it opens are measured over the same days. */
+export const CALL_RATE_THROUGH_YESTERDAY: RepsPlansWindowOptions = { throughYesterday: true };
 
 const MONTH_SHORT_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 

@@ -166,6 +166,11 @@ export async function loadRepKpiReports(input: {
   scope: DoctorCoverageScope;
   dateFrom: string;
   dateTo: string;
+  /**
+   * The call rate's own last day, when it stops before `dateTo` — yesterday in a running window
+   * (owner ruling C1). Coverage and frequency still read every visit to `dateTo`.
+   */
+  callRateTo?: string;
   /** Sat–Wed days in the window, holidays already removed. The call-rate denominator. */
   workingDays: number;
   holidays?: CallRateHolidays;
@@ -238,6 +243,7 @@ export async function loadRepKpiReports(input: {
         repName: input.repNameByHrId?.get(key) ?? key.toUpperCase(),
         month: input.dateFrom.slice(0, 7),
         workingDays: input.workingDays,
+        callRateTo: input.callRateTo,
         panel: panelByRep.get(key) ?? [],
         visits: visitsByRep.get(key) ?? [],
         standards,
