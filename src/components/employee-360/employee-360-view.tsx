@@ -129,11 +129,11 @@ const KPI_EXPLAIN: Record<string, string> = {
   // Check-ins (GPS)
   "GPS check-ins": "How many times their phone recorded a GPS location while in the field.",
   "Check-in : visit": "How many GPS check-ins there are for each visit — higher means visits are better backed up by location data.",
-  "Check-in coverage": "The share of working days that have at least one GPS check-in.",
+  "Check-in coverage": "The share of their active visiting days that have at least one GPS check-in. The GPS feed is partial, so this is evidence, never a score.",
   "Late-night tail": "The share of GPS check-ins that happened very late (10pm–1am); unusually high can be a red flag.",
   "Field window": "The typical time of day their fieldwork starts and ends, based on GPS check-ins.",
   "Check-ins / active day": "On active days, the average number of GPS check-ins per day.",
-  "Uncorroborated days": "Days they logged a visit but their phone recorded no GPS location to back it up.",
+  "Uncorroborated days": "Days they logged a visit but their phone recorded no GPS location to back it up. The GPS feed is partial and can stop for a working rep, so this is evidence, never a score.",
   "Distinct locations": "How many different physical spots (about 110m apart) their GPS check-ins came from.",
   // Leadership
   "Coaching delivered": "How many coaching reports this manager wrote for their team members.",
@@ -277,17 +277,19 @@ function SummaryLine({ text }: { text: string }) {
 // current value plus its change (▲ up / ▼ down) versus the previous period.
 const DELTA_EXPLAIN: Record<string, string> = {
   "Productive visits": "Real customer visits this period, and how that compares to the previous period (▲ up / ▼ down).",
-  "Visits / day": "Average customers seen per active field day, versus the previous period.",
+  "Visits / day": "Average productive visits per active field day, versus the previous period.",
   Customers: "How many different customers were visited this period, versus the previous period.",
   "Campaign share": "Share of visits that were campaign visits, versus the previous period (pp = percentage points).",
   "Check-in coverage": "Share of active days that had a GPS check-in, versus the previous period.",
   "Check-ins": "Total GPS check-ins this period, versus the previous period.",
 };
 
-function DeltaChip({ label, delta, kind, goodUp = true }: { label: string; delta: MetricDelta; kind: "int" | "ratio" | "pct"; goodUp?: boolean }) {
+// `judged={false}` shows the change without calling it good or bad. The GPS chips use it: the feed is
+// partial and can stop for a rep who is working normally, so a drop there is never a verdict on them.
+function DeltaChip({ label, delta, kind, goodUp = true, judged = true }: { label: string; delta: MetricDelta; kind: "int" | "ratio" | "pct"; goodUp?: boolean; judged?: boolean }) {
   const fmt = (v: number | null) => (v == null ? "—" : kind === "int" ? intFmt.format(Math.round(v)) : kind === "ratio" ? v.toFixed(1) : `${Math.round(v * 100)}%`);
   const rawDelta = delta.cur != null && delta.prev != null ? (kind === "pct" ? (delta.cur - delta.prev) * 100 : delta.cur - delta.prev) : null;
-  const tone = rawDelta == null || rawDelta === 0 ? "text-slate-400" : (rawDelta > 0) === goodUp ? "text-emerald-600" : "text-amber-600";
+  const tone = rawDelta == null || rawDelta === 0 || !judged ? "text-slate-400" : (rawDelta > 0) === goodUp ? "text-emerald-600" : "text-amber-600";
   const deltaText =
     rawDelta == null ? "—" : `${rawDelta >= 0 ? "▲ +" : "▼ "}${Math.abs(rawDelta) < 10 && kind !== "int" ? rawDelta.toFixed(1) : Math.round(rawDelta)}${kind === "pct" ? "pp" : ""}`;
   const tip = DELTA_EXPLAIN[label];
@@ -316,8 +318,8 @@ function ComparisonStrip({ comparison }: { comparison: Employee360Comparison }) 
         <DeltaChip label="Visits / day" delta={comparison.visitsPerActiveDay} kind="ratio" />
         <DeltaChip label="Customers" delta={comparison.distinctCustomers} kind="int" />
         <DeltaChip label="Campaign share" delta={comparison.campaignShare} kind="pct" />
-        <DeltaChip label="Check-in coverage" delta={comparison.checkinCoverage} kind="pct" />
-        <DeltaChip label="Check-ins" delta={comparison.checkinCount} kind="int" />
+        <DeltaChip label="Check-in coverage" delta={comparison.checkinCoverage} kind="pct" judged={false} />
+        <DeltaChip label="Check-ins" delta={comparison.checkinCount} kind="int" judged={false} />
       </div>
     </Card>
   );
@@ -703,7 +705,7 @@ export function Employee360View({
             <SummaryLine text={summary.checkinSummaryText} />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <KpiTile label="GPS check-ins" value={intFmt.format(summary.checkinCount)} />
-              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={`${b.checkinToVisitRatio} co.`} goodWhenAbove={summary.checkinToVisitRatio == null ? null : summary.checkinToVisitRatio >= b.checkinToVisitRatio} hint="GPS corroboration of visits" />
+              <KpiTile label="Check-in : visit" value={ratio1(summary.checkinToVisitRatio)} benchmark={`${b.checkinToVisitRatio} co.`} hint="GPS corroboration of visits" />
               <KpiTile label="Check-in coverage" value={pct(summary.checkinCoverage)} hint="days with GPS ÷ active days" />
               <KpiTile label="Late-night tail" value={pct(summary.lateNightShare)} goodWhenAbove={summary.lateNightShare == null ? null : !(summary.lateNightShare > 0.2)} hint="check-ins 22:00–01:00" />
             </div>
@@ -719,8 +721,8 @@ export function Employee360View({
 
             <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
               <KpiTile label="Field window" value={`${fmtHourView(summary.avgFirstHour)}–${fmtHourView(summary.avgLastHour)}`} hint={summary.avgSpanHours != null ? `~${summary.avgSpanHours.toFixed(1)}h/day` : undefined} />
-              <KpiTile label="Check-ins / active day" value={ratio1(summary.checkinsPerActiveDay)} />
-              <KpiTile label="Uncorroborated days" value={intFmt.format(summary.uncorroboratedDays)} goodWhenAbove={!(summary.uncorroboratedDays > 5)} hint="visit days with no GPS" />
+              <KpiTile label="Check-ins / active day" value={ratio1(summary.checkinsPerActiveDay)} hint="per day with GPS" />
+              <KpiTile label="Uncorroborated days" value={intFmt.format(summary.uncorroboratedDays)} hint="visit days with no GPS" />
               <KpiTile label="Distinct locations" value={intFmt.format(summary.distinctLocations)} hint="GPS points (~110m)" />
             </div>
 
@@ -739,7 +741,7 @@ export function Employee360View({
             </div>
 
             <div className="mt-4 text-xs text-slate-400">
-              Visit AM/PM split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM / {intFmt.format(summary.pmVisits)} PM</span>
+              Visit AM/PM split (self-reported): <span className="font-bold text-slate-700">{intFmt.format(summary.amVisits)} AM · {intFmt.format(summary.pmVisits)} PM</span>
               {summary.unknownAmpm > 0 ? ` · ${intFmt.format(summary.unknownAmpm)} unmarked` : ""}
             </div>
           </>
@@ -891,8 +893,8 @@ function SalesSection({ sales }: { sales: Employee360Profile["sales"] }) {
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <KpiTile label="Months hit target" value={`${sales.monthsHitTarget}/${sales.monthsCount}`} goodWhenAbove={sales.monthsCount > 0 ? sales.monthsHitTarget / sales.monthsCount >= 0.5 : null} />
             <KpiTile label="Growth (1st→latest)" value={sales.growthPct == null ? "—" : `${sales.growthPct >= 0 ? "+" : ""}${Math.round(sales.growthPct)}%`} goodWhenAbove={sales.growthPct == null ? null : sales.growthPct >= 0} />
-            <KpiTile label="Sales / visit" value={sales.salesPerVisit == null ? "—" : compactFmt.format(sales.salesPerVisit)} hint="per productive visit" />
-            <KpiTile label="Sales / customer" value={sales.salesPerCustomer == null ? "—" : compactFmt.format(sales.salesPerCustomer)} />
+            <KpiTile label="Sales / visit" value={sales.salesPerVisit == null ? "—" : compactFmt.format(sales.salesPerVisit)} hint="window months, per productive visit" />
+            <KpiTile label="Sales / customer" value={sales.salesPerCustomer == null ? "—" : compactFmt.format(sales.salesPerCustomer)} hint="window months, per doctor reached" />
           </div>
           {sales.monthly.length > 1 ? (
             <div className="mt-5">
