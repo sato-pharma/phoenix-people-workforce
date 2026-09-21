@@ -16,6 +16,10 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { roundCurrency } from "@/lib/payroll/money";
+import {
+  describeWorkflowTripIdRefusal,
+  findRowsCarryingWorkflowTripIds,
+} from "@/lib/outstation/workflow-trip-id-guard";
 
 /**
  * Stable, collision-resistant fallback id for an imported expense row that has
@@ -288,7 +292,7 @@ function resolveResidenceFromEmployee(employee: {
     .join(", ");
 }
 
-type EmployeeLookupMaps = {
+export type EmployeeLookupMaps = {
   codeByName: Map<string, string>;
   codeByHrId: Map<string, string>;
   residenceByHrId: Map<string, string>;
@@ -578,8 +582,12 @@ function specialistSummary(records: ExpenseTripRecord[]) {
     .sort((left, right) => right.total - left.total);
 }
 
-export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysisResult> {
-  const employeeMaps = await buildEmployeeLookupMaps();
+export async function analyzeExpenseWorkbook(
+  file: File,
+  // Tests pass the maps in so a parse runs without the employee directory, which is a database read.
+  options: { employeeMaps?: EmployeeLookupMaps } = {},
+): Promise<ExpenseAnalysisResult> {
+  const employeeMaps = options.employeeMaps ?? await buildEmployeeLookupMaps();
   const workbook = await loadExcelWorkbook(await file.arrayBuffer());
   const sheet = firstExcelWorksheet(workbook);
 
@@ -719,6 +727,14 @@ export async function analyzeExpenseWorkbook(file: File): Promise<ExpenseAnalysi
   }
   if (records.length === 0) {
     errors.push("No expense rows were detected in the uploaded workbook.");
+  }
+  // An `OUTSTATION-<n>` TripID is an app trip's payroll row: the save upserts on `trip_id`, so this
+  // row would overwrite that trip's money and workload rather than add a trip. Refused as a validation
+  // error so both upload routes stop BEFORE writing — and before the replace route clears its report.
+  // See workflow-trip-id-guard.ts.
+  const workflowTripRows = findRowsCarryingWorkflowTripIds(records);
+  if (workflowTripRows.length > 0) {
+    errors.push(describeWorkflowTripIdRefusal(workflowTripRows));
   }
 
   const invalidRows = records.length - payrollReadyRows;

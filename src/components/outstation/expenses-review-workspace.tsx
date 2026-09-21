@@ -274,7 +274,11 @@ export function ExpensesReviewWorkspace() {
       ExpenseTripRecord & { approvedAmount: number; hrApproved: boolean; hrComment: string }
     >,
   ) {
-    if (!expenseAnalysis) return;
+    // A refused upload's rows stay on screen so HR can read what to fix, but they were never
+    // imported and are never saved from here: this route would mint them a new report, and any app
+    // trip among them would be re-decided with the sheet's defaults (owner, 2026-09-21: the WHOLE
+    // sheet is refused).
+    if (!expenseAnalysis || expenseAnalysis.validation?.status === "failed") return;
 
     setExpenseApprovalsSaving(true);
     setExpenseAnalysisError(null);

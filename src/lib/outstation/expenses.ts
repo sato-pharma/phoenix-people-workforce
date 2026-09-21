@@ -34,6 +34,7 @@ import {
   type StoredExpenseDecision,
 } from "@/lib/outstation/approval-state";
 import { describeImportedHistoryRefusal, planImportedHistoryWrites } from "@/lib/outstation/imported-history";
+import { assertNoWorkflowTripIds } from "@/lib/outstation/workflow-trip-id-guard";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
@@ -1091,9 +1092,21 @@ export async function savePayrollExpenseApprovals(input: {
   }>;
   reportId?: string | null;
 }, accessContext: AccessContext, options?: {
+  /**
+   * True ONLY for the outstation workflow's own push of an app trip (service.ts). An
+   * `OUTSTATION-<n>` row is that trip's payroll record, and this save upserts on `trip_id`, so any
+   * other caller carrying one would overwrite the trip's money and workload. Never set it from a
+   * route. See workflow-trip-id-guard.ts.
+   */
+  allowWorkflowTripIds?: boolean;
   /** Receives what the payroll resync did, so the save can say when a decision did NOT reach payroll (audit finding 47). */
   onPayrollResync?: (outcomes: ExpenseResyncOutcome[]) => void;
 }) {
+  // FIRST, before any read and before the report row is minted: a refusal here writes nothing.
+  if (!options?.allowWorkflowTripIds) {
+    assertNoWorkflowTripIds(input.records);
+  }
+
   // WHO APPROVED IT - and this column does NOT hold only people.
   //
   // `outstation_expenses.approved_by` feeds `expense_claims.decided_by_hr_id` through

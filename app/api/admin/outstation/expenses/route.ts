@@ -7,6 +7,10 @@ import {
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
 import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
+import {
+  describeWorkflowTripIdRefusal,
+  findRowsCarryingWorkflowTripIds,
+} from "@/lib/outstation/workflow-trip-id-guard";
 import { describeExpenseResyncNotApplied, type ExpenseResyncOutcome } from "@/lib/automated-payroll/expense-resync";
 import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service";
 import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
@@ -171,6 +175,17 @@ export async function POST(request: Request) {
     // to the outstation workflow (status, evidence gate, notification), not to an upsert into
     // `outstation_expenses` that the next page load would drop.
     const { payrollRecords, requestRecords } = partitionExpenseApprovalRecords(records);
+
+    // An id in the workflow's reserved namespace that is not a request's exact id (`outstation-72`,
+    // `OUTSTATION - 72`) falls to the payroll save, which refuses it — but only AFTER the request
+    // decisions below were committed. Refuse it here, before anything is written, as a 400.
+    const reservedRows = findRowsCarryingWorkflowTripIds(payrollRecords);
+    if (reservedRows.length > 0) {
+      return NextResponse.json(
+        { error: "workflow_trip_id_refused", message: describeWorkflowTripIdRefusal(reservedRows) },
+        { status: 400 },
+      );
+    }
 
     const requestDecisions =
       requestRecords.length > 0
