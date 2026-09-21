@@ -424,6 +424,7 @@ import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
 import { runRepsListCallRateMergeTests } from "./reps-list-call-rate-merge.test.ts";
 import { runRepsPlansNoGpsFeedTests } from "./reps-plans-no-gps-feed.test.ts";
 import { runKpisNoGpsFeedTests } from "./kpis-no-gps-feed.test.ts";
+import { runRepsListThroughYesterdayTests } from "./reps-list-through-yesterday.test.ts";
 import {
   runPortalKpisNavTabTests,
   runPortalKpisPageConventionsTests,
@@ -2783,6 +2784,11 @@ await runTest(
   "kpis no GPS feed (ruling A1 on the KPIs board: the row reads No GPS feed with blank proved rates, "
   + "leaves the podiums and the team call-rate sums with its days, keeps coverage, and the cutover marks nobody)",
   runKpisNoGpsFeedTests,
+);
+await runTest(
+  "reps list through yesterday (ruling C1: a running window stops at yesterday, today's calls and its working "
+  + "day leave together, a window opened today scores empty, and the KPIs board keeps scoring through today)",
+  runRepsListThroughYesterdayTests,
 );
 await runTest(
   "reps plans roster (the rep with no visits is a zero row, seeded from the organogram, never a missing person)",
