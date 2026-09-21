@@ -76,12 +76,18 @@ function displayName(specialist: string) {
 }
 
 /**
- * The refusal the uploader reads. Names the people and the sheet rows, never the trip ids (owner rule:
- * names, never codes), and every row, never a truncated list. It says DELETE the row, never "clear the
- * Trip ID": a blank TripID is given a new synthetic id, which would import the same app trip as a
- * second payable row.
+ * WHERE the reserved id was caught, which decides how the refusal reads:
+ *  - `upload`   — the importer refused a sheet. It can name the sheet rows and tell HR to delete them
+ *                 and upload again.
+ *  - `approvals` — the Save on the approvals queue posted a reserved id. There is no sheet and no row
+ *                 to delete: HR finds the trip by name on the queue, so the message names people only
+ *                 (never a "row 0", which is what a sheetless record's absent row number used to read).
  */
-export function describeWorkflowTripIdRefusal(rows: ReadonlyArray<WorkflowTripIdRow>): string {
+export type WorkflowTripIdRefusalContext = "upload" | "approvals";
+
+/** People named for the refusal. Row numbers are an UPLOAD detail — the approvals queue has none, and a
+ *  non-positive row (a record built without a sheet) is dropped rather than printed as "row 0". */
+function listPeople(rows: ReadonlyArray<WorkflowTripIdRow>, context: WorkflowTripIdRefusalContext) {
   const byPerson = new Map<string, number[]>();
   for (const entry of rows) {
     const name = displayName(entry.specialist);
@@ -90,14 +96,38 @@ export function describeWorkflowTripIdRefusal(rows: ReadonlyArray<WorkflowTripId
     byPerson.set(name, list);
   }
 
-  const people = Array.from(byPerson.entries())
+  return Array.from(byPerson.entries())
     .map(([name, rowNumbers]) => {
-      const sorted = [...rowNumbers].sort((left, right) => left - right);
+      if (context === "approvals") return name;
+      const sorted = rowNumbers.filter((value) => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
+      if (sorted.length === 0) return name;
       return `${name} (${sorted.length === 1 ? "row" : "rows"} ${sorted.join(", ")})`;
     })
     .join("; ");
+}
 
+/**
+ * The refusal the uploader (or HR, on the approvals queue) reads. Names the people, never the trip ids
+ * (owner rule: names, never codes), and every one, never a truncated list. The upload wording says
+ * DELETE the row, never "clear the Trip ID": a blank TripID is given a new synthetic id, which would
+ * import the same app trip as a second payable row.
+ */
+export function describeWorkflowTripIdRefusal(
+  rows: ReadonlyArray<WorkflowTripIdRow>,
+  context: WorkflowTripIdRefusalContext = "upload",
+): string {
+  const people = listPeople(rows, context);
   const count = rows.length;
+
+  if (context === "approvals") {
+    return (
+      `${count === 1 ? "This approval was" : "These approvals were"} not saved: ` +
+      `${count === 1 ? "it is a trip" : `${count} of them are trips`} submitted in the Phoenix app, and ` +
+      `saving ${count === 1 ? "it here would overwrite that trip's" : "them here would overwrite those trips'"} ` +
+      `payroll figures. An app trip is decided on the Outstation queue, never on this screen. ${people}.`
+    );
+  }
+
   return (
     `This sheet was not imported: ${count} ${count === 1 ? "row belongs" : "rows belong"} to ` +
     `${count === 1 ? "a trip" : "trips"} submitted in the Phoenix app, and uploading ` +

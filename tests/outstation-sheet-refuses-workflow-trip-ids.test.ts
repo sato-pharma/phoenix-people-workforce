@@ -129,6 +129,45 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
     "never suggests blanking the Trip ID: a blank TripID gets a new id and imports the trip as a second payable row",
   );
 
+  // -- The approvals-queue refusal reads for a screen, not a sheet ------------------------------
+  // Save on the approvals queue posts records with no sheet row (`row` absent → 0). The upload
+  // wording ("This sheet was not imported… Delete those rows… row 0") is wrong there, so the helper
+  // takes a context: it names people only — there is no sheet, no row to delete, and no "row 0".
+  const approvalsRows = findRowsCarryingWorkflowTripIds([
+    { row: 0, specialist: "Dina Hamdy Fadel Mohamed Bdair", tripId: "OUTSTATION-72" },
+    { specialist: "Ahmed Sharaf", tripId: "outstation-52" },
+  ]);
+  const approvalsMessage = describeWorkflowTripIdRefusal(approvalsRows, "approvals");
+  assert.doesNotMatch(
+    approvalsMessage,
+    /row\s*0|\brows?\s+\d/i,
+    "HEADLINE: the approvals refusal never prints a sheet row — least of all the 'row 0' a sheetless record used to read",
+  );
+  assert.doesNotMatch(
+    approvalsMessage,
+    /sheet|upload|delete|imported/i,
+    "and never mentions a sheet, an upload or deleting a row — the approvals queue has none",
+  );
+  assert.match(
+    approvalsMessage,
+    /decided on the Outstation queue, never on this screen/,
+    "it points HR at the Outstation queue instead",
+  );
+  assert.match(approvalsMessage, /Dina Hamdy Fadel Mohamed Bdair; Ahmed Sharaf/, "and names every person, once each");
+  assert.doesNotMatch(approvalsMessage, /OUTSTATION\s*-|\b(72|52)\b/i, "still names, never the trip id");
+  // Both count branches, and the default context stays the sheet-upload wording.
+  const oneApproval = describeWorkflowTripIdRefusal(
+    findRowsCarryingWorkflowTripIds([{ specialist: "Dina Hamdy Fadel Mohamed Bdair", tripId: "OUTSTATION-72" }]),
+    "approvals",
+  );
+  assert.match(oneApproval, /This approval was not saved: it is a trip submitted in the Phoenix app/);
+  assert.doesNotMatch(oneApproval, /row\s*0/i, "the single-row branch has no 'row 0' either");
+  assert.match(
+    describeWorkflowTripIdRefusal(approvalsRows),
+    /This sheet was not imported/,
+    "the default context is still the sheet-upload wording — the upload path is unchanged",
+  );
+
   assert.throws(
     () => assertNoWorkflowTripIds([{ row: 4, specialist: "Dina Hamdy Fadel Mohamed Bdair", tripId: "OUTSTATION-72" }]),
     (error: unknown) => error instanceof WorkflowTripIdRefusedError && error.rows.length === 1,
@@ -222,6 +261,11 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
   assert.ok(
     reservedCheck < approvalsRoute.indexOf("await applyOutstationRequestExpenseDecisions("),
     "before it commits any request decision",
+  );
+  assert.match(
+    approvalsRoute,
+    /describeWorkflowTripIdRefusal\(reservedRows, "approvals"\)/,
+    "and refuses it with the approvals-context wording, not the sheet-upload wording",
   );
 
   // THE WHOLE SHEET IS REFUSED (owner, 2026-09-21). The refused rows stay on screen for HR to read,

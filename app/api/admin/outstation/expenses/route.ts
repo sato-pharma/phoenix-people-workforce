@@ -182,7 +182,7 @@ export async function POST(request: Request) {
     const reservedRows = findRowsCarryingWorkflowTripIds(payrollRecords);
     if (reservedRows.length > 0) {
       return NextResponse.json(
-        { error: "workflow_trip_id_refused", message: describeWorkflowTripIdRefusal(reservedRows) },
+        { error: "workflow_trip_id_refused", message: describeWorkflowTripIdRefusal(reservedRows, "approvals") },
         { status: 400 },
       );
     }
