@@ -57,7 +57,7 @@ const RULES = [
   [/healthz|railway|cron-job|app_error_events|\bcurl\b.*https?:/i, 'Probing, attributing and reporting production'],
   [/MEMORY\.md|memory-index|consolidate-memory/i, 'Memory and this index'],
   [/Win32_Process|Get-NetTCPConnection|freemem|commit charge|mem-watchdog/i, 'Machine ceiling'],
-  [/grep\s+-r|\brg\b|\bsed\b|ExcelJS|xlsx|MSYS|TZ=|\.env/i, 'Shell and tooling'],
+  [/grep\s+-r|\brg\b|\bsed\b|ExcelJS|xlsx|MSYS|TZ=|\.env|settings(\.local)?\.json|autoMode/i, 'Shell and tooling'],
 ];
 
 /** Walk up from cwd to the folder that holds AGENTS.md. */
