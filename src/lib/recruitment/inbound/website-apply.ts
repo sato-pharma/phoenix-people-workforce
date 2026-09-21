@@ -75,6 +75,7 @@ export type WebsiteApplyRoleKey =
   | "talent_acquisition_specialist"
   | "national_sales_manager"
   | "medical_representative"
+  | "district_manager"
   | "regulatory_affairs_specialist"
   | "quality_control_analyst";
 
@@ -108,6 +109,12 @@ const WEBSITE_APPLY_ROLES: Readonly<Record<WebsiteApplyRoleKey, WebsiteApplyRole
     key: "medical_representative",
     roleFamily: "medical_rep",
     title: "Medical Representative",
+  },
+  district_manager: {
+    jobTitle: "District Manager",
+    key: "district_manager",
+    roleFamily: "district_manager",
+    title: "District Manager",
   },
   // Regulatory Affairs and Quality Control are not field-force families, so the bot asks them neither
   // region nor area — their tailored form is background + experience + salary. They ride the "other"
