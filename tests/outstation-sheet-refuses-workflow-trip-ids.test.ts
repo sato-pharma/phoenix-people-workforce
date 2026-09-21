@@ -24,14 +24,14 @@ import {
  */
 
 // No database: the parse is given empty employee maps instead of reading the employee directory.
-const noEmployees: EmployeeLookupMaps = {
+export const noEmployees: EmployeeLookupMaps = {
   codeByHrId: new Map(),
   codeByName: new Map(),
   residenceByHrId: new Map(),
   residenceByName: new Map(),
 };
 
-function adminExportColumns(): ExportColumn[] {
+export function adminExportColumns(): ExportColumn[] {
   const source = readFileSync("app/api/admin/outstation/expenses/export/route.ts", "utf8");
   const columns = [...source.matchAll(/\{ key: "(\w+)", label: "([^"]+)"(, numeric: true)? \}/g)].map(
     (match) => ({ key: match[1], label: match[2], numeric: Boolean(match[3]) }),
@@ -43,7 +43,7 @@ function adminExportColumns(): ExportColumn[] {
   return columns;
 }
 
-function exportRow(overrides: Record<string, string | number>) {
+export function exportRow(overrides: Record<string, string | number>) {
   return {
     allowance: 0,
     approvedAmount: 323.14,
@@ -76,7 +76,7 @@ function exportRow(overrides: Record<string, string | number>) {
   };
 }
 
-async function analyzeAdminExport(rows: Array<Record<string, string | number>>) {
+export async function analyzeAdminExport(rows: Array<Record<string, string | number>>) {
   const buffer = await buildPhoenixTableWorkbook({
     columns: adminExportColumns(),
     rows,
@@ -139,7 +139,11 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
     "and lets an ordinary sheet row through",
   );
 
-  // -- End to end: the admin export re-imports, and its app trips are refused -----------------
+  // -- End to end: the admin export's app trips are refused -----------------------------------
+  // The download itself is now refused as a whole too (owner ruling 2026-09-21, see
+  // tests/outstation-sheet-refuses-approvals-export.test.ts). The app-trip refusal must STILL fire
+  // alongside it, so the download guard is never the only thing standing between a sheet and an app
+  // trip's payroll row.
   const exported = await analyzeAdminExport([
     exportRow({}),
     exportRow({
@@ -151,10 +155,10 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
   ]);
   assert.equal(
     exported.template?.recognized,
-    true,
-    "the admin Expense Approvals export is accepted as the Phoenix template — which is why the importer itself must refuse app trips",
+    false,
+    "the admin Expense Approvals export is refused as not-a-template (it once passed as the Phoenix template at 13 of 16 columns)",
   );
-  assert.equal(exported.records.length, 2, "both rows parse, so the refusal comes from the trip id and nothing else");
+  assert.equal(exported.records.length, 2, "both rows parse, so the app-trip refusal comes from the trip id and nothing else");
   const refusal = exported.validation.errors.find((error) => /submitted in the Phoenix app/.test(error));
   assert.ok(
     refusal,
@@ -164,11 +168,15 @@ export async function runOutstationSheetRefusesWorkflowTripIdsTests() {
   assert.doesNotMatch(refusal, /Ahmed Sharaf/, "the ordinary row is not named");
   assert.equal(exported.validation.status, "failed");
 
-  // Control: the same export without the app trip imports cleanly, so the refusal above is the guard.
+  // Control: the same export without the app trip carries no app-trip refusal, so the one above is
+  // this guard (the download refusal it still carries is the other guard's, and is not this test's).
   const historicalOnly = await analyzeAdminExport([
     exportRow({ specialist: "Ahmed Sharaf", hrId: "B-155", sourceFileName: "july-historical.xlsx", tripId: "T-1001" }),
   ]);
-  assert.deepEqual(historicalOnly.validation.errors, [], "a sheet with no app trip is not refused");
+  assert.ok(
+    !historicalOnly.validation.errors.some((error) => /submitted in the Phoenix app/.test(error)),
+    "a sheet with no app trip carries no app-trip refusal",
+  );
 
   // -- Wiring the database round-trip cannot execute here --------------------------------------
   // Both upload routes stop on validation errors before they save — the replace route before it

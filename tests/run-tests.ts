@@ -1455,6 +1455,7 @@ import { runOutstationRequestTypeValidationTests } from "./outstation-request-ty
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationSheetRefusesWorkflowTripIdsTests } from "./outstation-sheet-refuses-workflow-trip-ids.test.ts";
+import { runOutstationSheetRefusesApprovalsExportTests } from "./outstation-sheet-refuses-approvals-export.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -5222,8 +5223,13 @@ await runTest(
 );
 
 await runTest(
-  "a historical expense sheet never writes an app trip's payroll row: a TripID in the workflow's OUTSTATION- namespace (any case or spacing) is refused at analysis — before either upload route saves or the replace route clears its report — and again inside the save unless the caller is the workflow's own push; the uploader is told whose rows by name and row number, and the admin Expense Approvals export, which re-imports as the Phoenix template, is refused rather than overwriting its app trips",
+  "a historical expense sheet never writes an app trip's payroll row: a TripID in the workflow's OUTSTATION- namespace (any case or spacing) is refused at analysis — before either upload route saves or the replace route clears its report — and again inside the save unless the caller is the workflow's own push; the uploader is told whose rows by name and row number, and an app trip in the admin Expense Approvals export is refused on its own account, beside the download's own refusal",
   runOutstationSheetRefusesWorkflowTripIdsTests,
+);
+
+await runTest(
+  "the admin Expense Approvals download is never accepted as an expense upload (owner ruling 2026-09-21): it once passed as the Phoenix template at 13 of 16 columns and re-wrote every historical trip in it in place — workload to 0, Other and the deduction dropped, the HR comment lost, the trip moved into the new upload — so ANY ONE of its own columns refuses the file at analysis, before either upload route saves or the replace route clears its report, the banner says it is the download, and a genuine template sheet still imports",
+  runOutstationSheetRefusesApprovalsExportTests,
 );
 
 await runTest(

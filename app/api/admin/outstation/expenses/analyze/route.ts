@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
-import { analyzeExpenseWorkbook } from "@/lib/outstation/expense-import";
+import { analyzeExpenseWorkbook, unrecognizedExpenseTemplateMessage } from "@/lib/outstation/expense-import";
 import {
   isPayrollExpensesSchemaMissing,
   savePayrollExpenseApprovals,
@@ -53,7 +53,8 @@ export async function POST(request: Request) {
         {
           ...analysis,
           error: "unrecognized_expense_template",
-          message: "Unrecognized expense template. Please upload the Phoenix Outstation Expenses template.",
+          // The Expense Approvals download is refused here, by name — see expense-import.ts.
+          message: unrecognizedExpenseTemplateMessage(analysis),
         },
         { status: 400 },
       );
