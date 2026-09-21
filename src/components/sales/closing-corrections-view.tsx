@@ -12,6 +12,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ClosingCorrectionsResult } from "@/lib/sales/closing-corrections";
+import { closingCorrectionsHeadline } from "@/lib/sales/closing-corrections-headline";
 
 const UNITS = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const EGP = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
@@ -101,7 +102,13 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
   // money printed three times at three different magnitudes and nothing saying they were one event.
   // This page exists to size how far a month reads wrong before sign-off, so an inflated headline
   // inflates exactly the judgement it is there to inform. Pinned by tests/closing-corrections-one-event.test.ts.
-  const findingsCount = data?.situationCount ?? 0;
+  // A failed load has no count at all, so the green "nothing distorts" is earned only by a load
+  // that ran (closing-corrections-headline.ts).
+  const headline = closingCorrectionsHeadline({
+    loadError: initialError,
+    period,
+    situationCount: data?.situationCount,
+  });
 
   const switchPeriod = (next: string) => {
     startTransition(() => {
@@ -115,9 +122,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
         badges={(
           <>
             <AdminInsightChip>Month: {period || "No validated data"}</AdminInsightChip>
-            <AdminInsightChip tone={findingsCount > 0 ? "orange" : "emerald"}>
-              {findingsCount > 0 ? `${findingsCount} situations found` : "Nothing distorts this month"}
-            </AdminInsightChip>
+            <AdminInsightChip tone={headline.tone}>{headline.text}</AdminInsightChip>
           </>
         )}
         description="Situations where the data is booked exactly as the distributor sent it and one month still reads wrong: corrections that span two months, returns bigger than the month's sales, and returns landing long after their sale. Nothing here is a system error — this page names what to keep in mind while reading the closing."
