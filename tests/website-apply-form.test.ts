@@ -82,6 +82,7 @@ export function runWebsiteApplyFormTests() {
     "talent_acquisition_specialist",
     "national_sales_manager",
     "medical_representative",
+    "district_manager",
     "regulatory_affairs_specialist",
     "quality_control_analyst",
   ]);
@@ -94,6 +95,9 @@ export function runWebsiteApplyFormTests() {
   // The two office families ride "other" — the bot asks them neither region nor area.
   assert.equal(resolveWebsiteApplyRole("regulatory_affairs_specialist")?.roleFamily, "other");
   assert.equal(resolveWebsiteApplyRole("quality_control_analyst")?.roleFamily, "other");
+  // District Manager is a field-force family, so it is asked region + area like a Medical Rep, plus
+  // its own screening extra (dm_team_leadership); it carries the district_manager screening family.
+  assert.equal(resolveWebsiteApplyRole("district_manager")?.roleFamily, "district_manager");
 
   assert.equal(websiteExtraFieldKey("hr_ats_experience"), "extra:hr_ats_experience");
 
