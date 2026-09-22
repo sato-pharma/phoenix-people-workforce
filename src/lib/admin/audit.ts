@@ -149,6 +149,9 @@ export type AuditEntityType =
   | "deductions_comment"
   | "deductions_decision"
   | "deductions_publication"
+  // The Daily Deductions module's running-tally snapshot (published or superseded), a separate
+  // surface from the month-final "deductions_publication" above and audited on its own.
+  | "daily_deductions_publication"
   | "direct_order_request"
   | "doctor_coverage_config"
   | "double_visit_import"

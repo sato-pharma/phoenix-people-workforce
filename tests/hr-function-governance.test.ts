@@ -90,6 +90,26 @@ const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
   // answered EGP 0 payroll / EGP 0 sales / EGP 0 expenses for HR Advisory and EGP 0 sales /
   // EGP 0 expenses for HR Operations, so nothing they could act on was lost with it.
   "app/(admin)/admin/page.tsx",
+  // Names HR Operations in VIEW_ROLES, added 2026-09-22 with the Daily Deductions module — the
+  // running-tally sibling of the month-final Deductions screen below. Reviewed verdict: it GRANTS
+  // reach, and it is the string that opens the daily screen for her — the same audience
+  // {Super Admin, CEO, HR Operations} as the month page, deliberately, because the two are two views
+  // of the same money.
+  //
+  // It hands her nothing her job description withholds. payroll_inputs has granted her
+  // deductions:read since the seat was composed, and this page gives her READ ONLY: the two read
+  // routes (GET /publish list, GET /active) assert deductions:read, which she holds, and the page
+  // passes canPublish={role === "Super Admin"} so no compute or publish control renders for her.
+  // Her named boundaries — deductions:approve/create/update — all stay ABSENT and are enforced
+  // server-side, not merely hidden: POST /compute asserts deductions:create, POST /publish and
+  // POST /supersede assert deductions:approve, and publishDailyTally additionally asserts Super
+  // Admin. So she can read a published tally and nothing else, exactly as on the month screen.
+  //
+  // Added to the SET rather than replaced by canAccess(access, "deductions", "read"): the Finance
+  // Manager still holds that grant and the owner revoked his month screen on 2026-08-11 (excludedRoles
+  // ["Finance Manager"] on the hub card), so a permission check would have handed the page back to
+  // him as a side effect. HR Advisory is not here.
+  "app/(admin)/admin/daily-deductions/page.tsx",
   // Names HR Operations in VIEW_ROLES, added 2026-09-03. Reviewed verdict: it GRANTS reach, and it
   // is the string that opens the Deductions screen for her — listed for exactly that reason.
   //

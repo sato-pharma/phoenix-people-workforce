@@ -361,6 +361,7 @@ import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-superse
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
+import { runDailyDeductionsRangeAndClipTests } from "./daily-deductions-range-and-clip.test.ts";
 import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
@@ -2741,6 +2742,10 @@ await runTest(
 await runTest(
   "deductions current-month guard (an unfinished month is never collectable, on Cairo boundaries)",
   runDeductionsCurrentMonthGuardTests,
+);
+await runTest(
+  "daily deductions range + clip (only elapsed days count; clip-to-range prorates days and money together)",
+  runDailyDeductionsRangeAndClipTests,
 );
 await runTest(
   "deductions leaver settlement (a finished employment settles mid-month; insert-only, never reconcile)",
