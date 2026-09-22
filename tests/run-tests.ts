@@ -1004,6 +1004,7 @@ import { runApprovalsHubRowCapTests } from "./approvals-hub-row-cap.test.ts";
 import { runCeoTopMoversShareTests } from "./ceo-top-movers-share.test.ts";
 import { runActionCenterRowCapTests } from "./action-center-row-caps.test.ts";
 import { runDecidedForMeRowCapTests } from "./decided-for-me-row-caps.test.ts";
+import { runPortalHomeNoDeadApprovalsFetchTests } from "./portal-home-no-dead-approvals-fetch.test.ts";
 import { runHiringDocumentCaptureTests } from "./hiring-document-capture.test.ts";
 import { runHiringDocumentsAccessTests } from "./hiring-documents-access.test.ts";
 import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
@@ -3789,6 +3790,7 @@ await runTest("approvals hub feeds are paged, never capped (a hidden request is 
 await runTest("CEO top-movers Share is of the population, never of the filtered rows", runCeoTopMoversShareTests);
 await runTest("action center decision history is paged and totally ordered (170 of B-10's own approvals were hidden)", runActionCenterRowCapTests);
 await runTest("decided-for-me is paged, totally ordered, and raises a failed read instead of showing a quiet week", runDecidedForMeRowCapTests);
+await runTest("portal home does not fetch the approvals feed for a number nobody renders", runPortalHomeNoDeadApprovalsFetchTests);
 await runTest("hiring documents access (HR seat company-wide bypass)", runHiringDocumentsAccessTests);
 await runTest("hiring document audit (every write names its actor, before-images read first)", runHiringDocumentsAuditTests);
 await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);
