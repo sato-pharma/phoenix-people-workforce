@@ -35,6 +35,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { MarketingRequestApproverDetail } from "@/components/marketing-requests/marketing-request-approver-detail";
+import { MarketingInboxCancelButton } from "@/components/marketing-requests/marketing-inbox-cancel-button";
 import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -825,7 +826,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             title="Everything in approval"
             tone="bg-slate-100 text-slate-600 ring-slate-200"
           />
-          <ChainWatchList rows={oversightRows} />
+          <ChainWatchList onCancelled={() => void loadInbox()} rows={oversightRows} />
         </div>
       )}
     </div>
@@ -855,8 +856,16 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 const WATCH_PAGE_SIZE = 25;
 
 function ChainWatchList({
+  onCancelled,
   rows,
 }: {
+  /**
+   * Passed by the oversight queue only. When present, a row the server marked `canCancel` gets a
+   * Cancel control that calls this back on success (the inbox's own reload) so the row drops. The
+   * "Coming to me" queue omits it, and its rows never carry `canCancel`, so no cancel control can
+   * ever appear there — the affordance is a decision, and that list is not the decider's.
+   */
+  onCancelled?: () => void;
   rows: ReadonlyArray<MarketingApproverOversightRow & { myStepSequence?: number }>;
 }) {
   const [page, setPage] = useState(0);
@@ -899,13 +908,22 @@ function ChainWatchList({
           <PortalRecordCard
             accent={row.ageDays >= 7 ? "rose" : row.ageDays >= 3 ? "amber" : "slate"}
             actions={
-              <Link
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-                href={`/marketing-requests/${row.id}`}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Open the full record
-              </Link>
+              <div className="flex flex-wrap items-start gap-2">
+                <Link
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                  href={`/marketing-requests/${row.id}`}
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Open the full record
+                </Link>
+                {onCancelled && row.canCancel ? (
+                  <MarketingInboxCancelButton
+                    onCancelled={onCancelled}
+                    requestCode={row.requestCode}
+                    requestId={row.id}
+                  />
+                ) : null}
+              </div>
             }
             meta={
               <>
@@ -975,14 +993,23 @@ function ChainWatchList({
                       {age(row)}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right">
-                    <Link
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
-                      href={`/marketing-requests/${row.id}`}
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                      Open the full record
-                    </Link>
+                  <td className="px-3 py-2.5 text-right">
+                    <div className="flex flex-wrap items-start justify-end gap-2">
+                      <Link
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                        href={`/marketing-requests/${row.id}`}
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Open the full record
+                      </Link>
+                      {onCancelled && row.canCancel ? (
+                        <MarketingInboxCancelButton
+                          onCancelled={onCancelled}
+                          requestCode={row.requestCode}
+                          requestId={row.id}
+                        />
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}

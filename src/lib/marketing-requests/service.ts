@@ -133,6 +133,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { resolveCanonicalActorHrId } from "@/lib/auth/canonical-actor";
 import { viewerMayReopenMarketingRequests } from "@/lib/marketing-requests/reopen-rule";
+import { canCancelMarketingRequest } from "@/lib/marketing-requests/cancel";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -819,7 +820,14 @@ export type MarketingApproverUpcomingRow = MarketingApproverInboxRow & {
  * Same shape as an upcoming row minus `myStepSequence` — an oversight viewer has no rung of their
  * own, and inventing one (0, or the current holder's) would be a number that means nothing.
  */
-export type MarketingApproverOversightRow = Omit<MarketingApproverUpcomingRow, "myStepSequence">;
+export type MarketingApproverOversightRow = Omit<MarketingApproverUpcomingRow, "myStepSequence"> & {
+  /**
+   * Whether THIS viewer may call the request off from the inbox — Super Admin only, and only while
+   * the request is at a cancellable status. Optional so an upcoming row (which never carries it)
+   * stays assignable to the shared watch-list component; it is treated as false when absent.
+   */
+  canCancel?: boolean;
+};
 
 export type PreparedMarketingRequestDraft = {
   pharmacyRows: Array<{
@@ -8322,6 +8330,10 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
       awaitingApproverName: employeeNameByHrId(employeeRows, step.assignedHrId),
       awaitingStepName: step.stepName,
       totalGatingSteps: chain.length,
+      // The one action an oversight viewer may take on a request that is not his to decide: call it
+      // off. Gated by the same rule the case-file and API use, so the button never shows on a status
+      // that cannot be cancelled, and never for any role but Super Admin.
+      canCancel: canCancelMarketingRequest({ role: access.role, status: request.status }),
     });
   }
 
