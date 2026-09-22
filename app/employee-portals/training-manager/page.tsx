@@ -23,6 +23,7 @@ import {
 } from "@/lib/coaching/landing-insights";
 import { getCompanyLineTopAchievers } from "@/lib/employee-portal/service";
 import { getEmployeePhotoMap, resolveEmployeePhotoSrc } from "@/lib/employees/employee-photo";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { getPortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
@@ -41,9 +42,13 @@ export default async function TrainingManagerOverviewPage() {
     redirect("/employee-portals");
   }
 
+  // Cairo's year and month, NOT the server's. Railway production sets no TZ, so `getFullYear()`
+  // and `getMonth()` here returned UTC's — and between 00:00 and 03:00 Cairo on the 1st of a month
+  // UTC is still on the 31st. This page's whole leaderboard hangs off the pair: opening it just
+  // after midnight on the 1st showed the "previous month" board still on the month before last,
+  // and the coaching report year would roll over three hours late every New Year's Day.
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
+  const { year: currentYear, month: currentMonth } = currentCairoDateParts(now);
   // Previous calendar month, normalized across year boundaries (January → last
   // December) so the "top scores" leaderboard rolls to last month automatically
   // on the 1st of each month.

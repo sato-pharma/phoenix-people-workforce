@@ -30,6 +30,7 @@ import type {
   CeoCommandCenterData,
 } from "@/lib/ceo/command-center";
 import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
+import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import { cn } from "@/lib/utils";
 
 /**
@@ -485,6 +486,20 @@ export function CeoCommandCenter({
   }).format(new Date(data.generatedAt));
 
   const dataAvailable = visibleDataUnavailable.length === 0;
+  /**
+   * A RATE is a claim about a denominator that was actually read.
+   *
+   * When a source behind one does not answer, `emptyPlatformMetrics()` substitutes a literal —
+   * `achievementRate: 0` for sales, `employeeHealthRate: 1` for workforce — and both reach these
+   * tiles as fact. A failed workforce read renders "Employee health 100%" directly beside
+   * "0 active employees"; a failed sales read renders a flat "0%", which asserts the company sold
+   * nothing at all against its target. Neither figure exists. The amber notice above already names
+   * the source that went quiet; these two booleans stop the tiles from contradicting it.
+   */
+  const salesWasRead = !visibleDataUnavailable.some((source) => /sales/i.test(source));
+  const workforceWasRead = !visibleDataUnavailable.some((source) =>
+    /(workforce|employee directory|structure totals)/i.test(source),
+  );
   // Weekly-plan approval is Super Admin + CEO only (weekly_plans:approve is absent from the SFE
   // Manager's matrix), so that tile is a number he can never action. Leave he CAN approve, but the
   // `leaveSla` attention row below already carries the pending count and links to the same
@@ -602,45 +617,52 @@ export function CeoCommandCenter({
           {!isSfe ? <MetricTile
             icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
             label="Total structure"
-            value={n(headcount.total)}
+            value={workforceWasRead ? n(headcount.total) : "—"}
             sub="Employees plus vacancies"
           /> : null}
           {!isSfe ? <MetricTile
             icon={<Building2 className="h-3.5 w-3.5" />}
             label="Vacancies"
-            value={n(headcount.vacancies)}
+            value={workforceWasRead ? n(headcount.vacancies) : "—"}
             sub="Open positions"
-            tone={headcount.vacancies > 0 ? "amber" : "emerald"}
+            tone={!workforceWasRead || headcount.vacancies > 0 ? "amber" : "emerald"}
           /> : null}
           {isSfe ? <MetricTile
             icon={<Target className="h-3.5 w-3.5" />}
             label="Sales achievement"
-            value={pct(health.salesAchievementRate)}
-            sub="Company sales vs target"
-            tone={health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
+            value={salesWasRead ? pct(health.salesAchievementRate) : "—"}
+            // The window has to be on the tile. This rate is cumulative from the engine's 2026-01
+            // floor, and it sits two tiles from "Monthly sales", which is stamped with a single
+            // closing month — so unlabelled it read as that month's achievement.
+            sub={`Company sales vs target · ${SALES_ACHIEVEMENT_WINDOW_LABEL}`}
+            tone={salesWasRead && health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {!isSfe ? <MetricTile
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="Employee health"
-            value={pct(health.employeeHealthRate)}
+            value={workforceWasRead ? pct(health.employeeHealthRate) : "—"}
             sub="Active/total quality"
-            tone={health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
+            tone={workforceWasRead && health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {/* Lines/Areas from the employee directory are gated by canReadCompanyWorkforceAggregates
               (system scope, Super Admin, or CEO) and read a hard ZERO for everyone else — which is
               exactly how the SFE overview came to show "Lines 0 / Areas 0" against a live 59%
               achievement. His counts come from the SoS dataset instead: same question, sales data,
-              no HR gate. */}
+              no HR gate.
+
+              Both SoS tiles read `—` rather than 0 when `sos` is null — the same choice the
+              "Monthly sales" tile above already makes off this very object. A hard 0 asserts that
+              nothing sold, which is a far stronger claim than "nothing loaded". */}
           {isSfe ? <MetricTile
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             label="Lines selling"
-            value={n(sos?.lineCount ?? 0)}
+            value={sos ? n(sos.lineCount) : "—"}
             sub={sos ? `In ${sosPeriodLabel ?? "the latest period"}` : "No monthly sales loaded"}
             tone={sos && sos.lineCount > 0 ? "slate" : "amber"}
           /> : <MetricTile
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             label="Lines"
-            value={n(headcount.uniqueLines)}
+            value={workforceWasRead ? n(headcount.uniqueLines) : "—"}
             sub="Lookup-backed count"
           />}
           {/* NOT the region count: regions cannot be filtered to his lines (see
@@ -649,13 +671,13 @@ export function CeoCommandCenter({
           {isSfe ? <MetricTile
             icon={<MapPinned className="h-3.5 w-3.5" />}
             label="Products selling"
-            value={n(sos?.byProduct.length ?? 0)}
+            value={sos ? n(sos.byProduct.length) : "—"}
             sub={sos ? `Across ${n(sos.lineCount)} lines · ${sosPeriodLabel ?? "latest period"}` : "No monthly sales loaded"}
             tone={sos && sos.byProduct.length > 0 ? "slate" : "amber"}
           /> : <MetricTile
             icon={<MapPinned className="h-3.5 w-3.5" />}
             label="Areas"
-            value={n(headcount.uniqueAreas)}
+            value={workforceWasRead ? n(headcount.uniqueAreas) : "—"}
             sub="Lookup-backed count"
           />}
           {!isSfe ? <MetricTile
@@ -668,9 +690,12 @@ export function CeoCommandCenter({
           {!isSfe ? <MetricTile
             icon={<ClipboardCheck className="h-3.5 w-3.5" />}
             label="Salary flags"
-            value={n(payroll.unresolvedSalaryFlags)}
+            // Green-with-0 is an all-clear, and `payroll.available === false` is the one case where
+            // the 0 means "nothing was counted" rather than "nothing is wrong". The "Net payroll"
+            // tile beside it already reads that same flag.
+            value={payroll.available ? n(payroll.unresolvedSalaryFlags) : "—"}
             sub="Unresolved payroll risks"
-            tone={payroll.unresolvedSalaryFlags > 0 ? "rose" : "emerald"}
+            tone={!payroll.available ? "amber" : payroll.unresolvedSalaryFlags > 0 ? "rose" : "emerald"}
           /> : null}
         </div>
       </SectionShell>

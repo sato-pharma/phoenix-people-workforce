@@ -29,7 +29,7 @@ import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/earl
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { logError } from "@/lib/observability/log";
 import { loadPortalPlanAdherence, type PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
-import { currentCairoDateParts } from "@/lib/i18n/format";
+import { currentCairoDateOnlyIso, currentCairoDateParts } from "@/lib/i18n/format";
 import {
   SALES_HISTORY_FLOOR,
   loadEmployeeMonthlyAchievement,
@@ -473,7 +473,10 @@ const emptyRoleExtras: RoleSpecificExtras = {
 /** Cheap, single-query "what's paying out soon" — real pay_date rows, no recomputation. */
 async function getUpcomingMarketingActivity(requesterHrId?: string): Promise<UpcomingMarketingActivity[]> {
   const supabase = getSupabaseAdmin();
-  const today = new Date().toISOString().slice(0, 10);
+  // Cairo's calendar day, not the server's UTC one. Production runs with no TZ variable set, so
+  // from 21:00 UTC to midnight — which is 00:00 to 03:00 the NEXT morning in Cairo — a UTC "today"
+  // is still yesterday's date here, and this `gte` would keep listing a pay_date already spent.
+  const today = cairoTodayIso();
   let query = supabase
     .from("marketing_requests")
     .select("id, request_code, pay_date, estimated_cost")
@@ -788,7 +791,9 @@ export async function getMrHomeStats(
   shell: EmployeePortalShellData,
 ): Promise<MrHomeStats> {
   const hrId = normalizeHrId(access.hrId) ?? "";
-  const today = new Date().toISOString().slice(0, 10);
+  // Cairo's calendar day — see getUpcomingMarketingActivity. A rep opening his portal at 1am Cairo
+  // was being shown a UTC date that still read yesterday.
+  const today = cairoTodayIso();
   const supabase = getSupabaseAdmin();
 
   const mrSalesPromise = hrId
@@ -913,7 +918,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   const shell = await getEmployeePortalShellData(access);
   const hrId = normalizeHrId(access.hrId) ?? "";
   const role = access.role ?? "";
-  const today = new Date().toISOString().slice(0, 10);
+  const today = cairoTodayIso();
   const supabase = getSupabaseAdmin();
   const isMr = role.toLowerCase() === "medical rep";
 
@@ -921,9 +926,14 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   // with the batch below. getRoleSpecificExtras never throws — it resolves emptyRoleExtras
   // for roles it doesn't recognize and on any internal failure.
   const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // Cairo's year and month, NOT the server's. Railway production sets no TZ, so `getFullYear()`
+  // and `getMonth()` here were UTC's. They feed `thisMonthPrefix` for the double-visit pulse and
+  // the 90-day window below, and the damage lands on the 1st of a month: between 00:00 and 03:00
+  // Cairo on the 1st, UTC is still the 31st, so "this month" counted the month that just ended —
+  // a manager opening his portal after midnight on the 1st saw last month's double visits
+  // labelled as the new month's, and the fresh month read zero the moment UTC caught up.
+  const { year: currentYear, month: currentMonth } = currentCairoDateParts(now);
+  const ninetyDaysAgo = currentCairoDateOnlyIso(new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000));
 
   // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
   const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId) : Promise.resolve(null);

@@ -31,6 +31,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
 import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
+import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
 
 function egp(v: number) {
@@ -111,8 +112,18 @@ function HealthBreakdown({
     employeeHealthRate: number;
   };
 }) {
-  const metrics = [
-    { label: "Sales achievement", value: health.salesAchievementRate, target: 0.9, color: "#F97316" },
+  // `note` names the WINDOW a rate covers, and only one of these four has one. Linkage, readiness
+  // and employee linkage all score the state of the data as it stands right now; sales achievement
+  // is cumulative from the engine's 2026-01 floor, and unlabelled on a page full of month-stamped
+  // figures it read as the latest closing month.
+  const metrics: Array<{ label: string; value: number; target: number; color: string; note?: string }> = [
+    {
+      label: "Sales achievement",
+      value: health.salesAchievementRate,
+      target: 0.9,
+      color: "#F97316",
+      note: SALES_ACHIEVEMENT_WINDOW_LABEL,
+    },
     // Attendance readiness scores fingerprint device mappings — HR plumbing, not sales or CRM.
     ...(includeAttendanceReadiness
       ? [{ label: "Attendance readiness", value: health.attendanceReadinessRate, target: 1, color: "#3B82F6" }]
@@ -126,7 +137,7 @@ function HealthBreakdown({
   ];
   return (
     <div className={`grid divide-x divide-slate-200 ${metrics.length >= 4 ? "sm:grid-cols-4" : metrics.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-      {metrics.map(({ label, value, target, color }) => {
+      {metrics.map(({ label, value, target, color, note }) => {
         const pctVal = Math.round(Math.min(1, (Number.isFinite(value) ? value : 0) / target) * 100);
         const statusColor = pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
         return (
@@ -135,6 +146,7 @@ function HealthBreakdown({
             <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
               {pctVal}%
             </p>
+            {note ? <p className="-mt-2 text-phx-3xs font-semibold uppercase tracking-[0.12em] text-slate-400">{note}</p> : null}
             <div className="h-1.5 w-full bg-slate-100">
               <div className="h-full transition-all" style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }} />
             </div>

@@ -712,6 +712,13 @@ export function FinanceAdminBands({ view }: { view: FinanceCommandCenterView }) 
   const { data } = view;
   return (
     <>
+      {/* The Super Admin overview used to drop this notice on the floor: `view.unavailable` was
+        * destructured away and never rendered, so when the finance RPC failed `emptyData()`'s
+        * zeros reached the page as fact — EGP 0 net payroll, EGP 0 direct orders, EGP 0 marketing
+        * spend, all presented with no hint that nothing had been read. The Finance Manager's own
+        * page has always rendered it (see the bottom of FinanceCommandCenterView). Same notice,
+        * same data, so the two seats can never disagree about whether a figure is real. */}
+      <UnavailableNotice sources={view.unavailable} />
       <SectionShell
         action={
           <Link
@@ -762,6 +769,16 @@ export function FinanceCommandCenter({
   const { data } = view;
 
   const actionTotal = financeActionTotal(data);
+  /**
+   * An all-clear is a CLAIM, and it may only be made about queues that were actually read.
+   *
+   * When the aggregates RPC fails, `getFinanceCommandCenterData` substitutes `emptyData()` — every
+   * counter zero — and names the source in `view.unavailable`. `actionTotal` is then 0 for the one
+   * reason that must never produce "Every queue you own is clear": nothing was counted. The amber
+   * notice above says so, but the green panel below it said the opposite, and the green one is the
+   * one a tired reader believes.
+   */
+  const queuesWereRead = view.unavailable.length === 0;
 
   return (
     <div className="space-y-0 divide-y divide-slate-200">
@@ -833,7 +850,12 @@ export function FinanceCommandCenter({
         description="Everything below is assigned to you personally — not a company backlog."
         title="Waiting on you"
       >
-        {actionTotal === 0 ? (
+        {actionTotal === 0 && !queuesWereRead ? (
+          <div className="px-5 py-6 text-sm font-medium text-slate-500">
+            Your queues could not be read just now, so nothing here is a count. The amber notice
+            above names the source that did not answer.
+          </div>
+        ) : actionTotal === 0 ? (
           <AllClear message="Nothing is waiting on you. Every queue you own is clear." />
         ) : (
           <div>

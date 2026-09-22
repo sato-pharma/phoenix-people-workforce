@@ -9,11 +9,24 @@ import {
   isActiveSalesImportBatch,
   selectCurrentSalesRecords,
   salesAchievementRate,
+  SALES_ACHIEVEMENT_WINDOW_LABEL,
 } from "../src/lib/sales/metrics.ts";
+import { SALES_HISTORY_FLOOR } from "../src/lib/sales/vs-target.ts";
 
 export function runSalesSourceOfTruthTests() {
   assert.equal(salesAchievementRate(120, 100), 1.2);
   assert.equal(salesAchievementRate(120, 0), 0);
+
+  // The CEO and SFE overviews label the company achievement rate with this string, and the rate
+  // itself is built over SALES_HISTORY_FLOOR → the current Cairo month. The label is kept as a
+  // literal so metrics.ts stays free of the heavy vs-target module; this assertion is what stops
+  // the two drifting. Move the floor into another year and the label becomes a lie — this goes
+  // red before it ships.
+  assert.equal(
+    SALES_ACHIEVEMENT_WINDOW_LABEL,
+    `${SALES_HISTORY_FLOOR.slice(0, 4)} to date`,
+    "the achievement window label must name the year the canonical engine's data floor opens in",
+  );
 
   assert.equal(isActiveSalesImportBatch({ status: "approved", replacedByBatchId: null }), true);
   assert.equal(isActiveSalesImportBatch({ status: "validated", replacedByBatchId: null }), false);
