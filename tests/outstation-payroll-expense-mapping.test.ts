@@ -139,4 +139,60 @@ export function runOutstationPayrollExpenseMappingTests() {
   assert.equal(mappedMeeting.meetingAmount, 800, "meeting-type request defaults meeting_amount to the EXPECTED total, not the claim");
   assert.equal(mappedMeeting.total, 800, "the claim (900) must never become the payable total");
   assert.equal(mappedMeeting.other, 0);
+
+  // ── Payout month is resolved on Africa/Cairo's calendar day, never the server's UTC clock ──
+  // The payout month is the trip/expense month + 1. `nextPayrollPeriod` reads the date's Cairo
+  // calendar day; before the 2026-09-22 hardening it read the raw UTC month, which paid a trip a
+  // month early whenever the source instant fell in Cairo's first hours of the 1st (audit F-30).
+  // These dates are all in winter (EET, UTC+2), so the result is the same on any engine, whether
+  // or not its ICU knows Egypt reintroduced DST in 2023 — the +2 boundary holds year-round in
+  // January, February and December.
+
+  // A trip stored at UTC-midnight — how ALL live rows are stored — is unchanged: Cairo reads it
+  // on the same calendar day, so the month + 1 answer is identical to the old UTC reading. This is
+  // the no-regression-to-current-data guard.
+  const utcMidnightTrip = mapOutstationRequestRowToPayrollApproval({
+    created_at: "2026-02-01T09:00:00.000Z",
+    employee_name: "Account Admin",
+    id: 201,
+    status: "approved",
+    trip_start_date: "2026-02-01T00:00:00.000Z",
+  });
+  assert.equal(utcMidnightTrip.payoutMonth, 3, "a 1 Feb trip at UTC-midnight pays in March — unchanged by the Cairo anchor");
+  assert.equal(utcMidnightTrip.payoutYear, 2026);
+
+  // THE FIX: an instant in Cairo's first hours of the 1st. 2026-01-31 22:00 UTC IS 2026-02-01
+  // 00:00 in Cairo, so the trip belongs to February and pays in March. The old UTC reading saw
+  // January and paid in February — a month early. Reverting the anchor makes this assertion fire.
+  const cairoBoundaryTrip = mapOutstationRequestRowToPayrollApproval({
+    employee_name: "Account Admin",
+    id: 202,
+    status: "approved",
+    trip_start_date: "2026-01-31T22:00:00.000Z",
+  });
+  assert.equal(cairoBoundaryTrip.payoutMonth, 3, "2026-01-31 22:00 UTC is 2026-02-01 in Cairo — a February trip pays in March, not February");
+  assert.equal(cairoBoundaryTrip.payoutYear, 2026);
+
+  // The exact hardened fallback: trip_start_date is null, so the mapper reads created_at — a REAL
+  // instant, not a stored UTC-midnight date. One stamped just after Cairo midnight on the 1st must
+  // resolve on the Cairo day, the same as the trip case above. This is the path F-30 was about.
+  const nullDateFallback = mapOutstationRequestRowToPayrollApproval({
+    created_at: "2026-01-31T22:30:00.000Z",
+    employee_name: "Account Admin",
+    id: 203,
+    status: "approved",
+    trip_start_date: null,
+  });
+  assert.equal(nullDateFallback.payoutMonth, 3, "a null trip_start_date falls back to created_at, read on the Cairo day — March, not February");
+  assert.equal(nullDateFallback.payoutYear, 2026);
+
+  // December rolls the payout into January of the next year — the branch the anchor still owns.
+  const decemberRollover = mapOutstationRequestRowToPayrollApproval({
+    employee_name: "Account Admin",
+    id: 204,
+    status: "approved",
+    trip_start_date: "2026-12-15T00:00:00.000Z",
+  });
+  assert.equal(decemberRollover.payoutMonth, 1, "a December trip pays in January");
+  assert.equal(decemberRollover.payoutYear, 2027, "the January payout rolls into the next year");
 }
