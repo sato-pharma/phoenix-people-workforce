@@ -98,14 +98,33 @@ type EmployeeDbRow = {
   hr_id: string;
 };
 
-type RawPunchDbRow = {
+type LatestPunchDbRow = {
   device_id: string;
   device_user_id: string;
-  punch_time: string;
+  latest_punch_at: string | null;
 };
 
 function normalizeHrId(value: string | null | undefined) {
   return normalizeAttendanceHrId(value);
+}
+
+/**
+ * Newest punch first; a row that has never punched sorts last.
+ *
+ * Both lists on this screen order on the RESOLVED `latestPunchAt`, never on the stored
+ * `attendance_device_user_map.last_seen_punch_at` column. That column is NULL for 15 of the 19
+ * device users who actually have punches on production, so ordering on it in SQL buried live
+ * users underneath rows that have no punches at all.
+ */
+export function compareByLatestPunchDesc(
+  left: { deviceUserId: string; latestPunchAt: string | null },
+  right: { deviceUserId: string; latestPunchAt: string | null },
+): number {
+  const byPunch = String(right.latestPunchAt ?? "").localeCompare(String(left.latestPunchAt ?? ""));
+  if (byPunch !== 0) return byPunch;
+  // Total order. Without a tie-break, rows sharing a punch time (or sharing no punch time at all)
+  // can swap places between renders and the list looks like it is shuffling on its own.
+  return left.deviceUserId.localeCompare(right.deviceUserId);
 }
 
 export async function getAttendanceDeviceUserMappingDashboard(): Promise<AttendanceDeviceUserMappingDashboard> {
@@ -114,19 +133,26 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
     supabase
       .from("attendance_device_user_map")
       .select("id,device_id,device_user_id,employee_hr_id,is_active,last_seen_punch_at,non_employee_label,created_at,updated_at")
-      .order("last_seen_punch_at", { ascending: false, nullsFirst: false })
+      // Deterministic only. The DISPLAY order is applied below, on the resolved `latestPunchAt` —
+      // see `compareByLatestPunchDesc` for why it cannot be `last_seen_punch_at`.
       .order("device_id")
-      .order("device_user_id"),
+      .order("device_user_id")
+      .order("id"),
     supabase
       .from("employees")
       .select("hr_id,full_name")
       .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
       .order("full_name", { ascending: true }),
+    // ONE ROW PER DEVICE USER, folded by the database. This used to pull the newest 5,000 raw
+    // punches and fold them in Node: on 2026-09-23 that was 4,808 rows to derive 19 values, 192
+    // rows short of the cap biting. And the cap failed in the worst possible direction — the read
+    // was newest-first, so the rows that fell off were the OLDEST, meaning a device user who had
+    // STOPPED punching was the first to vanish. That is precisely the row this screen exists to
+    // surface, and it would not have shown as stale: it would have fallen back to the NULL stored
+    // column and read as if the user had never punched at all.
     supabase
-      .from("attendance_raw_punches")
-      .select("device_id,device_user_id,punch_time")
-      .order("punch_time", { ascending: false })
-      .limit(5000),
+      .from("attendance_device_user_latest_punch")
+      .select("device_id,device_user_id,latest_punch_at"),
   ]);
 
   if (mappingResult.error) throw mappingResult.error;
@@ -141,12 +167,15 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
     }));
   const employeeNames = new Map(employees.map((employee) => [normalizeHrId(employee.hrId), employee.fullName]));
 
+  // The view already carries one row per (device, device user), so this is a straight index —
+  // no first-wins fold, and no dependence on the order rows arrive in.
   const latestPunchByDeviceUser = new Map<string, string>();
-  for (const punch of (punchResult.data ?? []) as RawPunchDbRow[]) {
-    const key = attendanceDeviceUserKey(punch.device_id, punch.device_user_id);
-    if (!latestPunchByDeviceUser.has(key)) {
-      latestPunchByDeviceUser.set(key, punch.punch_time);
-    }
+  for (const punch of (punchResult.data ?? []) as LatestPunchDbRow[]) {
+    if (!punch.latest_punch_at) continue;
+    latestPunchByDeviceUser.set(
+      attendanceDeviceUserKey(punch.device_id, punch.device_user_id),
+      punch.latest_punch_at,
+    );
   }
 
   const mappings: AttendanceDeviceUserMappingRow[] = ((mappingResult.data ?? []) as MappingDbRow[]).map((row) => {
@@ -173,9 +202,10 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
     };
   });
 
+  mappings.sort(compareByLatestPunchDesc);
+
   const recentUnmapped = mappings
     .filter((mapping) => mapping.status === "unmapped")
-    .sort((left, right) => String(right.latestPunchAt ?? "").localeCompare(String(left.latestPunchAt ?? "")))
     .slice(0, 20);
 
   return {
