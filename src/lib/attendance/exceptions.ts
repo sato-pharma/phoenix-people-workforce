@@ -46,6 +46,22 @@ function chunk<T>(items: T[], size = 100): T[][] {
   return out;
 }
 
+// This read used to end in `.limit(500)`, and that cap was the dangerous kind: a truncated
+// list of exceptions does not read as missing data, it reads as employees who were absent.
+// An APPROVED exception EXCUSES a day — `head-office-attendance.ts` and
+// `attendance-cross-check.ts` both build their excused-day set straight from this array,
+// company-wide over a whole month — so row 501 onwards silently became unexcused absences,
+// which is the shape that ends in a deduction against someone who was never absent. The HR
+// command centre and the exceptions screen read it with `status: "all"` and no date filter
+// at all, so they were capped against the whole of history.
+//
+// So it pages to completeness instead. The ceiling below is a runaway guard, not a page size:
+// reaching it THROWS, because every caller already treats a thrown read as an unavailable
+// source and says so on the page, while a silently short array is indistinguishable from the
+// truth. Never turn this back into a `.limit()`.
+const EXCEPTION_PAGE_SIZE = 1000;
+export const MAX_ATTENDANCE_EXCEPTION_ROWS = 100_000;
+
 function toException(row: ExceptionDbRow, nameMap: Map<string, string>): AttendanceException {
   const hrId = normalizeAttendanceHrId(row.employee_hr_id) ?? row.employee_hr_id;
   return {
@@ -70,32 +86,79 @@ export type GetAttendanceExceptionsFilters = {
   status?: AttendanceExceptionStatus | "all";
 };
 
+const EXCEPTION_COLUMNS =
+  "id,employee_hr_id,exception_date,reason,status,requested_by,reviewed_by,reviewed_at,notes,created_at";
+
+/**
+ * Page a filtered exception select until the server runs out of rows.
+ *
+ * The loop advances by how many rows actually came back, never by the page size it asked for,
+ * so a PostgREST `max-rows` smaller than EXCEPTION_PAGE_SIZE cannot end it early — the cost of
+ * that is one extra empty request at the true end, which is the right price for never
+ * shortening the list by accident.
+ *
+ * Ordering carries an `id` tiebreak. Paging is only stable if the sort is total, and
+ * (exception_date, created_at) is not: two employees can hold the same date and the same
+ * creation instant, and a wobbling order across pages drops and duplicates rows.
+ *
+ * It takes its client as an argument so the paging rule can be exercised against a fake in
+ * `tests/attendance-exception-row-cap.test.ts`, rather than pinned by a regex that would pass
+ * the day someone reintroduced a `.limit()` two lines away.
+ */
+export async function fetchAllExceptionRows(
+  supabase: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  applyFilters: (query: any) => any, // eslint-disable-line @typescript-eslint/no-explicit-any
+): Promise<ExceptionDbRow[]> {
+  const rows: ExceptionDbRow[] = [];
+
+  for (let offset = 0; ; ) {
+    const query = applyFilters(
+      supabase
+        .from("attendance_exceptions")
+        .select(EXCEPTION_COLUMNS)
+        .order("exception_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ).range(offset, offset + EXCEPTION_PAGE_SIZE - 1);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const page = (data ?? []) as ExceptionDbRow[];
+    if (page.length === 0) break;
+
+    rows.push(...page);
+    offset += page.length;
+
+    if (rows.length > MAX_ATTENDANCE_EXCEPTION_ROWS) {
+      throw new Error(
+        `Attendance exceptions exceeded ${MAX_ATTENDANCE_EXCEPTION_ROWS} rows; refusing to answer with a partial list.`,
+      );
+    }
+  }
+
+  return rows;
+}
+
 export async function getAttendanceExceptions(
   filters: GetAttendanceExceptionsFilters = {},
 ): Promise<AttendanceException[]> {
   const supabase = getSupabaseAdmin();
 
-  let query = supabase
-    .from("attendance_exceptions")
-    .select("id,employee_hr_id,exception_date,reason,status,requested_by,reviewed_by,reviewed_at,notes,created_at")
-    .order("exception_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(500);
+  const rows = await fetchAllExceptionRows(supabase, (query) => {
+    let next = query;
+    if (filters.employeeHrId) {
+      const normalized = normalizeAttendanceHrId(filters.employeeHrId);
+      if (normalized) next = next.eq("employee_hr_id", normalized);
+    }
+    if (filters.dateFrom) next = next.gte("exception_date", filters.dateFrom);
+    if (filters.dateTo) next = next.lte("exception_date", filters.dateTo);
+    if (filters.status && filters.status !== "all") {
+      next = next.eq("status", filters.status);
+    }
+    return next;
+  });
 
-  if (filters.employeeHrId) {
-    const normalized = normalizeAttendanceHrId(filters.employeeHrId);
-    if (normalized) query = query.eq("employee_hr_id", normalized);
-  }
-  if (filters.dateFrom) query = query.gte("exception_date", filters.dateFrom);
-  if (filters.dateTo) query = query.lte("exception_date", filters.dateTo);
-  if (filters.status && filters.status !== "all") {
-    query = query.eq("status", filters.status);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  const rows = (data ?? []) as ExceptionDbRow[];
   const hrIds = [...new Set(rows.map((r) => normalizeAttendanceHrId(r.employee_hr_id) ?? r.employee_hr_id))];
   const nameMap = new Map<string, string>();
 
