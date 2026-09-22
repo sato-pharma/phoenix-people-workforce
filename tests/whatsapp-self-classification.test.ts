@@ -389,11 +389,12 @@ export function runWhatsAppSelfClassificationTests() {
       "product_manager",
       "national_sales_manager",
       "human_resources",
+      "talent_acquisition",
       "finance",
       "office_coordinator",
       "other",
     ].map((family) => classifyRowId("job_title", family)),
-    "the role menu must offer exactly the owner's nine roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02)",
+    "the role menu must offer exactly the owner's ten roles, in his order (eight stated 2026-08-28, Office Coordinator added 2026-09-02, Talent Acquisition added 2026-09-22 — now full at Meta's 10-row cap)",
   );
   for (const family of offeredRoleMenuFamilies) {
     assert.ok(

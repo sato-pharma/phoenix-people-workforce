@@ -435,14 +435,18 @@ export async function runWhatsAppQuestionPromptsTests() {
   );
   assert.deepEqual(menuViolations(hidden), [], "a menu with an answer hidden must still be sendable");
 
-  // Adding an answer = switching on one the code already understands.
+  // Adding an answer = switching on one the code already understands. The offered menu is now full at
+  // the ten-row cap (talent_acquisition took the last slot on 2026-09-22), so this save switches
+  // `finance` OFF and `sales` ON together — the net stays ten and sendable, while still proving a
+  // not-offered answer is emitted the moment the saved order names it, carrying the code's own id.
+  const withoutFinance = jobValues.filter((v) => v !== "finance");
   const added = applyPromptOverride(
     jobs,
-    new Map([["job_title", override(null, {}, { optionOrder: [...jobValues, "sales"] })]]),
+    new Map([["job_title", override(null, {}, { hiddenOptions: ["finance"], optionOrder: [...withoutFinance, "sales"] })]]),
   );
   assert.deepEqual(
     valuesOf(added.rows),
-    [...jobValues, "sales"],
+    [...withoutFinance, "sales"],
     "an answer the code understands but does not offer appears only when the saved order names it",
   );
   assert.equal(
@@ -453,7 +457,7 @@ export async function runWhatsAppQuestionPromptsTests() {
   assert.deepEqual(
     menuViolations(added),
     [],
-    "the added answer must not break the send-time check — its title comes from the same builder, which is why the 28-character label is shortened",
+    "the added answer must not break the send-time check — the menu is full, so switching finance off makes room for sales",
   );
 
   // An answer NOT offered by default stays off while nothing names it, even with other config saved.
@@ -550,7 +554,11 @@ export async function runWhatsAppQuestionPromptsTests() {
       optionOrder,
     });
   assert.deepEqual(configCheck(["finance"], []), [], "hiding one answer is saveable");
-  assert.deepEqual(configCheck([], ["sales"]), [], "switching on a known answer is saveable");
+  assert.deepEqual(
+    configCheck(["finance"], ["sales"]),
+    [],
+    "switching a known answer on is saveable — the offered menu is full at the ten-row cap, so this hides finance to make room for sales",
+  );
   assert.equal(
     configCheck([], ["marketing_manager"]).length,
     1,
@@ -568,19 +576,19 @@ export async function runWhatsAppQuestionPromptsTests() {
     "switching every answer off is refused at save time, not merely ignored at send time",
   );
   assert.equal(configCheck([], []).length, 0, "no change is not a violation");
-  // Job title's answer POOL went one PAST Meta's ten-row list on 2026-09-02, when office_coordinator
-  // was added for the Sheraton opening — the eleventh family the code understands. The comment that
-  // stood here predicted exactly this ("one more family added to the code later would put this
-  // question over the limit"), so what is pinned changes rather than the ceiling: a pool is allowed
-  // to be larger than a list, because a pool is not a message. Nothing an applicant receives is near
-  // the limit — jobTitleMenu() sends nine rows, with `sales` and `pharmacist` still off it.
+  // Job title's answer POOL sits PAST Meta's ten-row list. office_coordinator made it eleven on
+  // 2026-09-02 (the Sheraton opening); talent_acquisition made it twelve on 2026-09-22 (the paid TA
+  // campaign), and unlike the earlier extras it is OFFERED, so jobTitleMenu() now sends exactly ten
+  // rows — full at the ceiling, with `sales` and `pharmacist` the only two still off it. A pool is
+  // allowed to be larger than a list, because a pool is not a message: what is pinned is the count,
+  // not the ceiling.
   //
-  // What must hold is that the save-time check is now the thing standing between an admin and a 400:
-  // switching on all eleven is refused, and any ten still save.
-  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 1, "eleven answers exist; one list holds ten");
+  // What must hold is that the save-time check is the thing standing between an admin and a 400:
+  // switching on all twelve is refused, and any ten still save.
+  assert.equal(jobAllowed.length, WHATSAPP_LIST_MAX_ROWS + 2, "twelve answers exist; one list holds ten");
   assert.ok(
     configCheck([], jobAllowed).some((problem) => problem.includes(String(WHATSAPP_LIST_MAX_ROWS))),
-    "switching on all eleven answers must be refused at save time — the message would 400",
+    "switching on all twelve answers must be refused at save time — the message would 400",
   );
   assert.deepEqual(
     configCheck([], jobAllowed.slice(0, WHATSAPP_LIST_MAX_ROWS)),
@@ -799,6 +807,11 @@ export async function runWhatsAppQuestionPromptsTests() {
             "area_regional_manager",
             "product_manager",
             "national_sales_manager",
+            // Named here for the same reason office_coordinator is (2026-09-22, with the
+            // talent_acquisition family): it is offered by default, so leaving it out would not drop
+            // it from the wire — it would be APPENDED after "other", a different assertion than this
+            // fixture makes. The fixture is an admin's saved order, so it names every answer it covers.
+            "talent_acquisition",
             "finance",
             "sales",
             // Added to this saved order on 2026-09-02 with the office_coordinator family. It is
@@ -839,6 +852,7 @@ export async function runWhatsAppQuestionPromptsTests() {
         "phx:job_title:area_regional_manager",
         "phx:job_title:product_manager",
         "phx:job_title:national_sales_manager",
+        "phx:job_title:talent_acquisition",
         "phx:job_title:finance",
         "phx:job_title:sales",
         "phx:job_title:office_coordinator",

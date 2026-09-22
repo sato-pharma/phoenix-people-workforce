@@ -223,12 +223,18 @@ const ROLE_MENU_ORDER: CandidateRoleFamily[] = [
   "product_manager",
   "national_sales_manager",
   "human_resources",
+  // Talent Acquisition, added 2026-09-22 for the TA Specialist opening. It sits directly beside
+  // Human Resources because it is the recruiting seat inside HR, and the owner wants these CVs in
+  // their own bucket rather than folded into Human Resources. Making it a tap (not a typed "Other")
+  // is what puts every TA applicant in one family the pool can filter and the extra questions can be
+  // scoped to — the same reason Office Coordinator was made tappable below.
+  "talent_acquisition",
   "finance",
   // Added 2026-09-02 for the Sheraton Office Coordinator opening. It sits with the other head-office
   // seats and above "Other" — which stays last, because it is the answer meaning "none of these" and
-  // offering it early invites it. The list is now 9 rows against Metas 10-row cap, so ONE row is
-  // left: the next role added has to displace something rather than append, and a tenth would send
-  // the whole message to a 400 rather than merely look crowded.
+  // offering it early invites it. With Talent Acquisition added the list is now 10 rows — FULL
+  // against Metas 10-row cap. The NEXT role added has to displace something rather than append: an
+  // eleventh row is a 400 for the whole message, not merely a crowded list.
   //
   // This row is what makes the position tappable instead of typed, which matters twice over: the
   // applicant lands in a real family (so the extra questions can be scoped to them), and the job

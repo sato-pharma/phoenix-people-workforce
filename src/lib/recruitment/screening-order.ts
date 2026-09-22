@@ -84,6 +84,10 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   pharmacist: "pharma_adjacent",
   product_manager: "pharma_adjacent",
   sales: "sales",
+  // Talent Acquisition (added 2026-09-22). `unrelated` beside human_resources for the same reason:
+  // a recruiter's CV speaks to no field-force or pharma read, so a screener gets through the reps
+  // first. A title WAS read, so it is not `unknown`.
+  talent_acquisition: "unrelated",
 };
 
 /**
