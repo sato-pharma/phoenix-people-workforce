@@ -542,6 +542,7 @@ import { runSalesSourceOfTruthTests } from "./sales-source-of-truth.test.ts";
 import { runSosMonthlyReportCheckTests } from "./sos-monthly-report-check.test.ts";
 import { runSosReportPeriodTests } from "./sos-report-period.test.ts";
 import { runTerritoryScheduledSyncTests } from "./territory-scheduled-sync.test.ts";
+import { runTerritorySyncButtonPublishedGuardTests } from "./territory-sync-button-published-guard.test.ts";
 import { runSalesDistributorImportTests } from "./sales-distributor-import.test.ts";
 import { runCustomerNormalizeTests } from "./customer-normalize.test.ts";
 import { runPharmacyGeoValidateTests } from "./pharmacy-geo-validate.test.ts";
@@ -3037,6 +3038,10 @@ await runTest(
   runSosReportPeriodTests,
 );
 await runTest("territory scheduled re-stamp never touches a published closing", runTerritoryScheduledSyncTests);
+await runTest(
+  "the Territory Drilldown's Sync button carries the same published-month guard as the nightly job (one shared definition, the filter before the re-stamp, a short-circuit instead of an empty period list, and the withheld months named on screen)",
+  runTerritorySyncButtonPublishedGuardTests,
+);
 await runTest("sales distributor import", runSalesDistributorImportTests);
 await runTest("customer normalize + pharmacy chains", runCustomerNormalizeTests);
 await runTest("pharmacy geo validate (distance tiers)", runPharmacyGeoValidateTests);

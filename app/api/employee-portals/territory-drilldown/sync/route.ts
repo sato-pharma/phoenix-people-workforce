@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { resolveSyncablePeriods } from "@/lib/sales/territory/scheduled-sync";
 import {
-  computeSyncPeriods,
   getTerritorySyncStatus,
   syncTerritoryData,
   TERRITORY_SYNC_DEFAULT_MONTHS,
@@ -51,17 +51,44 @@ export async function POST(request: Request) {
     const months = Number.isInteger(requestedMonths) && requestedMonths > 0
       ? requestedMonths
       : TERRITORY_SYNC_DEFAULT_MONTHS;
-    const periods = computeSyncPeriods(months);
+
+    // THE PUBLISHED-MONTH GUARD — the same one, from the same function, the nightly job uses. A
+    // published closing has already been sent; its territories are never moved underneath it by a
+    // button press. Withholding happens HERE and not in the database, because the DB trigger reads
+    // `monthly_closing_locks` (a switch the owner toggles) while this reads
+    // `monthly_closing_publications` (a permanent record) — an unlocked published month would sail
+    // straight through the trigger.
+    const { window, syncablePeriods, publishedPeriodsSkipped } = await resolveSyncablePeriods(months);
+    const skippedNote = publishedPeriodsSkipped.length > 0
+      ? ` Left untouched, because their closing is published: ${publishedPeriodsSkipped.join(", ")}.`
+      : "";
+
+    // Never call the RPC with an empty list: `phx_sync_sos_run` treats an absent period list as
+    // EVERY period, so an empty array would re-stamp precisely the published months this guard
+    // exists to protect.
+    if (syncablePeriods.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: `Nothing to sync — every month in the window has a published closing, and a published month is never re-stamped.${skippedNote}`,
+        report: null,
+        window,
+        syncedPeriods: [],
+        publishedPeriodsSkipped,
+      });
+    }
 
     const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
-    const report = await syncTerritoryData({ periods, actorLoginId });
+    const report = await syncTerritoryData({ periods: syncablePeriods, actorLoginId });
 
     return NextResponse.json({
       success: true,
       message: report.restampedRows > 0
-        ? `Synced: re-stamped ${report.restampedRows} row(s) to today's geography and rebuilt ${report.refreshedBatches} batch(es). ${report.allReconciled ? "All lines reconcile." : "Some lines did not reconcile — see the report."}`
-        : `Already correct: nothing needed re-stamping. ${report.allReconciled ? "All lines reconcile." : "Some lines did not reconcile — see the report."}`,
+        ? `Synced: re-stamped ${report.restampedRows} row(s) to today's geography and rebuilt ${report.refreshedBatches} batch(es). ${report.allReconciled ? "All lines reconcile." : "Some lines did not reconcile — see the report."}${skippedNote}`
+        : `Already correct: nothing needed re-stamping. ${report.allReconciled ? "All lines reconcile." : "Some lines did not reconcile — see the report."}${skippedNote}`,
       report,
+      window,
+      syncedPeriods: syncablePeriods,
+      publishedPeriodsSkipped,
     });
   } catch (error) {
     return jsonError(error, "Failed to sync territory data.");
