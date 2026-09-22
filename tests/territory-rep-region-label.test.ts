@@ -91,10 +91,11 @@ export function runTerritoryRepRegionLabelTests() {
 
   // The line-aware region source must be fetched ONLY for the area (Medical Rep) level — the other
   // levels already read operational_region_code through loadLineAreas and must not pay a second
-  // query. Pinned by requiring the area-level guard right before the loadLineAreas(auLineCode, null).
+  // query. Pinned by requiring the area-level guard right before the loadLineAreas(auLineCode, null,
+  // asOf) call (asOf is the window-end date threaded in by finding 5).
   assert.ok(
-    /rootScope\.level === "area" && auLineCode\s*\n?\s*\?\s*loadLineAreas\(auLineCode, null\)/.test(build),
-    "the line-region override source (loadLineAreas(auLineCode, null)) must load only for the area level",
+    /rootScope\.level === "area" && auLineCode\s*\n?\s*\?\s*loadLineAreas\(auLineCode, null, asOf\)/.test(build),
+    "the line-region override source (loadLineAreas(auLineCode, null, asOf)) must load only for the area level",
   );
   assert.ok(
     build.includes("const allAreas = applyLineRegionOverride("),

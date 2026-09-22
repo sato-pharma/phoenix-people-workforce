@@ -2,21 +2,34 @@ import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 
 import { fetchTerritoryAreaPharmacies } from "./pharmacies";
 import { resolveTerritoryRootScope } from "./root-scope";
-import { buildTerritorySkeleton, deniedSkeleton, loadLineAreas, resolveAuLineCode } from "./skeleton";
+import {
+  buildTerritorySkeleton,
+  deniedSkeleton,
+  loadLineAreas,
+  resolveAuLineCode,
+  territoryAsOfDate,
+} from "./skeleton";
 import type { TerritoryAreaPayload, TerritoryRootScope, TerritorySkeleton } from "./types";
+
+export { isTerritoryLinePickerRole, TERRITORY_LINE_PICKER_ROLES } from "./root-scope";
+export { TERRITORY_PICKER_LINES } from "./skeleton";
 
 /** Thrown when a request's resolved territory scope denies it — the API layer maps this to 403. */
 export class TerritoryAccessError extends Error {}
 
-// Every role the Territory Drilldown module serves — the phased rollout (Medical Rep, then
-// District Manager, then Regional Manager, then National Sales Manager) is complete. Mirrors
-// the PORTAL_SOS_ROLES / isPortalSosRole precedent in portal-sos-dashboard.ts: the role gate
-// lives with the domain service, not the API route, so the page and every route agree.
+// Every role the Territory Drilldown module serves. Medical Rep / District Manager / Regional
+// Manager / National Sales Manager each drill their OWN single line's seat tree; Super Admin and
+// CEO see every line, so they pick one and drill it nationwide (see TERRITORY_LINE_PICKER_ROLES in
+// root-scope.ts). Mirrors the PORTAL_SOS_ROLES / isPortalSosRole precedent in
+// portal-sos-dashboard.ts: the role gate lives with the domain service, not the API route, so the
+// page and every route agree.
 export const TERRITORY_DRILLDOWN_ROLES = [
   "Medical Rep",
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
+  "Super Admin",
+  "CEO",
 ] as const satisfies readonly PhoenixRole[];
 
 const TERRITORY_DRILLDOWN_ROLE_SET = new Set<PhoenixRole>(TERRITORY_DRILLDOWN_ROLES);
@@ -25,12 +38,29 @@ export function isTerritoryDrilldownRole(role: PhoenixRole): boolean {
   return TERRITORY_DRILLDOWN_ROLE_SET.has(role);
 }
 
-export async function getTerritorySkeleton(ctx: AccessContext): Promise<TerritorySkeleton> {
-  const rootScope = await resolveTerritoryRootScope(ctx);
+/** The current month (UTC), matching the trailing window the area route builds. The skeleton's
+ *  area list is resolved as of this month's end, so a forward-dated territory move is not shown
+ *  before it takes effect (finding 5). */
+function currentWindowPeriod(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** The window a per-area fetch was asked for ends at its newest period (lastNPeriods pushes
+ *  oldest-first); with no periods, fall back to the current month. */
+function windowEndPeriod(periods: string[]): string {
+  return periods.length > 0 ? periods[periods.length - 1] : currentWindowPeriod();
+}
+
+export async function getTerritorySkeleton(
+  ctx: AccessContext,
+  selectedLine?: string | null,
+): Promise<TerritorySkeleton> {
+  const rootScope = await resolveTerritoryRootScope(ctx, selectedLine);
   if (rootScope.level === "denied") {
     return deniedSkeleton(ctx.role, rootScope.diagnostic);
   }
-  return buildTerritorySkeleton(ctx.role, rootScope);
+  return buildTerritorySkeleton(ctx.role, rootScope, territoryAsOfDate(currentWindowPeriod()));
 }
 
 /**
@@ -45,6 +75,7 @@ export async function getTerritorySkeleton(ctx: AccessContext): Promise<Territor
 async function isAreaInRootScope(
   areaCode: string,
   rootScope: Exclude<TerritoryRootScope, { level: "denied" }>,
+  asOf: string,
 ): Promise<boolean> {
   if (rootScope.level === "area") {
     return rootScope.sosAreaCodes.includes(areaCode);
@@ -53,7 +84,10 @@ async function isAreaInRootScope(
   if (!auLineCode) return false;
   const regionCodes =
     rootScope.level === "region" ? new Set(rootScope.regionCodes.map((code) => code.toUpperCase())) : null;
-  const lineAreas = await loadLineAreas(auLineCode, regionCodes);
+  // As of the SAME window end the fetch is for, so an area's membership matches the list the
+  // skeleton showed — validating against today's geography would 403 an area a forward-dated move
+  // has not yet reached, or admit one it already left.
+  const lineAreas = await loadLineAreas(auLineCode, regionCodes, asOf);
   return lineAreas.some((area) => area.areaCode.toUpperCase() === areaCode);
 }
 
@@ -67,14 +101,16 @@ export async function getTerritoryAreaPharmacies(
   ctx: AccessContext,
   areaCode: string,
   periods: string[],
+  selectedLine?: string | null,
 ): Promise<TerritoryAreaPayload> {
-  const rootScope = await resolveTerritoryRootScope(ctx);
+  const rootScope = await resolveTerritoryRootScope(ctx, selectedLine);
   if (rootScope.level === "denied") {
     throw new TerritoryAccessError(rootScope.diagnostic.message);
   }
 
+  const asOf = territoryAsOfDate(windowEndPeriod(periods));
   const normalizedAreaCode = areaCode.trim().toUpperCase();
-  if (!normalizedAreaCode || !(await isAreaInRootScope(normalizedAreaCode, rootScope))) {
+  if (!normalizedAreaCode || !(await isAreaInRootScope(normalizedAreaCode, rootScope, asOf))) {
     throw new TerritoryAccessError(`Area "${areaCode}" is outside your territory.`);
   }
 

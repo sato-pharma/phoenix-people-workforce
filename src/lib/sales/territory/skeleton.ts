@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { foldAreaOptionsForLine, scopeAndFoldAreaChildren } from "@/lib/sales/closing-area-merges";
+import { closingRegionsAsOfDate } from "@/lib/sales/closing-organogram-regions";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 import type { TerritoryDiagnostic, TerritoryRootScope, TerritorySkeleton } from "./types";
@@ -48,6 +49,25 @@ export function resolveAuLineCode(officialLine: string): string | null {
   return AU_LINE_CODE_BY_OFFICIAL_LINE[officialLine.trim().toLowerCase()] ?? null;
 }
 
+// The three product lines that carry a People Organogram seat tree (au.lines) — exactly the keys of
+// AU_LINE_CODE_BY_OFFICIAL_LINE, in canonical Source-of-Sales casing. A nationwide viewer with no
+// single line of their own (Super Admin / CEO, who see every line) drills ONE of these at a time,
+// because the whole skeleton is built from a single line's seat areas (see loadLineAreas). Head
+// Office is absent by design — it carries no seat structure and no tracked sales.
+export const TERRITORY_PICKER_LINES = ["Anti Infective", "CNS", "Pedia"] as const;
+
+/**
+ * The date the drilldown resolves an area's organogram geography at: the LAST DAY of the window-end
+ * month, via the SAME period→date rule the monthly closing uses (closingRegionsAsOfDate). The
+ * trailing window shown always ends at the current month, so this is the last day of the current
+ * month. Reading the window end — not "today" — is what keeps a forward-dated territory move (one
+ * written as a pair effective the 1st of a FUTURE month) out of a window that ends before it takes
+ * effect, exactly as f_line_area_map_asof(period_end) does for the closing and achievement numbers.
+ */
+export function territoryAsOfDate(windowEndPeriod: string): string {
+  return closingRegionsAsOfDate(windowEndPeriod);
+}
+
 /**
  * au.regions' code -> name map, via its public wrapper au_v_regions — the SAME organogram
  * source area names already come from. Needed because au's operational_region_code vocabulary
@@ -73,40 +93,100 @@ async function loadAuRegionNames(): Promise<Map<string, string>> {
   return names;
 }
 
+/** One raw au_v_line_area_map_all row — the effective-dated seat history, one row per
+ *  (line, area) period. `effective_to` is NULL on the currently-open row. */
+export type LineAreaMapRow = {
+  area_code?: string | null;
+  area_name?: string | null;
+  operational_region_code?: string | null;
+  carries_target?: boolean | null;
+  effective_from?: string | null;
+  effective_to?: string | null;
+};
+
+/**
+ * Pure as-of winner selection over au_v_line_area_map_all rows. Per area, pick the row whose
+ * [effective_from, effective_to) window contains `asOf` — effective_to EXCLUSIVE, latest
+ * effective_from wins — the EXACT predicate au.f_line_area_map_asof and buildOperationalRegionMap
+ * use, so the drilldown, the closing and the achievement engine never disagree about who owns an
+ * area on a given date. Only winners with `carries_target = true` are kept (an area whose in-force
+ * row is a sibling line's "other_line_specific"/"other_permanent" seat is excluded), and the
+ * optional `regionCodes` set narrows to those operational regions.
+ *
+ * Reading the window end instead of au_v_line_area_map (which is effective_to IS NULL = today AND
+ * every FUTURE-dated row) is the fix for finding 5: a move written as a pair effective the 1st of
+ * next month otherwise appears in a window that ends this month, showing the future region early.
+ * Pure and exported so that dating rule is provable without a database.
+ */
+export function selectLineAreasAsOf(
+  rows: readonly LineAreaMapRow[],
+  asOf: string,
+  regionCodes: Set<string> | null,
+): CanonicalArea[] {
+  const winningFrom = new Map<string, string>();
+  const winner = new Map<string, CanonicalArea>();
+  const winnerCarries = new Map<string, boolean>();
+  for (const row of rows) {
+    const areaCode = String(row.area_code ?? "").trim();
+    if (!areaCode) continue;
+    const key = areaCode.toUpperCase();
+    const from = String(row.effective_from ?? "");
+    const to = String(row.effective_to ?? "");
+    // Not yet in force for the window end. This single line is the whole point of `asOf`.
+    if (from && from > asOf) continue;
+    // Already superseded — EXCLUSIVE, matching the database: a row closed on 2026-09-01 covers
+    // 2026-08-31 and not 2026-09-01, which is the day its successor opens.
+    if (to && to <= asOf) continue;
+    // ISO dates order correctly as plain strings; "" (a missing effective_from) loses to any date.
+    const incumbent = winningFrom.get(key);
+    if (incumbent !== undefined && incumbent >= from) continue;
+    winningFrom.set(key, from);
+    winner.set(key, {
+      areaCode,
+      areaName: String(row.area_name ?? "").trim(),
+      regionCode: String(row.operational_region_code ?? "").trim(),
+    });
+    winnerCarries.set(key, Boolean(row.carries_target));
+  }
+  const out: CanonicalArea[] = [];
+  for (const [key, area] of winner) {
+    if (!winnerCarries.get(key)) continue;
+    if (regionCodes && regionCodes.size > 0 && !regionCodes.has(area.regionCode.toUpperCase())) continue;
+    out.push(area);
+  }
+  return out.sort((a, b) => a.areaCode.localeCompare(b.areaCode));
+}
+
 /**
  * Areas that structurally belong to ONE line's own People Organogram seat tree — optionally
- * narrowed to a set of regions — via au_v_line_area_map (the same seat structure
- * loadTargetableAreas already reads in monthly-targets.ts). `carries_target = true` selects
+ * narrowed to a set of regions — resolved AS OF `asOf` (the window-end date) against
+ * au_v_line_area_map_all, the effective-dated seat history. `carries_target = true` selects
  * exactly the areas in "occupied" or "vacant_will_hire" state for this line, excluding
  * "other_line_specific"/"other_permanent" rows — i.e. areas that are structurally a SIBLING
  * line's territory in the same geography.
  *
- * This is what makes a District Manager's (and later Regional/National Sales Manager's) area
- * list match their organogram subtree exactly, instead of "every area in the region": a
- * region routinely has a SEPARATE District Manager seat per line (Delta (1) has one DM for
- * Anti Infective, a different DM for CNS, a different one for Pedia, each covering a
- * different subset of that region's areas) — showing every area in the region would leak
- * areas that belong to a sibling line's DM, not this viewer's own seat.
+ * This is what makes a District Manager's (and Regional/National Sales Manager's) area list match
+ * their organogram subtree exactly, instead of "every area in the region": a region routinely has
+ * a SEPARATE District Manager seat per line (Delta (1) has one DM for Anti Infective, a different
+ * DM for CNS, a different one for Pedia, each covering a different subset of that region's areas) —
+ * showing every area in the region would leak areas that belong to a sibling line's DM.
+ *
+ * AS OF, not "today": the previous read hit au_v_line_area_map (effective_to IS NULL), so a
+ * forward-dated move showed its future region for the whole trailing window before it took effect.
+ * See selectLineAreasAsOf and territoryAsOfDate.
  */
-export async function loadLineAreas(auLineCode: string, regionCodes: Set<string> | null): Promise<CanonicalArea[]> {
+export async function loadLineAreas(
+  auLineCode: string,
+  regionCodes: Set<string> | null,
+  asOf: string,
+): Promise<CanonicalArea[]> {
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("au_v_line_area_map")
-    .select("area_code,area_name,operational_region_code,carries_target")
-    .eq("line_code", auLineCode)
-    .eq("carries_target", true);
-  if (regionCodes && regionCodes.size > 0) {
-    query = query.in("operational_region_code", [...regionCodes]);
-  }
-  const { data, error } = await query.order("area_code");
+  const { data, error } = await supabase
+    .from("au_v_line_area_map_all")
+    .select("area_code,area_name,operational_region_code,carries_target,effective_from,effective_to")
+    .eq("line_code", auLineCode);
   if (error) throw error;
-  return (data ?? [])
-    .map((row) => ({
-      areaCode: String((row as { area_code?: string | null }).area_code ?? "").trim(),
-      areaName: String((row as { area_name?: string | null }).area_name ?? "").trim(),
-      regionCode: String((row as { operational_region_code?: string | null }).operational_region_code ?? "").trim(),
-    }))
-    .filter((area) => area.areaCode);
+  return selectLineAreasAsOf((data ?? []) as LineAreaMapRow[], asOf, regionCodes);
 }
 
 /**
@@ -152,6 +232,7 @@ export function applyLineRegionOverride(
 export async function buildTerritorySkeleton(
   role: PhoenixRole,
   rootScope: Exclude<TerritoryRootScope, { level: "denied" }>,
+  asOf: string,
 ): Promise<TerritorySkeleton> {
   // For "region", the region set is already known before the area fetch (it bounds the
   // au_v_line_area_map query itself). For "area" it's derived afterward from the resolved
@@ -165,7 +246,7 @@ export async function buildTerritorySkeleton(
     rootScope.level === "area"
       ? loadCanonicalAreas()
       : auLineCode
-        ? loadLineAreas(auLineCode, regionCodesInScope)
+        ? loadLineAreas(auLineCode, regionCodesInScope, asOf)
         // officialLine didn't map to a known organogram line_code (shouldn't happen — every
         // resolved rootScope carries a real product line by construction) — fail closed to an
         // empty area list rather than falling back to an unfiltered/wrong-line listing.
@@ -175,7 +256,7 @@ export async function buildTerritorySkeleton(
     // levels already read the line-aware region directly through loadLineAreas above, so they pass
     // an empty list and applyLineRegionOverride leaves their areas untouched. See that function.
     rootScope.level === "area" && auLineCode
-      ? loadLineAreas(auLineCode, null)
+      ? loadLineAreas(auLineCode, null, asOf)
       : Promise.resolve([] as CanonicalArea[]),
   ]);
 

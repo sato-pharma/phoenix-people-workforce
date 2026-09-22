@@ -52,7 +52,10 @@ export async function GET(request: Request, context: { params: Promise<{ areaCod
       : DEFAULT_MONTHS_BACK;
     const periods = lastNPeriods(monthsBack);
 
-    const payload = await getTerritoryAreaPharmacies(access, decodeURIComponent(areaCode), periods);
+    // Super Admin / CEO drill a line they pick; every other role's line is derived and this is
+    // ignored. The client echoes the skeleton's officialLine so the fetch stays on the same line.
+    const selectedLine = searchParams.get("line");
+    const payload = await getTerritoryAreaPharmacies(access, decodeURIComponent(areaCode), periods, selectedLine);
     return NextResponse.json({ success: true, periods, ...payload });
   } catch (error) {
     return jsonError(error, "Failed to load area pharmacies.");

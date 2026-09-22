@@ -793,7 +793,11 @@ export function resolveEmployeePortalNavVisibility(
       isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
-      isNationalSalesManager,
+      isNationalSalesManager ||
+      // Super Admin / CEO see every line and drill any one of them nationwide via the line picker
+      // (TERRITORY_DRILLDOWN_ROLES / isTerritoryLinePickerRole, the server-side gate this mirrors).
+      resolvedRole === "Super Admin" ||
+      resolvedRole === "CEO",
     // Mirrors PORTAL_CRM_ROLES exactly (Medical Rep / DSM / RM / NSM). Uses the explicit
     // "District Manager" check, NOT isDistrictManager, so the Head-Office "Manager" rung — which has
     // no field reps and would get an empty grid — is excluded, matching the page's own gate.

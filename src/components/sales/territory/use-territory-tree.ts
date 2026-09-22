@@ -41,7 +41,10 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
     setStates((prev) => new Map(prev).set(key, { status: "loading" }));
 
     const controller = new AbortController();
-    fetch(`/api/employee-portals/territory-drilldown/area/${encodeURIComponent(key)}`, {
+    // Echo the skeleton's line so a Super Admin / CEO fetch stays on the line they picked (the
+    // server ignores it for every other role, whose line is derived from their own scope).
+    const lineParam = skeleton.officialLine ? `?line=${encodeURIComponent(skeleton.officialLine)}` : "";
+    fetch(`/api/employee-portals/territory-drilldown/area/${encodeURIComponent(key)}${lineParam}`, {
       signal: controller.signal,
     })
       .then(async (response) => {
@@ -91,7 +94,7 @@ export function useTerritoryTree(skeleton: TerritorySkeleton): UseTerritoryTreeR
       .finally(() => {
         inFlightRef.current.delete(key);
       });
-  }, []);
+  }, [skeleton.officialLine]);
 
   const areaState = useCallback(
     (areaCode: string): AreaFetchState => states.get(areaCode.trim().toUpperCase()) ?? { status: "idle" },
