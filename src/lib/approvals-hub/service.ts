@@ -5,6 +5,7 @@ import {
   type AccessContext,
 } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import {
   getVacationActionCenterData,
@@ -899,20 +900,24 @@ export async function getAllVacationDecisionsCompanyWide(access: AccessContext):
   }
   const db = getSupabaseAdmin();
   const [{ data: leaves }, { data: momSteps }, directory] = await Promise.all([
-    db
-      .from("v2_vacation_requests")
-      .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
-      .or("manager_decision_at.not.is.null,hr_decision_at.not.is.null")
-      .order("manager_decision_at", { ascending: false })
-      .limit(500),
-    db
-      .from("v2_vacation_approval_steps")
-      .select("request_id,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
-      .eq("step_key", "manager_of_manager")
-      .neq("status", "pending")
-      .not("decided_at", "is", null)
-      .order("decided_at", { ascending: false })
-      .limit(500),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      db
+        .from("v2_vacation_requests")
+        .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
+        .or("manager_decision_at.not.is.null,hr_decision_at.not.is.null")
+        .order("manager_decision_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      db
+        .from("v2_vacation_approval_steps")
+        .select("request_id,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
+        .eq("step_key", "manager_of_manager")
+        .neq("status", "pending")
+        .not("decided_at", "is", null)
+        .order("decided_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ),
     getEmployeeDirectory(),
   ]);
 
@@ -974,12 +979,14 @@ export async function getAllExcuseDecisionsCompanyWide(access: AccessContext): P
   }
   const db = getSupabaseAdmin();
   const [{ data: excuses }, directory] = await Promise.all([
-    db
-      .from("v2_excuse_requests")
-      .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
-      .not("manager_decision", "is", null)
-      .order("manager_decision_at", { ascending: false })
-      .limit(500),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      db
+        .from("v2_excuse_requests")
+        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
+        .not("manager_decision", "is", null)
+        .order("manager_decision_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ),
     getEmployeeDirectory(),
   ]);
 
@@ -1224,11 +1231,13 @@ export async function getCompanyExcuseRequestsExcludingFieldForce(access: Access
   }
   const db = getSupabaseAdmin();
   const [{ data, error }, directory] = await Promise.all([
-    db
-      .from("v2_excuse_requests")
-      .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,status,created_at")
-      .order("created_at", { ascending: false })
-      .limit(1000),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      db
+        .from("v2_excuse_requests")
+        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,status,created_at")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ),
     getEmployeeDirectory().catch(() => null),
   ]);
   if (error) {
@@ -1293,7 +1302,6 @@ function isPlanHrActor(access: Pick<AccessContext, "role" | "scope">): boolean {
 // workflow never produces (confirmed: 0 rows in production ever hold it). HR-acknowledge activates
 // on "final_approved", not "ceo_approved" — this was caught by an e2e click-through and fixed here.
 const PLAN_ACTIVE_STATUSES: EmployeePlanStatus[] = ["submitted", "manager_approved", "final_approved", "edit_requested"];
-const PLAN_BUCKET_LIMIT = 400;
 
 export type PlanApprovalStage = "manager" | "ceo" | "hr" | "edit_request";
 
@@ -1329,12 +1337,14 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const hrActor = isPlanHrActor(access);
 
   const [{ data, error }, directory] = await Promise.all([
-    getSupabaseAdmin()
-      .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at,employee_job_title")
-      .in("status", PLAN_ACTIVE_STATUSES)
-      .order("submitted_at", { ascending: true })
-      .limit(PLAN_BUCKET_LIMIT),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      getSupabaseAdmin()
+        .from("employee_plan_headers")
+        .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at,employee_job_title")
+        .in("status", PLAN_ACTIVE_STATUSES)
+        .order("submitted_at", { ascending: true })
+        .order("id", { ascending: true }),
+    ),
     getEmployeeDirectory(),
   ]);
   if (error) {
@@ -2033,12 +2043,14 @@ export async function getAllPlanDecisionsCompanyWide(access: AccessContext): Pro
   }
   const db = getSupabaseAdmin();
   const [{ data: plans }, directory] = await Promise.all([
-    db
-      .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
-      .or("manager_decision_at.not.is.null,ceo_decision_at.not.is.null")
-      .order("manager_decision_at", { ascending: false })
-      .limit(500),
+    fetchAllApprovalRows<Record<string, unknown>>(() =>
+      db
+        .from("employee_plan_headers")
+        .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,plan_kind,period_key,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+        .or("manager_decision_at.not.is.null,ceo_decision_at.not.is.null")
+        .order("manager_decision_at", { ascending: false })
+        .order("id", { ascending: false }),
+    ),
     getEmployeeDirectory(),
   ]);
 
@@ -2104,13 +2116,18 @@ async function fetchCompanyPlanRequestItems(
   } else if (!canSeeCeoApprovalTabs(access)) {
     throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
   }
-  let query = getSupabaseAdmin()
-    .from("employee_plan_headers")
-    .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
-    .neq("status", "draft");
-  if (options?.managerHrIds) query = query.in("manager_hr_id", options.managerHrIds);
+  // Rebuilt per page, never reused: a PostgREST builder is single-use, so paging a captured one
+  // would re-await a spent query and stack a second .order() onto it.
+  const buildQuery = () => {
+    let query = getSupabaseAdmin()
+      .from("employee_plan_headers")
+      .select("id,employee_name,employee_hr_id,employee_job_title,plan_kind,period_start_date,status,submitted_at")
+      .neq("status", "draft");
+    if (options?.managerHrIds) query = query.in("manager_hr_id", options.managerHrIds);
+    return query.order("submitted_at", { ascending: false }).order("id", { ascending: false });
+  };
   const [{ data, error }, directory] = await Promise.all([
-    query.order("submitted_at", { ascending: false }).limit(1000),
+    fetchAllApprovalRows<Record<string, unknown>>(buildQuery),
     getEmployeeDirectory(),
   ]);
   if (error) {
