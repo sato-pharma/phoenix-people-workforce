@@ -734,12 +734,16 @@ export async function loadTerritoryMap(params: {
   // area code in the right line but the wrong region must not leak that region's geography either.
   const allowed = await loadLineAreaRows(lineCode);
   const areaNames = new Map<string, string>();
+  // Same per-line region the filters use, so a brick never carries the line-agnostic
+  // `source_of_sales_bricks.region_code`, which predates the September 2026 moves.
+  const areaRegions = new Map<string, string>();
   for (const row of allowed) {
     const areaCode = str(row.area_code);
     const regionCode = str(row.operational_region_code).toUpperCase();
     if (scope.areaCodes && !scope.areaCodes.has(areaCode.toUpperCase())) continue;
     if (scope.regionCodes && !scope.regionCodes.has(regionCode)) continue;
     areaNames.set(areaCode, str(row.area_name) || areaCode);
+    areaRegions.set(areaCode, str(row.operational_region_code));
   }
   const requested = areaCodes.filter((code) => areaNames.has(code));
   if (requested.length === 0) return empty;
@@ -754,7 +758,7 @@ export async function loadTerritoryMap(params: {
   const brickRows = await pageAll<Row>(async (from, to) => {
     const { data, error } = await getSupabaseAdmin()
       .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, block_code, area_code, region_code, active")
+      .select("brick_id, brick_name, block_code, area_code, active")
       .in("area_code", requested)
       .eq("active", true)
       .range(from, to);
@@ -814,8 +818,8 @@ export async function loadTerritoryMap(params: {
         confidence: pinConfidence(centroid.provider, centroid.status),
         lat: centroid.lat,
         lng: centroid.lng,
-        regionCode: str(row.region_code),
-        regionName: regionNameByCode.get(str(row.region_code).toUpperCase()) || str(row.region_code),
+        regionCode: areaRegions.get(areaCode) ?? "",
+        regionName: regionNameByCode.get((areaRegions.get(areaCode) ?? "").toUpperCase()) || (areaRegions.get(areaCode) ?? ""),
       });
     }
   }
@@ -931,6 +935,11 @@ export type BrickSearchHit = {
   brickName: string;
   lat: number | null;
   lng: number | null;
+  /**
+   * False when the brick's area is not carried by the line being searched. Its region is then
+   * genuinely unknown for that line, so it is left blank rather than filled from somewhere else.
+   */
+  onSelectedLine: boolean;
   /** How the current pin was obtained — 'manual' means a person placed it. */
   provider: string | null;
   regionCode: string;
@@ -938,16 +947,55 @@ export type BrickSearchHit = {
   status: string | null;
 };
 
-/** Free-text brick lookup for the in-map search box. Matches Arabic or English, name or id. */
-export async function searchBricks(query: string, limit = 20): Promise<BrickSearchHit[]> {
+/** One line's view of an area, as the organogram has it right now. */
+export type LineArea = { areaName: string; regionCode: string };
+
+/**
+ * A brick's region is a PER-LINE fact, so it is resolved against the line being searched and
+ * nothing else. An area the line does not carry has no region ON THAT LINE — the honest answer is
+ * blank plus the flag, never a region borrowed from another line or from a pre-move column.
+ */
+export function resolveLineRegion(
+  areaCode: string,
+  lineAreas: Map<string, LineArea>,
+): { areaName: string | null; onSelectedLine: boolean; regionCode: string } {
+  const entry = lineAreas.get(areaCode);
+  if (!entry) return { areaName: null, onSelectedLine: false, regionCode: "" };
+  return { areaName: entry.areaName, onSelectedLine: true, regionCode: entry.regionCode };
+}
+
+/**
+ * Free-text brick lookup for the in-map search box. Matches Arabic or English, name or id.
+ *
+ * The region is resolved PER LINE from the organogram (`operational_region_code`), never from
+ * `source_of_sales_bricks.region_code`. That column has no line concept and predates the September
+ * 2026 moves, so it still reads Delta (1)/(2)/Others for every Delta (3) brick, plain "UE" for
+ * every UE-1/UE-2 brick, and the old region for CNS `CA5` and `D16` — 296 bricks labelled with a
+ * region their area has not been in since the moves landed.
+ */
+export async function searchBricks(params: {
+  access?: AccessContext;
+  limit?: number;
+  lineCode: string;
+  query: string;
+}): Promise<BrickSearchHit[]> {
+  const { access, limit = 20, lineCode, query } = params;
   const term = String(query ?? "").trim();
   if (term.length < 2) return [];
+  if (!LINE_LABELS[lineCode]) return [];
   const searchFilter = ilikeAnyFilter(["brick_name", "brick_id"], term);
   if (!searchFilter) return [];
 
+  // A line outside the caller's own scope is refused even when it was passed in explicitly, the
+  // same way loadTerritoryFilters and loadTerritoryMap refuse it.
+  const { scope, references } = access
+    ? await resolveTerritoryScopeWithReferences(access)
+    : { references: null, scope: { lineCodes: null, regionCodes: null, areaCodes: null } };
+  if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return [];
+
   const { data, error } = await getSupabaseAdmin()
     .from("source_of_sales_bricks")
-    .select("brick_id, brick_name, block_code, area_code, region_code")
+    .select("brick_id, brick_name, block_code, area_code")
     .eq("active", true)
     .or(searchFilter)
     .limit(limit);
@@ -973,6 +1021,16 @@ export async function searchBricks(query: string, limit = 20): Promise<BrickSear
     }
   }
 
+  // The line's own area map: organogram truth for both the area name and the region, as of now.
+  const lineAreas = new Map<string, LineArea>();
+  for (const row of await loadLineAreaRows(lineCode)) {
+    const areaCode = str(row.area_code);
+    if (!areaCode || lineAreas.has(areaCode)) continue;
+    lineAreas.set(areaCode, { areaName: str(row.area_name) || areaCode, regionCode: str(row.operational_region_code) });
+  }
+
+  // Only a fallback, for a brick the chosen line does not carry — the search is nationwide, so a
+  // hit can legitimately sit on another line's patch and still deserve a readable area name.
   const areaNames = new Map<string, string>();
   const { data: areaRows } = await getSupabaseAdmin()
     .from("source_of_sales_areas")
@@ -980,25 +1038,29 @@ export async function searchBricks(query: string, limit = 20): Promise<BrickSear
   for (const row of (areaRows ?? []) as Row[]) areaNames.set(str(row.area_code), str(row.area_name));
 
   const regionNameByCode = new Map(
-    (await loadSalesReferenceData({ includeCustomerBricks: false })).regions.map((r) => [r.regionCode.toUpperCase(), r.regionName]),
+    (references ?? (await loadSalesReferenceData({ includeCustomerBricks: false }))).regions.map((r) => [
+      r.regionCode.toUpperCase(),
+      r.regionName,
+    ]),
   );
 
   return rows.map((row) => {
     const brickId = str(row.brick_id);
     const pin = pins.get(brickId);
     const areaCode = str(row.area_code);
-    const regionCode = str(row.region_code);
+    const { areaName, onSelectedLine, regionCode } = resolveLineRegion(areaCode, lineAreas);
     return {
       areaCode,
-      areaName: areaNames.get(areaCode) ?? areaCode,
+      areaName: areaName ?? areaNames.get(areaCode) ?? areaCode,
       blockCode: str(row.block_code),
       brickId,
       brickName: str(row.brick_name) || brickId,
       lat: pin?.lat ?? null,
       lng: pin?.lng ?? null,
+      onSelectedLine,
       provider: pin?.provider ?? null,
       regionCode,
-      regionName: regionNameByCode.get(regionCode.toUpperCase()) || regionCode,
+      regionName: regionCode ? regionNameByCode.get(regionCode.toUpperCase()) || regionCode : "",
       status: pin?.status ?? null,
     };
   });

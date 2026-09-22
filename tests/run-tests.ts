@@ -1897,6 +1897,7 @@ import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.te
 import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headline.test.ts";
 import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
 import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
+import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6709,6 +6710,10 @@ await runTest(
 await runTest(
   "territory shared-pin guard: bricks sharing one coordinate are unlocated, not drawn as confident pins nor fed to the residence search; a unanimously hand-placed point is exempt and an already-demoted pin implicates nobody",
   runTerritorySharedPinGuardTests,
+);
+await runTest(
+  "territory brick search region label: a hit's region is the LINE's operational region, so the same brick reads UE-2 on Anti Infective and UE-1 on Pedia; an area the line does not carry shows no region at all",
+  runTerritorySearchRegionLabelTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
