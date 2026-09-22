@@ -81,6 +81,73 @@ function employee(overrides: Partial<EmployeeDirectoryRow>): EmployeeDirectoryRo
   } as EmployeeDirectoryRow;
 }
 
+/**
+ * "COACHING RED-ZONE REPS" COUNTS PEOPLE, NOT REPORTS.
+ *
+ * Both command centres used to compute it as `zoneCounts.critical_red + zoneCounts.red_zone` —
+ * a distribution over REPORTS. On production that put **35** on the CEO's attention queue against
+ * 45 reps who have ever been coached at all and 18 who have ever been red: a headcount that could
+ * not possibly be one. The real figure is 7.
+ *
+ * Two distinct ways the old sum lied, both pinned below: one rep coached red repeatedly counted
+ * once per report, and a rep who went red and was later coached back to green stayed counted
+ * forever. Only the rep's MOST RECENT completed report decides.
+ */
+function testRedZoneCountsPeopleNotReports() {
+  const repeatedlyRed = buildCoachingReportAnalytics([
+    report({ coachingDate: "2026-05-01", medicalRepHrId: "MR-1", performanceZone: "red_zone", reportId: "r1", status: "locked" }),
+    report({ coachingDate: "2026-04-01", medicalRepHrId: "MR-1", performanceZone: "critical_red", reportId: "r2", status: "locked" }),
+    report({ coachingDate: "2026-03-01", medicalRepHrId: "MR-1", performanceZone: "red_zone", reportId: "r3", status: "locked" }),
+  ]);
+  assert.equal(
+    repeatedlyRed.zoneCounts.red_zone + repeatedlyRed.zoneCounts.critical_red,
+    3,
+    "zoneCounts must keep counting REPORTS — the coaching dashboard and the Excel export draw that distribution",
+  );
+  assert.equal(
+    repeatedlyRed.redZoneRepCount,
+    1,
+    "one rep coached red three times is ONE red-zone rep, not three — this is the count the CEO's attention tile shows",
+  );
+
+  const recovered = buildCoachingReportAnalytics([
+    report({ coachingDate: "2026-06-01", medicalRepHrId: "MR-1", performanceZone: "green_zone", reportId: "r1", status: "locked" }),
+    report({ coachingDate: "2026-01-01", medicalRepHrId: "MR-1", performanceZone: "critical_red", reportId: "r2", status: "locked" }),
+    report({ coachingDate: "2026-02-01", medicalRepHrId: "MR-2", performanceZone: "red_zone", reportId: "r3", status: "locked" }),
+  ]);
+  assert.equal(
+    recovered.redZoneRepCount,
+    1,
+    "a rep coached back out of red must LEAVE the count; only MR-2, whose latest report is still red, remains",
+  );
+
+  // Latest is resolved by DATE, not by the caller's array order. `getCoachingReports` returns
+  // newest-first today, but the whole meaning of this figure is "most recent" — it must not
+  // silently become "whichever row came back first" when a caller sorts for a screen.
+  const outOfOrder = buildCoachingReportAnalytics([
+    report({ coachingDate: "2026-01-01", medicalRepHrId: "MR-1", performanceZone: "red_zone", reportId: "r1", status: "locked" }),
+    report({ coachingDate: "2026-06-01", medicalRepHrId: "MR-1", performanceZone: "green_zone", reportId: "r2", status: "locked" }),
+  ]);
+  assert.equal(outOfOrder.redZoneRepCount, 0, "the LATEST report decides, whatever order the rows arrive in");
+
+  // A draft red report is not a verdict — only completed statuses count, same as every other figure.
+  const draftOnly = buildCoachingReportAnalytics([
+    report({ medicalRepHrId: "MR-9", performanceZone: "critical_red", reportId: "r1", status: "draft" }),
+  ]);
+  assert.equal(draftOnly.redZoneRepCount, 0, "a DRAFT red report must not put a rep on the CEO's queue");
+
+  // Both command centres must read the people count, never re-add the report buckets.
+  for (const path of ["src/lib/ceo/command-center.ts", "src/lib/admin/command-center.ts"]) {
+    const source = readFileSync(path, "utf8");
+    assert.match(source, /redZoneRepCount/, `${path} must read the PEOPLE count`);
+    assert.doesNotMatch(
+      source,
+      /zoneCounts\.critical_red[\s\S]{0,40}zoneCounts\.red_zone/,
+      `${path} must not sum the REPORT buckets back into a headcount`,
+    );
+  }
+}
+
 export function runCoachingAnalyticsTests() {
   const rows = [
     ...rowsForReport("report-a", {
@@ -139,6 +206,9 @@ export function runCoachingAnalyticsTests() {
   assert.equal(reportAnalytics.draftCount, 1);
   assert.equal(reportAnalytics.pendingAcknowledgmentCount, 1);
   assert.deepEqual(reportAnalytics.zoneCounts, { green_zone: 1, yellow_zone: 1 });
+  assert.equal(reportAnalytics.redZoneRepCount, 0, "no completed red report means no red-zone rep");
+
+  testRedZoneCountsPeopleNotReports();
 
   const quarterlySummary: CoachingQuarterlySummaryRow[] = [
     { averageScore: 80, bestScore: 85, coachingCount: 1, firstScore: 80, improvementScore: 0, latestScore: 80, latestZone: "green_zone", lowestScore: 80, medicalRepHrId: "MR-1", quarter: 2, year: 2026 },
