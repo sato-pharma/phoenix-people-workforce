@@ -15,7 +15,7 @@ import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import { planHasSecondApprover } from "@/lib/weekly-planning/second-approver";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
-import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
+import { getPlatformMetrics, type PlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { latestPublishedClosingPeriod } from "@/lib/sales/monthly-closing-publication";
@@ -61,12 +61,17 @@ export type CeoAttentionItem = {
 export type CeoCommandCenterData = {
   generatedAt: string;
   dataUnavailable: string[];
+  /**
+   * Every figure here is `null` when it was never measured — the section threw, or this viewer
+   * has no permission to read it. A CEO reading 100% has no way to tell those apart from a clean
+   * bill of health, which is why none of them defaults to a number any more.
+   */
   health: {
-    score: number;
-    employeeHealthRate: number;
-    salesLinkageRate: number;
-    attendanceReadinessRate: number;
-    salesAchievementRate: number;
+    score: number | null;
+    employeeHealthRate: UncomputedRate;
+    salesLinkageRate: UncomputedRate;
+    attendanceReadinessRate: UncomputedRate;
+    salesAchievementRate: UncomputedRate;
   };
   headcount: {
     active: number;
@@ -190,17 +195,31 @@ function topMoversFromSos(
 // ── Lean CEO-specific data helpers ───────────────────────────────────────────
 // These are fast targeted queries (no full employee directory, no payroll loops).
 
-function safeRate(value: number) {
-  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+/**
+ * Clamp a rate that WAS measured. An unmeasured one stays `null` and a NaN becomes one: both mean
+ * "there is no number here", and the old `: 0` turned the second into a real, terrible-looking
+ * score that nobody had computed.
+ */
+function safeRate(value: UncomputedRate): UncomputedRate {
+  if (value === null) return null;
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
 }
 
+/**
+ * The headline health score averages the rates that EXIST. Counting an unread section as 0 would
+ * punish the CEO for a permission he does not have; counting it as 1 would hide a broken read.
+ * With nothing measured at all there is no score, and the answer is `null`.
+ */
 function healthScore(health: CeoAdminSignals["health"]) {
   const values = [
     health.employeeHealthRate,
     health.salesLinkageRate,
     health.attendanceReadinessRate,
     health.salesAchievementRate,
-  ].map(safeRate);
+  ]
+    .map(safeRate)
+    .filter((value): value is number => value !== null);
+  if (!values.length) return null;
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100);
 }
 
@@ -272,12 +291,14 @@ async function getCeoPendingPlansCount(): Promise<number> {
 
 function buildCeoHealth(
   platformMetrics: PlatformMetrics | null,
-  salesLinkageRate: number,
+  salesLinkageRate: UncomputedRate,
 ): CeoAdminSignals["health"] {
+  // `?? null`, never `?? 0`: no platform metrics at all means nothing was measured, and a zero
+  // here reads as a real, alarming figure rather than as the absence of one.
   return {
-    attendanceReadinessRate: safeRate(platformMetrics?.attendance.mappingReadinessRate ?? 0),
-    employeeHealthRate: safeRate(platformMetrics?.workforce.employeeHealthRate ?? 0),
-    salesAchievementRate: safeRate(platformMetrics?.sales.achievementRate ?? 0),
+    attendanceReadinessRate: safeRate(platformMetrics?.attendance.mappingReadinessRate ?? null),
+    employeeHealthRate: safeRate(platformMetrics?.workforce.employeeHealthRate ?? null),
+    salesAchievementRate: safeRate(platformMetrics?.sales.achievementRate ?? null),
     salesLinkageRate: safeRate(salesLinkageRate),
   };
 }
@@ -413,7 +434,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
     : null;
   const workforce = platformMetrics?.workforce;
   const platformPayroll = platformMetrics?.payroll;
-  const fallbackHealth = buildCeoHealth(platformMetrics, platformMetrics?.sales.dataQualityRate ?? 0);
+  const fallbackHealth = buildCeoHealth(platformMetrics, platformMetrics?.sales.dataQualityRate ?? null);
   const health = adminSignals?.health ?? fallbackHealth;
   const trends = adminSignals?.trends ?? buildCeoTrends(platformMetrics, sosOut, 0);
 
@@ -604,11 +625,12 @@ export type CeoAdminSignals = {
   departuresLast30d: number;
   /** Leave/vacation requests pending a decision (HR or manager stage); null if the vacation-report fetch failed. */
   leavePendingTotal: number | null;
+  /** `null` on any rate means it was never measured — see `CeoCommandCenterData["health"]`. */
   health: {
-    salesLinkageRate: number;
-    attendanceReadinessRate: number;
-    salesAchievementRate: number;
-    employeeHealthRate: number;
+    salesLinkageRate: UncomputedRate;
+    attendanceReadinessRate: UncomputedRate;
+    salesAchievementRate: UncomputedRate;
+    employeeHealthRate: UncomputedRate;
   };
   trends: {
     sales: Array<{ label: string; sales: number; target: number }>;

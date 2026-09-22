@@ -26,14 +26,29 @@ import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
 import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
 import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecycle";
 
+/**
+ * A rate that was NEVER COMPUTED reads `null`, not a number.
+ *
+ * Every one of these used to default to 1 — a clean 100% — and `emptyPlatformMetrics()` is
+ * returned for THREE different reasons: the read threw, the viewer has no permission for that
+ * module, or the population is empty. In the first two the figure does not exist, and a fabricated
+ * all-clear is the worst possible substitute: it is the number a manager would act on, and it says
+ * exactly what he wants to hear. `null` forces every surface to render "—" instead, and to say so.
+ *
+ * The permission case is the one that had no signal at all: `dataUnavailable` is appended only
+ * from `metricOrDefault`'s catch, so a section the viewer simply cannot read reached the page as
+ * 100% with an EMPTY unavailable list — nothing, anywhere, marked it as not-read.
+ */
+export type UncomputedRate = number | null;
+
 export type PlatformMetrics = {
   attendance: {
     activeMappings: number;
     activePolicies: number;
     currentMonthWorkingDays: number;
-    mappingReadinessRate: number;
+    mappingReadinessRate: UncomputedRate;
     missingDeviceMappings: number;
-    policyCoverageRate: number;
+    policyCoverageRate: UncomputedRate;
     totalDeviceMappings: number;
     totalPolicies: number;
   };
@@ -42,7 +57,7 @@ export type PlatformMetrics = {
     failedNotifications: number;
     pendingNotifications: number;
     sentNotifications: number;
-    templateReadinessRate: number;
+    templateReadinessRate: UncomputedRate;
     templatesActive: number;
     templatesReady: number;
     templatesTotal: number;
@@ -79,25 +94,25 @@ export type PlatformMetrics = {
     governmentDeductions: number;
     gross: number;
     net: number;
-    readinessRate: number;
+    readinessRate: UncomputedRate;
   };
   recruitment: {
-    hiringDocumentReadinessRate: number;
+    hiringDocumentReadinessRate: UncomputedRate;
     hiringDocumentsDue: number;
     hiringDocumentsMissing: number;
     hiringDocumentsPending: number;
     hiringDocumentsSubmitted: number;
   };
   sales: {
-    achievementRate: number;
+    achievementRate: UncomputedRate;
     activeProducts: number;
-    dataQualityRate: number;
+    dataQualityRate: UncomputedRate;
     salesValue: number;
     targetValue: number;
   };
   workforce: {
     activeEmployees: number;
-    employeeHealthRate: number;
+    employeeHealthRate: UncomputedRate;
     employeesWithoutManagers: number;
     openVacancies: number;
     totalEmployees: number;
@@ -107,14 +122,28 @@ export type PlatformMetrics = {
   };
 };
 
-const emptyPlatformMetrics = (): PlatformMetrics => ({
+/**
+ * The shape returned when a section could NOT be measured. Counts stay 0 — "no rows read" and
+ * "zero rows" look the same in a count, and a 0 invites a look rather than closing the question.
+ * Rates are `null`, because a rate is a JUDGEMENT and there is nothing here to judge.
+ *
+ * Note what is deliberately NOT here: a `dataUnavailable` entry for the permission case. A viewer
+ * without payroll access is not looking at a broken page, and putting "Payroll data unavailable"
+ * in front of every non-payroll role would train all of them to ignore the notice that matters.
+ * The `null` alone is what stops the fabricated all-clear; the surfaces render "—".
+ *
+ * Exported so `tests/platform-metrics.test.ts` can assert the rates directly. A regex over this
+ * source would pass the day someone reintroduced a `1` two functions away; reading the object is
+ * the only check that cannot.
+ */
+export const emptyPlatformMetrics = (): PlatformMetrics => ({
   attendance: {
     activeMappings: 0,
     activePolicies: 0,
     currentMonthWorkingDays: 0,
-    mappingReadinessRate: 1,
+    mappingReadinessRate: null,
     missingDeviceMappings: 0,
-    policyCoverageRate: 1,
+    policyCoverageRate: null,
     totalDeviceMappings: 0,
     totalPolicies: 0,
   },
@@ -123,7 +152,7 @@ const emptyPlatformMetrics = (): PlatformMetrics => ({
     failedNotifications: 0,
     pendingNotifications: 0,
     sentNotifications: 0,
-    templateReadinessRate: 1,
+    templateReadinessRate: null,
     templatesActive: 0,
     templatesReady: 0,
     templatesTotal: 0,
@@ -160,25 +189,25 @@ const emptyPlatformMetrics = (): PlatformMetrics => ({
     governmentDeductions: 0,
     gross: 0,
     net: 0,
-    readinessRate: 1,
+    readinessRate: null,
   },
   recruitment: {
-    hiringDocumentReadinessRate: 1,
+    hiringDocumentReadinessRate: null,
     hiringDocumentsDue: 0,
     hiringDocumentsMissing: 0,
     hiringDocumentsPending: 0,
     hiringDocumentsSubmitted: 0,
   },
   sales: {
-    achievementRate: 0,
+    achievementRate: null,
     activeProducts: 0,
-    dataQualityRate: 1,
+    dataQualityRate: null,
     salesValue: 0,
     targetValue: 0,
   },
   workforce: {
     activeEmployees: 0,
-    employeeHealthRate: 1,
+    employeeHealthRate: null,
     employeesWithoutManagers: 0,
     openVacancies: 0,
     totalEmployees: 0,
@@ -191,6 +220,17 @@ const emptyPlatformMetrics = (): PlatformMetrics => ({
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * The same coercion for a RATE, which must never fall back to a number. `numberValue` turning an
+ * absent rate into 0 is the identical defect to defaulting it to 1, pointing the other way: both
+ * print a verdict nobody measured.
+ */
+function rateValue(value: unknown): UncomputedRate {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 // A fixed structural seat, in the shape the organogram's own occupancy key reads.
@@ -355,9 +395,9 @@ export function buildCompanyWorkforceAggregateMetrics(directory: WorkforceMetric
 
   return {
     activeEmployees: structure.activeEmployees,
-    employeeHealthRate: totalEmployees
-      ? activeEmployees / totalEmployees
-      : 1,
+    // No employees read means no health to report. 1 here would have said "every employee is
+    // fine" about a population nobody counted.
+    employeeHealthRate: totalEmployees ? activeEmployees / totalEmployees : null,
     employeesWithoutManagers: employees.filter((employee) => !employee.managerHrId).length,
     openVacancies: structure.openVacancies,
     totalEmployees,
@@ -408,9 +448,9 @@ async function getSalesMetrics(accessContext: AccessContext): Promise<PlatformMe
   const sales = await getSalesPlatformMetrics(accessContext);
 
   return {
-    achievementRate: numberValue(sales.achievementRate),
+    achievementRate: rateValue(sales.achievementRate),
     activeProducts: numberValue(sales.activeProducts),
-    dataQualityRate: numberValue(sales.dataQualityRate),
+    dataQualityRate: rateValue(sales.dataQualityRate),
     salesValue: numberValue(sales.salesValue),
     targetValue: numberValue(sales.targetValue),
   };
@@ -445,7 +485,7 @@ async function getRecruitmentMetrics(accessContext: AccessContext): Promise<Plat
   });
 
   return {
-    hiringDocumentReadinessRate: numberValue(recruitment.hiringDocuments.readinessRate),
+    hiringDocumentReadinessRate: rateValue(recruitment.hiringDocuments.readinessRate),
     hiringDocumentsDue: recruitment.hiringDocuments.dueDocuments,
     hiringDocumentsMissing: recruitment.hiringDocuments.missingDocuments,
     hiringDocumentsPending: recruitment.hiringDocuments.pendingDocuments,

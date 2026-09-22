@@ -4,7 +4,7 @@ import { payrollExpensePeriodKey } from "@/lib/outstation/expense-metrics";
 import { getSalesDashboard } from "@/lib/sales/service";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getOperationalRecentActivity } from "@/lib/operations/events";
-import { getPlatformMetrics } from "@/lib/platform/metrics";
+import { getPlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import {
   canAccess,
   filterEmployeeDirectoryForAccess,
@@ -16,9 +16,9 @@ export type OverviewDashboardData = {
     activeMappings: number;
     activePolicies: number;
     currentMonthWorkingDays: number;
-    mappingReadinessRate: number;
+    mappingReadinessRate: UncomputedRate;
     missingDeviceMappings: number;
-    policyCoverageRate: number;
+    policyCoverageRate: UncomputedRate;
     totalDeviceMappings: number;
     totalPolicies: number;
   };
@@ -41,7 +41,7 @@ export type OverviewDashboardData = {
   };
   hr: {
     activeEmployees: number;
-    employeeHealthRate: number;
+    employeeHealthRate: UncomputedRate;
     employeesWithoutManagers: number;
     totalEmployees: number;
     uniqueAreas: number;
@@ -57,13 +57,13 @@ export type OverviewDashboardData = {
     gross: number;
     governmentDeductions: number;
     net: number;
-    readinessRate: number;
+    readinessRate: UncomputedRate;
     distribution: Array<{ name: string; value: number; color: string; percent: number }>;
   };
   sales: {
-    achievementRate: number;
+    achievementRate: UncomputedRate;
     activeProducts: number;
-    dataQualityRate: number;
+    dataQualityRate: UncomputedRate;
     salesValue: number;
     targetValue: number;
     trend: Array<{ period: string; sales: number; target: number }>;
