@@ -31,6 +31,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { CeoCommandCenterData, CeoAttentionTone, CeoWeeklyTrendPoint } from "@/lib/ceo/command-center";
 import { getCeoLandingDeferred, sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
 import { formatStartMinutes, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
+import type { UncomputedRate } from "@/lib/platform/metrics";
 import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import type { SfeImsContribution, SfeImsRow, SfeTargetPerformance } from "@/lib/sales/sfe-performance";
 
@@ -105,18 +106,19 @@ function HealthBreakdown({
 }: {
   includeEmployeeLinkage?: boolean;
   includeAttendanceReadiness?: boolean;
+  /** Any of these is `null` when it was never measured — a failed read, or no grant for it. */
   health: {
-    salesLinkageRate: number;
-    attendanceReadinessRate: number;
-    salesAchievementRate: number;
-    employeeHealthRate: number;
+    salesLinkageRate: UncomputedRate;
+    attendanceReadinessRate: UncomputedRate;
+    salesAchievementRate: UncomputedRate;
+    employeeHealthRate: UncomputedRate;
   };
 }) {
   // `note` names the WINDOW a rate covers, and only one of these four has one. Linkage, readiness
   // and employee linkage all score the state of the data as it stands right now; sales achievement
   // is cumulative from the engine's 2026-01 floor, and unlabelled on a page full of month-stamped
   // figures it read as the latest closing month.
-  const metrics: Array<{ label: string; value: number; target: number; color: string; note?: string }> = [
+  const metrics: Array<{ label: string; value: UncomputedRate; target: number; color: string; note?: string }> = [
     {
       label: "Sales achievement",
       value: health.salesAchievementRate,
@@ -138,17 +140,25 @@ function HealthBreakdown({
   return (
     <div className={`grid divide-x divide-slate-200 ${metrics.length >= 4 ? "sm:grid-cols-4" : metrics.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
       {metrics.map(({ label, value, target, color, note }) => {
-        const pctVal = Math.round(Math.min(1, (Number.isFinite(value) ? value : 0) / target) * 100);
-        const statusColor = pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
+        // An unmeasured rate is NOT a bad one. The old `Number.isFinite(value) ? value : 0` turned
+        // it into a red 0%, which on this panel is the loudest possible statement — four bars and
+        // one of them screaming about a section the viewer may simply hold no grant for. Grey it
+        // out, print "—", and leave the bar empty.
+        const measured = value !== null && Number.isFinite(value);
+        const pctVal = measured ? Math.round(Math.min(1, (value as number) / target) * 100) : null;
+        const statusColor =
+          pctVal === null ? "#94A3B8" : pctVal >= 80 ? "#10B981" : pctVal >= 60 ? "#F59E0B" : "#F43F5E";
         return (
           <div key={label} className="flex flex-col gap-3 px-5 py-5">
             <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
             <p className="text-3xl font-black tracking-tight" style={{ color: statusColor }}>
-              {pctVal}%
+              {pctVal === null ? "—" : `${pctVal}%`}
             </p>
             {note ? <p className="-mt-2 text-phx-3xs font-semibold uppercase tracking-[0.12em] text-slate-400">{note}</p> : null}
             <div className="h-1.5 w-full bg-slate-100">
-              <div className="h-full transition-all" style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }} />
+              {pctVal === null ? null : (
+                <div className="h-full transition-all" style={{ width: `${Math.max(2, pctVal)}%`, backgroundColor: color }} />
+              )}
             </div>
           </div>
         );

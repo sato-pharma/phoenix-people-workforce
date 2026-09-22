@@ -6,9 +6,79 @@ import {
   canReadCompanyRecruitmentAggregates,
   buildCompanyWorkforceAggregateMetrics,
   canReadCompanyWorkforceAggregates,
+  emptyPlatformMetrics,
 } from "../src/lib/platform/metrics.ts";
 
+/**
+ * A RATE THAT WAS NEVER MEASURED IS `null`, NEVER A NUMBER.
+ *
+ * `emptyPlatformMetrics()` is what every section returns when its read THREW or when the viewer
+ * holds no grant for it, and every one of these used to default to a clean `1` — a fabricated
+ * 100%, the single most dangerous substitute, because it is both the figure a manager acts on and
+ * the one he wants to see. The permission path is worse still: it appends nothing to
+ * `dataUnavailable`, so a section nobody was allowed to read reached the CEO's page as 100% with
+ * no notice anywhere on it.
+ *
+ * This reads the object rather than the source, so a `1` reintroduced anywhere in the chain fails
+ * here rather than passing a regex that happens to still match.
+ */
+function testUnmeasuredRatesAreNullNotAFabricatedHundredPercent() {
+  const empty = emptyPlatformMetrics();
+  const rates: Array<[string, unknown]> = [
+    ["attendance.mappingReadinessRate", empty.attendance.mappingReadinessRate],
+    ["attendance.policyCoverageRate", empty.attendance.policyCoverageRate],
+    ["communication.templateReadinessRate", empty.communication.templateReadinessRate],
+    ["payroll.readinessRate", empty.payroll.readinessRate],
+    ["recruitment.hiringDocumentReadinessRate", empty.recruitment.hiringDocumentReadinessRate],
+    ["sales.achievementRate", empty.sales.achievementRate],
+    ["sales.dataQualityRate", empty.sales.dataQualityRate],
+    ["workforce.employeeHealthRate", empty.workforce.employeeHealthRate],
+  ];
+  for (const [name, value] of rates) {
+    assert.equal(
+      value,
+      null,
+      `an unmeasured rate must be null, never a number — emptyPlatformMetrics().${name} is ${String(value)}, which every surface renders as a real percentage nobody computed`,
+    );
+  }
+
+  // Counts are the opposite case and must STAY 0: a zero count invites a look, where a null would
+  // have to be threaded through every tile that adds two of them together.
+  assert.equal(empty.workforce.totalEmployees, 0, "unmeasured COUNTS stay 0 — only rates go null");
+  assert.equal(empty.payroll.net, 0, "unmeasured COUNTS stay 0 — only rates go null");
+
+  // The rendering half. `pct()` on the CEO command centre is the one formatter these reach, and it
+  // has to take the null rather than a number, or the type system permits the old default again.
+  const ceoComponentSource = readFileSync("src/components/admin/ceo-command-center.tsx", "utf8");
+  assert.match(
+    ceoComponentSource,
+    /function pct\(value: UncomputedRate\)/,
+    "pct() must accept an uncomputed rate so an unmeasured one can print — instead of being spelled as a number",
+  );
+  assert.match(
+    ceoComponentSource,
+    /if \(value === null \|\| !Number\.isFinite\(value\)\) return "—";/,
+    'pct() must return "—" for a rate that was never computed',
+  );
+
+  // And the one place that AGGREGATES them: averaging an unmeasured section as 0 would mark the
+  // CEO's headline score down for a permission he does not hold.
+  const ceoSource = readFileSync("src/lib/ceo/command-center.ts", "utf8");
+  assert.match(
+    ceoSource,
+    /\.filter\(\(value\): value is number => value !== null\)/,
+    "the CEO health score must average only the rates that were actually measured",
+  );
+  assert.doesNotMatch(
+    ceoSource,
+    /safeRate\(platformMetrics\?\.[a-zA-Z.]+ \?\? 0\)/,
+    "a missing platform metric must fall back to null, never to a real-looking 0",
+  );
+}
+
 export function runPlatformMetricsTests() {
+  testUnmeasuredRatesAreNullNotAFabricatedHundredPercent();
+
   assert.equal(
     canReadCompanyWorkforceAggregates({ role: "CEO", scope: "company", source: "session" }),
     true,

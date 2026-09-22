@@ -30,6 +30,7 @@ import type {
   CeoCommandCenterData,
 } from "@/lib/ceo/command-center";
 import { sosPeriodDisplayLabel } from "@/lib/ceo/command-center";
+import type { UncomputedRate } from "@/lib/platform/metrics";
 import { SALES_ACHIEVEMENT_WINDOW_LABEL } from "@/lib/sales/metrics";
 import { cn } from "@/lib/utils";
 
@@ -78,8 +79,15 @@ function n(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "-";
 }
 
-function pct(value: number) {
-  return `${Math.round(Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) * 100)}%`;
+/**
+ * A rate that was never computed prints "—", the same as every other unread figure on this page.
+ * `null` arrives here from `emptyPlatformMetrics()` — a failed read OR a section this viewer holds
+ * no grant for — and the old signature could not express that: it took `number`, so the absence of
+ * a measurement had to be spelled as one, and 100% was what it got spelled as.
+ */
+function pct(value: UncomputedRate) {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 // Exported so the personal workspace overview draws the SAME tile rather than a copy of its
@@ -487,16 +495,17 @@ export function CeoCommandCenter({
 
   const dataAvailable = visibleDataUnavailable.length === 0;
   /**
-   * A RATE is a claim about a denominator that was actually read.
+   * A COUNT is a claim about rows that were actually read.
    *
-   * When a source behind one does not answer, `emptyPlatformMetrics()` substitutes a literal —
-   * `achievementRate: 0` for sales, `employeeHealthRate: 1` for workforce — and both reach these
-   * tiles as fact. A failed workforce read renders "Employee health 100%" directly beside
-   * "0 active employees"; a failed sales read renders a flat "0%", which asserts the company sold
-   * nothing at all against its target. Neither figure exists. The amber notice above already names
-   * the source that went quiet; these two booleans stop the tiles from contradicting it.
+   * The RATES no longer need this: `emptyPlatformMetrics()` carries `null` for every one of them,
+   * so `pct()` prints "—" on its own. The counts still do, because 0 is a legitimate count and an
+   * unread section is indistinguishable from an empty one — "Vacancies 0" next to a dead
+   * organogram read is a claim nobody measured.
+   *
+   * These booleans also only see a source that THREW: `dataUnavailable` is appended from
+   * `metricOrDefault`'s catch alone, never from a permission refusal. That blind spot is exactly
+   * why the rates were moved onto `null` instead.
    */
-  const salesWasRead = !visibleDataUnavailable.some((source) => /sales/i.test(source));
   const workforceWasRead = !visibleDataUnavailable.some((source) =>
     /(workforce|employee directory|structure totals)/i.test(source),
   );
@@ -630,19 +639,19 @@ export function CeoCommandCenter({
           {isSfe ? <MetricTile
             icon={<Target className="h-3.5 w-3.5" />}
             label="Sales achievement"
-            value={salesWasRead ? pct(health.salesAchievementRate) : "—"}
+            value={pct(health.salesAchievementRate)}
             // The window has to be on the tile. This rate is cumulative from the engine's 2026-01
             // floor, and it sits two tiles from "Monthly sales", which is stamped with a single
             // closing month — so unlabelled it read as that month's achievement.
             sub={`Company sales vs target · ${SALES_ACHIEVEMENT_WINDOW_LABEL}`}
-            tone={salesWasRead && health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
+            tone={health.salesAchievementRate !== null && health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {!isSfe ? <MetricTile
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="Employee health"
-            value={workforceWasRead ? pct(health.employeeHealthRate) : "—"}
+            value={pct(health.employeeHealthRate)}
             sub="Active/total quality"
-            tone={workforceWasRead && health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
+            tone={health.employeeHealthRate !== null && health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
           {/* Lines/Areas from the employee directory are gated by canReadCompanyWorkforceAggregates
               (system scope, Super Admin, or CEO) and read a hard ZERO for everyone else — which is

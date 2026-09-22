@@ -13,7 +13,7 @@ import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
 import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
 import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
-import { countUnoccupiedWorkforceSeats, getPlatformMetrics } from "@/lib/platform/metrics";
+import { countUnoccupiedWorkforceSeats, getPlatformMetrics, type UncomputedRate } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -34,7 +34,7 @@ import { calculateWorkforceStructureSummary } from "@/lib/workforce/seat-lifecyc
 
 export type DataHealthMetrics = {
   attendanceMappingIssues: number;
-  attendanceReadinessRate: number;
+  attendanceReadinessRate: UncomputedRate;
   leaveApprovedRequests: number;
   leavePendingRequests: number;
   leaveRejectedRequests: number;
@@ -82,7 +82,7 @@ export type AdminCommandCenterData = {
     sales: {
       salesValue: number;
       targetValue: number;
-      achievementRate: number;
+      achievementRate: UncomputedRate;
       activeProducts: number;
     };
     expenses: {
@@ -108,9 +108,9 @@ export type AdminCommandCenterData = {
       activeMappings: number;
       activePolicies: number;
       currentMonthWorkingDays: number;
-      mappingReadinessRate: number;
+      mappingReadinessRate: UncomputedRate;
       missingDeviceMappings: number;
-      policyCoverageRate: number;
+      policyCoverageRate: UncomputedRate;
       totalDeviceMappings: number;
       totalPolicies: number;
     };
@@ -228,7 +228,9 @@ function buildDataHealth(
 
   return {
     attendanceMappingIssues: 0,
-    attendanceReadinessRate: 1,
+    // `null`, never 1. This builder reads no attendance data at all, and the old literal claimed a
+    // perfect fingerprint-mapping score off a query that was never run.
+    attendanceReadinessRate: null,
     leaveApprovedRequests: 0,
     leavePendingRequests: 0,
     leaveRejectedRequests: 0,
@@ -397,7 +399,7 @@ async function fetchScopedPayrollSummary(accessContext: AccessContext): Promise<
 }
 
 async function fetchSalesSummary(accessContext: AccessContext): Promise<AdminCommandCenterData["overview"]["sales"] & { error: string | null }> {
-  const empty = { achievementRate: 0, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 };
+  const empty = { achievementRate: null, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 };
 
   try {
     return { ...await getSalesPlatformMetrics(accessContext), error: null };
@@ -718,7 +720,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         unpaidDays: platformMetrics.leave.unpaidDays,
       },
       sales: {
-        achievementRate: showSalesModules ? platformMetrics.sales.achievementRate : 0,
+        achievementRate: showSalesModules ? platformMetrics.sales.achievementRate : null,
         activeProducts: showSalesModules ? platformMetrics.sales.activeProducts : 0,
         salesValue: showSalesModules ? platformMetrics.sales.salesValue : 0,
         targetValue: showSalesModules ? platformMetrics.sales.targetValue : 0,
@@ -767,7 +769,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         : Promise.resolve({ batch: null, batchLabel: "Self only", employees: 0, error: null, flags: 0, gross: 0, net: 0 }),
       showSalesModules
         ? fetchSalesSummary(accessContext)
-        : Promise.resolve({ achievementRate: 0, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 }),
+        : Promise.resolve({ achievementRate: null, activeProducts: 0, error: null, salesValue: 0, targetValue: 0 }),
       getEmployeeDirectory(),
       getDataHealthStats(),
       showFinancialModules
@@ -807,7 +809,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
   let sales: AdminCommandCenterData["overview"]["sales"] = {
     salesValue: 0,
     targetValue: 0,
-    achievementRate: 0,
+    achievementRate: null,
     activeProducts: 0,
   };
   if (salesResult.status === "fulfilled") {
@@ -882,13 +884,16 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     totalRequests: 0,
     unpaidDays: 0,
   };
+  // The UNMEASURED shape. Counts stay 0; both rates are `null`, because "0 of 0 mappings" is not
+  // 100% ready — it is a section nobody read, and a 1 here is the same fabricated all-clear that
+  // `emptyPlatformMetrics()` used to hand out.
   const attendance: AdminCommandCenterData["overview"]["attendance"] = {
     activeMappings: 0,
     activePolicies: 0,
     currentMonthWorkingDays: 0,
-    mappingReadinessRate: 1,
+    mappingReadinessRate: null,
     missingDeviceMappings: 0,
-    policyCoverageRate: 1,
+    policyCoverageRate: null,
     totalDeviceMappings: 0,
     totalPolicies: 0,
   };
