@@ -4,6 +4,9 @@ import ExcelJS from "exceljs";
 // (`personal-expense-workload-dashboard`) as well as by API routes, and the identity module
 // reads the wordmark with node:fs, which fails a Turbopack client build outright.
 import { HOUSE_XLSX_COLORS, HOUSE_XLSX_FONT } from "@/lib/export/house-xlsx-palette";
+// Client-safe (no node:fs), so it is fine in this client-imported module — see the note above.
+// The owner reads every stamp in Cairo local, never raw UTC (house rule).
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 // Reusable, premium Phoenix-styled XLSX builder for any admin table.
 // Visual language matches the on-screen admin rules: black header band (sidebar
@@ -172,7 +175,7 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
   // Row 2 — subtitle
   sheet.mergeCells(2, 1, 2, colCount);
   const subCell = sheet.getCell(2, 1);
-  subCell.value = input.subtitle ?? `Phoenix Workforce · exported ${new Date().toLocaleString("en-GB")}`;
+  subCell.value = input.subtitle ?? `Phoenix Workforce · exported ${cairoDateTimeSortable(new Date().toISOString())} Cairo`;
   subCell.font = { name: theme.font, size: 10, italic: theme.band !== null, color: { argb: theme.subtitleColour } };
   subCell.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
   if (theme.band) subCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: theme.band } };
@@ -306,7 +309,7 @@ async function buildOutstationExpenseWorkbook(
   workbook: ExcelJS.Workbook,
   input: BuildTableWorkbookInput,
 ) {
-  const generatedAt = new Date().toLocaleString("en-GB");
+  const generatedAt = `${cairoDateTimeSortable(new Date().toISOString())} Cairo`;
   const total = sumRows(input.rows, "total");
   const travel = sumRows(input.rows, "travelCost");
   const meeting = sumRows(input.rows, "meetingAmount");

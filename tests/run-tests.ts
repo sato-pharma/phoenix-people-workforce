@@ -7,6 +7,7 @@ import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated-stamp-cairo.test.ts";
+import { runExportEmailGeneratedStampCairoTests } from "./export-email-generated-stamp-cairo.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
@@ -4938,6 +4939,11 @@ await runTest(
 await runTest(
   "sales export Generated stamp is Cairo, not UTC (the weekly export, weekly summarized report, SoS BI dashboard export and SoS email-report all stamp the workbook 'Generated' time in Cairo wall-clock via cairoDateTimeSortable, matching the CRM master exports)",
   runSalesExportGeneratedStampCairoTests,
+);
+
+await runTest(
+  "export/email Generated stamps are Cairo, not UTC (the shared table-workbook helper, Activity export, outstation expense-command/approval/expenses exports, master-data workbook and the account-setup/password-reset email all zone their timestamps to Cairo — cairoDateTimeSortable for the free-text stamps, an explicit Africa/Cairo zone for the data-value cells)",
+  runExportEmailGeneratedStampCairoTests,
 );
 
 await runTest(
