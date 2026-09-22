@@ -20,7 +20,7 @@
  * returned, since the rep could no longer act on a return; a late approval still records.
  */
 
-import { ApiError, conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
   editablePlanDays,
   fieldWeekDays,
@@ -57,7 +57,7 @@ import {
   type PhoenixCrmViewer,
 } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, chunk, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { loadMonthVisitCounts, loadReadiness, loadReference, loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomers, loadMonthVisitCounts, loadReadiness, loadReference, loadTerritoryCustomers, mapTimings } from "@/lib/phoenix-crm/server/list";
 import { notifyPhoenixCrm } from "@/lib/phoenix-crm/server/notifications";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
@@ -147,9 +147,16 @@ async function loadPlanItemRows(planIds: ReadonlyArray<string>, columns: string)
   return rows;
 }
 
-/** A planned customer who has left the list since, or whose planned place was removed. */
+/**
+ * A planned customer who has left the list since, or whose planned place was removed. A customer who
+ * is not validated yet is NOT stale — he is planned on purpose, and stale blocks submitting.
+ */
 function isStaleItem(row: Row): boolean {
-  return record(row.customer).status !== "active" || record(row.place).status !== "active";
+  const status = record(row.customer).status;
+  if (status !== "active" && status !== "pending") return true;
+  // He has no place, so there is no place to have been removed.
+  if (row.place === null || row.place === undefined) return false;
+  return record(row.place).status !== "active";
 }
 
 type TerritoryReadiness = { ready: boolean; total: number; open: number; dropPending: number };
@@ -166,23 +173,14 @@ async function territoryReadiness(seatId: string, isTest: boolean, markReady: bo
   return { ready: entry.ready, total: entry.total, open: entry.open, dropPending: entry.dropPending };
 }
 
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
-function listNotReadyMessage(readiness: TerritoryReadiness): string {
-  const parts: string[] = [];
-  if (readiness.open > 0) parts.push(`${plural(readiness.open, "customer", "customers")} to validate`);
-  if (readiness.dropPending > 0) parts.push(`${plural(readiness.dropPending, "drop", "drops")} waiting for your manager`);
-  const left = parts.length > 0 ? `: ${parts.join(" and ")}` : "";
-  return `The weekly plan opens when every customer on your reference list is validated or dropped${left}.`;
-}
-
 // ── The planner ─────────────────────────────────────────────────────────────────────────────────
 
 export type PlanItemView = {
   customerId: string;
-  placeId: string;
+  /** Null for a customer who is not validated yet: he is planned without a place. */
+  placeId: string | null;
+  /** Carried over from iReports360 and not validated yet. Plannable, visitable, counted in nothing. */
+  pending: boolean;
   name: string;
   listType: PhoenixCrmListType;
   grade: PhoenixCrmGrade | null;
@@ -224,6 +222,8 @@ export type PlannerView = {
   weekStart: string;
   weeks: Array<{ weekStart: string; status: PhoenixCrmPlanStatus | null; statusLabel: string }>;
   readiness: TerritoryReadiness;
+  /** Customers carried over from iReports360 and not validated yet. Information, never a refusal. */
+  pendingCount: number;
   rules: Pick<PhoenixCrmSettings, "pmDailyCap" | "amDailyCap" | "farApartKm" | "gradeTargets">;
   plan: PlanSummary | null;
   days: PlanDayView[];
@@ -276,9 +276,11 @@ function buildDays(input: {
       counts[listType] += 1;
       const exceptionType = textOrNull(row.exception_type);
       const nearest = spread.nearestKmById[customerId];
+      const pending = customer.status === "pending";
       return {
         customerId,
-        placeId: String(row.place_id),
+        placeId: textOrNull(row.place_id),
+        pending,
         name: textOrNull(customer.name) ?? "Customer",
         listType,
         grade: parseGrade(customer.grade),
@@ -287,7 +289,8 @@ function buildDays(input: {
         brickName: textOrNull(place.brick_name),
         zone: textOrNull(place.zone),
         receives: row.receives === true,
-        windowsText: describeDayWindows(mapTimings(place.timings), date, ramadan),
+        // No place means nothing is known about when he receives — never "does not receive this day".
+        windowsText: row.place ? describeDayWindows(mapTimings(place.timings), date, ramadan) : "No days and hours yet",
         startMinute: numberOrNull(row.start_minute),
         exceptionType,
         exceptionLabel: exceptionLabel(exceptionType),
@@ -324,9 +327,10 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const weekStart = isFieldWeekStart(raw.weekStart) ? raw.weekStart : weeks[0];
   const weekList = weeks.includes(weekStart) ? weeks : [weekStart, ...weeks];
 
+  await ensureReferenceCustomers(seat, isTest);
   const [planRowsResult, { customers, placesByCustomer }, visitCounts, readiness] = await Promise.all([
     getSupabaseAdmin().from("phoenix_crm_plans").select(PLAN_COLUMNS).eq("seat_id", seat.seatId).eq("is_test", isTest).in("week_start", weekList),
-    loadTerritoryCustomers(seat.seatId, isTest, { activeOnly: true }),
+    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     territoryReadiness(seat.seatId, isTest, false),
   ]);
@@ -352,6 +356,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       grade: parseGrade(row.grade),
       speciality: textOrNull(row.speciality),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
+      pending: row.status === "pending",
       places: (placesByCustomer.get(customerId) ?? []).map((place) => ({
         placeId: place.placeId,
         label: place.label,
@@ -371,9 +376,10 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
   const status = plan?.status ?? null;
   let blockedReason: string | null = null;
   if (viewerIsRep) {
+    // Owner, 2026-09-22: nothing about the list ever stops a rep planning. Only the week itself and a
+    // territory with no line can, and neither is about the customers on it.
     if (!weekOpen) blockedReason = "This week has passed. Choose a week ahead to plan.";
     else if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so it cannot be planned.";
-    else if (!isTest && !readiness.ready) blockedReason = listNotReadyMessage(readiness);
   }
   const itemCount = itemRows.length;
   const staleOnOpenDays = days.some((day) => day.editable && day.items.some((item) => item.stale));
@@ -389,6 +395,7 @@ export async function loadPlanner(viewer: PhoenixCrmViewer, raw: { seatId: unkno
       return { weekStart: week, status: weekStatus, statusLabel: planStatusLabel(weekStatus) };
     }),
     readiness,
+    pendingCount: plannerCustomers.filter((row) => row.pending).length,
     rules: {
       pmDailyCap: settings.pmDailyCap,
       amDailyCap: settings.amDailyCap,
@@ -434,11 +441,9 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
   const editableDays = editablePlanDays(weekStart, today);
   if (editableDays.length === 0) throw conflictError("This week has passed. Reload the planner.");
 
-  if (!isTest) {
-    // Stamps the territory ready the first time its list is complete; it then stays ready.
-    const readiness = await territoryReadiness(seat.seatId, false, true);
-    if (!readiness.ready) throw new ApiError(409, "phoenix_crm_list_not_ready", listNotReadyMessage(readiness));
-  }
+  // Stamps the territory ready the first time its list is complete; it then stays ready. It is a
+  // progress mark for the manager's Team tab, and it has never refused a plan since 2026-09-22.
+  if (!isTest) await territoryReadiness(seat.seatId, false, true);
 
   const drafts = parsePlanItems(body.items);
   if (!drafts.ok) throw validationError(drafts.error);
@@ -447,7 +452,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
     throw conflictError("A day that has passed cannot be changed. Reload the planner.");
   }
 
-  const { customers, placesByCustomer } = await loadTerritoryCustomers(seat.seatId, isTest, { activeOnly: true });
+  const { customers, placesByCustomer } = await loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true });
   const ruleCustomers = new Map<string, PlanRuleCustomer>(
     customers.map((row) => {
       const customerId = String(row.id);
@@ -457,6 +462,7 @@ export async function savePlan(viewer: PhoenixCrmViewer, raw: unknown): Promise<
           customerId,
           name: String(row.name),
           listType: listTypeOf(row.list_type),
+          pending: row.status === "pending",
           places: (placesByCustomer.get(customerId) ?? []).map((place) => ({ placeId: place.placeId, timings: place.timings })),
         },
       ];

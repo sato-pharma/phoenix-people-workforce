@@ -3,12 +3,14 @@
 /**
  * Phoenix CRM — the List tab: a territory's customer list.
  *
- * Owner, 2026-09-16:
- *   - the territory's iReports360 list is shown as a reference only; a customer is real once the rep
- *     validates it at the clinic with a live photo, the location and at least one timing;
+ * Owner, 2026-09-16, amended 2026-09-22:
+ *   - the rep keeps his whole iReports360 list from day one. Every customer on it is a real customer,
+ *     PENDING until he validates it at the clinic with a live photo, the location and at least one
+ *     timing — once per customer, forever;
+ *   - a pending customer is planned and visited exactly like any other. Nothing about the list ever
+ *     stops the rep. He simply counts in no metric until he is validated, and the visits already saved
+ *     against him start counting the moment he is;
  *   - the list stays with the territory; accounts (AM) and doctors in their clinics (PM), no pharmacies;
- *   - the list is ready, and weekly plans start, when every reference customer is validated or has
- *     left the list with the district manager's approval;
  *   - a timetable shows who receives on each day, the way the rep's own sheet did.
  */
 
@@ -18,11 +20,22 @@ import { Plus, Search } from "lucide-react";
 
 import { useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
-import { customerMetaText, monthStanding, monthVisitsText, placeName, territoryLine } from "@/components/phoenix-crm/labels";
+import {
+  customerMetaText,
+  monthStanding,
+  monthVisitsText,
+  PENDING_PILL,
+  pendingVisitsText,
+  placeName,
+  referenceAddressText,
+  referenceLastVisitText,
+  territoryLine,
+} from "@/components/phoenix-crm/labels";
 import { CustomerScreen } from "@/components/phoenix-crm/list-customer";
 import {
   AddPlaceScreen,
   DropScreen,
+  EditDetailsScreen,
   EditPlaceScreen,
   GradeScreen,
   listUrl,
@@ -67,7 +80,7 @@ import {
   windowsForWeekday,
 } from "@/lib/phoenix-crm/timings";
 import { PHOENIX_CRM_LIST_LABEL, type PhoenixCrmListType, type PhoenixCrmSeason, type PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
-import type { ListCustomer, ListPlace, ListReferenceEntry, TerritoryListView } from "@/lib/phoenix-crm/view-types";
+import type { ListCustomer, ListPlace, TerritoryListView } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
 type ListSection = "validate" | "customers" | "timetable" | "requests" | "left";
@@ -189,6 +202,14 @@ export function ListTab({
     onStartVisit({ seatId, test, customerId: saved.customerId, customerName: saved.customerName, photo, validatedAtMs: saved.savedAtMs });
   }
 
+  /** Add a visit on a customer straight from his row, with no photo to carry: he takes one at the door. */
+  function visitCustomer(customer: ListCustomer) {
+    if (!onStartVisit) return;
+    setScreen({ name: "home" });
+    setNotice(null);
+    onStartVisit({ seatId, test, customerId: customer.customerId, customerName: customer.name, photo: null, validatedAtMs: Date.now() });
+  }
+
   const view = resource.data;
   let body: ReactNode;
 
@@ -219,6 +240,7 @@ export function ListTab({
             onBack={home}
             onNotice={showNotice}
             onOpen={(next) => go(next)}
+            onVisitCustomer={onStartVisit ? visitCustomer : undefined}
           />
         );
         break;
@@ -296,6 +318,19 @@ export function ListTab({
         );
         break;
       }
+      case "edit-details": {
+        const { customerId } = screen;
+        body = (
+          <EditDetailsScreen
+            {...base}
+            customerId={customerId}
+            key={`edit-details-${customerId}`}
+            onBack={() => openCustomer(customerId)}
+            onDone={(next) => customerChanged(customerId, next)}
+          />
+        );
+        break;
+      }
       case "drop": {
         const { contactCrmId, customerId } = screen;
         body = (
@@ -333,6 +368,7 @@ export function ListTab({
             onOpen={(next) => go(next)}
             onRequestChanged={(message) => showNotice({ tone: "info", title: message })}
             onRetry={resource.reload}
+            onVisitCustomer={onStartVisit ? visitCustomer : undefined}
             query={query}
             season={season}
             section={section}
@@ -367,6 +403,7 @@ function ListHome({
   onOpen,
   onRequestChanged,
   onRetry,
+  onVisitCustomer,
   query,
   season,
   section,
@@ -388,6 +425,8 @@ function ListHome({
   onOpen: (screen: ListScreen) => void;
   onRequestChanged: (message: string) => void;
   onRetry: () => void;
+  /** Add a visit on this customer. Absent where visits are not entered from this page. */
+  onVisitCustomer?: (customer: ListCustomer) => void;
   query: string;
   season: PhoenixCrmSeason | null;
   section: ListSection | null;
@@ -402,14 +441,16 @@ function ListHome({
   view: TerritoryListView;
   weekday: number | null;
 }) {
-  const toValidate = view.reference.filter((entry) => entry.state === "open" || entry.state === "drop_pending");
+  // A customer carried over from iReports360 is a real customer from day one, pending until the rep
+  // validates him at the clinic. He is planned and visited like anyone else; he counts in nothing yet.
+  const pending = view.customers.filter((customer) => customer.status === "pending");
   const active = view.customers.filter((customer) => customer.status === "active");
   const dropped = view.customers.filter((customer) => customer.status === "dropped");
   const waiting = view.requests.filter((request) => request.status === "pending");
-  const hasReference = view.reference.length > 0;
+  const hasReference = view.reference.length > 0 || pending.length > 0;
 
   const defaultSection: ListSection =
-    view.canEdit && hasReference && toValidate.length > 0 ? "validate" : view.canReview && waiting.length > 0 ? "requests" : "customers";
+    view.canEdit && pending.length > 0 ? "validate" : view.canReview && waiting.length > 0 ? "requests" : "customers";
   const current: ListSection = section === "validate" && !hasReference ? "customers" : (section ?? defaultSection);
 
   const needle = query.trim().toLowerCase();
@@ -417,7 +458,7 @@ function ListHome({
 
   const sectionOptions = [
     ...(hasReference
-      ? [{ value: "validate" as const, label: "To validate", note: toValidate.length > 0 ? `${countText(toValidate.length)} to go` : "All done" }]
+      ? [{ value: "validate" as const, label: "To validate", note: pending.length > 0 ? `${countText(pending.length)} to go` : "All done" }]
       : []),
     { value: "customers" as const, label: "Customers", note: pairText(countByType(active)) },
     { value: "timetable" as const, label: "Timetable", note: "Who receives when" },
@@ -448,7 +489,7 @@ function ListHome({
       ) : null}
       {error ? <CrmLoadError message={error} onRetry={onRetry} /> : null}
 
-      <ReadinessBlock toValidate={toValidate} view={view} />
+      <ReadinessBlock pending={pending} view={view} />
 
       <CrmBlock className="border-t border-slate-100" title="Which part of the list">
         <CrmChoice columns={3} label="Which part of the list" onChange={setSection} options={sectionOptions} value={current} />
@@ -489,12 +530,11 @@ function ListHome({
       ) : null}
 
       {current === "validate" ? (
-        <ToValidateSection
-          entries={toValidate
-            .filter((entry) => typeMatches(entry.listType) && matchesQuery(needle, [entry.name, entry.speciality, entry.address, entry.zone, entry.city]))
-            .sort(byTypeThenName)}
+        <PendingSection
+          customers={pending.filter((customer) => typeMatches(customer.listType) && customerMatches(needle, customer)).sort(byTypeThenName)}
           filtered={Boolean(needle) || typeFilter !== "all"}
           onOpen={onOpen}
+          onStartVisit={onVisitCustomer}
           view={view}
         />
       ) : null}
@@ -542,15 +582,19 @@ function customerMatches(needle: string, customer: ListCustomer): boolean {
   return matchesQuery(needle, [
     customer.name,
     customer.speciality,
+    // Before he is validated the only address he has is the one iReports360 holds.
+    customer.reference?.address ?? null,
+    customer.reference?.city ?? null,
+    customer.reference?.zone ?? null,
     ...customer.places.flatMap((place) => [place.label, place.address, place.zone, place.brickName]),
   ]);
 }
 
-function ReadinessBlock({ toValidate, view }: { toValidate: ReadonlyArray<ListReferenceEntry>; view: TerritoryListView }) {
+function ReadinessBlock({ pending, view }: { pending: ReadonlyArray<ListCustomer>; view: TerritoryListView }) {
   const { readiness } = view;
-  const toGo = readiness.open + readiness.dropPending;
+  const toGo = pending.length;
 
-  if (view.reference.length === 0) {
+  if (view.reference.length === 0 && pending.length === 0) {
     return (
       <CrmBlock>
         <CrmNote title="No iReports360 list for this territory" tone="info">
@@ -568,28 +612,21 @@ function ReadinessBlock({ toValidate, view }: { toValidate: ReadonlyArray<ListRe
       <CrmStatGrid>
         <CrmStat label="Reference list" note={pairText(reference)} value={countText(readiness.total)} />
         <CrmStat label="Validated" note={`of ${countText(readiness.total)}`} tone={readiness.validated > 0 ? "good" : "neutral"} value={countText(readiness.validated)} />
-        <CrmStat
-          label="To validate"
-          note={pairText(countByType(toValidate))}
-          tone={toGo > 0 ? "warn" : "good"}
-          value={countText(toGo)}
-        />
+        <CrmStat label="To validate" note={pairText(countByType(pending))} tone={toGo > 0 ? "warn" : "good"} value={countText(toGo)} />
         <CrmStat label="Drops waiting" note={`${plural(readiness.dropped, "customer", "customers")} dropped`} value={countText(readiness.dropPending)} />
       </CrmStatGrid>
 
       <div className="mt-3 grid gap-2">
-        {readiness.ready ? (
-          <CrmNote title="The list is ready" tone="good">
+        {toGo === 0 ? (
+          <CrmNote title="Every customer is validated" tone="good">
             {readiness.readyAt ? `Ready since ${cairoStamp(readiness.readyAt)}. ` : null}
-            Weekly plans can start. Customers who appear on the reference list later show under To validate.
+            Customers who appear on the iReports360 list later show under To validate, and can be planned and visited straight away.
           </CrmNote>
         ) : (
-          <CrmNote title="Weekly plans start when the list is ready" tone="warn">
+          <CrmNote title={`${countText(toGo)} not validated yet`} tone="info">
             {view.canEdit
-              ? "Validate each reference customer at the clinic, or ask to drop the ones who should not stay."
-              : "The rep validates each reference customer at the clinic, or asks to drop the ones who should not stay."}{" "}
-            {plural(toGo, "customer", "customers")} to go
-            {readiness.dropPending > 0 ? `, ${countText(readiness.dropPending)} of them waiting for a drop decision` : ""}.
+              ? "Plan them and visit them as normal — nothing here holds your week up. Validate each one at the clinic with a live photo, the location and its days and hours, and the visits you have already saved against it start counting."
+              : "The rep plans and visits them as normal. Each one starts counting once the rep validates it at the clinic."}
           </CrmNote>
         )}
         {view.referenceSource && !view.referenceSource.isCurrent ? (
@@ -602,70 +639,85 @@ function ReadinessBlock({ toValidate, view }: { toValidate: ReadonlyArray<ListRe
   );
 }
 
-function referenceAddress(entry: ListReferenceEntry): string | null {
-  const parts = [entry.address, entry.zone, entry.city].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(" · ") : null;
-}
-
-function lastVisitText(entry: ListReferenceEntry): string {
-  return entry.lastVisitedOn ? dayLabelWithYear(entry.lastVisitedOn) : "None recorded";
-}
-
-function ToValidateSection({
-  entries,
+/**
+ * The customers carried over from iReports360 that the rep has not validated yet.
+ *
+ * Owner, 2026-09-22: two buttons — Validate, and Add a visit. He plans them and visits them like
+ * anyone else; validating is what makes them, and the visits already saved against them, count.
+ */
+function PendingSection({
+  customers,
   filtered,
   onOpen,
+  onStartVisit,
   view,
 }: {
-  entries: ReadonlyArray<ListReferenceEntry>;
+  customers: ReadonlyArray<ListCustomer>;
   filtered: boolean;
   onOpen: (screen: ListScreen) => void;
+  onStartVisit?: (customer: ListCustomer) => void;
   view: TerritoryListView;
 }) {
-  if (entries.length === 0) {
+  if (customers.length === 0) {
     return (
       <div className="border-t border-slate-100">
         {filtered ? (
           <CrmEmpty message="Clear the search or show all customers." title="No customer to validate matches" />
         ) : (
-          <CrmEmpty message="Every reference customer is validated or has left the list." title="Every reference customer is done" />
+          <CrmEmpty message="Every customer carried over from iReports360 is validated or has left the list." title="Every customer is validated" />
         )}
       </div>
     );
   }
 
-  const actions = (entry: ListReferenceEntry) =>
-    view.canEdit ? (
-      <>
-        <CrmButton onClick={() => onOpen({ name: "validate", contactCrmId: entry.contactCrmId })} size="sm" variant="primary">
+  const actions = (customer: ListCustomer) => (
+    <>
+      {view.canEdit && customer.referenceContactCrmId !== null ? (
+        <CrmButton onClick={() => onOpen({ name: "validate", contactCrmId: customer.referenceContactCrmId as number })} size="sm" variant="primary">
           Validate
         </CrmButton>
-        {entry.state === "open" ? (
-          <CrmButton onClick={() => onOpen({ name: "drop", customerId: null, contactCrmId: entry.contactCrmId })} size="sm">
-            Ask to drop
-          </CrmButton>
-        ) : null}
-      </>
-    ) : null;
+      ) : null}
+      {view.canEdit && onStartVisit ? (
+        <CrmButton onClick={() => onStartVisit(customer)} size="sm">
+          Add a visit
+        </CrmButton>
+      ) : null}
+      <CrmButton onClick={() => onOpen({ name: "customer", customerId: customer.customerId })} size="sm">
+        Open
+      </CrmButton>
+    </>
+  );
+
+  const pills = (customer: ListCustomer) => (
+    <>
+      <CrmPill tone="orange">{PENDING_PILL}</CrmPill>
+      {customer.pendingDropRequestId ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
+    </>
+  );
 
   return (
     <div className="border-t border-slate-100">
       <CrmCardsOnPhone>
-        {entries.map((entry) => (
+        {customers.map((customer) => (
           <CrmCard
-            accent={entry.state === "drop_pending" ? "border-l-slate-300" : "border-l-amber-500"}
-            actions={actions(entry)}
-            key={entry.contactCrmId}
-            meta={customerMetaText(entry)}
-            status={entry.state === "drop_pending" ? <CrmPill tone="warn">Drop waiting</CrmPill> : null}
-            title={entry.name}
+            accent={customer.pendingDropRequestId ? "border-l-slate-300" : "border-l-amber-500"}
+            actions={actions(customer)}
+            key={customer.customerId}
+            meta={customerMetaText(customer)}
+            status={pills(customer)}
+            title={customer.name}
           >
-            <p className="break-words text-xs font-semibold leading-5 text-slate-600">{referenceAddress(entry) ?? "No address in iReports360"}</p>
-            <p className="break-words text-xs font-semibold leading-5 text-slate-500">Last visit in iReports360: {lastVisitText(entry)}</p>
+            <p className="break-words text-xs font-semibold leading-5 text-slate-600">
+              {referenceAddressText(customer.reference) ?? "No address in iReports360"}
+            </p>
+            <p className="break-words text-xs font-semibold leading-5 text-slate-500">
+              Last visit in iReports360: {referenceLastVisitText(customer.reference)}
+            </p>
+            <p className="break-words text-xs font-semibold leading-5 text-slate-500">{pendingVisitsText(customer.visitsThisMonth)}</p>
           </CrmCard>
         ))}
       </CrmCardsOnPhone>
-      <CrmTable columns={["34%", "30%", "14%", "22%"]}>
+      <CrmTable columns={["30%", "26%", "16%", "28%"]}>
         <thead>
           <tr>
             <th className={crmThClassName} scope="col">
@@ -675,7 +727,7 @@ function ToValidateSection({
               Address in iReports360
             </th>
             <th className={crmThClassName} scope="col">
-              Last visit
+              This month
             </th>
             <th className={crmThClassName} scope="col">
               <span className="sr-only">Actions</span>
@@ -683,21 +735,20 @@ function ToValidateSection({
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => (
-            <tr key={entry.contactCrmId}>
+          {customers.map((customer) => (
+            <tr key={customer.customerId}>
               <td className={crmTdClassName}>
-                <p className="font-black text-slate-950">{entry.name}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(entry)}</p>
-                {entry.state === "drop_pending" ? (
-                  <div className="mt-1">
-                    <CrmPill tone="warn">Drop waiting</CrmPill>
-                  </div>
-                ) : null}
+                <p className="font-black text-slate-950">{customer.name}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{customerMetaText(customer)}</p>
+                <div className="mt-1 flex flex-wrap gap-1">{pills(customer)}</div>
               </td>
-              <td className={crmTdClassName}>{referenceAddress(entry) ?? "—"}</td>
-              <td className={crmTdClassName}>{lastVisitText(entry)}</td>
+              <td className={crmTdClassName}>{referenceAddressText(customer.reference) ?? "—"}</td>
               <td className={crmTdClassName}>
-                <div className="flex flex-wrap gap-2">{actions(entry)}</div>
+                <p>{pendingVisitsText(customer.visitsThisMonth)}</p>
+                <p className="mt-1 text-xs text-slate-500">Last visit in iReports360: {referenceLastVisitText(customer.reference)}</p>
+              </td>
+              <td className={crmTdClassName}>
+                <div className="flex flex-wrap gap-2">{actions(customer)}</div>
               </td>
             </tr>
           ))}

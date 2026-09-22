@@ -24,7 +24,7 @@ import { describeDayWindows, isUuid } from "@/lib/phoenix-crm/plan-rules";
 import { managerChain, resolveVisitParticipants } from "@/lib/phoenix-crm/scope";
 import { readTestFlag, territoryForRead, territoryForVisit, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { callPhoenixCrm, numberOrNull, textOrNull, throwIfError } from "@/lib/phoenix-crm/server/db";
-import { loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
+import { ensureReferenceCustomers, loadMonthVisitCounts, loadTerritoryCustomers } from "@/lib/phoenix-crm/server/list";
 import { loadPeopleNames, nameOf, type PeopleNames } from "@/lib/phoenix-crm/server/people";
 import { photoSlotIssuedAt } from "@/lib/phoenix-crm/server/photos";
 import { lineProductFamilies } from "@/lib/phoenix-crm/server/products";
@@ -50,7 +50,7 @@ const KIND_LABEL: Record<PhoenixCrmVisitKind, string> = {
 export function visitLocationLabel(flag: VisitLocationFlag, distanceMeters: number | null, accuracyMeters: number | null): string {
   if (flag === "far") return `Far from the validated place (${formatDistance(distanceMeters)})`;
   if (flag === "weak_gps") return `Weak location signal (accuracy ${formatDistance(accuracyMeters)})`;
-  if (flag === "no_place") return "No validated place to compare with";
+  if (flag === "no_place") return "No place saved yet to compare with";
   return distanceMeters === null ? "At the validated place" : `At the validated place (${formatDistance(distanceMeters)})`;
 }
 
@@ -191,6 +191,11 @@ export type VisitCustomerOption = {
   visitedToday: boolean;
   visitsThisMonth: number;
   target: number | null;
+  /**
+   * Carried over from iReports360 and not validated yet: he has no place, the visit saves with no
+   * location to compare against, and it counts in nothing until he is validated.
+   */
+  pending: boolean;
 };
 
 export type VisitPerson = {
@@ -240,8 +245,9 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   const today = viewer.cairoToday;
   const chain = managerChain(viewer.org, seat.seatId);
 
+  await ensureReferenceCustomers(seat, isTest);
   const [{ customers, placesByCustomer }, visitCounts, planned, visitRows, products] = await Promise.all([
-    loadTerritoryCustomers(seat.seatId, isTest, { activeOnly: true }),
+    loadTerritoryCustomers(seat.seatId, isTest, { onListOnly: true }),
     loadMonthVisitCounts(seat.seatId, isTest, monthStartOf(today), today),
     plannedCustomerIds(seat.seatId, isTest, today),
     loadVisitRows(seat.seatId, isTest, today),
@@ -276,6 +282,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       visitedToday: visitedToday.has(customerId),
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: gradeTarget(settings, listType, grade),
+      pending: row.status === "pending",
     };
   });
   // Today's planned customers first, then the rest by name.
@@ -284,7 +291,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
   let blockedReason: string | null = null;
   if (!seat.lineCode) blockedReason = "This territory has no line in the organogram, so visits cannot be saved.";
   else if (products.length === 0) blockedReason = `No products are on file for ${seat.lineName ?? "this line"} yet, so a visit cannot record the products discussed.`;
-  else if (options.length === 0) blockedReason = "No validated customers yet. Validate customers on the List tab first.";
+  else if (options.length === 0) blockedReason = "No customers on your list yet. Add them on the List tab first.";
 
   return {
     territory: describeTerritory(viewer.org, seat, names),

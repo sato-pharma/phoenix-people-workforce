@@ -72,7 +72,11 @@ export type PendingVisit = {
   test: boolean;
   customerId: string;
   customerName: string;
-  photo: CapturedPhoto;
+  /**
+   * The photo the place was just validated with, which may stand for this visit. Null when the rep
+   * came straight from a customer's row — he takes the visit's own photo at the door.
+   */
+  photo: CapturedPhoto | null;
   /** The phone's Date.now() when the validation saved. */
   validatedAtMs: number;
 };
@@ -653,7 +657,7 @@ function AddVisit({
   const [products, setProducts] = useState<string[]>([]);
   const [comment, setComment] = useState("");
   const [photo, setPhoto] = useState<CapturedPhoto | null>(null);
-  const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff));
+  const [usePlacePhoto, setUsePlacePhoto] = useState(Boolean(handoff?.photo));
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   // The visit's id, made on the first press of Save and kept until the visit is saved, so a save sent
@@ -692,7 +696,7 @@ function AddVisit({
 
   const loaded = form;
   const customer = customerId ? loaded.customers.find((option) => option.customerId === customerId) ?? null : null;
-  const placePhoto = handoff && usePlacePhoto && customer && customer.customerId === handoff.customerId ? handoff.photo : null;
+  const placePhoto = handoff?.photo && usePlacePhoto && customer && customer.customerId === handoff.customerId ? handoff.photo : null;
   const who = participantsOf(loaded, kind, managerHrId, seniorHrId);
   const commentLength = comment.trim().length;
 
