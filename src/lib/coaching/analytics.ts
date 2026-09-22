@@ -63,6 +63,12 @@ function average(total: number, count: number) {
 export const completedReportStatuses = new Set(["submitted", "reviewed_by_employee", "locked"]);
 const coachingMonthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 
+/**
+ * The two zones that put a rep on the CEO's attention queue. One list, so the tile, the admin
+ * command centre and this module cannot drift apart on what "red" means.
+ */
+export const redPerformanceZones = new Set(["critical_red", "red_zone"]);
+
 export type CoachingReportAnalyticsSummary = {
   averageScore: number;
   bestScore: number;
@@ -71,8 +77,45 @@ export type CoachingReportAnalyticsSummary = {
   latestReport: CoachingReportSummaryRow | null;
   lowestScore: number;
   pendingAcknowledgmentCount: number;
+  /**
+   * PEOPLE currently in the red zone — reps whose MOST RECENT completed report is `red_zone` or
+   * `critical_red`. This is NOT `zoneCounts.red_zone + zoneCounts.critical_red`.
+   *
+   * `zoneCounts` counts REPORTS, and both command centres used to add its two red buckets up and
+   * label the result "Coaching red-zone reps". On production that read **35** against 45 reps who
+   * have ever been coached at all and 18 who have ever been red — arithmetically impossible as a
+   * headcount. The real figure is **7**. One rep coached red four times was four reps on the CEO's
+   * queue, and a rep who went red in 2024 and green ever since was still one of them.
+   *
+   * No recency window, by the owner's decision (2026-09-22, asked in writing with the numbers in
+   * front of him): a rep last coached red 421 days ago is still a rep nobody has coached back out
+   * of red, and hiding him would bury the worse problem. Do not add a cutoff here.
+   */
+  redZoneRepCount: number;
+  /** REPORTS by zone — the distribution the coaching dashboard and the Excel export draw. */
   zoneCounts: Record<string, number>;
 };
+
+/**
+ * Each rep's most recent completed report, keyed canonically on their HR id.
+ *
+ * Resolved by comparing `coachingDate` (then `createdAt` as the tiebreak) rather than trusting the
+ * caller's array order. `getCoachingReports` does order newest-first today, but "latest" is the
+ * whole meaning of this number — it must not silently become "whichever row the query returned
+ * first" the day a caller sorts for the screen.
+ */
+function latestCompletedReportByRep(completed: CoachingReportSummaryRow[]) {
+  const latest = new Map<string, CoachingReportSummaryRow>();
+  for (const report of completed) {
+    const key = canonicalHrIdKey(report.medicalRepHrId);
+    if (!key) continue;
+    const held = latest.get(key);
+    if (!held || `${report.coachingDate}|${report.createdAt}` > `${held.coachingDate}|${held.createdAt}`) {
+      latest.set(key, report);
+    }
+  }
+  return latest;
+}
 
 function averageValues(values: number[]) {
   if (values.length === 0) return 0;
@@ -279,6 +322,11 @@ export function buildCoachingReportAnalytics(
     return accumulator;
   }, {});
 
+  let redZoneRepCount = 0;
+  for (const report of latestCompletedReportByRep(completed).values()) {
+    if (report.performanceZone && redPerformanceZones.has(report.performanceZone)) redZoneRepCount += 1;
+  }
+
   return {
     averageScore: averageValues(scores),
     bestScore: scores.length ? Math.max(...scores) : 0,
@@ -287,6 +335,7 @@ export function buildCoachingReportAnalytics(
     latestReport: completed[0] ?? null,
     lowestScore: scores.length ? Math.min(...scores) : 0,
     pendingAcknowledgmentCount: completed.filter((report) => report.status === "submitted" && !report.acknowledged).length,
+    redZoneRepCount,
     zoneCounts,
   };
 }

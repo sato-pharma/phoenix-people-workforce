@@ -547,10 +547,10 @@ async function getCeoAdminSignals(
       : resolvedPlatformMetrics.lifecycleRisk.expiringContracts;
   const probationCounts =
     probationCountsR.status === "fulfilled" ? probationCountsR.value : { dueSoon: 0 };
-  const coachingRedZone =
-    coachingR.status === "fulfilled"
-      ? (coachingR.value.zoneCounts.critical_red ?? 0) + (coachingR.value.zoneCounts.red_zone ?? 0)
-      : 0;
+  // PEOPLE, not reports. `zoneCounts` is a distribution over REPORTS, and adding its two red
+  // buckets up under the label "Coaching red-zone reps" read 35 on production — against 45 reps
+  // who have ever been coached at all and 18 who have ever been red. The honest figure is 7.
+  const coachingRedZone = coachingR.status === "fulfilled" ? coachingR.value.redZoneRepCount : 0;
   const unresolvedSalaryFlags =
     flagsR.status === "fulfilled" ? flagsR.value.unresolvedCount : resolvedPlatformMetrics.payroll.flags;
   const hiresLast30d = recentHiresR.status === "fulfilled" ? recentHiresR.value : 0;

@@ -573,7 +573,9 @@ async function fetchExecutiveSignals(
     const analytics = buildCoachingReportAnalytics(coachingResult.value);
     if (analytics.coachingCount > 0) {
       coachingScore = analytics.averageScore;
-      coachingRedZone = (analytics.zoneCounts.critical_red ?? 0) + (analytics.zoneCounts.red_zone ?? 0);
+      // PEOPLE, not reports — `zoneCounts` is a distribution over REPORTS, and summing its two red
+      // buckets counted one rep coached red four times as four reps.
+      coachingRedZone = analytics.redZoneRepCount;
     } else {
       // No completed reports yet — show "Unavailable" rather than a misleading 0%.
       errors.push("Coaching data unavailable.");
