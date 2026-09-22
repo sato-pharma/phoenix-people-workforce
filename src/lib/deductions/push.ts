@@ -122,6 +122,38 @@ async function stampNotificationResult(
 }
 
 /**
+ * Map an error from `phx_push_deduction` to the operator-facing message.
+ *
+ * A 23505 (unique_violation) reaches here from two unrelated places that need
+ * OPPOSITE advice:
+ *   * the day-overlap trigger `deductions_publication_lines_guard_day_overlap`
+ *     RAISEs unique_violation with the clause "one employee-day may only be
+ *     deducted once" — a genuine business conflict: the employee-day is already
+ *     deducted on another active line, so the operator must withdraw or clear it;
+ *   * a real unique-INDEX collision — the active-line index
+ *     `deductions_publication_lines_active_candidate_idx` or the month's
+ *     publication index — which only happens when two pushes race. Postgres's
+ *     message there is "duplicate key value violates unique constraint …";
+ *     nothing was double-deducted, so the fix is simply to reload and retry.
+ * The old handler labelled BOTH as the day-overlap conflict, so a concurrent
+ * FIRST push of a month told the operator to "clear the duplicate" that does not
+ * exist. PostgREST surfaces the raised/duplicate-key TEXT (not a separate
+ * `constraint` field), so the day-overlap clause is what we key on.
+ */
+export function describePushConflict(
+  error: { code?: string | null; message?: string | null },
+  subject: string,
+): string {
+  if (error.code === "23505") {
+    if (/one employee-day may only be deducted once/i.test(error.message ?? "")) {
+      return `Conflict: ${subject} is already being deducted for one of these days under another category in this month. Withdraw or clear the duplicate first.`;
+    }
+    return `Conflict: another change to ${subject}'s deductions was saved a moment ago. Reload the month and push again — nothing was double-deducted.`;
+  }
+  return `Validation: could not push this deduction: ${error.message ?? "unknown error"}`;
+}
+
+/**
  * Push one candidate. Returns the mapped result, or throws a prefixed error
  * (Conflict:/Validation:/not found) that `jsonError` turns into the right status.
  */
@@ -144,16 +176,7 @@ async function pushOneCandidate(input: {
   });
 
   if (error) {
-    // 23505 = unique_violation. The re-push path withdraws the candidate's own
-    // active line first, so this is the day-overlap guard firing: another active
-    // line already deducts one of these days. Surface it as a conflict the way
-    // publishMonth surfaces its collisions.
-    if (error.code === "23505") {
-      throw new Error(
-        `Conflict: ${candidate.employeeName ?? candidate.employeeHrId} is already being deducted for one of these days under another category in this month. Withdraw or clear the duplicate first.`,
-      );
-    }
-    throw new Error(`Validation: could not push this deduction: ${error.message}`);
+    throw new Error(describePushConflict(error, candidate.employeeName ?? candidate.employeeHrId));
   }
 
   const row = (data ?? {}) as Record<string, unknown>;
