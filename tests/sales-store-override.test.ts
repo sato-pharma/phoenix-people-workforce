@@ -99,8 +99,8 @@ export async function runSalesStoreOverrideTests() {
 
   assert.equal(
     STORE_OVERRIDE_CUSTOMER_KEYS.size,
-    8,
-    "3 earlier rulings + 3 الفاتح Delta accounts + بدر keyed at both its distributors (الرساله فارم needs no key — it already matches «فارم»)",
+    9,
+    "3 earlier rulings + 3 الفاتح Delta accounts + بدر at both distributors + دار الطب-الفاتح-طنطا (الرساله فارم needs no key — it already matches «فارم»)",
   );
 
   const channelsByRepSource = readFileSync(
@@ -475,4 +475,20 @@ async function runBadrRulingTests(): Promise<void> {
   // ── the control: the city split itself is gated off before August, so no pre-August line moves ──
   assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 is before the city-split gate, so بدر's July lines cannot move");
   assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is on, which is why بدر restates");
+
+  // ── دار الطب-الفاتح-طنطا (RM|7010216, Gharbia): keyed as a store, but moves 0.00 — its only row is a
+  //    July return, before the gate. The key just governs how it is treated the first time it sells. ──
+  assert.ok(isStoreOverride("7010216", "RM"), "دار الطب-الفاتح-طنطا at RM is recognised");
+  assert.ok(isStoreOverride("0007010216", " rm "), "padding and casing do not defeat its key");
+  assert.ok(!isStoreOverride("7010216", "IS"), "its code is not a licence at another distributor");
+  assert.equal(
+    classifyCustomerChannel("دار الطب-الفاتح-طنطا", "7010216", "RM"),
+    "store",
+    "the override makes the keyword-less name a store",
+  );
+  assert.equal(
+    classifyCustomerChannel("دار الطب-الفاتح-طنطا", "7010216", "PS"),
+    "pharmacy",
+    "without a ruling at that distributor it keeps the keyword-less default — proof the name carries no store word",
+  );
 }

@@ -286,6 +286,13 @@ export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
   //   split gate and do not move. Code carries no leading zeros, so the keys are the code as written.
   "IS|386724",
   "IS-S|386724",
+  // ─── دار الطب-الفاتح-طنطا, Gharbia — owner ruling 2026-09-23 ────────────────────────────────────
+  // Code 7010216, distributor RM, in Tanta (D14 → Gharbia, so the split spreads across D14 + D15 like
+  // الفاتح above). The name carries no store word, so it defaults to pharmacy and needs the override.
+  // Its only sales record on file is a single -1 / -60.75 CNS return in July 2026 (D14), which is
+  // before the split gate — so it MOVES 0.00 today and the key only decides how the account is
+  // treated the first time it sells on a tracked line from August on.
+  "RM|7010216",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
