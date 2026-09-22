@@ -15,6 +15,7 @@ import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { resolveLockedModuleForPath } from "@/lib/navigation/module-catalog";
 import { PATH_HEADER } from "@/lib/navigation/shell-headers";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 type EmployeePortalServerShellProps = {
@@ -60,14 +61,19 @@ export async function EmployeePortalServerShell({
   // Whether the owner shared his interview calendar with this person. One small read of the shares
   // table, in the same round trip as the rest; it fails closed to "no row", never to an error.
   let sharedInterviewCalendar = false;
+  // Whether Phoenix CRM has anything open for this person today — the module's own gate, the same
+  // one the My Visits button asks, so the sidebar row and that button can never disagree. It fails
+  // closed and never throws, so a CRM outage costs the row, never the portal.
+  let phoenixCrm = false;
   // The saved nav-row arrangement used to be read here, in this same Promise.all. The portal has
   // no horizontal rows any more (owner rule, 2026-09-03 — see EmployeePortalChrome), so the read
   // went with them: it crossed the Atlantic to Frankfurt on every portal page render.
   try {
-    [data, hasDeviceMapping, sharedInterviewCalendar] = await Promise.all([
+    [data, hasDeviceMapping, sharedInterviewCalendar, phoenixCrm] = await Promise.all([
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
       access.hrId ? hasInterviewCalendarAccess(access).catch(() => false) : Promise.resolve(false),
+      access.hrId ? phoenixCrmEntryAvailable(access).catch(() => false) : Promise.resolve(false),
     ]);
   } catch (error) {
     logPortalFailure(
@@ -94,6 +100,7 @@ export async function EmployeePortalServerShell({
     data.employee.hrId,
     hasDeviceMapping,
     sharedInterviewCalendar,
+    phoenixCrm,
   );
 
   // The tab stays in the sidebar wearing a padlock — taking it away would say "this was removed",

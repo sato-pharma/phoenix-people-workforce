@@ -34,6 +34,7 @@ import { getEmployeePortalShellData } from "@/lib/employee-portal/service";
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
 import { hasInterviewCalendarAccess } from "@/lib/recruitment/interview-calendar";
 
 export const dynamic = "force-dynamic";
@@ -105,12 +106,15 @@ export default async function EmployeePortalProfilePage() {
     .map((part) => part.charAt(0))
     .join("")
     .toUpperCase();
-  const [hasDeviceMapping, sharedInterviewCalendar] = access.hrId
+  const [hasDeviceMapping, sharedInterviewCalendar, phoenixCrm] = access.hrId
     ? await Promise.all([
         employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
         hasInterviewCalendarAccess(access).catch(() => false),
+        // The same gate the portal shell asks, asked again because this page builds its own chrome.
+        // A flag left out here is a sidebar row that disappears the moment the rep opens his profile.
+        phoenixCrmEntryAvailable(access).catch(() => false),
       ])
-    : ([false, false] as [boolean, boolean]);
+    : ([false, false, false] as [boolean, boolean, boolean]);
   const navVisibility = resolveEmployeePortalNavVisibility(
     employee.roleLabel,
     access.role,
@@ -119,6 +123,7 @@ export default async function EmployeePortalProfilePage() {
     employee.hrId,
     hasDeviceMapping,
     sharedInterviewCalendar,
+    phoenixCrm,
   );
 
   const employmentRows: Array<{

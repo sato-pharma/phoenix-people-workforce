@@ -1876,6 +1876,12 @@ const employeePortalNavigationSectionSeeds = [
       // position while those rules were settled).
       { href: "/employee-portals/attendance/digests", icon: CalendarCheck, label: "Weekly Attendance", permissions: [{ resource: "attendance", action: "read" }] },
       { href: "/employee-portals/visits", icon: MapPinned, label: "My Visits", permissions: [{ resource: "crm_visits", action: "read" }] },
+      // Phoenix CRM's portal address, beside My Visits because that page held its only door until
+      // 2026-09-23. This catalog does not drive the sidebar — employee-portal-layout.tsx does — but
+      // it is what the Cmd/Ctrl+K palette searches and what names the browser tab, so the page is
+      // listed here as well. The real gate is inside the page (the phoenix_crm permission, a
+      // territory, and an open line); the coarse permission below only keeps the palette honest.
+      { href: "/employee-portals/field-crm", icon: ClipboardList, label: "Phoenix CRM", permissions: [{ resource: "phoenix_crm", action: "read" }] },
     ],
     label: "Leave Management",
   },
