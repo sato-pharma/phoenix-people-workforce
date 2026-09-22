@@ -346,6 +346,9 @@ function ExpenseSnippet({
           byRegion={data.byRegion}
           topSpenders={data.topSpenders}
           windowLabel={data.windowLabel}
+          // Both tables below are truncated (regions to 7, spenders to 5), so their Share column
+          // must divide by the window's WHOLE spend — the same figure this card shows above it.
+          totalAmount={data.totalAmount}
         />
       )}
     </div>
