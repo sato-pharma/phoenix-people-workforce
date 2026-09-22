@@ -281,6 +281,7 @@ Full account: `docs/agents-owner-rules.md` §4.1.
 - 🔴 **The badge must read the live evidence, not a frozen note** — EITHER half reaching `complete` clears it.
 - 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** Repair it with hand SQL, not code.
 - 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** Check the gate before wiring any `actionUrl`.
+- 🔴 **A WHOLESALER / MAKHZAN is NEVER shown as a candidate NOR validated as a venue — BOTH the direct-order and marketing flows** (owner, 2026-09-22, "never never never"). No makhzan flag exists; it is read from the monthly closing's NAME rule, reused via `src/lib/venues/wholesaler-venue-guard.ts` (imports the pure primitives of `customer-channel.ts`, never edits it). **Two tiers** (owner, "block certain, flag فارما"): `isCertainWholesalerVenue` HARD-BLOCKS the unmistakable warehouses (مخزن·جملة·trade phrase·QM·«م - »·named roster·code-keyed override) out of every picker AND write path; `suspectedWholesalerFlag` only FLAGS an ambiguous «X فارما / الشركة / الجمعيه / تريد» for the human, NEVER refuses. Pharmacy overrides (مخزن الطرشوبى) win first; the Super-Admin merge picker `listMarketingVenueMergeCandidates` is deliberately NOT filtered. Account: `docs/agents-owner-rules.md` §4.1. Pinned by `tests/wholesaler-venue-guard.test.ts`. `wholesaler-makhzan-never-shown-or-validated-as-a-venue`
 
 ## 5. Session, worktree, and parallel-work safety
 

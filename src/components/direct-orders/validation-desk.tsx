@@ -192,6 +192,16 @@ export function ValidationDesk({ rows }: Props) {
                     an absent or unreadable answer says so rather than staying quiet. Silence here
                     would be read as "nothing wrong", which is the one thing it must never mean. */}
                 <EvidenceReading check={row.evidenceCheck} claimedName={row.claimedPharmacyName} venueType={row.venueType} />
+                {/* Name-based wholesaler suspicion (owner rule, 2026-09-22). ADVISORY ONLY: a
+                    certain wholesaler never reaches this desk (the pickers drop it, the write path
+                    refuses it), so this only ever warns on the ambiguous فارما tier and never blocks
+                    a decision — a real retail pharmacy can be branded this way. */}
+                {row.suspectedWholesaler ? (
+                  <p className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800">
+                    {row.suspectedWholesalerNote ??
+                      "This name could be a wholesaler rather than a pharmacy — check the storefront photo and the licence before validating it."}
+                  </p>
+                ) : null}
                 {row.capturedLatitude != null ? (
                   <a
                     className="mt-1 block text-phx-xs font-bold text-orange-600 underline"

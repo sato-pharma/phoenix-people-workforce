@@ -11,6 +11,7 @@ import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { conflictError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { canonicalHrIdKey, resolveStoredHrId, type StoredHrIdDirectoryEntry } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { WHOLESALER_VENUE_REFUSED_MESSAGE, isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 
 import {
   assertCustomerPharmacyMappingAccess,
@@ -28,6 +29,7 @@ export type CustomerPharmacyLinkDecisionResult = {
 type LinkStatusRow = {
   active: boolean;
   id: string;
+  pharmacy_id: string | null;
   validation_notes: string | null;
   validation_status: CustomerPharmacyValidationStatus | null;
 };
@@ -73,12 +75,28 @@ export function composeValidationNotes(existingNotes: string | null, addition: s
 async function fetchLinkStatus(linkId: string): Promise<LinkStatusRow> {
   const { data, error } = await getSupabaseAdmin()
     .from("marketing_customer_pharmacies")
-    .select("id, validation_status, validation_notes, active")
+    .select("id, validation_status, validation_notes, active, pharmacy_id")
     .eq("id", linkId)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw notFoundError(`Customer pharmacy link ${linkId} was not found.`);
   return data as LinkStatusRow;
+}
+
+/**
+ * The venue name behind a link, for the wholesaler guard on approve. Read on its own rather than
+ * embedded in `fetchLinkStatus` to keep this module free of a foreign-table join and its FK-name
+ * assumptions. Returns null when the link carries no pharmacy id (never expected, but not an error).
+ */
+async function fetchLinkedPharmacyName(pharmacyId: string | null): Promise<string | null> {
+  if (!pharmacyId) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("marketing_pharmacies")
+    .select("display_name")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { display_name?: string | null } | null)?.display_name ?? null;
 }
 
 function requireLinkId(linkId: string): string {
@@ -147,6 +165,14 @@ export async function approveCustomerPharmacyLink(
     throw conflictError(
       `Only pending links can be approved. Current status: ${existing.validation_status ?? "unknown"}.`,
     );
+  }
+
+  // Owner rule 2026-09-22 ("never never never"): approving a link IS validating its venue, so a
+  // wholesaler / makhzan is refused here — the one place a person turns a pending link into
+  // `admin_approved`. Name-only (a marketing pharmacy code is a different code space from the SoS
+  // override codes); the two-tier detector still protects owner pharmacy-overrides by name.
+  if (isCertainWholesalerVenue(await fetchLinkedPharmacyName(existing.pharmacy_id))) {
+    throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE);
   }
 
   const actorHrId = await resolveActorStoredHrId(access);

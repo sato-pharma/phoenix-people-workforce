@@ -503,7 +503,15 @@ export function matchedNeverStoreKeywords(name: string | null | undefined): stri
   }).map((keyword) => keyword.label);
 }
 
-function matchesAnyName(
+/**
+ * The label of the first entry whose stem appears in this name (spaced OR squashed form), or null.
+ *
+ * Exported so a caller outside the closing — e.g. the venue wholesaler guard — reuses the closing's
+ * EXACT matching against a keyword list (STORE_OVERRIDE_NAMES, the pharmacy override lists) instead
+ * of re-implementing the spaced/squashed comparison and drifting from it. Pure; no behaviour change
+ * from when this was the private `matchesAnyName`.
+ */
+export function nameMatchesAnyKeyword(
   name: string | null | undefined,
   entries: readonly ChannelNameKeyword[],
 ): string | null {
@@ -605,9 +613,9 @@ export function isStoreCustomer(
   // does the same thing in reverse — both are the exact error the override lists exist to stop.
   if (isPharmacyOverride(clientCode)) return false;
   if (isStoreOverride(clientCode, distributorCode)) return true;
-  if (matchesAnyName(name, STORE_OVERRIDE_NAMES)) return true;
-  if (matchesAnyName(name, PHARMACY_OVERRIDE_NAMES)) return false;
-  if (matchesAnyName(name, PHARMACY_OVERRIDE_CHAINS)) return false;
+  if (nameMatchesAnyKeyword(name, STORE_OVERRIDE_NAMES)) return true;
+  if (nameMatchesAnyKeyword(name, PHARMACY_OVERRIDE_NAMES)) return false;
+  if (nameMatchesAnyKeyword(name, PHARMACY_OVERRIDE_CHAINS)) return false;
   if (matchedNeverStoreKeywords(name).length > 0) return false;
   if (isWholesaleOnlyDistributor(distributorCode)) return true;
   return matchedStoreKeywords(name).length > 0

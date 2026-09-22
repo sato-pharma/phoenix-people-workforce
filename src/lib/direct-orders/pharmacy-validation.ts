@@ -37,6 +37,12 @@ import {
   venueAdminRouteEvidenceGapMessage,
   venueIdentityGapMessage,
 } from "@/lib/venues/venue-validation-rule";
+import {
+  WHOLESALER_VENUE_REFUSED_MESSAGE,
+  isCertainWholesalerVenue,
+  suspectedWholesalerFlag,
+  suspectedWholesalerNote,
+} from "@/lib/venues/wholesaler-venue-guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pharmacy Validation (spec A2 — docs/specs/direct-orders-v2.md).
@@ -145,6 +151,14 @@ export type DirectOrderValidationRow = {
    * such. It is advisory only: nothing in the decide path consults it, and a test asserts that.
    */
   evidenceCheck: DirectOrderEvidenceCheck | null;
+  /**
+   * Name-based wholesaler suspicion (owner rule, 2026-09-22). A certain wholesaler never reaches the
+   * desk at all (the pickers drop it and the write paths refuse it); this is the AMBIGUOUS tier — a
+   * bare «X فارما»-style name that MIGHT be a warehouse. It is advisory only, exactly like
+   * `evidenceCheck`: the desk shows a warning, the human decides, nothing in the decide path reads it.
+   */
+  suspectedWholesaler: boolean;
+  suspectedWholesalerNote: string | null;
   /**
    * `field` = a live photo and a pin; `invoice` = a distributor invoice alone (owner, 2026-09-14).
    * Every row filed before the invoice route existed is `field`.
@@ -884,14 +898,19 @@ export async function suggestDirectOrderPharmacies(
     p_limit: Math.min(Math.max(input.limit ?? 5, 1), 20),
   });
   if (error) throw error;
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
-    distributorCode: String(row.distributor_code ?? ""),
-    customerCode: String(row.customer_code ?? ""),
-    customerName: String(row.customer_name ?? ""),
-    address: row.address ? String(row.address) : null,
-    areaCode: row.area_code ? String(row.area_code) : null,
-    score: Number(row.score ?? 0),
-  }));
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({
+      distributorCode: String(row.distributor_code ?? ""),
+      customerCode: String(row.customer_code ?? ""),
+      customerName: String(row.customer_name ?? ""),
+      address: row.address ? String(row.address) : null,
+      areaCode: row.area_code ? String(row.area_code) : null,
+      score: Number(row.score ?? 0),
+    }))
+    // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
+    // "did you mean" candidate — not to the rep before they claim a new pharmacy, nor to the Super
+    // Admin on the validation desk (both read this same call).
+    .filter((hit) => !isCertainWholesalerVenue(hit.customerName, hit.customerCode, hit.distributorCode));
 }
 
 type ValidationPharmacyRow = {
@@ -1034,6 +1053,10 @@ async function mapValidationRow(
     // Read straight through: the column is null whenever there is no answer, and null must stay
     // null all the way to the screen rather than becoming a default that reads like a pass.
     evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
+    // Name-based wholesaler suspicion (owner rule, 2026-09-22). Name-only: a certain wholesaler is
+    // already blocked upstream, so what a claim can still carry here is the ambiguous فارما tier.
+    suspectedWholesaler: suspectedWholesalerFlag(row.claimed_pharmacy_name as string | null),
+    suspectedWholesalerNote: suspectedWholesalerNote(row.claimed_pharmacy_name as string | null),
   };
 }
 
@@ -1440,6 +1463,16 @@ export async function decideDirectOrderPharmacyValidation(
     .maybeSingle();
   const venueType = normalizeVenueType((venueRow as { venue_type?: string | null } | null)?.venue_type);
 
+  // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never accepted as a
+  // venue. On `approve` the only identity is the rep's claimed name — there is no code to check — so
+  // a certain-wholesaler name is refused outright. (`match` is refused below on the master-database
+  // customer name it would attach to.) The two-tier detector protects owner pharmacy-overrides, so a
+  // real pharmacy named like a warehouse (مخزن الطرشوبى) is not caught here.
+  const claimedVenueName = String((row as { claimed_pharmacy_name?: string | null }).claimed_pharmacy_name ?? "").trim();
+  if (input.decision === "approve" && isCertainWholesalerVenue(claimedVenueName)) {
+    badRequest(WHOLESALER_VENUE_REFUSED_MESSAGE);
+  }
+
   // `match` IS THE FORGERY PATH FOR A VENUE WITH NO DISTRIBUTOR ACCOUNT, and it was the one door
   // left open. Matching inserts a real distributor/customer pair into
   // `direct_order_pharmacy_distributor_codes` for this venue — which is exactly the shape the whole
@@ -1498,12 +1531,21 @@ export async function decideDirectOrderPharmacyValidation(
     // simply relocate the phantom.
     const { data: mapRow } = await supabase
       .from("source_of_sales_customer_map")
-      .select("brick_id, area_code, region_code")
+      .select("customer_name, brick_id, area_code, region_code")
       .eq("active", true)
       .eq("distributor_code", distributorCode)
       .eq("customer_code", customerCode)
       .maybeSingle();
     if (!mapRow) badRequest("That customer is not in the master database.");
+
+    // Owner rule 2026-09-22 ("never never never"): matching would attach this venue to the master
+    // customer, so a wholesaler / makhzan customer is refused — a warehouse's sales belong to the
+    // distributor, not to a single venue. Checked with the code pair so a code-keyed owner ruling
+    // (pharmacy-override or store-override) is honoured.
+    const matchedCustomerName = String((mapRow as { customer_name?: string | null }).customer_name ?? "").trim();
+    if (isCertainWholesalerVenue(matchedCustomerName, customerCode, distributorCode)) {
+      badRequest(WHOLESALER_VENUE_REFUSED_MESSAGE);
+    }
 
     const geo = mapRow as Record<string, unknown>;
     const { error: linkError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({

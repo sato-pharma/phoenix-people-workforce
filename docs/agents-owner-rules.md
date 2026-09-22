@@ -862,6 +862,64 @@ running month "just to see".
   venue IS; it is about whether a distributor vouches for it.
   `venue-validation-rule-gps-photo-then-code-or-licence`
 
+- 🔴 **A WHOLESALER / MAKHZAN is NEVER shown as a candidate NOR validated as a venue, in BOTH the
+  direct-order and the marketing-request flows.** Owner rule, 2026-09-22, emphatic — *"never never
+  never"*, after he saw a distributor's own warehouse offered as a matchable venue. A makhzan is not
+  an end customer; validating one mis-credits its sales to a warehouse instead of the shop that sold
+  the medicine.
+
+  **There is no wholesaler flag anywhere in the data** — venue types are only `pharmacy` / `nursery`
+  (`src/lib/venues/venue-type.ts`) and no reference table carries a customer-type column. The monthly
+  closing already answers "is this customer a wholesaler" **by name**, in
+  `src/lib/sales/customer-channel.ts` (`isStoreCustomer`), and the guard reuses that module's exported
+  primitives so the two can never disagree and so every owner pharmacy-override (مخزن الطرشوبى is a
+  real pharmacy, عابدين فارما is a chain) applies to venues automatically. The guard lives in its own
+  venue-only module, `src/lib/venues/wholesaler-venue-guard.ts`, which **imports** those primitives and
+  **never edits `customer-channel.ts`**, so the closing's published numbers are left exactly as they
+  are. The one enabling change there was to export the existing private `matchesAnyName` as a pure
+  `nameMatchesAnyKeyword` — no behaviour change, and `tests/sales-customer-channel.test.ts` stays green.
+
+  **Two tiers**, owner decision the same day, asked in chat as multiple choice and answered *"block
+  certain, flag فارما"*:
+
+  - **HARD-BLOCK — `isCertainWholesalerVenue(name, code?, distributorCode?)`.** The unmistakable
+    warehouses: a name containing مخزن (makhzan) or جملة (wholesale), the medicines trade phrase
+    (لتجارة وتوزيع الأدوية…, via `matchesTradePhrase`), El Qema / QM (a wholesale-only distributor,
+    `isWholesaleOnlyDistributor`), the EPDA «م - » warehouse prefix (`matchedStorePrefixes`), the
+    owner's named-wholesaler roster (`STORE_OVERRIDE_NAMES`), or a code-keyed store ruling
+    (`isStoreOverride`). These are dropped from **every candidate picker** and **refused at every
+    validation write path** with one shared message. Pharmacy protectors win first, so a real pharmacy
+    named like a warehouse (مخزن الطرشوبى) is never blocked.
+  - **FLAG — `suspectedWholesalerFlag(name)` / `suspectedWholesalerNote(name)`.** The ambiguous store
+    words on their own — a bare «X فارما / Pharma», الشركة, الجمعيه, تريد. A field venue branded
+    "Pharma" is often a **real retail pharmacy**, and the owner's standing rule is that a false
+    positive must never *silently refuse* one. So these are **never** hard-blocked; the desk shows a
+    visible "suspected wholesaler" warning and the human decides. The system flags, it never
+    auto-rejects — the same discipline the AI evidence check already follows.
+
+  **Why مخزن and جملة live in the venue guard and not in `customer-channel.ts`.** The closing's rule is
+  calibrated on distributor customer files and is deliberately conservative: it excludes bare جملة
+  («ايه ام جروب الجمله» was ruled a pharmacy there) and treats the **plural** مخازن as a government
+  depot — a "never a store" word, a protector. This guard is about field-visited **venues**, a
+  different population, where a venue literally named «مخزن X» or «X جملة» is a warehouse. The singular
+  مخزن and جملة are added **above** the shared primitives, never inside them; the government plural
+  مخازن stays a protector, matched separately.
+
+  **Deliberate scope note — the Super-Admin duplicate-merge picker is NOT filtered.**
+  `listMarketingVenueMergeCandidates` (the tool that retires a duplicate marketing venue onto a
+  survivor) still lists wholesalers on purpose: hiding them there would remove the only way to retire
+  an existing wholesaler row, which contradicts flagging existing ones. Every *validation* picker and
+  write path is guarded; the merge/cleanup tool is not.
+
+  **Blast radius on production (measured read-only, `ozucdzovmcqvepbozvqf`, 2026-09-22).** Direct
+  orders: exactly **one** human-validated certain wholesaler — `مخزن نيو سيتي` (trusted + verified);
+  the owner unwinds it on its own screen (nothing auto-un-validates). Marketing: **zero**
+  human-validated wholesalers — four certain trade-phrase names and three suspected «X فارما»/الجمعيه
+  names all carry only `system_validated` links (no human looked), so the guard simply blocks the
+  certain ones going forward and flags the suspected ones. Pinned by
+  `tests/wholesaler-venue-guard.test.ts`, wired as its own `runTest` line in `tests/run-tests.ts`.
+  `wholesaler-makhzan-never-shown-or-validated-as-a-venue`
+
 - 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** Seeded rows
   carry no area and so appear nowhere at all. **Owner rule: the REGISTERED CODE beats live GPS.**
   `seeded-marketing-pharmacies-have-no-area-and-are-invisible`

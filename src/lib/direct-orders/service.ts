@@ -47,6 +47,7 @@ import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import { isCertainWholesalerVenue } from "@/lib/venues/wholesaler-venue-guard";
 import { resolveDirectOrderPharmacyValidationBadge } from "@/lib/direct-orders/pharmacy-validation-badge";
 import { isDirectOrderInvoiceContentType } from "@/lib/direct-orders/invoice-evidence";
 import {
@@ -3482,7 +3483,10 @@ export async function searchDistributorCustomers(
     .filter((option) => option.customerName.length > 0)
     // Belt and braces: the query is already scoped, but never return a row outside the caller's
     // areas even if the catalogue holds an area the scope resolver does not know about.
-    .filter((option) => unrestricted || !option.areaCode || allowedAreaCodes.has(option.areaCode.toUpperCase()));
+    .filter((option) => unrestricted || !option.areaCode || allowedAreaCodes.has(option.areaCode.toUpperCase()))
+    // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is a distributor's own
+    // warehouse, not an end customer — it is never offered as a matchable venue in this picker.
+    .filter((option) => !isCertainWholesalerVenue(option.customerName, option.customerCode, distributorCode));
 }
 
 /** One hit from the pharmacy combo box (spec B1/B2 — docs/specs/direct-orders-v2.md). */
@@ -3569,7 +3573,10 @@ export async function searchDirectOrderPharmacyDirectory(
         verificationStatus: row.verification_status ? String(row.verification_status) : null,
       };
     })
-    .filter((hit) => (hit.areaCode ? unrestricted || allowedAreaCodes.has(hit.areaCode.toUpperCase()) : unrestricted));
+    .filter((hit) => (hit.areaCode ? unrestricted || allowedAreaCodes.has(hit.areaCode.toUpperCase()) : unrestricted))
+    // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
+    // matchable venue in the submit-form combo box, on either the directory or the Phoenix side.
+    .filter((hit) => !isCertainWholesalerVenue(hit.customerName, hit.customerCode, hit.distributorCode));
 }
 
 export async function listDirectOrderDistributorOptions(): Promise<Array<{ distributorCode: string; distributorName: string }>> {

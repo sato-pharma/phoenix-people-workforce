@@ -209,6 +209,7 @@ status, give it its own line.
 ## 4.1 Marketing customer, venue and licence validation
 
 - **Venue validation is GPS + a live picture ALWAYS — and leg 3 (the registered code,…** — `venue-validation-rule-gps-photo-then-code-or-licence`
+- **A wholesaler / makhzan is NEVER shown as a candidate nor validated as a venue (both flows; two tiers).** — `wholesaler-makhzan-never-shown-or-validated-as-a-venue`
 - **Marketing pharmacies are TERRITORIAL, and a NULL area_id makes one invisible.** — `seeded-marketing-pharmacies-have-no-area-and-are-invisible`
 - **A licence verdict is PERMANENT and has no correction path.** — `a-licence-verdict-is-permanent-and-has-no-correction-path`
 - **system_validated means NO HUMAN LOOKED.** — `marketing-system-validated-means-no-human-looked`
