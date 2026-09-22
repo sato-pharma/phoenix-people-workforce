@@ -23,7 +23,15 @@ import { useState } from "react";
 
 import { crmGet, crmPost, crmUrl, errorCodeOf, messageOf } from "@/components/phoenix-crm/api";
 import { cairoStamp, dayLabelWithYear, plural } from "@/components/phoenix-crm/format";
-import { customerMetaText, listText, monthVisitsText, placeName, territoryLine } from "@/components/phoenix-crm/labels";
+import {
+  customerMetaText,
+  listText,
+  monthVisitsText,
+  placeName,
+  referenceAddressText,
+  referenceLastVisitText,
+  territoryLine,
+} from "@/components/phoenix-crm/labels";
 import { releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
@@ -112,6 +120,7 @@ export type ListScreen =
   | { name: "add-place"; customerId: string; draft: PlaceDraftState | null }
   | { name: "edit-place"; customerId: string; placeId: string }
   | { name: "grade"; customerId: string }
+  | { name: "edit-details"; customerId: string }
   | { name: "drop"; customerId: string | null; contactCrmId: number | null }
   | { name: "saved"; saved: SavedPlace; photo: CapturedPhoto };
 
@@ -445,7 +454,7 @@ export function ValidateScreen({
     }
   }
 
-  const referenceAddress = reference ? [reference.address, reference.zone, reference.city].filter((part): part is string => Boolean(part)).join(" · ") : "";
+  const referenceAddress = referenceAddressText(reference);
 
   return (
     <CrmPanel>
@@ -459,7 +468,7 @@ export function ValidateScreen({
           <CustomerHeading customer={reference}>
             <div className="mt-2">
               {referenceAddress ? <Detail label="Address in iReports360">{referenceAddress}</Detail> : null}
-              <Detail label="Last visit in iReports360">{reference.lastVisitedOn ? dayLabelWithYear(reference.lastVisitedOn) : "None recorded"}</Detail>
+              <Detail label="Last visit in iReports360">{referenceLastVisitText(reference)}</Detail>
             </div>
           </CustomerHeading>
           {reference.state === "drop_pending" ? (
@@ -467,8 +476,11 @@ export function ValidateScreen({
               You asked for this customer to leave the list. Validating withdraws that request.
             </CrmNote>
           ) : null}
+          {/* Owner, 2026-09-22: validating is the three captures and nothing else, once and for good. The
+              name and the grade are changed later, from the customer's own page, as their own actions. */}
           <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-            The address and grade are iReports360&apos;s, for reference. The live photo, the location and the days and hours make the customer real.
+            The name and grade are iReports360&apos;s for now — you can change them later from the customer&apos;s page. Your live photo, the
+            location and the days and hours become this customer&apos;s real record, and its visits start counting. You validate a customer once.
           </p>
         </CrmBlock>
       ) : null}
@@ -1008,6 +1020,149 @@ export function GradeScreen({
           </CrmBlock>
           <SaveBar busy={saving} label="Send the proposal" onCancel={onBack} onSave={() => void save()} problem={problem} />
         </>
+      )}
+    </CrmPanel>
+  );
+}
+
+/**
+ * The customer's name and speciality, corrected later.
+ *
+ * Owner, 2026-09-22: "later can change his name, can change his grade". Validating is the three captures
+ * and nothing else, so the name arrives from iReports360 as it was typed there — often a title, a
+ * short form or a misspelling. The grade is not here: it keeps its proposal flow, because it sets the
+ * number of visits this customer is owed, and therefore the rep's own target.
+ */
+export function EditDetailsScreen({
+  customerId,
+  onBack,
+  onDone,
+  refreshing,
+  reload,
+  seatId,
+  test,
+  view,
+}: ListScreenBase & {
+  customerId: string;
+  onBack: () => void;
+  onDone: (notice: ListNotice) => void;
+}) {
+  const customer = view.customers.find((entry) => entry.customerId === customerId) ?? null;
+  const [name, setName] = useState(customer?.name ?? "");
+  const [speciality, setSpeciality] = useState(customer?.speciality ?? "");
+  const [sameName, setSameName] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const gone = !view.canEdit ? EDIT_ONLY : !customer ? NOT_ON_LIST : customer.status === "dropped" ? "This customer left the list." : null;
+  if (!customer || gone) {
+    return <ListGone backLabel="Customer" message={gone ?? NOT_ON_LIST} onBack={onBack} refreshing={refreshing} title="Change the details" />;
+  }
+
+  const cleanName = normalizedName(name);
+  const cleanSpeciality = normalizedName(speciality);
+  const unchanged = cleanName === customer.name && cleanSpeciality === (customer.speciality ?? "");
+
+  async function save(allowSameName: boolean) {
+    if (saving || !customer) return;
+    if (cleanName.length < 3) {
+      setProblem("Write the customer's full name.");
+      return;
+    }
+    if (unchanged) {
+      setProblem("Change the name or the speciality first.");
+      return;
+    }
+    setSaving(true);
+    setProblem(null);
+    setSameName(false);
+    try {
+      await crmPost<unknown>(
+        "/api/phoenix-crm/list/rename",
+        { seatId, test, customerId: customer.customerId, name: cleanName, speciality: cleanSpeciality || null, allowSameName },
+        "result",
+      );
+      onDone({ tone: "good", title: `Details changed: ${cleanName}` });
+    } catch (error) {
+      const code = errorCodeOf(error);
+      if (code === "phoenix_crm_same_name") {
+        setSameName(true);
+        setSaving(false);
+        return;
+      }
+      if (code && REQUEST_RELOAD.has(code)) reload();
+      setProblem(messageOf(error));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <CrmPanel>
+      <CrmBackBar backLabel="Customer" onBack={onBack} title="Change the details" />
+      <CrmBlock>
+        <CustomerHeading customer={customer}>
+          <Detail label="On the list from">{customer.origin === "reference" ? "The iReports360 list" : "Added in Phoenix"}</Detail>
+        </CustomerHeading>
+      </CrmBlock>
+      <CrmBlock className="border-t border-slate-100" title="Name and speciality">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <CrmField className="sm:col-span-2" hint="As written on the sign." htmlFor="phoenix-crm-details-name" label="Full name">
+            <input
+              autoComplete="off"
+              className={crmInputClassName}
+              disabled={saving}
+              id="phoenix-crm-details-name"
+              maxLength={CUSTOMER_NAME_MAX}
+              onChange={(event) => {
+                setName(event.target.value);
+                setSameName(false);
+                setProblem(null);
+              }}
+              value={name}
+            />
+          </CrmField>
+          <CrmField className="sm:col-span-2" hint="Optional. Pick one from the list or write it." htmlFor="phoenix-crm-details-speciality" label="Speciality">
+            <input
+              autoComplete="off"
+              className={crmInputClassName}
+              disabled={saving}
+              id="phoenix-crm-details-speciality"
+              list="phoenix-crm-details-specialities"
+              maxLength={SPECIALITY_TEXT_MAX}
+              onChange={(event) => {
+                setSpeciality(event.target.value);
+                setProblem(null);
+              }}
+              value={speciality}
+            />
+            <datalist id="phoenix-crm-details-specialities">
+              {knownSpecialities(view).map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+          </CrmField>
+        </div>
+        <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
+          The grade is not changed here. Propose it from the customer&apos;s page. {deciderText(view)}
+        </p>
+      </CrmBlock>
+      {sameName ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote title="A customer with this name is already on the list" tone="warn">
+            Two customers called {cleanName} are hard to tell apart on a plan. Check the list first; save it anyway only if they really are two
+            different customers.
+          </CrmNote>
+          <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+            <CrmButton busy={saving} onClick={() => void save(true)} variant="primary">
+              Save it anyway
+            </CrmButton>
+            <CrmButton disabled={saving} onClick={() => setSameName(false)}>
+              Change the name
+            </CrmButton>
+          </div>
+        </CrmBlock>
+      ) : (
+        <SaveBar busy={saving} label="Save the details" onCancel={onBack} onSave={() => void save(false)} problem={problem} />
       )}
     </CrmPanel>
   );

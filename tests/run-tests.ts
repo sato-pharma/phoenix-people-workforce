@@ -1496,6 +1496,7 @@ import { runPhoenixCrmCalendarTests } from "./phoenix-crm-calendar.test.ts";
 import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
+import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -4934,6 +4935,11 @@ await runTest(
 await runTest(
   "Phoenix CRM edges (the phoenix_crm grants per role; every route asserts its listed action before reading anything, and every POST checks the origin first; the registry and the screens agree with the routes; nothing reaches the pilot or iReports360's tables; the phone's code imports no server code; the migration is service-role only, writes its own tables only, keeps the photo bucket private and never uses current_date)",
   runPhoenixCrmBoundaryTests,
+);
+
+await runTest(
+  "Phoenix CRM's carried-over customers (owner, 2026-09-22: a customer not validated yet is planned and visited like anyone else, with no place and no days and hours; his visits count in NOTHING — coverage, plan against actual and the manager's report all filter on the customer being validated, on both sides; validating makes the visits already saved against him count, with no backfill, and happens once; the name is corrected later, on its own; and the rep's list never refuses a plan again)",
+  runPhoenixCrmPendingCustomerTests,
 );
 
 await runTest(

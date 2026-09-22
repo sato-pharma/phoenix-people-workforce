@@ -27,7 +27,15 @@ import { ArrowLeft, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoStamp, countText, dayLabel, dayLabelLong, plural, weekLabel } from "@/components/phoenix-crm/format";
-import { customerMetaText, monthStanding, monthVisitsText, territoryLine } from "@/components/phoenix-crm/labels";
+import {
+  customerMetaText,
+  monthStanding,
+  monthVisitsText,
+  PENDING_PILL,
+  pendingListNote,
+  pendingVisitsText,
+  territoryLine,
+} from "@/components/phoenix-crm/labels";
 import {
   CrmBackBar,
   CrmBlock,
@@ -102,7 +110,6 @@ const PLAN_RELOAD_CODES = new Set([
   "phoenix_crm_conflict",
   "phoenix_crm_customer_not_on_list",
   "phoenix_crm_day_not_editable",
-  "phoenix_crm_list_not_ready",
   "phoenix_crm_not_editable",
   "phoenix_crm_place_changed",
   "phoenix_crm_plan_not_found",
@@ -193,13 +200,6 @@ function reviewerSentence(view: PlannerView): string {
   return "The manager above this territory reviews it.";
 }
 
-function readinessText(readiness: PlannerView["readiness"]): string {
-  const parts: string[] = [];
-  if (readiness.open > 0) parts.push(`${plural(readiness.open, "customer", "customers")} to validate`);
-  if (readiness.dropPending > 0) parts.push(`${plural(readiness.dropPending, "drop", "drops")} waiting for a decision`);
-  return parts.length > 0 ? parts.join(" and ") : "a few customers left to settle";
-}
-
 /** The saved items of the days the rep may still change, as a draft starts from them. */
 function savedDraftItems(view: PlannerView): PlanItemDraft[] {
   return view.days
@@ -247,20 +247,25 @@ function changeSummary(before: ReadonlyArray<PlanItemDraft>, after: ReadonlyArra
 
 type PlaceEntry = { customer: PlannerCustomer; place: PlannerPlace; position: number };
 
-type PlanIndex = { places: Map<string, PlaceEntry>; customerIds: Set<string> };
+type PlanIndex = { places: Map<string, PlaceEntry>; byCustomer: Map<string, PlannerCustomer>; customerIds: Set<string> };
 
 function indexCustomers(customers: ReadonlyArray<PlannerCustomer>): PlanIndex {
   const places = new Map<string, PlaceEntry>();
+  const byCustomer = new Map<string, PlannerCustomer>();
   for (const customer of customers) {
+    byCustomer.set(customer.customerId, customer);
     customer.places.forEach((place, position) => places.set(place.placeId, { customer, place, position }));
   }
-  return { places, customerIds: new Set(customers.map((customer) => customer.customerId)) };
+  return { places, byCustomer, customerIds: new Set(customers.map((customer) => customer.customerId)) };
 }
 
 /** One customer on a plan day, as a screen shows it. */
 type DayRow = {
   customerId: string;
-  placeId: string;
+  /** Null for a customer not validated yet: he is planned as he is, and validated at the door. */
+  placeId: string | null;
+  /** Carried over from iReports360 and not validated yet. */
+  pending: boolean;
   name: string;
   listType: PhoenixCrmListType;
   meta: string;
@@ -299,6 +304,7 @@ function liveRow(entry: PlaceEntry, item: PlanItemDraft, day: PlanDayView, rules
   return {
     customerId: customer.customerId,
     placeId: place.placeId,
+    pending: false,
     name: customer.name,
     listType: customer.listType,
     meta: customerMetaText(customer),
@@ -319,26 +325,64 @@ function liveRow(entry: PlaceEntry, item: PlanItemDraft, day: PlanDayView, rules
   };
 }
 
+/**
+ * A customer carried over from iReports360 and not validated yet. He has no place and no days and
+ * hours, so there is nothing to say about where or when — and no month standing, because his visits
+ * do not count yet.
+ */
+function pendingRow(customer: PlannerCustomer): DayRow {
+  return {
+    customerId: customer.customerId,
+    placeId: null,
+    pending: true,
+    name: customer.name,
+    listType: customer.listType,
+    meta: customerMetaText(customer),
+    where: "No place saved yet",
+    hours: "No days and hours yet",
+    receives: true,
+    noRamadanTime: false,
+    exceptionType: null,
+    exceptionNote: null,
+    gone: null,
+    standing: null,
+    visits: pendingVisitsText(customer.visitsThisMonth),
+    lat: null,
+    lon: null,
+    isolated: false,
+    nearestKm: null,
+    startMinute: null,
+  };
+}
+
 /** A saved item as the server answered it: a day that has passed, or a plan this viewer does not change. */
 function savedRow(item: PlanItemView, index: PlanIndex, rules: PlanRules): DayRow {
-  const entry = index.places.get(item.placeId);
+  const entry = item.placeId ? index.places.get(item.placeId) : undefined;
   const onList = entry !== undefined && entry.customer.customerId === item.customerId ? entry : null;
   const target = onList ? gradeTarget(rules, onList.customer.listType, onList.customer.grade) : null;
+  // A customer not validated yet is on the list with no place; his visits do not count yet, so there
+  // is no month standing to show and saying "not visited this month" would be a lie.
+  const listed = index.byCustomer.get(item.customerId) ?? null;
   return {
     customerId: item.customerId,
     placeId: item.placeId,
+    pending: item.pending,
     name: item.name,
     listType: item.listType,
     meta: customerMetaText(item),
-    where: placeLine({ label: item.placeLabel, zone: item.zone, brick: item.brickName }, onList?.position ?? null),
+    where: item.placeId ? placeLine({ label: item.placeLabel, zone: item.zone, brick: item.brickName }, onList?.position ?? null) : "No place saved yet",
     hours: item.windowsText,
     receives: item.receives,
     noRamadanTime: false,
     exceptionType: asExceptionType(item.exceptionType),
     exceptionNote: item.exceptionNote,
     gone: item.stale ? (index.customerIds.has(item.customerId) ? "place" : "customer") : null,
-    standing: onList ? monthStanding(onList.customer.visitsThisMonth, target) : null,
-    visits: onList ? monthVisitsText(onList.customer.visitsThisMonth, target) : null,
+    standing: item.pending || !onList ? null : monthStanding(onList.customer.visitsThisMonth, target),
+    visits: item.pending
+      ? pendingVisitsText(listed?.visitsThisMonth ?? 0)
+      : onList
+        ? monthVisitsText(onList.customer.visitsThisMonth, target)
+        : null,
     lat: null,
     lon: null,
     isolated: item.isolated,
@@ -348,7 +392,13 @@ function savedRow(item: PlanItemView, index: PlanIndex, rules: PlanRules): DayRo
 }
 
 function draftRow(item: PlanItemDraft, day: PlanDayView, index: PlanIndex, rules: PlanRules): DayRow {
-  const entry = index.places.get(item.placeId);
+  // No place means a customer carried over from iReports360 and not validated yet: he is on the list,
+  // he is planned, and there is nothing to look up.
+  if (item.placeId === null) {
+    const pendingCustomer = index.byCustomer.get(item.customerId);
+    if (pendingCustomer) return pendingRow(pendingCustomer);
+  }
+  const entry = item.placeId ? index.places.get(item.placeId) : undefined;
   if (entry && entry.customer.customerId === item.customerId) return liveRow(entry, item, day, rules);
   const gone = index.customerIds.has(item.customerId) ? "place" : "customer";
   const saved = day.items.find((candidate) => candidate.customerId === item.customerId && candidate.placeId === item.placeId);
@@ -356,6 +406,7 @@ function draftRow(item: PlanItemDraft, day: PlanDayView, index: PlanIndex, rules
   return {
     customerId: item.customerId,
     placeId: item.placeId,
+    pending: false,
     name: "A customer no longer on the list",
     listType: "PM",
     meta: "",
@@ -1179,21 +1230,22 @@ function WeekScreen({
         <CrmBlock className="border-t border-slate-100">
           <CrmNote tone="warn">
             <span className="block">{view.blockedReason}</span>
-            {!view.readiness.ready && onOpenList ? (
+          </CrmNote>
+        </CrmBlock>
+      ) : null}
+
+      {/* Owner, 2026-09-22: information, never a refusal — the week is planned whatever the list holds. */}
+      {view.pendingCount > 0 ? (
+        <CrmBlock className="border-t border-slate-100">
+          <CrmNote tone="info" title={`${countText(view.pendingCount)} not validated yet`}>
+            <span className="block">{pendingListNote(view.pendingCount)}</span>
+            {view.viewerIsRep && onOpenList ? (
               <span className="mt-2 block">
                 <CrmButton onClick={onOpenList} size="sm">
                   Open the list
                 </CrmButton>
               </span>
             ) : null}
-          </CrmNote>
-        </CrmBlock>
-      ) : null}
-
-      {!view.viewerIsRep && !view.isTest && !view.readiness.ready ? (
-        <CrmBlock className="border-t border-slate-100">
-          <CrmNote>
-            This territory&apos;s list is not ready yet: {readinessText(view.readiness)}. Weekly plans start once it is.
           </CrmNote>
         </CrmBlock>
       ) : null}
@@ -1739,6 +1791,7 @@ function PlannedRow({
       <div className="mt-2 flex max-w-full flex-wrap gap-1">
         {row.gone === "customer" ? <CrmPill tone="bad">Left the list</CrmPill> : null}
         {row.gone === "place" ? <CrmPill tone="bad">Place removed</CrmPill> : null}
+        {row.gone === null && row.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
         {row.gone === null && row.standing ? <CrmPill tone={row.standing.tone}>{row.standing.label}</CrmPill> : null}
         {row.gone === null && !row.receives && row.exceptionType ? <CrmPill tone="warn">{exceptionLabel(row.exceptionType)}</CrmPill> : null}
         {row.gone === null && !row.receives && !row.exceptionType ? <CrmPill tone={editing ? "bad" : "warn"}>No reason given</CrmPill> : null}
@@ -1839,7 +1892,11 @@ function AddCustomers({
   const searchId = `${idPrefix}-search-${day.date}`;
   const areaId = `${idPrefix}-area-${day.date}`;
   const placed = rows.filter((row) => row.gone === null).map((row) => ({ customerId: row.customerId, placeId: row.placeId }));
-  const eligible = view.customers.filter((customer) => day.listTypes.includes(customer.listType) && customer.places.length > 0);
+  // A customer not validated yet has no place, and is offered exactly like anyone else: the rep plans
+  // him and validates him at the door. Only a validated customer whose places are all gone drops out.
+  const eligible = view.customers.filter(
+    (customer) => day.listTypes.includes(customer.listType) && (customer.pending || customer.places.length > 0),
+  );
   const all = suggestForDay({ weekday, ramadan: day.ramadan, customers: eligible, placed, settings: view.rules }).filter(
     (suggestion) => !suggestion.alreadyOnDay,
   );
@@ -1918,7 +1975,7 @@ function AddCustomers({
 
       {eligible.length === 0 ? (
         <p className="mt-3 text-sm font-medium text-slate-500">
-          {morning ? "No validated account to place yet." : "No validated customer to place yet."} Customers validated on the List tab show here.
+          {morning ? "No account to place yet." : "No customer to place yet."} Customers on your List tab show here.
         </p>
       ) : all.length === 0 ? (
         <p className="mt-3 text-sm font-medium text-slate-500">Every customer who can go on this day is already on it.</p>
@@ -2067,11 +2124,13 @@ function SuggestionRow({
   const [note, setNote] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
 
-  const standing = monthStanding(suggestion.visitsThisMonth, suggestion.target);
-  const hours = suggestion.receives
-    ? suggestion.windows.map((window) => formatTimingWindow(window)).join(", ")
-    : `Does not receive on ${weekdayName}`;
-  const noteId = `${idPrefix}-add-note-${suggestion.customerId}-${suggestion.placeId}`;
+  const standing = suggestion.pending ? null : monthStanding(suggestion.visitsThisMonth, suggestion.target);
+  const hours = suggestion.pending
+    ? "No days and hours yet"
+    : suggestion.receives
+      ? suggestion.windows.map((window) => formatTimingWindow(window)).join(", ")
+      : `Does not receive on ${weekdayName}`;
+  const noteId = `${idPrefix}-add-note-${suggestion.customerId}-${suggestion.placeId ?? "pending"}`;
 
   function add() {
     if (suggestion.receives) {
@@ -2101,8 +2160,14 @@ function SuggestionRow({
           <p className="mt-0.5 break-words text-xs font-semibold leading-5 text-slate-500">{customerMetaText(suggestion)}</p>
           <p className="mt-1 break-words text-sm font-bold text-slate-800">{hours}</p>
           <p className="break-words text-xs font-semibold leading-5 text-slate-600">
-            {placeLine({ label: suggestion.placeLabel, zone: suggestion.zone, brick: suggestion.brick }, null)} ·{" "}
-            {monthVisitsText(suggestion.visitsThisMonth, suggestion.target)}
+            {suggestion.pending ? (
+              pendingVisitsText(suggestion.visitsThisMonth)
+            ) : (
+              <>
+                {placeLine({ label: suggestion.placeLabel, zone: suggestion.zone, brick: suggestion.brick }, null)} ·{" "}
+                {monthVisitsText(suggestion.visitsThisMonth, suggestion.target)}
+              </>
+            )}
           </p>
         </div>
         {asking ? null : (
@@ -2114,7 +2179,7 @@ function SuggestionRow({
       </div>
 
       <div className="mt-2 flex max-w-full flex-wrap gap-1">
-        <CrmPill tone={standing.tone}>{standing.label}</CrmPill>
+        {standing ? <CrmPill tone={standing.tone}>{standing.label}</CrmPill> : <CrmPill tone="orange">{PENDING_PILL}</CrmPill>}
         {suggestion.sameBrick ? <CrmPill tone="info">Same brick</CrmPill> : suggestion.sameZone ? <CrmPill tone="info">Same zone</CrmPill> : null}
         {hasPlaced && suggestion.receives ? (
           suggestion.fitsTime ? (

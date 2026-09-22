@@ -234,6 +234,7 @@ function planCustomers(): Map<string, PlanRuleCustomer> {
         customerId: DOCTOR,
         name: "Dr Mona Adel",
         listType: "PM",
+        pending: false,
         places: [{ placeId: DOCTOR_PLACE, timings: timings(timing(6, "18:00", "20:00"), timing(1, "17:00"), timing(0, "21:00", "", "ramadan")) }],
       },
     ],
@@ -243,6 +244,7 @@ function planCustomers(): Map<string, PlanRuleCustomer> {
         customerId: ACCOUNT,
         name: "Al Shorouk Hospital",
         listType: "AM",
+        pending: false,
         places: [{ placeId: ACCOUNT_PLACE, timings: timings(timing(6, "10:00"), timing(4, "09:00")) }],
       },
     ],
@@ -319,10 +321,13 @@ function runPlanRuleTests() {
 
   assert.equal(refusalOf(resolvePlan([item("2026-10-09", DOCTOR, DOCTOR_PLACE)])), "2026-10-09 is not a working day of this plan's week.", "Friday is never a plan day");
   assert.equal(refusalOf(resolvePlan([item("2026-10-10", DOCTOR, DOCTOR_PLACE)])), "2026-10-10 is not a working day of this plan's week.");
+  // Owner, 2026-09-22: validation is no longer the price of planning. What is refused here is a
+  // customer who is not on the rep's list AT ALL — one carried over from iReports360 and not yet
+  // validated plans exactly like any other, and is covered by the pending suite.
   assert.equal(
     refusalOf(resolvePlan([item(WEEK, uuid("cccccccc", 9), DOCTOR_PLACE)])),
-    "A planned customer is no longer on your validated list. Reload the planner.",
-    "only validated customers can be planned",
+    "A planned customer is no longer on your list. Reload the planner.",
+    "a customer who is not on the list at all cannot be planned",
   );
   assert.equal(
     refusalOf(resolvePlan([item(WEEK, DOCTOR, ACCOUNT_PLACE)])),
@@ -364,13 +369,13 @@ function runPlanRuleTests() {
   for (let n = 1; n <= 16; n += 1) {
     const customerId = uuid("dddddddd", n);
     const placeId = uuid("eeeeeeee", n);
-    crowd.set(customerId, { customerId, name: `Doctor ${n}`, listType: "PM", places: [{ placeId, timings: timings(timing(6, "18:00")) }] });
+    crowd.set(customerId, { customerId, name: `Doctor ${n}`, listType: "PM", pending: false, places: [{ placeId, timings: timings(timing(6, "18:00")) }] });
     doctors.push(item(WEEK, customerId, placeId));
   }
   for (let n = 1; n <= 6; n += 1) {
     const customerId = uuid("ffffffff", n);
     const placeId = uuid("abababab", n);
-    crowd.set(customerId, { customerId, name: `Account ${n}`, listType: "AM", places: [{ placeId, timings: timings(timing(6, "10:00")) }] });
+    crowd.set(customerId, { customerId, name: `Account ${n}`, listType: "AM", pending: false, places: [{ placeId, timings: timings(timing(6, "10:00")) }] });
     accounts.push(item(WEEK, customerId, placeId));
   }
   assert.equal(refusalOf(resolvePlan(doctors, crowd)), "Saturday 3 Oct has 16 doctors. A day holds 15 doctors at most.", "a plan day cannot take a 16th doctor");
@@ -588,7 +593,7 @@ function place(placeId: string, weekTimings: PhoenixCrmTiming[], where: { brick?
 }
 
 function customer(name: string, places: PlannerPlace[], grade: PlannerCustomer["grade"] = null, visitsThisMonth = 0): PlannerCustomer {
-  return { customerId: `customer-${name}`, name, listType: "PM", grade, speciality: null, visitsThisMonth, places };
+  return { customerId: `customer-${name}`, name, listType: "PM", grade, pending: false, speciality: null, visitsThisMonth, places };
 }
 
 function suggestNames(customers: PlannerCustomer[], placed: PlannerCustomer[]) {

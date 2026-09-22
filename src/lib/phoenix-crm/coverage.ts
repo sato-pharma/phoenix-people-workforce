@@ -6,8 +6,11 @@
  *   - Frequency = visits against the grade's monthly visits.
  *   - "Uncovered" for the planner = both: customers not visited this month first, then customers
  *     behind their grade's visits.
- *   - The list is ready (weekly plans start) when every reference customer is done: validated, or
- *     dropped with a reason once the district manager approves the drop.
+ *   - The list is "ready" when every reference customer is done: validated, or dropped with a reason
+ *     once the district manager approves the drop. Owner, 2026-09-22: this is PROGRESS, shown to the
+ *     manager on the Team tab — it has never held a plan back since that day. A customer not
+ *     validated yet is planned and visited freely; he simply counts on NEITHER side of coverage or
+ *     frequency until he is validated, and then his visits already saved start counting.
  *
  * Standing rule carried over (owner 2026-08-21, reaffirmed 2026-09-04): over-visiting is a deviation
  * too, never a bonus, so frequency counts customers EXACTLY on their grade's number and reports under

@@ -20,6 +20,7 @@ import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
 import {
   cleanText,
+  CUSTOMER_NAME_MAX,
   DEVICE_CLOCK_TOLERANCE_MINUTES,
   deviceClockSkewMinutes,
   dropReasonLabel,
@@ -85,6 +86,14 @@ export type ListPlace = {
   clockOff: boolean;
 };
 
+/** What iReports360 said about a carried-over customer, so the rep can find him before he has a place. */
+export type ListCustomerReference = {
+  address: string | null;
+  city: string | null;
+  zone: string | null;
+  lastVisitedOn: string | null;
+};
+
 export type ListCustomer = {
   customerId: string;
   listType: PhoenixCrmListType;
@@ -93,8 +102,12 @@ export type ListCustomer = {
   grade: PhoenixCrmGrade | null;
   origin: "reference" | "new";
   referenceContactCrmId: number | null;
-  status: "active" | "dropped";
+  /** "pending": carried over from iReports360 and not validated yet. It counts in no report. */
+  status: "active" | "pending" | "dropped";
   validatedAt: string | null;
+  validatedByName: string | null;
+  /** What iReports360 holds on him; null for a customer the rep added himself. */
+  reference: ListCustomerReference | null;
   droppedReason: string | null;
   droppedNote: string | null;
   statusChangedAt: string;
@@ -201,20 +214,37 @@ export function mapPlaceRow(row: Row): ListPlace {
 const PLACE_COLUMNS =
   "id, customer_id, label, address, brick_id, brick_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes";
 const CUSTOMER_COLUMNS =
-  "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, dropped_reason, dropped_note, status_changed_at";
+  "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at";
 
-/** Every customer of a territory (active and dropped), with its active places. */
+/**
+ * Every customer carried over from the territory's iReports360 list has a row here, pending until the
+ * rep validates it at the clinic. Minting them is idempotent, so every read of the list, the planner
+ * or the visit form calls this and the list keeps itself in step with iReports360 — a customer added
+ * there appears, one taken off simply stops being minted.
+ */
+export async function ensureReferenceCustomers(seat: OrgSeat, isTest: boolean): Promise<void> {
+  if (!seat.lineCode) return;
+  const { error } = await getSupabaseAdmin().rpc("phoenix_crm_ensure_reference_customers", {
+    p_seat_id: seat.seatId,
+    p_line_code: seat.lineCode,
+    p_is_test: isTest,
+  });
+  throwIfError(error);
+}
+
+/** Every customer of a territory (on the list and dropped), with its active places. */
 export async function loadTerritoryCustomers(
   seatId: string,
   isTest: boolean,
-  options: { activeOnly?: boolean } = {},
+  options: { onListOnly?: boolean } = {},
 ): Promise<{ customers: Row[]; placesByCustomer: Map<string, ListPlace[]> }> {
   const supabase = getSupabaseAdmin();
   const [customers, places] = await Promise.all([
     fetchAllRowsKeyset<Row>(
       () => {
         let query = supabase.from("phoenix_crm_customers").select(CUSTOMER_COLUMNS).eq("seat_id", seatId).eq("is_test", isTest);
-        if (options.activeOnly) query = query.eq("status", "active");
+        // On the list: validated, or carried over and waiting to be. Only a dropped customer is left out.
+        if (options.onListOnly) query = query.in("status", ["active", "pending"]);
         return query;
       },
       { cursorColumn: "id", cursorOf: (row) => String(row.id) },
@@ -369,6 +399,7 @@ export async function loadRequestRows(seatIds: string[], isTest: boolean, option
 export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknown, test: unknown): Promise<TerritoryListView> {
   const { seat, isTest } = territoryForRead(viewer, seatId, readTestFlag(test));
   const monthStart = monthStartOf(viewer.cairoToday);
+  await ensureReferenceCustomers(seat, isTest);
   const [reference, { customers, placesByCustomer }, requestRows, visitCounts, readinessMap] = await Promise.all([
     loadReference(seat.seatId, isTest),
     loadTerritoryCustomers(seat.seatId, isTest),
@@ -380,6 +411,7 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
   const names = await loadPeopleNames([
     ...territoryPeople(viewer.org, [seat]),
     ...requestRows.flatMap((row) => [text(row.requested_by_hr_id), text(row.decided_by_hr_id)]),
+    ...customers.map((row) => text(row.validated_by_hr_id)),
     reference[0]?.source_hr_id ?? null,
   ]);
   const requests = requestRows.map((row) => mapRequestRow(row, names));
@@ -396,6 +428,8 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     }
   }
 
+  const referenceByContact = new Map(reference.map((row) => [Number(row.contact_crm_id), row]));
+
   const listCustomers: ListCustomer[] = customers.map((row) => {
     const customerId = String(row.id);
     const listType: PhoenixCrmListType = row.list_type === "AM" ? "AM" : "PM";
@@ -404,6 +438,9 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
     const target = gradeTarget(viewer.config.settings, listType, grade);
     const pending = pendingByCustomer.get(customerId);
     const droppedReason = text(row.dropped_reason);
+    const validatedBy = text(row.validated_by_hr_id);
+    const contactCrmId = numberOrNull(row.reference_contact_crm_id);
+    const referenceRow = contactCrmId === null ? undefined : referenceByContact.get(contactCrmId);
     return {
       customerId,
       listType,
@@ -411,9 +448,13 @@ export async function loadTerritoryList(viewer: PhoenixCrmViewer, seatId: unknow
       speciality: text(row.speciality),
       grade,
       origin: row.origin === "new" ? "new" : "reference",
-      referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
-      status: row.status === "dropped" ? "dropped" : "active",
+      referenceContactCrmId: contactCrmId,
+      status: row.status === "dropped" ? "dropped" : row.status === "pending" ? "pending" : "active",
       validatedAt: text(row.validated_at),
+      validatedByName: validatedBy ? nameOf(names, validatedBy) : null,
+      reference: referenceRow
+        ? { address: referenceRow.address, city: referenceRow.city, zone: referenceRow.zone, lastVisitedOn: referenceRow.last_visited_on }
+        : null,
       droppedReason: dropReasonLabel(droppedReason) ?? droppedReason,
       droppedNote: text(row.dropped_note),
       statusChangedAt: String(row.status_changed_at),
@@ -565,6 +606,37 @@ export async function validateCustomer(viewer: PhoenixCrmViewer, raw: unknown): 
     );
   }
   return validated;
+}
+
+/**
+ * The customer's name and speciality, changed later.
+ *
+ * Owner, 2026-09-22: validating is the three captures and nothing else — "later can change his name,
+ * can change his grade". The grade keeps its proposal flow (the district manager decides it, because it
+ * sets the rep's own target); the name and speciality are the rep's own to correct. The territory's rep
+ * only, and never on a customer that has left the list.
+ */
+export async function renameCustomer(
+  viewer: PhoenixCrmViewer,
+  raw: unknown,
+): Promise<{ customerId: string; customerName: string; speciality: string | null }> {
+  const body = record(raw);
+  const { seat, isTest } = territoryForRepWrite(viewer, body.seatId, readTestFlag(body.test));
+  if (!isUuid(body.customerId)) throw validationError("Choose the customer to change.");
+  const name = cleanText(body.name, CUSTOMER_NAME_MAX);
+  if (!name || name.length < 3) throw validationError("Write the customer's full name.");
+  const result = await callPhoenixCrm<Row>("phoenix_crm_rename_customer", {
+    p: {
+      seat_id: seat.seatId,
+      actor_hr_id: viewer.hrId,
+      is_test: isTest,
+      customer_id: String(body.customerId).toLowerCase(),
+      name,
+      speciality: cleanText(body.speciality, 80),
+      allow_same_name: body.allowSameName === true,
+    },
+  });
+  return { customerId: String(result.customer_id), customerName: String(result.customer_name), speciality: text(result.speciality) };
 }
 
 export async function addPlace(viewer: PhoenixCrmViewer, raw: unknown): Promise<{ placeId: string; customerId: string; customerName: string }> {

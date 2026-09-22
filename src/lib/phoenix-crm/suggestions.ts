@@ -9,6 +9,10 @@
  * Order (decision 2026-09-16): receives that day → uncovered first (not visited this month, then
  * behind its grade) → same brick, then same zone, as the customers already placed that day → the time
  * window fits around the ones already placed → nearest → earliest window → name.
+ *
+ * Owner, 2026-09-22: a customer carried over from iReports360 and not validated yet has no place and
+ * no days and hours, so there is nothing to rank him on. He is offered plainly, once, after the
+ * customers who can be ranked — never hidden, never faked a place.
  */
 
 import { coverageTier, gradeTarget, type CoverageTier } from "@/lib/phoenix-crm/coverage";
@@ -33,17 +37,22 @@ export type PlannerCustomer = {
   grade: PhoenixCrmGrade | null;
   speciality: string | null;
   visitsThisMonth: number;
+  /** Carried over from iReports360 and not validated yet: no place and no days and hours. */
+  pending: boolean;
   places: PlannerPlace[];
 };
 
 export type PlacedOnDay = {
   customerId: string;
-  placeId: string;
+  /** Null for a customer who is not validated yet. */
+  placeId: string | null;
 };
 
 export type DaySuggestion = {
   customerId: string;
-  placeId: string;
+  /** Null for a customer who is not validated yet: there is no place to plan him at. */
+  placeId: string | null;
+  pending: boolean;
   placeLabel: string | null;
   name: string;
   listType: PhoenixCrmListType;
@@ -92,7 +101,9 @@ export function suggestForDay(input: {
   for (const customer of input.customers) for (const place of customer.places) placesById.set(place.placeId, place);
 
   const placedCustomerIds = new Set(input.placed.map((item) => item.customerId));
-  const placedPlaces = input.placed.map((item) => placesById.get(item.placeId)).filter((place): place is PlannerPlace => Boolean(place));
+  const placedPlaces = input.placed
+    .map((item) => (item.placeId ? placesById.get(item.placeId) : undefined))
+    .filter((place): place is PlannerPlace => Boolean(place));
   const placedBricks = new Set(placedPlaces.map((place) => normalizeArea(place.brick)).filter(Boolean));
   const placedZones = new Set(placedPlaces.map((place) => normalizeArea(place.zone)).filter(Boolean));
 
@@ -105,9 +116,37 @@ export function suggestForDay(input: {
 
   const suggestions: DaySuggestion[] = [];
   for (const customer of input.customers) {
-    if (customer.places.length === 0) continue;
     const target = gradeTarget(input.settings, customer.listType, customer.grade);
     const tier = coverageTier(customer.visitsThisMonth, target);
+    // A customer who is not validated yet has no place and no days and hours, so there is nothing to
+    // rank him on and no day he is off on. He is offered plainly, once, and placed as he is.
+    if (customer.pending) {
+      suggestions.push({
+        customerId: customer.customerId,
+        placeId: null,
+        pending: true,
+        placeLabel: null,
+        name: customer.name,
+        listType: customer.listType,
+        grade: customer.grade,
+        speciality: customer.speciality,
+        brick: null,
+        zone: null,
+        receives: true,
+        windows: [],
+        noRamadanTime: false,
+        tier,
+        visitsThisMonth: customer.visitsThisMonth,
+        target,
+        sameBrick: false,
+        sameZone: false,
+        fitsTime: false,
+        nearestPlacedKm: null,
+        alreadyOnDay: placedCustomerIds.has(customer.customerId),
+      });
+      continue;
+    }
+    if (customer.places.length === 0) continue;
     const receivingPlaces = customer.places.filter(
       (place) => windowsForWeekday(place.timings, input.weekday, input.ramadan).windows.length > 0,
     );
@@ -130,6 +169,7 @@ export function suggestForDay(input: {
       suggestions.push({
         customerId: customer.customerId,
         placeId: place.placeId,
+        pending: false,
         placeLabel: place.label,
         name: customer.name,
         listType: customer.listType,
@@ -162,6 +202,7 @@ function flag(value: boolean): number {
 export function compareSuggestions(left: DaySuggestion, right: DaySuggestion): number {
   return (
     flag(!left.alreadyOnDay) - flag(!right.alreadyOnDay) ||
+    flag(!left.pending) - flag(!right.pending) ||
     flag(left.receives) - flag(right.receives) ||
     left.tier - right.tier ||
     flag(left.sameBrick) - flag(right.sameBrick) ||

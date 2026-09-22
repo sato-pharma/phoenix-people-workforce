@@ -90,6 +90,7 @@ does not fire, so its silence is not evidence that no trap applies.
 - **`n_live_tup` is STALE in production — it reports LIVE tables as empty.** Sweep with a real `count(*)` via `query_to_xml`.
 - **A Supabase client request that times out at 15s STILL COMMITS**, leaving a half-applied state with no audit row. Do heavy multi-step mutations in ONE `plpgsql` function.
 - **A missing TABLE answers `PGRST205`, NOT `42P01`** — so the obvious guard fires never and the deploy-before-migration window 500s a whole page. Treat both codes as one set behind one helper. `a-missing-table-answers-pgrst205-not-42p01`
+- **`scripts/apply-sql-file.mjs` reaches STAGING on `aws-0` and PRODUCTION on `aws-1`** — its `DEFAULT_POOLER_HOST` is `aws-0-eu-central-1`, right for staging (whose env file is already pooler-form) and wrong for production (whose env file is the direct `db.<ref>` form and gets rewritten). The failure reads `tenant/user postgres.<ref> not found`, which sounds like a bad password, and nothing on disk names the region. Prefix `PHOENIX_POOLER_HOST=aws-1-eu-central-1.pooler.supabase.com` for production; change the default for neither. `apply-sql-file-default-pooler-host-is-wrong-for-production`
 
 **Database, grants and RLS**
 

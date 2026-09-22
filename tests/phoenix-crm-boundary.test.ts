@@ -91,6 +91,8 @@ const ROUTE_GATES: RouteGate[] = [
   get("visits/form", "create"),
   get("list"),
   post("list/validate", "create"),
+  // The name and speciality, corrected after validating (owner, 2026-09-22): the rep's own write.
+  post("list/rename", "create"),
   post("list/places", "create"),
   post("list/places/update", "create"),
   post("list/requests", "create"),
@@ -310,16 +312,97 @@ function runImportTests() {
 
 const MIGRATION = "supabase/migrations/20260916150000_phoenix_crm.sql";
 
-/** The migration without its comments (the rollback lives in comments and drops everything). */
-function migrationSql(): string {
-  return readFileSync(MIGRATION, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+/**
+ * The migrations that follow the first one, in order. Each is held to the same hygiene — one
+ * transaction, SECURITY DEFINER with a fixed search path, service-role-only execute, its own tables
+ * only — and the functions it adds join the set the services may call.
+ */
+const LATER_MIGRATIONS = ["supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql"];
+
+/** A migration without its comments (the rollback lives in comments and drops everything). */
+function migrationSql(path = MIGRATION): string {
+  return readFileSync(path, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+}
+
+/** The functions a migration creates or replaces, each held to the same header and grants. */
+function functionsIn(sql: string, path: string): string[] {
+  const functions = [...sql.matchAll(/\bcreate or replace function public\.(phoenix_crm_[a-z_]+)\(/g)].map((match) => match[1]);
+  assert.equal(functions.length, (sql.match(/\bcreate\s+(?:or\s+replace\s+)?function\b/gi) ?? []).length, `${path}: every function is a public.phoenix_crm_* function`);
+  assert.equal(new Set(functions).size, functions.length, `${path}: no function is defined twice — an overload would escape its revoke`);
+  for (const name of functions) {
+    const header = new RegExp(`create or replace function public\\.${name}\\(([\\s\\S]*?)\\nas \\$\\$`).exec(sql);
+    assert.ok(header, `${path}: ${name}'s header ends in "as $$"`);
+    assert.match(header[1], /\n\s*security definer\n/, `${path}: ${name} is SECURITY DEFINER`);
+    assert.match(header[1], /\n\s*set search_path to 'public'\s*$/, `${path}: ${name} fixes its search path`);
+  }
+  return functions;
+}
+
+/**
+ * The module's SQL as the database actually holds it: the first migration, with every function a later
+ * one replaced swapped for its live text, and every function a later one added appended.
+ *
+ * Pinning a rule against the first migration alone is how a check quietly starts reading dead SQL — the
+ * text is still in the file, and the database stopped running it the day a later migration replaced it.
+ */
+function liveMigrationSql(): string {
+  let sql = migrationSql();
+  for (const path of LATER_MIGRATIONS) {
+    const later = migrationSql(path);
+    for (const name of [...later.matchAll(/\bcreate or replace function public\.(phoenix_crm_[a-z_]+)\(/g)].map((match) => match[1])) {
+      const live = functionSql(later, name);
+      if (sql.includes(`create or replace function public.${name}(`)) sql = sql.replace(functionSql(sql, name), live);
+      else sql += `\n${live}\n$$;\n`;
+    }
+  }
+  return sql;
+}
+
+/** Every function a migration introduces is taken from everyone and given to the service role alone. */
+function assertFunctionGrants(sql: string, path: string, expected: readonly string[]) {
+  const revoked = [...sql.matchAll(/^revoke execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) from public, anon, authenticated;$/gm)].map((match) => match[1]);
+  const granted = [...sql.matchAll(/^grant execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) to service_role;$/gm)].map((match) => match[1]);
+  assert.deepEqual([...revoked].sort(), [...expected].sort(), `${path}: every function it introduces is taken away from public, anon and authenticated`);
+  assert.deepEqual([...granted].sort(), [...expected].sort(), `${path}: and given to the service role`);
+}
+
+/** What every migration in the module must do, whichever one it is. */
+function assertMigrationHygiene(sql: string, path: string) {
+  assert.match(sql.trim(), /^begin;/, `${path} runs in one transaction`);
+  assert.match(sql.trim(), /commit;$/, `${path} commits at the very end`);
+  assert.match(sql, /\nnotify pgrst, 'reload schema';\n/, `${path}: the API sees the new functions without a restart`);
+  const opening = sql.split("\n").map((line) => line.trim()).filter(Boolean);
+  assert.deepEqual(opening.slice(0, 2), ["begin;", "set local lock_timeout = '5s';"], `${path} waits at most 5 seconds for any lock`);
+  assert.doesNotMatch(sql, /\bgrant\b[^;]*\bto\s+[^;]*\b(?:anon|authenticated|public)\b/i, `${path}: nothing is granted to anon, authenticated or public`);
+  assert.doesNotMatch(sql, /\bsecurity\s+invoker\b/i, `${path}: no function runs as its caller`);
+  assert.doesNotMatch(sql, /\btruncate\b/i, `${path}: nothing is truncated`);
+  assert.doesNotMatch(sql, /crm_native_|crm_cutover|crm_contact_list_changes/, `${path} touches nothing of the pilot's`);
+  assert.doesNotMatch(sql, /\bcurrent_date\b/i, `${path}: a day is always the Cairo day, stated — current_date is the database's UTC day`);
+  const writes = [...sql.matchAll(/\b(insert\s+into|delete\s+from|update)\s+([a-z_][a-z_0-9]*(?:\.[a-z_][a-z_0-9]*)?)/gi)]
+    .filter((match) => !(match[1].toLowerCase() === "update" && match[2].toLowerCase() === "set"))
+    .map((match) => match[2].toLowerCase());
+  for (const target of writes) {
+    assert.ok(
+      /^public\.phoenix_crm_[a-z_]+$/.test(target) || target === "storage.buckets",
+      `${path} writes ${target} — Phoenix CRM writes its own tables only`,
+    );
+  }
+  for (const match of sql.matchAll(/\bdrop\s+(\w+)((?:\s+if\s+exists)?\s+[a-z_][a-z_0-9]*)?/gi)) {
+    const what = match[1].toLowerCase();
+    // "drop not null" widens a column of its own; "drop constraint" replaces one of its own CHECKs.
+    if (what === "not") continue;
+    if (what === "constraint") {
+      const named = (match[2] ?? "").trim().replace(/^if\s+exists\s+/i, "");
+      assert.match(named, /^phoenix_crm_[a-z_0-9]+$/, `${path} drops the constraint ${named} — it only ever replaces its own`);
+      continue;
+    }
+    assert.equal(what, "policy", `${path} drops a ${match[1]} — it only ever replaces its own policies and constraints`);
+  }
 }
 
 function runMigrationTests() {
   const sql = migrationSql();
-  assert.match(sql.trim(), /^begin;/, "the migration runs in one transaction");
-  assert.match(sql.trim(), /commit;$/, "and commits at the very end");
-  assert.match(sql, /\nnotify pgrst, 'reload schema';\n/, "the API sees the new functions without a restart");
+  assertMigrationHygiene(sql, MIGRATION);
 
   // Tables: its own thirteen, every one locked to the service role.
   const tables = [...sql.matchAll(/\bcreate table if not exists public\.(phoenix_crm_[a-z_]+) \(/g)].map((match) => match[1]);
@@ -342,38 +425,29 @@ function runMigrationTests() {
   }
 
   // Functions: seventeen, SECURITY DEFINER with a fixed search path, executable by the service role only.
-  const functions = [...sql.matchAll(/\bcreate or replace function public\.(phoenix_crm_[a-z_]+)\(/g)].map((match) => match[1]);
-  assert.equal(functions.length, (sql.match(/\bcreate\s+(?:or\s+replace\s+)?function\b/gi) ?? []).length, "every function is a public.phoenix_crm_* function");
-  assert.equal(new Set(functions).size, functions.length, "no function is defined twice — an overload would escape its revoke");
+  const functions = functionsIn(sql, MIGRATION);
   assert.equal(functions.length, 17, "Phoenix CRM's seventeen functions");
-  for (const name of functions) {
-    const header = new RegExp(`create or replace function public\\.${name}\\(([\\s\\S]*?)\\nas \\$\\$`).exec(sql);
-    assert.ok(header, `${name}: its header ends in "as $$"`);
-    assert.match(header[1], /\n\s*security definer\n/, `${name} is SECURITY DEFINER`);
-    assert.match(header[1], /\n\s*set search_path to 'public'\s*$/, `${name} fixes its search path`);
-  }
-  const revoked = [...sql.matchAll(/^revoke execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) from public, anon, authenticated;$/gm)].map((match) => match[1]);
-  const granted = [...sql.matchAll(/^grant execute on function public\.(phoenix_crm_[a-z_]+)\([^)]*\) to service_role;$/gm)].map((match) => match[1]);
-  assert.deepEqual([...revoked].sort(), [...functions].sort(), "every function is taken away from public, anon and authenticated");
-  assert.deepEqual([...granted].sort(), [...functions].sort(), "and given to the service role");
-  assert.doesNotMatch(sql, /\bgrant\b[^;]*\bto\s+[^;]*\b(?:anon|authenticated|public)\b/i, "nothing is granted to anon, authenticated or public");
-  assert.doesNotMatch(sql, /\bsecurity\s+invoker\b/i);
+  assertFunctionGrants(sql, MIGRATION, functions);
 
   // Writes: its own tables, and the bucket row. Reads of the organogram and the reference list are by design.
   const writes = [...sql.matchAll(/\b(insert\s+into|delete\s+from|update)\s+([a-z_][a-z_0-9]*(?:\.[a-z_][a-z_0-9]*)?)/gi)]
     .filter((match) => !(match[1].toLowerCase() === "update" && match[2].toLowerCase() === "set"))
     .map((match) => match[2].toLowerCase());
   assert.ok(writes.length >= 40, `found only ${writes.length} writes — the scan has stopped seeing the functions`);
-  for (const target of writes) {
-    assert.ok(/^public\.phoenix_crm_[a-z_]+$/.test(target) || target === "storage.buckets", `the migration writes ${target} — Phoenix CRM writes its own tables only`);
+  // Against the SQL the database runs today, never a function a later migration has replaced.
+  runMigrationReviewFixTests(liveMigrationSql());
+
+  // The migrations that follow it are held to the same hygiene, and their functions join the set the
+  // services may call. A function replaced by a later migration is not counted twice.
+  const callable = new Set(functions);
+  for (const path of LATER_MIGRATIONS) {
+    const later = migrationSql(path);
+    assertMigrationHygiene(later, path);
+    const added = functionsIn(later, path);
+    assert.ok(added.length > 0, `${path} replaces no function — has it been renamed?`);
+    assertFunctionGrants(later, path, added.filter((name) => !callable.has(name)));
+    for (const name of added) callable.add(name);
   }
-  for (const match of sql.matchAll(/\bdrop\s+(\w+)/gi)) {
-    assert.equal(match[1].toLowerCase(), "policy", `the migration drops a ${match[1]} — it only ever replaces its own policies`);
-  }
-  assert.doesNotMatch(sql, /\btruncate\b/i);
-  assert.doesNotMatch(sql, /crm_native_|crm_cutover|crm_contact_list_changes/, "the migration touches nothing of the pilot's");
-  assert.doesNotMatch(sql, /\bcurrent_date\b/i, "a day is always the Cairo day, stated — current_date is the database's UTC day");
-  runMigrationReviewFixTests(sql);
 
   // The photo bucket: private, JPEG only, 2 MB; a re-run makes it private again.
   assert.match(
@@ -406,7 +480,7 @@ function runMigrationTests() {
     }
     for (const match of source.matchAll(/(?:\.rpc|\bcallPhoenixCrm(?:<[^();{}\n]*>)?|\brpcAll(?:<[^();{}\n]*>)?\([^,()]*(?:\(\))?,)\(?\s*"([a-z_]+)"/g)) {
       rpcUses += 1;
-      assert.ok(functions.includes(match[1]), `${file} calls ${match[1]}, which the migration does not create`);
+      assert.ok(callable.has(match[1]), `${file} calls ${match[1]}, which no Phoenix CRM migration creates`);
     }
     for (const match of source.matchAll(/\.storage\.from\(\s*([^)]*)\)/g)) {
       assert.equal(match[1].trim(), "PHOENIX_CRM_PHOTO_BUCKET", `${file} opens a bucket other than the module's own`);

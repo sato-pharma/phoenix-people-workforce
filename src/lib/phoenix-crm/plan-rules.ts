@@ -1,9 +1,11 @@
 /**
  * Phoenix CRM — the weekly plan's rules, with no I/O.
  *
- * Owner, 2026-09-16:
- *   - A rep is asked for a weekly plan only once their list is ready. The rep places the customers;
- *     the system assists and never plans for them.
+ * Owner, 2026-09-16, amended 2026-09-22:
+ *   - Nothing about the list ever stops a rep planning. A customer carried over from iReports360 and
+ *     not validated yet is planned like any other — he simply has no place and no timings, and he
+ *     counts in no report until he is validated. The rep places the customers; the system assists and
+ *     never plans for them.
  *   - Each customer's timings show. Placing a customer on a day the customer does not receive is allowed after
  *     the rep picks an exception type (e.g. "at another place") — the planner asks, it does not block.
  *   - A plan day holds at most 15 PM doctors and 5 AM accounts (settings). These are the only hard
@@ -58,7 +60,8 @@ export function isPlanEditable(status: PhoenixCrmPlanStatus): boolean {
 export type PlanItemDraft = {
   planDate: string;
   customerId: string;
-  placeId: string;
+  /** Null for a customer carried over from iReports360 and not validated yet: he has no place. */
+  placeId: string | null;
   exceptionType: PlanExceptionType | null;
   exceptionNote: string | null;
 };
@@ -75,7 +78,12 @@ export function parsePlanItems(raw: unknown): PlanRuleResult<PlanItemDraft[]> {
     const body = (entry && typeof entry === "object" ? entry : {}) as Record<string, unknown>;
     const planDate = String(body.planDate ?? "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(planDate)) return { ok: false, error: "A planned customer has no day. Reload the planner." };
-    if (!isUuid(body.customerId) || !isUuid(body.placeId)) {
+    if (!isUuid(body.customerId)) {
+      return { ok: false, error: "A planned customer is missing. Reload the planner." };
+    }
+    // A customer who is not validated yet has no place; every other customer must name one.
+    const hasPlace = body.placeId !== null && body.placeId !== undefined && body.placeId !== "";
+    if (hasPlace && !isUuid(body.placeId)) {
       return { ok: false, error: "A planned customer is missing. Reload the planner." };
     }
     const exceptionRaw = String(body.exceptionType ?? "").trim();
@@ -89,7 +97,7 @@ export function parsePlanItems(raw: unknown): PlanRuleResult<PlanItemDraft[]> {
     items.push({
       planDate,
       customerId: String(body.customerId).toLowerCase(),
-      placeId: String(body.placeId).toLowerCase(),
+      placeId: hasPlace ? String(body.placeId).toLowerCase() : null,
       exceptionType,
       exceptionNote: note || null,
     });
@@ -101,6 +109,8 @@ export type PlanRuleCustomer = {
   customerId: string;
   name: string;
   listType: PhoenixCrmListType;
+  /** Carried over from iReports360 and not validated yet: no place, no timings, and it counts in nothing. */
+  pending: boolean;
   places: ReadonlyArray<{ placeId: string; timings: PhoenixCrmTiming[] }>;
 };
 
@@ -138,10 +148,11 @@ export function resolvePlanItems(input: {
     }
     const customer = input.customers.get(item.customerId);
     if (!customer) {
-      return { ok: false, error: "A planned customer is no longer on your validated list. Reload the planner." };
+      return { ok: false, error: "A planned customer is no longer on your list. Reload the planner." };
     }
-    const place = customer.places.find((entry) => entry.placeId === item.placeId);
-    if (!place) {
+    // A customer who is not validated yet has no place: he is planned as he is, and validated at the door.
+    const place = customer.pending ? null : customer.places.find((entry) => entry.placeId === item.placeId);
+    if (!customer.pending && !place) {
       return { ok: false, error: `${customer.name}'s place was changed. Reload the planner and place this customer again.` };
     }
     const allowed = planDayListTypes(item.planDate);
@@ -155,21 +166,30 @@ export function resolvePlanItems(input: {
       };
     }
 
-    const weekday = weekdayOfIsoDay(item.planDate);
-    const { windows } = windowsForWeekday(place.timings, weekday, input.isRamadan(item.planDate));
-    const receives = windows.length > 0;
-    let exceptionType = item.exceptionType;
-    let exceptionNote = item.exceptionNote;
-    if (receives) {
-      exceptionType = null;
-      exceptionNote = null;
-    } else if (!exceptionType) {
-      return {
-        ok: false,
-        error: `${customer.name} does not receive visits on ${PHOENIX_CRM_WEEKDAY_NAMES[weekday]}. Choose a reason for ${dayLabel(item.planDate)}.`,
-      };
-    } else if (exceptionType === "other" && !exceptionNote) {
-      return { ok: false, error: `Write a note on why ${customer.name} is on ${dayLabel(item.planDate)}.` };
+    // Nothing is known about when a pending customer receives, so there is no day he is "off" on and
+    // no reason to ask the rep for one.
+    let receives = true;
+    let startMinute: number | null = null;
+    let exceptionType: PlanExceptionType | null = null;
+    let exceptionNote: string | null = null;
+    if (place) {
+      const weekday = weekdayOfIsoDay(item.planDate);
+      const { windows } = windowsForWeekday(place.timings, weekday, input.isRamadan(item.planDate));
+      receives = windows.length > 0;
+      exceptionType = item.exceptionType;
+      exceptionNote = item.exceptionNote;
+      if (receives) {
+        exceptionType = null;
+        exceptionNote = null;
+        startMinute = windows[0].startMinute;
+      } else if (!exceptionType) {
+        return {
+          ok: false,
+          error: `${customer.name} does not receive visits on ${PHOENIX_CRM_WEEKDAY_NAMES[weekday]}. Choose a reason for ${dayLabel(item.planDate)}.`,
+        };
+      } else if (exceptionType === "other" && !exceptionNote) {
+        return { ok: false, error: `Write a note on why ${customer.name} is on ${dayLabel(item.planDate)}.` };
+      }
     }
 
     const counts = perDay.get(item.planDate) ?? { AM: 0, PM: 0 };
@@ -177,11 +197,12 @@ export function resolvePlanItems(input: {
     perDay.set(item.planDate, counts);
     resolved.push({
       ...item,
+      placeId: place ? place.placeId : null,
       exceptionType,
       exceptionNote,
       listType: customer.listType,
       receives,
-      startMinute: receives ? windows[0].startMinute : null,
+      startMinute,
     });
   }
 
