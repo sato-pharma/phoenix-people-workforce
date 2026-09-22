@@ -230,6 +230,21 @@ export type MarketingDecisionProductLine = {
 // existing `import type { ... } from ".../service"` keeps resolving.
 export type { MarketingDecisionOverlap, MarketingDecisionPharmacy };
 
+/**
+ * A target pharmacy on the approver window, carrying its own "already validated" stamp (owner,
+ * 2026-09-22). Computed here rather than in the loader because the honest name of a human validator
+ * comes from the same employee directory this summary already loads, and only the approver window
+ * needs it — the Case File keeps the plain `MarketingDecisionPharmacy`.
+ *
+ * The badge is null unless the pharmacy is in a validated state, so a nullish check is the render
+ * gate: a badge renders the green "Validated · by whom · when" stamp, a null renders the explicit
+ * "Not validated" chip. That pairing is the point — before it, a pending pharmacy with no photo was
+ * indistinguishable from a validated one.
+ */
+export type MarketingDecisionPharmacyWithValidation = MarketingDecisionPharmacy & {
+  validationBadge: ValidationBadge | null;
+};
+
 export type MarketingRequestDecisionSummary = {
   allowReject: boolean;
   /**
@@ -300,7 +315,7 @@ export type MarketingRequestDecisionSummary = {
   requestDate: string | null;
   roiCoverageRatio: number | null;
   roiStatus: string | null;
-  targetPharmacies: MarketingDecisionPharmacy[];
+  targetPharmacies: MarketingDecisionPharmacyWithValidation[];
   trackDirectSales: boolean;
   /**
    * Other live requests that would be credited the SAME invoice lines as this one.
@@ -4045,6 +4060,25 @@ export async function getMarketingRequestDecisionSummary(
   // distributor, and whether each vendor code was ever matched.
   const targetPharmacies = await loadMarketingDecisionPharmacies(supabase, requestPharmacyRows);
 
+  // The per-pharmacy "already validated · by whom · when" stamp (owner, 2026-09-22). A target
+  // pharmacy carries the SAME validation_status vocabulary as a marketing customer and the SAME
+  // human/system rule, so the badge is resolved by the customer resolver — the name of a human
+  // validator is looked up in the very directory this summary already loaded (`employeeRows`), and
+  // never shown for `system_validated`, where the row's id is the capturing owner, not a reviewer.
+  const targetPharmaciesWithValidation: MarketingDecisionPharmacyWithValidation[] = targetPharmacies.map(
+    (pharmacy) => ({
+      ...pharmacy,
+      validationBadge: resolveMarketingCustomerValidationBadge({
+        status: pharmacy.validationStatus,
+        validatedByName: pharmacy.validatedByHrId
+          ? employeeNameByHrId(employeeRows, pharmacy.validatedByHrId) || null
+          : null,
+        validatedAt: pharmacy.validatedAt,
+        capturedAt: pharmacy.evidenceCapturedAt,
+      }),
+    }),
+  );
+
   const customerRow = customerResult.data as {
     captured_address?: string | null;
     customer_code?: string | null;
@@ -4137,7 +4171,7 @@ export async function getMarketingRequestDecisionSummary(
     requestDate: request.requestDate ?? null,
     roiCoverageRatio: request.roiCoverageRatio ?? null,
     roiStatus: request.roiStatus ?? null,
-    targetPharmacies,
+    targetPharmacies: targetPharmaciesWithValidation,
     // Not carried on the mapped domain object; read defensively rather than widen MarketingRequest
     // for one read-only field on one screen.
     trackDirectSales: (request as { trackDirectSales?: boolean }).trackDirectSales === true,

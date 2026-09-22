@@ -543,6 +543,10 @@ function decisionPharmacy(overrides: Partial<MarketingDecisionPharmacy> = {}): M
     pharmacyName: "Some Pharmacy",
     referenceLookup: "resolved",
     referenceStatus: "matched",
+    validationStatus: "pending",
+    validatedByHrId: null,
+    validatedAt: null,
+    evidenceCapturedAt: null,
     ...overrides,
   };
 }
