@@ -26,6 +26,7 @@ export const candidateRoleFamilies = [
   "sales",
   "pharmacist",
   "human_resources",
+  "talent_acquisition",
   "finance",
   "office_coordinator",
   "other",
@@ -45,6 +46,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   pharmacist: "Pharmacist",
   product_manager: "Product Manager",
   sales: "Sales & Business Development",
+  talent_acquisition: "Talent Acquisition",
 };
 
 /**
@@ -131,10 +133,18 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
 
   if (/\b(product|brand|marketing)\s+manager\b/.test(t)) return "product_manager";
 
+  // Talent Acquisition before the HR families, added 2026-09-22 for the TA Specialist opening. A
+  // recruiter IS an HR seat, but the owner wants these CVs in their own bucket rather than folded
+  // into Human Resources, so a title that names the recruiting work outright ("Talent Acquisition
+  // Specialist", "Senior Recruiter", "Recruitment Coordinator") lands here — including one that
+  // also says HR ("Talent Acquisition & HR Manager"), because the specific word is the applied-for
+  // job. Payroll and personnel are NOT here: they are HR operations, not recruiting, and stay below.
+  if (/talent\s+acquisition|\brecruit(er|ment|ing)?\b/.test(t)) return "talent_acquisition";
+
   // HR before finance: payroll and compensation are HR work here, and several titles carry both
   // ("Sr. Payroll & Personnel Specialist | HR Operations | Comp & Ben").
   if (/\bhr\b|\bhrbp\b|human resource|human resources/.test(t)) return "human_resources";
-  if (/\bpersonnel\b|talent acquisition|\brecruit(er|ment)?\b|\bpayroll\b/.test(t)) return "human_resources";
+  if (/\bpersonnel\b|\bpayroll\b/.test(t)) return "human_resources";
 
   if (/\baccountant\b|\baccounting\b|\baccounts\b|\bfinance\b|\bfinancial\b|\btax\b|\baudit(or)?\b/.test(t)) {
     return "finance";

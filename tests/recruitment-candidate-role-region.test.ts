@@ -140,6 +140,13 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
   assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "human_resources",
     "payroll and personnel are HR work here, not finance");
+  // Talent Acquisition splits out of Human Resources (2026-09-22): a title naming the recruiting
+  // work lands in its own family, while payroll/personnel/bare-HR stay Human Resources.
+  assert.equal(candidateRoleFamily("Talent Acquisition Specialist"), "talent_acquisition");
+  assert.equal(candidateRoleFamily("Senior Recruiter"), "talent_acquisition");
+  assert.equal(candidateRoleFamily("Recruitment Coordinator"), "talent_acquisition");
+  assert.equal(candidateRoleFamily("Talent Acquisition & HR Manager"), "talent_acquisition",
+    "the recruiting word wins over a bare HR mention — it is the applied-for job");
   assert.equal(candidateRoleFamily("Senior Tax & Accounts Payable"), "finance");
   assert.equal(candidateRoleFamily("\u0645\u062d\u0627\u0633\u0628 \u0639\u0627\u0645"), "finance", "Arabic accountant");
   assert.equal(candidateRoleFamily("Community Pharmacist"), "pharmacist");

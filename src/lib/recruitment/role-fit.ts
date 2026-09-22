@@ -234,6 +234,7 @@ function dimensionsFor(family: CandidateRoleFamily | null, facts: CandidateScree
       ];
     case "office_coordinator":
     case "human_resources":
+    case "talent_acquisition":
     case "finance":
       return [
         currentRoleDimension(facts, "Office / admin role"),
