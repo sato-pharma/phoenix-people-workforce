@@ -691,6 +691,9 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/plans/reviews", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/team", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/reports", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
+  // The Doctors directory: validated customers across territories. Scope is settled in
+  // loadDoctorDirectory — a directory role reads the company, everyone else reads downward only.
+  sessionApi({ methods: ["GET"], pattern: "/api/phoenix-crm/doctors", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/upload-slot", permission: { resource: "phoenix_crm", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // A read sent as a POST (a batch of photo paths does not belong in a URL); it writes nothing.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/phoenix-crm/photos/sign", permission: { resource: "phoenix_crm", action: "read" }, guard: "assert-permission", csrfRequired: true }),
