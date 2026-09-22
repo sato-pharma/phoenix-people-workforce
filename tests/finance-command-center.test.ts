@@ -7,7 +7,7 @@ import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests
 /**
  * Guards for the Finance Manager's landing dashboard (/admin/finance-command-center).
  *
- * Three invariants, each pinned because breaking it is silent:
+ * Four invariants, each pinned because breaking it is silent:
  *
  *  1. DEDUCTION SOURCE. Every deduction figure must come from committed payroll, never from
  *     `deductions_candidates`. Measured on production 2026-08-10, July's candidate estimates
@@ -21,6 +21,10 @@ import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests
  *     Phase A fans out transitively into the low hundreds of round trips.
  *  3. PREDICATE PARITY. "Unbooked direct order" is defined in TypeScript AND in SQL. Two
  *     definitions of the same money question drift; this asserts they agree.
+ *  4. A WINDOW HAS TWO ENDS. The two leaver counters shipped bounded at the bottom only, so each
+ *     read "this month or any month after it" under a label saying "this month". Forward-dated
+ *     exit rows are the normal case, not an edge one, and the page cannot show that a figure
+ *     covers a wider window than it names.
  */
 
 /**
@@ -35,6 +39,7 @@ const MIGRATION_PATHS = [
   "supabase/migrations/20260811010000_finance_command_center_direct_orders_marketing_depth.sql",
   "supabase/migrations/20260811020000_finance_command_center_parts_and_channels.sql",
   "supabase/migrations/20260830003000_finance_command_center_invoice_overdue.sql",
+  "supabase/migrations/20260922190000_finance_command_center_exit_month_upper_bound.sql",
 ] as const;
 
 /** The definition currently in the database — the last CREATE OR REPLACE wins. */
@@ -254,6 +259,46 @@ function testMigrationKeepsItsTimeoutAndLocksDownExecute() {
   }
 }
 
+function testLeaverCountersAreBoundedToBothEndsOfTheMonth() {
+  // `resignedThisMonth` and `leavingThisMonth` shipped with a lower bound only, so each answered
+  // "this month OR ANY MONTH AFTER IT" while its label said "this month". Forward-dating is the
+  // NORMAL case here — a notice period is served, so a resignation accepted today routinely carries
+  // a last working date weeks out — and the over-count would be silent: the page has no way to show
+  // that a figure covers a wider window than the one it names. Latent on production when it was
+  // fixed (2026-09-22: 6 and 6 either way, zero rows past the month end), which is exactly why a
+  // test has to hold it — nothing on the screen would go visibly wrong when it next regresses.
+  const migrationSql = stripSqlComments(read(MIGRATION_PATH));
+
+  for (const [key, column] of [
+    ["resignedThisMonth", "resignation_date"],
+    ["leavingThisMonth", "last_working_date"],
+  ] as const) {
+    const clause = new RegExp(
+      `'${key}',\\s*count\\(\\*\\) filter \\(where ${column}\\s*>=\\s*v_month_start and ${column}\\s*<\\s*v_month_next\\)`,
+    );
+    assert.ok(
+      clause.test(migrationSql),
+      `${key} must be bounded at BOTH ends — \`${column} >= v_month_start and ${column} < v_month_next\` — or a leaver whose date falls in a LATER month is counted in this one`,
+    );
+  }
+
+  // Half-open, never `<=` a month end: an inclusive upper bound needs a different literal for a
+  // 30-day month and a 31-day one, and gets one of them wrong every time it is rewritten.
+  assert.ok(
+    /v_month_next\s+date\s*:=\s*\(date_trunc\('month', \(now\(\) at time zone 'Africa\/Cairo'\)\) \+ interval '1 month'\)::date/.test(
+      migrationSql,
+    ),
+    "the upper bound must be the FIRST day of the next Cairo month, compared with `<`",
+  );
+  // Cairo, not the container's clock. Railway sets no TZ, so a UTC month boundary moves both
+  // figures for the first three hours of every Cairo day — worst on the 1st, when Finance is
+  // closing the month these two numbers are about.
+  assert.ok(
+    !/v_month_(start|next)\s+date\s*:=\s*[^;]*current_date/.test(migrationSql),
+    "the month boundary must be taken in Africa/Cairo, never against the server's current_date",
+  );
+}
+
 function testPageIsRoleGatedNotPermissionGated() {
   const pageSource = read(PAGE_PATH);
 
@@ -348,6 +393,7 @@ export function runFinanceCommandCenterTests() {
   testUnbookedPredicateMatchesTypescript();
   testInvoiceOverduePredicateMatchesTypescript();
   testMigrationKeepsItsTimeoutAndLocksDownExecute();
+  testLeaverCountersAreBoundedToBothEndsOfTheMonth();
   testPageIsRoleGatedNotPermissionGated();
   testLandingAndNavAgree();
 }
