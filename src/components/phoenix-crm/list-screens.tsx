@@ -855,11 +855,11 @@ function EditPlaceForm({
   onDone: (notice: ListNotice) => void;
   place: ListPlace;
 }) {
+  // The location is not in the draft: it was resolved from the captured coordinates and is frozen
+  // (owner, 2026-09-23). An edit reaches the place's NAME and its days and hours, nothing else.
   const [draft, setDraft] = useState<PlaceDraftState>(() => ({
     photo: null,
     label: place.label ?? "",
-    address: place.address ?? "",
-    zone: place.zone ?? "",
     timings: place.timings,
   }));
   const [saving, setSaving] = useState(false);
@@ -876,7 +876,6 @@ function EditPlaceForm({
     setSaving(true);
     setProblem(null);
     const label = draft.label.trim() || null;
-    const zone = draft.zone.trim() || null;
     try {
       await crmPost<unknown>(
         "/api/phoenix-crm/list/places/update",
@@ -887,12 +886,10 @@ function EditPlaceForm({
           action: "edit",
           timings: timingsToDrafts(draft.timings),
           label,
-          address: draft.address.trim() || null,
-          zone,
         },
         "place",
       );
-      onDone({ tone: "good", title: `Place saved: ${placeName({ label, zone, brickName: place.brickName }, index)}`, message: customer.name });
+      onDone({ tone: "good", title: `Place saved: ${placeName({ label, zone: place.zone, brickName: place.brickName }, index)}`, message: customer.name });
     } catch (error) {
       const code = errorCodeOf(error);
       if (code === "phoenix_crm_place_not_found" || code === "phoenix_crm_place_retired") reload();
@@ -921,6 +918,15 @@ function EditPlaceForm({
         disabled={saving}
         firstStep={1}
         idPrefix={`phoenix-crm-place-${place.placeId}`}
+        location={{
+          address: place.address,
+          areaName: place.areaName,
+          brickName: place.brickName,
+          lat: place.lat,
+          lon: place.lon,
+          regionName: place.regionName,
+          zone: place.zone,
+        }}
         onChange={setDraft}
         ramadanNote={ramadanHoursNote(view.ramadan, cairoToday)}
         seatId={seatId}

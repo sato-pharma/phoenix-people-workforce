@@ -1018,9 +1018,12 @@ function AddVisit({
             </CrmButton>
           </div>
         ) : customer ? (
+          // No hint under the camera (owner, 2026-09-23): the rep is at the door with the phone up,
+          // and a sentence about his location being compared with the validated place — and about the
+          // metres that would flag it — is not something he can act on there. The check itself is
+          // unchanged: a visit further than `visitFarMeters` still saves and is still flagged.
           <LivePhotoCapture
             disabled={saving}
-            hint={`Your location is checked against the customer's validated place. A visit more than ${loaded.rules.visitFarMeters} m away still saves, flagged.`}
             onChange={(next) => {
               setProblem(null);
               setPhoto(next);

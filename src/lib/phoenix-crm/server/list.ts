@@ -15,6 +15,7 @@
  */
 
 import { loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
+import { resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { notFoundError, validationError } from "@/lib/http/api-errors";
 import { monthStartOf, nextRamadan } from "@/lib/phoenix-crm/calendar";
 import { coverageTier, gradeTarget, summarizeReadiness, type CoverageTier, type ReadinessSummary, type ReferenceState } from "@/lib/phoenix-crm/coverage";
@@ -69,12 +70,24 @@ function text(value: unknown): string | null {
 
 // ── Reading ─────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * A place as it was captured. Everything below the label is the location, resolved on the server from
+ * the coordinates the camera reported and never editable afterwards (owner, 2026-09-23): the clean
+ * address, the part of town, the Phoenix brick with the distance that justifies it, that brick's area
+ * and region, and the raw fix itself.
+ */
 export type ListPlace = {
   placeId: string;
   label: string | null;
   address: string | null;
   brickId: string | null;
   brickName: string | null;
+  /** How far the point was from that brick's centre — the only place a wrong brick is visible. */
+  brickDistanceKm: number | null;
+  areaCode: string | null;
+  areaName: string | null;
+  regionCode: string | null;
+  regionName: string | null;
   zone: string | null;
   lat: number;
   lon: number;
@@ -200,6 +213,11 @@ export function mapPlaceRow(row: Row): ListPlace {
     address: text(row.address),
     brickId: text(row.brick_id),
     brickName: text(row.brick_name),
+    brickDistanceKm: numberOrNull(row.brick_distance_km),
+    areaCode: text(row.area_code),
+    areaName: text(row.area_name),
+    regionCode: text(row.region_code),
+    regionName: text(row.region_name),
     zone: text(row.zone),
     lat: Number(row.lat),
     lon: Number(row.lon),
@@ -212,7 +230,7 @@ export function mapPlaceRow(row: Row): ListPlace {
 }
 
 const PLACE_COLUMNS =
-  "id, customer_id, label, address, brick_id, brick_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes";
+  "id, customer_id, label, address, brick_id, brick_name, brick_distance_km, area_code, area_name, region_code, region_name, zone, lat, lon, accuracy_meters, timings, photo_path, captured_at, device_skew_minutes";
 const CUSTOMER_COLUMNS =
   "id, list_type, name, speciality, grade, origin, reference_contact_crm_id, status, validated_at, validated_by_hr_id, dropped_reason, dropped_note, status_changed_at";
 
@@ -512,9 +530,36 @@ function lineCodeOf(seat: OrgSeat): string {
   return seat.lineCode;
 }
 
-/** The place as the database function reads it: the brick from the location, the phone clock compared. */
+/**
+ * The place as the database function reads it — the whole location resolved HERE, from the captured
+ * coordinates, and never taken from the phone.
+ *
+ * Owner, 2026-09-23: "the capture location is never editable and its separated when captured to brick
+ * area region clean addresss and raw location". Five things, and each is written once:
+ *
+ *   - **raw location** — `lat`, `lon`, `accuracy_meters`, and the phone's clock compared with ours;
+ *     the coordinates the camera reported, untouched;
+ *   - **clean address** — Google's own formatted address for that point, read here through the same
+ *     `resolveEvidenceLocation` the photo's watermark uses, so the address ON the picture and the
+ *     address in the row are one lookup and cannot disagree;
+ *   - **brick**, **area**, **region** — the Phoenix territory the point physically fell in, from the
+ *     nearest brick centroid, with the distance that justifies it kept beside them. A match further
+ *     than `BRICK_TRUST_KM` names no brick at all rather than a fabricated neighbouring one, and the
+ *     distance is stored either way: a wrong brick is only ever visible in that number.
+ *
+ * Before this the phone sent `address`, `zone` and `brick` and the row took them as given, so the
+ * evidence of where a customer is could be typed over on the way. It cannot now: `PlaceDraft` no
+ * longer carries them, and nothing on this path reads the body for a location.
+ */
 async function placePayload(place: PlaceDraft): Promise<Row> {
-  const [centroids, issuedAt] = await Promise.all([loadBrickCentroids(), photoSlotIssuedAt(place.photoPath)]);
+  const [centroids, issuedAt, located] = await Promise.all([
+    loadBrickCentroids(),
+    photoSlotIssuedAt(place.photoPath),
+    // Best-effort, exactly as the watermark treats it: a pin in the desert, a refused lookup or a
+    // spent map quota leaves the clean address null. The coordinates, the photo and the brick are
+    // the proof; the address is the courtesy on top of them, and a validation is never blocked on it.
+    resolveEvidenceLocation({ accuracyMeters: place.accuracyMeters, latitude: place.lat, longitude: place.lon }).catch(() => null),
+  ]);
   const brick = resolveBrickForPoint(place.lat, place.lon, centroids);
   const trusted = brick && brick.distanceKm <= BRICK_TRUST_KM ? brick : null;
   return {
@@ -524,10 +569,15 @@ async function placePayload(place: PlaceDraft): Promise<Row> {
     accuracy_meters: place.accuracyMeters,
     device_skew_minutes: issuedAt ? deviceClockSkewMinutes(place.deviceCapturedAt, new Date(issuedAt)) : null,
     label: place.label,
-    address: place.address,
+    address: located?.address ?? null,
+    zone: located?.components.area ?? null,
     brick_id: trusted?.brickId ?? null,
-    brick_name: trusted?.brickName ?? place.brick,
-    zone: place.zone,
+    brick_name: trusted?.brickName ?? null,
+    brick_distance_km: brick ? Math.round(brick.distanceKm * 100) / 100 : null,
+    area_code: trusted?.areaCode ?? null,
+    area_name: trusted?.areaName ?? null,
+    region_code: trusted?.regionCode ?? null,
+    region_name: trusted?.regionName ?? null,
     timings: place.timings,
   };
 }
@@ -670,25 +720,14 @@ export async function updatePlace(viewer: PhoenixCrmViewer, raw: unknown): Promi
   if (action === "edit") {
     const timings = parseTimings(body.timings);
     if (!timings.ok) throw validationError(timings.error);
-    // The function writes every detail it is given, so the brick (set from the location, which an edit
-    // never moves) is passed back as it is.
-    const { data, error } = await getSupabaseAdmin()
-      .from("phoenix_crm_places")
-      .select("brick_id, brick_name")
-      .eq("id", placeId)
-      .eq("seat_id", seat.seatId)
-      .eq("is_test", isTest)
-      .maybeSingle();
-    throwIfError(error);
-    if (!data) throw notFoundError("This place is no longer on the list. Reload the list.");
-    const current = data as Row;
+    // An edit changes what the rep WROTE — the place's name and its days and hours. It never reaches
+    // the location: the clean address, the part of town, the brick, the area and the region were
+    // resolved from the captured coordinates and are the customer's record now (owner, 2026-09-23).
+    // They are not read from the body and not passed back through, so `phoenix_crm_update_place` has
+    // nothing to write them from even if an older phone still sends them.
     Object.assign(payload, {
       timings: timings.timings,
       label: cleanText(body.label, PLACE_TEXT_MAX),
-      address: cleanText(body.address, PLACE_TEXT_MAX),
-      zone: cleanText(body.zone, 80),
-      brick_id: text(current.brick_id),
-      brick_name: text(current.brick_name),
     });
   }
   const result = await callPhoenixCrm<Row>("phoenix_crm_update_place", { p: payload });

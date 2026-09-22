@@ -523,17 +523,20 @@ function runEntryRuleTests() {
   assert.equal(refusalOf(parsePlaceDraft({})), PHOTO);
   assert.equal(refusalOf(parsePlaceDraft({ photoPath: "seat/photo.jpg" })), LOCATION);
   assert.equal(refusalOf(parsePlaceDraft({ photoPath: "seat/photo.jpg", lat: 30.05, lon: 31.23 })), "Add the days and hours this customer receives visits.");
+  // The place's NAME is the rep's; WHERE it is never was. Owner, 2026-09-23: "the capture location
+  // is never editable and its separated when captured to brick area region clean addresss and raw
+  // location" — so the address, the part of town and the brick are resolved on the server from the
+  // captured coordinates and are not on this type at all. A phone still sending the old keys is
+  // IGNORED rather than refused, so one holding the previous bundle keeps validating; the deepEqual
+  // below is what proves the ignoring, since a leaked key would show up as an extra property.
   assert.deepEqual(
-    valueOf(parsePlaceDraft({ photoPath: " seat/photo.jpg ", lat: 30.05, lon: 31.23, accuracyMeters: 9, label: "  Clinic   2 ", brick: " Faisal ", zone: "", timings: [timing(6, "18:00")] })),
+    valueOf(parsePlaceDraft({ photoPath: " seat/photo.jpg ", lat: 30.05, lon: 31.23, accuracyMeters: 9, label: "  Clinic   2 ", address: " 5 Faisal St ", brick: " Faisal ", zone: "Haram", timings: [timing(6, "18:00")] })),
     {
       lat: 30.05,
       lon: 31.23,
       accuracyMeters: 9,
       deviceCapturedAt: null,
       label: "Clinic 2",
-      address: null,
-      brick: "Faisal",
-      zone: null,
       photoPath: "seat/photo.jpg",
       timings: [{ weekday: 6, startMinute: 1080, endMinute: null, season: "normal" }],
     },
