@@ -1373,6 +1373,7 @@ import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped
 import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
+import { runWholesalerVenueGuardTests } from "./wholesaler-venue-guard.test.ts";
 import { runSosWarehouseOwnerRulingsTests } from "./sos-warehouse-owner-rulings.test.ts";
 import { runEpdaPediaWarehouseRulingsTests } from "./epda-pedia-warehouse-rulings.test.ts";
 import { runImportSplitPreviewTests } from "./import-split-preview.test.ts";
@@ -4327,6 +4328,10 @@ await runTest("direct orders registry grants every chain rung (SFE can return/re
 await runTest(
   "SoS customer channel (six words ⇒ store, مستشف ⇒ hospital and it wins the overlap without stopping the closing's city split; ة/ه fold; channel totals cover the whole side)",
   runSalesCustomerChannelTests,
+);
+await runTest(
+  "wholesaler venue guard (a makhzan/جملة/trade-phrase/QM/roster venue is hard-blocked; owner pharmacy-overrides protected; a bare فارما is flagged not blocked — never shown, never validated in DO or marketing)",
+  runWholesalerVenueGuardTests,
 );
 await runTest(
   "SoS warehouse rulings (all 167 the owner decided one by one on 2026-09-06 — 73 warehouse, 78 pharmacy, 16 government — pinned so a stem or a fold cannot silently re-decide one)",

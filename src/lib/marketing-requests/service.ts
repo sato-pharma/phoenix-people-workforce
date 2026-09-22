@@ -128,6 +128,12 @@ import {
   type VenueType,
 } from "@/lib/venues/venue-type";
 import { parsePharmacyLicenseDataUrl } from "@/lib/venues/pharmacy-license";
+import {
+  WHOLESALER_VENUE_REFUSED_MESSAGE,
+  isCertainWholesalerVenue,
+  suspectedWholesalerFlag,
+  suspectedWholesalerNote,
+} from "@/lib/venues/wholesaler-venue-guard";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
@@ -2440,6 +2446,13 @@ export function prepareMarketingRequestDraft(params: {
           `"${venue.display_name ?? "That venue"}" is a pharmacy, so a request must target one of its distributor codes.`,
           "pharmacy_code_required",
         );
+      }
+      // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never a request
+      // target — refused here for an existing venue that was validated before this guard existed.
+      // (A coded target carries no name in this pure function; the validation-write and target-
+      // picker guards cover that path upstream.)
+      if (isCertainWholesalerVenue(venue.display_name)) {
+        throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE, "venue_is_wholesaler");
       }
       return {
         distributor_code_id: null,
@@ -5361,6 +5374,11 @@ function mapValidationReportRows(params: {
       inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
       secondCodeBackfill: isSecondCodeBackfill(link.validationNotes),
+      // Name-based wholesaler suspicion (owner rule, 2026-09-22), name-only — a marketing pharmacy
+      // code is a different code space from the SoS override codes the detector keys on. A certain
+      // wholesaler is already blocked upstream, so this only warns on the ambiguous فارما tier.
+      suspectedWholesaler: suspectedWholesalerFlag(pharmacy.displayName),
+      suspectedWholesalerNote: suspectedWholesalerNote(pharmacy.displayName),
       validationNotes: link.validationNotes,
       validationStatus: link.validationStatus,
     });
@@ -5641,6 +5659,11 @@ async function buildReusableMarketingPharmacies(params: {
   }
 
   return visible
+    // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
+    // reusable venue. Name-only here — a marketing pharmacy code is a different code space from the
+    // Source-of-Sales override codes the detector reads, so passing it could only mis-key an owner
+    // ruling. The two-tier detector still protects owner pharmacy-overrides by NAME.
+    .filter((row) => !isCertainWholesalerVenue(row.display_name))
     // A PHARMACY with no distributor code has nothing to link a sale to, so there is nothing to
     // reuse — offering it would create a customer with an empty target list in the request form.
     //
@@ -6162,6 +6185,12 @@ export async function createMarketingValidationRecord(
       // visibility rule is the boundary. Same rule that built the list — own, team, or same area.
       if (!row.owner_hr_id || !canReuseMarketingPharmacy(access, row, employeeRows, viewerAreaId)) {
         throw forbiddenError("Forbidden: that pharmacy is not one you can attach to a customer.");
+      }
+      // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never accepted as a
+      // venue — including one that was validated before this guard existed and is now being reused.
+      // Name-only (a marketing pharmacy code is a different code space from the SoS override codes).
+      if (isCertainWholesalerVenue(row.display_name)) {
+        throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE, "venue_is_wholesaler");
       }
       reusedPharmacyRows.set(pharmacyId, row);
     }
@@ -6724,11 +6753,23 @@ export async function createMarketingValidationRecord(
             pharmacy,
             // ...and so can the 2026-09-08 second-code backfill, for the same reason.
             secondCodeBackfill: isSecondCodeBackfill(reusedLink.validationNotes),
+            // Name-based wholesaler suspicion (owner rule, 2026-09-22), name-only, advisory tier.
+            suspectedWholesaler: suspectedWholesalerFlag(pharmacy.displayName),
+            suspectedWholesalerNote: suspectedWholesalerNote(pharmacy.displayName),
             validationNotes: reusedLink.validationNotes,
             validationStatus: reusedLink.validationStatus,
           });
         }
         continue;
+      }
+
+      // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never MINTED as a
+      // venue. Only reached on the fresh-capture path (the reuse branch above `continue`d), so this
+      // refuses a newly claimed warehouse name before a marketing_pharmacies row is created. The
+      // two-tier detector protects owner pharmacy-overrides, so a real pharmacy named like a
+      // warehouse is not caught; an ambiguous "X فارما" is flagged elsewhere, never refused here.
+      if (isCertainWholesalerVenue(normalizedPharmacy.displayName)) {
+        throw validationError(WHOLESALER_VENUE_REFUSED_MESSAGE, "venue_is_wholesaler");
       }
 
       const pharmacyInsert = await supabase
@@ -6919,6 +6960,9 @@ export async function createMarketingValidationRecord(
           inferredFromHistory: isInferredFromHistory(link.validationNotes),
           pharmacy,
           secondCodeBackfill: isSecondCodeBackfill(link.validationNotes),
+          // Name-based wholesaler suspicion (owner rule, 2026-09-22), name-only, advisory tier.
+          suspectedWholesaler: suspectedWholesalerFlag(pharmacy.displayName),
+          suspectedWholesalerNote: suspectedWholesalerNote(pharmacy.displayName),
           validationNotes: link.validationNotes,
           validationStatus: link.validationStatus,
         });
@@ -7519,6 +7563,10 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     // A link with no code is offerable only when its venue is genuinely codeless. Anything else is
     // a broken row, and offering it would put a target in the picker the server would then refuse.
     if (!code && (!pharmacy || venueRequiresDistributorCode(pharmacy.venueType))) continue;
+    // Owner rule 2026-09-22 ("never never never"): a wholesaler / makhzan is never offered as a
+    // target venue, even if one slipped past validation before this guard existed. Name-only — the
+    // marketing pharmacy code is a different code space (see buildReusableMarketingPharmacies).
+    if (pharmacy && isCertainWholesalerVenue(pharmacy.name)) continue;
     const list = pharmaciesByCustomer[link.customer_id] ?? [];
     list.push({
       distributorCodeId: link.distributor_code_id,

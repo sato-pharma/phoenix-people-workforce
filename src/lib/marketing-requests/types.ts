@@ -734,6 +734,15 @@ export type MarketingValidationReportRow = {
    * the badge for 39 customers whose other links are unproven.
    */
   secondCodeBackfill: boolean;
+  /**
+   * Name-based wholesaler suspicion (owner rule, 2026-09-22). A CERTAIN wholesaler never becomes a
+   * validated venue (the pickers drop it, the write paths refuse it), so this is the AMBIGUOUS tier
+   * only — a bare «X فارما»/الجمعيه-style name that MIGHT be a warehouse. Advisory: the desk shows a
+   * warning, the human decides, nothing gates on it. Computed name-only (a marketing pharmacy code is
+   * a different code space from the Source-of-Sales override codes the detector keys on).
+   */
+  suspectedWholesaler: boolean;
+  suspectedWholesalerNote: string | null;
   validationNotes: string | null;
   validationStatus: MarketingValidationStatus;
 };

@@ -400,6 +400,9 @@ type ValidatedPharmacyDetail = {
   governorate: string;
   id: string;
   name: string;
+  /** Name-based wholesaler suspicion (owner rule, 2026-09-22) — advisory only, ambiguous فارما tier. */
+  suspectedWholesaler: boolean;
+  suspectedWholesalerNote: string | null;
   vendorCodes: Array<{
     code: string;
     distributorName: string;
@@ -721,6 +724,9 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
       governorate: row.pharmacy.extractedGovernorateName ?? "",
       id: row.pharmacy.id,
       name: row.pharmacy.displayName,
+      // Name-derived, so the same for every link of this pharmacy — carry the first row's answer.
+      suspectedWholesaler: row.suspectedWholesaler,
+      suspectedWholesalerNote: row.suspectedWholesalerNote,
       vendorCodes: vendorCode ? [vendorCode] : [],
     });
   }
@@ -1516,6 +1522,12 @@ function ValidatedPharmaciesModal({
               {pharmacies.map((pharmacy) => (
                 <div className="rounded-sm border border-slate-200 bg-white p-3" key={pharmacy.id}>
                   <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
+                  {pharmacy.suspectedWholesaler ? (
+                    <p className="mt-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-sm font-semibold text-amber-800">
+                      {pharmacy.suspectedWholesalerNote ??
+                        "This name could be a wholesaler rather than a pharmacy — check the storefront photo and the licence before validating it."}
+                    </p>
+                  ) : null}
                   <div className="mt-2 space-y-1 text-phx-sm">
                     <div className="flex justify-between">
                       <span className="font-medium text-slate-500">Area</span>
@@ -1555,7 +1567,15 @@ function ValidatedPharmaciesModal({
                 <tbody className="bg-white text-phx-md">
                   {pharmacies.map((pharmacy) => (
                     <tr className="border-t border-slate-100" key={pharmacy.id}>
-                      <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{pharmacy.name}</td>
+                      <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">
+                        {pharmacy.name}
+                        {pharmacy.suspectedWholesaler ? (
+                          <span className="mt-1 block border border-amber-200 bg-amber-50 px-2 py-1 text-phx-xs font-semibold text-amber-800">
+                            {pharmacy.suspectedWholesalerNote ??
+                              "Could be a wholesaler — check the photo and licence before validating."}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.area || "Not captured"}</td>
                       <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">{pharmacy.governorate || "Not captured"}</td>
                       <td className="px-3 py-2.5">
