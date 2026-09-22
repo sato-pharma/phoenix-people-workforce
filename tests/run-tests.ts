@@ -1591,6 +1591,7 @@ import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
+import { runTerritoryUnitsEffectiveTests } from "./territory-units-effective.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
@@ -5378,6 +5379,11 @@ await runTest(
 await runTest(
   "Territory Management area pharmacies value a direct order as it is from the source, never units x factory price (owner rule, locked)",
   runTerritoryDirectValueTests,
+);
+
+await runTest(
+  "Territory Management area pharmacies count units on the credited effective-units basis, matching value — never raw total_qty (41 split El Qema/city-rule rows disagreed, gap 1,772.08 units)",
+  runTerritoryUnitsEffectiveTests,
 );
 
 await runTest(
