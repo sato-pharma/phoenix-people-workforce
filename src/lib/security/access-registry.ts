@@ -714,6 +714,12 @@ export const accessRegistry = [
   // identity check, not a role action. Separate route from sales-month deliberately — recording a
   // payment must never be able to move which month the sales landed in.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/collection", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The record-level conversation (open at ANY status, owner 2026-09-22). Read and post are gated by
+  // loadDirectOrderForConversation -> getDirectOrderRequest, which asserts direct_orders:read and then
+  // applies the same scope check every approval surface uses; that domain helper IS the gate, so the
+  // permission reads `read`. Marketing's twin needs no entry — /api/marketing-requests/** covers it.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/:id/conversation", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/conversation", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Sidebar badge for the unbooked queue (approved, no sales month). Same `read` permission as the
   // setter above, and the same identity gate behind it: getDirectOrderUnbookedBadge returns 0 to
   // anyone who cannot actually book a month, so the shared Direct Orders nav row stays unbadged for

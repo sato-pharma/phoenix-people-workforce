@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import {
   ApprovalTracker,
   Field,
@@ -1200,6 +1201,14 @@ export function DirectOrderRequestDetail({
         commentField="comment"
         actions={availableActions}
         backHref={backHref}
+      />
+
+      {/* The conversation — open at ANY status (owner rule, 2026-09-22). Keyed by the order id so it
+          remounts fresh when the reader moves to another order. Both the admin and portal detail
+          pages render this component, so requester and approvers see the same thread. */}
+      <RecordConversationThread
+        base={`/api/direct-orders/${encodeURIComponent(request.id)}/conversation`}
+        key={request.id}
       />
     </div>
   );

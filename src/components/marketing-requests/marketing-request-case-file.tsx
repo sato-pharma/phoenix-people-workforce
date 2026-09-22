@@ -21,6 +21,7 @@ import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marke
 import { MarketingFinanceHoldControl } from "@/components/marketing-requests/marketing-finance-hold-control";
 import { MarketingCancelControl } from "@/components/marketing-requests/marketing-cancel-control";
 import { MarketingReopenControl } from "@/components/marketing-requests/marketing-reopen-control";
+import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -912,6 +913,14 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
             </p>
           </div>
         </div>
+      </div>
+
+      {/* The conversation — open at ANY status, even after this request is rejected / cancelled
+          (owner rule, 2026-09-22). This case-file page is the shared "open the request" destination
+          for the requester and every approver, so mounting the thread here reaches everyone. Every
+          message emails the requester, cc's everyone on the request, and pings them in-app / Telegram. */}
+      <div className="mt-6">
+        <RecordConversationThread base={`/api/marketing-requests/${header.requestId}/conversation`} />
       </div>
     </main>
   );

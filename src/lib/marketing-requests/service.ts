@@ -138,6 +138,12 @@ import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhoo
 import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyConversationMessage } from "@/lib/conversations/notify";
+import {
+  insertRecordConversationComment,
+  listRecordConversation,
+  listRecordConversationAuthors,
+  type RecordConversationComment,
+} from "@/lib/conversations/comments";
 
 type MarketingProductDbRow = {
   active?: boolean | null;
@@ -9084,6 +9090,149 @@ async function notifyAdvisoryComment(input: {
 }
 
 /**
+ * The marketing-request CONVERSATION — a running thread that is open at ANY status.
+ *
+ * Owner rule, 2026-09-22: the conversation must be available even after a request is rejected /
+ * approved / closed / cancelled, so a requester can ask why it was turned down and a reviewer can
+ * answer, and everyone on the request is emailed / Telegrammed / pinged for every message.
+ *
+ * Distinct from `postMarketingAdvisoryComment` above: that is a CC reviewer's on-record note into
+ * the approval TIMELINE and is writable only while their step is the active one. This thread has no
+ * status gate and no step tie — its authorisation is simply "can you see the request", the exact
+ * rule `getMarketingRequestDetail` uses.
+ */
+/**
+ * The one visibility gate for a marketing request: the requester, anyone who can see it under
+ * `canSeeMarketingRequest`, an assigned approver on any rung (alias-aware, so a shared identity still
+ * matches), or a system-scope caller. Shared by the request-detail loader and the conversation
+ * loader so both decide sight exactly the same way. Throws `Forbidden:` otherwise.
+ */
+function assertCanViewMarketingRequest(
+  access: AccessContext,
+  requestRow: MarketingRequestDbRow,
+  employeeRows: Awaited<ReturnType<typeof loadEmployeeDirectoryRows>>,
+  steps: ReturnType<typeof mapApprovalStep>[],
+): void {
+  const actorHrId = normalizeHrId(access.hrId);
+  const isAssignedApprover = actorHrId
+    ? steps.some((step) => isSamePerson(step.assignedHrId, access.hrId))
+    : false;
+  if (!canSeeMarketingRequest(access, requestRow, employeeRows) && !isAssignedApprover && access.scope !== "system") {
+    throw forbiddenError("Forbidden: you cannot view this marketing request.");
+  }
+}
+
+async function loadMarketingRequestForConversation(
+  access: AccessContext,
+  requestId: string,
+): Promise<{ requestRow: MarketingRequestDbRow; steps: ReturnType<typeof mapApprovalStep>[] }> {
+  const cleanRequestId = cleanText(requestId);
+  if (!cleanRequestId) throw validationError("Marketing request ID is required.");
+  if (!isUuid(cleanRequestId)) {
+    throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  }
+  const supabase = getSupabaseAdmin();
+  const [employeeRows, requestResult, stepsResult] = await Promise.all([
+    loadEmployeeDirectoryRows(),
+    supabase.from("marketing_requests").select("*").eq("id", cleanRequestId).maybeSingle(),
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .eq("request_id", cleanRequestId)
+      .order("sequence", { ascending: true }),
+  ]);
+  if (requestResult.error) throw requestResult.error;
+  if (!requestResult.data) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  if (stepsResult.error) throw stepsResult.error;
+  const requestRow = requestResult.data as MarketingRequestDbRow;
+  const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+
+  assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
+  return { requestRow, steps };
+}
+
+/** Every message on a marketing request's conversation, oldest first. */
+export async function listMarketingRequestConversation(
+  access: AccessContext,
+  requestId: string,
+): Promise<{ comments: RecordConversationComment[]; schemaReady: boolean }> {
+  const { requestRow } = await loadMarketingRequestForConversation(access, requestId);
+  return listRecordConversation("marketing_requests", String(requestRow.id));
+}
+
+/** Post one message to a marketing request's conversation, then fan it out to everyone on it. */
+export async function postMarketingRequestConversationComment(
+  access: AccessContext,
+  requestId: string,
+  body: string,
+): Promise<RecordConversationComment> {
+  const { requestRow, steps } = await loadMarketingRequestForConversation(access, requestId);
+  const actorHrId = normalizeHrId(access.hrId);
+  if (!actorHrId) throw forbiddenError("Forbidden: no HR_ID on this session.");
+
+  const employeeRows = await loadEmployeeDirectoryRows();
+  const authorName = employeeNameByHrId(employeeRows, access.hrId) || null;
+  const comment = await insertRecordConversationComment({
+    authorHrId: access.hrId ?? null,
+    authorName,
+    authorRole: access.role ?? null,
+    body,
+    module: "marketing_requests",
+    recordId: String(requestRow.id),
+  });
+
+  await notifyMarketingRequestConversation({ comment, requestRow, steps });
+  return comment;
+}
+
+/**
+ * Fan a marketing conversation message out To the requester and CC everyone else on the request.
+ *
+ * Participants: the requester (the thread's owner), the manager, everyone who has already decided a
+ * step (an assignee who has not acted yet is a future name, not a participant), and everyone who has
+ * already posted in this thread — so a running discussion keeps its audience. Best-effort: the
+ * message is already stored and a delivery failure must not undo it.
+ */
+async function notifyMarketingRequestConversation(input: {
+  comment: RecordConversationComment;
+  requestRow: MarketingRequestDbRow;
+  steps: ReturnType<typeof mapApprovalStep>[];
+}): Promise<void> {
+  try {
+    const request = input.requestRow;
+    if (!request.requester_hr_id) return;
+    const priorAuthors = await listRecordConversationAuthors("marketing_requests", String(request.id));
+    const participantHrIds = [
+      request.requester_hr_id,
+      request.manager_hr_id ?? null,
+      ...input.steps.filter((step) => step.decisionAt).map((step) => step.assignedHrId),
+      ...priorAuthors,
+    ];
+
+    await notifyConversationMessage({
+      actionUrl: marketingActionUrl(String(request.id)),
+      authorHrId: input.comment.authorHrId,
+      authorName: input.comment.authorName,
+      body: input.comment.body,
+      eventType: "marketing_request_comment",
+      messageKey: input.comment.id,
+      metadata: { requestId: String(request.id) },
+      module: "marketing_requests",
+      participantHrIds,
+      recordId: String(request.id),
+      submitterHrId: request.requester_hr_id,
+      subjectLabel: String(request.request_code ?? "").trim() || String(request.id),
+      threadLabel: "marketing request",
+    });
+  } catch (error) {
+    logError("Marketing request conversation failed to notify the thread", {
+      labels: { event: "marketing_request_conversation_notify_failed", requestId: String(input.requestRow.id) },
+      error,
+    });
+  }
+}
+
+/**
  * Full detail for a single marketing request: header, products, pharmacies, and the
  * ordered approval timeline with assignee display names. Used by the tracking timeline
  * and the "Returned to me → Edit & Resubmit" prefill. Visible to anyone who can see the
@@ -9129,13 +9278,8 @@ export async function getMarketingRequestDetail(
 
   const steps = ((stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
 
+  assertCanViewMarketingRequest(access, requestRow, employeeRows, steps);
   const actorHrId = normalizeHrId(access.hrId);
-  const isAssignedApprover = actorHrId
-    ? steps.some((step) => isSamePerson(step.assignedHrId, access.hrId))
-    : false;
-  if (!canSeeMarketingRequest(access, requestRow, employeeRows) && !isAssignedApprover && access.scope !== "system") {
-    throw forbiddenError("Forbidden: you cannot view this marketing request.");
-  }
 
   // The viewer may post a non-blocking comment when they are a CC reviewer on the step that is
   // currently active (mirrors postMarketingAdvisoryComment's eligibility rule).
