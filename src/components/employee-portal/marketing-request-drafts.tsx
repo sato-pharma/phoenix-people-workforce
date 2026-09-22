@@ -18,6 +18,7 @@ import {
   FileCheck2,
   ListChecks,
   Megaphone,
+  MessageCircle,
   PackagePlus,
   Pencil,
   RefreshCcw,
@@ -36,6 +37,7 @@ import {
   MarketingApprovalTimeline,
   MarketingProgressStrip,
 } from "@/components/employee-portal/marketing-approval-timeline";
+import { RecordConversationThread } from "@/components/conversations/record-conversation-thread";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -701,6 +703,12 @@ function MarketingRequestDraftWorkspaceInner() {
     null,
   );
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  // A rejected request stays OPEN for conversation (owner rule, 2026-09-22): the requester can ask
+  // why it was refused and the approver can answer, right here on the card, at any status. One card
+  // open at a time.
+  const [openRejectedConversationId, setOpenRejectedConversationId] = useState<
+    string | null
+  >(null);
 
   /* ------ Focus trap for active tab panel (#1) ------------------------------------------------------------------------------ */
   const createPanelRef = useFocusTrap(activeView === "create");
@@ -2998,6 +3006,38 @@ function MarketingRequestDraftWorkspaceInner() {
                           this request could not be read.
                         </p>
                       )}
+                    </div>
+
+                    {/* A rejected request is never closed to conversation (owner rule, 2026-09-22):
+                        the requester can ask why it was refused and the approver can answer, right
+                        here. Every message emails the requester, cc's everyone on the request, and
+                        pings them in-app / Telegram. */}
+                    <div className="mt-2 border-t border-rose-200/70 pt-2">
+                      <button
+                        aria-expanded={
+                          openRejectedConversationId === request.id
+                        }
+                        className="flex w-full items-center justify-center gap-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-2 text-phx-xs font-bold text-rose-700 transition hover:bg-rose-50"
+                        onClick={() =>
+                          setOpenRejectedConversationId((current) =>
+                            current === request.id ? null : request.id,
+                          )
+                        }
+                        type="button"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        {openRejectedConversationId === request.id
+                          ? "Hide conversation"
+                          : "Open conversation & reply"}
+                      </button>
+                      {openRejectedConversationId === request.id ? (
+                        <div className="mt-2">
+                          <RecordConversationThread
+                            base={`/api/marketing-requests/${request.id}/conversation`}
+                            key={request.id}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 );
