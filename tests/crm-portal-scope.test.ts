@@ -76,6 +76,14 @@ export function runCrmPortalScopeTests() {
   assert.ok(master.includes("intersectHrIdAllowLists("), "master.ts must intersect scope with the Line/Hire filter, not overwrite one with the other");
   // The fail-closed empty-set sentinel the whole design leans on must still be in applyMasterFilters.
   assert.ok(master.includes('["__no_match__"]'), "applyMasterFilters must keep its fail-closed empty-allow-set sentinel");
+  // The Vacations computed tab is memoised like Triples: a scoped viewer (down to a single Medical Rep)
+  // must not re-scan the whole mirror on every page render / Next-Prev click. computeVacationPeriods
+  // delegates to an uncached worker behind a short-TTL cache, exactly as computeTriplesInRange does.
+  assert.ok(master.includes("vacationsCache"), "the Vacations computed tab must be memoised (vacationsCache), like triplesCache");
+  assert.ok(
+    master.includes("computeVacationPeriodsUncached"),
+    "computeVacationPeriods must delegate to a cached wrapper over computeVacationPeriodsUncached",
+  );
 
   const portalScope = readFileSync("src/lib/crm/portal-crm-scope.ts", "utf8");
   // Scope is expressed via the EXACT-match agent filter, NEVER the substring one (the C1 leak class).
@@ -107,7 +115,25 @@ export function runCrmPortalScopeTests() {
   const portalPage = readFileSync("app/employee-portals/crm/page.tsx", "utf8");
   assert.ok(portalPage.includes("isPortalCrmRole(access.role)"), "the portal page must gate on isPortalCrmRole");
   assert.ok(portalPage.includes('assertPermission(access, "crm_visits", "read")'), "the portal page must assert crm_visits:read");
+  // A revoked crm_visits:read (role_permission_overrides) must redirect to the role's landing page,
+  // NOT throw an uncaught 500 — assertPermission runs before the shell's error boundary. Matches the
+  // scoped export route, which returns a clean 403 for the identical case.
+  assert.ok(
+    portalPage.includes("isForbiddenError"),
+    "the portal page must catch a ForbiddenError from assertPermission and redirect, never surface it as a 500",
+  );
   assert.ok(portalPage.includes("resolvePortalCrmScope(access)"), "the portal page must resolve the per-viewer scope");
+  // A manager reads the mirror on a decision surface, so the portal shows the sync freshness panel —
+  // but read-only: its backfill control hits a Super-Admin-only endpoint, so a field manager must
+  // never see it. getCrmMasterData already loads the sync runs this renders from.
+  assert.ok(portalPage.includes("<CrmSyncStatusPanel"), "the portal page must render the CRM sync-status panel for a freshness signal");
+  assert.ok(portalPage.includes("readOnly"), "the portal sync panel must render read-only (the backfill control is Super-Admin-only)");
+  const syncPanel = readFileSync("src/components/crm/crm-sync-status-panel.tsx", "utf8");
+  assert.ok(syncPanel.includes("readOnly"), "CrmSyncStatusPanel must accept a readOnly prop");
+  assert.ok(
+    syncPanel.includes("retiredAt || readOnly"),
+    "readOnly must drop the backfill footer, the same way a retired vendor does",
+  );
   assert.ok(portalPage.includes("extraTabs={[]}"), "the portal page must pass extraTabs={[]} so the unscoped governance panels never render");
   assert.ok(portalPage.includes("showMappingFilter={false}"), "the portal page must hide the agent-unmapped Mapping filter");
   // The page must not implement a `view` param at all, so ?view=unmapped can't reach a governance panel.
@@ -121,6 +147,9 @@ export function runCrmPortalScopeTests() {
   assert.doesNotMatch(portalExport, /await streamCrmMasterExportPages/, "the portal export must not await/buffer the generator");
   assert.doesNotMatch(portalExport, /Array\.from\(/, "the portal export must not collect the stream into an array");
   assert.ok(portalExport.includes("maxDuration = 300"), "the portal export keeps the 300s streaming budget");
+  // The export cover stamps the generated time in Cairo local, never raw UTC (house rule).
+  assert.ok(portalExport.includes("cairoDateTimeSortable"), "the export cover must stamp the generated time in Cairo local");
+  assert.ok(!portalExport.includes("UTC"), "the export cover must not stamp the generated time in UTC");
 
   // ── (B) the reusable grid's admin default is unchanged ───────────────────────
   const table = readFileSync("src/components/crm/crm-master-table.tsx", "utf8");

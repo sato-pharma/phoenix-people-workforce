@@ -220,7 +220,9 @@ export function runCrmReportsReadPhoenixTests() {
     assert.ok(triples.includes(".from(CRM_VISITS_UNIFIED_VIEW)"), "E2: double-visit triples read the unified visits");
     assert.ok(triples.includes('q.not("exclusion_crm_id", "in", excludedInList)'), "E2: triples exclude departed reps on exclusion_crm_id");
 
-    const vacations = block(master, "async function computeVacationPeriods(");
+    // The uncached worker holds the read (computeVacationPeriods is now a thin TTL-cache wrapper, the
+    // same split as computeTriplesInRange → computeTriplesUncached inspected just above).
+    const vacations = block(master, "async function computeVacationPeriodsUncached(");
     assert.ok(vacations.includes(".from(CRM_VISITS_UNIFIED_VIEW)"), "E3: vacations read the unified visits");
     assert.ok(vacations.includes('.eq("visit_type", -4)'), "E3: vacations select leave by CODE — Phoenix's visits carry no vendor label to match");
     assert.doesNotMatch(vacations, /\.ilike\("visit_type_description"/, "E3: no word match on the vendor description survives");

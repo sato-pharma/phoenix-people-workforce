@@ -1409,7 +1409,31 @@ export function vacationAgentKey(row: Pick<VacationDayRow, "agent_crm_id" | "age
  * advisory report — they answer different questions and are kept in sync by intent, never by
  * forcing the numbers to match.
  */
-async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
+// Short-TTL memo for {@link computeVacationPeriodsUncached}, keyed by the date range — the SAME shape
+// and reason as triplesCache above. Both entry pages default the range to null, so a scoped viewer
+// (even a Medical Rep who ends up with a handful of rows) triggered the whole-mirror vacation scan
+// below on every Vacations page render and every Next/Prev click; triples were already memoised, this
+// path was not. The company-wide result is cached PRE-scope — every caller filters it per-viewer
+// afterwards (filterComputedRows), exactly as the triples path does.
+const VACATIONS_CACHE_TTL_MS = 60_000;
+const VACATIONS_CACHE_MAX = 20;
+const vacationsCache = new Map<string, { at: number; value: { periods: CrmMasterRow[]; truncated: boolean } }>();
+
+async function computeVacationPeriods(range: {
+  dateFrom: string | null;
+  dateTo: string | null;
+}): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
+  const key = `${range.dateFrom ?? ""}|${range.dateTo ?? ""}`;
+  const cached = vacationsCache.get(key);
+  if (cached && Date.now() - cached.at < VACATIONS_CACHE_TTL_MS) return cached.value;
+  const value = await computeVacationPeriodsUncached(range);
+  // Bounded: distinct date ranges are few in practice, but never let this grow without limit.
+  if (vacationsCache.size >= VACATIONS_CACHE_MAX) vacationsCache.clear();
+  vacationsCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function computeVacationPeriodsUncached(range: { dateFrom: string | null; dateTo: string | null }): Promise<{ periods: CrmMasterRow[]; truncated: boolean }> {
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
