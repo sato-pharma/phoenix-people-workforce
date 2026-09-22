@@ -33,6 +33,7 @@ import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import { DirectOrderInvoiceEvidence } from "@/components/direct-orders/direct-order-invoice-evidence";
 import { AttachDirectOrderInvoice } from "@/components/direct-orders/attach-direct-order-invoice";
+import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
 import { directOrderInvoiceSlotLabel } from "@/lib/direct-orders/invoice-evidence";
 import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 
@@ -159,6 +160,7 @@ export function DirectOrderRequestDetail({
     bonusOverCap,
     missingManagementLine,
     pharmacyEvidence,
+    pharmacyValidation = null,
     possibleDistributorMatches,
     autoLinkRefusal,
     productPharmacyPrice,
@@ -299,6 +301,18 @@ export function DirectOrderRequestDetail({
           </div>
         ) : null}
       </section>
+
+      {/* The "already validated" stamp (owner, 2026-09-22): when this order stands on a pharmacy
+          Phoenix already recognises, say so at the top — who validated it and when — and jump the
+          approver to the evidence already lower on this same window (the photo/GPS/licence panel
+          when a held-lane claim exists, otherwise the distributor codes). */}
+      {pharmacyValidation ? (
+        <ValidatedEvidenceLink
+          badge={pharmacyValidation}
+          href={pharmacyEvidence ? "#do-pharmacy-evidence" : "#do-distributors"}
+          venueNoun="pharmacy"
+        />
+      ) : null}
 
       {/* Straight under the header, full width: for a new pharmacy this invoice IS what the SFE
           Manager decides on, so it is the first thing on the order, not a thumbnail further down. */}
@@ -482,7 +496,7 @@ export function DirectOrderRequestDetail({
       </PanelSection>
 
       {pharmacyEvidence ? (
-        <PanelSection title="Pharmacy evidence">
+        <PanelSection title="Pharmacy evidence" anchorId="do-pharmacy-evidence">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
             <div>
               {/* An invoice claim carries the distributor invoice INSTEAD of a photo and a pin (owner,
@@ -646,7 +660,7 @@ export function DirectOrderRequestDetail({
         </PanelSection>
       ) : null}
 
-      <PanelSection title="Distributors">
+      <PanelSection title="Distributors" anchorId="do-distributors">
         {/* Distributors get a row each rather than one joined string: three pairs runs ~80
             characters, which would either wrap or blow the grid. This mirrors the layout the
             pharmacy-variance table already uses for exactly this data, and the mapped-brick

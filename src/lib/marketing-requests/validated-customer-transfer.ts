@@ -3,6 +3,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdKey, hrIdForStorage, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
+import { getMarketingRequestDecisionSummary } from "@/lib/marketing-requests/service";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isUuid } from "@/lib/http/uuid";
@@ -806,7 +807,21 @@ export async function getValidatedMarketingCustomerDetail(
   customerId: string,
 ): Promise<ValidatedCustomerDetail> {
   assertValidatedCustomerRegisterAccess(access);
+  return assembleValidatedMarketingCustomerDetail(customerId, canTransferValidatedCustomers(access));
+}
 
+/**
+ * Gate-free assembly of one customer's full validation dossier. The CALLER owns authorization —
+ * either the Super-Admin/SFE register gate (getValidatedMarketingCustomerDetail) or a marketing
+ * approver holding the request that stands on this customer
+ * (getValidatedMarketingCustomerDetailForApprover). `viewerCanTransfer` is passed IN, not derived
+ * from access here, because the transfer/revert action belongs ONLY to the register — the approver
+ * path always passes false, so its dossier is strictly read-only.
+ */
+async function assembleValidatedMarketingCustomerDetail(
+  customerId: string,
+  viewerCanTransfer: boolean,
+): Promise<ValidatedCustomerDetail> {
   const id = String(customerId ?? "").trim();
   if (!id) throw validationError("A customer id is required.");
   // A malformed id is NOT FOUND, not a fault: this is a uuid column, and Postgres answers a
@@ -1130,8 +1145,44 @@ export async function getValidatedMarketingCustomerDetail(
     pharmacies,
     photoUrl: photo?.signedUrl ?? null,
     transfer,
-    viewerCanTransfer: canTransferValidatedCustomers(access),
+    viewerCanTransfer,
   };
+}
+
+/**
+ * The same full dossier, for the marketing APPROVER currently holding a request that stands on an
+ * already-validated customer (owner ask, 2026-09-22 — the badge's "jump to the venue's full
+ * validation data": his brick, his area, the location, the photo, the distributor codes,
+ * everything). Authorization is INHERITED from getMarketingRequestDecisionSummary — the exact gate
+ * that already guards the approver window this dossier is reached from. It throws unless the caller
+ * holds the request's current, still-pending step and is not deciding their own request, so this
+ * exposes nothing the approver could not already read on the request itself. It only adds the
+ * linked pharmacies, distributor codes and completeness the inline panel omits. The transfer action
+ * is NEVER offered here (viewerCanTransfer: false); the transfer/revert POST stays register-only.
+ */
+export async function getValidatedMarketingCustomerDetailForApprover(
+  access: AccessContext,
+  requestId: string,
+): Promise<ValidatedCustomerDetail> {
+  // Authorize against the request itself. Throws (forbidden/conflict) for anyone who is not the
+  // current holder of this request's pending step — identical tightness to the approver window.
+  const summary = await getMarketingRequestDecisionSummary(requestId, "approve", access);
+  const customerId = await resolveApproverRequestCustomerId(summary.requestId);
+  if (!customerId) {
+    throw notFoundError("This request is not linked to a validated customer.");
+  }
+  return assembleValidatedMarketingCustomerDetail(customerId, false);
+}
+
+/** The customer this request stands on. Called only AFTER the summary has authorized the caller. */
+async function resolveApproverRequestCustomerId(requestId: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("marketing_requests")
+    .select("customer_id")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { customer_id?: string | null } | null)?.customer_id ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -113,6 +113,8 @@ import type {
   MarketingWorkflowApprovalScope,
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
+import { resolveMarketingCustomerValidationBadge } from "@/lib/marketing-requests/customer-validation-badge";
+import type { ValidationBadge } from "@/lib/validation/validation-badge";
 import { decodeVenueTarget, encodeVenueTarget } from "@/lib/marketing-requests/venue-type";
 import {
   DEFAULT_VENUE_TYPE,
@@ -309,6 +311,13 @@ export type MarketingRequestDecisionSummary = {
    * "Return for edit" — this just makes sure they are not approving it blind.
    */
   contestedBy: MarketingDecisionOverlap[];
+  /** The customer's uuid, for evidence/history joins. Null when the request carries no customer. */
+  customerId: string | null;
+  /**
+   * The "already validated · by whom · when" stamp for the approver window (owner, 2026-09-22).
+   * Null unless the customer is in a validated state — a nullish check is the render gate.
+   */
+  customerValidation: ValidationBadge | null;
 };
 
 type MarketingControlSettingDbRow = {
@@ -3999,7 +4008,7 @@ export async function getMarketingRequestDecisionSummary(
         // `speciality` does NOT exist on marketing_customers — naming it here threw
         // "column does not exist" and took the whole approval window down to its safe state.
         // The real column for the free-text qualifier is `other_type_description`.
-        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name")
+        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name, validation_status, validated_at, validated_by_hr_id, evidence_photo_captured_at")
         .eq("id", request.customerId)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -4042,9 +4051,13 @@ export async function getMarketingRequestDecisionSummary(
     customer_type?: string | null;
     display_name?: string | null;
     evidence_photo_name?: string | null;
+    evidence_photo_captured_at?: string | null;
     extracted_area_name?: string | null;
     extracted_governorate_name?: string | null;
     other_type_description?: string | null;
+    validation_status?: MarketingValidationStatus | null;
+    validated_at?: string | null;
+    validated_by_hr_id?: string | null;
   } | null;
   const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
   const customerName = cleanText(customerRow?.display_name);
@@ -4109,6 +4122,17 @@ export async function getMarketingRequestDecisionSummary(
     customerType: cleanText(customerRow?.customer_type),
     evidencePhotoName: cleanText(customerRow?.evidence_photo_name),
     evidencePhotoUrl: evidencePhoto?.signedUrl ?? null,
+    customerId: request.customerId ?? null,
+    // The "already validated · by whom · when" stamp for the approver window (owner, 2026-09-22).
+    // Null unless the customer is in a validated state, so a nullish check is the render gate.
+    customerValidation: resolveMarketingCustomerValidationBadge({
+      status: customerRow?.validation_status ?? null,
+      validatedByName: customerRow?.validated_by_hr_id
+        ? employeeNameByHrId(employeeRows, customerRow.validated_by_hr_id) || null
+        : null,
+      validatedAt: customerRow?.validated_at ?? null,
+      capturedAt: customerRow?.evidence_photo_captured_at ?? null,
+    }),
     notes: cleanText(request.notes),
     requestDate: request.requestDate ?? null,
     roiCoverageRatio: request.roiCoverageRatio ?? null,

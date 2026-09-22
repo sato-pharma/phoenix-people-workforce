@@ -52,7 +52,23 @@ function SeverityIcon({ severity }: { severity: ValidatedCustomerCompletenessIte
  * spots something afterwards. So a red row here changes what the dialog SAYS, not whether the
  * button works.
  */
-export function ValidatedCustomerDetailView({ customerId }: { customerId: string }) {
+export function ValidatedCustomerDetailView({
+  customerId,
+  endpoint,
+  backHref = REGISTER_HREF,
+  backLabel = "Back to validated customers",
+}: {
+  customerId: string;
+  /**
+   * Where to FETCH the dossier. Defaults to the Super-Admin register API keyed by customer id. The
+   * marketing approver dossier passes its own request-keyed endpoint, which is gated to the
+   * approver holding the request rather than to the register.
+   */
+  endpoint?: string;
+  /** Where the "back" link points, and its label. Default: back to the validated-customers register. */
+  backHref?: string;
+  backLabel?: string;
+}) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -64,9 +80,10 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
     setIsLoading(true);
     setMessage(null);
     try {
-      const response = await fetch(`/api/marketing-requests/validated-customers/${customerId}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        endpoint ?? `/api/marketing-requests/validated-customers/${customerId}`,
+        { cache: "no-store" },
+      );
       const payload = await response.json();
       if (!response.ok) {
         setDetail(null);
@@ -80,7 +97,7 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
     } finally {
       setIsLoading(false);
     }
-  }, [customerId]);
+  }, [customerId, endpoint]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -158,10 +175,10 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
           action={
             <Link
               className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700"
-              href={REGISTER_HREF}
+              href={backHref}
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to the register
+              {backLabel}
             </Link>
           }
           message={message ?? "That customer could not be loaded."}
@@ -182,10 +199,10 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           className="inline-flex items-center gap-1.5 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 transition hover:border-orange-200 hover:text-orange-700"
-          href={REGISTER_HREF}
+          href={backHref}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to validated customers
+          {backLabel}
         </Link>
         <div className="flex flex-wrap gap-2">
           {canTransfer ? (

@@ -1401,6 +1401,8 @@ import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inb
 import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
 
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
+import { runMarketingApproverCustomerDossierTests } from "./marketing-approver-customer-dossier.test.ts";
+import { runValidatedEvidenceBadgeTests } from "./validated-evidence-badge.test.ts";
 import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence-access.test.ts";
 // Registered beside its marketing siblings rather than appended at the end of the file: every PR
 // appends there, so a branch parked on that anchor conflicts with each one that lands.
@@ -4437,6 +4439,16 @@ await runTest(
 await runTest(
   "marketing approver customer history (clean slate vs unmeasured vs failed lookup are three different answers; a measured zero survives)",
   runMarketingApproverCustomerHistoryTests,
+);
+
+await runTest(
+  "validated-evidence badge (already-validated stamp on both approver windows; a name shows only when a human looked, never for a system/catalogue validation)",
+  runValidatedEvidenceBadgeTests,
+);
+
+await runTest(
+  "marketing approver customer dossier (request-keyed gate: authorizes through the request holder, read-only, never inherits the register gate or a customer-id key)",
+  runMarketingApproverCustomerDossierTests,
 );
 
 await runTest(

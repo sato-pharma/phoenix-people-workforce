@@ -19,9 +19,18 @@ import type { DirectOrderPricingBreakdown } from "@/lib/direct-orders/approval-f
  */
 
 /** Dark block header with the orange accent bar — the module's premium section divider. */
-export function PanelSection({ children, title }: { children: ReactNode; title: string }) {
+export function PanelSection({
+  children,
+  title,
+  anchorId,
+}: {
+  children: ReactNode;
+  title: string;
+  /** Optional in-page anchor target — the "already validated" jump lands on this panel. */
+  anchorId?: string;
+}) {
   return (
-    <div className="border border-slate-200">
+    <div id={anchorId} className="scroll-mt-4 border border-slate-200">
       <div className="flex items-center gap-2 bg-slate-900 px-4 py-2.5">
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
         <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>

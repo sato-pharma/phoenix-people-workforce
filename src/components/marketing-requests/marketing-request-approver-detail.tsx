@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AlertTriangle, Camera, MapPin, Phone, Store } from "lucide-react";
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { ValidatedEvidenceLink } from "@/components/validation/validated-evidence-link";
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -36,9 +38,18 @@ function formatDate(value: string | null) {
   });
 }
 
-function Section({ children, title }: { children: React.ReactNode; title: string }) {
+function Section({
+  children,
+  title,
+  anchorId,
+}: {
+  children: React.ReactNode;
+  title: string;
+  /** Optional in-page anchor target — the "already validated" jump lands on this section. */
+  anchorId?: string;
+}) {
   return (
-    <div className="space-y-1.5">
+    <div id={anchorId} className="scroll-mt-4 space-y-1.5">
       <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
       {children}
     </div>
@@ -187,6 +198,10 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
   const [detail, setDetail] = useState<MarketingApproverRequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // The approver window renders in BOTH the admin shell and the employee portal, at
+  // `.../marketing-requests/inbox`. The full-dossier page lives beside the inbox in whichever tree
+  // the approver is in, so derive the base from the current path rather than hard-coding one shell.
+  const pathname = usePathname();
 
   // Same shape as MarketingRequestedProductHistory, the sibling per-row fetcher: an inline async
   // IIFE guarded by `cancelled`, never a useCallback the effect then invokes — that trips
@@ -237,8 +252,31 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
 
   const history = detail.customerHistory;
 
+  // Beside the inbox in whichever shell we are in: `/admin/marketing-requests/customer-dossier/<id>`
+  // or `/employee-portals/marketing-requests/customer-dossier/<id>`. The page and its API both
+  // authorize against the request, so the URL is safe to build on the client.
+  const marketingBase = (() => {
+    const marker = "/marketing-requests/";
+    const idx = pathname.indexOf(marker);
+    return idx >= 0
+      ? pathname.slice(0, idx + marker.length)
+      : "/employee-portals/marketing-requests/";
+  })();
+  const customerDossierHref = `${marketingBase}customer-dossier/${encodeURIComponent(requestId)}`;
+
   return (
     <div className="space-y-3.5">
+      {/* The "already validated" stamp (owner, 2026-09-22): when this request stands on a customer
+          the desk (or the evidence-gate) already validated, say so at the top — who validated it and
+          when — and jump the approver to the customer evidence already lower on this same window. */}
+      {detail.customerValidation ? (
+        <ValidatedEvidenceLink
+          badge={detail.customerValidation}
+          href={customerDossierHref}
+          venueNoun="customer"
+        />
+      ) : null}
+
       {/* ── Double-count warning first: it changes whether the rest even matters ───────────── */}
       {detail.contestedBy.length > 0 ? (
         <div className="rounded-sm border border-rose-300 bg-rose-50 px-2.5 py-2">
@@ -301,7 +339,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
       </Section>
 
       {/* ── Customer ──────────────────────────────────────────────────────────────────────── */}
-      <Section title="Customer">
+      <Section title="Customer" anchorId="mkt-customer-evidence">
         <div className="grid gap-2 sm:grid-cols-3">
           <Field emptyLabel="No code" label="Code" value={detail.customerCode} />
           <Field emptyLabel="Not recorded" label="Type" value={detail.customerType} />
