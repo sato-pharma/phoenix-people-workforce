@@ -268,6 +268,37 @@ function runScreenTests() {
     assert.doesNotMatch(pending, forbidden, "what a rep reads about a customer he has not validated states a fact with the fix inside it — never cannot, must, blocked or missing");
   }
 
+  // ── Asking to drop a customer who is not validated yet ────────────────────────────────────────
+  // Besides Validate and Add a visit, the drop request is the ONLY screen a rep can open on a customer
+  // he has not validated — rule 1 says a carried-over customer leaves the list by being validated or
+  // by being removed, and this is the removing. Every other surface swapped to the pending wording;
+  // this one was missed and still printed "1 of 3 visits this month": a target he does not have and a
+  // shortfall he cannot owe, on the one screen where the rep is explaining why he should go.
+  const screens = source("src/components/phoenix-crm/list-screens.tsx");
+  const dropStart = screens.indexOf("export function DropScreen(");
+  assert.ok(dropStart > 0, "the drop-request screen is still in list-screens.tsx");
+  const drop = screens.slice(dropStart);
+  assert.match(
+    drop,
+    /const notValidated = customer !== null && customer\.status === "pending";/,
+    "the drop screen tells a customer's OWN pending status apart from a drop request already waiting — the two meanings of the word collide on this one screen, and reusing the name is how it would break again",
+  );
+  const heading = /customer && notValidated \? \(([\s\S]*?)\) : customer \? \(([\s\S]*?)\) : reference/.exec(drop);
+  assert.ok(heading, "a customer who is not validated yet is read on his own branch of the drop screen's heading");
+  assert.match(
+    heading[1],
+    /pendingVisitsText\(customer\.visitsThisMonth\)/,
+    "who is told what his saved visits are, in the module's one shared pending sentence",
+  );
+  assert.doesNotMatch(heading[1], /monthVisitsText/, "and is never scored against a target he does not have");
+  assert.doesNotMatch(heading[1], /placesDaysText/, "nor told he has no place, which is simply what not validated means");
+  assert.match(
+    heading[2],
+    /monthVisitsText\(customer\.visitsThisMonth, customer\.target\)/,
+    "while a validated customer still reads on this screen exactly as he did",
+  );
+  assert.match(drop, /<CrmPill tone="orange">\{PENDING_PILL\}<\/CrmPill>/, "and the screen says which kind of customer this is, in the same words as everywhere else");
+
   // The module's locked look, still: no horizontal scroll, no ellipsis, no rounded corner.
   for (const file of ["src/components/phoenix-crm/list-tab.tsx", "src/components/phoenix-crm/list-customer.tsx", "src/components/phoenix-crm/plan-tab.tsx", "src/components/phoenix-crm/list-screens.tsx"]) {
     const body = source(file);
