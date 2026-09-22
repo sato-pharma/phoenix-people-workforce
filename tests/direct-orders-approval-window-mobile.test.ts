@@ -32,7 +32,9 @@ export function runDirectOrdersApprovalWindowMobileTests() {
     /from "@\/components\/approvals-hub\/direct-order-detail-primitives"/,
     "the approval window must still import its section/field primitives from direct-order-detail-primitives.tsx",
   );
-  assert.match(source, /<PanelSection title="Distributors">/, "Distributors must render inside a PanelSection");
+  // `[^>]*` tolerates section props such as the `anchorId` the validated-evidence badge jumps to
+  // (2026-09-22) — the invariant being pinned is only that Distributors is a shared PanelSection.
+  assert.match(source, /<PanelSection title="Distributors"[^>]*>/, "Distributors must render inside a PanelSection");
   assert.match(source, /<PanelSection title="Approval chain">/, "Approval chain must render inside a PanelSection");
 
   // ── Every table is desktop-only ────────────────────────────────────────────

@@ -165,6 +165,10 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     missingManagementLine: false,
     // The common case (2026-08-08): most orders never touch the held/validation lane at all.
     pharmacyEvidence: null,
+    // No already-validated stamp for this fixture's pharmacy — the badge is resolved separately and
+    // its own resolver is unit-tested in validated-evidence-badge.test.ts. Required (not optional)
+    // so the spread of Partial<DirectOrderApprovalDetail> above cannot silently drop it.
+    pharmacyValidation: null,
     possibleDistributorMatches: [],
     // No candidates, so nothing was refused — auto-link had nothing to decide about.
     autoLinkRefusal: null,

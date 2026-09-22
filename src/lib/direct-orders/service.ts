@@ -40,6 +40,7 @@ import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import { resolveDirectOrderPharmacyValidationBadge } from "@/lib/direct-orders/pharmacy-validation-badge";
 import { isDirectOrderInvoiceContentType } from "@/lib/direct-orders/invoice-evidence";
 import {
   loadDirectOrderRequestInvoice,
@@ -6032,6 +6033,10 @@ export async function getDirectOrderApprovalDetail(
         }
       : null,
     pharmacyEvidence,
+    // The "already validated · by whom · when" stamp for the approver window (owner, 2026-09-22).
+    // Resolved from the SAME evidence + pharmacy the panel below already renders, so the badge and
+    // the evidence it jumps to can never disagree.
+    pharmacyValidation: resolveDirectOrderPharmacyValidationBadge(pharmacy, pharmacyEvidence, nameOf),
     orderInvoice,
     invoiceExpected,
     canAttachInvoice,

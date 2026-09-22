@@ -2,6 +2,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import type { VenueType } from "@/lib/venues/venue-type";
 import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
+import type { ValidationBadge } from "@/lib/validation/validation-badge";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
 import type { DirectOrderInvoiceContentType, DirectOrderInvoiceSlotCount } from "@/lib/direct-orders/invoice-evidence";
 // Type-only, and hold-decision.ts imports type-only from here — a types-only cycle is erased at
@@ -844,6 +845,12 @@ export type DirectOrderApprovalDetail = {
    * (owner rule, 2026-08-08): they see their own photo, not the adjudicator-facing AI reading.
    */
   pharmacyEvidence: DirectOrderValidationRow | null;
+  /**
+   * The "already validated · by whom · when" stamp for the approver window (owner, 2026-09-22).
+   * Null when the pharmacy is NOT yet validated — a fresh pending_review or a rejected pharmacy — so
+   * a nullish check is the render gate. See resolveDirectOrderPharmacyValidationBadge.
+   */
+  pharmacyValidation: ValidationBadge | null;
   /**
    * The distributor invoice saved with THIS order (owner, 2026-09-14: the SFE Manager must clearly see
    * the invoice that was used). Null when the order carries none. Optional so hand-built details stay
