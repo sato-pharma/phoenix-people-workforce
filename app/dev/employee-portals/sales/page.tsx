@@ -98,6 +98,8 @@ export default async function SalesDevPreviewPage() {
     data.employee.department,
     data.employee.hrId,
     true, // dev preview fixture: surface device-gated tabs (e.g. Fingerprint Report)
+    true, // and the shared interview calendar
+    true, // and Phoenix CRM — the preview exists to show every row, not one account's rows
   );
 
   return (

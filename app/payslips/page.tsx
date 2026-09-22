@@ -14,6 +14,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { getPayslipPortalData } from "@/lib/employee-portal/service";
+import { phoenixCrmEntryAvailable } from "@/lib/phoenix-crm/server/page";
 
 export const dynamic = "force-dynamic";
 
@@ -54,9 +55,14 @@ export default async function PayslipsPage() {
     );
   }
 
-  const hasDeviceMapping = access.hrId
-    ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
-    : false;
+  const [hasDeviceMapping, phoenixCrm] = access.hrId
+    ? await Promise.all([
+        employeeHasActiveDeviceMapping(access.hrId).catch(() => false),
+        // The same gate the portal shell asks. This page builds its own chrome, so a flag left out
+        // here is a sidebar row that disappears the moment the rep opens his payslips.
+        phoenixCrmEntryAvailable(access).catch(() => false),
+      ])
+    : ([false, false] as [boolean, boolean]);
 
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,
@@ -65,6 +71,11 @@ export default async function PayslipsPage() {
     data.employee.department,
     data.employee.hrId,
     hasDeviceMapping,
+    // The interview-calendar share is not read on this page and never has been, so its row is absent
+    // from the payslips rail. Left as it stands — passed explicitly only because the CRM flag sits
+    // behind it in the argument list.
+    false,
+    phoenixCrm,
   );
 
   if (navigationMode === "admin") {

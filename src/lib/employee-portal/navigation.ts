@@ -102,6 +102,17 @@ export type EmployeePortalNavVisibility = {
   showReportItTab?: boolean;
   showReportItDashboardTab?: boolean;
   showFingerprintReportTab?: boolean;
+  /**
+   * Phoenix CRM — customer lists, weekly plans, visits and reports (owner, 2026-09-23: "put it in the
+   * sidebar"). NOT a role test: the module's own gate already answers it — the `phoenix_crm`
+   * permission, a territory of the viewer's own or beneath him, and his line opened in
+   * `phoenix_crm_line_rollout`. That is `phoenixCrmEntryAvailable`, which the My Visits button has
+   * always asked; this row asks the same question, so the two doors can never disagree.
+   *
+   * Until today the button on My Visits was the only door, one click in, and 71 of the 73 territories
+   * with a reference list waiting had never opened the module once.
+   */
+  showPhoenixCrmTab?: boolean;
   // Sales Intelligence (Product / Group Product Managers): line- or product-scoped
   // analytics surfaces that mirror the admin dashboards inside the employee portal.
   showRoiIntelligenceTab?: boolean;
@@ -434,6 +445,7 @@ export function resolveEmployeePortalNavVisibility(
   viewerHrId?: string | null | undefined,
   hasDeviceMapping?: boolean,
   hasInterviewCalendarAccess?: boolean,
+  hasPhoenixCrmEntry?: boolean,
 ): EmployeePortalNavVisibility {
   const resolvedRole = resolvePortalRole(roleLabel, accessRole);
   const normalizedLine = String(employeeLineName ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -728,6 +740,10 @@ export function resolveEmployeePortalNavVisibility(
     // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
     showFingerprintReportTab: hasDeviceMapping === true || isMarketingManager,
+    // No role test on purpose. `phoenixCrmEntryAvailable` (src/lib/phoenix-crm/server/page.ts) is the
+    // module's own gate and already answers permission, territory and line opening together; a second
+    // list of roles here would drift from it the first time the owner opens or closes a line.
+    showPhoenixCrmTab: hasPhoenixCrmEntry === true,
     showRoiIntelligenceTab,
     // Mirrors PORTAL_SOS_ACTION_ROLES (portal-sos-dashboard.ts). Medical Rep added 2026-09-14 (owner):
     // he sees his own area's pharmacy action lists only, never the distributor dashboard.

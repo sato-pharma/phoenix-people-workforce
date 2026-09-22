@@ -231,6 +231,7 @@ function buildEmployeePortalSections({
   showSupportTab = false,
   showPrivateCalendarTab = false,
   showMyVisitsTab = true,
+  showPhoenixCrmTab = false,
   showDeductionsTab = true,
   showMyCoachingTab = false,
   showTeamCoachingTab = false,
@@ -372,7 +373,17 @@ function buildEmployeePortalSections({
         // `showMyVisitsTab`/`isPortalHrOfficeStaff` (navigation.ts) is always true/false now and
         // no portal role is excluded.
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
-        // Directly under My Visits because it is the same data read competitively: My Visits is what
+        // Phoenix CRM — the customer list with its timings, the weekly plan, the visits and the
+        // reports (owner, 2026-09-23: "put it in the sidebar"). Directly under My Visits because
+        // that is where its only door was until today: a button inside the My Visits page, one click
+        // in, which 71 of the 73 territories with a list waiting had never found. Same icon and same
+        // label as the admin card in system-navigation.ts, so the two doors read as one module.
+        //
+        // The flag is `phoenixCrmEntryAvailable` — the module's own gate, not a role list: the
+        // phoenix_crm permission, a territory of his own or beneath him, and his line opened in
+        // phoenix_crm_line_rollout. The page behind it enforces the same thing again.
+        ...(showPhoenixCrmTab ? [{ href: "/employee-portals/field-crm", label: "Phoenix CRM", icon: ClipboardList }] : []),
+        // Beside My Visits because it is the same data read competitively: My Visits is what
         // I did, Early Birds is how the START of those days ranks against the district. The board had
         // no portal rail row at all until 2026-09-18 — only a catalog entry in system-navigation.ts,
         // which this rail does not read (see the header of buildEmployeePortalSections' own memory:

@@ -161,6 +161,14 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab", "showMarketingCoverageReportTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"], navBadge: "direct-orders-needs-action" },
   { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"], permission: { resource: "crm_visits", action: "read" } },
+  // Phoenix CRM — the rep's own customer list, weekly plan, visits and reports. Beside My Visits
+  // because the button inside that page was its only door until 2026-09-23. No `permission`: the
+  // page carries no single machine-readable gate (loadPhoenixCrmPage weighs the phoenix_crm
+  // permission, the viewer's territories and whether his line is open together), and B6 above
+  // requires the field to be absent then.
+  // The short label is the full one on purpose: "CRM" alone is already taken above by the vendor
+  // CRM Master board, and a manager who holds both would see two tabs reading "CRM".
+  { label: "Phoenix CRM", fullLabel: "Phoenix CRM", href: "/employee-portals/field-crm", icon: ClipboardList, flags: ["showPhoenixCrmTab"] },
   { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
   { label: "Scores", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"], permission: { resource: "coaching", action: "read" } },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"], permission: { resource: "double_visit_analytics", action: "read" } },
