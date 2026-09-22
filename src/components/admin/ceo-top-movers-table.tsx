@@ -7,6 +7,7 @@ import {
   TableNoResults,
 } from "@/components/ui/sortable-table";
 import { useSortableTable, visibleMax } from "@/components/ui/use-sortable-table";
+import { formatTopMoverShare, topMoverShareBasis } from "@/lib/ceo/top-mover-share";
 
 export type TopMoverRow = { label: string; value: number };
 
@@ -44,6 +45,7 @@ export function CeoTopMoversTable({
   valueHeader = "Value (EGP)",
   format,
   subtitle,
+  total,
   empty = "No data yet.",
 }: {
   movers: TopMoverRow[];
@@ -53,6 +55,13 @@ export function CeoTopMoversTable({
   valueHeader?: string;
   format?: (v: number) => string;
   subtitle?: string;
+  /**
+   * The denominator for the Share column: the WHOLE population's value, not just the rows listed
+   * here. Every caller passes a truncated slice (`slice(0, 5)`, `slice(0, 7)`), so without this
+   * the column reads as a share of the top few. Left out, it falls back to the sum of `movers`,
+   * which is correct only when the caller really is passing a complete set.
+   */
+  total?: number;
   empty?: string;
 }) {
   const table = useSortableTable(movers, {
@@ -63,12 +72,35 @@ export function CeoTopMoversTable({
 
   const maxVal = visibleMax(table.rows, (r) => r.value);
   const fmt = format ?? egp;
-  const grandTotal = movers.reduce((s, r) => s + r.value, 0);
+
+  // ONE denominator, for the screen AND the export.
+  //
+  // There used to be two, and both were wrong. The screen divided by the rows left after the
+  // FILTER (`table.rows`), so typing in the filter box silently re-based every percentage: narrow
+  // to a single region and its share read 100.0%. The export divided by the sum of `movers`
+  // instead — so a downloaded sheet and the screen it came from disagreed the moment anyone
+  // filtered, which the standing rule that an export must MATCH the screen forbids outright.
+  //
+  // The sum of `movers` was not right either. Every caller passes a truncated list, so that sum is
+  // the total of the top few, not of the period. Measured on production 2026-09-23 against the
+  // Source of Sales months: the five listed regions are 90.4% of August's real regional value and
+  // 87.6% of May's, so each region's share read roughly 11% and 14% too high — a region at a true
+  // 27% was shown as 30%. Top Lines was unaffected in practice: only four lines carry sales, so
+  // its top-5 slice is the whole population already.
+  //
+  // `total` is that real population value where the caller knows it. The shares then legitimately
+  // do NOT sum to 100% on a top-N list, which is the honest outcome — the remaining money sits in
+  // the rows that did not make the cut.
+  //
+  // The arithmetic itself lives in `@/lib/ceo/top-mover-share` so it can be tested without
+  // rendering React; `movers` goes in, never `table.rows`, which is what re-based the old one.
+  const shareBasis = topMoverShareBasis(movers, total);
+  const sharePct = (value: number) => formatTopMoverShare(value, shareBasis);
 
   const exportRows = movers.map((r) => ({
     label: r.label,
     value: r.value,
-    share: grandTotal > 0 ? `${((r.value / grandTotal) * 100).toFixed(1)}%` : "—",
+    share: sharePct(r.value),
   }));
 
   // Nothing to show at all. Say so once, in one line.
@@ -155,9 +187,7 @@ export function CeoTopMoversTable({
                 label={labelHeader.toLowerCase() + "s"}
               />
             ) : (
-              (() => {
-                const visibleTotal = table.rows.reduce((s, r) => s + r.value, 0);
-                return table.rows.map((row, i) => (
+              table.rows.map((row, i) => (
                   <tr key={row.label} className="bg-white hover:bg-slate-50/80">
                     <td className="px-2 py-2 text-phx-2xs font-black text-slate-300">
                       #{i + 1}
@@ -176,14 +206,10 @@ export function CeoTopMoversTable({
                     <td className="px-2 py-2 text-right font-bold text-slate-900">
                       {fmt(row.value)}
                     </td>
-                    <td className="px-2 py-2 text-right text-slate-500">
-                      {visibleTotal > 0
-                        ? `${((row.value / visibleTotal) * 100).toFixed(1)}%`
-                        : "—"}
-                    </td>
+                    {/* Share of the whole population — NEVER of the rows the filter happens to leave. */}
+                    <td className="px-2 py-2 text-right text-slate-500">{sharePct(row.value)}</td>
                   </tr>
-                ));
-              })()
+              ))
             )}
           </tbody>
         </table>

@@ -17,10 +17,16 @@ export function CeoExpenseTables({
   byRegion,
   topSpenders,
   windowLabel,
+  totalAmount,
 }: {
   byRegion: Array<{ label: string; amount: number }>;
   topSpenders: Array<{ label: string; amount: number }>;
   windowLabel?: string;
+  /**
+   * The window's whole spend. Both lists arrive truncated — regions to 7, spenders to 5 out of an
+   * already-capped leaderboard — so this is the only correct denominator for their Share column.
+   */
+  totalAmount?: number;
 }) {
   const regionRows = byRegion.map((r) => ({ label: r.label, value: r.amount }));
   const spenderRows = topSpenders.map((s) => ({ label: s.label, value: s.amount }));
@@ -39,6 +45,7 @@ export function CeoExpenseTables({
           labelHeader="Region"
           valueHeader="Amount (EGP)"
           format={egp}
+          total={totalAmount}
           empty="No regional data yet."
         />
       </div>
@@ -54,6 +61,7 @@ export function CeoExpenseTables({
           labelHeader="Manager"
           valueHeader="Amount (EGP)"
           format={egp}
+          total={totalAmount}
           empty="No spender data yet."
         />
       </div>

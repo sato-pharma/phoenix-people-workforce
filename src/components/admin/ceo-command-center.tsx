@@ -868,6 +868,9 @@ export function CeoCommandCenter({
                   exportTitle="Source of Sales — Top Lines"
                   subtitle={sos?.period ?? undefined}
                   labelHeader="Product Line"
+                  // `topLines` is the top FIVE (topMoversFromSos slices it), so Share must divide by
+                  // EVERY line carrying sales this period — not by the handful listed here.
+                  total={(sos?.byLine ?? []).reduce((sum, line) => sum + line.totalValue, 0)}
                   empty="No monthly sales loaded yet."
                 />
               </div>
@@ -879,6 +882,10 @@ export function CeoCommandCenter({
                   exportTitle="Source of Sales — Top Regions"
                   subtitle={sos?.period ?? undefined}
                   labelHeader="Region"
+                  // Same slice, and this is where it actually bit: 13 regions carried sales in
+                  // August and the five listed are 90.4% of their value, so every share here read
+                  // about 11% high until this denominator was passed.
+                  total={(sos?.byRegion ?? []).reduce((sum, region) => sum + region.totalValue, 0)}
                   empty="No regional sales data yet."
                 />
               </div>
