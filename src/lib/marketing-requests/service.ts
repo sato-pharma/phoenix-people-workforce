@@ -8320,6 +8320,7 @@ export type MarketingApproverHistoryOutcome =
   | "returned"
   | "closed"
   | "archived"
+  | "cancelled"
   | "in_flight";
 
 /**
@@ -8345,6 +8346,8 @@ export function marketingHistoryOutcome(status: MarketingRequest["status"]): Mar
       return "closed";
     case "archived":
       return "archived";
+    case "cancelled":
+      return "cancelled";
     default:
       return "in_flight";
   }
@@ -8354,6 +8357,7 @@ export function marketingHistoryOutcome(status: MarketingRequest["status"]): Mar
 export const MARKETING_HISTORY_OUTCOME_LABEL: Record<MarketingApproverHistoryOutcome, string> = {
   approved: "Approved",
   archived: "Archived",
+  cancelled: "Cancelled",
   closed: "Closed",
   in_flight: "Still in approval",
   rejected: "Rejected",
@@ -8370,6 +8374,7 @@ const MARKETING_HISTORY_STATUSES: ReadonlyArray<MarketingRequest["status"]> = [
   "rejected",
   "returned",
   "archived",
+  "cancelled",
 ];
 
 /**

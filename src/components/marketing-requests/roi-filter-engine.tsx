@@ -119,6 +119,7 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "Closed",
   finance_hold: "Finance hold",
   archived: "Archived",
+  cancelled: "Cancelled",
 };
 
 function KpiCard({

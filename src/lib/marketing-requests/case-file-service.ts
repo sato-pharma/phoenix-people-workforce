@@ -247,6 +247,8 @@ export function describeLifecycleStage(input: {
   switch (input.stage) {
     case "rejected":
       return "Refused. No money was committed, and nothing here counts towards company spend.";
+    case "cancelled":
+      return "Cancelled. The request was called off, so no money is committed and nothing here counts towards company spend.";
     case "awaiting_approval":
       // A held request is NOT awaiting an approval, and the generic sentence below said it was.
       //

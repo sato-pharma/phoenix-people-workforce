@@ -42,6 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
   closed: "Closed",
   finance_hold: "Finance hold",
   archived: "Archived",
+  cancelled: "Cancelled",
 };
 
 function StatCard({ label, value, hint, accent = "slate" }: { label: string; value: string; hint?: string; accent?: "slate" | "orange" | "green" | "sky" }) {

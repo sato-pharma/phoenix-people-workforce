@@ -46,6 +46,7 @@ import type {
 const OUTCOME_VARIANT: Record<MarketingApproverHistoryOutcome, "neutral" | "success" | "warning" | "danger"> = {
   approved: "success",
   archived: "neutral",
+  cancelled: "danger",
   closed: "neutral",
   in_flight: "warning",
   rejected: "danger",
@@ -55,6 +56,7 @@ const OUTCOME_VARIANT: Record<MarketingApproverHistoryOutcome, "neutral" | "succ
 const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2> = {
   approved: CheckCircle2,
   archived: Archive,
+  cancelled: XCircle,
   closed: Archive,
   in_flight: History,
   rejected: XCircle,
@@ -64,6 +66,7 @@ const OUTCOME_ICON: Record<MarketingApproverHistoryOutcome, typeof CheckCircle2>
 const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
   approved: "from-white via-emerald-50/40 to-white",
   archived: "from-white via-slate-50 to-white",
+  cancelled: "from-white via-rose-50/40 to-white",
   closed: "from-white via-slate-50 to-white",
   in_flight: "from-white via-orange-50/30 to-white",
   rejected: "from-white via-rose-50/40 to-white",
@@ -76,6 +79,7 @@ const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
 const OUTCOME_DETAIL_BORDER: Record<MarketingApproverHistoryOutcome, string> = {
   approved: "border-l-emerald-500",
   archived: "border-l-slate-400",
+  cancelled: "border-l-rose-500",
   closed: "border-l-slate-400",
   in_flight: "border-l-orange-500",
   rejected: "border-l-rose-500",
