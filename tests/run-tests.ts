@@ -1497,6 +1497,7 @@ import { runPhoenixCrmRulesTests } from "./phoenix-crm-rules.test.ts";
 import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts";
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
+import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -4940,6 +4941,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's carried-over customers (owner, 2026-09-22: a customer not validated yet is planned and visited like anyone else, with no place and no days and hours; his visits count in NOTHING — coverage, plan against actual and the manager's report all filter on the customer being validated, on both sides; validating makes the visits already saved against him count, with no backfill, and happens once; the name is corrected later, on its own; and the rep's list never refuses a plan again)",
   runPhoenixCrmPendingCustomerTests,
+);
+
+await runTest(
+  "Phoenix CRM's Doctors directory (owner, 2026-09-22: the cross-territory list of VALIDATED customers only, searchable by name; scope is settled on the server and runs downward only, with the Super Admin, the CEO, the SFE Manager and the Training Manager reading the whole company — the Training Manager as a directory role only, never as company scope over every territory's visits, plans and reports; the seventh tab has its own phone grid rule and its own content branch)",
+  runPhoenixCrmDoctorsDirectoryTests,
 );
 
 await runTest(

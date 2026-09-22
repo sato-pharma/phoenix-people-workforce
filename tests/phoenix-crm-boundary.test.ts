@@ -104,6 +104,8 @@ const ROUTE_GATES: RouteGate[] = [
   post("plans/decide", "approve"),
   get("plans/reviews"),
   get("team"),
+  // The Doctors directory: validated customers across territories, scoped downward on the server.
+  get("doctors"),
   get("reports"),
   post("photos/upload-slot", "create"),
   // A read sent as a POST (a batch of photo paths does not belong in a URL), audited as a read.

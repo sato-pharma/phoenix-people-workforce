@@ -26,6 +26,7 @@ export type {
   TerritoryListView,
   ValidateResult,
 } from "@/lib/phoenix-crm/server/list";
+export type { DoctorDirectoryRow, DoctorDirectoryView } from "@/lib/phoenix-crm/server/doctors";
 export type { TeamRequest, TeamTerritoryRow, TeamView } from "@/lib/phoenix-crm/server/team";
 export type {
   PlanDayView,

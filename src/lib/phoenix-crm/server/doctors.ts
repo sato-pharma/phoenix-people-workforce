@@ -1,0 +1,170 @@
+/**
+ * Phoenix CRM — the Doctors directory: every validated customer the viewer may see, across territories.
+ *
+ * Owner, 2026-09-22: "BUILD the cross-territory validated-doctors list". The Team tab already reaches
+ * one customer's page through his rep's territory; this is the second door, for the people who look
+ * across many reps at once — type a name, land on the same page, without first knowing whose
+ * territory the doctor sits in.
+ *
+ * Two rules decide what comes back, and both are settled here on the server, never in a component:
+ *
+ *  - **Validated only.** A customer carried over from iReports360 and not validated yet belongs to
+ *    his own rep's list, not to a company directory. He appears the moment his rep validates him.
+ *  - **Downward only.** The seats are the viewer's own `scopeTerritories`, which `territoriesInScope`
+ *    resolves downward — never a sibling, never your own manager. The four directory roles below read
+ *    every territory instead; everyone else reads their own subtree.
+ */
+
+import type { PhoenixRole } from "@/lib/auth/permissions";
+import type { OrgSeat } from "@/lib/phoenix-crm/scope";
+import type { PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
+import { chunk } from "@/lib/phoenix-crm/server/db";
+import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
+import { describeTerritory, territoryPeople } from "@/lib/phoenix-crm/server/territory";
+import type { PhoenixCrmGrade, PhoenixCrmListType } from "@/lib/phoenix-crm/types";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+type Row = Record<string, unknown>;
+
+/**
+ * The roles that read every territory's validated customers.
+ *
+ * Owner, 2026-09-22: "give SFE and Training Manager the full company list too". Deliberately its own
+ * set rather than Phoenix CRM's `COMPANY_ROLES` (access.ts): widening that one would hand the Training
+ * Manager every territory's visits, list, plan and reports as well, which is not what he asked for.
+ * This set governs the directory and nothing else. It matches `doctorListBasisForRole`'s `company`
+ * roles on the Reps List, so the two surfaces agree about who looks at the whole field.
+ */
+const DIRECTORY_COMPANY_ROLES = new Set<string>(["Super Admin", "CEO", "SFE Manager", "Training Manager"]);
+
+/** Does this role read every territory's validated customers, rather than its own subtree? */
+export function isDirectoryCompanyRole(role: PhoenixRole | string): boolean {
+  return DIRECTORY_COMPANY_ROLES.has(role);
+}
+
+/** One validated customer, with the territory that holds him so the row can open his page. */
+export type DoctorDirectoryRow = {
+  customerId: string;
+  name: string;
+  listType: PhoenixCrmListType;
+  speciality: string | null;
+  grade: PhoenixCrmGrade | null;
+  validatedAt: string;
+  validatedByName: string | null;
+  /** How many places are on record; the captured location and photo live on the customer's own page. */
+  placeCount: number;
+  /** The territory this customer is listed in: the seat whose list the row opens. */
+  seatId: string;
+  territoryName: string;
+  areaName: string | null;
+  regionName: string | null;
+  lineName: string | null;
+  repName: string | null;
+};
+
+export type DoctorDirectoryView = {
+  rows: DoctorDirectoryRow[];
+  /** How the viewer's reach was decided, so the screen can say it in one sentence. */
+  scope: "company" | "territories";
+  territoryCount: number;
+};
+
+/**
+ * The territories whose validated customers this viewer reads.
+ *
+ * A directory role reads every territory in an open line — the same "open lines only" rule
+ * `resolvePhoenixCrmViewer` applies to `scopeTerritories`, so the directory never shows a line the
+ * module has not opened. The Super Admin reads the lot (his own entries are always test entries, and
+ * in test mode the directory follows him onto any territory).
+ */
+export function directorySeats(viewer: PhoenixCrmViewer): OrgSeat[] {
+  if (!isDirectoryCompanyRole(viewer.role)) return viewer.scopeTerritories;
+  if (viewer.isSuperAdmin) return viewer.org.territories;
+  return viewer.org.territories.filter((seat) => Boolean(seat.lineCode && viewer.openLines.has(seat.lineCode)));
+}
+
+/** Active places per customer, over many seats at once. */
+async function loadPlaceCounts(seatIds: string[], isTest: boolean): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  for (const part of chunk(seatIds, 100)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_places")
+          .select("id, customer_id")
+          .in("seat_id", part)
+          .eq("is_test", isTest)
+          .eq("status", "active"),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    for (const row of rows) {
+      const customerId = String(row.customer_id);
+      counts.set(customerId, (counts.get(customerId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Every validated customer in the viewer's reach, newest validation first.
+ *
+ * `status = 'active'` IS "validated" — the `phoenix_crm_customers_active_is_validated` check makes the
+ * two one statement — but the query asks for `validated_at not null` as well, so the rule reads here
+ * exactly as it reads in every report function.
+ */
+export async function loadDoctorDirectory(viewer: PhoenixCrmViewer, isTest: boolean): Promise<DoctorDirectoryView> {
+  const seats = directorySeats(viewer);
+  const scope: DoctorDirectoryView["scope"] = isDirectoryCompanyRole(viewer.role) ? "company" : "territories";
+  const seatIds = seats.map((seat) => seat.seatId);
+  if (seatIds.length === 0) return { rows: [], scope, territoryCount: 0 };
+
+  const customers: Row[] = [];
+  for (const part of chunk(seatIds, 100)) {
+    const rows = await fetchAllRowsKeyset<Row>(
+      () =>
+        getSupabaseAdmin()
+          .from("phoenix_crm_customers")
+          .select("id, seat_id, list_type, name, speciality, grade, validated_at, validated_by_hr_id")
+          .in("seat_id", part)
+          .eq("is_test", isTest)
+          .eq("status", "active")
+          .not("validated_at", "is", null),
+      { cursorColumn: "id", cursorOf: (row) => String(row.id) },
+    );
+    customers.push(...rows);
+  }
+
+  const placeCounts = await loadPlaceCounts(seatIds, isTest);
+  const names = await loadPeopleNames([
+    ...territoryPeople(viewer.org, seats),
+    ...customers.map((row) => (typeof row.validated_by_hr_id === "string" ? row.validated_by_hr_id : null)),
+  ]);
+  const territoryById = new Map(seats.map((seat) => [seat.seatId, describeTerritory(viewer.org, seat, names)]));
+
+  const rows: DoctorDirectoryRow[] = [];
+  for (const row of customers) {
+    const territory = territoryById.get(String(row.seat_id));
+    if (!territory) continue;
+    const validatedBy = typeof row.validated_by_hr_id === "string" ? row.validated_by_hr_id : null;
+    rows.push({
+      customerId: String(row.id),
+      name: String(row.name),
+      listType: row.list_type === "AM" ? "AM" : "PM",
+      speciality: typeof row.speciality === "string" ? row.speciality : null,
+      grade: typeof row.grade === "string" ? (row.grade as PhoenixCrmGrade) : null,
+      validatedAt: String(row.validated_at),
+      validatedByName: validatedBy ? nameOf(names, validatedBy) : null,
+      placeCount: placeCounts.get(String(row.id)) ?? 0,
+      seatId: territory.seatId,
+      territoryName: territory.name,
+      areaName: territory.areaName,
+      regionName: territory.regionName,
+      lineName: territory.lineName,
+      repName: territory.repName,
+    });
+  }
+  // Newest validation first: the doctors the field has just proved are the ones being looked for.
+  rows.sort((left, right) => right.validatedAt.localeCompare(left.validatedAt) || left.name.localeCompare(right.name));
+  return { rows, scope, territoryCount: seatIds.length };
+}

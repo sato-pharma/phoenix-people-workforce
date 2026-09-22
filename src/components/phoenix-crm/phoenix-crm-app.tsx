@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { crmGet, messageOf } from "@/components/phoenix-crm/api";
+import { DoctorsTab } from "@/components/phoenix-crm/doctors-tab";
 import { countText, plural } from "@/components/phoenix-crm/format";
 import { ListTab } from "@/components/phoenix-crm/list-tab";
 import { releaseCapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
@@ -48,18 +49,23 @@ import { cn } from "@/lib/utils";
 
 type TabKey = keyof PhoenixCrmTabs;
 
-const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "reports", "settings"];
+const TAB_ORDER: readonly TabKey[] = ["visits", "list", "plan", "team", "doctors", "reports", "settings"];
 
 const TAB_LABELS: Record<TabKey, string> = {
   visits: "Visits",
   list: "List",
   plan: "Plan",
   team: "Team",
+  doctors: "Doctors",
   reports: "Reports",
   settings: "Settings",
 };
 
-/** Phones fit three tabs a row (two rows for five or six); wider screens fit every tab on one row. */
+/**
+ * Phones fit three tabs a row (two rows for five or six, three for seven); wider screens fit every tab
+ * on one row. Seven is the Super Admin's full set — four a row from `sm` keeps the labels on one line
+ * until there is room for all seven, rather than shrinking the type (the fits-the-screen rule).
+ */
 const TAB_COLUMNS: Record<number, string> = {
   1: "grid-cols-1",
   2: "grid-cols-2",
@@ -67,6 +73,7 @@ const TAB_COLUMNS: Record<number, string> = {
   4: "grid-cols-4",
   5: "grid-cols-3 sm:grid-cols-5",
   6: "grid-cols-3 sm:grid-cols-6",
+  7: "grid-cols-3 sm:grid-cols-4 lg:grid-cols-7",
 };
 
 /** The tabs that show one territory, chosen with the picker above them. */
@@ -74,8 +81,8 @@ type SeatTab = "visits" | "list" | "plan";
 
 const SEAT_TABS: readonly SeatTab[] = ["visits", "list", "plan"];
 
-/** The tabs that can hold work the page keeps while another tab is open. Reports hold none. */
-type HoldingTab = Exclude<TabKey, "reports">;
+/** The tabs that can hold work the page keeps while another tab is open. Reports and Doctors hold none. */
+type HoldingTab = Exclude<TabKey, "reports" | "doctors">;
 
 /** Each tab's work, as the question before letting it go names it. */
 const HELD_WORK: Record<HoldingTab, string> = {
@@ -117,7 +124,7 @@ function isSeatTab(key: TabKey): key is SeatTab {
 }
 
 function isHoldingTab(key: TabKey): key is HoldingTab {
-  return key !== "reports";
+  return key !== "reports" && key !== "doctors";
 }
 
 function allowedTabs(tabs: PhoenixCrmTabs): TabKey[] {
@@ -560,6 +567,16 @@ export function PhoenixCrmApp({
           onChanged={refreshOverview}
           onDirtyChange={holdReporters.team}
           onOpenList={openTerritoryList}
+          test={test}
+        />
+      );
+    }
+    if (key === "doctors") {
+      return (
+        <DoctorsTab
+          key={`doctors|${test}`}
+          onOpenList={openTerritoryList}
+          openableSeatIds={overview.territories.map((territory) => territory.seatId)}
           test={test}
         />
       );

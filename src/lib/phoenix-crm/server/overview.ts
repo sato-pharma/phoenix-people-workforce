@@ -15,11 +15,20 @@ import { plannableWeeks } from "@/lib/phoenix-crm/calendar";
 import { managerChain, type OrgSeat } from "@/lib/phoenix-crm/scope";
 import { canReviewTerritory, lineOpeningText, type PhoenixCrmViewer } from "@/lib/phoenix-crm/server/access";
 import { chunk, throwIfError } from "@/lib/phoenix-crm/server/db";
+import { isDirectoryCompanyRole } from "@/lib/phoenix-crm/server/doctors";
 import { loadPeopleNames, nameOf } from "@/lib/phoenix-crm/server/people";
 import { describeTerritory, territoryPeople, type TerritorySummary } from "@/lib/phoenix-crm/server/territory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
-export type PhoenixCrmTabs = { visits: boolean; list: boolean; plan: boolean; team: boolean; reports: boolean; settings: boolean };
+export type PhoenixCrmTabs = {
+  visits: boolean;
+  list: boolean;
+  plan: boolean;
+  team: boolean;
+  doctors: boolean;
+  reports: boolean;
+  settings: boolean;
+};
 
 export type PhoenixCrmOverview = {
   viewer: {
@@ -50,6 +59,9 @@ export type PhoenixCrmOverview = {
 
 function closedMessage(viewer: PhoenixCrmViewer): string | null {
   if (viewer.isSuperAdmin || viewer.scopeTerritories.length > 0) return null;
+  // A directory role holds no territory (the Training Manager has no seat in the organogram) and
+  // still has the Doctors tab to open, so the module is not closed for them.
+  if (isDirectoryCompanyRole(viewer.role)) return null;
   const heldClosed = [...viewer.waitingTerritories, ...viewer.managerSeats].find(
     (seat) => !seat.lineCode || !viewer.openLines.has(seat.lineCode),
   );
@@ -121,6 +133,10 @@ export async function loadPhoenixCrmOverview(viewer: PhoenixCrmViewer): Promise<
     list: hasScope,
     plan: viewer.isSuperAdmin || ownSeatIds.length > 0,
     team: viewer.isSuperAdmin || (scope.length > 0 && (viewer.managerSeats.length > 0 || viewer.basis === "all")),
+    // The Doctors directory. A directory role (owner, 2026-09-22: the SFE Manager and the Training
+    // Manager read the whole company) gets it without holding a seat — a Training Manager has no
+    // territory in the organogram, so `hasScope` alone would leave him with no tab at all.
+    doctors: hasScope || isDirectoryCompanyRole(viewer.role),
     reports: hasScope,
     settings: viewer.isSuperAdmin && viewer.canUpdate,
   };
