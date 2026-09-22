@@ -793,7 +793,10 @@ export async function getCeoLandingDeferred(
   // Managers on leave today — derive from DV manager list + leave map
   let managersOnLeave: CeoLandingDeferredData["managersOnLeave"] = null;
   if (dv && dv.managerSummaries.length > 0) {
-    const todayIso = new Date().toISOString().slice(0, 10);
+    // "On leave TODAY" means the Cairo calendar day — the same clock `crmDateTo` above already
+    // uses. Production runs UTC, so from 21:00 UTC onward this asked the leave map about
+    // yesterday, and a manager on leave on the new Cairo day read as present until 03:00.
+    const todayIso = cairoTodayIso();
     const hrIds = dv.managerSummaries.map((s) => s.managerHrId).filter(Boolean);
     try {
       const leaveMap = await getApprovedLeaveDayMap({

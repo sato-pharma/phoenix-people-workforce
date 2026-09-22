@@ -16,6 +16,7 @@ import type { ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildDownwardCut } from "@/lib/crm/doctor-coverage-scope";
 import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
@@ -180,8 +181,17 @@ function emptyDashboard(dateFrom: string, dateTo: string): DoubleVisitDashboardD
   };
 }
 
+/**
+ * "Today" here is a BUSINESS day, so it is Cairo's calendar date, not the server's.
+ *
+ * Railway production sets no TZ variable, so this used to return UTC's date. Every `asOfDate`
+ * stamp, `daysBetween` gap and — the one that actually moves a number — `currentMonthBounds`
+ * hung off it. Between 00:00 and 03:00 Cairo on the 1st of a month UTC is still on the 31st, so
+ * a manager opening his portal after midnight on the 1st saw the double-visit pulse still
+ * counting the month that had just ended.
+ */
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return cairoTodayIso();
 }
 
 function addDaysIso(dateIso: string, days: number) {

@@ -83,6 +83,21 @@ export function salesAchievementRate(sales: number, target: number) {
   return target > 0 ? sales / target : 0;
 }
 
+/**
+ * How the COMPANY-WIDE achievement rate must be NAMED wherever it is shown.
+ *
+ * `getSalesPlatformMetrics` runs the canonical dashboard with no filter, so the rate it hands back
+ * covers `SALES_HISTORY_FLOOR` ("2026-01") through the current Cairo month — cumulative, never a
+ * single month. On the CEO and SFE overviews that figure sits directly beside tiles explicitly
+ * stamped with one closing month, so unlabelled it reads as that month's achievement. Owner
+ * decision, 2026-09-22: label it "2026 to date".
+ *
+ * The year is the FLOOR's, not today's — the window opens in 2026 and runs to now, so this stays
+ * true in later years too. `runSalesSourceOfTruthTests` pins it against `SALES_HISTORY_FLOOR` so
+ * the label and the window it describes cannot drift apart in silence.
+ */
+export const SALES_ACHIEVEMENT_WINDOW_LABEL = "2026 to date";
+
 export type SalesManagerPerformanceMember = {
   managerHrId?: string | null;
   managerName?: string | null;

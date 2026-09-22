@@ -543,7 +543,18 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
     ? queue
     : (segments[0]?.key ?? "decide");
 
+  /**
+   * "Nothing involves you" is a statement about the QUEUE, and it may only be made when the queue
+   * was actually read.
+   *
+   * Every failure path here — a non-ok response and the network catch alike — clears all four row
+   * sets and sets `error`. Without the `!error` leg below, those empty arrays took the same branch
+   * a genuinely empty inbox takes, so a 500 rendered "No marketing requests involve you right now"
+   * in large type with the error banner above it. For the Financial Advisor that panel IS the
+   * landing page, and that sentence is the one thing it must never say on a failed load.
+   */
   const isCompletelyEmpty =
+    !error &&
     rows.length === 0 &&
     advisoryRows.length === 0 &&
     upcomingRows.length === 0 &&
@@ -564,9 +575,13 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               Requests awaiting my decision
             </h2>
             <p className="text-phx-xs font-medium text-slate-400">
+              {/* `rows` is emptied on every failure path, so without the error leg a failed load
+                  reported "0 requests pending" — a count, in the same place a real count goes. */}
               {isLoading
                 ? "Loading…"
-                : `${rows.length} request${rows.length === 1 ? "" : "s"} pending`}
+                : error
+                  ? "Could not be counted"
+                  : `${rows.length} request${rows.length === 1 ? "" : "s"} pending`}
             </p>
           </div>
         </div>
