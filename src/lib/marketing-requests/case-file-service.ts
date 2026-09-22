@@ -27,6 +27,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
+import { canCancelMarketingRequest } from "@/lib/marketing-requests/cancel";
 import { canReopenRejectedMarketingRequest } from "@/lib/marketing-requests/reopen-rule";
 import {
   canPlaceMarketingRequestOnFinanceHold,
@@ -1487,6 +1488,9 @@ function buildViewer(
   return {
     admittedAs,
     can: {
+      // Super Admin + a live, non-terminal request. Read from the domain rule rather than spelled
+      // out here, for the same reason as reopen below: a second copy of the rule is where they drift.
+      cancel: canCancelMarketingRequest({ role: access.role, status: request.status }),
       comment: canComment,
       decide: canDecide,
       // Mirrors assertMarketingFinanceHoldAccess exactly. Affordance only: the route re-checks it

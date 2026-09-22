@@ -388,6 +388,12 @@ export type MarketingCaseFileViewer = {
    * route that performs the action. A capability boolean must never be used as a data gate.
    */
   can: {
+    /**
+     * Whether this viewer may CANCEL — call off a live, non-terminal request. Super Admin and a
+     * cancellable status, from `cancel.ts` — the same predicate the module enforces, so the control
+     * and the write cannot drift. Affordance only; the route re-checks before writing.
+     */
+    cancel: boolean;
     comment: boolean;
     decide: boolean;
     /**
