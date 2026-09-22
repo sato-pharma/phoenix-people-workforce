@@ -54,6 +54,7 @@ function pngDataUri(bytes: Buffer): string {
 }
 
 let logoCache: string | null | undefined;
+let reverseLogoCache: string | null | undefined;
 let signatureCache: string | null | undefined;
 let sealCache: string | null | undefined;
 
@@ -76,6 +77,30 @@ export function satoLogoDataUri(): string | null {
     }
   }
   return logoCache;
+}
+
+/**
+ * The REVERSE Sato mark — SATO drawn in WHITE — as a `data:` URI, for the Sato corporate letter's
+ * navy masthead band. Null when it cannot be read.
+ *
+ * This is the opposite file from `satoLogoDataUri()` above, and choosing between them matters: the
+ * on-light mark (SATO in ink) vanishes on a navy band, and this reverse mark vanishes on white
+ * paper. The Sato variant is the only design that draws on navy, so it is the only caller — the
+ * classic and executive letters keep the on-light mark, and this reader is passed to the renderer
+ * only when the template's variant is `sato`.
+ *
+ * The literal `join(process.cwd(), …)` is load-bearing exactly as in the readers above: a variadic
+ * helper here once made ONE route trace 6,034 files. Keep every segment a string literal, inline.
+ */
+export function satoLogoReverseDataUri(): string | null {
+  if (reverseLogoCache === undefined) {
+    try {
+      reverseLogoCache = pngDataUri(readFileSync(join(process.cwd(), "public", "brand", "sato-pharma-logo.png")));
+    } catch {
+      reverseLogoCache = null;
+    }
+  }
+  return reverseLogoCache;
 }
 
 /**

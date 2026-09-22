@@ -12,6 +12,20 @@ import {
   OFFER_EXECUTIVE_THEME,
   executiveOfferBlocks,
 } from "@/lib/offers/executive-template";
+import {
+  OFFER_SATO_FONT,
+  OFFER_SATO_FONT_SIZE_PT,
+  OFFER_SATO_TEMPLATE_NAME,
+  OFFER_SATO_THEME,
+  satoOfferBlocks,
+} from "@/lib/offers/sato-template";
+import {
+  OFFER_HOUSE_FONT,
+  OFFER_HOUSE_FONT_SIZE_PT,
+  OFFER_HOUSE_TEMPLATE_NAME,
+  OFFER_HOUSE_THEME,
+  houseOfferBlocks,
+} from "@/lib/offers/house-template";
 import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } from "@/lib/offers/types";
 
 /**
@@ -23,8 +37,9 @@ import type { OfferBlock, OfferBuiltinKey, OfferTemplateVariant, OfferTheme } fr
  * itself; a generator can. `builtinKey` is how a row is matched back to its generator, so renaming
  * a template in the UI never breaks its Restore button.
  *
- * Adding a third design is one entry here plus its own `*-template.ts`. Nothing else in the module
- * enumerates them — the seeder, the restore route and the designer all read this list.
+ * Adding a design is one entry here plus its own `*-template.ts`. Nothing else in the module
+ * enumerates them — the seeder, the restore route and the designer all read this list. The third,
+ * `sato`, was added beside the two frozen uploaded letters and changes neither of them.
  */
 export type OfferBuiltinTemplate = {
   blocks: () => OfferBlock[];
@@ -63,6 +78,28 @@ export const OFFER_BUILTIN_TEMPLATES: OfferBuiltinTemplate[] = [
     theme: OFFER_EXECUTIVE_THEME,
     variant: "executive",
   },
+  {
+    blocks: satoOfferBlocks,
+    description: "The Sato corporate letter — navy masthead band, reverse mark, brand seam, SHARP square edges.",
+    fontFamily: OFFER_SATO_FONT,
+    fontSizePt: OFFER_SATO_FONT_SIZE_PT,
+    key: "sato",
+    name: OFFER_SATO_TEMPLATE_NAME,
+    seedAsDefault: false,
+    theme: OFFER_SATO_THEME,
+    variant: "sato",
+  },
+  {
+    blocks: houseOfferBlocks,
+    description: "The HR-forms house identity — the on-light mark over the engine-turned band, three logo blues, ink rule (no filled areas), a 6% zebra salary table.",
+    fontFamily: OFFER_HOUSE_FONT,
+    fontSizePt: OFFER_HOUSE_FONT_SIZE_PT,
+    key: "house",
+    name: OFFER_HOUSE_TEMPLATE_NAME,
+    seedAsDefault: false,
+    theme: OFFER_HOUSE_THEME,
+    variant: "house",
+  },
 ];
 
 export function offerBuiltinTemplate(key: string): OfferBuiltinTemplate | null {
@@ -74,5 +111,5 @@ export function isOfferBuiltinKey(value: unknown): value is OfferBuiltinKey {
 }
 
 export function isOfferTemplateVariant(value: unknown): value is OfferTemplateVariant {
-  return value === "classic" || value === "executive";
+  return value === "classic" || value === "executive" || value === "sato" || value === "house";
 }

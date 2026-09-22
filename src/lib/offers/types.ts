@@ -39,8 +39,16 @@ export type OfferBlockType =
  *
  * `classic`   — the signed Dr Samaa letter: white sheet, blue rail, hairline rules.
  * `executive` — the Ultra Premium letter: navy bands, tinted zebra table, numeral tiles.
+ * `sato`      — the Sato corporate-identity letter: navy masthead band closed by a 3px brand
+ *               seam, the reverse Sato mark, micro labels and the SHARP square-edge look. It is a
+ *               THIRD skin added beside the two frozen designs, not a change to either of them.
+ * `house`     — the HR-forms house identity (SATO-DIS-2026-01): the on-light mark over the
+ *               engine-turned band, the three logo blues, and the INK RULE — no filled areas, the
+ *               identity carried by lines and type, one 6% zebra on the salary table. A FOURTH
+ *               skin the owner asked for on 2026-09-22 to match the hiring-pack forms, added
+ *               beside the three others and changing none of them.
  */
-export type OfferTemplateVariant = "classic" | "executive";
+export type OfferTemplateVariant = "classic" | "executive" | "sato" | "house";
 
 /**
  * Which shipped design a row IS a copy of, or null for one somebody built themselves.
@@ -48,7 +56,7 @@ export type OfferTemplateVariant = "classic" | "executive";
  * This is what makes "restore" survive renaming: the built-ins are regenerated from code, and the
  * row is found by this key rather than by a name the owner is free to change.
  */
-export type OfferBuiltinKey = "classic" | "executive";
+export type OfferBuiltinKey = "classic" | "executive" | "sato" | "house";
 
 export type OfferBlock = {
   id: string;

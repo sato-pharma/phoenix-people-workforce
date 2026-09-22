@@ -8,7 +8,7 @@ import { offerJsonError } from "@/lib/offers/http";
 import { renderOfferDocument } from "@/lib/offers/render";
 import { renderOfferEmail } from "@/lib/offers/render-email";
 import { isOfferTemplateVariant } from "@/lib/offers/builtin-templates";
-import { satoLogoDataUri, satoLogoUrl, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
+import { satoLogoDataUri, satoLogoReverseDataUri, satoLogoUrl, satoSealDataUri, satoSignatureDataUri } from "@/lib/offers/brand";
 import { systemDeployment } from "@/config/system-settings";
 import { sanitizeTemplateBlocks, sanitizeTheme } from "@/lib/offers/service";
 import {
@@ -86,6 +86,9 @@ export async function POST(request: Request) {
 
     const rendered = renderOfferDocument(template, fields, {
       logoUrl: logoUrl ?? satoLogoDataUri() ?? undefined,
+      // The reverse (white-on-navy) mark, so the Sato corporate design's navy masthead shows its
+      // mark in the on-screen preview and not just in the PDF. Only that variant draws on navy.
+      logoReverseUrl: template.variant === "sato" ? (satoLogoReverseDataUri() ?? undefined) : undefined,
       // The designer has to show the signature the PDF will actually carry. Without this the
       // preview would render an unsigned letter and the signed one would only ever appear in the
       // candidate's inbox — the one place nobody checks it before it is too late.
