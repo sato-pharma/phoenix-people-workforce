@@ -8,6 +8,7 @@ import { buildWeeklyExportWorkbook } from "@/lib/sales/weekly/export-workbook";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
       accessScope,
     });
 
-    const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
+    const generatedAt = cairoDateTimeSortable(new Date().toISOString()) + " Cairo";
     // The actual Excel "repair" culprit was the sparkline (now removed from the builder). interactive
     // keeps the native PivotTable + slicers OFF for now as a precaution until confirmed clean on the
     // full production dataset; the workbook still has live formulas, native charts, conditional

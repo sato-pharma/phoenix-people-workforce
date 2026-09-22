@@ -6,6 +6,7 @@ import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runRepTargetsTests } from "./rep-targets.test.ts";
 import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
+import { runSalesExportGeneratedStampCairoTests } from "./sales-export-generated-stamp-cairo.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
@@ -4932,6 +4933,11 @@ await runTest(
 await runTest(
   "CRM reports read Phoenix's own lists and visits (KPI list sizes and the Reps List read open doctor-list assignments by HR id; double visits, vacations as type -4, the master datasets and the customer brick punch-list read the unified views and exclude on exclusion_crm_id)",
   runCrmReportsReadPhoenixTests,
+);
+
+await runTest(
+  "sales export Generated stamp is Cairo, not UTC (the weekly export, weekly summarized report, SoS BI dashboard export and SoS email-report all stamp the workbook 'Generated' time in Cairo wall-clock via cairoDateTimeSortable, matching the CRM master exports)",
+  runSalesExportGeneratedStampCairoTests,
 );
 
 await runTest(

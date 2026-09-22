@@ -6,6 +6,7 @@ import { canExportSosDashboard } from "@/lib/sales/access-scope";
 import { buildSosBiWorkbook } from "@/lib/sales/sos-bi-workbook";
 import { getSosDashboard, type SosDashboardFilters } from "@/lib/sales/sos-dashboard";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,7 @@ export async function GET(request: Request) {
     ].filter(Boolean);
     const filterSummary = filterParts.length > 0 ? filterParts.join(" · ") : "No filters (full scope)";
 
-    const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
+    const generatedAt = cairoDateTimeSortable(new Date().toISOString()) + " Cairo";
     const buffer = await buildSosBiWorkbook({
       data,
       generatedBy: access.loginId ?? access.hrId ?? access.role,
