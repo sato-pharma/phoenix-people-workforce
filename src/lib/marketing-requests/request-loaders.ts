@@ -24,7 +24,7 @@ import {
   windowMonths,
   type OverlapCandidate,
 } from "@/lib/marketing-requests/request-overlap";
-import type { MarketingRequest } from "@/lib/marketing-requests/types";
+import type { MarketingRequest, MarketingValidationStatus } from "@/lib/marketing-requests/types";
 
 /** One target pharmacy exactly as the requester submitted it — never collapsed to a count. */
 export type MarketingDecisionPharmacy = {
@@ -73,6 +73,22 @@ export type MarketingDecisionPharmacy = {
    * existing single-string behaviour.
    */
   referenceLookup: "resolved" | "lookup_failed";
+  /**
+   * The pharmacy's OWN validation state, raw ('pending' | 'system_validated' | 'sfe_validated' |
+   * 'admin_approved' | 'rejected').
+   *
+   * DISTINCT from `referenceStatus`, which is only about the distributor CODE match: a target
+   * pharmacy can carry a matched code and still never have been validated as a venue. That is
+   * exactly the gap the approver could not see — a pending pharmacy with no photo rendered as a bare
+   * name, indistinguishable from a validated one whose photo simply was not kept (owner, 2026-09-22).
+   */
+  validationStatus: MarketingValidationStatus;
+  /** validated_by_hr_id — the human validator, when a person (desk/link) adjudicated it; else null. */
+  validatedByHrId: string | null;
+  /** validated_at — the human decision moment. */
+  validatedAt: string | null;
+  /** evidence_photo_captured_at — the only honest "when" for the system-validated case. */
+  evidenceCapturedAt: string | null;
 };
 
 export type MarketingDecisionOverlap = {
@@ -133,6 +149,9 @@ export async function loadMarketingDecisionPharmacies(
       id: string;
       license_name_matches_sign: boolean | null;
       pharmacy_code: string | null;
+      validation_status: string | null;
+      validated_by_hr_id: string | null;
+      validated_at: string | null;
     }>(
       supabase,
       "marketing_pharmacies",
@@ -209,6 +228,15 @@ export async function loadMarketingDecisionPharmacies(
       // reference state — saying "pending" about it would be an invention.
       referenceLookup: code ? "resolved" : "lookup_failed",
       referenceStatus: cleanText(code?.reference_status) ?? "pending",
+      // The pharmacy's own validation state. A row that could not be read defaults to "pending",
+      // the honest floor: an unknown venue is treated as not-yet-validated, never as validated.
+      validationStatus: (cleanText(pharmacy?.validation_status) as MarketingValidationStatus | null) ?? "pending",
+      validatedByHrId: cleanText(pharmacy?.validated_by_hr_id),
+      // Timestamps are read raw (no whitespace-collapsing) so the badge formatter parses them exactly.
+      validatedAt: pharmacy?.validated_at ?? null,
+      evidenceCapturedAt: row.pharmacy_id
+        ? evidenceByPharmacyId.get(String(row.pharmacy_id))?.capturedAt ?? null
+        : null,
     };
   });
 }

@@ -1404,6 +1404,7 @@ import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chai
 
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
 import { runMarketingApproverCustomerDossierTests } from "./marketing-approver-customer-dossier.test.ts";
+import { runMarketingApproverPharmacyValidationBadgeTests } from "./marketing-approver-pharmacy-validation-badge.test.ts";
 import { runValidatedEvidenceBadgeTests } from "./validated-evidence-badge.test.ts";
 import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence-access.test.ts";
 // Registered beside its marketing siblings rather than appended at the end of the file: every PR
@@ -4453,6 +4454,11 @@ await runTest(
 await runTest(
   "marketing approver customer dossier (request-keyed gate: authorizes through the request holder, read-only, never inherits the register gate or a customer-id key)",
   runMarketingApproverCustomerDossierTests,
+);
+
+await runTest(
+  "marketing approver target-pharmacy validation badge (loader carries the venue's own validation state; window shows Validated / Not validated per pharmacy; human/system split honoured)",
+  runMarketingApproverPharmacyValidationBadgeTests,
 );
 
 await runTest(

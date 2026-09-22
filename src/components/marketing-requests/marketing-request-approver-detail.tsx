@@ -432,7 +432,38 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                       {pharmacy.referenceStatus}
                     </span>
                   ) : null}
+                  {/* Validated-or-not, per pharmacy (owner, 2026-09-22). The green stamp appears only
+                      when the venue is in a validated state; every other state — including the
+                      pending pharmacies with no photo — reads an explicit "Not validated", so the
+                      approver is never left guessing at a bare name. */}
+                  {pharmacy.validationBadge ? (
+                    <span className="inline-flex items-center gap-1 rounded-sm border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-emerald-800">
+                      <span aria-hidden className="inline-block h-1.5 w-1.5 bg-emerald-500" />
+                      Validated
+                    </span>
+                  ) : (
+                    <span className="rounded-sm border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.08em] text-slate-600">
+                      Not validated
+                    </span>
+                  )}
                 </div>
+                {/* Who validated it and when — only in the validated case, and never a fabricated
+                    reviewer: the system case reads "by the system", the human case the resolved name. */}
+                {pharmacy.validationBadge ? (
+                  <p className="mt-0.5 text-phx-2xs font-medium text-emerald-800" dir="auto">
+                    {pharmacy.validationBadge.isHuman
+                      ? pharmacy.validationBadge.byName
+                        ? `Validated by ${pharmacy.validationBadge.byName}`
+                        : "Validated by a reviewer"
+                      : "Validated by the system"}
+                    {formatDate(pharmacy.validationBadge.atIso)
+                      ? ` · ${formatDate(pharmacy.validationBadge.atIso)}`
+                      : ""}
+                    {pharmacy.validationBadge.isHuman && pharmacy.validationBadge.method
+                      ? ` · ${pharmacy.validationBadge.method}`
+                      : ""}
+                  </p>
+                ) : null}
                 {/* The pharmacy's own retained shop front, on the same rule as the customer's. */}
                 {pharmacy.evidencePhotoUrl ? (
                   <ZoomablePhoto
