@@ -2,6 +2,10 @@ import { hrIdsMatch, resolveNavigationMode, type AccessContext } from "@/lib/aut
 import { isSamePerson, sharedIdentityKeys } from "@/lib/auth/identity-aliases";
 import type { ActionHubItem, HistoricalApprovalItem, MyRequestItem, MyRequestStatusTone } from "@/components/action-center/types";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+// The same pager the Approvals Hub uses (#4273). One implementation, not a second copy: both
+// surfaces answer the same question — "every request this person decided" — and a cap on either
+// hides real decisions the same way.
+import { fetchAllApprovalRows } from "@/lib/approvals-hub/page-rows";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isMarketingDoubleVisit } from "@/lib/weekly-planning/marketing-double-visit";
 import { vacationTypeLabel } from "@/lib/vacation/calculations";
@@ -519,6 +523,140 @@ export async function getAwaitingMyActionItems(
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Row shapes for the decided-history feeds.
+//
+// They have to be written out because those reads are now PAGED through `fetchAllApprovalRows`,
+// which cannot infer a row type from a PostgREST builder the way awaiting one directly does. Each
+// type lists exactly the columns its `.select()` asks for, so the query and the code that reads it
+// can no longer drift apart silently.
+//
+// Written as `type` aliases, never interfaces: three consumers below reach an embedded parent by
+// casting the row (`row as Record<string, unknown>`, `row as { marketing_requests?: … }`), and
+// only a type alias carries the implicit index signature those casts need. The embedded parents
+// themselves stay `unknown` here — PostgREST returns an embedded relation as either an object or a
+// one-element array depending on how it resolves the relationship, and the consumers already
+// normalize both shapes rather than assume one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type DecidedLeaveRow = {
+  id: string;
+  employee_name: string | null;
+  employee_hr_id: string | null;
+  vacation_type: string | null;
+  start_date: string | null;
+  status: string | null;
+  manager_decision: string | null;
+  manager_decision_at: string | null;
+  manager_decision_by_hr_id: string | null;
+  hr_decision: string | null;
+  hr_decision_at: string | null;
+  hr_decision_by_hr_id: string | null;
+};
+
+type DecidedExcuseRow = {
+  id: string;
+  employee_name: string | null;
+  employee_hr_id: string | null;
+  excuse_date: string | null;
+  excuse_type: string | null;
+  manager_decision: string | null;
+  manager_decision_at: string | null;
+  manager_decision_by_hr_id: string | null;
+};
+
+type DecidedPlanRow = {
+  id: string;
+  employee_name: string | null;
+  employee_hr_id: string | null;
+  employee_job_title: string | null;
+  manager_hr_id: string | null;
+  period_key: string | null;
+  plan_kind: string | null;
+  status: string | null;
+  manager_decision_at: string | null;
+  manager_decision_by_hr_id: string | null;
+  ceo_decision_at: string | null;
+  ceo_decision_by_hr_id: string | null;
+};
+
+type DecidedResignationRow = {
+  id: string;
+  employee_name: string | null;
+  employee_hr_id: string | null;
+  effective_date: string | null;
+  status: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+};
+
+type DecidedSalaryBatchRow = {
+  id: string;
+  file_name: string | null;
+  month: string | number | null;
+  year: string | number | null;
+  status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+};
+
+type DecidedSalesImportRow = {
+  id: string;
+  file_name: string | null;
+  period: string | null;
+  month: string | number | null;
+  year: string | number | null;
+  status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+};
+
+type DecidedMarketingStepRow = {
+  id: string;
+  request_id: string | null;
+  step_name: string | null;
+  status: string | null;
+  decision_by_hr_id: string | null;
+  decision_at: string | null;
+  marketing_requests: unknown;
+};
+
+type DecidedExpenseRow = {
+  id: string;
+  specialist: string | null;
+  hr_id: string | null;
+  expense_date: string | null;
+  total: number | string | null;
+  status: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+};
+
+type DecidedVacationStepRow = {
+  id: string;
+  request_id: string | null;
+  step_key: string | null;
+  status: string | null;
+  approver_hr_id: string | null;
+  decided_at: string | null;
+  v2_vacation_requests: unknown;
+};
+
+type DecidedDirectOrderEventRow = {
+  id: string;
+  request_id: string | null;
+  actor_hr_id: string | null;
+  event_type: string | null;
+  created_at: string | null;
+  direct_order_requests: unknown;
+};
+
 /**
  * Returns a chronological list of every approval decision the signed-in user has
  * ever made, across leave, excuse, weekly-plan, and resignation modules.
@@ -577,6 +715,20 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     return `${base}/${encodeURIComponent(String(requestId ?? ""))}`;
   };
 
+  // Every feed below is PAGED, not capped, and every one ends its ordering with `id`.
+  //
+  // WHY BOTH HALVES MATTER. These ten reads used to end in `.limit(200)` or `.limit(100)`, which
+  // made a person's own decision history quietly stop at the cap. Measured on production
+  // 2026-09-23, this was live for the owner himself: B-10 has approved 370 outstation expenses,
+  // so 170 of his own approvals — everything decided before 2026-09-07 back to 2026-06-07 — were
+  // simply absent from his history, with nothing on the page saying the list was cut.
+  //
+  // The `id` tiebreak is not defensive tidiness either. 240 of those 370 approvals share ONE
+  // `approved_at` instant (a bulk approval writes them together), so `order by approved_at desc`
+  // alone cut straight through the middle of a tie: Postgres was free to return a different
+  // arbitrary 200 of those 240 on each load, and did not have to be consistent between them.
+  // Ordering by `(decided_at, id)` makes the sequence total, which is what paging needs to be
+  // correct at all — a non-total sort both drops and duplicates rows across page boundaries.
   const [
     leaves,
     excuses,
@@ -590,83 +742,96 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     directOrderEvents,
     directoryResult,
   ] = await Promise.allSettled([
-      db
-        .from("v2_vacation_requests")
-        .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
-        .or(decidedByAnyOfMine("manager_decision_by_hr_id", "hr_decision_by_hr_id"))
-        .not("manager_decision_at", "is", null)
-        .order("manager_decision_at", { ascending: false })
-        .limit(200),
-      db
-        .from("v2_excuse_requests")
-        .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
-        .or(decidedByAnyOfMine("manager_decision_by_hr_id"))
-        .not("manager_decision", "is", null)
-        .order("manager_decision_at", { ascending: false })
-        .limit(200),
-      db
-        .from("employee_plan_headers")
-        .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
-        .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
-        .not("manager_decision_at", "is", null)
-        .order("manager_decision_at", { ascending: false })
-        .limit(200),
-      db
-        .from("employee_resignations")
-        .select("id,employee_name,employee_hr_id,effective_date,status,reviewed_by,reviewed_at,approved_by,approved_at,rejected_by,rejected_at")
-        .or(decidedByAnyOfMine("reviewed_by", "approved_by", "rejected_by"))
-        .order("reviewed_at", { ascending: false })
-        .limit(100),
-      db
-        .from("salary_batches")
-        .select("id,file_name,month,year,status,approved_by,approved_at")
-        .or(decidedByAnyOfMine("approved_by"))
-        .not("approved_at", "is", null)
-        .order("approved_at", { ascending: false })
-        .limit(100),
-      db
-        .from("sales_import_batches")
-        .select("id,file_name,period,month,year,status,approved_by,approved_at,rejected_by,rejected_at")
-        .or(decidedByAnyOfMine("approved_by", "rejected_by"))
-        .order("approved_at", { ascending: false })
-        .limit(100),
-      db
-        .from("marketing_request_approval_steps")
-        .select("request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id)")
-        .or(decidedByAnyOfMine("decision_by_hr_id"))
-        .not("decision_at", "is", null)
-        .order("decision_at", { ascending: false })
-        .limit(200),
-      db
-        .from("outstation_expenses")
-        .select("id,specialist,hr_id,expense_date,total,status,approved_by,approved_at")
-        .or(decidedByAnyOfMine("approved_by"))
-        .not("approved_at", "is", null)
-        .order("approved_at", { ascending: false })
-        .limit(200),
+      fetchAllApprovalRows<DecidedLeaveRow>(() =>
+        db
+          .from("v2_vacation_requests")
+          .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
+          .or(decidedByAnyOfMine("manager_decision_by_hr_id", "hr_decision_by_hr_id"))
+          .not("manager_decision_at", "is", null)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedExcuseRow>(() =>
+        db
+          .from("v2_excuse_requests")
+          .select("id,employee_name,employee_hr_id,excuse_date,excuse_type,manager_decision,manager_decision_at,manager_decision_by_hr_id")
+          .or(decidedByAnyOfMine("manager_decision_by_hr_id"))
+          .not("manager_decision", "is", null)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedPlanRow>(() =>
+        db
+          .from("employee_plan_headers")
+          .select("id,employee_name,employee_hr_id,employee_job_title,manager_hr_id,period_key,plan_kind,status,manager_decision_at,manager_decision_by_hr_id,ceo_decision_at,ceo_decision_by_hr_id")
+          .or(decidedByAnyOfMine("manager_decision_by_hr_id", "ceo_decision_by_hr_id"))
+          .not("manager_decision_at", "is", null)
+          .order("manager_decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedResignationRow>(() =>
+        db
+          .from("employee_resignations")
+          .select("id,employee_name,employee_hr_id,effective_date,status,reviewed_by,reviewed_at,approved_by,approved_at,rejected_by,rejected_at")
+          .or(decidedByAnyOfMine("reviewed_by", "approved_by", "rejected_by"))
+          .order("reviewed_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedSalaryBatchRow>(() =>
+        db
+          .from("salary_batches")
+          .select("id,file_name,month,year,status,approved_by,approved_at")
+          .or(decidedByAnyOfMine("approved_by"))
+          .not("approved_at", "is", null)
+          .order("approved_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedSalesImportRow>(() =>
+        db
+          .from("sales_import_batches")
+          .select("id,file_name,period,month,year,status,approved_by,approved_at,rejected_by,rejected_at")
+          .or(decidedByAnyOfMine("approved_by", "rejected_by"))
+          .order("approved_at", { ascending: false })
+          .order("id", { ascending: false })),
+      // `id` joins the select purely so the ordering can be made total — the consumer keys this
+      // item on request_id + step_name, which is not unique enough to page on.
+      fetchAllApprovalRows<DecidedMarketingStepRow>(() =>
+        db
+          .from("marketing_request_approval_steps")
+          .select("id,request_id,step_name,status,decision_by_hr_id,decision_at,marketing_requests(request_code,requester_hr_id)")
+          .or(decidedByAnyOfMine("decision_by_hr_id"))
+          .not("decision_at", "is", null)
+          .order("decision_at", { ascending: false })
+          .order("id", { ascending: false })),
+      fetchAllApprovalRows<DecidedExpenseRow>(() =>
+        db
+          .from("outstation_expenses")
+          .select("id,specialist,hr_id,expense_date,total,status,approved_by,approved_at")
+          .or(decidedByAnyOfMine("approved_by"))
+          .not("approved_at", "is", null)
+          .order("approved_at", { ascending: false })
+          .order("id", { ascending: false })),
       // manager_of_manager decisions are never written to the main request's
       // manager_decision_by_hr_id column (only direct_manager is). Query the
       // steps table directly so the secondary manager sees their history too.
-      db
-        .from("v2_vacation_approval_steps")
-        .select("request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
-        .eq("step_key", "manager_of_manager")
-        .or(decidedByAnyOfMine("approver_hr_id"))
-        .neq("status", "pending")
-        .not("decided_at", "is", null)
-        .order("decided_at", { ascending: false })
-        .limit(200),
+      // `id` is selected for the same reason as the marketing steps above.
+      fetchAllApprovalRows<DecidedVacationStepRow>(() =>
+        db
+          .from("v2_vacation_approval_steps")
+          .select("id,request_id,step_key,status,approver_hr_id,decided_at,v2_vacation_requests(id,employee_name,employee_hr_id,vacation_type,start_date)")
+          .eq("step_key", "manager_of_manager")
+          .or(decidedByAnyOfMine("approver_hr_id"))
+          .neq("status", "pending")
+          .not("decided_at", "is", null)
+          .order("decided_at", { ascending: false })
+          .order("id", { ascending: false })),
       // Direct orders read from the EVENT log, not direct_order_approval_steps: a `return` decision
       // deliberately leaves the step row untouched (see phx_apply_direct_order_decision), so the
       // steps table cannot attribute a return to the approver who made it. The event log records
       // every transition with its actor, so returns show up here too.
-      db
-        .from("direct_order_events")
-        .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(product_name,qty,sales_value,requester_hr_id)")
-        .or(decidedByAnyOfMine("actor_hr_id"))
-        .in("event_type", ["approve", "reject", "return"])
-        .order("created_at", { ascending: false })
-        .limit(200),
+      fetchAllApprovalRows<DecidedDirectOrderEventRow>(() =>
+        db
+          .from("direct_order_events")
+          .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(product_name,qty,sales_value,requester_hr_id)")
+          .or(decidedByAnyOfMine("actor_hr_id"))
+          .in("event_type", ["approve", "reject", "return"])
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })),
       getEmployeeDirectory(),
     ]);
 
