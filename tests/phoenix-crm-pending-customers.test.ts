@@ -124,9 +124,10 @@ function runPickerTests() {
 // ── The database: one predicate, on both sides of every report ──────────────────────────────────
 
 const MIGRATION = "supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql";
+const DECIDE_FIX = "supabase/migrations/20260922210000_phoenix_crm_decide_request_reads_decision.sql";
 
-function sqlOf(): string {
-  return readFileSync(MIGRATION, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
+function sqlOf(file = MIGRATION): string {
+  return readFileSync(file, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
 }
 
 /** One function's text, from its header to its closing `$$;`. */
@@ -259,9 +260,73 @@ function runScreenTests() {
   }
 }
 
+/**
+ * The manager's decision, and the one key that made every approval a refusal.
+ *
+ * 20260922180258 replaced `phoenix_crm_decide_request` wholesale to teach it that a PENDING customer
+ * can be dropped, and while rewriting it read its input from `approve` instead of `decision`. The
+ * caller has always sent `decision` (src/lib/phoenix-crm/server/list.ts), so the key was never there,
+ * `coalesce(..., false)` won every time, and the approve branch was dead code: no grade was ever
+ * applied and NO customer could be taken off a list — one of the only two ways a carried-over
+ * customer ever leaves it.
+ *
+ * It was silent in the worst way: the manager clicked Approve and was told the request was REFUSED.
+ * Nothing threw, nothing logged, and no test looked at the key. This one does, on both sides — the
+ * function and its caller must name the same key, or the next rewrite breaks it the same way.
+ */
+function runDecideRequestTests() {
+  const sql = sqlOf(DECIDE_FIX);
+  const decide = functionSql(sql, "phoenix_crm_decide_request");
+
+  // The key itself: read from `decision`, never from `approve`.
+  assert.match(decide, /v_decision text := coalesce\(p ->> 'decision', ''\)/, "the decision is read from the `decision` key");
+  assert.match(decide, /if v_decision = 'approve' then/, "and the approve branch turns on it");
+  assert.doesNotMatch(decide, /p ->> 'approve'/, "`approve` is not a key this function has ever been sent");
+
+  // A payload with no usable decision is bad_input — NEVER a silent refusal. This is the assertion
+  // that would have caught the regression: without it, a missing key just means "refused".
+  assert.match(
+    decide,
+    /if v_actor is null or v_request_id is null or v_decision not in \('approve', 'refuse'\) then\s+raise exception 'phoenix_crm:bad_input';/,
+    "a payload with no decision, or an unknown one, is refused as bad input rather than silently recorded as a refusal",
+  );
+
+  // The caller and the function must agree about the key.
+  const caller = readFileSync("src/lib/phoenix-crm/server/list.ts", "utf8");
+  assert.match(
+    caller,
+    /callPhoenixCrm<Row>\("phoenix_crm_decide_request", \{\s*p: \{[^}]*\bdecision\b/,
+    "the caller sends `decision`, which is what the function reads",
+  );
+
+  // The error code the UI actually tests for. `already_decided` reaches neither db.ts's map nor the
+  // card, so a second decision surfaced as an opaque 500 instead of "already decided".
+  assert.match(decide, /raise exception 'phoenix_crm:request_decided'/, "a second decision raises the code the UI knows");
+  assert.doesNotMatch(decide, /already_decided/, "and not one nothing maps");
+  assert.match(readFileSync("src/lib/phoenix-crm/server/db.ts", "utf8"), /request_decided: \{ status: 409/, "which db.ts maps to a 409");
+
+  // The note guard the rewrite dropped: over-long notes belong in bad_input, not in a table CHECK.
+  assert.match(
+    decide,
+    /if v_note is not null and char_length\(v_note\) > 500 then\s+raise exception 'phoenix_crm:bad_input';/,
+    "an over-long note is bad input, not a 500 from the table's own CHECK",
+  );
+
+  // The pending-customer drop branch the rewrite was FOR must survive the repair. (sqlOf strips
+  // comments, so this reads the code: an existing pending row is UPDATED to dropped, where the old
+  // version could only insert a fresh dropped row and refused when one already existed.)
+  assert.match(decide, /raise exception 'phoenix_crm:already_validated'/, "a validated customer is not dropped down this path");
+  assert.match(
+    decide,
+    /set status = 'dropped',[\s\S]*?where c\.id = v_customer\.id\s+returning c\.\* into v_customer;/,
+    "an existing pending row is updated to dropped rather than refused for existing",
+  );
+}
+
 export function runPhoenixCrmPendingCustomerTests() {
   runPlanningTests();
   runPickerTests();
   runMigrationTests();
+  runDecideRequestTests();
   runScreenTests();
 }
