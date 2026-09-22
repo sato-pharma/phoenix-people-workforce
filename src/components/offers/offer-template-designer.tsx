@@ -542,7 +542,7 @@ export function OfferTemplateDesigner({
             </Button>
           </div>
         }
-        description="Two SATO designs ship with Phoenix. Both are fully editable and both can always be restored to how they shipped. Build a new one from scratch, or duplicate one and edit the copy."
+        description="Four SATO designs ship with Phoenix. All are fully editable and each can always be restored to how it shipped. Build a new one from scratch, or duplicate one and edit the copy."
         title="Templates"
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-4">
