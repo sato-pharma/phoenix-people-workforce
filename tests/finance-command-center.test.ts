@@ -7,7 +7,7 @@ import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests
 /**
  * Guards for the Finance Manager's landing dashboard (/admin/finance-command-center).
  *
- * Four invariants, each pinned because breaking it is silent:
+ * Five invariants, each pinned because breaking it is silent:
  *
  *  1. DEDUCTION SOURCE. Every deduction figure must come from committed payroll, never from
  *     `deductions_candidates`. Measured on production 2026-08-10, July's candidate estimates
@@ -25,6 +25,10 @@ import { resolveMarketingInvoiceObligation } from "../src/lib/marketing-requests
  *     read "this month or any month after it" under a label saying "this month". Forward-dated
  *     exit rows are the normal case, not an edge one, and the page cannot show that a figure
  *     covers a wider window than it names.
+ *  5. ONE TREND POINT PER MONTH. The committed-payroll trend is keyed on the period, so the
+ *     grouping key must be the period too. Three consumers — the chart's React key, the
+ *     month-over-month delta chain, and the "Net payroll" tile's read of the LAST entry — all
+ *     assume it, and `limit` counts grouped rows, so a split month would shorten the window too.
  */
 
 /**
@@ -40,6 +44,7 @@ const MIGRATION_PATHS = [
   "supabase/migrations/20260811020000_finance_command_center_parts_and_channels.sql",
   "supabase/migrations/20260830003000_finance_command_center_invoice_overdue.sql",
   "supabase/migrations/20260922190000_finance_command_center_exit_month_upper_bound.sql",
+  "supabase/migrations/20260922200000_finance_command_center_committed_trend_one_row_per_month.sql",
 ] as const;
 
 /** The definition currently in the database — the last CREATE OR REPLACE wins. */
@@ -299,6 +304,47 @@ function testLeaverCountersAreBoundedToBothEndsOfTheMonth() {
   );
 }
 
+function testCommittedTrendIsOneRowPerMonth() {
+  // This was reported to the owner as a LIVE duplicate and it was not one: salary_batches carries
+  // a unique index on (year, month), so the old `group by b.year, b.month, b.status` could never
+  // split a month. Measured on production 2026-09-22 — eight months, each one batch, each one
+  // status, and the payload byte-identical before and after the change.
+  //
+  // It is pinned anyway because the query was single-row-per-month only by virtue of a constraint
+  // declared in a DIFFERENT migration, and three consumers fail quietly if that stops holding:
+  // NetMonthOverMonth keys its bars on `period` and compares each entry with the one before it,
+  // and the "Net payroll" tile reads the LAST entry. `limit v_months` counts GROUPED rows, so a
+  // split month would also shorten the window from six months to five without saying so.
+  const migrationSql = stripSqlComments(read(MIGRATION_PATH));
+
+  assert.ok(
+    /group by b\.year, b\.month\s*$/m.test(migrationSql),
+    "the committed-payroll trend must group on the period alone — `group by b.year, b.month`",
+  );
+  assert.ok(
+    !/group by b\.year, b\.month, b\.status/.test(migrationSql),
+    "`status` is a batch attribute, not part of the period — grouping on it lets one month yield two entries carrying the same `period`",
+  );
+  // Aggregated rather than dropped: the payload shape is part of FinanceCommittedMonth, and the
+  // service types `status` as a string.
+  assert.ok(
+    /string_agg\(distinct b\.status, ' \+ ' order by b\.status\)\s+as status/.test(migrationSql),
+    "`status` must survive as an aggregate — and one that reads 'approved + locked' rather than silently picking one of two",
+  );
+
+  // The consumers this protects, asserted where they live, so deleting the guard needs deleting
+  // the reason too.
+  const dashboard = read("src/components/admin/finance-command-center.tsx");
+  assert.ok(
+    /key=\{month\.period\}/.test(dashboard),
+    "the trend chart keys its bars on `period`, which is why a month may appear at most once",
+  );
+  assert.ok(
+    /committed\[data\.payroll\.committed\.length - 1\]/.test(dashboard),
+    "the Net payroll tile reads the LAST committed entry, which is the newest month only while months are unique",
+  );
+}
+
 function testPageIsRoleGatedNotPermissionGated() {
   const pageSource = read(PAGE_PATH);
 
@@ -394,6 +440,7 @@ export function runFinanceCommandCenterTests() {
   testInvoiceOverduePredicateMatchesTypescript();
   testMigrationKeepsItsTimeoutAndLocksDownExecute();
   testLeaverCountersAreBoundedToBothEndsOfTheMonth();
+  testCommittedTrendIsOneRowPerMonth();
   testPageIsRoleGatedNotPermissionGated();
   testLandingAndNavAgree();
 }
