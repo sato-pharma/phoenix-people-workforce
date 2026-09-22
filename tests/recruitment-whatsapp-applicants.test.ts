@@ -219,9 +219,19 @@ function runRegionTests() {
 
 function runRowTests() {
   // ── Who is on the page ─────────────────────────────────────────────────────────────────────────
+  // The owner wants the live Talent Acquisition folder shown, empty and ready, before the first CV
+  // lands (owner decision, 2026-09-22). So with nobody applied for anything, the page still lists
+  // exactly that one bucket — everything reading 0 — and nothing else.
   const skipped = view({ sessions: [session({ job_title_family: null, step: "job_title" })] });
   assert.equal(skipped.rows.length, 0, "question one never tapped: not an applicant for anything yet");
-  assert.equal(skipped.titles.length, 0);
+  assert.deepEqual(
+    skipped.titles.map((title) => ({ count: title.count, inFolders: title.inFolders, unlinked: title.unlinked, value: title.value })),
+    [{ count: 0, inFolders: 0, unlinked: 0, value: "talent_acquisition" }],
+    "the always-shown Talent Acquisition folder appears with no applicants; no other empty folder does",
+  );
+  const emptyFilters = skipped.filtersByTitle.talent_acquisition ?? [];
+  assert.equal(emptyFilters.at(0)?.key, REGION_FILTER_KEY, "its filters build fine with no applicants: region first");
+  assert.equal(emptyFilters.at(-1)?.key, ANSWERED_FILTER_KEY, "and answered-all last");
 
   // ── One row per person per title: a finished conversation beats a newer abandoned one ─────────
   const finishedOlder = session({ expected_salary: "9000", id: "older", started_at: "2026-09-01T09:00:00Z" });
@@ -246,8 +256,8 @@ function runRowTests() {
   assert.equal(twoJobs.rows.length, 2, "one person applying for two jobs is a row under each");
   assert.deepEqual(
     twoJobs.titles.map((title) => title.value),
-    ["medical_rep", "office_coordinator"],
-    "titles follow the bot's own menu order",
+    ["medical_rep", "talent_acquisition", "office_coordinator"],
+    "titles follow the bot's own menu order, with the always-shown Talent Acquisition folder in its menu slot",
   );
 
   // ── Not matched to a candidate: counted under the title, never silently dropped ───────────────

@@ -42,7 +42,7 @@
 // of them the CV's address is the only place it can come from. That is the owner's "both".
 
 import { candidateRegionCodes, candidateRegionLabels, foreignRegionLabel } from "@/lib/recruitment/candidate-region";
-import { candidateRoleFamilyLabels } from "@/lib/recruitment/candidate-role-family";
+import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { candidateDecisionTabOf } from "@/lib/recruitment/candidate-decision-tabs";
 import { candidateScreeningFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { candidateStatusLabel } from "@/lib/recruitment/candidate-status";
@@ -455,6 +455,15 @@ function filtersForTitle(input: {
   return filters;
 }
 
+/**
+ * Families the drop list ALWAYS shows, even with zero applicants. The page otherwise lists a role
+ * only once someone has tapped it in the bot — right for settled roles, but the owner wants the live
+ * Talent Acquisition folder visible and ready before the first CV lands, so he can confirm it and
+ * file CVs into it (owner decision, 2026-09-22). An always-listed family renders an empty bucket:
+ * count, filed and unlinked all read 0 until a real applicant taps it — nothing else changes.
+ */
+const ALWAYS_LISTED_FAMILIES: readonly CandidateRoleFamily[] = ["talent_acquisition"];
+
 /** The owner's menu order, then any title the menu no longer offers, then "Other" last. */
 function titleOrder(a: string, b: string): number {
   const rank = (family: string) => {
@@ -535,7 +544,12 @@ export function buildWhatsAppApplicantsView(input: {
   rows.sort((a, b) => Date.parse(b.appliedAt) - Date.parse(a.appliedAt) || a.name.localeCompare(b.name));
 
   const families = [
-    ...new Set([...rows.map((row) => row.titleValue), ...unlinkedSenders.keys(), ...filedCandidates.keys()]),
+    ...new Set([
+      ...ALWAYS_LISTED_FAMILIES,
+      ...rows.map((row) => row.titleValue),
+      ...unlinkedSenders.keys(),
+      ...filedCandidates.keys(),
+    ]),
   ].sort(titleOrder);
   const titles: WhatsAppApplicantTitle[] = families.map((family) => {
     // A sender who ALSO has a listed conversation under this title is already on the page.
