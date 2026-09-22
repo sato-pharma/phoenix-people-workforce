@@ -1898,6 +1898,7 @@ import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headli
 import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
 import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
 import { runTerritorySearchRegionLabelTests } from "./territory-search-region-label.test.ts";
+import { runTerritorySearchScopeTests } from "./territory-search-scope.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6712,8 +6713,12 @@ await runTest(
   runTerritorySharedPinGuardTests,
 );
 await runTest(
-  "territory brick search region label: a hit's region is the LINE's operational region, so the same brick reads UE-2 on Anti Infective and UE-1 on Pedia; an area the line does not carry shows no region at all",
+  "territory brick search region label: a hit's region is the LINE's operational region, so the same brick reads UE-2 on Anti Infective and UE-1 on Pedia, never the line-agnostic brick column",
   runTerritorySearchRegionLabelTests,
+);
+await runTest(
+  "territory brick search scope: the search is bounded by the caller's OWN areas on the line — a DM reaches his two, not the sibling DM's, not another region's and never the Others bucket; the picker and the search share one definition",
+  runTerritorySearchScopeTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
