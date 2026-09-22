@@ -285,9 +285,16 @@ function PlaceCard({
   const [problem, setProblem] = useState<string | null>(null);
 
   const name = placeName(place, index);
-  const details = [place.address, place.zone, place.brickName ? `Brick ${place.brickName}` : null].filter(
-    (part): part is string => Boolean(part) && part !== name,
-  );
+  // The location as it was separated at capture: clean address, part of town, then the Phoenix
+  // territory the point fell in — brick, area, region (owner, 2026-09-23). None of it is editable, so
+  // this is a record, not a summary of something the rep typed.
+  const details = [
+    place.address,
+    place.zone,
+    place.brickName ? `Brick ${place.brickName}` : null,
+    place.areaName,
+    place.regionName,
+  ].filter((part): part is string => Boolean(part) && part !== name);
   const remaining = customer.places.length - 1;
 
   async function retire() {

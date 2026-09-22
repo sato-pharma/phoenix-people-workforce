@@ -105,11 +105,20 @@ export function parseCapturedFix(raw: Record<string, unknown>): EntryRuleResult<
 
 // ── Validating a customer (a place with its timings) ────────────────────────────────────────────
 
+/**
+ * What the phone may say about a place: its NAME, its photo, its timings, and the raw fix.
+ *
+ * Owner, 2026-09-23: "the capture location is never editable and its separated when captured to
+ * brick area region clean addresss and raw location". So the address, the part of town, the brick,
+ * the area and the region are NOT on this type at all — they are derived on the SERVER from the
+ * captured coordinates (`placePayload`, server/list.ts) and frozen there. A body that still carries
+ * an `address`, `zone` or `brick` key is ignored rather than refused, so a phone still holding the
+ * previous bundle keeps validating; its typed address simply stops being read.
+ *
+ * `label` stays typed: a place's NAME ("Evening clinic") is what the rep calls it, not where it is.
+ */
 export type PlaceDraft = CapturedFix & {
   label: string | null;
-  address: string | null;
-  brick: string | null;
-  zone: string | null;
   photoPath: string;
   timings: PhoenixCrmTiming[];
 };
@@ -127,9 +136,6 @@ export function parsePlaceDraft(raw: unknown): EntryRuleResult<PlaceDraft> {
     value: {
       ...fix.value,
       label: cleanText(body.label, PLACE_TEXT_MAX),
-      address: cleanText(body.address, PLACE_TEXT_MAX),
-      brick: cleanText(body.brick, 80),
-      zone: cleanText(body.zone, 80),
       photoPath,
       timings: timings.timings,
     },

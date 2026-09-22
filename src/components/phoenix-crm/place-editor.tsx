@@ -17,22 +17,38 @@ import { PLACE_TEXT_MAX } from "@/lib/phoenix-crm/entry-rules";
 import { parseTimings } from "@/lib/phoenix-crm/timings";
 import type { PhoenixCrmTiming } from "@/lib/phoenix-crm/types";
 
-/** The server keeps a zone to this length (src/lib/phoenix-crm/entry-rules.ts parsePlaceDraft). */
-const ZONE_TEXT_MAX = 80;
-
+/**
+ * What the rep fills in. The location is NOT here.
+ *
+ * Owner, 2026-09-23: "the capture location is never editable and its separated when captured to brick
+ * area region clean addresss and raw location". The address and the part of town used to be text
+ * boxes on this screen, seeded from the location and then open to be typed over — so the record of
+ * where a customer is could differ from where the photo was taken. They are gone: the server resolves
+ * the clean address, the part of town, the brick, the area and the region from the captured
+ * coordinates and freezes them. What stays typed is the place's NAME and its days and hours.
+ */
 export type PlaceDraftState = {
   photo: CapturedPhoto | null;
   label: string;
-  address: string;
-  zone: string;
   timings: PhoenixCrmTiming[];
+};
+
+/** A place's location as it stands: on the capture screen the photo's, on an edit the saved row's. */
+export type CapturedLocation = {
+  address: string | null;
+  zone: string | null;
+  brickName: string | null;
+  areaName: string | null;
+  regionName: string | null;
+  lat: number;
+  lon: number;
 };
 
 /** Updates arrive as functions of the latest draft: a photo finishes uploading while the rep types. */
 export type PlaceDraftUpdate = (update: (current: PlaceDraftState) => PlaceDraftState) => void;
 
 export function emptyPlaceDraft(): PlaceDraftState {
-  return { photo: null, label: "", address: "", zone: "", timings: [] };
+  return { photo: null, label: "", timings: [] };
 }
 
 /** The server's own checks, so a gap is named before the save leaves the phone. */
@@ -42,7 +58,11 @@ export function placeDraftProblem(draft: PlaceDraftState, options: { needsPhoto:
   return checked.ok ? null : checked.error;
 }
 
-/** The place as /api/phoenix-crm/list/validate and /list/places read it. The brick comes from the location. */
+/**
+ * The place as /api/phoenix-crm/list/validate and /list/places read it: the photo, the raw fix, the
+ * name and the timings. No address, no part of town, no brick — the server resolves the whole
+ * location from these coordinates and writes it once (owner, 2026-09-23).
+ */
 export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {
   return {
     photoPath: photo.path,
@@ -51,9 +71,6 @@ export function placePayload(photo: CapturedPhoto, draft: PlaceDraftState) {
     accuracyMeters: photo.accuracyMeters,
     deviceCapturedAt: photo.deviceCapturedAt,
     label: draft.label.trim() || null,
-    address: draft.address.trim() || null,
-    zone: draft.zone.trim() || null,
-    brick: null,
     timings: timingsToDrafts(draft.timings),
   };
 }
@@ -65,10 +82,47 @@ export function ramadanHoursNote(ramadan: { startsOn: string; endsOn: string } |
   return `${inForce ? "Ramadan runs" : "The next Ramadan runs"} ${dayLabelWithYear(ramadan.startsOn)} to ${dayLabelWithYear(ramadan.endsOn)}. Ramadan hours are used on those days.`;
 }
 
-/** A field the rep typed stays; one the last photo filled follows the new photo. */
-function carried(typed: string, previousAuto: string | null | undefined, nextAuto: string | null | undefined, max: number): string {
-  if (typed.trim() && typed !== (previousAuto ?? "").slice(0, max)) return typed;
-  return (nextAuto ?? "").slice(0, max);
+/** One captured fact, printed as a fact — never an input, because none of this can be typed over. */
+function LocationFact({ children, label }: { children: string; label: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="break-words text-sm font-semibold text-slate-800">{children}</p>
+    </div>
+  );
+}
+
+/**
+ * The location as it was captured: read-only, always (owner, 2026-09-23).
+ *
+ * On the capture screen this is what the phone resolved for the photo it just took; the brick, the
+ * area and the region are settled on the server as it saves, which is why they are named as coming
+ * with the save rather than shown blank. On an edit it is the row's own frozen location.
+ */
+function CapturedLocationBlock({ capture, location }: { capture: boolean; location: CapturedLocation | null }) {
+  if (!location) {
+    return (
+      <p className="text-sm font-medium text-slate-500">
+        {capture ? "Take the photo and the location is filed with it." : "This place has no location on record."}
+      </p>
+    );
+  }
+  const territory = [location.brickName, location.areaName, location.regionName].filter(Boolean).join(" · ");
+  return (
+    <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <LocationFact label="Address">{location.address ?? "The map did not answer for this point. The coordinates below are the record."}</LocationFact>
+      </div>
+      {location.zone ? <LocationFact label="Part of town">{location.zone}</LocationFact> : null}
+      <LocationFact label="Brick · area · region">{territory || (capture ? "Filed from this location when you save" : "No brick near enough to name")}</LocationFact>
+      <div className="sm:col-span-2">
+        <LocationFact label="Coordinates">{`${location.lat.toFixed(6)}, ${location.lon.toFixed(6)}`}</LocationFact>
+      </div>
+      <p className="text-sm font-medium text-slate-500 sm:col-span-2">
+        Taken from where you stood. It is the customer&rsquo;s record and cannot be changed.
+      </p>
+    </div>
+  );
 }
 
 export function PlaceEditor({
@@ -77,6 +131,7 @@ export function PlaceEditor({
   disabled = false,
   firstStep,
   idPrefix,
+  location = null,
   onChange,
   photoBlockedReason = null,
   ramadanNote,
@@ -89,6 +144,8 @@ export function PlaceEditor({
   capture: boolean;
   customerName: string;
   disabled?: boolean;
+  /** The saved place's frozen location, when one is already on record. */
+  location?: CapturedLocation | null;
   /** The number of this editor's first step on the screen ("2 · Live photo"). */
   firstStep: number;
   idPrefix: string;
@@ -105,13 +162,15 @@ export function PlaceEditor({
   const detailsStep = timingsStep + 1;
 
   function takePhoto(photo: CapturedPhoto | null) {
-    onChange((current) => ({
-      ...current,
-      photo,
-      address: carried(current.address, current.photo?.address, photo?.address, PLACE_TEXT_MAX),
-      zone: carried(current.zone, current.photo?.zone, photo?.zone, ZONE_TEXT_MAX),
-    }));
+    onChange((current) => ({ ...current, photo }));
   }
+
+  // The capture screen shows the photo's own location; an edit shows the saved row's.
+  const shown: CapturedLocation | null = capture
+    ? value.photo
+      ? { address: value.photo.address, zone: value.photo.zone, brickName: null, areaName: null, regionName: null, lat: value.photo.lat, lon: value.photo.lon }
+      : null
+    : location;
 
   return (
     <>
@@ -145,53 +204,24 @@ export function PlaceEditor({
         />
       </CrmBlock>
 
-      <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Place details`}>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <CrmField className="sm:col-span-2" hint="Optional. For example: Evening clinic, or Al Salam Hospital." htmlFor={`${idPrefix}-label`} label="Place name">
-            <input
-              className={crmInputClassName}
-              disabled={disabled}
-              id={`${idPrefix}-label`}
-              maxLength={PLACE_TEXT_MAX}
-              onChange={(event) => {
-                const label = event.target.value;
-                onChange((current) => ({ ...current, label }));
-              }}
-              value={value.label}
-            />
-          </CrmField>
-          <CrmField
-            className="sm:col-span-2"
-            hint={capture ? "Filled from your location when it is found. Correct it if it is wrong." : null}
-            htmlFor={`${idPrefix}-address`}
-            label="Address"
-          >
-            <input
-              className={crmInputClassName}
-              disabled={disabled}
-              id={`${idPrefix}-address`}
-              maxLength={PLACE_TEXT_MAX}
-              onChange={(event) => {
-                const address = event.target.value;
-                onChange((current) => ({ ...current, address }));
-              }}
-              value={value.address}
-            />
-          </CrmField>
-          <CrmField hint="The part of town. For example: Faisal." htmlFor={`${idPrefix}-zone`} label="Zone">
-            <input
-              className={crmInputClassName}
-              disabled={disabled}
-              id={`${idPrefix}-zone`}
-              maxLength={ZONE_TEXT_MAX}
-              onChange={(event) => {
-                const zone = event.target.value;
-                onChange((current) => ({ ...current, zone }));
-              }}
-              value={value.zone}
-            />
-          </CrmField>
-        </div>
+      <CrmBlock className="border-t border-slate-100" title={`${detailsStep} · Place name`}>
+        <CrmField hint="Optional. For example: Evening clinic, or Al Salam Hospital." htmlFor={`${idPrefix}-label`} label="Place name">
+          <input
+            className={crmInputClassName}
+            disabled={disabled}
+            id={`${idPrefix}-label`}
+            maxLength={PLACE_TEXT_MAX}
+            onChange={(event) => {
+              const label = event.target.value;
+              onChange((current) => ({ ...current, label }));
+            }}
+            value={value.label}
+          />
+        </CrmField>
+      </CrmBlock>
+
+      <CrmBlock className="border-t border-slate-100" title={`${detailsStep + 1} · Location`}>
+        <CapturedLocationBlock capture={capture} location={shown} />
       </CrmBlock>
     </>
   );

@@ -1505,6 +1505,7 @@ import { runPhoenixCrmEmailBlockTests } from "./phoenix-crm-email-block.test.ts"
 import { runPhoenixCrmBoundaryTests } from "./phoenix-crm-boundary.test.ts";
 import { runPhoenixCrmPendingCustomerTests } from "./phoenix-crm-pending-customers.test.ts";
 import { runPhoenixCrmDoctorsDirectoryTests } from "./phoenix-crm-doctors-directory.test.ts";
+import { runPhoenixCrmPlaceLocationFrozenTests } from "./phoenix-crm-place-location-frozen.test.ts";
 import { runCrmCutoverTests } from "./crm-cutover.test.ts";
 import { runCrmUnifyVendorReadsTests } from "./crm-unify-vendor-reads.test.ts";
 import { runPhoenixKpiRulesTests } from "./phoenix-kpi-rules.test.ts";
@@ -4964,6 +4965,11 @@ await runTest(
 await runTest(
   "Phoenix CRM's carried-over customers (owner, 2026-09-22: a customer not validated yet is planned and visited like anyone else, with no place and no days and hours; his visits count in NOTHING — coverage, plan against actual and the manager's report all filter on the customer being validated, on both sides; validating makes the visits already saved against him count, with no backfill, and happens once; the name is corrected later, on its own; and the rep's list never refuses a plan again)",
   runPhoenixCrmPendingCustomerTests,
+);
+
+await runTest(
+  "Phoenix CRM's captured location is frozen and separated (owner, 2026-09-23: \"the capture location is never editable and its separated when captured to brick area region clean addresss and raw location\" — the phone sends no address, zone or brick and has no box to type one into; the server resolves the clean address, the part of town, the brick with its distance, the area and the region from the captured coordinates; and the database's edit path writes only the place's name and its days and hours)",
+  runPhoenixCrmPlaceLocationFrozenTests,
 );
 
 await runTest(
