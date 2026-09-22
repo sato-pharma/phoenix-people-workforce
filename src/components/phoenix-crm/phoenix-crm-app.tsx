@@ -43,7 +43,7 @@ import {
   CrmSelect,
   type CrmChoiceOption,
 } from "@/components/phoenix-crm/ui";
-import { VisitsTab, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import { VisitsTab, type PendingValidate, type PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import type { PhoenixCrmOverview, PhoenixCrmTabs, TerritorySummary } from "@/lib/phoenix-crm/view-types";
 import { cn } from "@/lib/utils";
 
@@ -216,6 +216,9 @@ export function PhoenixCrmApp({
   // test mode; real entries are for reading.
   const [testMode, setTestMode] = useState(true);
   const [pendingVisit, setPendingVisit] = useState<PendingVisit | null>(null);
+  // The mirror of pendingVisit, running the other way: Add Visit hands a still-pending customer to the
+  // List's Validate screen, so the rep who is already at the door with his phone out can finish it now.
+  const [pendingValidate, setPendingValidate] = useState<PendingValidate | null>(null);
   const [holding, setHolding] = useState<ReadonlySet<HoldingTab>>(() => new Set<HoldingTab>());
   const [asking, setAsking] = useState<{ move: Move; work: HoldingTab[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -333,6 +336,11 @@ export function PhoenixCrmApp({
       releaseCapturedPhoto(pendingVisit.photo);
       setPendingVisit(null);
     }
+    // The Validate hand-off belongs to one territory in one mode in the same way. It carries no photo.
+    const nextListSeat = move.kind === "seat" ? seatOf(overview, "list", move.seatId) : seats.list;
+    if (pendingValidate && (pendingValidate.seatId !== nextListSeat || pendingValidate.test !== nextTest)) {
+      setPendingValidate(null);
+    }
     // A tab let go does not say so on its way out.
     if (dropped.length > 0) {
       setHolding((current) => new Set([...current].filter((key) => !dropped.includes(key))));
@@ -365,6 +373,18 @@ export function PhoenixCrmApp({
   function pendingVisitDone() {
     releaseCapturedPhoto(pendingVisit?.photo);
     setPendingVisit(null);
+  }
+
+  /** The other direction: a visit was just saved on a pending customer and he chose to validate now. */
+  function startValidate(validate: PendingValidate) {
+    setPendingValidate(validate);
+    openTab("list");
+    scrollToTop();
+  }
+
+  /** The Validate screen opened from that hand-off was saved or backed out of. No photo to release. */
+  function pendingValidateDone() {
+    setPendingValidate(null);
   }
 
   /** Visits entered on this territory, where the List offers Add Visit after a place is saved. */
@@ -598,6 +618,7 @@ export function PhoenixCrmApp({
           cairoToday={cairoToday}
           key={`${seatId}|${test}`}
           onPendingVisitDone={pendingVisitDone}
+          onStartValidate={startValidate}
           onWorkChange={holdReporters.visits}
           pendingVisit={pendingVisit}
           seatId={seatId}
@@ -610,8 +631,10 @@ export function PhoenixCrmApp({
         <ListTab
           cairoToday={cairoToday}
           key={`${seatId}|${test}`}
+          onPendingValidateDone={pendingValidateDone}
           onStartVisit={entersVisits(seatId) ? startVisit : undefined}
           onWorkChange={holdReporters.list}
+          pendingValidate={pendingValidate}
           seatId={seatId}
           test={test}
         />

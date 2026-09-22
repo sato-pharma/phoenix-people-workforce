@@ -70,7 +70,7 @@ import {
   crmTdClassName,
   crmThClassName,
 } from "@/components/phoenix-crm/ui";
-import type { PendingVisit } from "@/components/phoenix-crm/visits-tab";
+import type { PendingValidate, PendingVisit } from "@/components/phoenix-crm/visits-tab";
 import { weekdayOfIsoDay } from "@/lib/phoenix-crm/calendar";
 import {
   formatTimingWindow,
@@ -113,16 +113,22 @@ function pairText(counts: Record<PhoenixCrmListType, number>): string {
 
 export function ListTab({
   cairoToday,
+  onPendingValidateDone,
   onStartVisit,
   onWorkChange,
+  pendingValidate,
   seatId,
   test,
 }: {
   cairoToday: string;
+  /** The Validate hand-off was opened, saved, or left behind: the page may let it go. */
+  onPendingValidateDone?: () => void;
   /** Add Visit with the photo a place was just saved with. Absent where visits are not entered. */
   onStartVisit?: (visit: PendingVisit) => void;
   /** A customer entry opened or closed: the page keeps this tab as it is while another tab is open. */
   onWorkChange?: (working: boolean) => void;
+  /** A visit was just saved on a pending customer and he chose to validate him now. */
+  pendingValidate?: PendingValidate | null;
   seatId: string;
   test: boolean;
 }) {
@@ -137,9 +143,17 @@ export function ListTab({
   const topRef = useRef<HTMLDivElement>(null);
   const handedOffPhoto = useRef<CapturedPhoto | null>(null);
 
+  // A hand-off belongs to one territory in one mode, exactly as Add Visit's does.
+  const validateHandoff = pendingValidate && pendingValidate.seatId === seatId && pendingValidate.test === test ? pendingValidate : null;
+  // He saved a visit on a pending customer and pressed Validate now: that outranks whatever screen this
+  // tab was left on, because the hand-off is the only reason the tab was opened. Every screen below is
+  // dispatched from `current`, never from `screen` — including the held-work guard, which would
+  // otherwise let the page swap the tab away from a validation he is standing at the door to finish.
+  const current: ListScreen = validateHandoff ? { name: "validate", contactCrmId: validateHandoff.contactCrmId } : screen;
+
   // The list, a customer and the saved screen hold nothing unsaved; every other screen is an entry under way.
-  const working = screen.name !== "home" && screen.name !== "customer" && screen.name !== "saved";
-  const savedPhoto = screen.name === "saved" ? screen.photo : null;
+  const working = current.name !== "home" && current.name !== "customer" && current.name !== "saved";
+  const savedPhoto = current.name === "saved" ? current.photo : null;
 
   useEffect(() => {
     onWorkChange?.(working);
@@ -158,8 +172,9 @@ export function ListTab({
     if (top && top.getBoundingClientRect().top < 0) top.scrollIntoView({ block: "start" });
   }
 
-  /** Opens a screen. */
+  /** Opens a screen. Deliberately moving anywhere is also the end of a Validate hand-off. */
   function go(next: ListScreen, nextNotice: ListNotice | null = null) {
+    if (validateHandoff) onPendingValidateDone?.();
     setScreen(next);
     setNotice(nextNotice);
     scrollToTop();
@@ -197,6 +212,7 @@ export function ListTab({
     if (!onStartVisit) return;
     // The photo goes on to Add Visit; the page lets it go when the visit is saved or put aside.
     handedOffPhoto.current = photo;
+    if (validateHandoff) onPendingValidateDone?.();
     setScreen({ name: "home" });
     setNotice(null);
     onStartVisit({ seatId, test, customerId: saved.customerId, customerName: saved.customerName, photo, validatedAtMs: saved.savedAtMs });
@@ -205,6 +221,7 @@ export function ListTab({
   /** Add a visit on a customer straight from his row, with no photo to carry: he takes one at the door. */
   function visitCustomer(customer: ListCustomer) {
     if (!onStartVisit) return;
+    if (validateHandoff) onPendingValidateDone?.();
     setScreen({ name: "home" });
     setNotice(null);
     onStartVisit({ seatId, test, customerId: customer.customerId, customerName: customer.name, photo: null, validatedAtMs: Date.now() });
@@ -230,12 +247,12 @@ export function ListTab({
       reload: resource.reload,
     };
 
-    switch (screen.name) {
+    switch (current.name) {
       case "customer":
         body = (
           <CustomerScreen
             {...base}
-            customerId={screen.customerId}
+            customerId={current.customerId}
             notice={notice}
             onBack={home}
             onNotice={showNotice}
@@ -248,11 +265,11 @@ export function ListTab({
         body = (
           <ValidateScreen
             {...base}
-            key={`validate-${screen.contactCrmId}`}
+            key={`validate-${current.contactCrmId}`}
             onAddPlaceInstead={addPlaceInstead}
             onBack={home}
             onSaved={placeSaved}
-            subject={{ mode: "reference", contactCrmId: screen.contactCrmId }}
+            subject={{ mode: "reference", contactCrmId: current.contactCrmId }}
           />
         );
         break;
@@ -260,7 +277,7 @@ export function ListTab({
         body = <ValidateScreen {...base} key="new" onAddPlaceInstead={addPlaceInstead} onBack={home} onSaved={placeSaved} subject={{ mode: "new" }} />;
         break;
       case "restore": {
-        const { customerId, from } = screen;
+        const { customerId, from } = current;
         body = (
           <ValidateScreen
             {...base}
@@ -275,12 +292,12 @@ export function ListTab({
         break;
       }
       case "add-place": {
-        const { customerId } = screen;
+        const { customerId } = current;
         body = (
           <AddPlaceScreen
             {...base}
             customerId={customerId}
-            initialDraft={screen.draft}
+            initialDraft={current.draft}
             key={`add-place-${customerId}`}
             onBack={() => {
               // The draft may hold a photo taken on Add a new customer; this screen let it go already.
@@ -292,7 +309,7 @@ export function ListTab({
         break;
       }
       case "edit-place": {
-        const { customerId, placeId } = screen;
+        const { customerId, placeId } = current;
         body = (
           <EditPlaceScreen
             {...base}
@@ -306,7 +323,7 @@ export function ListTab({
         break;
       }
       case "grade": {
-        const { customerId } = screen;
+        const { customerId } = current;
         body = (
           <GradeScreen
             {...base}
@@ -319,7 +336,7 @@ export function ListTab({
         break;
       }
       case "edit-details": {
-        const { customerId } = screen;
+        const { customerId } = current;
         body = (
           <EditDetailsScreen
             {...base}
@@ -332,7 +349,7 @@ export function ListTab({
         break;
       }
       case "drop": {
-        const { contactCrmId, customerId } = screen;
+        const { contactCrmId, customerId } = current;
         body = (
           <DropScreen
             {...base}
@@ -346,7 +363,7 @@ export function ListTab({
         break;
       }
       case "saved": {
-        const { photo, saved } = screen;
+        const { photo, saved } = current;
         body = (
           <SavedScreen
             onBack={home}

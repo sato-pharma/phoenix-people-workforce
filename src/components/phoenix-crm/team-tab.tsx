@@ -9,7 +9,9 @@
  *   - customers far apart on one plan day are highlighted to the manager who reviews the plan;
  *   - a new doctor's grade, a grade change and a drop are proposed by the rep and decided by the
  *     district manager;
- *   - weekly plans start once a territory's list is ready, so the managers see who is still validating.
+ *   - a rep plans and visits freely on a customer he has not validated yet (owner, 2026-09-22), so
+ *     readiness is progress through the carried-over list and nothing waits on it: it is shown as
+ *     information, never as a warning and never as the default filter.
  *
  * The server lists only the territories beneath the viewer (scope runs downward only). The Super
  * Admin's Team tab holds test plans and test requests, which the Super Admin decides.
@@ -19,7 +21,7 @@ import { useId, useRef, useState } from "react";
 
 import { crmUrl, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoDayOf, cairoStamp, countText, dayLabel, dayLabelWithYear, plural, weekLabel } from "@/components/phoenix-crm/format";
-import { matchesWords } from "@/components/phoenix-crm/labels";
+import { matchesWords, PENDING_PILL } from "@/components/phoenix-crm/labels";
 import { PlanTab } from "@/components/phoenix-crm/plan-tab";
 import { RequestCard } from "@/components/phoenix-crm/request-card";
 import {
@@ -161,7 +163,9 @@ function readinessLine(readiness: SeatReadiness): string {
   const parts = [`${countText(readiness.validated)} of ${countText(readiness.total)} validated`];
   if (readiness.dropped > 0) parts.push(`${countText(readiness.dropped)} dropped`);
   if (readiness.dropPending > 0) parts.push(`${plural(readiness.dropPending, "drop", "drops")} waiting for a decision`);
-  if (readiness.open > 0) parts.push(`${countText(readiness.open)} to validate`);
+  // The rep's own word for the same customers (PENDING_PILL), so a manager and his rep read one
+  // vocabulary. It is how far the rep has got, not a shortfall: nothing of his is waiting on it.
+  if (readiness.open > 0) parts.push(`${countText(readiness.open)} ${PENDING_PILL.toLowerCase()}`);
   return parts.join(" · ");
 }
 
@@ -172,7 +176,9 @@ function readySince(readiness: SeatReadiness): string | null {
 
 function ReadinessPill({ readiness }: { readiness: SeatReadiness | null }) {
   if (!readiness) return null;
-  return readiness.ready ? <CrmPill tone="good">List ready</CrmPill> : <CrmPill tone="warn">Still validating</CrmPill>;
+  // Not `warn`: nothing is wrong with a territory part-way through its list, and validating a whole
+  // carried-over list takes months. `good` still marks a finished one.
+  return readiness.ready ? <CrmPill tone="good">List ready</CrmPill> : <CrmPill tone="info">Validating</CrmPill>;
 }
 
 function requestsText(row: TeamTerritoryRow): string {
@@ -333,8 +339,8 @@ export function TeamTab({
                   {test ? null : (
                     <CrmStat
                       label="Lists ready"
-                      note={summary.notReady > 0 ? `${countText(summary.notReady)} still validating` : "Every list is ready"}
-                      tone={summary.notReady > 0 ? "warn" : "good"}
+                      note={summary.notReady > 0 ? `${countText(summary.notReady)} validating` : "Every list is ready"}
+                      tone={summary.notReady > 0 ? "neutral" : "good"}
                       value={`${countText(summary.ready)} of ${countText(summary.ready + summary.notReady)}`}
                     />
                   )}
@@ -724,14 +730,17 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
     if (listFilterMatches(row, "ready")) counts.ready += 1;
     if (listFilterMatches(row, "vacant")) counts.vacant += 1;
   }
-  const currentFilter: ListFilter = filter ?? (counts.not_ready > 0 ? "not_ready" : "all");
+  // Every territory, always. Defaulting to "not_ready" opened this section on a filtered subset for as
+  // long as any list was part-way through — which, now that nothing waits on validation, is every
+  // territory for months. He chooses the filter; the page does not choose one for him.
+  const currentFilter: ListFilter = filter ?? "all";
   const searchable = team.territories.length > SEARCH_FROM;
   const rows = team.territories.filter(
     (row) => listFilterMatches(row, currentFilter) && (!searchable || matchesWords(query, territoryWords(row.territory))),
   );
   const shown = rows.slice(0, limit);
   const filterOptions: Array<CrmChoiceOption<ListFilter>> = [
-    { value: "not_ready", label: "Still validating", note: countText(counts.not_ready) },
+    { value: "not_ready", label: "Validating", note: countText(counts.not_ready) },
     { value: "ready", label: "Ready", note: countText(counts.ready) },
     { value: "vacant", label: "Without a rep", note: countText(counts.vacant) },
     { value: "all", label: "Every territory", note: countText(team.territories.length) },
@@ -755,8 +764,8 @@ function ListsSection({ idPrefix, onOpenList, team }: { idPrefix: string; onOpen
     <>
       <CrmBlock className="border-t border-slate-100" title="Customer lists">
         <p className="break-words text-sm font-medium leading-6 text-slate-600">
-          A territory&apos;s weekly plans start once every customer on its reference list is validated, or dropped with the district
-          manager&apos;s approval.
+          Every customer a rep carried over from iReports360 is on his list from the first day, and he plans and visits on all of them
+          from the first day. Validating each one at the door is what makes those visits count. Nothing here is waiting on you.
         </p>
         <div className={cn("mt-3 grid min-w-0 gap-3", searchable ? "md:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] md:items-end" : undefined)}>
           <CrmField label="Show">

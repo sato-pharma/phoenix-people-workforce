@@ -8,6 +8,11 @@
  *   - weekly plans start once the list is ready (every reference customer validated, or dropped with
  *     the manager's approval), so a manager needs to see who is still validating.
  *
+ * Owner, 2026-09-22 — that last rule is GONE: a rep plans and visits freely on a customer he has not
+ * validated yet. Readiness is therefore progress through the carried-over list, not a gate. A manager
+ * watches it to see how far each rep has got, and nothing in it waits on him — which is why the Team
+ * tab shows it as information rather than as a warning or a default filter.
+ *
  * Scope runs downward only. Readiness is measured on real entries; test mode (the Super Admin) lists
  * test requests only.
  */

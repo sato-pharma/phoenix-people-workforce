@@ -13,6 +13,14 @@
  *  - **Downward only.** The seats are the viewer's own `scopeTerritories`, which `territoriesInScope`
  *    resolves downward — never a sibling, never your own manager. The four directory roles below read
  *    every territory instead; everyone else reads their own subtree.
+ *
+ * **The Training Manager sees this directory and nothing behind it — the owner's ruling, 2026-09-22,
+ * not a gap.** He reads every validated doctor here by name, grade, list type and territory, but
+ * `territoryForRead` (access.ts) refuses him every territory: he is not in `COMPANY_ROLES` and holds
+ * no sales seat, so "Open the list" never appears for him and he never reaches a customer's page, its
+ * validation photo or its coordinates. That was put to the owner directly, with a read-only customer
+ * page offered as the fix, and he answered: "The list is enough for him." **Do not add a read-only
+ * page, a new endpoint, or place columns on `DoctorDirectoryRow` to close it, and do not re-raise it.**
  */
 
 import type { PhoenixRole } from "@/lib/auth/permissions";

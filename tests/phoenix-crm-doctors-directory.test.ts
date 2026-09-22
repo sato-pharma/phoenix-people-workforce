@@ -121,9 +121,50 @@ function runLookTests() {
   assert.doesNotMatch(tab, /counts\.AM \+ counts\.PM/, "accounts and doctors are never added together");
 }
 
-export function runPhoenixCrmDoctorsDirectoryTests() {
+/**
+ * Gate one: the permission matrix. Naming a role in `DIRECTORY_COMPANY_ROLES` promises him nothing —
+ * every `/api/phoenix-crm/*` route calls `assertPermission(access, "phoenix_crm", "read")` first, and
+ * a role the matrix does not grant is refused before the directory's own scope rule is ever reached.
+ *
+ * This is not hypothetical. The owner asked for the Training Manager on 2026-09-22; the SFE Manager's
+ * grant landed and his did not, so for a day the code above named him a directory role while the door
+ * answered 403 to every call he made. The set test passed the whole time. The matrix is asserted from
+ * the REAL exported object, never from the file's text, because that is what the route reads.
+ */
+async function runMatrixGrantTests() {
+  const { permissionMatrix } = (await import("@/lib/auth/permissions")) as {
+    permissionMatrix: Record<string, Record<string, string[] | undefined>>;
+  };
+
+  for (const role of ["Super Admin", "CEO", "SFE Manager", "Training Manager"]) {
+    assert.ok(
+      (permissionMatrix[role]?.phoenix_crm ?? []).includes("read"),
+      `${role} reads the whole company's validated customers, so the matrix must let him through the door`,
+    );
+  }
+
+  // Read ALONE for the Training Manager: `create`, `update` and `approve` are what
+  // resolvePhoenixCrmViewer turns into entering visits, requesting list changes and deciding them.
+  const trainingManager = permissionMatrix["Training Manager"]?.phoenix_crm ?? [];
+  for (const action of ["create", "update", "approve"]) {
+    assert.ok(
+      !trainingManager.includes(action),
+      `the Training Manager reads the doctors directory; he never ${action}s in Phoenix CRM`,
+    );
+  }
+
+  // And the card that opens it. The sidebar is UX only — the routes are the boundary — but a role
+  // with the grant and no card has no door at all.
+  const nav = source("src/config/system-navigation.ts");
+  const card = /href: "\/admin\/field-crm",[\s\S]*?roles: \[([^\]]+)\]/.exec(nav);
+  assert.ok(card, "the Phoenix CRM card declares the roles that see it");
+  assert.match(card[1], /"Training Manager"/, "the Training Manager has a door to the directory he was granted");
+}
+
+export async function runPhoenixCrmDoctorsDirectoryTests() {
   runScopeTests();
   runRouteTests();
   runTabTests();
   runLookTests();
+  await runMatrixGrantTests();
 }

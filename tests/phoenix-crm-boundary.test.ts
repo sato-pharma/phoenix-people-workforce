@@ -44,6 +44,13 @@ const GRANTS: ReadonlyArray<readonly [PhoenixRole, readonly PermissionAction[]]>
   ["National Sales Manager", ["read", "approve"]],
   // Sees every plan and may return one (narrowed to returning in the service).
   ["SFE Manager", ["read", "approve"]],
+  // The Doctors directory and NOTHING else. Owner, 2026-09-22: "give SFE and Training Manager the
+  // full company list too", then, asked whether he should also reach a customer's page: "The list is
+  // enough for him." He holds no sales seat, so `territoryForRead` refuses him every territory and
+  // the list is where he stops — measured 403 on list and visits. READ alone is the whole grant:
+  // `create`, `update` and `approve` are what resolvePhoenixCrmViewer turns into entering visits,
+  // requesting list changes and deciding them, and he does none of those.
+  ["Training Manager", ["read"]],
 ];
 
 function runPermissionTests() {
