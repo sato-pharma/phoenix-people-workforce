@@ -58,7 +58,8 @@ export type MarketingRequestStatus =
   | "roi_tracking"
   | "closed"
   | "finance_hold"
-  | "archived";
+  | "archived"
+  | "cancelled";
 
 export type MarketingRoiStatus =
   | "not_calculated"

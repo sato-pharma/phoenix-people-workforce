@@ -17,7 +17,13 @@ import type { RoiTrackerRow } from "@/lib/marketing-requests/roi-tracker-service
  * Where a request sits in its life. STAGES, not verdicts — how a campaign performed lives in
  * `resultStatus`; this answers only "where is the money right now".
  */
-export type RoiLifecycleStage = "rejected" | "awaiting_approval" | "approved_unpaid" | "measuring" | "judged";
+export type RoiLifecycleStage =
+  | "rejected"
+  | "cancelled"
+  | "awaiting_approval"
+  | "approved_unpaid"
+  | "measuring"
+  | "judged";
 
 /** Statuses that mean nobody has committed the money yet — a decision is still outstanding. */
 const AWAITING_STATUSES = new Set(["draft", "pending_validation", "pending_approval", "returned", "finance_hold"]);
@@ -42,6 +48,9 @@ export function roiLifecycleStage(
   dataFrontier: string | null,
 ): RoiLifecycleStage {
   if (row.status === "rejected") return "rejected";
+  // A cancelled request was called off after entering the chain. Like a refusal, none of its money
+  // is committed, so it is checked before the pay-date arms below can promote it into the pipeline.
+  if (row.status === "cancelled") return "cancelled";
   if (AWAITING_STATUSES.has(row.status)) return "awaiting_approval";
   if (!row.payDate || (dataFrontier && row.payDate.slice(0, 7) > dataFrontier)) return "approved_unpaid";
   if (row.dataCoverage === "complete") return "judged";

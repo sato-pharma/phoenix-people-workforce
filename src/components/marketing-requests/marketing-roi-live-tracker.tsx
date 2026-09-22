@@ -65,7 +65,7 @@ type Stage = RoiLifecycleStage;
 const stageOf = roiLifecycleStage;
 const judgementMonth = roiJudgementMonth;
 
-const STAGE_ORDER: Stage[] = ["awaiting_approval", "approved_unpaid", "measuring", "judged", "rejected"];
+const STAGE_ORDER: Stage[] = ["awaiting_approval", "approved_unpaid", "measuring", "judged", "rejected", "cancelled"];
 
 const STAGE_META: Record<Stage, { label: string; bar: string; chip: string; help: string }> = {
   approved_unpaid: {
@@ -98,6 +98,12 @@ const STAGE_META: Record<Stage, { label: string; bar: string; chip: string; help
     help: "Turned down — never counted as committed money",
     label: "Rejected",
   },
+  cancelled: {
+    bar: "bg-slate-300",
+    chip: "border-slate-200 bg-slate-100 text-slate-600",
+    help: "Called off — never counted as committed money",
+    label: "Cancelled",
+  },
 };
 
 const VERDICT_STYLE: Record<string, string> = {
@@ -111,6 +117,7 @@ const REQUEST_STATUS_LABEL: Record<string, string> = {
   active: "Active",
   approved: "Approved",
   archived: "Archived",
+  cancelled: "Cancelled",
   closed: "Closed",
   draft: "Draft",
   finance_hold: "On finance hold",
@@ -268,6 +275,7 @@ function FlightPath({
       judged: { cost: 0, count: 0 },
       measuring: { cost: 0, count: 0 },
       rejected: { cost: 0, count: 0 },
+      cancelled: { cost: 0, count: 0 },
     };
     for (const row of rows) {
       const stage = stageOf(row, dataFrontier);
@@ -277,9 +285,10 @@ function FlightPath({
     return acc;
   }, [rows, dataFrontier]);
 
-  // Rejected money was never committed, so it is deliberately excluded from the committed
-  // total — otherwise the bar would imply the company spent money it turned down.
-  const committed = STAGE_ORDER.filter((stage) => stage !== "rejected").reduce((sum, stage) => sum + totals[stage].cost, 0);
+  // Rejected and cancelled money was never committed, so both are deliberately excluded from the
+  // committed total — otherwise the bar would imply the company spent money it turned down or called off.
+  const uncommittedStage = (stage: Stage) => stage === "rejected" || stage === "cancelled";
+  const committed = STAGE_ORDER.filter((stage) => !uncommittedStage(stage)).reduce((sum, stage) => sum + totals[stage].cost, 0);
 
   return (
     <section className="flex flex-col gap-3 rounded-sm border border-slate-200 bg-white p-4">
@@ -293,7 +302,7 @@ function FlightPath({
 
       {committed > 0 ? (
         <div className="flex h-7 w-full overflow-hidden rounded-sm bg-slate-100">
-          {STAGE_ORDER.filter((stage) => stage !== "rejected").map((stage) => {
+          {STAGE_ORDER.filter((stage) => !uncommittedStage(stage)).map((stage) => {
             const share = totals[stage].cost / committed;
             if (share <= 0) return null;
             return (

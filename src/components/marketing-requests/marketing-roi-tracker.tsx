@@ -278,6 +278,7 @@ const REQUEST_STATUS_LABEL: Record<string, string> = {
   active: "Active",
   approved: "Approved",
   archived: "Archived",
+  cancelled: "Cancelled",
   closed: "Closed",
   draft: "Draft",
   finance_hold: "On finance hold",
