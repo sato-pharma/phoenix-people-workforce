@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
+import { loadActivePushedLineIdByCandidate } from "@/lib/deductions/pushed-lines.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 
@@ -27,8 +28,19 @@ export async function GET(request: Request) {
         ? (categoryParam as DeductionsCategory)
         : undefined;
 
-    const candidates = await listCandidatesForMonth({ monthKey, category });
-    return NextResponse.json({ success: true, candidates });
+    // The workspace shows, per candidate, whether it is already PUSHED (released
+    // to the employee's portal and to payroll) and — when it is — the active line
+    // id needed to withdraw it. `pushedLineId` is null for a not-yet-pushed
+    // candidate. Loaded once for the month and joined in memory.
+    const [candidates, pushedLineByCandidate] = await Promise.all([
+      listCandidatesForMonth({ monthKey, category }),
+      loadActivePushedLineIdByCandidate(monthKey),
+    ]);
+    const withPushState = candidates.map((candidate) => ({
+      ...candidate,
+      pushedLineId: pushedLineByCandidate.get(candidate.id) ?? null,
+    }));
+    return NextResponse.json({ success: true, candidates: withPushState });
   } catch (error) {
     return jsonError(error, "Failed to load deduction candidates.");
   }

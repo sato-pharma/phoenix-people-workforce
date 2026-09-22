@@ -351,6 +351,7 @@ import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guard
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
+import { runDeductionsPerLinePushTests } from "./deductions-per-line-push.test.ts";
 import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
@@ -6646,6 +6647,10 @@ await runTest(
 await runTest("the Office commit reports an Office step it could not confirm, never swallows it: the allocation stays saved and the reply names the reason", runOfficeCommitConfirmStepTests);
 await runTest("Closing Corrections never reads green when its load failed: the headline chip says it could not check the month, and green is earned only by a load that ran and found nothing", runClosingCorrectionsHeadlineTests);
 await runTest("master workbook: a failed row-count or batch-id read fails the export, never an empty sheet", runMasterWorkbookCountErrorTests);
+await runTest(
+  "deductions per-line push: a rep's deduction CCs DM+RSM+NSM and a DM's CCs RSM+NSM (never the CEO, never self, RSM only if occupied, else the flat manager); from the 2026-09 cutover PUSH not approval releases pay and the frozen line amount equals what payroll charges; push and withdraw are Super Admin only",
+  runDeductionsPerLinePushTests,
+);
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
 console.log(`\n${testDurationsMs.length} test files passed in ${totalMs.toFixed(0)}ms. Slowest:`);

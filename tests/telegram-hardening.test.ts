@@ -49,10 +49,15 @@ export function runTelegramHardeningTests() {
   // ── Module governance: unknown modules FAIL SAFE (disabled), sensitive ones gated ──
   assert.equal(defaultTelegramPolicyFor("totally_unknown_module_xyz").enabled, false, "Unknown module must default to disabled");
   assert.equal(defaultTelegramPolicyFor("offers").enabled, false, "offers must be disabled by default (sensitive)");
-  // "deductions" has no real caller (verified 2026-07-11: no createSystemNotification call in
-  // the codebase uses this module string) and was removed from the default list; it still
-  // resolves disabled via the unknown-module fail-safe, so this behavior is unchanged.
-  assert.equal(defaultTelegramPolicyFor("deductions").enabled, false, "deductions falls through to the fail-safe default (no real caller, entry removed)");
+  // "deductions" became a real Telegram caller on 2026-09-22: the per-line PUSH
+  // (src/lib/deductions/notify-deduction.ts) sends module "deductions" on the in_app +
+  // telegram channels to the employee and their manager chain. Before that it had no caller
+  // and was deliberately absent (fail-safe disabled, verified 2026-07-11); now it needs an
+  // explicit enabled row. It is NOT generic-only — the notice already carries no amount and
+  // no category, so its full text is safe, and genericOnly would force the shared payslip
+  // literal, which is the wrong message for a deduction.
+  assert.equal(defaultTelegramPolicyFor("deductions").enabled, true, "deductions must have an explicit enabled policy (per-line push is a real caller since 2026-09-22)");
+  assert.equal(defaultTelegramPolicyFor("deductions").genericOnly, false, "deductions carries full content — no amount/category is in the text, so a generic ping is wrong");
   assert.equal(defaultTelegramPolicyFor("coaching").genericOnly, true, "coaching must be generic-only");
   assert.equal(defaultTelegramPolicyFor("resignations").enabled, false, "resignations stay disabled (unchanged)");
   assert.equal(defaultTelegramPolicyFor("payroll").genericOnly, true, "payroll stays generic-only (unchanged)");
@@ -73,7 +78,7 @@ export function runTelegramHardeningTests() {
   assert.equal(defaultTelegramPolicyFor("direct_orders").genericOnly, false, "direct_orders must carry full content — an approver cannot act on a generic ping");
   // The modules with real live callers are present in the default policy list.
   const moduleNames = new Set(defaultTelegramModulePolicies().map((policy) => policy.module));
-  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance", "direct_orders", "attendance_digest", "phoenix_crm"]) {
+  for (const expected of ["offers", "coaching", "outstation", "weekly_plans", "birthday", "attendance", "field_workforce_compliance", "direct_orders", "attendance_digest", "phoenix_crm", "deductions"]) {
     assert.ok(moduleNames.has(expected), `default policies should include ${expected}`);
   }
   // Orphaned entries with zero real callers under ANY spelling (verified by grepping every
@@ -81,7 +86,7 @@ export function runTelegramHardeningTests() {
   // NOTE: "excuses" (plural) is also a zero-caller orphan by that same test, but
   // tests/excuses.test.ts explicitly pins it as deliberate defensive coverage from a prior
   // session, so it is intentionally NOT in this removal list.
-  for (const removed of ["payslip", "payslips", "contracts", "leave", "deductions", "coaching_report", "anniversary", "birthdays"]) {
+  for (const removed of ["payslip", "payslips", "contracts", "leave", "coaching_report", "anniversary", "birthdays"]) {
     assert.ok(!moduleNames.has(removed), `orphaned policy "${removed}" must be removed (no real caller uses this exact module string)`);
   }
 
