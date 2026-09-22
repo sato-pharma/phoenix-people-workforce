@@ -1896,6 +1896,7 @@ import { runPortalShellRolesTests } from "./portal-shell-roles.test.ts";
 import { runOfficeCommitConfirmStepTests } from "./office-commit-confirm-step.test.ts";
 import { runClosingCorrectionsHeadlineTests } from "./closing-corrections-headline.test.ts";
 import { runMasterWorkbookCountErrorTests } from "./master-workbook-count-error.test.ts";
+import { runTerritorySharedPinGuardTests } from "./territory-shared-pin-guard.test.ts";
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -6704,6 +6705,10 @@ await runTest("master workbook: a failed row-count or batch-id read fails the ex
 await runTest(
   "deductions per-line push: a rep's deduction CCs DM+RSM+NSM and a DM's CCs RSM+NSM (never the CEO, never self, RSM only if occupied, else the flat manager); from the 2026-09 cutover PUSH not approval releases pay and the frozen line amount equals what payroll charges; push and withdraw are Super Admin only",
   runDeductionsPerLinePushTests,
+);
+await runTest(
+  "territory shared-pin guard: bricks sharing one coordinate are unlocated, not drawn as confident pins nor fed to the residence search; a unanimously hand-placed point is exempt and an already-demoted pin implicates nobody",
+  runTerritorySharedPinGuardTests,
 );
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

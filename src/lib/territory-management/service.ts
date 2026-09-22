@@ -665,6 +665,49 @@ function pairStats(bricks: TerritoryBrick[]): { meanKm: number | null; spreadKm:
   };
 }
 
+// ── shared-pin guard ────────────────────────────────────────────────────────
+export type BrickPin = { lat: number; lng: number; provider: string; status: string };
+
+/** Exact-coordinate identity. Two pins on the same point locate the same place, whatever the name. */
+export function coordinateKey(lat: number, lng: number): string {
+  return `${lat},${lng}`;
+}
+
+/**
+ * Coordinates that more than one brick sits on, so the pin identifies none of them.
+ *
+ * The geocoder labels its OWN reuse `shared_fallback`, and that half was already handled. What it
+ * does not label is a coordinate it happened to return twice across separate successful runs: four
+ * Damietta bricks (دمياط, السراو, المنشاة, سنورس) all landed on the Damietta city point stamped
+ * `success`, and بور سعيد + بورفؤاد on a second point 48.9 km from the real Port Said. Left alone
+ * they draw as distinct pins at 70–85% confidence and, worse, enter the MST and the 1-median
+ * residence search as zero-distance duplicates that drag the recommendation toward whichever town
+ * the geocoder gave up on. Measured 2026-09-22 on production: 29 bricks over 12 coordinates.
+ *
+ * Only `success` pins count. One already demoted cannot make a good pin look shared.
+ *
+ * A pin a person placed is exempt, matching saveBrickPin's own rule: two bricks on one point is a
+ * deliberate human choice, not a geocoder giving up. A coordinate is only exempt when EVERY brick
+ * on it is manual — one hand-placed pin does not vouch for a geocoded one that happens to collide.
+ */
+export function sharedCoordinateKeys(pins: Iterable<BrickPin>): Set<string> {
+  const holders = new Map<string, { manual: number; total: number }>();
+  for (const pin of pins) {
+    if (pin.status !== "success") continue;
+    if (!Number.isFinite(pin.lat) || !Number.isFinite(pin.lng)) continue;
+    const key = coordinateKey(pin.lat, pin.lng);
+    const tally = holders.get(key) ?? { manual: 0, total: 0 };
+    tally.total += 1;
+    if (pin.provider === MANUAL_PIN_PROVIDER) tally.manual += 1;
+    holders.set(key, tally);
+  }
+  const shared = new Set<string>();
+  for (const [key, tally] of holders) {
+    if (tally.total > 1 && tally.manual < tally.total) shared.add(key);
+  }
+  return shared;
+}
+
 // ── map data ────────────────────────────────────────────────────────────────
 export async function loadTerritoryMap(params: {
   access?: AccessContext;
@@ -739,6 +782,11 @@ export async function loadTerritoryMap(params: {
     });
   }
 
+  // Computed over EVERY brick centroid, not just the selected areas' — otherwise the same brick
+  // would be trusted or distrusted depending on which areas happen to be on screen, and a twin
+  // sitting in an unselected area would let its partner through.
+  const shared = sharedCoordinateKeys(centroids.values());
+
   const bricks: TerritoryBrick[] = [];
   const unlocated: UnlocatedBrick[] = [];
   for (const row of brickRows) {
@@ -752,7 +800,15 @@ export async function loadTerritoryMap(params: {
       brickName: str(row.brick_name) || brickId,
     };
     const centroid = centroids.get(brickId);
-    if (centroid && centroid.status === "success") {
+    if (!centroid) {
+      unlocated.push({ ...base, reason: "missing" });
+    } else if (centroid.status !== "success") {
+      unlocated.push({ ...base, reason: centroid.status === "shared_fallback" ? "shared-fallback" : "wrong-region" });
+    } else if (shared.has(coordinateKey(centroid.lat, centroid.lng))) {
+      // Same verdict as the geocoder's own `shared_fallback`, reached a step later: the pin is real
+      // but it is not THIS brick's. Reported, never drawn and never fed to the residence search.
+      unlocated.push({ ...base, reason: "shared-fallback" });
+    } else {
       bricks.push({
         ...base,
         confidence: pinConfidence(centroid.provider, centroid.status),
@@ -761,10 +817,6 @@ export async function loadTerritoryMap(params: {
         regionCode: str(row.region_code),
         regionName: regionNameByCode.get(str(row.region_code).toUpperCase()) || str(row.region_code),
       });
-    } else if (!centroid) {
-      unlocated.push({ ...base, reason: "missing" });
-    } else {
-      unlocated.push({ ...base, reason: centroid.status === "shared_fallback" ? "shared-fallback" : "wrong-region" });
     }
   }
 
