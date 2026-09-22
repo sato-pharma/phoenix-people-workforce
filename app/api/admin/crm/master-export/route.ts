@@ -15,6 +15,7 @@ import {
 import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,7 +99,8 @@ export async function GET(request: NextRequest) {
         ["Date to", filter.dateTo || "—"],
         ["Search", filter.search || "—"],
         ["Scope", "Company-wide (Super Admin)"],
-        ["Generated", `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`],
+        // Cairo wall-clock, matching the portal twin — the house rule for every report the owner reads.
+        ["Generated", `${cairoDateTimeSortable(new Date().toISOString())} Cairo`],
         [
           "Row count",
           "Not stated here on purpose: the rows are streamed, so none have been read when this page is written. The Visits sheet is the count.",

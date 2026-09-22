@@ -106,6 +106,10 @@ export function runCrmPortalScopeTests() {
     adminExport.includes("canUseAdminCrmWorkspace(access)"),
     "the admin export must keep a hard role gate in front of the company-wide CRM scope",
   );
+  // The admin export cover stamps the generated time in Cairo local too, never raw UTC — the same
+  // house rule the portal twin holds below (both twins must match).
+  assert.ok(adminExport.includes("cairoDateTimeSortable"), "the admin export cover must stamp the generated time in Cairo local");
+  assert.ok(!adminExport.includes("UTC"), "the admin export cover must not stamp the generated time in UTC");
   assert.ok(
     adminPage.includes("canUseAdminCrmWorkspace(access)"),
     "the admin CRM page must keep a hard role gate in front of the company-wide CRM scope",
