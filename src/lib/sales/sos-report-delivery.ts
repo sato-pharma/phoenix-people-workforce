@@ -23,6 +23,7 @@ import { buildSosBiWorkbook } from "@/lib/sales/sos-bi-workbook";
 import { getSosDashboard } from "@/lib/sales/sos-dashboard";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export type SosReportDeliveryResult =
   | { period: string; recipients: string[]; sent: true }
@@ -127,7 +128,7 @@ export async function buildAndEmailSosBiReport(input: {
     return { period, reason: "No active CEO / Super Admin has a work email on file.", sent: false };
   }
 
-  const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
+  const generatedAt = cairoDateTimeSortable(new Date().toISOString()) + " Cairo";
   const buffer = await buildSosBiWorkbook({
     data,
     filterSummary: "No filters (full scope) — CEO / Super Admin monthly report",

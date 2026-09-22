@@ -23,6 +23,7 @@ import {
 import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import { assertWeeklyTerritoryViewer } from "@/lib/sales/weekly/territory-gate";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { cairoDateTimeSortable } from "@/lib/format/cairo-datetime";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -349,7 +350,7 @@ export async function GET(request: Request) {
         : monthLabel || weekLabel
           ? [monthLabel, weekLabel].filter(Boolean).join(" · ")
           : "Latest uploaded week";
-    const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
+    const generatedAt = cairoDateTimeSortable(new Date().toISOString()) + " Cairo";
 
     const buffer = await buildWeeklySummaryWorkbook({
       weekly,
