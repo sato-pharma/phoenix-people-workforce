@@ -92,7 +92,7 @@ export async function fetchTerritoryAreaPharmacies(
         brickId,
         totalUnits: 0,
         totalValue: 0,
-        months: periods.map((period) => ({ period, hasSales: false, units: 0, products: [] })),
+        months: periods.map((period) => ({ period, hasSales: false, value: 0, products: [] })),
       });
     }
     const pharmacy = byClient.get(clientCode)!;
@@ -102,9 +102,11 @@ export async function fetchTerritoryAreaPharmacies(
     pharmacy.totalValue += value;
     const monthEntry = pharmacy.months.find((month) => month.period === row.period);
     if (monthEntry) {
-      // Unconditional — must stay equal to the sum feeding pharmacy.totalUnits/totalValue
-      // above (a credit-note row can be negative; it still has to net into the month).
-      monthEntry.units += units;
+      // The bar plots VALUE, never a units total — a units total means nothing once two
+      // different products are summed (owner golden rule). Value is additive across products,
+      // and unconditional here so a credit-note row (which can be negative) still nets into
+      // the month, staying equal to the sum feeding pharmacy.totalValue above.
+      monthEntry.value += value;
       monthEntry.hasSales = monthEntry.hasSales || units > 0;
       // The product breakdown (trend tooltip) only lists genuine positive sales lines —
       // a negative/zero adjustment row would read as a confusing "Product X: -3 units".
