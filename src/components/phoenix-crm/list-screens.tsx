@@ -27,6 +27,8 @@ import {
   customerMetaText,
   listText,
   monthVisitsText,
+  PENDING_PILL,
+  pendingVisitsText,
   placeName,
   referenceAddressText,
   referenceLastVisitText,
@@ -52,6 +54,7 @@ import {
   CrmLoading,
   CrmNote,
   CrmPanel,
+  CrmPill,
   crmInputClassName,
   crmTextareaClassName,
   type NoteTone,
@@ -1213,7 +1216,12 @@ export function DropScreen({
     return <ListGone backLabel={backLabel} message={gone ?? NOT_ON_LIST} onBack={onBack} refreshing={refreshing} title="Ask to drop a customer" />;
   }
 
+  // Two different "pending"s meet on this one screen, and they are never the same thing: `pending`
+  // below is a drop request already waiting for the district manager, while `notValidated` is the
+  // customer's own status — carried over from iReports360 and not validated at the door yet. A rep
+  // may ask to drop such a customer, so this screen has to read him the way every other screen does.
   const pending = customer ? customer.pendingDropRequestId !== null : reference?.state === "drop_pending";
+  const notValidated = customer !== null && customer.status === "pending";
   const noteLength = note.trim().length;
   const until = customer ? "Until then the customer stays on your list." : "Until then the customer stays under To validate.";
 
@@ -1258,7 +1266,16 @@ export function DropScreen({
       <CrmBackBar backLabel={backLabel} onBack={onBack} title="Ask to drop a customer" />
       <CrmBlock>
         <CustomerHeading customer={subject}>
-          {customer ? (
+          {/* A customer who is not validated yet has no place and no target, so neither a places line
+              nor a month standing is true of him — printing "1 of 3 visits this month" here would
+              charge him against a target he does not have. He gets what he has instead: the visits
+              saved on him, which count once he is validated, and what iReports360 knows. */}
+          {customer && notValidated ? (
+            <>
+              <Detail label="This month">{pendingVisitsText(customer.visitsThisMonth)}</Detail>
+              <Detail label="Last visit in iReports360">{referenceLastVisitText(customer.reference)}</Detail>
+            </>
+          ) : customer ? (
             <>
               <Detail label="Places">{placesDaysText(customer)}</Detail>
               <Detail label="This month">{monthVisitsText(customer.visitsThisMonth, customer.target)}</Detail>
@@ -1267,6 +1284,11 @@ export function DropScreen({
             <Detail label="Last visit in iReports360">{dayLabelWithYear(reference.lastVisitedOn)}</Detail>
           ) : null}
         </CustomerHeading>
+        {notValidated ? (
+          <div className="mt-2 flex flex-wrap gap-1">
+            <CrmPill tone="orange">{PENDING_PILL}</CrmPill>
+          </div>
+        ) : null}
       </CrmBlock>
       {pending ? (
         <CrmBlock className="border-t border-slate-100">
