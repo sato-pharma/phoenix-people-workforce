@@ -220,6 +220,22 @@ function runMigrationTests() {
   for (const column of ["name", "speciality", "grade"]) {
     assert.doesNotMatch(flip[1], new RegExp(`\\b${column}\\s*=`), `validating writes ${column} — it is the three captures and nothing else, and the name is changed later on its own`);
   }
+
+  // Owner, 2026-09-23: "keep the iReports360 grades on validation". The check above says validating
+  // does not OVERWRITE a grade; these two say what the grade actually is, which is the half a future
+  // session would change while leaving that one green. Re-grading at the door is the obvious-looking
+  // improvement here — the rep is standing in front of the doctor — and it is refused, because the
+  // grade sets that rep's own target and so is never his to set.
+  const refInsert = /insert into public\.phoenix_crm_customers \([\s\S]*?'reference', v_ref\.contact_crm_id,[\s\S]*?\)/.exec(validate);
+  assert.ok(refInsert, "validating a carried-over customer still mints him from the reference row");
+  assert.match(refInsert[0], /\bv_ref\.grade\b/, "a carried-over customer keeps the grade iReports360 gave him — it is copied from the reference row, never asked for at the door");
+
+  // And the one customer a rep creates himself is graded by nobody: the row goes in with NO grade and
+  // a 'grade' request goes to the district manager. A literal grade here would be the rep grading.
+  const newInsert = /elsif v_mode = 'new' then([\s\S]*?)elsif v_mode = 'restore' then/.exec(validate);
+  assert.ok(newInsert, "validating still has the branch for a customer the rep adds himself");
+  assert.match(newInsert[1], /'grade', v_customer\.id/, "a rep-added customer opens a grade REQUEST — the grade is proposed, never applied");
+  assert.doesNotMatch(newInsert[1], /grade[^,)]*=>?\s*'[ABC]'/, "a rep never writes a grade himself, not even on a customer he created");
 }
 
 // ── The screens ─────────────────────────────────────────────────────────────────────────────────
