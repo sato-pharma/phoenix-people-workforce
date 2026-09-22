@@ -196,6 +196,13 @@ export type VisitCustomerOption = {
    * location to compare against, and it counts in nothing until he is validated.
    */
   pending: boolean;
+  /**
+   * His entry on the territory's iReports360 list, which is what the Validate screen opens on. Null
+   * for a customer the rep added himself — he has no reference entry, so there is nothing to validate
+   * from here. Carried so that saving a visit on a pending customer can offer "Validate now" without
+   * a second read: he is at the door with the phone already in his hand.
+   */
+  referenceContactCrmId: number | null;
 };
 
 export type VisitPerson = {
@@ -283,6 +290,7 @@ export async function loadVisitForm(viewer: PhoenixCrmViewer, raw: { seatId: unk
       visitsThisMonth: visitCounts.get(customerId) ?? 0,
       target: gradeTarget(settings, listType, grade),
       pending: row.status === "pending",
+      referenceContactCrmId: numberOrNull(row.reference_contact_crm_id),
     };
   });
   // Today's planned customers first, then the rest by name.

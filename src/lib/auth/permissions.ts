@@ -1451,6 +1451,15 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     weekly_plans: ["read", "create", "update"],
     report_it: ["read", "create"],
+    // Owner, 2026-09-22: "give SFE and Training Manager the full company list too". The SFE Manager's
+    // grant landed that day; this one did not, so `DIRECTORY_COMPANY_ROLES` (phoenix-crm/server/
+    // doctors.ts) named the Training Manager while `assertPermission(access, "phoenix_crm", "read")`
+    // refused him at the door — the directory he was promised answered 403 to every call.
+    // READ ALONE, deliberately: `create`, `update` and `approve` are what resolvePhoenixCrmViewer
+    // turns into entering visits, requesting list changes and deciding them (access.ts), and he does
+    // none of those. He also holds no sales seat, so `territoryForRead` still refuses him every
+    // territory — the owner's own ruling of the same day, "The list is enough for him".
+    phoenix_crm: ["read"],
   },
   // Marketing Manager uses the employee portal like PM/GPM for reports and sidebar modules,
   // while HR authority remains blocked.

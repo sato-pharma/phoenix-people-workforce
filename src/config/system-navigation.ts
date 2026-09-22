@@ -4059,14 +4059,19 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     // plans, visits and reports, built clean in Phoenix. It took over this card from the 2026-09-14
     // pilot, whose link the owner asked to hide when this module shipped; the pilot's pages still
     // serve by typed address until it is removed after go-live. The admin-shell holders of
-    // phoenix_crm read are these three; reps and their managers open it from My Visits. The enforcing
+    // phoenix_crm read are these four; reps and their managers open it from My Visits. The enforcing
     // gate is phoenix_crm inside the page and every /api/phoenix-crm route.
+    //
+    // The Training Manager joined them on 2026-09-22, with the matrix grant he was promised that day
+    // and never got. He opens the card for the Doctors directory ALONE: `territoryForRead` refuses
+    // him every territory, so the list is where he stops — the owner's ruling, "The list is enough
+    // for him", not a gap to close.
     href: "/admin/field-crm",
     icon: ClipboardList,
     label: "Phoenix CRM",
     description: "Customer lists with their timings, weekly plans, visits and reports, entered in Phoenix.",
     permissions: [{ resource: "phoenix_crm", action: "read" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
+    roles: ["Super Admin", "CEO", "SFE Manager", "Training Manager"],
   },
   // Reps Plans had its own card here until 2026-09-21, when the owner merged it into Reps List
   // ("merge the 2 modules into 1 module WHICH REPS LIST"). The board is now the Call rate tab of the

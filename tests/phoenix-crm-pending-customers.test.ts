@@ -125,6 +125,7 @@ function runPickerTests() {
 
 const MIGRATION = "supabase/migrations/20260922180258_phoenix_crm_pending_customers.sql";
 const DECIDE_FIX = "supabase/migrations/20260922210000_phoenix_crm_decide_request_reads_decision.sql";
+const REACHABLE = "supabase/migrations/20260922233000_phoenix_crm_pending_reachable.sql";
 
 function sqlOf(file = MIGRATION): string {
   return readFileSync(file, "utf8").replace(/\r\n/g, "\n").replace(/--.*$/gm, "");
@@ -323,10 +324,121 @@ function runDecideRequestTests() {
   );
 }
 
+/**
+ * The two rules that were reachable only in the easy case, and the screens the first pass never got to.
+ *
+ * Rule 1 — "it leaves only by being validated or removed." Both doors ran through
+ * phoenix_crm_seat_reference, which reads live iReports360 assignments. End the assignment and the
+ * pending row rightly survived while BOTH doors raised not_on_reference_list: a customer with no way
+ * off the list at all, which is the state rule 1 forbids.
+ *
+ * Rule 5 — "on validation his already-logged visits start counting", ruled literally by the owner on
+ * 2026-09-22. Coverage demanded the validation fall inside the month, so a month that closed first
+ * never reopened.
+ *
+ * Rule 4 — a pending visit counts in no metric. The visit form was the one screen that had never
+ * heard the word, and it printed "2 of 3 visits this month" over visits that count for nothing.
+ */
+function runPendingReachableTests() {
+  const sql = sqlOf(REACHABLE);
+  const source = (file: string) => readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+
+  // ── Rule 1: one resolver, used by both doors ───────────────────────────────────────────────────
+  const helper = functionSql(sql, "phoenix_crm_reference_entry");
+  assert.match(helper, /from public\.phoenix_crm_seat_reference\(array\[p_seat_id\], p_is_test\) r/, "the live reference list is still read first");
+  assert.match(
+    helper,
+    /from public\.phoenix_crm_customers c\s+where c\.seat_id = p_seat_id/,
+    "and a customer whose iReports360 assignment ended is resolved from his own surviving row",
+  );
+  // The fallback must not shadow a live entry, or a stale customer row would answer for a live one.
+  assert.match(helper, /and not exists \(\s+select 1\s+from public\.phoenix_crm_seat_reference/, "the fallback fires only when the live list has nothing");
+  // seat_reference's own vocabulary, or every caller reading `state` misreads the fallback row.
+  for (const state of ["dropped", "validated", "drop_pending", "open"]) {
+    assert.match(helper, new RegExp(`'${state}'`), `the fallback speaks seat_reference's '${state}'`);
+  }
+
+  for (const name of ["phoenix_crm_validate_customer", "phoenix_crm_create_request"]) {
+    const body = functionSql(sql, name);
+    assert.match(body, /from public\.phoenix_crm_reference_entry\(/, `${name} resolves the contact through the shared entry`);
+    assert.doesNotMatch(
+      body,
+      /from public\.phoenix_crm_seat_reference\(/,
+      `${name} no longer reads the live assignment list directly — that is what stranded a carried-over customer`,
+    );
+    assert.match(body, /raise exception 'phoenix_crm:not_on_reference_list'/, `${name} still refuses a contact that is on neither`);
+  }
+
+  // ── Rule 5: coverage reopens the month ─────────────────────────────────────────────────────────
+  const coverage = functionSql(sql, "phoenix_crm_report_coverage");
+  assert.match(coverage, /and c\.validated_at is not null/, "coverage still counts only validated customers");
+  assert.doesNotMatch(
+    coverage,
+    /validated_at < \(b\.next_month/,
+    "but no longer demands the validation happened inside the month — a rep validated in October has his September visits counted in September",
+  );
+  // The clause beside it stays: a customer dropped later still belongs to the month he was dropped in.
+  assert.match(coverage, /c\.status = 'active' or c\.status_changed_at >= \(b\.month_start/, "a dropped customer still belongs to the month he was dropped in");
+
+  // ── Rule 4: the visit form knows the word ──────────────────────────────────────────────────────
+  const visits = source("src/components/phoenix-crm/visits-tab.tsx");
+  assert.match(
+    visits,
+    /customer\.pending \? pendingVisitsText\(customer\.visitsThisMonth\) : monthVisitsText\(customer\.visitsThisMonth, customer\.target\)/,
+    "the visit form never prints a month standing over visits that count for nothing",
+  );
+  assert.equal(
+    visits.match(/customer\.pending \? pendingVisitsText\(/g)?.length,
+    2,
+    "in the picker AND in the chosen-customer summary — both said 2 of 3 before",
+  );
+  assert.match(visits, /\{customer\.pending \? <CrmPill tone="orange">\{PENDING_PILL\}<\/CrmPill> : null\}/, "the picker carries the same pill as every other screen");
+  assert.match(visits, /\{PENDING_COUNTS_NOTE\}/, "and the one sentence that says what validating buys");
+
+  // ── The Validate hand-off: Add Visit → the List's Validate screen ──────────────────────────────
+  const listTab = source("src/components/phoenix-crm/list-tab.tsx");
+  assert.match(
+    listTab,
+    /const current: ListScreen = validateHandoff \? \{ name: "validate", contactCrmId: validateHandoff\.contactCrmId \} : screen;/,
+    "the hand-off outranks whatever screen the tab was left on",
+  );
+  assert.match(
+    listTab,
+    /const working = current\.name !== "home" && current\.name !== "customer" && current\.name !== "saved";/,
+    "and the held-work guard reads `current`, or the page could swap the tab away from a validation he is standing at the door to finish",
+  );
+  assert.match(listTab, /switch \(current\.name\) \{/, "every screen is dispatched from `current`");
+  assert.match(listTab, /if \(validateHandoff\) onPendingValidateDone\?\.\(\);\s+setScreen\(next\);/, "moving anywhere deliberately ends the hand-off, or the tab sticks on it");
+
+  // Offered only where there is something to validate: a customer the rep added himself has no
+  // iReports360 entry, so `referenceContactCrmId` is null and no button appears.
+  assert.match(
+    visits,
+    /onStartValidate && saved\.validate !== null/,
+    "Validate now is offered only when the customer he just visited is pending AND has a reference entry",
+  );
+  assert.match(
+    source("src/lib/phoenix-crm/server/visits.ts"),
+    /referenceContactCrmId: numberOrNull\(row\.reference_contact_crm_id\)/,
+    "which the visit form's own read carries, so the nudge costs no second request",
+  );
+
+  // ── The Team tab no longer tells managers plans wait for validation ────────────────────────────
+  const team = source("src/components/phoenix-crm/team-tab.tsx");
+  assert.doesNotMatch(
+    team,
+    /weekly plans start once/i,
+    "the wall the owner removed is not still described to his managers",
+  );
+  assert.doesNotMatch(team, /<CrmPill tone="warn">Validating<\/CrmPill>/, "a territory part-way through its list is not a warning");
+  assert.match(team, /const currentFilter: ListFilter = filter \?\? "all";/, "and the section does not open pre-filtered to the territories still validating");
+}
+
 export function runPhoenixCrmPendingCustomerTests() {
   runPlanningTests();
   runPickerTests();
   runMigrationTests();
   runDecideRequestTests();
+  runPendingReachableTests();
   runScreenTests();
 }

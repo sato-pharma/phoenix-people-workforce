@@ -21,7 +21,15 @@ import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 
 import { crmPost, crmUrl, errorCodeOf, messageOf, newClientId, useCrmGet } from "@/components/phoenix-crm/api";
 import { cairoClock, cairoStamp, dayLabelLong, plural, shiftIsoDay } from "@/components/phoenix-crm/format";
-import { customerMetaText, listText, monthVisitsText, territoryLine } from "@/components/phoenix-crm/labels";
+import {
+  customerMetaText,
+  listText,
+  monthVisitsText,
+  PENDING_COUNTS_NOTE,
+  PENDING_PILL,
+  pendingVisitsText,
+  territoryLine,
+} from "@/components/phoenix-crm/labels";
 import { LivePhotoCapture, releaseCapturedPhoto, type CapturedPhoto } from "@/components/phoenix-crm/live-photo-capture";
 import { CrmPhotoThumb } from "@/components/phoenix-crm/photo";
 import {
@@ -79,6 +87,19 @@ export type PendingVisit = {
   photo: CapturedPhoto | null;
   /** The phone's Date.now() when the validation saved. */
   validatedAtMs: number;
+};
+
+/**
+ * The other direction: a visit just saved on a customer who is not validated yet, handed BACK to the
+ * List tab's Validate screen. It carries no photo by design — validating takes its own live photo of
+ * the door, and the visit's photo is the visit's proof, not the place's.
+ */
+export type PendingValidate = {
+  seatId: string;
+  test: boolean;
+  /** His entry on the territory's iReports360 list: what the Validate screen opens on. */
+  contactCrmId: number;
+  customerName: string;
 };
 
 /**
@@ -270,26 +291,46 @@ function VisitTable({ visits }: { visits: ReadonlyArray<VisitRow> }) {
   );
 }
 
-function SavedNote({ customerName, visit }: { customerName: string; visit: SavedVisit }) {
-  if (visit.duplicate) {
-    return (
-      <CrmNote title={customerName} tone="info">
-        This visit was already saved, at {cairoClock(visit.capturedAt)}.
-      </CrmNote>
-    );
-  }
-  const flagged = isFlagged(visit.locationFlag);
-  return (
-    <CrmNote title={`Visit saved: ${customerName}`} tone={flagged ? "warn" : "good"}>
-      {cairoClock(visit.capturedAt)} · {visit.locationLabel}
-      {flagged ? ". The visit is saved with this flag." : ""}
+/** What the day screen shows after a visit is saved, and — for a pending customer — what to do next. */
+type SavedState = {
+  visit: SavedVisit;
+  customerName: string;
+  /** His iReports360 entry, when he is pending and has one: what Validate opens on. */
+  validate: number | null;
+};
+
+function SavedNote({ onValidate, saved }: { onValidate: (() => void) | null; saved: SavedState }) {
+  const { customerName, visit } = saved;
+  const note = visit.duplicate ? (
+    <CrmNote title={customerName} tone="info">
+      This visit was already saved, at {cairoClock(visit.capturedAt)}.
     </CrmNote>
+  ) : (
+    <CrmNote title={`Visit saved: ${customerName}`} tone={isFlagged(visit.locationFlag) ? "warn" : "good"}>
+      {cairoClock(visit.capturedAt)} · {visit.locationLabel}
+      {isFlagged(visit.locationFlag) ? ". The visit is saved with this flag." : ""}
+    </CrmNote>
+  );
+  if (!onValidate) return note;
+  // The one moment he is certainly at the door with the phone in his hand. An offer, never a gate:
+  // the visit is already saved either way, and nothing here can undo it.
+  return (
+    <div className="grid min-w-0 gap-2">
+      {note}
+      <CrmNote title={PENDING_PILL} tone="info">
+        <span className="block">{PENDING_COUNTS_NOTE} It takes the location, one photo and the opening hours, once.</span>
+        <CrmButton className="mt-2" onClick={onValidate} variant="primary">
+          Validate now
+        </CrmButton>
+      </CrmNote>
+    </div>
   );
 }
 
 export function VisitsTab({
   cairoToday,
   onPendingVisitDone,
+  onStartValidate,
   onWorkChange,
   pendingVisit,
   seatId,
@@ -298,6 +339,8 @@ export function VisitsTab({
   cairoToday: string;
   /** The hand-off from the List tab was used or abandoned. */
   onPendingVisitDone: () => void;
+  /** Validate the customer this visit was just saved on. Absent where this page cannot edit the list. */
+  onStartValidate?: (validate: PendingValidate) => void;
   /** Add Visit opened or closed: the page keeps this tab as it is while another tab is open. */
   onWorkChange?: (working: boolean) => void;
   pendingVisit: PendingVisit | null;
@@ -306,7 +349,7 @@ export function VisitsTab({
 }) {
   const [date, setDate] = useState(cairoToday);
   const [adding, setAdding] = useState(false);
-  const [saved, setSaved] = useState<{ visit: SavedVisit; customerName: string } | null>(null);
+  const [saved, setSaved] = useState<SavedState | null>(null);
   const day = useCrmGet<VisitDayView>(crmUrl("/api/phoenix-crm/visits", { date, seatId, test }), "day");
 
   const handoff = pendingVisit && pendingVisit.seatId === seatId && pendingVisit.test === test ? pendingVisit : null;
@@ -330,10 +373,10 @@ export function VisitsTab({
           setAdding(false);
           if (handoff) onPendingVisitDone();
         }}
-        onSaved={(visit, customerName) => {
+        onSaved={(visit, customerName, validate) => {
           setAdding(false);
           if (handoff) onPendingVisitDone();
-          setSaved({ visit, customerName });
+          setSaved({ visit, customerName, validate });
           setDate(visit.visitDate);
           day.reload();
         }}
@@ -401,7 +444,19 @@ export function VisitsTab({
 
       {saved ? (
         <div className="px-4 pt-4 sm:px-5">
-          <SavedNote customerName={saved.customerName} visit={saved.visit} />
+          <SavedNote
+            onValidate={
+              onStartValidate && saved.validate !== null
+                ? () => {
+                    const contactCrmId = saved.validate;
+                    if (contactCrmId === null) return;
+                    setSaved(null);
+                    onStartValidate({ seatId, test, contactCrmId, customerName: saved.customerName });
+                  }
+                : null
+            }
+            saved={saved}
+          />
         </div>
       ) : null}
 
@@ -541,12 +596,17 @@ function CustomerPicker({
                       <span className="mt-0.5 block break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</span>
                     </span>
                     <span className="flex max-w-full flex-wrap gap-1">
+                      {customer.pending ? <CrmPill tone="orange">{PENDING_PILL}</CrmPill> : null}
                       {customer.plannedToday ? <CrmPill tone="orange">On today&apos;s plan</CrmPill> : null}
                       {customer.visitedToday ? <CrmPill tone="good">Visited today</CrmPill> : null}
                     </span>
                   </span>
                   <PlaceWindows customer={customer} />
-                  <span className="mt-1 block text-xs font-semibold text-slate-600">{monthVisitsText(customer.visitsThisMonth, customer.target)}</span>
+                  {/* A customer not validated yet has no month standing to report: "2 of 3 visits this
+                      month" would be read as progress on a figure his visits do not move. */}
+                  <span className="mt-1 block text-xs font-semibold text-slate-600">
+                    {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
+                  </span>
                 </button>
               </li>
             );
@@ -642,7 +702,9 @@ function AddVisit({
 }: {
   handoff: PendingVisit | null;
   onClose: () => void;
-  onSaved: (visit: SavedVisit, customerName: string) => void;
+  // `validate` is his iReports360 entry when the customer he just visited is still pending and has
+  // one — the id the Validate screen opens on. Null whenever there is nothing to offer.
+  onSaved: (visit: SavedVisit, customerName: string, validate: number | null) => void;
   seatId: string;
   test: boolean;
 }) {
@@ -774,7 +836,7 @@ function AddVisit({
     try {
       const saved = await crmPost<SavedVisit>("/api/phoenix-crm/visits", next.payload, "visit");
       releaseCapturedPhoto(photo);
-      onSaved(saved, next.customerName);
+      onSaved(saved, next.customerName, customer?.pending ? customer.referenceContactCrmId : null);
     } catch (error) {
       const code = errorCodeOf(error);
       let message = messageOf(error);
@@ -815,7 +877,16 @@ function AddVisit({
               <p className="break-words text-sm font-black text-slate-950">{customer.name}</p>
               <p className="mt-0.5 break-words text-xs font-semibold text-slate-500">{customerMetaText(customer)}</p>
               <PlaceWindows customer={customer} />
-              <p className="mt-1 text-xs font-semibold text-slate-600">{monthVisitsText(customer.visitsThisMonth, customer.target)}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                {customer.pending ? pendingVisitsText(customer.visitsThisMonth) : monthVisitsText(customer.visitsThisMonth, customer.target)}
+              </p>
+              {/* Never a warning and never a gate: he saves this visit exactly as he would any other.
+                  The one thing worth saying is what validating buys him. */}
+              {customer.pending ? (
+                <CrmNote className="mt-2" title={PENDING_PILL} tone="info">
+                  {PENDING_COUNTS_NOTE}
+                </CrmNote>
+              ) : null}
               {customer.visitedToday ? (
                 <CrmNote className="mt-2" tone="info">
                   This customer&apos;s visit for today is already saved.
