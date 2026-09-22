@@ -19,6 +19,7 @@ import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-repor
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
 import { MarketingFinanceHoldControl } from "@/components/marketing-requests/marketing-finance-hold-control";
+import { MarketingCancelControl } from "@/components/marketing-requests/marketing-cancel-control";
 import { MarketingReopenControl } from "@/components/marketing-requests/marketing-reopen-control";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -705,6 +706,20 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
               </p>
             ) : null}
             <MarketingReopenControl requestId={header.requestId} stepName={refusedRung?.stepName ?? null} />
+          </div>
+        ) : null}
+
+        {viewer.can.cancel ? (
+          <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+            <p className="text-phx-xs font-semibold uppercase tracking-[0.16em] text-slate-600">
+              Cancel
+            </p>
+            <p className="mt-1 text-phx-md leading-5 text-slate-700">
+              Call this request off if it will not go ahead. It becomes terminal and stops counting
+              towards committed spend, but pays nobody and reverses nothing — any money already moved
+              is reversed on the finance screen.
+            </p>
+            <MarketingCancelControl requestId={header.requestId} />
           </div>
         ) : null}
 
