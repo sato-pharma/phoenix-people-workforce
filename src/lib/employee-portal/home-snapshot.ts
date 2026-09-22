@@ -20,7 +20,23 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
-import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+// NOTE there is deliberately no `getAwaitingMyActionItems` import here any more.
+//
+// The DSM, NSM and RM branches each used to call it, take `.length`, and hand the number out as
+// `pendingApprovals` — which no component ever rendered. Grepping `app/` and `src/components/` for
+// the field returns nothing outside this file, and all three dashboards (dsm-command-center,
+// nsm-command-center, rm-command-center) destructure the neighbouring fields and skip it.
+//
+// It was not a free dead field. One "portal" call fans out to SIX data sources — vacation, excuse,
+// resignations, contract renewals, plans awaiting action, and the whole employee directory — so
+// every District, National Sales and Regional Manager paid for all six on every landing-page load
+// to compute a number that was then dropped.
+//
+// Nothing is lost by removing it: the same count already reaches these users through the sidebar's
+// `approvals-hub-pending` NavBadge, which reads `/api/approvals-hub/pending-count` — the same
+// `getAwaitingMyActionItems(access, "portal")` behind one shared endpoint
+// (`src/components/employee-portal/employee-portal-layout.tsx`). The function keeps four other live
+// callers, so this removes a caller, not the capability.
 import { countPlanAwaiting } from "@/lib/approvals-hub/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
@@ -354,16 +370,15 @@ export type PortalHomeSnapshot = {
    * without calling Date.now() during render (which is impure for a React component).
    */
   mmOverview: (MarketingOverviewMetrics & { upcoming: UpcomingMarketingActivity[]; asOf: number }) | null;
-  /** District Manager only: the DSM's own med-rep team, current period, + team approvals awaiting
-   * the DSM, + the CRM first-visit board for that team. `members` is the top-10 sales leaderboard;
-   * `crm` covers every direct report, ranked and uncapped. */
+  /** District Manager only: the DSM's own med-rep team, current period, + the CRM first-visit board
+   * for that team. `members` is the top-10 sales leaderboard; `crm` covers every direct report,
+   * ranked and uncapped. */
   dsmTeam:
     | {
         achievementPercent: number;
         memberCount: number;
         totalSales: number;
         totalTarget: number;
-        pendingApprovals: number;
         /** Which published month(s) these numbers cover, e.g. "Jul 2026". Null when none is
          *  published — the keycards must then say so rather than print a bare number. */
         windowLabel: string | null;
@@ -375,14 +390,13 @@ export type PortalHomeSnapshot = {
         crm: NsmCrmComplianceData;
       }
     | null;
-  /** National Sales Manager only: the NSM's line, rolled up by DSM, + approvals awaiting the NSM. */
+  /** National Sales Manager only: the NSM's line, rolled up by DSM. */
   nsmNational:
     | {
         achievementPercent: number;
         dsmCount: number;
         totalSales: number;
         totalTarget: number;
-        pendingApprovals: number;
         /** Which published month(s) these numbers cover. See dsmTeam.windowLabel. */
         windowLabel: string | null;
       }
@@ -424,7 +438,6 @@ export type PortalHomeSnapshot = {
         totalTarget: number;
         /** Region sales carried by no district row (vacant-DM reps + in-region direct orders). */
         unattributedSales: number;
-        pendingApprovals: number;
         /** Which published month(s) these numbers cover. See dsmTeam.windowLabel. */
         windowLabel: string | null;
         /** People who left during the window: off both leaderboards, still inside the region total. */
@@ -520,9 +533,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       return { ...emptyRoleExtras, mmOverview: { ...overview, upcoming, asOf: Date.now() } };
     }
     if (role === "District Manager") {
-      const [team, approvals, directoryRows] = await Promise.all([
+      const [team, directoryRows] = await Promise.all([
         getDsmTeamPerformance(access, {}),
-        getAwaitingMyActionItems(access, "portal").catch(() => []),
         getEmployeeDirectoryRows().catch(() => []),
       ]);
       if (!team) return emptyRoleExtras;
@@ -556,7 +568,6 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           memberCount: people.memberCount,
           totalSales: team.teamTotalSales,
           totalTarget: team.teamTotalTarget,
-          pendingApprovals: approvals.length,
           windowLabel: salesWindowLabel(team.periods),
           departedCount: people.departedCount,
           departedSales: people.departedSales,
@@ -566,10 +577,9 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "National Sales Manager") {
-      const [national, repTeam, approvals, directoryRows] = await Promise.all([
+      const [national, repTeam, directoryRows] = await Promise.all([
         getNsmDsmPerformance(access, {}),
         getDsmTeamPerformance(access, {}),
-        getAwaitingMyActionItems(access, "portal").catch(() => []),
         getEmployeeDirectoryRows().catch(() => []),
       ]);
       if (!national) return emptyRoleExtras;
@@ -638,7 +648,6 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           dsmCount: dsmRoster.active.length,
           totalSales: national.lineTotalSales,
           totalTarget: national.lineTotalTarget,
-          pendingApprovals: approvals.length,
           windowLabel: salesWindowLabel(national.periods),
         },
         nsmBoard: {
@@ -651,9 +660,8 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       };
     }
     if (role === "Regional Manager") {
-      const [regional, approvals, directoryRows] = await Promise.all([
+      const [regional, directoryRows] = await Promise.all([
         getRmRegionalPerformance(access, {}),
-        getAwaitingMyActionItems(access, "portal").catch(() => []),
         getEmployeeDirectoryRows().catch(() => []),
       ]);
       if (!regional) return emptyRoleExtras;
@@ -719,7 +727,6 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           totalSales: regional.regionTotalSales,
           totalTarget: regional.regionTotalTarget,
           unattributedSales: regional.unattributedSales,
-          pendingApprovals: approvals.length,
           windowLabel: salesWindowLabel(regional.periods),
           departedCount: dsmRoster.departed.length + repRoster.departed.length,
           departedSales: sumSales(dsmRoster.departed) + sumSales(repRoster.departed),
