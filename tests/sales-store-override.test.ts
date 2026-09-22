@@ -95,8 +95,13 @@ export async function runSalesStoreOverrideTests() {
 
   await runAmerQutbRulingTests();
   await runAlFatehRulingTests();
+  await runBadrRulingTests();
 
-  assert.equal(STORE_OVERRIDE_CUSTOMER_KEYS.size, 6, "the three earlier rulings plus the three الفاتح Delta accounts");
+  assert.equal(
+    STORE_OVERRIDE_CUSTOMER_KEYS.size,
+    8,
+    "3 earlier rulings + 3 الفاتح Delta accounts + بدر keyed at both its distributors (الرساله فارم needs no key — it already matches «فارم»)",
+  );
 
   const channelsByRepSource = readFileSync(
     new URL("../src/lib/sales/channels-by-rep.ts", import.meta.url),
@@ -373,4 +378,101 @@ async function runAlFatehRulingTests(): Promise<void> {
     false,
     "an un-overridden pharmacy in the same brick is never split",
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// بدر, Delta 1 (Menoufia) — owner ruling 2026-09-23: a wholesaler mis-booked as a pharmacy. Its bare
+// name «بدر» carries none of the six store words, so the override is provably what does the work. It
+// sells through TWO distributors (IS on CNS, IS-S on Anti Infective), so it is keyed at both. Menoufia
+// = D12 + D13, so each August sale splits 50/50. The owner unlocked ALL of August (AI, CNS, Pedia) on
+// 2026-09-22, so both August lines restate.
+//
+// الرساله فارم (code 1557996, PS) was listed by the owner in the same message, but it needs NO override:
+// «فارم» is a STORE_NAME_KEYWORD, so it is already a store and already splits. This test pins exactly
+// that — بدر needs the key, الرساله فارم does not — so a later "tidy" that keys الرساله (redundant) or
+// drops بدر (a real regression) fails here.
+const MENOUFIA_AREAS = ["D12", "D13"];
+const BADR = { code: "386724", name: "بدر" };
+const AL_RESALA = { code: "1557996", distributorCode: "PS", name: "الرساله فارم" };
+
+function menoufiaRow(over: Partial<StoreSplitRow> = {}): StoreSplitRow {
+  return {
+    areaCode: "D12",
+    clientCode: BADR.code,
+    clientName: BADR.name,
+    distributorCode: "IS-S",
+    includedInClosing: true,
+    isDirect: false,
+    officialLine: "Anti Infective",
+    productCode: "SA001",
+    qty: 20,
+    salesValue: 2223,
+    ...over,
+  };
+}
+
+async function runBadrRulingTests(): Promise<void> {
+  // ── بدر is recognised at both of its distributors, and only there ───────────────────────────────
+  assert.ok(isStoreOverride(BADR.code, "IS"), "بدر at IS (CNS) is recognised");
+  assert.ok(isStoreOverride(BADR.code, "IS-S"), "بدر at IS-S (Anti Infective) is recognised");
+  assert.ok(isStoreOverride("0000386724", " is-s "), "padding and casing do not defeat بدر's key");
+  assert.ok(!isStoreOverride(BADR.code, "PS"), "بدر is not swept in at a distributor it does not sell through");
+  assert.ok(!isStoreOverride("386725", "IS"), "a neighbouring code is not swept in");
+
+  // ── the bare name says pharmacy, so the override is provably what reclassifies بدر ──────────────
+  assert.equal(isStoreCustomer(BADR.name), false, "«بدر» carries no store word on its own");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "IS"), "store");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "IS-S"), "store");
+  assert.equal(classifyCustomerChannel(BADR.name, BADR.code, "PS"), "pharmacy", "بدر at an unruled distributor keeps the default");
+
+  // ── August 2026 runs the legacy rule for both AI and CNS (cutover 2026-09), and honours the override ──
+  for (const [distributor, line] of [["IS-S", "Anti Infective"], ["IS", "CNS"]] as const) {
+    assert.equal(
+      legacyIsStoreCustomer(BADR.name, BADR.code, distributor),
+      true,
+      `the pre-2026-09-06 rule honours the override for بدر at ${distributor}`,
+    );
+    assert.equal(
+      isStoreCustomerForPeriod(BADR.name, BADR.code, distributor, "2026-08", line),
+      true,
+      `August 2026 ${line} sees بدر as a warehouse`,
+    );
+  }
+
+  // ── بدر's money splits 50/50 across Menoufia (D12 + D13), even split, nothing leaves the city ───
+  const badrAi = menoufiaRow(); // بدر, D12, AI (IS-S), 2,223.00
+  const badrCns = menoufiaRow({ distributorCode: "IS", officialLine: "CNS", qty: 10, salesValue: 344.25 });
+  for (const row of [badrAi, badrCns]) {
+    assert.equal(isSplitEligible(row, "2026-08"), true, `بدر ${row.officialLine} must split in August — it did not before this ruling`);
+    const plan = splitTargetsFor(row);
+    assert.ok(plan, "a Menoufia warehouse always has a split plan");
+    assert.deepEqual([...(plan?.homeAreas ?? [])].sort(), MENOUFIA_AREAS, "both Menoufia areas take a share");
+    assert.deepEqual(plan?.awayAreas, [], "a Menoufia warehouse never reaches outside its own city");
+    assert.equal(plan?.homeFraction, 1, "nothing leaves Menoufia — the plain city rule");
+  }
+  assert.equal(badrAi.salesValue / MENOUFIA_AREAS.length, 1111.5, "بدر AI: 1,111.50 to each area (D12→D13 1,111.50)");
+  assert.equal(badrCns.salesValue / MENOUFIA_AREAS.length, 172.125, "بدر CNS: 172.125 to each area (D12→D13 172.13)");
+
+  // ── without the override بدر would NOT split — this is what the ruling changed ──────────────────
+  assert.equal(
+    legacyIsStoreCustomer(BADR.name, BADR.code, "OTHER"),
+    false,
+    "at a distributor with no ruling, بدر falls back to pharmacy and does not split",
+  );
+
+  // ── الرساله فارم needs NO override: «فارم» already makes it a store, and it already splits ──────
+  assert.equal(isStoreOverride(AL_RESALA.code, "PS"), false, "الرساله فارم is deliberately NOT keyed — the keyword does the work");
+  assert.equal(isStoreCustomer(AL_RESALA.name), true, "«الرساله فارم» matches «فارم», so it is already a store");
+  assert.equal(
+    isSplitEligible(
+      menoufiaRow({ clientCode: AL_RESALA.code, clientName: AL_RESALA.name, distributorCode: "PS", areaCode: "D13", qty: 30, salesValue: 1822.5 }),
+      "2026-08",
+    ),
+    true,
+    "الرساله فارم already splits in August on the keyword alone",
+  );
+
+  // ── the control: the city split itself is gated off before August, so no pre-August line moves ──
+  assert.equal(isStoreCitySplitActive("2026-07"), false, "July 2026 is before the city-split gate, so بدر's July lines cannot move");
+  assert.equal(isStoreCitySplitActive("2026-08"), true, "August 2026 is on, which is why بدر restates");
 }

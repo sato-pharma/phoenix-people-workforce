@@ -269,6 +269,23 @@ export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
   "IS-S|446433",
   "PS|1552831",
   "PS|1520649",
+  // ─── بدر, Delta 1 (Menoufia) — owner ruling 2026-09-23 ─────────────────────────────────────────
+  // Another Delta (1) wholesaler mis-booked as a pharmacy, same as ابن خلدون / الفاتح above. It sits
+  // in Menoufia (areas D12 + D13), so the city split spreads each sale 50/50 across the two. Code
+  // 386724 sells through TWO distributors, so it needs a key for each: IS on CNS and IS-S on Anti
+  // Infective (both booked on D12).
+  //
+  // NOTE on الرساله فارم (code 1557996, PS): the owner listed it too, but its name already matches the
+  // «فارم» STORE_NAME_KEYWORD, so it is ALREADY a store and already city-splits — no override needed.
+  //
+  // WHAT بدر MOVES in August 2026 (the owner unlocked ALL of August — AI, CNS and Pedia — on
+  // 2026-09-22, so both lines below restate):
+  //   AI  20u / 2,223.00 whole on D12 → 10u / 1,111.50 on each of D12, D13  (D12→D13 1,111.50)
+  //   CNS 10u / 344.25   whole on D12 →  5u / 172.13 on each of D12, D13    (D12→D13 172.13)
+  //   Nothing leaves its own line and nothing leaves Delta. Its pre-August months are before the
+  //   split gate and do not move. Code carries no leading zeros, so the keys are the code as written.
+  "IS|386724",
+  "IS-S|386724",
 ]);
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
