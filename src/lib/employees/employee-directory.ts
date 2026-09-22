@@ -334,6 +334,64 @@ let inFlightDirectory: Promise<EmployeeDirectoryData> | null = null;
 
 const CACHE_TTL = 30000; // 30 seconds
 
+/**
+ * How old a cached directory may be and still be served when a fresh load FAILS.
+ *
+ * The fresh path has always been bounded by CACHE_TTL. The failure paths were not bounded at all:
+ * they returned `cache.data` on a timeout without looking at `timestamp`, so an entry from minutes
+ * or hours ago was handed back as current. The directory carries headcount, managers, job titles
+ * and salary figures, and every page that renders them states them as fact — there is nothing on
+ * screen that distinguishes "as of now" from "as of this morning".
+ *
+ * Ten minutes is the judgement: long enough to ride out a transient timeout or a PostgREST schema
+ * hiccup without turning a blip into an outage, short enough that nobody makes a decision on a
+ * roster that has since changed. Past it we throw, and the pages already render a thrown directory
+ * load as a visible "could not load" — which is honest in a way a confidently stale page is not.
+ */
+export const STALE_CACHE_MAX_AGE = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * The age rule on its own, exported so it can be tested without a database.
+ *
+ * `true` means a cache entry stamped at `timestamp` may stand in for a load that failed at `now`.
+ * A future timestamp (a clock step) reads as age 0 and is allowed — refusing there would turn a
+ * clock adjustment into an outage, and the entry is by definition not old.
+ */
+export function mayServeStaleDirectory(timestamp: number, now: number = Date.now()): boolean {
+  if (!Number.isFinite(timestamp)) return false;
+  return now - timestamp <= STALE_CACHE_MAX_AGE;
+}
+
+/**
+ * May this cache entry stand in for a load that failed?
+ *
+ * Returns the data when the entry is inside STALE_CACHE_MAX_AGE, and null otherwise — including
+ * when there is no entry at all. Both outcomes are logged, because "the page is showing you
+ * something slightly old" and "the page gave up" are each worth seeing in the logs, and neither
+ * used to leave any trace whatsoever.
+ */
+function serveStaleOnFailure<T>(
+  entry: { data: T; timestamp: number } | null | undefined,
+  context: { surface: string; error: unknown },
+): T | null {
+  if (!entry) return null;
+  const now = Date.now();
+  const ageMs = now - entry.timestamp;
+  if (mayServeStaleDirectory(entry.timestamp, now)) {
+    console.log("Employee directory load failed; serving a recent cached copy", {
+      level: "warning",
+      tags: { component: "employee-directory", action: context.surface },
+      extra: { ageMs, maxAgeMs: STALE_CACHE_MAX_AGE, message: employeeDirectoryErrorMessage(context.error) },
+    });
+    return entry.data;
+  }
+  logError("Employee directory load failed and the cached copy is too old to stand in for it", {
+    labels: { event: "employee_directory_stale_cache_refused", component: "employee-directory", action: context.surface },
+    error: context.error,
+  });
+  return null;
+}
+
 // Same TTL + in-flight-dedupe pattern as directoryCache/inFlightDirectory above, applied to
 // getEmployeeDirectoryRows(). Keyed by includeInactive since callers legitimately need two
 // different result sets (active-only vs. full history) that must never be served
@@ -920,9 +978,14 @@ export async function getEmployeeDirectory(): Promise<EmployeeDirectoryData> {
   try {
     return await inFlightDirectory;
   } catch (error) {
-    if (isEmployeeDirectoryTimeout(error) && directoryCache) {
-      return directoryCache.data;
-    }
+    // The ONE place that decides whether a stale copy may answer for a failed load.
+    //
+    // It is no longer narrowed to `isEmployeeDirectoryTimeout`: the fallback-select branch inside
+    // fetchEmployeeDirectory now throws instead of quietly returning stale rows into the success
+    // path, and that branch's old behaviour — serve what we have rather than crash the page — is
+    // preserved here, where it is age-bounded and cannot re-stamp the cache as fresh.
+    const stale = serveStaleOnFailure(directoryCache, { surface: "getEmployeeDirectory", error });
+    if (stale) return stale;
 
     throw error;
   }
@@ -980,10 +1043,18 @@ async function fetchEmployeeDirectory(): Promise<EmployeeDirectoryData> {
         labels: { event: "employee_directory_fallback_failed", component: "employee-directory", action: "fetchEmployeeDirectory-fallback" },
         error: fallbackError,
       });
-      // If a warm cache exists, serve stale data rather than crashing the page.
-      if (directoryCache) {
-        return directoryCache.data;
-      }
+      // Deliberately THROW here rather than returning `directoryCache.data`, which is what this
+      // branch used to do.
+      //
+      // Returning stale rows from inside the fetch handed them back as a SUCCESSFUL load, and the
+      // `.then()` in getEmployeeDirectory writes every successful load into the cache with a fresh
+      // `Date.now()`. So a failing fallback re-stamped the old data as new, on every call: the
+      // 30-second TTL could never expire while the query kept failing, and the cache was renewed
+      // indefinitely off its own contents. Nothing aged, and nothing said so.
+      //
+      // The single decision about whether stale data may stand in now lives in ONE place — the
+      // catch in getEmployeeDirectory — where it is bounded by STALE_CACHE_MAX_AGE and where
+      // serving it cannot refresh the timestamp.
       throw fallbackError;
     }
   }
@@ -1609,10 +1680,14 @@ export async function getEmployeeDirectoryRows(
   try {
     return await inFlight;
   } catch (error) {
-    const staleCache = directoryRowsCache.get(includeInactive);
-    if (isEmployeeDirectoryTimeout(error) && staleCache) {
-      return staleCache.data;
-    }
+    // Same rule as getEmployeeDirectory, same bound. This read is keyed by includeInactive, so the
+    // age test applies to the entry for THIS key — the two result sets must never stand in for one
+    // another, and a fresh active-only entry says nothing about how old the full-history one is.
+    const stale = serveStaleOnFailure(directoryRowsCache.get(includeInactive), {
+      surface: `getEmployeeDirectoryRows(includeInactive=${includeInactive})`,
+      error,
+    });
+    if (stale) return stale;
 
     throw error;
   }
