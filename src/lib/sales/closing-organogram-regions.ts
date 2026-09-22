@@ -396,11 +396,13 @@ const LINE_AREA_MAP_COLUMNS = "area_code,operational_region_code,effective_from,
  * landed on the month before it the moment that month was closed. Pass null only where there is
  * genuinely no month yet — the empty skeleton — never as a shortcut.
  *
- * Reads `au_v_line_area_map_all`, the ONLY caller that does. Every other consumer stays on
- * `au_v_line_area_map`, which exposes open rows only and answers "who owns this area today" — the
- * owner's standing rule that SoS sales attribute to today's structure, never as-was, still governs
- * them. The closing is the one place that has to ask the other question, "who owned it in the month
- * I am closing", and it cannot be answered from open rows alone: a territory move is written as a
+ * Reads `au_v_line_area_map_all` — the closing, and (since finding 5) the Territory Drilldown's
+ * loadLineAreas, both resolve as-of a chosen date and so read the effective-dated history rather
+ * than the open-row view. Every OTHER consumer stays on `au_v_line_area_map`, which exposes open
+ * rows only and answers "who owns this area today" — the owner's standing rule that SoS sales
+ * attribute to today's structure, never as-was, still governs them. The closing is the one place
+ * that has to ask the other question, "who owned it in the month I am closing", and it cannot be
+ * answered from open rows alone: a territory move is written as a
  * PAIR, so while it is still in the future the current-only view shows NEITHER half — the old row
  * has an `effective_to`, the new one has not started — and the area silently falls back to its
  * geographic region. That is what the history view exists to close.

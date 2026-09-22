@@ -23,7 +23,10 @@ export async function GET(request: Request) {
       );
     }
 
-    const skeleton = await getTerritorySkeleton(access);
+    // Super Admin / CEO drill a line they pick; every other role's line is derived and this is
+    // ignored (see resolveTerritoryRootScope).
+    const selectedLine = new URL(request.url).searchParams.get("line");
+    const skeleton = await getTerritorySkeleton(access, selectedLine);
     return NextResponse.json({ success: true, skeleton });
   } catch (error) {
     return jsonError(error, "Failed to load territory drilldown.");

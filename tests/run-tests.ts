@@ -1594,6 +1594,7 @@ import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runTerritoryDirectValueTests } from "./territory-direct-value.test.ts";
 import { runTerritoryUnitsEffectiveTests } from "./territory-units-effective.test.ts";
 import { runTerritoryUnitBarsValueTests } from "./territory-unit-bars-value.test.ts";
+import { runTerritoryAsofAndLinePickerTests } from "./territory-asof-and-line-picker.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 import { runCrmVisitTypeMeaningTests } from "./crm-visit-type-meaning.test.ts";
@@ -5392,6 +5393,10 @@ await runTest(
 await runTest(
   "Territory Management pharmacy monthly trend bar plots value, never a units total summed across different products (owner golden rule)",
   runTerritoryUnitBarsValueTests,
+);
+await runTest(
+  "Territory Drilldown resolves areas as of the window end (forward-dated moves not shown early); Super Admin / CEO drill any line nationwide via the picker",
+  runTerritoryAsofAndLinePickerTests,
 );
 
 await runTest(

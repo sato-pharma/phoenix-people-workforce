@@ -1589,10 +1589,10 @@ const employeePortalNavigationSectionSeeds = [
       // why. DO NOT RE-ADD either row: the board they point at scores every doctor against the
       // GRADE norm instead of the rep's own planned call count, which the owner has ruled is the
       // wrong measure. A replacement is being built; it gets its own entry when it ships.
-      // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
-      // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
-      // src/lib/sales/territory/service.ts, the server-side gate this list must match.
-      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      // The four sales roles plus Super Admin / CEO (who drill any one line nationwide via the line
+      // picker) — see TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the
+      // server-side gate this list must match.
+      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Super Admin", "CEO"] },
       // Portal-shell counterpart of /sales/territory-management — same component, own-scope data.
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.
